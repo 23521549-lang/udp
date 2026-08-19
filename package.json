@@ -1,0 +1,32 @@
+{
+  "name": "udp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "UDP — Configurable DevOps Platform with Integrated Feature Flags and Progressive Delivery",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "db:generate": "pnpm --filter @udp/db generate",
+    "db:migrate": "pnpm --filter @udp/db migrate",
+    "db:studio": "pnpm --filter @udp/db studio",
+    "db:seed": "pnpm --filter @udp/db seed",
+    "dev:infra": "docker compose -f docker-compose.dev.yml up -d",
+    "dev:infra:down": "docker compose -f docker-compose.dev.yml down",
+    "dev:infra:logs": "docker compose -f docker-compose.dev.yml logs -f",
+    "dev:core": "pnpm --filter @udp/core-backend dev",
+    "dev:flags": "pnpm --filter @udp/flag-service dev",
+    "dev:pd": "pnpm --filter @udp/pd-controller dev",
+    "dev:portal": "pnpm --filter @udp/portal dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}

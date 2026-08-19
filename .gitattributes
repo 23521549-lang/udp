@@ -1,0 +1,17 @@
+# Chuẩn hóa xuống dòng: repo luôn lưu LF, tránh cảnh báo CRLF trên Windows
+* text=auto eol=lf
+
+# File nhị phân — không đụng vào
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+# Script Windows cần CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

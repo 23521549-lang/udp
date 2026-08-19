@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: dev
+
+scrape_configs:
+  # Prometheus tự giám sát
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # 3 service của UDP — chạy trên host, không trong container
+  - job_name: udp-services
+    static_configs:
+      - targets:
+          - host.docker.internal:3001 # core-backend
+          - host.docker.internal:3002 # flag-service
+          - host.docker.internal:3003 # pd-controller
+
+  # Ứng dụng mẫu — nguồn metrics cho flag-level progressive delivery (C1).
+  # Phải expose http_server_request_duration_seconds kèm nhãn
+  # feature_flag_key / feature_flag_variant do UDPTelemetryHook gắn vào.
+  - job_name: sample-app
+    static_configs:
+      - targets:
+          - host.docker.internal:3010
