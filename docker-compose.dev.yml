@@ -1,18 +1,23 @@
+# Hạ tầng dev. Mọi giá trị đọc từ .env ở cùng thư mục — không hardcode
+# credential ở đây, để đổi mật khẩu chỉ phải sửa đúng một file.
+# Cú pháp ${VAR:-default} giữ cho compose vẫn chạy được khi chưa có .env.
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: udp-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: udp
-      POSTGRES_PASSWORD: udp_dev_password
-      POSTGRES_DB: udp
+      POSTGRES_USER: ${POSTGRES_USER:-udp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-udp_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-udp}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - udp-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U udp -d udp"]
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-udp} -d ${POSTGRES_DB:-udp}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -22,7 +27,7 @@ services:
     container_name: udp-prometheus
     restart: unless-stopped
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - udp-promdata:/prometheus

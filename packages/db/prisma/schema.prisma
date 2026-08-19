@@ -1,0 +1,667 @@
+// UDP — Prisma schema (theo Technical Design v3.0)
+// Nguyên tắc: mỗi bảng có ĐÚNG MỘT service được quyền ghi (xem §1.2).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum PlatformRole {
+  USER
+  PLATFORM_ADMIN
+}
+
+enum ProjectRole {
+  OWNER
+  MAINTAINER
+  DEVELOPER
+  VIEWER
+}
+
+enum CreationMode {
+  CREATE_NEW
+  IMPORT_EXISTING
+}
+
+enum ProjectStatus {
+  DRAFT
+  PROVISIONING
+  ACTIVE
+  ERROR
+  DELETED
+}
+
+enum CloudProvider {
+  AWS
+  GCP
+  AZURE
+}
+
+enum CredentialMode {
+  BYOC
+  MANAGED
+}
+
+enum SdkKeyType {
+  SERVER
+  CLIENT
+}
+
+enum DomainType {
+  CICD
+  CONTAINER_REGISTRY
+  INFRA
+  GITOPS
+  MONITORING
+  LOGGING
+  TRACING
+  SERVICE_MESH
+  SECRETS
+  SECURITY
+  POLICY
+  DATABASE
+  PROGRESSIVE_DELIVERY
+  COST
+  ARTIFACT_REGISTRY
+}
+
+enum DomainStatus {
+  PENDING
+  DEPLOYING
+  ACTIVE
+  SWITCHING
+  TEARINGDOWN
+  ERROR
+  BLOCKED
+}
+
+enum JobType {
+  PROVISION
+  TEARDOWN
+  DOMAIN_APPLY
+}
+
+enum JobState {
+  QUEUED
+  NETWORK
+  CLUSTER
+  DOMAINS
+  DONE
+  COMPENSATING
+  FAILED
+}
+
+enum FlagType {
+  BOOLEAN
+  STRING
+  NUMBER
+  JSON
+}
+
+enum FlagLifecycleStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum RuleType {
+  USER_BASED
+  PERCENTAGE
+  ATTRIBUTE_BASED
+  SEGMENT
+}
+
+enum RolloutScope {
+  FLAG_LEVEL
+  SERVICE_LEVEL
+}
+
+enum RolloutStrategy {
+  CANARY
+  ATTRIBUTE_SPLIT
+  BLUE_GREEN
+}
+
+enum ControlMode {
+  UDP_DRIVEN
+  TOOL_DRIVEN
+}
+
+enum RolloutStatus {
+  PENDING
+  IN_PROGRESS
+  PAUSED
+  DONE
+  FAILED
+}
+
+enum FailReason {
+  AUTO_ROLLBACK
+  MANUAL
+  EXPIRED
+}
+
+enum RolloutAction {
+  PROMOTE
+  ROLLBACK
+  PAUSE
+  RESUME
+  COMPLETE
+  HOLD
+}
+
+enum TriggeredBy {
+  MANUAL
+  AUTO
+}
+
+enum DeploymentEventType {
+  DEPLOY_START
+  DEPLOY_SUCCESS
+  DEPLOY_FAILURE
+  FLAG_CHANGE
+  ROLLBACK
+}
+
+enum DeploymentTrigger {
+  WEBHOOK
+  MANUAL
+  ROLLBACK
+}
+
+enum ActorType {
+  USER
+  SYSTEM
+  SDK
+}
+
+// ============================================================
+// NHÓM 1 — Người dùng, project, phân quyền
+// ============================================================
+
+model User {
+  id           String       @id @default(uuid()) @db.Uuid
+  email        String       @unique @db.VarChar(255)
+  passwordHash String       @map("password_hash") @db.VarChar(255)
+  name         String       @db.VarChar(255)
+  platformRole PlatformRole @default(USER) @map("platform_role")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  ownedProjects   Project[]         @relation("ProjectOwner")
+  memberships     ProjectMember[]
+  createdKeys     SdkKey[]
+  createdCreds    CloudCredential[]
+  createdRollouts RolloutSession[]
+  rolloutEvents   RolloutEvent[]
+  auditLogs       AuditLog[]
+
+  @@map("users")
+}
+
+model ProjectMember {
+  id          String      @id @default(uuid()) @db.Uuid
+  projectId   String      @map("project_id") @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  projectRole ProjectRole @map("project_role")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+model Project {
+  id              String        @id @default(uuid()) @db.Uuid
+  ownerId         String        @map("owner_id") @db.Uuid
+  name            String        @db.VarChar(255)
+  repoUrl         String?       @map("repo_url") @db.VarChar(500)
+  creationMode    CreationMode  @map("creation_mode")
+  languageRuntime String        @map("language_runtime") @db.VarChar(50)
+  status          ProjectStatus @default(DRAFT)
+  metadata        Json?
+  // §2.2 — trần tài nguyên, cưỡng chế ở MỌI lời gọi adapter
+  resourceQuota   Json          @map("resource_quota")
+  // §4.4 — TTL môi trường lab, cron tự teardown khi quá hạn
+  expiresAt       DateTime?     @map("expires_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  owner            User              @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members          ProjectMember[]
+  environments     Environment[]
+  credentials      CloudCredential[]
+  domainConfigs    DomainConfig[]
+  provisioningJobs ProvisioningJob[]
+  flags            FeatureFlag[]
+  segments         Segment[]
+  rolloutSessions  RolloutSession[]
+  deploymentEvents DeploymentEvent[]
+  auditLogs        AuditLog[]
+
+  @@index([ownerId, status])
+  @@index([expiresAt])
+  @@map("projects")
+}
+
+model Environment {
+  id            String   @id @default(uuid()) @db.Uuid
+  projectId     String   @map("project_id") @db.Uuid
+  name          String   @db.VarChar(50)
+  k8sNamespace  String   @map("k8s_namespace") @db.VarChar(63)
+  isProduction  Boolean  @default(false) @map("is_production")
+  rank          Int
+  // ETag cho /sdk/config + con trỏ SSE. Tăng mỗi lần cấu hình flag đổi (§6.3)
+  configVersion Int      @default(0) @map("config_version")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  project          Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sdkKeys          SdkKey[]
+  flagEnvConfigs   FlagEnvConfig[]
+  evaluationStats  FlagEvaluationStat[]
+  rolloutSessions  RolloutSession[]
+  changeLog        ConfigChangeLog[]
+  deploymentEvents DeploymentEvent[]
+  auditLogs        AuditLog[]
+
+  @@unique([projectId, name])
+  @@map("environments")
+}
+
+model SdkKey {
+  id            String     @id @default(uuid()) @db.Uuid
+  environmentId String     @map("environment_id") @db.Uuid
+  keyType       SdkKeyType @map("key_type")
+  // Chỉ lưu hash. Plaintext hiện ĐÚNG MỘT LẦN lúc tạo (§2.2)
+  keyHash       String     @unique @map("key_hash") @db.Char(64)
+  keyPrefix     String     @map("key_prefix") @db.VarChar(16)
+  label         String?    @db.VarChar(100)
+  lastUsedAt    DateTime?  @map("last_used_at")
+  revokedAt     DateTime?  @map("revoked_at")
+  createdById   String     @map("created_by") @db.Uuid
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  createdBy   User        @relation(fields: [createdById], references: [id])
+
+  @@index([environmentId])
+  @@map("sdk_keys")
+}
+
+// ============================================================
+// NHÓM 2 — Cloud credential, domain config, job
+// ============================================================
+
+model CloudCredential {
+  id               String         @id @default(uuid()) @db.Uuid
+  projectId        String         @map("project_id") @db.Uuid
+  provider         CloudProvider
+  mode             CredentialMode
+  // Envelope encryption AES-256-GCM (§4.3)
+  encryptedPayload String         @map("encrypted_payload")
+  encryptedDek     String         @map("encrypted_dek")
+  kekVersion       Int            @default(1) @map("kek_version")
+  nonce            String         @db.VarChar(32)
+  authTag          String         @map("auth_tag") @db.VarChar(32)
+  // SHA-256 của định danh public — so sánh credential mà không cần giải mã
+  fingerprint      String         @db.Char(64)
+  lastValidatedAt  DateTime?      @map("last_validated_at")
+  isActive         Boolean        @default(false) @map("is_active")
+  createdById      String         @map("created_by") @db.Uuid
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([projectId])
+  @@map("cloud_credentials")
+}
+
+model DomainConfig {
+  id                 String       @id @default(uuid()) @db.Uuid
+  projectId          String       @map("project_id") @db.Uuid
+  domainType         DomainType   @map("domain_type")
+  isEnabled          Boolean      @default(false) @map("is_enabled")
+  domainStatus       DomainStatus @default(PENDING) @map("domain_status")
+  selectedTool       String?      @map("selected_tool") @db.VarChar(100)
+  toolConfig         Json?        @map("tool_config")
+  // CapabilityBinding[] adapter trả về sau khi deploy (§5.3)
+  capabilityBindings Json?        @map("capability_bindings")
+  lastError          Json?        @map("last_error")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, domainType])
+  @@map("domain_configs")
+}
+
+model ProvisioningJob {
+  id               String    @id @default(uuid()) @db.Uuid
+  projectId        String    @map("project_id") @db.Uuid
+  jobType          JobType   @map("job_type")
+  state            JobState  @default(QUEUED)
+  // Sổ tài nguyên đã tạo — ghi NGAY sau mỗi lần tạo thành công.
+  // Không có nó thì compensation không biết phải xóa gì (ADR-02).
+  createdResources Json      @default("[]") @map("created_resources")
+  payload          Json
+  lastError        Json?     @map("last_error")
+  attempt          Int       @default(0)
+  heartbeatAt      DateTime? @map("heartbeat_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([heartbeatAt])
+  @@map("provisioning_jobs")
+}
+
+// ============================================================
+// NHÓM 3 — Feature flag (writer: flag-service)
+// ============================================================
+
+model FeatureFlag {
+  id                  String              @id @default(uuid()) @db.Uuid
+  projectId           String              @map("project_id") @db.Uuid
+  key                 String              @db.VarChar(255)
+  description         String?
+  flagType            FlagType            @map("flag_type")
+  defaultVariantKey   String              @map("default_variant_key") @db.VarChar(100)
+  lifecycleStatus     FlagLifecycleStatus @default(DRAFT) @map("lifecycle_status")
+  // Thuộc tính dùng để hash percentage — userId, sessionId, accountId (§6.4)
+  stickinessAttribute String              @default("userId") @map("stickiness_attribute") @db.VarChar(100)
+  // Kill-switch dài hạn — miễn cảnh báo stale flag
+  permanent           Boolean             @default(false)
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  project    Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  variants   FlagVariant[]
+  envConfigs FlagEnvConfig[]
+  evalStats  FlagEvaluationStat[]
+
+  @@unique([projectId, key])
+  @@index([projectId, lifecycleStatus])
+  @@map("feature_flags")
+}
+
+model FlagVariant {
+  id     String @id @default(uuid()) @db.Uuid
+  flagId String @map("flag_id") @db.Uuid
+  key    String @db.VarChar(100)
+  value  Json
+
+  flag FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+
+  @@unique([flagId, key])
+  @@map("flag_variants")
+}
+
+model FlagEnvConfig {
+  id                String   @id @default(uuid()) @db.Uuid
+  flagId            String   @map("flag_id") @db.Uuid
+  environmentId     String   @map("environment_id") @db.Uuid
+  isEnabled         Boolean  @default(false) @map("is_enabled")
+  defaultVariantKey String?  @map("default_variant_key") @db.VarChar(100)
+  // Optimistic lock ở mức env: sửa flag ở dev không chặn người sửa prod
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  flag        FeatureFlag         @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  environment Environment         @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  rules       FlagTargetingRule[]
+  rollouts    RolloutSession[]
+
+  @@unique([flagId, environmentId])
+  @@index([environmentId, isEnabled])
+  @@map("flag_env_configs")
+}
+
+model FlagTargetingRule {
+  id              String   @id @default(uuid()) @db.Uuid
+  flagEnvConfigId String   @map("flag_env_config_id") @db.Uuid
+  ruleType        RuleType @map("rule_type")
+  condition       Json
+  variantKey      String   @map("variant_key") @db.VarChar(100)
+  // Sinh 1 lần khi tạo rule, KHÔNG đổi khi chỉnh percentage.
+  // Nếu đổi, nhóm người dùng bị xáo lại — vi phạm bất biến I1 (§13.3).
+  bucketSalt      String   @map("bucket_salt") @db.VarChar(36)
+  description     String?  @db.VarChar(255)
+  priority        Int
+
+  flagEnvConfig FlagEnvConfig @relation(fields: [flagEnvConfigId], references: [id], onDelete: Cascade)
+
+  @@index([flagEnvConfigId, priority])
+  @@map("flag_targeting_rules")
+}
+
+model Segment {
+  id          String   @id @default(uuid()) @db.Uuid
+  projectId   String   @map("project_id") @db.Uuid
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  conditions  Json
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+  @@map("segments")
+}
+
+model FlagEvaluationStat {
+  id            String   @id @default(uuid()) @db.Uuid
+  flagId        String   @map("flag_id") @db.Uuid
+  environmentId String   @map("environment_id") @db.Uuid
+  variantKey    String   @map("variant_key") @db.VarChar(100)
+  evalCount     BigInt   @default(0) @map("eval_count")
+  bucketHour    DateTime @map("bucket_hour")
+
+  flag        FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@unique([flagId, environmentId, variantKey, bucketHour])
+  @@index([bucketHour])
+  @@map("flag_evaluation_stats")
+}
+
+/// ADR-05 — Outbox lan truyền thay đổi cấu hình flag.
+///
+/// Nguyên tắc: hệ thống ĐÚNG nhờ dữ liệu trong bảng, NHANH nhờ NOTIFY.
+/// Mỗi thay đổi flag ghi một dòng ở đây TRONG CÙNG TRANSACTION với thay đổi
+/// thật và với việc tăng Environment.configVersion. Replica flag-service giữ
+/// con trỏ lastSeenId và poll `WHERE id > lastSeenId`; NOTIFY (nếu có) chỉ
+/// đánh thức vòng poll sớm hơn chứ không mang dữ liệu.
+///
+/// Ưu điểm so với chỉ dùng LISTEN/NOTIFY: replay được sau khi replica restart,
+/// không giới hạn 8KB payload, và chạy qua mọi connection pooler.
+///
+/// CẢNH BÁO — bẫy thứ tự commit: id được cấp lúc INSERT nhưng dòng chỉ nhìn
+/// thấy được lúc COMMIT, nên một dòng id nhỏ hơn có thể xuất hiện SAU dòng id
+/// lớn hơn. Vì vậy vòng poll phải đọc trễ một khoảng an toàn
+/// (chỉ lấy dòng có createdAt < now() - safetyLagMs) VÀ luôn đối chiếu
+/// Environment.configVersion làm lưới an toàn cuối cùng (bất biến I15).
+model ConfigChangeLog {
+  /// Chỉ dùng để sắp thứ tự trong CÙNG một transaction và để hiển thị.
+  /// KHÔNG dùng làm con trỏ đọc — xem cột `xid` bên dưới.
+  id            BigInt   @id @default(autoincrement())
+  environmentId String   @map("environment_id") @db.Uuid
+  /// flag.created | flag.updated | flag.archived | rule.replaced |
+  /// envconfig.toggled | variant.updated | segment.updated
+  changeType    String   @map("change_type") @db.VarChar(50)
+  /// Delta đầy đủ để replica cập nhật cache mà không phải đọc lại toàn bộ
+  payload       Json
+  /// configVersion của environment SAU thay đổi này.
+  /// Đây là CHECKSUM: replica áp delta xong phải tính ra đúng con số này,
+  /// nếu lệch thì vứt cache và lấy snapshot đầy đủ (bất biến I15a).
+  configVersion Int      @map("config_version")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  /// Con trỏ đọc THẬT của change feed — định danh transaction 64-bit.
+  ///
+  /// Vì sao không dùng `id`: BIGSERIAL phản ánh thứ tự BẮT ĐẦU transaction,
+  /// còn cái ta cần là thứ tự NHÌN THẤY ĐƯỢC. Hai transaction đồng thời có thể
+  /// commit ngược thứ tự id, khiến replica đã đặt con trỏ ở id lớn bỏ sót
+  /// vĩnh viễn dòng id nhỏ hơn commit muộn.
+  ///
+  /// Cách đọc đúng:
+  ///   SELECT pg_snapshot_xmin(pg_current_snapshot()) AS horizon;
+  ///   SELECT * FROM config_change_log
+  ///    WHERE environment_id = $1 AND xid >= $lastXid AND xid < $horizon
+  ///    ORDER BY xid, id;
+  ///   lastXid = horizon
+  /// Mọi transaction có xid < horizon đều chắc chắn đã kết thúc, nên không
+  /// tồn tại cửa sổ để dòng nào lọt qua (bất biến I15b).
+  ///
+  /// Prisma không có kiểu xid8 ⇒ khai Unsupported, đọc bằng $queryRaw.
+  xid Unsupported("xid8") @default(dbgenerated("pg_current_xact_id()"))
+
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  /// Con trỏ đọc của change feed (tầng 2)
+  @@index([environmentId, xid])
+  @@index([environmentId, id])
+  /// Job dọn dẹp: xóa dòng cũ hơn 7 ngày
+  @@index([createdAt])
+  @@map("config_change_log")
+}
+
+// ============================================================
+// NHÓM 4 — Progressive delivery (writer: pd-controller)
+// ============================================================
+
+model RolloutSession {
+  id                       String          @id @default(uuid()) @db.Uuid
+  projectId                String          @map("project_id") @db.Uuid
+  environmentId            String          @map("environment_id") @db.Uuid
+  flagEnvConfigId          String?         @map("flag_env_config_id") @db.Uuid
+  targetVariantKey         String?         @map("target_variant_key") @db.VarChar(100)
+  rolloutScope             RolloutScope    @map("rollout_scope")
+  strategy                 RolloutStrategy
+  controlMode              ControlMode     @map("control_mode")
+  workloadName             String?         @map("workload_name") @db.VarChar(253)
+  status                   RolloutStatus   @default(PENDING)
+  currentTrafficPercentage Decimal         @default(0) @map("current_traffic_percentage") @db.Decimal(5, 2)
+  versionNew               String?         @map("version_new") @db.VarChar(255)
+  versionOld               String?         @map("version_old") @db.VarChar(255)
+  thresholds               Json
+  metricQueries            Json?           @map("metric_queries")
+  stepPercent              Decimal         @map("step_percent") @db.Decimal(5, 2)
+  stepIntervalSeconds      Int             @default(300) @map("step_interval_seconds")
+  warmUpRequests           Int             @default(100) @map("warm_up_requests")
+  maxDurationSeconds       Int             @default(86400) @map("max_duration_seconds")
+  // Optimistic lock: reconciler chỉ ghi khi version khớp (bất biến I6).
+  // Đồng thời là fencing token cho lease bên dưới — worker tỉnh dậy sau khi
+  // đã mất lease sẽ thấy version đổi và bỏ kết quả của mình đi (bất biến I17).
+  version                  Int             @default(0)
+  // ADR-05 — Lease thay cho pg_advisory_lock. Giành quyền bằng
+  // UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1).
+  // Chạy qua mọi connection pooler, tự hết hạn khi worker chết,
+  // và cho biết ai đang xử lý session nào.
+  claimedBy                String?         @map("claimed_by") @db.VarChar(100)
+  claimedUntil             DateTime?       @map("claimed_until")
+  failReason               FailReason?     @map("fail_reason")
+  createdById              String          @map("created_by") @db.Uuid
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment   Environment    @relation(fields: [environmentId], references: [id])
+  flagEnvConfig FlagEnvConfig? @relation(fields: [flagEnvConfigId], references: [id])
+  createdBy     User           @relation(fields: [createdById], references: [id])
+  events        RolloutEvent[]
+
+  @@index([projectId, status, createdAt])
+  @@index([status, updatedAt])
+  // Hàng đợi giành việc của reconciler: tìm session chưa ai giữ hoặc lease đã hết hạn
+  @@index([status, claimedUntil])
+  @@map("rollout_sessions")
+}
+
+model RolloutEvent {
+  id                String        @id @default(uuid()) @db.Uuid
+  sessionId         String        @map("session_id") @db.Uuid
+  action            RolloutAction
+  // true = ý định của người dùng (S1 ghi); false = đã thực thi trên cluster (S3 ghi).
+  // Nhờ tách này, chỉ Service 3 chạm vào K8s — không có race (§2.2).
+  isIntent          Boolean       @default(false) @map("is_intent")
+  processedAt       DateTime?     @map("processed_at")
+  trafficPercentage Decimal       @map("traffic_percentage") @db.Decimal(5, 2)
+  metricSnapshot    Json?         @map("metric_snapshot")
+  reason            String?       @db.VarChar(255)
+  triggeredBy       TriggeredBy   @map("triggered_by")
+  actorUserId       String?       @map("actor_user_id") @db.Uuid
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  session RolloutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  actor   User?          @relation(fields: [actorUserId], references: [id])
+
+  @@index([sessionId, createdAt])
+  @@map("rollout_events")
+}
+
+// ============================================================
+// NHÓM 5 — Event store và audit (append-only, KHÔNG cascade)
+// ============================================================
+
+model DeploymentEvent {
+  id            String              @id @default(uuid()) @db.Uuid
+  projectId     String              @map("project_id") @db.Uuid
+  environmentId String?             @map("environment_id") @db.Uuid
+  eventType     DeploymentEventType @map("event_type")
+  pipelineId    String?             @map("pipeline_id") @db.VarChar(255)
+  imageTag      String?             @map("image_tag") @db.VarChar(255)
+  commitSha     String?             @map("commit_sha") @db.VarChar(40)
+  triggeredBy   DeploymentTrigger   @map("triggered_by")
+  metadata      Json?
+  occurredAt    DateTime            @default(now()) @map("occurred_at")
+
+  // Restrict: giữ vĩnh viễn để tính DORA metrics kể cả khi project bị xóa
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  // environmentId trước đây là cột trần không có quan hệ — không nhất quán với
+  // AuditLog và không có FK bảo vệ. SetNull thay vì Restrict: xóa environment
+  // là thao tác hợp lệ, còn lịch sử deploy thì phải giữ.
+  environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, occurredAt])
+  @@index([environmentId, occurredAt])
+  @@index([pipelineId])
+  @@map("deployment_events")
+}
+
+model AuditLog {
+  id            String    @id @default(uuid()) @db.Uuid
+  projectId     String?   @map("project_id") @db.Uuid
+  actorUserId   String?   @map("actor_user_id") @db.Uuid
+  actorType     ActorType @map("actor_type")
+  action        String    @db.VarChar(100)
+  targetType    String    @map("target_type") @db.VarChar(50)
+  targetId      String    @map("target_id") @db.VarChar(100)
+  environmentId String?   @map("environment_id") @db.Uuid
+  // before/after PHẢI đi qua redact() trước khi ghi (§2.2)
+  before        Json?
+  after         Json?
+  ipAddress     String?   @map("ip_address") @db.Inet
+  userAgent     String?   @map("user_agent") @db.VarChar(255)
+  occurredAt    DateTime  @default(now()) @map("occurred_at")
+
+  project     Project?     @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  actor       User?        @relation(fields: [actorUserId], references: [id])
+  environment Environment? @relation(fields: [environmentId], references: [id])
+
+  @@index([projectId, occurredAt])
+  @@index([actorUserId, occurredAt])
+  @@map("audit_logs")
+}

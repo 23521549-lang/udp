@@ -21,11 +21,14 @@
     "dev:portal": "pnpm --filter @udp/portal dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
-    "test": "pnpm -r test"
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
+    "//lint": "eslint sẽ được thêm cùng service đầu tiên — hiện chưa package nào có mã nguồn để lint",
+    "test": "pnpm -r --if-present test"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
+    "prettier": "^3.3.3",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"
   }

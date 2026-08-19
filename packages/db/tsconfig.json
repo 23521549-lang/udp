@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // rootDir phải bao được CẢ src/ lẫn prisma/. Để "./src" thì prisma/seed.ts
+    // nằm ngoài rootDir và tsc báo TS6059 ngay khi build lần đầu.
+    "rootDir": ".",
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*.ts", "prisma/**/*.ts"]
+}
