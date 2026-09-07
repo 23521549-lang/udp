@@ -1,28 +1,43 @@
 import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { PrismaClient } from "@prisma/client";
 import {
   BOOLEAN_VARIANTS,
   DEFAULT_ENVIRONMENTS,
   DEFAULT_RESOURCE_QUOTA,
   DEFAULT_STICKINESS_ATTRIBUTE,
+  DOMAIN_CATALOG_SEED,
   SDK_KEY,
+  TOTAL_BUCKETS,
 } from "@udp/config";
+import { createPgAdapter } from "../src/adapter.js";
+import { PrismaClient } from "../src/generated/prisma/client.js";
 
 /**
  * Dữ liệu mẫu cho môi trường dev.
  *
- * Hai nguyên tắc:
+ * Ba nguyên tắc:
  *
- *  1. IDEMPOTENT — chạy bao nhiêu lần cũng ra cùng một kết quả. Đạt được bằng
- *     cách dùng UUID cố định + upsert, thay vì để database tự sinh id. Nhờ vậy
- *     `pnpm db:seed` an toàn để chạy lại bất cứ lúc nào.
- *
+ *  1. IDEMPOTENT — chạy bao nhiêu lần cũng ra cùng kết quả, nhờ UUID cố định +
+ *     upsert thay vì để database tự sinh id.
  *  2. KHÔNG HARDCODE giá trị nghiệp vụ — mọi hằng số lấy từ @udp/config.
- *     Đổi TOTAL_BUCKETS hay DEFAULT_ENVIRONMENTS thì seed tự theo.
+ *  3. Seed phải MINH HỌA ĐƯỢC thiết kế, không chỉ làm database hết rỗng. Cụ thể
+ *     là mô hình rule hai nửa của §6.4: "ai khớp" tách khỏi "phục vụ gì".
  */
 
-const prisma = new PrismaClient();
+// Migrate và seed dùng kết nối session mode (§15.3, prisma.config.ts).
+// Ở đây đọc thẳng process.env vì seed chạy qua `prisma db seed` nên dotenv đã nạp.
+const connectionString =
+  process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL;
+
+if (!connectionString) {
+  throw new Error("Thiếu DATABASE_URL_DIRECT (hoặc DATABASE_URL) trong .env");
+}
+
+// Dung chung factory voi runtime: TLS xac thuc day du bang CA da ghim, tran pool
+// tuong minh. Seed chi can vai ket noi nen dat 2.
+const prisma = new PrismaClient({
+  adapter: createPgAdapter({ connectionString, max: 2 }),
+});
 
 // UUID cố định để seed idempotent — KHÔNG dùng ngoài môi trường dev.
 const ID = {
@@ -39,7 +54,7 @@ const DEV_PASSWORD = "udp12345678";
 
 /**
  * SDK key cố định để test SDK ngay mà không phải vào Portal tạo.
- * Database chỉ lưu HASH — đúng như thiết kế §2.2, plaintext không nằm trong DB.
+ * Database chỉ lưu HASH — đúng như §2.2, plaintext không nằm trong DB.
  */
 const DEV_SERVER_KEY = `${SDK_KEY.serverPrefix}dev_0000000000000000000000000000`;
 
@@ -47,12 +62,45 @@ const sha256 = (value: string): string =>
   createHash("sha256").update(value).digest("hex");
 
 const slugifyNamespace = (project: string, env: string): string =>
-  `udp-${project}-${env}`.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
+  `udp-${project}-${env}`
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .slice(0, 63);
 
-async function main(): Promise<void> {
+// ============================================================
+// Danh mục domain
+// ============================================================
+
+/**
+ * Bảng `DomainCatalog` là khóa ngoại của `DomainConfig`, nên nó phải có dữ liệu
+ * trước mọi thứ khác. Ở bản chạy thật, tiến trình khởi động đồng bộ bảng này từ
+ * adapter registry; ở đây seed đóng vai trò đó cho tới khi registry tồn tại.
+ *
+ * Theo bất biến I29: chỉ UPSERT, không bao giờ DELETE — xóa hàng sẽ phá khóa
+ * ngoại của những DomainConfig đã tồn tại.
+ */
+async function seedDomainCatalog(): Promise<void> {
+  for (const entry of DOMAIN_CATALOG_SEED) {
+    await prisma.domainCatalog.upsert({
+      where: { domainType: entry.domainType },
+      update: {
+        tier: entry.tier,
+        displayName: entry.displayName,
+        defaultOrder: entry.defaultOrder,
+        isAvailable: true,
+      },
+      create: entry,
+    });
+  }
+}
+
+// ============================================================
+// Người dùng và project
+// ============================================================
+
+async function seedUsersAndProject() {
   const passwordHash = await bcrypt.hash(DEV_PASSWORD, 12);
 
-  // ---------- Người dùng ----------
   const owner = await prisma.user.upsert({
     where: { id: ID.userOwner },
     update: {},
@@ -77,7 +125,6 @@ async function main(): Promise<void> {
     },
   });
 
-  // ---------- Project ----------
   const project = await prisma.project.upsert({
     where: { id: ID.project },
     update: {},
@@ -89,13 +136,13 @@ async function main(): Promise<void> {
       languageRuntime: "nodejs",
       status: "ACTIVE",
       resourceQuota: DEFAULT_RESOURCE_QUOTA,
-      members: {
-        create: { userId: owner.id, projectRole: "OWNER" },
-      },
+      // WARN là mặc định cho BYOC: hết hạn thì cảnh báo, KHÔNG tự xóa tài nguyên
+      // trong tài khoản của khách (§4.4).
+      expiryAction: "WARN",
+      members: { create: { userId: owner.id, projectRole: "OWNER" } },
     },
   });
 
-  // ---------- Environment (dev / staging / prod) ----------
   for (const spec of DEFAULT_ENVIRONMENTS) {
     await prisma.environment.upsert({
       where: { projectId_name: { projectId: project.id, name: spec.name } },
@@ -105,36 +152,41 @@ async function main(): Promise<void> {
         name: spec.name,
         rank: spec.rank,
         isProduction: spec.isProduction,
+        // Production không cho deploy tự động từ webhook (§8.3)
+        autoDeploy: !spec.isProduction,
         k8sNamespace: slugifyNamespace(project.name, spec.name),
       },
     });
   }
 
-  const devEnv = await prisma.environment.findUniqueOrThrow({
-    where: { projectId_name: { projectId: project.id, name: "dev" } },
-  });
+  return { owner, project };
+}
 
-  // ---------- SDK key ----------
-  await prisma.sdkKey.upsert({
-    where: { keyHash: sha256(DEV_SERVER_KEY) },
-    update: {},
-    create: {
-      environmentId: devEnv.id,
-      keyType: "SERVER",
-      keyHash: sha256(DEV_SERVER_KEY),
-      keyPrefix: DEV_SERVER_KEY.slice(0, SDK_KEY.displayPrefixLength),
-      label: "seed — dev server key",
-      createdById: owner.id,
-    },
-  });
+// ============================================================
+// Feature flag
+// ============================================================
 
-  // ---------- Flag 1: boolean, bật ở dev, canary 20% ----------
+/**
+ * Flag `dark-mode` minh họa mô hình rule hai nửa của §6.4.
+ *
+ * Điểm đáng chú ý là rule thứ hai: canary 20% được biểu diễn bằng
+ * `ruleType: ALL` (ai cũng khớp) + `serve` là một PHÂN PHỐI THEO TRỌNG SỐ.
+ *
+ * v3 có `ruleType: PERCENTAGE` gộp hai khái niệm vào một, và hệ quả là chia ba
+ * variant bằng chuỗi rule cho ra 33/22/45 thay vì 33/33/34, vì rule thứ hai chỉ
+ * nhận phần còn lại. Tách ra thì `ATTRIBUTE_BASED` + `distribution` diễn đạt được
+ * "10% người dùng ở VN", điều mà v3 không làm được.
+ *
+ * Và quan trọng nhất: `serve.weights` CHÍNH LÀ thứ mà rollout FLAG_LEVEL ramp
+ * (§7.7). Không tách hai nửa thì đóng góp C1 không có chỗ để tác động.
+ */
+async function seedDarkModeFlag(projectId: string, ownerId: string) {
   const darkMode = await prisma.featureFlag.upsert({
     where: { id: ID.flagDarkMode },
     update: {},
     create: {
       id: ID.flagDarkMode,
-      projectId: project.id,
+      projectId,
       key: "dark-mode",
       description: "Giao diện tối — flag boolean đơn giản",
       flagType: "BOOLEAN",
@@ -148,75 +200,105 @@ async function main(): Promise<void> {
         ],
       },
     },
+    include: { variants: true },
   });
+
+  const variantId = (key: string): string => {
+    const found = darkMode.variants.find((v) => v.key === key);
+    if (!found) throw new Error(`Không tìm thấy variant "${key}" của dark-mode`);
+    return found.id;
+  };
+
+  const onId = variantId(BOOLEAN_VARIANTS.ON);
+  const offId = variantId(BOOLEAN_VARIANTS.OFF);
 
   // FlagEnvConfig cho TỪNG environment — bật ở dev, tắt ở staging và prod.
   // Đây chính là điều thiết kế v2 không biểu diễn được (ADR-04).
   for (const spec of DEFAULT_ENVIRONMENTS) {
-    const env = await prisma.environment.findUniqueOrThrow({
-      where: { projectId_name: { projectId: project.id, name: spec.name } },
+    const environment = await prisma.environment.findUniqueOrThrow({
+      where: { projectId_name: { projectId, name: spec.name } },
     });
 
     const cfg = await prisma.flagEnvConfig.upsert({
       where: {
-        flagId_environmentId: { flagId: darkMode.id, environmentId: env.id },
+        flagId_environmentId: {
+          flagId: darkMode.id,
+          environmentId: environment.id,
+        },
       },
       update: {},
       create: {
         flagId: darkMode.id,
-        environmentId: env.id,
+        environmentId: environment.id,
         isEnabled: spec.name === "dev",
         defaultVariantKey: BOOLEAN_VARIANTS.OFF,
       },
     });
 
-    // Chỉ dev có rule canary 20%
     if (spec.name !== "dev") continue;
 
-    const existing = await prisma.flagTargetingRule.count({
+    const alreadySeeded = await prisma.flagTargetingRule.count({
       where: { flagEnvConfigId: cfg.id },
     });
-    if (existing > 0) continue;
+    if (alreadySeeded > 0) continue;
 
     await prisma.flagTargetingRule.createMany({
       data: [
         {
           flagEnvConfigId: cfg.id,
+          // NỬA MỘT: ai khớp — danh sách userId cụ thể
           ruleType: "USER_BASED",
           condition: { userIds: ["user-1", "user-2"] },
-          variantKey: BOOLEAN_VARIANTS.ON,
-          // Salt cố định trong seed để chạy lại vẫn ra cùng nhóm người dùng.
-          // Ở code thật, salt sinh ngẫu nhiên MỘT LẦN lúc tạo rule và không đổi
-          // khi chỉnh percentage — nếu đổi, nhóm người dùng bị xáo lại (I1).
+          // NỬA HAI: phục vụ gì — một variant duy nhất
+          serve: { kind: "variant", variantId: onId },
+          variantId: onId,
+          // Salt cố định trong seed để chạy lại vẫn ra cùng nhóm. Ở code thật,
+          // salt sinh ngẫu nhiên MỘT LẦN lúc tạo rule và KHÔNG đổi khi chỉnh
+          // trọng số — đổi nó là bốc lại nhóm người dùng, vi phạm I1.
           bucketSalt: "seed-rule-user-based",
           description: "Nhóm nội bộ luôn thấy tính năng",
           priority: 0,
         },
         {
           flagEnvConfigId: cfg.id,
-          ruleType: "PERCENTAGE",
-          condition: { percentage: 20 },
-          variantKey: BOOLEAN_VARIANTS.ON,
-          bucketSalt: "seed-rule-percentage",
-          description: "Canary 20%",
+          // NỬA MỘT: mọi người đều khớp
+          ruleType: "ALL",
+          condition: {},
+          // NỬA HAI: phân phối 20/80. Tổng weight = TOTAL_BUCKETS, không phải 100 —
+          // 100_000 bucket cho phép ngưỡng tới 0,001%, nhu cầu thật khi canary
+          // trên traffic lớn (§6.4).
+          serve: {
+            kind: "distribution",
+            weights: [
+              { variantId: onId, weight: 0.2 * TOTAL_BUCKETS },
+              { variantId: offId, weight: 0.8 * TOTAL_BUCKETS },
+            ],
+          },
+          bucketSalt: "seed-rule-canary",
+          description: "Canary 20% — đây là rule mà rollout FLAG_LEVEL sẽ ramp",
           priority: 1,
         },
       ],
     });
   }
 
-  // ---------- Flag 2: multivariate, còn DRAFT ----------
+  return darkMode;
+}
+
+/** Flag nhiều variant, còn DRAFT — SDK chưa nhận flag ở trạng thái này (§6.7) */
+async function seedCheckoutFlag(projectId: string): Promise<void> {
   await prisma.featureFlag.upsert({
     where: { id: ID.flagCheckout },
     update: {},
     create: {
       id: ID.flagCheckout,
-      projectId: project.id,
+      projectId,
       key: "checkout-algorithm",
       description: "Ba thuật toán checkout — flag nhiều variant",
       flagType: "STRING",
       defaultVariantKey: "legacy",
       lifecycleStatus: "DRAFT",
+      // B2B: cả công ty cùng thấy hoặc cùng không, nên hash theo accountId
       stickinessAttribute: "accountId",
       variants: {
         create: [
@@ -227,14 +309,15 @@ async function main(): Promise<void> {
       },
     },
   });
+}
 
-  // ---------- Segment tái sử dụng ----------
+async function seedSegment(projectId: string): Promise<void> {
   await prisma.segment.upsert({
     where: { id: ID.segmentBeta },
     update: {},
     create: {
       id: ID.segmentBeta,
-      projectId: project.id,
+      projectId,
       name: "beta-testers",
       description: "Người dùng gói premium ở Việt Nam",
       conditions: [
@@ -243,6 +326,41 @@ async function main(): Promise<void> {
       ],
     },
   });
+}
+
+async function seedSdkKey(
+  environmentId: string,
+  createdById: string,
+): Promise<void> {
+  await prisma.sdkKey.upsert({
+    where: { keyHash: sha256(DEV_SERVER_KEY) },
+    update: {},
+    create: {
+      environmentId,
+      keyType: "SERVER",
+      keyHash: sha256(DEV_SERVER_KEY),
+      keyPrefix: DEV_SERVER_KEY.slice(0, SDK_KEY.displayPrefixLength),
+      label: "seed — dev server key",
+      createdById,
+    },
+  });
+}
+
+// ============================================================
+
+async function main(): Promise<void> {
+  await seedDomainCatalog();
+
+  const { owner, project } = await seedUsersAndProject();
+
+  const devEnv = await prisma.environment.findUniqueOrThrow({
+    where: { projectId_name: { projectId: project.id, name: "dev" } },
+  });
+
+  await seedSdkKey(devEnv.id, owner.id);
+  await seedDarkModeFlag(project.id, owner.id);
+  await seedCheckoutFlag(project.id);
+  await seedSegment(project.id);
 
   console.log(`
 Seed hoàn tất.
@@ -250,19 +368,22 @@ Seed hoàn tất.
   Đăng nhập     dev@udp.local   / ${DEV_PASSWORD}
                 admin@udp.local / ${DEV_PASSWORD}   (PLATFORM_ADMIN)
 
+  Domain        ${DOMAIN_CATALOG_SEED.length} domain trong DomainCatalog
   Project       ${project.name} (${project.id})
   Environment   ${DEFAULT_ENVIRONMENTS.map((e) => e.name).join(", ")}
 
   SDK key (dev) ${DEV_SERVER_KEY}
                 Database chỉ lưu hash — chuỗi này không đọc lại được từ DB.
 
-  Flags         dark-mode           ACTIVE, bật ở dev, canary 20%
+  Flags         dark-mode           ACTIVE, bật ở dev
+                                    rule 1: USER_BASED  → serve variant "on"
+                                    rule 2: ALL         → serve distribution 20/80
                 checkout-algorithm  DRAFT, 3 variant
 `);
 }
 
 main()
-  .catch((error) => {
+  .catch((error: unknown) => {
     console.error(error);
     process.exit(1);
   })

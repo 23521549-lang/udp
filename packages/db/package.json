@@ -10,7 +10,9 @@
   },
   "scripts": {
     "//": "dotenv -e ../../.env nạp .env ở GỐC workspace — không giữ bản sao DATABASE_URL trong packages/db",
+    "//migrate": "migrate/studio dùng DATABASE_URL_DIRECT: chúng chạy nhiều statement nên không an toàn qua pooler transaction mode (ADR-05, §15.3)",
     "generate": "prisma generate",
+    "validate": "dotenv -e ../../.env -- prisma validate",
     "migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "migrate:reset": "dotenv -e ../../.env -- prisma migrate reset",
@@ -20,14 +22,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
-    "@udp/config": "workspace:*"
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "@udp/config": "workspace:*",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
-    "bcryptjs": "^2.4.3",
     "@types/bcryptjs": "^2.4.6",
+    "@types/pg": "^8.11.10",
+    "bcryptjs": "^2.4.3",
     "dotenv-cli": "^7.4.2",
-    "prisma": "^5.22.0",
+    "prisma": "^7.10.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"
   },

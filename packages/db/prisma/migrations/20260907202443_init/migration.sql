@@ -11,19 +11,16 @@ CREATE TYPE "CreationMode" AS ENUM ('CREATE_NEW', 'IMPORT_EXISTING');
 CREATE TYPE "ProjectStatus" AS ENUM ('DRAFT', 'PROVISIONING', 'ACTIVE', 'ERROR', 'DELETED');
 
 -- CreateEnum
+CREATE TYPE "ExpiryAction" AS ENUM ('WARN', 'TEARDOWN');
+
+-- CreateEnum
 CREATE TYPE "CloudProvider" AS ENUM ('AWS', 'GCP', 'AZURE');
 
 -- CreateEnum
 CREATE TYPE "CredentialMode" AS ENUM ('BYOC', 'MANAGED');
 
 -- CreateEnum
-CREATE TYPE "SdkKeyType" AS ENUM ('SERVER', 'CLIENT');
-
--- CreateEnum
-CREATE TYPE "DomainType" AS ENUM ('CICD', 'CONTAINER_REGISTRY', 'INFRA', 'GITOPS', 'MONITORING', 'LOGGING', 'TRACING', 'SERVICE_MESH', 'SECRETS', 'SECURITY', 'POLICY', 'DATABASE', 'PROGRESSIVE_DELIVERY', 'COST', 'ARTIFACT_REGISTRY');
-
--- CreateEnum
-CREATE TYPE "DomainStatus" AS ENUM ('PENDING', 'DEPLOYING', 'ACTIVE', 'SWITCHING', 'TEARINGDOWN', 'ERROR', 'BLOCKED');
+CREATE TYPE "DomainStatus" AS ENUM ('PENDING', 'DEPLOYING', 'ACTIVE', 'SWITCHING', 'RECONFIGURING', 'TEARINGDOWN', 'BLOCKED', 'ERROR');
 
 -- CreateEnum
 CREATE TYPE "JobType" AS ENUM ('PROVISION', 'TEARDOWN', 'DOMAIN_APPLY');
@@ -32,13 +29,22 @@ CREATE TYPE "JobType" AS ENUM ('PROVISION', 'TEARDOWN', 'DOMAIN_APPLY');
 CREATE TYPE "JobState" AS ENUM ('QUEUED', 'NETWORK', 'CLUSTER', 'DOMAINS', 'DONE', 'COMPENSATING', 'FAILED');
 
 -- CreateEnum
+CREATE TYPE "ResourceStatus" AS ENUM ('CREATING', 'CREATED', 'READY', 'DELETING', 'DELETED', 'ORPHAN_SUSPECTED');
+
+-- CreateEnum
+CREATE TYPE "ProvisionStep" AS ENUM ('NETWORK', 'CLUSTER', 'DOMAINS', 'K8S_MANAGED');
+
+-- CreateEnum
+CREATE TYPE "SdkKeyType" AS ENUM ('SERVER', 'CLIENT');
+
+-- CreateEnum
 CREATE TYPE "FlagType" AS ENUM ('BOOLEAN', 'STRING', 'NUMBER', 'JSON');
 
 -- CreateEnum
 CREATE TYPE "FlagLifecycleStatus" AS ENUM ('DRAFT', 'ACTIVE', 'ARCHIVED');
 
 -- CreateEnum
-CREATE TYPE "RuleType" AS ENUM ('USER_BASED', 'PERCENTAGE', 'ATTRIBUTE_BASED', 'SEGMENT');
+CREATE TYPE "RuleType" AS ENUM ('ALL', 'USER_BASED', 'ATTRIBUTE_BASED', 'SEGMENT');
 
 -- CreateEnum
 CREATE TYPE "RolloutScope" AS ENUM ('FLAG_LEVEL', 'SERVICE_LEVEL');
@@ -53,10 +59,10 @@ CREATE TYPE "ControlMode" AS ENUM ('UDP_DRIVEN', 'TOOL_DRIVEN');
 CREATE TYPE "RolloutStatus" AS ENUM ('PENDING', 'IN_PROGRESS', 'PAUSED', 'DONE', 'FAILED');
 
 -- CreateEnum
-CREATE TYPE "FailReason" AS ENUM ('AUTO_ROLLBACK', 'MANUAL', 'EXPIRED');
+CREATE TYPE "FailReason" AS ENUM ('AUTO_ROLLBACK', 'MANUAL', 'EXPIRED', 'DEPENDENCY_DOWN');
 
 -- CreateEnum
-CREATE TYPE "RolloutAction" AS ENUM ('PROMOTE', 'ROLLBACK', 'PAUSE', 'RESUME', 'COMPLETE', 'HOLD');
+CREATE TYPE "RolloutAction" AS ENUM ('PROMOTE', 'ROLLBACK', 'PAUSE', 'RESUME', 'COMPLETE', 'HOLD', 'DEPENDENCY_DOWN');
 
 -- CreateEnum
 CREATE TYPE "TriggeredBy" AS ENUM ('MANUAL', 'AUTO');
@@ -65,10 +71,21 @@ CREATE TYPE "TriggeredBy" AS ENUM ('MANUAL', 'AUTO');
 CREATE TYPE "DeploymentEventType" AS ENUM ('DEPLOY_START', 'DEPLOY_SUCCESS', 'DEPLOY_FAILURE', 'FLAG_CHANGE', 'ROLLBACK');
 
 -- CreateEnum
-CREATE TYPE "DeploymentTrigger" AS ENUM ('WEBHOOK', 'MANUAL', 'ROLLBACK');
+CREATE TYPE "DeploymentTrigger" AS ENUM ('WEBHOOK', 'MANUAL', 'ROLLBACK', 'AUTO');
 
 -- CreateEnum
 CREATE TYPE "ActorType" AS ENUM ('USER', 'SYSTEM', 'SDK');
+
+-- CreateTable
+CREATE TABLE "domain_catalog" (
+    "domain_type" VARCHAR(50) NOT NULL,
+    "tier" VARCHAR(20) NOT NULL,
+    "display_name" VARCHAR(100) NOT NULL,
+    "default_order" INTEGER NOT NULL,
+    "is_available" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "domain_catalog_pkey" PRIMARY KEY ("domain_type")
+);
 
 -- CreateTable
 CREATE TABLE "users" (
@@ -105,6 +122,9 @@ CREATE TABLE "projects" (
     "metadata" JSONB,
     "resource_quota" JSONB NOT NULL,
     "expires_at" TIMESTAMP(3),
+    "expiry_action" "ExpiryAction" NOT NULL DEFAULT 'WARN',
+    "cluster_access" JSONB,
+    "domain_set_version" INTEGER NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -119,7 +139,9 @@ CREATE TABLE "environments" (
     "k8s_namespace" VARCHAR(63) NOT NULL,
     "is_production" BOOLEAN NOT NULL DEFAULT false,
     "rank" INTEGER NOT NULL,
+    "auto_deploy" BOOLEAN NOT NULL DEFAULT true,
     "config_version" INTEGER NOT NULL DEFAULT 0,
+    "config_hash" CHAR(64),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "environments_pkey" PRIMARY KEY ("id")
@@ -165,16 +187,41 @@ CREATE TABLE "cloud_credentials" (
 CREATE TABLE "domain_configs" (
     "id" UUID NOT NULL,
     "project_id" UUID NOT NULL,
-    "domain_type" "DomainType" NOT NULL,
+    "domain_type" VARCHAR(50) NOT NULL,
     "is_enabled" BOOLEAN NOT NULL DEFAULT false,
     "domain_status" "DomainStatus" NOT NULL DEFAULT 'PENDING',
     "selected_tool" VARCHAR(100),
     "tool_config" JSONB,
-    "capability_bindings" JSONB,
+    "adapter_version" VARCHAR(20),
     "last_error" JSONB,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "domain_configs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "capability_bindings" (
+    "id" UUID NOT NULL,
+    "domain_config_id" UUID NOT NULL,
+    "environment_id" UUID,
+    "capability_id" VARCHAR(50) NOT NULL,
+    "provided_by" VARCHAR(100) NOT NULL,
+    "schema_version" VARCHAR(10) NOT NULL,
+    "endpoint" VARCHAR(500),
+    "attributes" JSONB,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "capability_bindings_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "capability_preferences" (
+    "id" UUID NOT NULL,
+    "project_id" UUID NOT NULL,
+    "capability_id" VARCHAR(50) NOT NULL,
+    "provider_tool_id" VARCHAR(100) NOT NULL,
+
+    CONSTRAINT "capability_preferences_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -183,15 +230,36 @@ CREATE TABLE "provisioning_jobs" (
     "project_id" UUID NOT NULL,
     "job_type" "JobType" NOT NULL,
     "state" "JobState" NOT NULL DEFAULT 'QUEUED',
-    "created_resources" JSONB NOT NULL DEFAULT '[]',
     "payload" JSONB NOT NULL,
+    "estimated_cost" JSONB,
     "last_error" JSONB,
+    "version" INTEGER NOT NULL DEFAULT 0,
+    "claimed_by" VARCHAR(100),
+    "claimed_until" TIMESTAMP(3),
     "attempt" INTEGER NOT NULL DEFAULT 0,
     "heartbeat_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "provisioning_jobs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "provisioned_resources" (
+    "id" UUID NOT NULL,
+    "job_id" UUID,
+    "project_id" UUID NOT NULL,
+    "step" "ProvisionStep" NOT NULL,
+    "kind" VARCHAR(40) NOT NULL,
+    "idempotency_key" VARCHAR(120) NOT NULL,
+    "provider_id" VARCHAR(255),
+    "provider" "CloudProvider" NOT NULL,
+    "region" VARCHAR(50) NOT NULL,
+    "status" "ResourceStatus" NOT NULL DEFAULT 'CREATING',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "provisioned_resources_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -203,7 +271,7 @@ CREATE TABLE "feature_flags" (
     "flag_type" "FlagType" NOT NULL,
     "default_variant_key" VARCHAR(100) NOT NULL,
     "lifecycle_status" "FlagLifecycleStatus" NOT NULL DEFAULT 'DRAFT',
-    "stickiness_attribute" VARCHAR(100) NOT NULL DEFAULT 'userId',
+    "stickiness_attribute" VARCHAR(100) NOT NULL DEFAULT 'targetingKey',
     "permanent" BOOLEAN NOT NULL DEFAULT false,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -239,10 +307,11 @@ CREATE TABLE "flag_targeting_rules" (
     "flag_env_config_id" UUID NOT NULL,
     "rule_type" "RuleType" NOT NULL,
     "condition" JSONB NOT NULL,
-    "variant_key" VARCHAR(100) NOT NULL,
+    "serve" JSONB NOT NULL,
     "bucket_salt" VARCHAR(36) NOT NULL,
     "description" VARCHAR(255),
     "priority" INTEGER NOT NULL,
+    "variant_id" UUID,
 
     CONSTRAINT "flag_targeting_rules_pkey" PRIMARY KEY ("id")
 );
@@ -279,8 +348,8 @@ CREATE TABLE "config_change_log" (
     "change_type" VARCHAR(50) NOT NULL,
     "payload" JSONB NOT NULL,
     "config_version" INTEGER NOT NULL,
+    "actor_user_id" UUID,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "xid" xid8 NOT NULL DEFAULT pg_current_xact_id(),
 
     CONSTRAINT "config_change_log_pkey" PRIMARY KEY ("id")
 );
@@ -291,21 +360,27 @@ CREATE TABLE "rollout_sessions" (
     "project_id" UUID NOT NULL,
     "environment_id" UUID NOT NULL,
     "flag_env_config_id" UUID,
-    "target_variant_key" VARCHAR(100),
+    "targeting_rule_id" UUID,
+    "target_variant_id" UUID,
+    "workload_name" VARCHAR(253),
     "rollout_scope" "RolloutScope" NOT NULL,
     "strategy" "RolloutStrategy" NOT NULL,
     "control_mode" "ControlMode" NOT NULL,
-    "workload_name" VARCHAR(253),
     "status" "RolloutStatus" NOT NULL DEFAULT 'PENDING',
     "current_traffic_percentage" DECIMAL(5,2) NOT NULL DEFAULT 0,
+    "baseline_percentage" DECIMAL(5,2) NOT NULL DEFAULT 0,
     "version_new" VARCHAR(255),
     "version_old" VARCHAR(255),
     "thresholds" JSONB NOT NULL,
     "metric_queries" JSONB,
     "step_percent" DECIMAL(5,2) NOT NULL,
     "step_interval_seconds" INTEGER NOT NULL DEFAULT 300,
+    "analysis_interval_seconds" INTEGER NOT NULL DEFAULT 30,
+    "metric_window_seconds" INTEGER NOT NULL DEFAULT 60,
     "warm_up_requests" INTEGER NOT NULL DEFAULT 100,
     "max_duration_seconds" INTEGER NOT NULL DEFAULT 86400,
+    "last_step_at" TIMESTAMP(3),
+    "last_decision" JSONB,
     "version" INTEGER NOT NULL DEFAULT 0,
     "claimed_by" VARCHAR(100),
     "claimed_until" TIMESTAMP(3),
@@ -339,10 +414,15 @@ CREATE TABLE "deployment_events" (
     "id" UUID NOT NULL,
     "project_id" UUID NOT NULL,
     "environment_id" UUID,
+    "deployment_id" UUID NOT NULL,
     "event_type" "DeploymentEventType" NOT NULL,
+    "workload_name" VARCHAR(253),
     "pipeline_id" VARCHAR(255),
     "image_tag" VARCHAR(255),
     "commit_sha" VARCHAR(40),
+    "commit_timestamp" TIMESTAMP(3),
+    "restores_deployment_id" UUID,
+    "rollout_session_id" UUID,
     "triggered_by" "DeploymentTrigger" NOT NULL,
     "metadata" JSONB,
     "occurred_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -397,13 +477,34 @@ CREATE INDEX "sdk_keys_environment_id_idx" ON "sdk_keys"("environment_id");
 CREATE INDEX "cloud_credentials_project_id_idx" ON "cloud_credentials"("project_id");
 
 -- CreateIndex
+CREATE INDEX "domain_configs_domain_type_idx" ON "domain_configs"("domain_type");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "domain_configs_project_id_domain_type_key" ON "domain_configs"("project_id", "domain_type");
+
+-- CreateIndex
+CREATE INDEX "capability_bindings_capability_id_idx" ON "capability_bindings"("capability_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "capability_bindings_domain_config_id_capability_id_environm_key" ON "capability_bindings"("domain_config_id", "capability_id", "environment_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "capability_preferences_project_id_capability_id_key" ON "capability_preferences"("project_id", "capability_id");
 
 -- CreateIndex
 CREATE INDEX "provisioning_jobs_project_id_created_at_idx" ON "provisioning_jobs"("project_id", "created_at");
 
 -- CreateIndex
-CREATE INDEX "provisioning_jobs_heartbeat_at_idx" ON "provisioning_jobs"("heartbeat_at");
+CREATE INDEX "provisioning_jobs_state_claimed_until_idx" ON "provisioning_jobs"("state", "claimed_until");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "provisioned_resources_idempotency_key_key" ON "provisioned_resources"("idempotency_key");
+
+-- CreateIndex
+CREATE INDEX "provisioned_resources_project_id_status_idx" ON "provisioned_resources"("project_id", "status");
+
+-- CreateIndex
+CREATE INDEX "provisioned_resources_job_id_idx" ON "provisioned_resources"("job_id");
 
 -- CreateIndex
 CREATE INDEX "feature_flags_project_id_lifecycle_status_idx" ON "feature_flags"("project_id", "lifecycle_status");
@@ -433,19 +534,13 @@ CREATE INDEX "flag_evaluation_stats_bucket_hour_idx" ON "flag_evaluation_stats"(
 CREATE UNIQUE INDEX "flag_evaluation_stats_flag_id_environment_id_variant_key_bu_key" ON "flag_evaluation_stats"("flag_id", "environment_id", "variant_key", "bucket_hour");
 
 -- CreateIndex
-CREATE INDEX "config_change_log_environment_id_xid_idx" ON "config_change_log"("environment_id", "xid");
-
--- CreateIndex
-CREATE INDEX "config_change_log_environment_id_id_idx" ON "config_change_log"("environment_id", "id");
-
--- CreateIndex
 CREATE INDEX "config_change_log_created_at_idx" ON "config_change_log"("created_at");
 
 -- CreateIndex
-CREATE INDEX "rollout_sessions_project_id_status_created_at_idx" ON "rollout_sessions"("project_id", "status", "created_at");
+CREATE UNIQUE INDEX "config_change_log_environment_id_config_version_key" ON "config_change_log"("environment_id", "config_version");
 
 -- CreateIndex
-CREATE INDEX "rollout_sessions_status_updated_at_idx" ON "rollout_sessions"("status", "updated_at");
+CREATE INDEX "rollout_sessions_project_id_status_created_at_idx" ON "rollout_sessions"("project_id", "status", "created_at");
 
 -- CreateIndex
 CREATE INDEX "rollout_sessions_status_claimed_until_idx" ON "rollout_sessions"("status", "claimed_until");
@@ -454,13 +549,16 @@ CREATE INDEX "rollout_sessions_status_claimed_until_idx" ON "rollout_sessions"("
 CREATE INDEX "rollout_events_session_id_created_at_idx" ON "rollout_events"("session_id", "created_at");
 
 -- CreateIndex
+CREATE INDEX "rollout_events_session_id_is_intent_processed_at_idx" ON "rollout_events"("session_id", "is_intent", "processed_at");
+
+-- CreateIndex
 CREATE INDEX "deployment_events_project_id_occurred_at_idx" ON "deployment_events"("project_id", "occurred_at");
 
 -- CreateIndex
 CREATE INDEX "deployment_events_environment_id_occurred_at_idx" ON "deployment_events"("environment_id", "occurred_at");
 
 -- CreateIndex
-CREATE INDEX "deployment_events_pipeline_id_idx" ON "deployment_events"("pipeline_id");
+CREATE INDEX "deployment_events_deployment_id_idx" ON "deployment_events"("deployment_id");
 
 -- CreateIndex
 CREATE INDEX "audit_logs_project_id_occurred_at_idx" ON "audit_logs"("project_id", "occurred_at");
@@ -496,7 +594,25 @@ ALTER TABLE "cloud_credentials" ADD CONSTRAINT "cloud_credentials_created_by_fke
 ALTER TABLE "domain_configs" ADD CONSTRAINT "domain_configs_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "domain_configs" ADD CONSTRAINT "domain_configs_domain_type_fkey" FOREIGN KEY ("domain_type") REFERENCES "domain_catalog"("domain_type") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "capability_bindings" ADD CONSTRAINT "capability_bindings_domain_config_id_fkey" FOREIGN KEY ("domain_config_id") REFERENCES "domain_configs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "capability_bindings" ADD CONSTRAINT "capability_bindings_environment_id_fkey" FOREIGN KEY ("environment_id") REFERENCES "environments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "capability_preferences" ADD CONSTRAINT "capability_preferences_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "provisioning_jobs" ADD CONSTRAINT "provisioning_jobs_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "provisioned_resources" ADD CONSTRAINT "provisioned_resources_job_id_fkey" FOREIGN KEY ("job_id") REFERENCES "provisioning_jobs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "provisioned_resources" ADD CONSTRAINT "provisioned_resources_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "feature_flags" ADD CONSTRAINT "feature_flags_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -512,6 +628,9 @@ ALTER TABLE "flag_env_configs" ADD CONSTRAINT "flag_env_configs_environment_id_f
 
 -- AddForeignKey
 ALTER TABLE "flag_targeting_rules" ADD CONSTRAINT "flag_targeting_rules_flag_env_config_id_fkey" FOREIGN KEY ("flag_env_config_id") REFERENCES "flag_env_configs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "flag_targeting_rules" ADD CONSTRAINT "flag_targeting_rules_variant_id_fkey" FOREIGN KEY ("variant_id") REFERENCES "flag_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "segments" ADD CONSTRAINT "segments_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -533,6 +652,9 @@ ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_environment_id_f
 
 -- AddForeignKey
 ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_flag_env_config_id_fkey" FOREIGN KEY ("flag_env_config_id") REFERENCES "flag_env_configs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_targeting_rule_id_fkey" FOREIGN KEY ("targeting_rule_id") REFERENCES "flag_targeting_rules"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

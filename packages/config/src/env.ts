@@ -62,13 +62,39 @@ const envSchema = z.object({
     .default("info"),
 
   // ---------- Database ----------
+  /** Kết nối POOLED (transaction mode) — dùng cho truy vấn CRUD thường */
   DATABASE_URL: z.string().url().startsWith("postgresql://"),
   /**
-   * Kết nối trực tiếp (session mode) — dùng cho migration, pg-boss và kênh
-   * NOTIFY. Xem §15.3: hai cơ chế này ngừng hoạt động sau connection pooler
-   * ở chế độ transaction. Bỏ trống thì dùng chung DATABASE_URL.
+   * Kết nối SESSION MODE — bắt buộc, và thường KHÁC `DATABASE_URL`.
+   *
+   * Ba thứ cần nó vì chúng giữ trạng thái qua nhiều statement trong cùng một
+   * session, thứ mà pooler ở transaction mode phá vỡ (§15.3):
+   *   - Prisma Migrate: một migration là nhiều statement + advisory lock của Prisma
+   *   - pg-boss: `migrate` và `supervise` cũng nhiều statement (ADR-02 điều kiện 1)
+   *   - Kênh `LISTEN`: đăng ký gắn với MỘT backend cụ thể; trả kết nối về pool là mất
+   *
+   * Với Supabase free tier, đây là **session pooler** (cổng 5432 trên
+   * `pooler.supabase.com`), KHÔNG phải `db.<ref>.supabase.co:5432` — host đó chỉ
+   * resolve IPv6 nên không kết nối được từ mạng chỉ có IPv4.
+   *
+   * v3 để optional và fallback về `DATABASE_URL`. Với Postgres cục bộ thì vô hại
+   * vì hai chuỗi giống nhau; với managed Postgres thì fallback đó làm migration
+   * hỏng giữa chừng theo cách rất khó chẩn đoán, nên v4 bắt buộc khai tường minh.
    */
-  DATABASE_URL_DIRECT: z.string().url().optional(),
+  DATABASE_URL_DIRECT: z.string().url().startsWith("postgresql://"),
+  /**
+   * Trần số kết nối của pool cho MỖI tiến trình.
+   *
+   * Đây là giá trị do MÔI TRƯỜNG quy định nên nằm ở đây chứ không ở constants.ts:
+   * Supabase free tier cho 60 kết nối và đã dùng sẵn 5 cho hạ tầng của họ, còn
+   * Postgres tự dựng thì hoàn toàn khác.
+   *
+   * Vì sao phải khai tường minh: mặc định của pool là `số CPU × 2 + 1`, tức là
+   * 17 kết nối trên một máy 8 nhân — chỉ riêng ba service đã vượt trần, chưa kể
+   * pg-boss và kết nối session-pinned cho LISTEN. Lỗi khi đó là `too many
+   * connections` lúc chạy, không phải lúc build, nên rất tốn thời gian truy vết.
+   */
+  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(5),
 
   // ---------- Auth ----------
   JWT_ACCESS_SECRET: z
@@ -111,7 +137,7 @@ const envSchema = z.object({
 
   // ---------- Change feed (ADR-05) ----------
   /**
-   * `snapshot` = chỉ tầng 1. `delta` = bật thêm tầng 2 (con trỏ xid8).
+   * `snapshot` = chỉ tầng 1. `delta` = bật thêm tầng 2 (con trỏ config_version).
    * Cho phép đo đối chứng hai chế độ trên cùng hệ thống — phép đo E4 (§14).
    */
   CHANGEFEED_MODE: z.enum(["snapshot", "delta"]).default("snapshot"),
@@ -157,8 +183,12 @@ if (!parsed.success) {
 export const env = Object.freeze(parsed.data);
 export type Env = typeof env;
 
-/** Kết nối direct dùng cho migration, pg-boss, NOTIFY (§15.3) */
-export const directDatabaseUrl = env.DATABASE_URL_DIRECT ?? env.DATABASE_URL;
+/**
+ * Kết nối session mode cho migration, pg-boss và kênh NOTIFY (§15.3).
+ * Không còn fallback về DATABASE_URL: env schema đã bắt buộc khai tường minh,
+ * vì một fallback âm thầm sang pooled connection làm migration hỏng giữa chừng.
+ */
+export const directDatabaseUrl = env.DATABASE_URL_DIRECT;
 
 export const isProduction = env.NODE_ENV === "production";
 export const isDevelopment = env.NODE_ENV === "development";

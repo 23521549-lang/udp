@@ -13,6 +13,12 @@ build/
 packages/db/prisma/*.db
 packages/db/prisma/*.db-journal
 
+# Prisma 7 sinh client dưới dạng mã TypeScript vào chính project (2,4 MB, 31 file)
+# thay vì vào node_modules như các bản trước. Đây là ARTIFACT chứ không phải mã
+# nguồn: nó suy ra hoàn toàn từ schema.prisma, nên commit vào chỉ làm mọi diff nhiễu.
+# Sau khi clone, và sau mỗi lần sửa schema, chạy: pnpm db:generate
+packages/db/src/generated/
+
 # ============================================================
 # Bí mật — TUYỆT ĐỐI không commit.
 # Đề tài xử lý credential cloud thật; một service-account.json

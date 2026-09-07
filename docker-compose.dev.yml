@@ -1,27 +1,27 @@
 # Hạ tầng dev. Mọi giá trị đọc từ .env ở cùng thư mục — không hardcode
 # credential ở đây, để đổi mật khẩu chỉ phải sửa đúng một file.
 # Cú pháp ${VAR:-default} giữ cho compose vẫn chạy được khi chưa có .env.
+#
+# ============================================================
+# PostgreSQL KHÔNG còn ở đây — đã chuyển lên managed Postgres (Supabase).
+# Cấu hình kết nối ở .env: cần HAI chuỗi, xem .env.example và §15.3.
+#
+# Hai hệ quả, ghi lại để không phát hiện muộn:
+#
+#   1. Integration test dùng Testcontainers (I15a–I22) cần một Postgres
+#      DÙNG-MỘT-LẦN: mỗi lần chạy là database sạch, tạo và thu hồi role tự do,
+#      50 kết nối đồng thời. Không thể dùng database dev chung cho việc đó, nên
+#      nhóm test này chỉ chạy ở CI.
+#
+#   2. Phép đo E4 (độ trễ lan truyền cấu hình) phải chạy ở CI, nơi database và
+#      ứng dụng nằm cùng một máy. Đo trên máy cá nhân với database ở Singapore
+#      thì RTT mạng lấn át chính con số mà E4 định chứng minh.
+#
+# Prometheus vẫn chạy cục bộ vì C1 cần nó để phát triển, và nó nhẹ hơn Postgres
+# nhiều: không có volume dữ liệu lớn, không có WAL, retention chỉ 7 ngày.
+# ============================================================
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: udp-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-udp}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-udp_dev_password}
-      POSTGRES_DB: ${POSTGRES_DB:-udp}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - udp-pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test:
-        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-udp} -d ${POSTGRES_DB:-udp}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   prometheus:
     image: prom/prometheus:latest
     container_name: udp-prometheus
@@ -37,8 +37,8 @@ services:
       - "--storage.tsdb.retention.time=7d"
       - "--web.enable-lifecycle"
     extra_hosts:
+      # Cho phép Prometheus trong container scrape service chạy trên máy host
       - "host.docker.internal:host-gateway"
 
 volumes:
-  udp-pgdata:
   udp-promdata:

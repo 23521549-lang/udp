@@ -1,17 +1,31 @@
-// UDP — Prisma schema (theo Technical Design v3.0)
-// Nguyên tắc: mỗi bảng có ĐÚNG MỘT service được quyền ghi (xem §1.2).
+// UDP — Prisma schema (Technical Design v4.0)
+//
+// Cách đọc file này: model được nhóm theo ĐÚNG MỘT service có quyền ghi (§1.2).
+// Ranh giới đó không phải quy ước đặt tên mà được cưỡng chế ở tầng database bằng
+// Postgres role udp_s1 / udp_s2 / udp_s3, và bất biến I22 đối chiếu quyền thật
+// trong information_schema với ma trận ở §1.2.
+//
+// Hai nguyên tắc chi phối toàn bộ schema:
+//   1. Đúng nhờ trạng thái bền vững, nhanh nhờ tín hiệu (ADR-05). Không cột nào
+//      dựa vào LISTEN/NOTIFY để đúng; NOTIFY chỉ đánh thức vòng poll sớm hơn.
+//   2. Nguồn sự thật nằm bên ngoài (ADR-08). Sổ ProvisionedResource và
+//      CapabilityBinding là cache dựng lại được, không phải nguồn sự thật.
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
+// Prisma 7 bỏ `url` khỏi khối này. Chuỗi kết nối cho Migrate nằm ở prisma.config.ts;
+// runtime nhận connection qua driver adapter truyền vào PrismaClient (packages/db/src).
+// Việc tách này hợp với §15.3: Migrate cần DATABASE_URL_DIRECT (nhiều statement,
+// không an toàn qua pooler transaction mode), còn runtime dùng DATABASE_URL pooled.
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ============================================================
-// ENUMS
+// ENUM — người dùng và project
 // ============================================================
 
 enum PlatformRole {
@@ -39,6 +53,18 @@ enum ProjectStatus {
   DELETED
 }
 
+/// §4.4 — Hành vi khi project hết hạn.
+/// WARN là mặc định cho BYOC: cảnh báo nhưng KHÔNG đụng tài nguyên của khách.
+/// Tự xóa cluster production trong tài khoản người khác là rủi ro pháp lý, không phải bug.
+enum ExpiryAction {
+  WARN
+  TEARDOWN
+}
+
+// ============================================================
+// ENUM — cloud, domain, job
+// ============================================================
+
 enum CloudProvider {
   AWS
   GCP
@@ -50,37 +76,17 @@ enum CredentialMode {
   MANAGED
 }
 
-enum SdkKeyType {
-  SERVER
-  CLIENT
-}
-
-enum DomainType {
-  CICD
-  CONTAINER_REGISTRY
-  INFRA
-  GITOPS
-  MONITORING
-  LOGGING
-  TRACING
-  SERVICE_MESH
-  SECRETS
-  SECURITY
-  POLICY
-  DATABASE
-  PROGRESSIVE_DELIVERY
-  COST
-  ARTIFACT_REGISTRY
-}
-
 enum DomainStatus {
   PENDING
   DEPLOYING
   ACTIVE
   SWITCHING
+  RECONFIGURING
   TEARINGDOWN
-  ERROR
+  /// Domain phụ thuộc vào một domain đang lỗi — tách khỏi ERROR để người dùng
+  /// thấy được nguyên nhân gốc thay vì một loạt lỗi giống nhau
   BLOCKED
+  ERROR
 }
 
 enum JobType {
@@ -99,6 +105,44 @@ enum JobState {
   FAILED
 }
 
+/// §4.5 — Máy trạng thái của một ResourceStep. Mỗi cạnh có hành vi khôi phục
+/// xác định; bảng đầy đủ K1–K10 ở §4.5 và được kiểm tự động bởi bất biến I31.
+enum ResourceStatus {
+  /// Đã ghi ý định, CHƯA biết cloud có tạo được chưa. Trạng thái nguy hiểm nhất:
+  /// mọi lần resume PHẢI gọi lookup() ở đây trước khi quyết định tạo.
+  CREATING
+  /// API đã trả về id
+  CREATED
+  /// waitReady() xong, tài nguyên dùng được
+  READY
+  DELETING
+  DELETED
+  /// Xóa không được sau nhiều lần thử. KHÔNG phải trạng thái cuối im lặng:
+  /// orphan-scan.job và GET /admin/orphan-resources hiển thị kèm chi phí đang chạy.
+  ORPHAN_SUSPECTED
+}
+
+/// Bước nào của job đã tạo ra tài nguyên. K8S_MANAGED là tài nguyên do Kubernetes
+/// sinh ra (ELB/ENI của Service LoadBalancer, EBS của PVC) — adapter không tạo
+/// trực tiếp nhưng PHẢI dọn, vì chúng giữ tham chiếu tới VPC (§4.5).
+enum ProvisionStep {
+  NETWORK
+  CLUSTER
+  DOMAINS
+  K8S_MANAGED
+}
+
+// ============================================================
+// ENUM — feature flag
+// ============================================================
+
+enum SdkKeyType {
+  /// Local evaluation: nhận toàn bộ rule, đánh giá tại chỗ. Chỉ dùng ở backend.
+  SERVER
+  /// Remote evaluation qua OFREP: KHÔNG rule nào rời server (ADR-03).
+  CLIENT
+}
+
 enum FlagType {
   BOOLEAN
   STRING
@@ -112,20 +156,31 @@ enum FlagLifecycleStatus {
   ARCHIVED
 }
 
+/// AI KHỚP — tách khỏi "phục vụ gì" (cột `serve`).
+/// v3 có PERCENTAGE gộp hai khái niệm nên không diễn đạt được "10% người dùng ở VN",
+/// và chia 3 variant bằng chuỗi rule cho ra 33/22/45 thay vì 33/33/34 (§6.4).
 enum RuleType {
+  ALL
   USER_BASED
-  PERCENTAGE
   ATTRIBUTE_BASED
   SEGMENT
 }
 
+// ============================================================
+// ENUM — progressive delivery
+// ============================================================
+
 enum RolloutScope {
+  /// Canary theo variant của flag, cùng một pod và cùng một binary — đóng góp C1
   FLAG_LEVEL
+  /// Canary theo image version của pod
   SERVICE_LEVEL
 }
 
 enum RolloutStrategy {
   CANARY
+  /// v2 gọi là AB_TESTING. Đổi tên vì thiết kế chỉ làm phần định tuyến, không làm
+  /// suy luận thống kê — gọi đúng tên tránh bị hỏi "đâu là p-value" (§7.2).
   ATTRIBUTE_SPLIT
   BLUE_GREEN
 }
@@ -147,6 +202,9 @@ enum FailReason {
   AUTO_ROLLBACK
   MANUAL
   EXPIRED
+  /// Không rollback được vì Service 2 không phản hồi quá rollbackRetrySeconds (§7.6).
+  /// Tách khỏi AUTO_ROLLBACK vì đây là THẤT BẠI CỦA CƠ CHẾ AN TOÀN, phải cảnh báo P1.
+  DEPENDENCY_DOWN
 }
 
 enum RolloutAction {
@@ -156,12 +214,17 @@ enum RolloutAction {
   RESUME
   COMPLETE
   HOLD
+  DEPENDENCY_DOWN
 }
 
 enum TriggeredBy {
   MANUAL
   AUTO
 }
+
+// ============================================================
+// ENUM — event store
+// ============================================================
 
 enum DeploymentEventType {
   DEPLOY_START
@@ -175,6 +238,9 @@ enum DeploymentTrigger {
   WEBHOOK
   MANUAL
   ROLLBACK
+  /// Do reconciler quyết định, không do người bấm. Cần để E5 tách được MTTR của
+  /// auto-rollback (C1) khỏi MTTR của rollback thủ công.
+  AUTO
 }
 
 enum ActorType {
@@ -184,7 +250,40 @@ enum ActorType {
 }
 
 // ============================================================
-// NHÓM 1 — Người dùng, project, phân quyền
+// NHÓM 0 — Danh mục domain
+// Writer: tiến trình khởi động (đồng bộ từ adapter registry). KHÔNG endpoint nào ghi.
+// ============================================================
+
+/// §2.2, §5.3 — Bảng tham chiếu thay cho enum DomainType trong DDL.
+///
+/// Vì sao không phải enum: thêm một domain mới vào enum Postgres là một migration,
+/// tức một file ngoài thư mục adapter, và điều đó phá vỡ chỉ số "0 file" của C2.
+/// Khóa ngoại chặn giá trị lạ ĐÚNG NHƯ enum, nhưng thêm domain thì chỉ cần thêm
+/// thư mục adapter — registry tự phát hiện và đồng bộ bảng này lúc khởi động.
+///
+/// Ràng buộc (bất biến I29): tiến trình đồng bộ chỉ UPSERT và đặt is_available = false
+/// cho domain không còn adapter. KHÔNG BAO GIỜ DELETE — xóa hàng sẽ phá khóa ngoại
+/// của những DomainConfig đã tồn tại.
+model DomainCatalog {
+  /// CICD, CONTAINER_REGISTRY, INFRA, GITOPS, MONITORING, LOGGING, TRACING,
+  /// SERVICE_MESH, INGRESS, SECRETS, SECURITY, POLICY, DATABASE,
+  /// PROGRESSIVE_DELIVERY, COST, ARTIFACT_REGISTRY — 16 domain (§5.5)
+  domainType   String  @id @map("domain_type") @db.VarChar(50)
+  tier         String  @db.VarChar(20)
+  displayName  String  @map("display_name") @db.VarChar(100)
+  /// Chỉ để sắp xếp hiển thị và phá hòa trong cùng một bậc topo.
+  /// KHÔNG quyết định thứ tự deploy — thứ tự đó do đồ thị capability sinh ra (§5.3).
+  defaultOrder Int     @map("default_order")
+  isAvailable  Boolean @default(true) @map("is_available")
+
+  domainConfigs DomainConfig[]
+
+  @@map("domain_catalog")
+}
+
+// ============================================================
+// NHÓM 1 — Người dùng, project, environment
+// Writer: Service 1
 // ============================================================
 
 model User {
@@ -230,19 +329,36 @@ model Project {
   languageRuntime String        @map("language_runtime") @db.VarChar(50)
   status          ProjectStatus @default(DRAFT)
   metadata        Json?
-  // §2.2 — trần tài nguyên, cưỡng chế ở MỌI lời gọi adapter
-  resourceQuota   Json          @map("resource_quota")
-  // §4.4 — TTL môi trường lab, cron tự teardown khi quá hạn
-  expiresAt       DateTime?     @map("expires_at")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  owner            User              @relation("ProjectOwner", fields: [ownerId], references: [id])
+  /// §4.4 lớp 1 — trần tài nguyên, cưỡng chế ở MỌI lời gọi adapter.
+  /// Trong mô hình BYOC, một bug về vòng lặp provisioning tiêu tiền THẬT của
+  /// developer chứ không phải của platform.
+  resourceQuota Json @map("resource_quota")
+
+  /// §4.4 lớp 3 — TTL. expiryAction quyết định hết hạn thì làm gì.
+  expiresAt    DateTime?    @map("expires_at")
+  expiryAction ExpiryAction @default(WARN) @map("expiry_action")
+
+  /// ADR-06 — { clusterId, apiEndpoint, caData, controlPlaneServiceAccounts }.
+  /// KHÔNG chứa kubeconfig hay token: bất biến I24 cấm mọi token sống quá 1 giờ
+  /// được ghi xuống database hay đĩa.
+  clusterAccess Json? @map("cluster_access")
+
+  /// Optimistic lock cho CẢ TẬP domain. Không có nó, hai PUT /domains đồng thời
+  /// đều qua validator (mỗi cái hợp lệ so với trạng thái cũ) rồi đánh nhau ở job.
+  domainSetVersion Int @default(0) @map("domain_set_version")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner            User                   @relation("ProjectOwner", fields: [ownerId], references: [id])
   members          ProjectMember[]
   environments     Environment[]
   credentials      CloudCredential[]
   domainConfigs    DomainConfig[]
+  capabilityPrefs  CapabilityPreference[]
   provisioningJobs ProvisioningJob[]
+  provisionedRes   ProvisionedResource[]
   flags            FeatureFlag[]
   segments         Segment[]
   rolloutSessions  RolloutSession[]
@@ -254,35 +370,58 @@ model Project {
   @@map("projects")
 }
 
+/// ADR-04 — Environment là công dân hạng nhất. Cùng một flag phải có giá trị khác
+/// nhau ở dev và prod; gắn flag thẳng vào Project không biểu diễn được điều đó.
 model Environment {
-  id            String   @id @default(uuid()) @db.Uuid
-  projectId     String   @map("project_id") @db.Uuid
-  name          String   @db.VarChar(50)
-  k8sNamespace  String   @map("k8s_namespace") @db.VarChar(63)
-  isProduction  Boolean  @default(false) @map("is_production")
-  rank          Int
-  // ETag cho /sdk/config + con trỏ SSE. Tăng mỗi lần cấu hình flag đổi (§6.3)
-  configVersion Int      @default(0) @map("config_version")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id           String  @id @default(uuid()) @db.Uuid
+  projectId    String  @map("project_id") @db.Uuid
+  name         String  @db.VarChar(50)
+  k8sNamespace String  @map("k8s_namespace") @db.VarChar(63)
+  isProduction Boolean @default(false) @map("is_production")
+  rank         Int
+  /// Deploy tự động từ webhook có được phép ở environment này không (§8.3)
+  autoDeploy   Boolean @default(true) @map("auto_deploy")
 
-  project          Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  sdkKeys          SdkKey[]
-  flagEnvConfigs   FlagEnvConfig[]
-  evaluationStats  FlagEvaluationStat[]
-  rolloutSessions  RolloutSession[]
-  changeLog        ConfigChangeLog[]
-  deploymentEvents DeploymentEvent[]
-  auditLogs        AuditLog[]
+  /// ADR-05 — CON TRỎ ĐỌC của change feed, và ETag của GET /sdk/config.
+  ///
+  /// Được cấp DƯỚI ROW-LOCK của chính hàng này và lock giữ tới commit, nên
+  /// version n+1 chỉ có thể được cấp SAU KHI transaction mang version n đã commit.
+  /// Hệ quả: thứ tự nhìn thấy trùng thứ tự version, và không tồn tại hổng vĩnh viễn.
+  /// Đây là lý do v4 bỏ xid8 của v3.2 — bảo đảm đến từ row-lock, không từ kiểu dữ liệu.
+  ///
+  /// Chỉ Service 2 được ghi cột này. Ngoại lệ duy nhất: Service 3 ở nhánh
+  /// DEPENDENCY_DOWN (§7.6, I30) có GRANT mức cột để kill-switch lan truyền được.
+  configVersion Int @default(0) @map("config_version")
+
+  /// sha256 của snapshot đã chuẩn hóa — CHECKSUM NỘI DUNG.
+  /// configVersion là số đếm nên nó KHÔNG phải checksum: replica áp delta sai nội
+  /// dung nhưng đúng số vẫn qua được nếu chỉ so version. Cột này bắt lỗi đó (I15a).
+  configHash String? @map("config_hash") @db.Char(64)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project            Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sdkKeys            SdkKey[]
+  flagEnvConfigs     FlagEnvConfig[]
+  evaluationStats    FlagEvaluationStat[]
+  rolloutSessions    RolloutSession[]
+  changeLog          ConfigChangeLog[]
+  capabilityBindings CapabilityBinding[]
+  deploymentEvents   DeploymentEvent[]
+  auditLogs          AuditLog[]
 
   @@unique([projectId, name])
   @@map("environments")
 }
 
+/// ADR-03 — Ranh giới tin cậy của SDK endpoint.
+/// projectId là UUID xuất hiện trong URL Portal nên KHÔNG phải bí mật. Project và
+/// environment được suy ra TỪ KEY, không từ tham số do client gửi lên.
 model SdkKey {
   id            String     @id @default(uuid()) @db.Uuid
   environmentId String     @map("environment_id") @db.Uuid
   keyType       SdkKeyType @map("key_type")
-  // Chỉ lưu hash. Plaintext hiện ĐÚNG MỘT LẦN lúc tạo (§2.2)
+  /// Chỉ lưu hash. Plaintext hiện ĐÚNG MỘT LẦN lúc tạo và không nằm trong database.
   keyHash       String     @unique @map("key_hash") @db.Char(64)
   keyPrefix     String     @map("key_prefix") @db.VarChar(16)
   label         String?    @db.VarChar(100)
@@ -299,26 +438,30 @@ model SdkKey {
 }
 
 // ============================================================
-// NHÓM 2 — Cloud credential, domain config, job
+// NHÓM 2 — Credential, domain, job, sổ tài nguyên
+// Writer: Service 1
 // ============================================================
 
 model CloudCredential {
-  id               String         @id @default(uuid()) @db.Uuid
-  projectId        String         @map("project_id") @db.Uuid
-  provider         CloudProvider
-  mode             CredentialMode
-  // Envelope encryption AES-256-GCM (§4.3)
-  encryptedPayload String         @map("encrypted_payload")
-  encryptedDek     String         @map("encrypted_dek")
-  kekVersion       Int            @default(1) @map("kek_version")
-  nonce            String         @db.VarChar(32)
-  authTag          String         @map("auth_tag") @db.VarChar(32)
-  // SHA-256 của định danh public — so sánh credential mà không cần giải mã
-  fingerprint      String         @db.Char(64)
-  lastValidatedAt  DateTime?      @map("last_validated_at")
-  isActive         Boolean        @default(false) @map("is_active")
-  createdById      String         @map("created_by") @db.Uuid
-  createdAt        DateTime       @default(now()) @map("created_at")
+  id       String         @id @default(uuid()) @db.Uuid
+  projectId String        @map("project_id") @db.Uuid
+  provider CloudProvider
+  mode     CredentialMode
+
+  /// §4.3 — Envelope encryption AES-256-GCM có AAD. DEK riêng từng project,
+  /// KEK ở ngoài database. Một bản dump database MỘT MÌNH là vô dụng.
+  encryptedPayload String @map("encrypted_payload")
+  encryptedDek     String @map("encrypted_dek")
+  kekVersion       Int    @default(1) @map("kek_version")
+  nonce            String @db.VarChar(32)
+  authTag          String @map("auth_tag") @db.VarChar(32)
+
+  /// SHA-256 của định danh public — so sánh credential mà không cần giải mã
+  fingerprint     String    @db.Char(64)
+  lastValidatedAt DateTime? @map("last_validated_at")
+  isActive        Boolean   @default(false) @map("is_active")
+  createdById     String    @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy User    @relation(fields: [createdById], references: [id])
@@ -328,64 +471,208 @@ model CloudCredential {
 }
 
 model DomainConfig {
-  id                 String       @id @default(uuid()) @db.Uuid
-  projectId          String       @map("project_id") @db.Uuid
-  domainType         DomainType   @map("domain_type")
-  isEnabled          Boolean      @default(false) @map("is_enabled")
-  domainStatus       DomainStatus @default(PENDING) @map("domain_status")
-  selectedTool       String?      @map("selected_tool") @db.VarChar(100)
-  toolConfig         Json?        @map("tool_config")
-  // CapabilityBinding[] adapter trả về sau khi deploy (§5.3)
-  capabilityBindings Json?        @map("capability_bindings")
-  lastError          Json?        @map("last_error")
-  updatedAt          DateTime     @updatedAt @map("updated_at")
+  id        String @id @default(uuid()) @db.Uuid
+  projectId String @map("project_id") @db.Uuid
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// KHÓA NGOẠI, không phải enum — xem DomainCatalog để biết vì sao.
+  domainType String @map("domain_type") @db.VarChar(50)
+
+  isEnabled    Boolean      @default(false) @map("is_enabled")
+  domainStatus DomainStatus @default(PENDING) @map("domain_status")
+  selectedTool String?      @map("selected_tool") @db.VarChar(100)
+
+  /// Validate bằng Zod theo (domainType, selectedTool). Trường đánh dấu `secret`
+  /// trong schema được mã hóa như §4.3 TRƯỚC khi lưu.
+  toolConfig Json? @map("tool_config")
+
+  /// §8.6 — Phiên bản adapter/chart đã deploy. detectDrift() so với cột này, nên
+  /// cập nhật nó khi upgrade THẤT BẠI sẽ làm mọi lần quét sau báo trôi giả.
+  adapterVersion String? @map("adapter_version") @db.VarChar(20)
+
+  lastError Json?    @map("last_error")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  catalog  DomainCatalog       @relation(fields: [domainType], references: [domainType])
+  bindings CapabilityBinding[]
 
   @@unique([projectId, domainType])
+  @@index([domainType])
   @@map("domain_configs")
 }
 
-model ProvisioningJob {
-  id               String    @id @default(uuid()) @db.Uuid
-  projectId        String    @map("project_id") @db.Uuid
-  jobType          JobType   @map("job_type")
-  state            JobState  @default(QUEUED)
-  // Sổ tài nguyên đã tạo — ghi NGAY sau mỗi lần tạo thành công.
-  // Không có nó thì compensation không biết phải xóa gì (ADR-02).
-  createdResources Json      @default("[]") @map("created_resources")
-  payload          Json
-  lastError        Json?     @map("last_error")
-  attempt          Int       @default(0)
-  heartbeatAt      DateTime? @map("heartbeat_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+/// §5.3 — Giá trị THẬT mà một adapter cung cấp sau khi deploy xong.
+///
+/// v3 để binding sống trong ctx.resolved của worker; worker restart giữa bậc DOMAINS
+/// là mất hết, và bên tiêu thụ không có cách nào đọc lại endpoint sau này.
+/// Theo ADR-08, bảng này là CACHE DỰNG LẠI ĐƯỢC từ trạng thái thật trên cluster,
+/// không phải nguồn sự thật.
+model CapabilityBinding {
+  id             String @id @default(uuid()) @db.Uuid
+  domainConfigId String @map("domain_config_id") @db.Uuid
+
+  /// NULL = binding cluster-scoped (Istio control plane, operator).
+  /// Khác NULL = binding riêng cho một environment.
+  environmentId String? @map("environment_id") @db.Uuid
+
+  /// metrics.query, mesh.traffic-split, traffic.control, registry.oci...
+  capabilityId String @map("capability_id") @db.VarChar(50)
+  /// "monitoring:prometheus-grafana"
+  providedBy String @map("provided_by") @db.VarChar(100)
+  /// Semver của capability. Cần để phân biệt PromQL (2.x) với DQL (1.x): Flagger
+  /// khai `constraint: "^2"` nên Datadog không thỏa (§5.3).
+  schemaVersion String @map("schema_version") @db.VarChar(10)
+
+  endpoint String? @db.VarChar(500)
+  /// Trường đánh dấu secret được mã hóa như §4.3
+  attributes Json?
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  domainConfig DomainConfig @relation(fields: [domainConfigId], references: [id], onDelete: Cascade)
+  environment  Environment? @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@unique([domainConfigId, capabilityId, environmentId])
+  @@index([capabilityId])
+  @@map("capability_bindings")
+}
+
+/// §5.3 — Lựa chọn của người dùng khi nhiều adapter cùng cung cấp một capability
+/// không độc quyền (Prometheus và VictoriaMetrics cùng cho metrics.query).
+///
+/// v3 giải AMBIGUOUS_PROVIDER bằng dropdown nhưng KHÔNG có chỗ lưu, nên worker
+/// restart là mất lựa chọn. Đổi hàng ở đây kích hoạt rebind consumer (§8.2 CASE 5).
+model CapabilityPreference {
+  id             String @id @default(uuid()) @db.Uuid
+  projectId      String @map("project_id") @db.Uuid
+  capabilityId   String @map("capability_id") @db.VarChar(50)
+  providerToolId String @map("provider_tool_id") @db.VarChar(100)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@unique([projectId, capabilityId])
+  @@map("capability_preferences")
+}
+
+/// ADR-02 — Job bền vững qua restart.
+///
+/// pg-boss là CƠ CHẾ THỰC THI; bảng này là NGUỒN SỰ THẬT NGHIỆP VỤ. Job đối soát
+/// định kỳ so hai bên: pg-boss đánh dấu failed sau khi hết retry trong khi state
+/// vẫn là CLUSTER sẽ khiến Portal hiển thị "đang tạo cluster" vĩnh viễn.
+model ProvisioningJob {
+  id        String   @id @default(uuid()) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  jobType   JobType  @map("job_type")
+  state     JobState @default(QUEUED)
+  payload   Json
+
+  /// Ước tính chi phí đã được người dùng xác nhận ở bước Preview — giữ lại để
+  /// đối chiếu với số thật từ OpenCost sau này (§4.4 lớp 2)
+  estimatedCost Json? @map("estimated_cost")
+
+  lastError Json? @map("last_error")
+
+  /// ADR-02 điều kiện 5 — LEASE + FENCING.
+  ///
+  /// Tình huống thật cần chặn: worker A mất kết nối database 5 phút nhưng VẪN GỌI
+  /// ĐƯỢC AWS; pg-boss giao job cho B; A tỉnh lại và tạo tiếp tài nguyên.
+  /// Mọi UPDATE đều kèm WHERE version = $expected, nên A bị từ chối.
+  version      Int       @default(0)
+  claimedBy    String?   @map("claimed_by") @db.VarChar(100)
+  claimedUntil DateTime? @map("claimed_until")
+
+  /// Chỉ để retry và hiển thị. KHÔNG dùng làm điều kiện dừng — pg-boss có
+  /// retryLimit riêng và đó mới là nguồn sự thật về số lượt thử.
+  attempt Int @default(0)
+
+  /// Chỉ để hiển thị. Heartbeat thật là của pg-boss (touch() mỗi 30 giây).
+  /// v3 có stale-job-reaper tự viết chạy song song — hai reaper cạnh tranh có thể
+  /// tạo hai job pg-boss cho cùng một ProvisioningJob. v4 bỏ reaper.
+  heartbeatAt DateTime? @map("heartbeat_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project   Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  resources ProvisionedResource[]
+
   @@index([projectId, createdAt])
-  @@index([heartbeatAt])
+  @@index([state, claimedUntil])
   @@map("provisioning_jobs")
 }
 
+/// ADR-08, §4.5 — Sổ tài nguyên, ghi TRƯỚC mỗi lời gọi cloud.
+///
+/// Vì sao là bảng riêng chứ không phải JSONB trên ProvisioningJob (như v3): một
+/// mảng JSONB bị GHI ĐÈ TOÀN BỘ khi hai worker cùng chạm. Mỗi tài nguyên một hàng
+/// thì hai worker sửa hai hàng khác nhau không đè nhau.
+///
+/// Vì sao ghi TRƯỚC lời gọi: đóng cửa sổ crash K3 (§4.5) — cloud đã tạo xong nhưng
+/// ta chưa kịp biết. Ghi sau như v3 thì crash ở đó là mất dấu tài nguyên vĩnh viễn.
+///
+/// QUAN TRỌNG (ADR-08): bảng này KHÔNG phải nguồn sự thật. Nguồn sự thật là tag
+/// udp.key trên chính tài nguyên. Mất sạch bảng này, rebuildLedgerFromCloud() dựng
+/// lại được và hệ thống vẫn hội tụ đúng — đó là điểm crash K10 và là mệnh đề trung
+/// tâm của đóng góp C3.
+model ProvisionedResource {
+  id        String  @id @default(uuid()) @db.Uuid
+  /// NULL sau khi job bị xóa: sổ phải sống lâu hơn job đã tạo ra nó, nếu không
+  /// mất luôn khả năng dọn tài nguyên cloud.
+  jobId     String? @map("job_id") @db.Uuid
+  projectId String  @map("project_id") @db.Uuid
+
+  step ProvisionStep
+  /// vpc, subnet, nat-gateway, cluster, nodegroup, k8s-loadbalancer... (§4.2)
+  kind String        @db.VarChar(40)
+
+  /// {projectId}:{step}:{kind}:{name} — cũng chính là giá trị của tag udp.key.
+  /// UNIQUE ở đây là lớp chặn thứ hai sau lookup(): kể cả khi lookup sót, database
+  /// vẫn không cho ghi hai hàng cho cùng một tài nguyên.
+  idempotencyKey String @unique @map("idempotency_key") @db.VarChar(120)
+
+  /// NULL cho tới khi API cloud trả về. Đây là đường tra cứu DỰ PHÒNG khi khách
+  /// đã xóa tag nhưng sổ còn id (điểm crash K8, §4.5 quy tắc 3).
+  providerId String? @map("provider_id") @db.VarChar(255)
+
+  provider CloudProvider
+  region   String         @db.VarChar(50)
+  status   ResourceStatus @default(CREATING)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  /// SetNull chứ không Cascade: xóa job KHÔNG được xóa sổ.
+  job     ProvisioningJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  /// Restrict: không cho xóa project khi sổ còn tài nguyên chưa dọn.
+  project Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, status])
+  @@index([jobId])
+  @@map("provisioned_resources")
+}
+
 // ============================================================
-// NHÓM 3 — Feature flag (writer: flag-service)
+// NHÓM 3 — Feature flag
+// Writer: Service 2 (trừ ngoại lệ kill-switch của S3 ở §7.6)
 // ============================================================
 
 model FeatureFlag {
-  id                  String              @id @default(uuid()) @db.Uuid
-  projectId           String              @map("project_id") @db.Uuid
-  key                 String              @db.VarChar(255)
-  description         String?
-  flagType            FlagType            @map("flag_type")
-  defaultVariantKey   String              @map("default_variant_key") @db.VarChar(100)
-  lifecycleStatus     FlagLifecycleStatus @default(DRAFT) @map("lifecycle_status")
-  // Thuộc tính dùng để hash percentage — userId, sessionId, accountId (§6.4)
-  stickinessAttribute String              @default("userId") @map("stickiness_attribute") @db.VarChar(100)
-  // Kill-switch dài hạn — miễn cảnh báo stale flag
-  permanent           Boolean             @default(false)
-  createdAt           DateTime            @default(now()) @map("created_at")
-  updatedAt           DateTime            @updatedAt @map("updated_at")
+  id                String              @id @default(uuid()) @db.Uuid
+  projectId         String              @map("project_id") @db.Uuid
+  key               String              @db.VarChar(255)
+  description       String?
+  flagType          FlagType            @map("flag_type")
+  defaultVariantKey String              @map("default_variant_key") @db.VarChar(100)
+  lifecycleStatus   FlagLifecycleStatus @default(DRAFT) @map("lifecycle_status")
+
+  /// Thuộc tính dùng để hash khi chia nhóm. Cấu hình được vì B2B cần rollout theo
+  /// accountId (cả công ty cùng thấy hoặc cùng không), không phải theo userId (§6.4).
+  stickinessAttribute String @default("targetingKey") @map("stickiness_attribute") @db.VarChar(100)
+
+  /// Kill-switch dài hạn — miễn cảnh báo stale flag (§6.7)
+  permanent Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   project    Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   variants   FlagVariant[]
@@ -401,22 +688,26 @@ model FlagVariant {
   id     String @id @default(uuid()) @db.Uuid
   flagId String @map("flag_id") @db.Uuid
   key    String @db.VarChar(100)
+  /// Phải khớp flagType của flag — validate ở tầng application bằng Zod
   value  Json
 
-  flag FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  flag  FeatureFlag         @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  rules FlagTargetingRule[]
 
   @@unique([flagId, key])
   @@map("flag_variants")
 }
 
+/// ADR-04 — Trạng thái của một flag ở MỘT environment.
 model FlagEnvConfig {
-  id                String   @id @default(uuid()) @db.Uuid
-  flagId            String   @map("flag_id") @db.Uuid
-  environmentId     String   @map("environment_id") @db.Uuid
-  isEnabled         Boolean  @default(false) @map("is_enabled")
-  defaultVariantKey String?  @map("default_variant_key") @db.VarChar(100)
-  // Optimistic lock ở mức env: sửa flag ở dev không chặn người sửa prod
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id            String  @id @default(uuid()) @db.Uuid
+  flagId        String  @map("flag_id") @db.Uuid
+  environmentId String  @map("environment_id") @db.Uuid
+  isEnabled     Boolean @default(false) @map("is_enabled")
+  defaultVariantKey String? @map("default_variant_key") @db.VarChar(100)
+
+  /// Optimistic lock ở mức environment: sửa flag ở dev không chặn người sửa prod
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   flag        FeatureFlag         @relation(fields: [flagId], references: [id], onDelete: Cascade)
   environment Environment         @relation(fields: [environmentId], references: [id], onDelete: Cascade)
@@ -428,19 +719,41 @@ model FlagEnvConfig {
   @@map("flag_env_configs")
 }
 
+/// §6.4, §6.5 — Rule gồm HAI NỬA TÁCH RỜI: ai khớp (ruleType + condition) và
+/// phục vụ gì (serve).
 model FlagTargetingRule {
   id              String   @id @default(uuid()) @db.Uuid
   flagEnvConfigId String   @map("flag_env_config_id") @db.Uuid
-  ruleType        RuleType @map("rule_type")
-  condition       Json
-  variantKey      String   @map("variant_key") @db.VarChar(100)
-  // Sinh 1 lần khi tạo rule, KHÔNG đổi khi chỉnh percentage.
-  // Nếu đổi, nhóm người dùng bị xáo lại — vi phạm bất biến I1 (§13.3).
-  bucketSalt      String   @map("bucket_salt") @db.VarChar(36)
-  description     String?  @db.VarChar(255)
-  priority        Int
 
-  flagEnvConfig FlagEnvConfig @relation(fields: [flagEnvConfigId], references: [id], onDelete: Cascade)
+  /// NỬA MỘT — ai khớp
+  ruleType  RuleType @map("rule_type")
+  /// Validate bằng Zod theo ruleType; {} với ALL
+  condition Json
+
+  /// NỬA HAI — phục vụ gì. Hai hình dạng:
+  ///   { kind: "variant",      variantId }
+  ///   { kind: "distribution", weights: [{ variantId, weight }] }  tổng = 100000
+  ///
+  /// Đây cũng là cột mà đóng góp C1 tác động: rollout FLAG_LEVEL ramp `weights`
+  /// của đúng một rule, và rollback đưa về baselinePercentage (§7.7).
+  serve Json
+
+  /// Sinh MỘT LẦN khi tạo rule và KHÔNG đổi khi chỉnh trọng số.
+  /// Đổi nó nghĩa là bốc lại nhóm người dùng — người đang thấy tính năng sẽ mất
+  /// nó dù phần trăm chỉ tăng. Bất biến I1 kiểm điều này.
+  bucketSalt String @map("bucket_salt") @db.VarChar(36)
+
+  description String? @db.VarChar(255)
+  /// Nhỏ hơn = ưu tiên cao hơn. Rule được sắp sẵn lúc dựng cache, không sort mỗi
+  /// lần đánh giá (§6.5).
+  priority    Int
+
+  flagEnvConfig FlagEnvConfig    @relation(fields: [flagEnvConfigId], references: [id], onDelete: Cascade)
+  /// Chỉ dùng khi serve.kind = "variant". Restrict để chặn xóa variant còn được
+  /// rule tham chiếu — cảnh báo ORPHAN_RULE ở §6.7 phải chặn ở CẢ HAI chiều.
+  variant       FlagVariant?     @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  variantId     String?          @map("variant_id") @db.Uuid
+  rollouts      RolloutSession[]
 
   @@index([flagEnvConfigId, priority])
   @@map("flag_targeting_rules")
@@ -451,6 +764,7 @@ model Segment {
   projectId   String   @map("project_id") @db.Uuid
   name        String   @db.VarChar(100)
   description String?  @db.VarChar(255)
+  /// Mảng điều kiện thuộc tính, nối bằng AND
   conditions  Json
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -461,6 +775,8 @@ model Segment {
   @@map("segments")
 }
 
+/// §6.7 — Nền tảng cho việc phát hiện flag chết. SDK gộp in-process rồi báo cáo
+/// mỗi 60 giây, nên bảng này nhận lô chứ không nhận từng lượt đánh giá.
 model FlagEvaluationStat {
   id            String   @id @default(uuid()) @db.Uuid
   flagId        String   @map("flag_id") @db.Uuid
@@ -477,128 +793,149 @@ model FlagEvaluationStat {
   @@map("flag_evaluation_stats")
 }
 
-/// ADR-05 — Outbox lan truyền thay đổi cấu hình flag.
+/// ADR-05 tầng 2 — Outbox lan truyền thay đổi cấu hình.
 ///
-/// Nguyên tắc: hệ thống ĐÚNG nhờ dữ liệu trong bảng, NHANH nhờ NOTIFY.
-/// Mỗi thay đổi flag ghi một dòng ở đây TRONG CÙNG TRANSACTION với thay đổi
-/// thật và với việc tăng Environment.configVersion. Replica flag-service giữ
-/// con trỏ lastSeenId và poll `WHERE id > lastSeenId`; NOTIFY (nếu có) chỉ
-/// đánh thức vòng poll sớm hơn chứ không mang dữ liệu.
+/// THỨ TỰ TRANSACTION BẮT BUỘC khi đổi cấu hình flag:
+///   1. UPDATE environments SET config_version = config_version + 1 ... RETURNING → v
+///   2. Thay đổi thật (rule, env-config, variant, segment)
+///   3. Cập nhật config_hash
+///   4. INSERT hàng ở đây mang ĐÚNG v — ghi CUỐI CÙNG
 ///
-/// Ưu điểm so với chỉ dùng LISTEN/NOTIFY: replay được sau khi replica restart,
-/// không giới hạn 8KB payload, và chạy qua mọi connection pooler.
+/// Khóa hàng Environment đầu tiên biến nó thành điểm tuần tự hóa duy nhất của
+/// environment đó: không deadlock, và thứ tự version = thứ tự commit.
 ///
-/// CẢNH BÁO — bẫy thứ tự commit: id được cấp lúc INSERT nhưng dòng chỉ nhìn
-/// thấy được lúc COMMIT, nên một dòng id nhỏ hơn có thể xuất hiện SAU dòng id
-/// lớn hơn. Vì vậy vòng poll phải đọc trễ một khoảng an toàn
-/// (chỉ lấy dòng có createdAt < now() - safetyLagMs) VÀ luôn đối chiếu
-/// Environment.configVersion làm lưới an toàn cuối cùng (bất biến I15).
+/// Replica đọc theo con trỏ config_version và YÊU CẦU LIÊN TỤC (n, n+1, n+2...).
+/// Gặp hổng thì lấy snapshot — tầng 2 không thể làm hỏng trạng thái, chỉ có thể chậm.
 model ConfigChangeLog {
-  /// Chỉ dùng để sắp thứ tự trong CÙNG một transaction và để hiển thị.
-  /// KHÔNG dùng làm con trỏ đọc — xem cột `xid` bên dưới.
+  /// Chỉ để sắp thứ tự trong CÙNG một transaction và để hiển thị.
+  /// KHÔNG dùng làm con trỏ đọc — con trỏ là configVersion.
   id            BigInt   @id @default(autoincrement())
   environmentId String   @map("environment_id") @db.Uuid
   /// flag.created | flag.updated | flag.archived | rule.replaced |
-  /// envconfig.toggled | variant.updated | segment.updated
+  /// envconfig.toggled | variant.updated | segment.updated | sdkkey.revoked
   changeType    String   @map("change_type") @db.VarChar(50)
   /// Delta đầy đủ để replica cập nhật cache mà không phải đọc lại toàn bộ
   payload       Json
-  /// configVersion của environment SAU thay đổi này.
-  /// Đây là CHECKSUM: replica áp delta xong phải tính ra đúng con số này,
-  /// nếu lệch thì vứt cache và lấy snapshot đầy đủ (bất biến I15a).
+  /// configVersion của environment SAU thay đổi này. Đây là con trỏ đọc thật.
   configVersion Int      @map("config_version")
+  /// Ai đã đổi — cho tính năng xem lại lịch sử cấu hình
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at")
-
-  /// Con trỏ đọc THẬT của change feed — định danh transaction 64-bit.
-  ///
-  /// Vì sao không dùng `id`: BIGSERIAL phản ánh thứ tự BẮT ĐẦU transaction,
-  /// còn cái ta cần là thứ tự NHÌN THẤY ĐƯỢC. Hai transaction đồng thời có thể
-  /// commit ngược thứ tự id, khiến replica đã đặt con trỏ ở id lớn bỏ sót
-  /// vĩnh viễn dòng id nhỏ hơn commit muộn.
-  ///
-  /// Cách đọc đúng:
-  ///   SELECT pg_snapshot_xmin(pg_current_snapshot()) AS horizon;
-  ///   SELECT * FROM config_change_log
-  ///    WHERE environment_id = $1 AND xid >= $lastXid AND xid < $horizon
-  ///    ORDER BY xid, id;
-  ///   lastXid = horizon
-  /// Mọi transaction có xid < horizon đều chắc chắn đã kết thúc, nên không
-  /// tồn tại cửa sổ để dòng nào lọt qua (bất biến I15b).
-  ///
-  /// Prisma không có kiểu xid8 ⇒ khai Unsupported, đọc bằng $queryRaw.
-  xid Unsupported("xid8") @default(dbgenerated("pg_current_xact_id()"))
 
   environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
 
-  /// Con trỏ đọc của change feed (tầng 2)
-  @@index([environmentId, xid])
-  @@index([environmentId, id])
-  /// Job dọn dẹp: xóa dòng cũ hơn 7 ngày
+  /// Con trỏ đọc của change feed
+  @@unique([environmentId, configVersion])
+  /// Job dọn dẹp: xóa dòng cũ hơn 7 ngày (replica offline lâu hơn sẽ thấy hổng
+  /// và tự lấy snapshot — I18)
   @@index([createdAt])
   @@map("config_change_log")
 }
 
 // ============================================================
-// NHÓM 4 — Progressive delivery (writer: pd-controller)
+// NHÓM 4 — Progressive delivery
+// Writer: CHIA THEO CỘT. Service 1 tạo hàng và ghi cấu hình; Service 3 là writer
+// duy nhất của status, currentTrafficPercentage, failReason, lastDecision,
+// lastStepAt, claimedBy, claimedUntil, version (§1.2).
 // ============================================================
 
 model RolloutSession {
-  id                       String          @id @default(uuid()) @db.Uuid
-  projectId                String          @map("project_id") @db.Uuid
-  environmentId            String          @map("environment_id") @db.Uuid
-  flagEnvConfigId          String?         @map("flag_env_config_id") @db.Uuid
-  targetVariantKey         String?         @map("target_variant_key") @db.VarChar(100)
-  rolloutScope             RolloutScope    @map("rollout_scope")
-  strategy                 RolloutStrategy
-  controlMode              ControlMode     @map("control_mode")
-  workloadName             String?         @map("workload_name") @db.VarChar(253)
-  status                   RolloutStatus   @default(PENDING)
-  currentTrafficPercentage Decimal         @default(0) @map("current_traffic_percentage") @db.Decimal(5, 2)
-  versionNew               String?         @map("version_new") @db.VarChar(255)
-  versionOld               String?         @map("version_old") @db.VarChar(255)
-  thresholds               Json
-  metricQueries            Json?           @map("metric_queries")
-  stepPercent              Decimal         @map("step_percent") @db.Decimal(5, 2)
-  stepIntervalSeconds      Int             @default(300) @map("step_interval_seconds")
-  warmUpRequests           Int             @default(100) @map("warm_up_requests")
-  maxDurationSeconds       Int             @default(86400) @map("max_duration_seconds")
-  // Optimistic lock: reconciler chỉ ghi khi version khớp (bất biến I6).
-  // Đồng thời là fencing token cho lease bên dưới — worker tỉnh dậy sau khi
-  // đã mất lease sẽ thấy version đổi và bỏ kết quả của mình đi (bất biến I17).
-  version                  Int             @default(0)
-  // ADR-05 — Lease thay cho pg_advisory_lock. Giành quyền bằng
-  // UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1).
-  // Chạy qua mọi connection pooler, tự hết hạn khi worker chết,
-  // và cho biết ai đang xử lý session nào.
-  claimedBy                String?         @map("claimed_by") @db.VarChar(100)
-  claimedUntil             DateTime?       @map("claimed_until")
-  failReason               FailReason?     @map("fail_reason")
-  createdById              String          @map("created_by") @db.Uuid
-  createdAt                DateTime        @default(now()) @map("created_at")
-  updatedAt                DateTime        @updatedAt @map("updated_at")
+  id            String @id @default(uuid()) @db.Uuid
+  projectId     String @map("project_id") @db.Uuid
+  environmentId String @map("environment_id") @db.Uuid
 
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  environment   Environment    @relation(fields: [environmentId], references: [id])
-  flagEnvConfig FlagEnvConfig? @relation(fields: [flagEnvConfigId], references: [id])
-  createdBy     User           @relation(fields: [createdById], references: [id])
+  /// --- Mục tiêu: FLAG_LEVEL dùng ba cột này, SERVICE_LEVEL dùng workloadName ---
+  flagEnvConfigId String? @map("flag_env_config_id") @db.Uuid
+  /// Rule cụ thể mà rollout ramp `serve.weights` của nó
+  targetingRuleId String? @map("targeting_rule_id") @db.Uuid
+  targetVariantId String? @map("target_variant_id") @db.Uuid
+  workloadName    String? @map("workload_name") @db.VarChar(253)
+
+  rolloutScope RolloutScope    @map("rollout_scope")
+  strategy     RolloutStrategy
+  controlMode  ControlMode     @map("control_mode")
+
+  status                   RolloutStatus @default(PENDING)
+  currentTrafficPercentage Decimal       @default(0) @map("current_traffic_percentage") @db.Decimal(5, 2)
+
+  /// Mốc rollback. FLAG_LEVEL rollback về ĐÂY, không về 0: flag đã ổn định ở 30%
+  /// thì rollback không được tắt luôn 30% đó (§7.1).
+  baselinePercentage Decimal @default(0) @map("baseline_percentage") @db.Decimal(5, 2)
+
+  versionNew String? @map("version_new") @db.VarChar(255)
+  versionOld String? @map("version_old") @db.VarChar(255)
+
+  /// { errorRate, relativeErrorRate, latencyP99Ms, minErrors, maxConsecutiveBreaches }
+  thresholds    Json
+  /// Ghi đè truy vấn mặc định cho app dùng tên metric riêng
+  metricQueries Json? @map("metric_queries")
+
+  /// --- Nhịp: HAI con số TÁCH RỜI, và đây là điểm sửa quan trọng nhất của v4 ---
+  stepPercent Decimal @map("step_percent") @db.Decimal(5, 2)
+  /// Thời gian tối thiểu ở một bậc TRƯỚC KHI promote
+  stepIntervalSeconds Int @default(300) @map("step_interval_seconds")
+  /// Nhịp ĐO metrics, độc lập với dwell ở trên.
+  /// v3 để dwell chặn trước decide() nên sau mỗi promote không có phép đo nào
+  /// trong 5 phút — MTTD tối thiểu 10 phút, tự phá lập luận "rollback trong một
+  /// vòng SSE" và làm phép đo E5 vô nghĩa.
+  analysisIntervalSeconds Int @default(30) @map("analysis_interval_seconds")
+  /// Cửa sổ truy vấn metric. Validator ép >= 4 x scrapeInterval đo được từ probe().
+  metricWindowSeconds Int @default(60) @map("metric_window_seconds")
+
+  warmUpRequests     Int @default(100) @map("warm_up_requests")
+  maxDurationSeconds Int @default(86400) @map("max_duration_seconds")
+
+  /// Traffic đổi lần cuối lúc nào — điều kiện dwell và điều kiện "cửa sổ metric
+  /// đã nằm trọn sau bậc mới chưa"
+  lastStepAt DateTime? @map("last_step_at")
+
+  /// { decision, reason, at, breachStreak, metricSnapshot } — cập nhật MỖI TICK.
+  /// Là cột JSONB chứ không phải RolloutEvent: ghi một event mỗi 30 giây sẽ sinh
+  /// ~2880 dòng/ngày/session mà không mang thêm thông tin nào.
+  lastDecision Json? @map("last_decision")
+
+  /// ADR-05 — Optimistic lock VÀ fencing token.
+  /// Worker tỉnh dậy sau khi đã mất lease sẽ thấy version đổi và bỏ kết quả của
+  /// mình đi (I17). Side effect ra ngoài cũng mang version này: PATCH sang
+  /// Service 2 kèm If-Match, và Service 2 trả 412 nếu cũ (I23).
+  version      Int       @default(0)
+  claimedBy    String?   @map("claimed_by") @db.VarChar(100)
+  claimedUntil DateTime? @map("claimed_until")
+
+  failReason  FailReason? @map("fail_reason")
+  createdById String      @map("created_by") @db.Uuid
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  project       Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  environment   Environment        @relation(fields: [environmentId], references: [id])
+  flagEnvConfig FlagEnvConfig?     @relation(fields: [flagEnvConfigId], references: [id])
+  targetingRule FlagTargetingRule? @relation(fields: [targetingRuleId], references: [id])
+  createdBy     User               @relation(fields: [createdById], references: [id])
   events        RolloutEvent[]
 
   @@index([projectId, status, createdAt])
-  @@index([status, updatedAt])
-  // Hàng đợi giành việc của reconciler: tìm session chưa ai giữ hoặc lease đã hết hạn
+  /// Hàng đợi giành việc của reconciler: session chưa ai giữ hoặc lease đã hết hạn
   @@index([status, claimedUntil])
   @@map("rollout_sessions")
 }
 
+/// Nhật ký CHUYỂN TRẠNG THÁI, không phải nhật ký mỗi tick.
+///
+/// isIntent tách hai loại hàng và đó là cơ chế chống race của ADR-01:
+///   true  = Ý ĐỊNH của người dùng, do Service 1 ghi. Portal KHÔNG apply K8s.
+///   false = ĐÃ THỰC THI trên cluster, do Service 3 ghi.
+/// Nhờ tách này chỉ tồn tại MỘT writer duy nhất tới đối tượng điều khiển traffic.
 model RolloutEvent {
   id                String        @id @default(uuid()) @db.Uuid
   sessionId         String        @map("session_id") @db.Uuid
   action            RolloutAction
-  // true = ý định của người dùng (S1 ghi); false = đã thực thi trên cluster (S3 ghi).
-  // Nhờ tách này, chỉ Service 3 chạm vào K8s — không có race (§2.2).
   isIntent          Boolean       @default(false) @map("is_intent")
+  /// Khác NULL nghĩa là Service 3 đã xử lý intent này
   processedAt       DateTime?     @map("processed_at")
   trafficPercentage Decimal       @map("traffic_percentage") @db.Decimal(5, 2)
+  /// Truy vấn thật đã chạy và cửa sổ thời gian — để người dùng KIỂM CHỨNG được
+  /// quyết định của hệ thống thay vì phải tin
   metricSnapshot    Json?         @map("metric_snapshot")
   reason            String?       @db.VarChar(255)
   triggeredBy       TriggeredBy   @map("triggered_by")
@@ -609,35 +946,59 @@ model RolloutEvent {
   actor   User?          @relation(fields: [actorUserId], references: [id])
 
   @@index([sessionId, createdAt])
+  /// Reconciler tìm intent chưa xử lý ở mỗi vòng
+  @@index([sessionId, isIntent, processedAt])
   @@map("rollout_events")
 }
 
 // ============================================================
-// NHÓM 5 — Event store và audit (append-only, KHÔNG cascade)
+// NHÓM 5 — Event store và audit
+// APPEND-ONLY, NHIỀU WRITER: S1, S2, S3 đều INSERT trực tiếp.
+//
+// Vì sao không bắt ghi "qua API của Service 1" như v3: đó là dual-write. Đổi flag
+// thành công nhưng gọi API thất bại thì mất audit; gọi API trước rồi transaction
+// rollback thì audit sai. Đúng bài toán ADR-02 tránh.
 // ============================================================
 
 model DeploymentEvent {
-  id            String              @id @default(uuid()) @db.Uuid
-  projectId     String              @map("project_id") @db.Uuid
-  environmentId String?             @map("environment_id") @db.Uuid
-  eventType     DeploymentEventType @map("event_type")
-  pipelineId    String?             @map("pipeline_id") @db.VarChar(255)
-  imageTag      String?             @map("image_tag") @db.VarChar(255)
-  commitSha     String?             @map("commit_sha") @db.VarChar(40)
-  triggeredBy   DeploymentTrigger   @map("triggered_by")
-  metadata      Json?
-  occurredAt    DateTime            @default(now()) @map("occurred_at")
+  id            String  @id @default(uuid()) @db.Uuid
+  projectId     String  @map("project_id") @db.Uuid
+  environmentId String? @map("environment_id") @db.Uuid
 
-  // Restrict: giữ vĩnh viễn để tính DORA metrics kể cả khi project bị xóa
+  /// Gom DEPLOY_START / DEPLOY_SUCCESS / DEPLOY_FAILURE của CÙNG MỘT lần deploy.
+  /// Thiếu nó thì Deployment Frequency đếm cả START lẫn SUCCESS thành hai lần deploy.
+  deploymentId String @map("deployment_id") @db.Uuid
+
+  eventType    DeploymentEventType @map("event_type")
+  workloadName String?             @map("workload_name") @db.VarChar(253)
+  pipelineId   String?             @map("pipeline_id") @db.VarChar(255)
+  imageTag     String?             @map("image_tag") @db.VarChar(255)
+  commitSha    String?             @map("commit_sha") @db.VarChar(40)
+
+  /// Lead Time for Changes = occurredAt(DEPLOY_SUCCESS prod) − commitTimestamp.
+  /// KHÔNG suy ra được từ commitSha nếu không gọi ngược API của Git provider,
+  /// nên webhook phải mang sẵn (§8.3).
+  commitTimestamp DateTime? @map("commit_timestamp")
+
+  /// Với ROLLBACK: deployment nào bị coi là thất bại. Cho Change Failure Rate và
+  /// thời gian khôi phục.
+  restoresDeploymentId String? @map("restores_deployment_id") @db.Uuid
+  /// Nối với auto-rollback của C1 — thiếu nó thì E5 không tách được MTTR của
+  /// reconciler khỏi MTTR của người bấm nút
+  rolloutSessionId     String? @map("rollout_session_id") @db.Uuid
+
+  triggeredBy DeploymentTrigger @map("triggered_by")
+  metadata    Json?
+  occurredAt  DateTime          @default(now()) @map("occurred_at")
+
+  /// Restrict: giữ vĩnh viễn để tính DORA kể cả khi project bị xóa
   project     Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  // environmentId trước đây là cột trần không có quan hệ — không nhất quán với
-  // AuditLog và không có FK bảo vệ. SetNull thay vì Restrict: xóa environment
-  // là thao tác hợp lệ, còn lịch sử deploy thì phải giữ.
+  /// SetNull: xóa environment là thao tác hợp lệ, còn lịch sử deploy thì phải giữ
   environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
 
   @@index([projectId, occurredAt])
   @@index([environmentId, occurredAt])
-  @@index([pipelineId])
+  @@index([deploymentId])
   @@map("deployment_events")
 }
 
@@ -650,12 +1011,15 @@ model AuditLog {
   targetType    String    @map("target_type") @db.VarChar(50)
   targetId      String    @map("target_id") @db.VarChar(100)
   environmentId String?   @map("environment_id") @db.Uuid
-  // before/after PHẢI đi qua redact() trước khi ghi (§2.2)
-  before        Json?
-  after         Json?
-  ipAddress     String?   @map("ip_address") @db.Inet
-  userAgent     String?   @map("user_agent") @db.VarChar(255)
-  occurredAt    DateTime  @default(now()) @map("occurred_at")
+
+  /// PHẢI đi qua redact() trước khi ghi. Một số SDK cloud nhét credential vào
+  /// error.config, nên ghi thẳng object lỗi là rò credential (§12 T3, I12).
+  before Json?
+  after  Json?
+
+  ipAddress  String?  @map("ip_address") @db.Inet
+  userAgent  String?  @map("user_agent") @db.VarChar(255)
+  occurredAt DateTime @default(now()) @map("occurred_at")
 
   project     Project?     @relation(fields: [projectId], references: [id], onDelete: Restrict)
   actor       User?        @relation(fields: [actorUserId], references: [id])
