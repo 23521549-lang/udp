@@ -99,9 +99,12 @@ enum JobState {
   QUEUED
   NETWORK
   CLUSTER
+  CLUSTER_ACCESS
   DOMAINS
   DONE
+  CANCEL_REQUESTED
   COMPENSATING
+  COMPENSATION_FAILED
   FAILED
 }
 
@@ -213,7 +216,7 @@ enum RolloutAction {
   PAUSE
   RESUME
   COMPLETE
-  HOLD
+  EXPIRE
   DEPENDENCY_DOWN
 }
 
@@ -292,7 +295,7 @@ model User {
   passwordHash String       @map("password_hash") @db.VarChar(255)
   name         String       @db.VarChar(255)
   platformRole PlatformRole @default(USER) @map("platform_role")
-  createdAt    DateTime     @default(now()) @map("created_at")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 
   ownedProjects   Project[]         @relation("ProjectOwner")
   memberships     ProjectMember[]
@@ -301,6 +304,7 @@ model User {
   createdRollouts RolloutSession[]
   rolloutEvents   RolloutEvent[]
   auditLogs       AuditLog[]
+  configChanges   ConfigChangeLog[]
 
   @@map("users")
 }
@@ -310,7 +314,7 @@ model ProjectMember {
   projectId   String      @map("project_id") @db.Uuid
   userId      String      @map("user_id") @db.Uuid
   projectRole ProjectRole @map("project_role")
-  createdAt   DateTime    @default(now()) @map("created_at")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -336,7 +340,7 @@ model Project {
   resourceQuota Json @map("resource_quota")
 
   /// §4.4 lớp 3 — TTL. expiryAction quyết định hết hạn thì làm gì.
-  expiresAt    DateTime?    @map("expires_at")
+  expiresAt    DateTime?    @map("expires_at") @db.Timestamptz(3)
   expiryAction ExpiryAction @default(WARN) @map("expiry_action")
 
   /// ADR-06 — { clusterId, apiEndpoint, caData, controlPlaneServiceAccounts }.
@@ -348,8 +352,8 @@ model Project {
   /// đều qua validator (mỗi cái hợp lệ so với trạng thái cũ) rồi đánh nhau ở job.
   domainSetVersion Int @default(0) @map("domain_set_version")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   owner            User                   @relation("ProjectOwner", fields: [ownerId], references: [id])
   members          ProjectMember[]
@@ -396,9 +400,12 @@ model Environment {
   /// sha256 của snapshot đã chuẩn hóa — CHECKSUM NỘI DUNG.
   /// configVersion là số đếm nên nó KHÔNG phải checksum: replica áp delta sai nội
   /// dung nhưng đúng số vẫn qua được nếu chỉ so version. Cột này bắt lỗi đó (I15a).
-  configHash String? @map("config_hash") @db.Char(64)
+  /// VarChar chứ KHÔNG phải Char(64): với char(n), DEFAULT '' được Postgres đệm
+  /// thành 64 dấu cách. Đã đo trên Supabase — SQL length() trả 0 nhưng giá trị
+  /// đọc về phía JS lại TRUTHY. Hai bên bất đồng là loại bug tốn hàng giờ.
+  configHash String @default("") @map("config_hash") @db.VarChar(64)
 
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   project            Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sdkKeys            SdkKey[]
@@ -425,10 +432,10 @@ model SdkKey {
   keyHash       String     @unique @map("key_hash") @db.Char(64)
   keyPrefix     String     @map("key_prefix") @db.VarChar(16)
   label         String?    @db.VarChar(100)
-  lastUsedAt    DateTime?  @map("last_used_at")
-  revokedAt     DateTime?  @map("revoked_at")
+  lastUsedAt    DateTime?  @map("last_used_at") @db.Timestamptz(3)
+  revokedAt     DateTime?  @map("revoked_at") @db.Timestamptz(3)
   createdById   String     @map("created_by") @db.Uuid
-  createdAt     DateTime   @default(now()) @map("created_at")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
 
   environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   createdBy   User        @relation(fields: [createdById], references: [id])
@@ -453,15 +460,20 @@ model CloudCredential {
   encryptedPayload String @map("encrypted_payload")
   encryptedDek     String @map("encrypted_dek")
   kekVersion       Int    @default(1) @map("kek_version")
-  nonce            String @db.VarChar(32)
-  authTag          String @map("auth_tag") @db.VarChar(32)
+  /// Cho phép xoay DEK (re-encrypt payload) độc lập với xoay KEK
+  dekVersion       Int    @default(1) @map("dek_version")
+  /// aws-role | aws-key | gcp-wif | gcp-key | azure-federated | azure-secret.
+  /// Portal đọc cột này để cảnh báo khi project dùng khóa tĩnh thay vì federated.
+  authKind         String @map("auth_kind") @db.VarChar(20)
+  nonce            String @db.Char(24)
+  authTag          String @map("auth_tag") @db.Char(24)
 
   /// SHA-256 của định danh public — so sánh credential mà không cần giải mã
   fingerprint     String    @db.Char(64)
-  lastValidatedAt DateTime? @map("last_validated_at")
+  lastValidatedAt DateTime? @map("last_validated_at") @db.Timestamptz(3)
   isActive        Boolean   @default(false) @map("is_active")
   createdById     String    @map("created_by") @db.Uuid
-  createdAt       DateTime  @default(now()) @map("created_at")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy User    @relation(fields: [createdById], references: [id])
@@ -490,7 +502,7 @@ model DomainConfig {
   adapterVersion String? @map("adapter_version") @db.VarChar(20)
 
   lastError Json?    @map("last_error")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   catalog  DomainCatalog       @relation(fields: [domainType], references: [domainType])
@@ -526,12 +538,14 @@ model CapabilityBinding {
   endpoint String? @db.VarChar(500)
   /// Trường đánh dấu secret được mã hóa như §4.3
   attributes Json?
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   domainConfig DomainConfig @relation(fields: [domainConfigId], references: [id], onDelete: Cascade)
   environment  Environment? @relation(fields: [environmentId], references: [id], onDelete: Cascade)
 
-  @@unique([domainConfigId, capabilityId, environmentId])
+  /// KHÔNG dùng @@unique ở đây: Postgres coi NULL là DISTINCT nên hai binding
+  /// cluster-scoped (environment_id NULL) trùng nhau vẫn lọt. Ràng buộc thật là
+  /// expression index idx_binding_unique trong migration constraints (§2.2).
   @@index([capabilityId])
   @@map("capability_bindings")
 }
@@ -578,7 +592,7 @@ model ProvisioningJob {
   /// Mọi UPDATE đều kèm WHERE version = $expected, nên A bị từ chối.
   version      Int       @default(0)
   claimedBy    String?   @map("claimed_by") @db.VarChar(100)
-  claimedUntil DateTime? @map("claimed_until")
+  claimedUntil DateTime? @map("claimed_until") @db.Timestamptz(3)
 
   /// Chỉ để retry và hiển thị. KHÔNG dùng làm điều kiện dừng — pg-boss có
   /// retryLimit riêng và đó mới là nguồn sự thật về số lượt thử.
@@ -587,10 +601,10 @@ model ProvisioningJob {
   /// Chỉ để hiển thị. Heartbeat thật là của pg-boss (touch() mỗi 30 giây).
   /// v3 có stale-job-reaper tự viết chạy song song — hai reaper cạnh tranh có thể
   /// tạo hai job pg-boss cho cùng một ProvisioningJob. v4 bỏ reaper.
-  heartbeatAt DateTime? @map("heartbeat_at")
+  heartbeatAt DateTime? @map("heartbeat_at") @db.Timestamptz(3)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   project   Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   resources ProvisionedResource[]
@@ -637,8 +651,8 @@ model ProvisionedResource {
   region   String         @db.VarChar(50)
   status   ResourceStatus @default(CREATING)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   /// SetNull chứ không Cascade: xóa job KHÔNG được xóa sổ.
   job     ProvisioningJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
@@ -661,7 +675,10 @@ model FeatureFlag {
   key               String              @db.VarChar(255)
   description       String?
   flagType          FlagType            @map("flag_type")
-  defaultVariantKey String              @map("default_variant_key") @db.VarChar(100)
+  /// FK THẬT, không phải chuỗi key. v3 lưu key nên trỏ được tới variant đã xóa
+  /// và làm evaluator crash (§6.5). Restrict chặn xóa variant còn được tham chiếu
+  /// — nửa thứ hai của ORPHAN_RULE (§6.7).
+  defaultVariantId  String?             @map("default_variant_id") @db.Uuid
   lifecycleStatus   FlagLifecycleStatus @default(DRAFT) @map("lifecycle_status")
 
   /// Thuộc tính dùng để hash khi chia nhóm. Cấu hình được vì B2B cần rollout theo
@@ -671,11 +688,12 @@ model FeatureFlag {
   /// Kill-switch dài hạn — miễn cảnh báo stale flag (§6.7)
   permanent Boolean @default(false)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   project    Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  variants   FlagVariant[]
+  variants       FlagVariant[] @relation("FlagVariants")
+  defaultVariant FlagVariant?  @relation("FlagDefaultVariant", fields: [defaultVariantId], references: [id], onDelete: Restrict)
   envConfigs FlagEnvConfig[]
   evalStats  FlagEvaluationStat[]
 
@@ -691,8 +709,10 @@ model FlagVariant {
   /// Phải khớp flagType của flag — validate ở tầng application bằng Zod
   value  Json
 
-  flag  FeatureFlag         @relation(fields: [flagId], references: [id], onDelete: Cascade)
-  rules FlagTargetingRule[]
+  flag                 FeatureFlag      @relation("FlagVariants", fields: [flagId], references: [id], onDelete: Cascade)
+  defaultForFlags      FeatureFlag[]    @relation("FlagDefaultVariant")
+  defaultForEnvConfigs FlagEnvConfig[]  @relation("EnvDefaultVariant")
+  rolloutTargets       RolloutSession[]
 
   @@unique([flagId, key])
   @@map("flag_variants")
@@ -704,15 +724,16 @@ model FlagEnvConfig {
   flagId        String  @map("flag_id") @db.Uuid
   environmentId String  @map("environment_id") @db.Uuid
   isEnabled     Boolean @default(false) @map("is_enabled")
-  defaultVariantKey String? @map("default_variant_key") @db.VarChar(100)
+  defaultVariantId String? @map("default_variant_id") @db.Uuid
 
   /// Optimistic lock ở mức environment: sửa flag ở dev không chặn người sửa prod
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   flag        FeatureFlag         @relation(fields: [flagId], references: [id], onDelete: Cascade)
   environment Environment         @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   rules       FlagTargetingRule[]
   rollouts    RolloutSession[]
+  defaultVariant FlagVariant? @relation("EnvDefaultVariant", fields: [defaultVariantId], references: [id], onDelete: Restrict)
 
   @@unique([flagId, environmentId])
   @@index([environmentId, isEnabled])
@@ -749,13 +770,10 @@ model FlagTargetingRule {
   priority    Int
 
   flagEnvConfig FlagEnvConfig    @relation(fields: [flagEnvConfigId], references: [id], onDelete: Cascade)
-  /// Chỉ dùng khi serve.kind = "variant". Restrict để chặn xóa variant còn được
-  /// rule tham chiếu — cảnh báo ORPHAN_RULE ở §6.7 phải chặn ở CẢ HAI chiều.
-  variant       FlagVariant?     @relation(fields: [variantId], references: [id], onDelete: Restrict)
-  variantId     String?          @map("variant_id") @db.Uuid
   rollouts      RolloutSession[]
 
   @@index([flagEnvConfigId, priority])
+  @@index([serve(ops: JsonbOps)], type: Gin)
   @@map("flag_targeting_rules")
 }
 
@@ -766,8 +784,8 @@ model Segment {
   description String?  @db.VarChar(255)
   /// Mảng điều kiện thuộc tính, nối bằng AND
   conditions  Json
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -783,7 +801,7 @@ model FlagEvaluationStat {
   environmentId String   @map("environment_id") @db.Uuid
   variantKey    String   @map("variant_key") @db.VarChar(100)
   evalCount     BigInt   @default(0) @map("eval_count")
-  bucketHour    DateTime @map("bucket_hour")
+  bucketHour    DateTime @map("bucket_hour") @db.Timestamptz(3)
 
   flag        FeatureFlag @relation(fields: [flagId], references: [id], onDelete: Cascade)
   environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
@@ -820,9 +838,10 @@ model ConfigChangeLog {
   configVersion Int      @map("config_version")
   /// Ai đã đổi — cho tính năng xem lại lịch sử cấu hình
   actorUserId   String?  @map("actor_user_id") @db.Uuid
-  createdAt     DateTime @default(now()) @map("created_at")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  actor       User?       @relation(fields: [actorUserId], references: [id])
 
   /// Con trỏ đọc của change feed
   @@unique([environmentId, configVersion])
@@ -860,7 +879,9 @@ model RolloutSession {
 
   /// Mốc rollback. FLAG_LEVEL rollback về ĐÂY, không về 0: flag đã ổn định ở 30%
   /// thì rollback không được tắt luôn 30% đó (§7.1).
-  baselinePercentage Decimal @default(0) @map("baseline_percentage") @db.Decimal(5, 2)
+  /// NULLABLE có chủ đích: rollback đưa traffic về ĐÂY, không phải về 0. Để
+  /// @default(0) thì quên set sẽ thành rollback im lặng về 0 — đúng thứ cột này chặn.
+  baselinePercentage Decimal? @map("baseline_percentage") @db.Decimal(5, 2)
 
   versionNew String? @map("version_new") @db.VarChar(255)
   versionOld String? @map("version_old") @db.VarChar(255)
@@ -887,7 +908,7 @@ model RolloutSession {
 
   /// Traffic đổi lần cuối lúc nào — điều kiện dwell và điều kiện "cửa sổ metric
   /// đã nằm trọn sau bậc mới chưa"
-  lastStepAt DateTime? @map("last_step_at")
+  lastStepAt DateTime? @map("last_step_at") @db.Timestamptz(3)
 
   /// { decision, reason, at, breachStreak, metricSnapshot } — cập nhật MỖI TICK.
   /// Là cột JSONB chứ không phải RolloutEvent: ghi một event mỗi 30 giây sẽ sinh
@@ -900,17 +921,18 @@ model RolloutSession {
   /// Service 2 kèm If-Match, và Service 2 trả 412 nếu cũ (I23).
   version      Int       @default(0)
   claimedBy    String?   @map("claimed_by") @db.VarChar(100)
-  claimedUntil DateTime? @map("claimed_until")
+  claimedUntil DateTime? @map("claimed_until") @db.Timestamptz(3)
 
   failReason  FailReason? @map("fail_reason")
   createdById String      @map("created_by") @db.Uuid
-  createdAt   DateTime    @default(now()) @map("created_at")
-  updatedAt   DateTime    @updatedAt @map("updated_at")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   project       Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  environment   Environment        @relation(fields: [environmentId], references: [id])
+  environment   Environment        @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   flagEnvConfig FlagEnvConfig?     @relation(fields: [flagEnvConfigId], references: [id])
   targetingRule FlagTargetingRule? @relation(fields: [targetingRuleId], references: [id])
+  targetVariant FlagVariant?       @relation(fields: [targetVariantId], references: [id])
   createdBy     User               @relation(fields: [createdById], references: [id])
   events        RolloutEvent[]
 
@@ -932,7 +954,7 @@ model RolloutEvent {
   action            RolloutAction
   isIntent          Boolean       @default(false) @map("is_intent")
   /// Khác NULL nghĩa là Service 3 đã xử lý intent này
-  processedAt       DateTime?     @map("processed_at")
+  processedAt       DateTime?     @map("processed_at") @db.Timestamptz(3)
   trafficPercentage Decimal       @map("traffic_percentage") @db.Decimal(5, 2)
   /// Truy vấn thật đã chạy và cửa sổ thời gian — để người dùng KIỂM CHỨNG được
   /// quyết định của hệ thống thay vì phải tin
@@ -940,7 +962,7 @@ model RolloutEvent {
   reason            String?       @db.VarChar(255)
   triggeredBy       TriggeredBy   @map("triggered_by")
   actorUserId       String?       @map("actor_user_id") @db.Uuid
-  createdAt         DateTime      @default(now()) @map("created_at")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
   session RolloutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   actor   User?          @relation(fields: [actorUserId], references: [id])
@@ -963,7 +985,7 @@ model RolloutEvent {
 model DeploymentEvent {
   id            String  @id @default(uuid()) @db.Uuid
   projectId     String  @map("project_id") @db.Uuid
-  environmentId String? @map("environment_id") @db.Uuid
+  environmentId String  @map("environment_id") @db.Uuid
 
   /// Gom DEPLOY_START / DEPLOY_SUCCESS / DEPLOY_FAILURE của CÙNG MỘT lần deploy.
   /// Thiếu nó thì Deployment Frequency đếm cả START lẫn SUCCESS thành hai lần deploy.
@@ -978,7 +1000,7 @@ model DeploymentEvent {
   /// Lead Time for Changes = occurredAt(DEPLOY_SUCCESS prod) − commitTimestamp.
   /// KHÔNG suy ra được từ commitSha nếu không gọi ngược API của Git provider,
   /// nên webhook phải mang sẵn (§8.3).
-  commitTimestamp DateTime? @map("commit_timestamp")
+  commitTimestamp DateTime? @map("commit_timestamp") @db.Timestamptz(3)
 
   /// Với ROLLBACK: deployment nào bị coi là thất bại. Cho Change Failure Rate và
   /// thời gian khôi phục.
@@ -989,12 +1011,13 @@ model DeploymentEvent {
 
   triggeredBy DeploymentTrigger @map("triggered_by")
   metadata    Json?
-  occurredAt  DateTime          @default(now()) @map("occurred_at")
+  occurredAt  DateTime          @default(now()) @map("occurred_at") @db.Timestamptz(3)
 
   /// Restrict: giữ vĩnh viễn để tính DORA kể cả khi project bị xóa
   project     Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
-  /// SetNull: xóa environment là thao tác hợp lệ, còn lịch sử deploy thì phải giữ
-  environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  /// Restrict: DORA chỉ tính deploy vào production, nên hàng mất environment_id
+  /// là hàng không phân loại được. SetNull còn là một UPDATE trên bảng append-only.
+  environment Environment  @relation(fields: [environmentId], references: [id], onDelete: Restrict)
 
   @@index([projectId, occurredAt])
   @@index([environmentId, occurredAt])
@@ -1019,13 +1042,17 @@ model AuditLog {
 
   ipAddress  String?  @map("ip_address") @db.Inet
   userAgent  String?  @map("user_agent") @db.VarChar(255)
-  occurredAt DateTime @default(now()) @map("occurred_at")
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
 
   project     Project?     @relation(fields: [projectId], references: [id], onDelete: Restrict)
   actor       User?        @relation(fields: [actorUserId], references: [id])
-  environment Environment? @relation(fields: [environmentId], references: [id])
+  environment Environment? @relation(fields: [environmentId], references: [id], onDelete: Restrict)
 
   @@index([projectId, occurredAt])
   @@index([actorUserId, occurredAt])
+  /// "Lich su cua doi tuong nay" (§2.2). Index thuong nen khai o day chu khong
+  /// viet tay trong SQL: Prisma co mo hinh cho no, va thu gi Prisma co mo hinh
+  /// ma nam ngoai schema thi lan migrate dev sau se sinh lenh DROP.
+  @@index([targetType, targetId, occurredAt(sort: Desc)])
   @@map("audit_logs")
 }

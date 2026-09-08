@@ -211,7 +211,6 @@ async function seedDarkModeFlag(projectId: string, ownerId: string) {
       key: "dark-mode",
       description: "Giao diện tối — flag boolean đơn giản",
       flagType: "BOOLEAN",
-      defaultVariantKey: BOOLEAN_VARIANTS.OFF,
       lifecycleStatus: "ACTIVE",
       stickinessAttribute: DEFAULT_STICKINESS_ATTRIBUTE,
       variants: {
@@ -233,6 +232,15 @@ async function seedDarkModeFlag(projectId: string, ownerId: string) {
   const onId = variantId(BOOLEAN_VARIANTS.ON);
   const offId = variantId(BOOLEAN_VARIANTS.OFF);
 
+  // Bước 3 của chuỗi tạo flag. `default_variant_id` là FK THẬT nên không gán
+  // được ngay lúc INSERT flag — lúc đó variant chưa có id. Vì cột NULLABLE nên
+  // ba bước INSERT flag → INSERT variant → UPDATE flag nằm gọn trong một
+  // transaction; đó là lý do §2.2 không cần DEFERRABLE.
+  await prisma.featureFlag.update({
+    where: { id: darkMode.id },
+    data: { defaultVariantId: offId },
+  });
+
   // FlagEnvConfig cho TỪNG environment — bật ở dev, tắt ở staging và prod.
   // Đây chính là điều thiết kế v2 không biểu diễn được (ADR-04).
   for (const spec of DEFAULT_ENVIRONMENTS) {
@@ -247,12 +255,15 @@ async function seedDarkModeFlag(projectId: string, ownerId: string) {
           environmentId: environment.id,
         },
       },
-      update: {},
+      // defaultVariantId nằm ở CẢ update lẫn create. Để riêng create thì hàng đã
+      // tồn tại với default NULL sẽ không bao giờ được chữa, và seed mất tính
+      // idempotent đúng ở chỗ nguyên tắc 1 của file này tuyên bố nó có.
+      update: { defaultVariantId: offId },
       create: {
         flagId: darkMode.id,
         environmentId: environment.id,
         isEnabled: spec.name === "dev",
-        defaultVariantKey: BOOLEAN_VARIANTS.OFF,
+        defaultVariantId: offId,
       },
     });
 
@@ -272,7 +283,6 @@ async function seedDarkModeFlag(projectId: string, ownerId: string) {
           condition: { userIds: ["user-1", "user-2"] },
           // NỬA HAI: phục vụ gì — một variant duy nhất
           serve: checkedServe({ kind: "variant", variantId: onId }),
-          variantId: onId,
           // Salt cố định trong seed để chạy lại vẫn ra cùng nhóm. Ở code thật,
           // salt sinh ngẫu nhiên MỘT LẦN lúc tạo rule và KHÔNG đổi khi chỉnh
           // trọng số — đổi nó là bốc lại nhóm người dùng, vi phạm I1.
@@ -312,7 +322,7 @@ async function seedDarkModeFlag(projectId: string, ownerId: string) {
 
 /** Flag nhiều variant, còn DRAFT — SDK chưa nhận flag ở trạng thái này (§6.7) */
 async function seedCheckoutFlag(projectId: string): Promise<void> {
-  await prisma.featureFlag.upsert({
+  const checkout = await prisma.featureFlag.upsert({
     where: { id: ID.flagCheckout },
     update: {},
     create: {
@@ -321,7 +331,6 @@ async function seedCheckoutFlag(projectId: string): Promise<void> {
       key: "checkout-algorithm",
       description: "Ba thuật toán checkout — flag nhiều variant",
       flagType: "STRING",
-      defaultVariantKey: "legacy",
       lifecycleStatus: "DRAFT",
       // B2B: cả công ty cùng thấy hoặc cùng không, nên hash theo accountId
       stickinessAttribute: "accountId",
@@ -333,6 +342,15 @@ async function seedCheckoutFlag(projectId: string): Promise<void> {
         ],
       },
     },
+    include: { variants: true },
+  });
+
+  const legacy = checkout.variants.find((v) => v.key === "legacy");
+  if (!legacy) throw new Error('Không tìm thấy variant "legacy" của checkout-algorithm');
+
+  await prisma.featureFlag.update({
+    where: { id: checkout.id },
+    data: { defaultVariantId: legacy.id },
   });
 }
 

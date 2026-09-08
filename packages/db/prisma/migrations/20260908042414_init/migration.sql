@@ -26,7 +26,7 @@ CREATE TYPE "DomainStatus" AS ENUM ('PENDING', 'DEPLOYING', 'ACTIVE', 'SWITCHING
 CREATE TYPE "JobType" AS ENUM ('PROVISION', 'TEARDOWN', 'DOMAIN_APPLY');
 
 -- CreateEnum
-CREATE TYPE "JobState" AS ENUM ('QUEUED', 'NETWORK', 'CLUSTER', 'DOMAINS', 'DONE', 'COMPENSATING', 'FAILED');
+CREATE TYPE "JobState" AS ENUM ('QUEUED', 'NETWORK', 'CLUSTER', 'CLUSTER_ACCESS', 'DOMAINS', 'DONE', 'CANCEL_REQUESTED', 'COMPENSATING', 'COMPENSATION_FAILED', 'FAILED');
 
 -- CreateEnum
 CREATE TYPE "ResourceStatus" AS ENUM ('CREATING', 'CREATED', 'READY', 'DELETING', 'DELETED', 'ORPHAN_SUSPECTED');
@@ -62,7 +62,7 @@ CREATE TYPE "RolloutStatus" AS ENUM ('PENDING', 'IN_PROGRESS', 'PAUSED', 'DONE',
 CREATE TYPE "FailReason" AS ENUM ('AUTO_ROLLBACK', 'MANUAL', 'EXPIRED', 'DEPENDENCY_DOWN');
 
 -- CreateEnum
-CREATE TYPE "RolloutAction" AS ENUM ('PROMOTE', 'ROLLBACK', 'PAUSE', 'RESUME', 'COMPLETE', 'HOLD', 'DEPENDENCY_DOWN');
+CREATE TYPE "RolloutAction" AS ENUM ('PROMOTE', 'ROLLBACK', 'PAUSE', 'RESUME', 'COMPLETE', 'EXPIRE', 'DEPENDENCY_DOWN');
 
 -- CreateEnum
 CREATE TYPE "TriggeredBy" AS ENUM ('MANUAL', 'AUTO');
@@ -94,7 +94,7 @@ CREATE TABLE "users" (
     "password_hash" VARCHAR(255) NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "platform_role" "PlatformRole" NOT NULL DEFAULT 'USER',
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
@@ -105,7 +105,7 @@ CREATE TABLE "project_members" (
     "project_id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
     "project_role" "ProjectRole" NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "project_members_pkey" PRIMARY KEY ("id")
 );
@@ -121,12 +121,12 @@ CREATE TABLE "projects" (
     "status" "ProjectStatus" NOT NULL DEFAULT 'DRAFT',
     "metadata" JSONB,
     "resource_quota" JSONB NOT NULL,
-    "expires_at" TIMESTAMP(3),
+    "expires_at" TIMESTAMPTZ(3),
     "expiry_action" "ExpiryAction" NOT NULL DEFAULT 'WARN',
     "cluster_access" JSONB,
     "domain_set_version" INTEGER NOT NULL DEFAULT 0,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "projects_pkey" PRIMARY KEY ("id")
 );
@@ -141,8 +141,8 @@ CREATE TABLE "environments" (
     "rank" INTEGER NOT NULL,
     "auto_deploy" BOOLEAN NOT NULL DEFAULT true,
     "config_version" INTEGER NOT NULL DEFAULT 0,
-    "config_hash" CHAR(64),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "config_hash" VARCHAR(64) NOT NULL DEFAULT '',
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "environments_pkey" PRIMARY KEY ("id")
 );
@@ -155,10 +155,10 @@ CREATE TABLE "sdk_keys" (
     "key_hash" CHAR(64) NOT NULL,
     "key_prefix" VARCHAR(16) NOT NULL,
     "label" VARCHAR(100),
-    "last_used_at" TIMESTAMP(3),
-    "revoked_at" TIMESTAMP(3),
+    "last_used_at" TIMESTAMPTZ(3),
+    "revoked_at" TIMESTAMPTZ(3),
     "created_by" UUID NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "sdk_keys_pkey" PRIMARY KEY ("id")
 );
@@ -172,13 +172,15 @@ CREATE TABLE "cloud_credentials" (
     "encrypted_payload" TEXT NOT NULL,
     "encrypted_dek" TEXT NOT NULL,
     "kek_version" INTEGER NOT NULL DEFAULT 1,
-    "nonce" VARCHAR(32) NOT NULL,
-    "auth_tag" VARCHAR(32) NOT NULL,
+    "dek_version" INTEGER NOT NULL DEFAULT 1,
+    "auth_kind" VARCHAR(20) NOT NULL,
+    "nonce" CHAR(24) NOT NULL,
+    "auth_tag" CHAR(24) NOT NULL,
     "fingerprint" CHAR(64) NOT NULL,
-    "last_validated_at" TIMESTAMP(3),
+    "last_validated_at" TIMESTAMPTZ(3),
     "is_active" BOOLEAN NOT NULL DEFAULT false,
     "created_by" UUID NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "cloud_credentials_pkey" PRIMARY KEY ("id")
 );
@@ -194,7 +196,7 @@ CREATE TABLE "domain_configs" (
     "tool_config" JSONB,
     "adapter_version" VARCHAR(20),
     "last_error" JSONB,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "domain_configs_pkey" PRIMARY KEY ("id")
 );
@@ -209,7 +211,7 @@ CREATE TABLE "capability_bindings" (
     "schema_version" VARCHAR(10) NOT NULL,
     "endpoint" VARCHAR(500),
     "attributes" JSONB,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "capability_bindings_pkey" PRIMARY KEY ("id")
 );
@@ -235,11 +237,11 @@ CREATE TABLE "provisioning_jobs" (
     "last_error" JSONB,
     "version" INTEGER NOT NULL DEFAULT 0,
     "claimed_by" VARCHAR(100),
-    "claimed_until" TIMESTAMP(3),
+    "claimed_until" TIMESTAMPTZ(3),
     "attempt" INTEGER NOT NULL DEFAULT 0,
-    "heartbeat_at" TIMESTAMP(3),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "heartbeat_at" TIMESTAMPTZ(3),
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "provisioning_jobs_pkey" PRIMARY KEY ("id")
 );
@@ -256,8 +258,8 @@ CREATE TABLE "provisioned_resources" (
     "provider" "CloudProvider" NOT NULL,
     "region" VARCHAR(50) NOT NULL,
     "status" "ResourceStatus" NOT NULL DEFAULT 'CREATING',
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "provisioned_resources_pkey" PRIMARY KEY ("id")
 );
@@ -269,12 +271,12 @@ CREATE TABLE "feature_flags" (
     "key" VARCHAR(255) NOT NULL,
     "description" TEXT,
     "flag_type" "FlagType" NOT NULL,
-    "default_variant_key" VARCHAR(100) NOT NULL,
+    "default_variant_id" UUID,
     "lifecycle_status" "FlagLifecycleStatus" NOT NULL DEFAULT 'DRAFT',
     "stickiness_attribute" VARCHAR(100) NOT NULL DEFAULT 'targetingKey',
     "permanent" BOOLEAN NOT NULL DEFAULT false,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "feature_flags_pkey" PRIMARY KEY ("id")
 );
@@ -295,8 +297,8 @@ CREATE TABLE "flag_env_configs" (
     "flag_id" UUID NOT NULL,
     "environment_id" UUID NOT NULL,
     "is_enabled" BOOLEAN NOT NULL DEFAULT false,
-    "default_variant_key" VARCHAR(100),
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "default_variant_id" UUID,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "flag_env_configs_pkey" PRIMARY KEY ("id")
 );
@@ -311,7 +313,6 @@ CREATE TABLE "flag_targeting_rules" (
     "bucket_salt" VARCHAR(36) NOT NULL,
     "description" VARCHAR(255),
     "priority" INTEGER NOT NULL,
-    "variant_id" UUID,
 
     CONSTRAINT "flag_targeting_rules_pkey" PRIMARY KEY ("id")
 );
@@ -323,8 +324,8 @@ CREATE TABLE "segments" (
     "name" VARCHAR(100) NOT NULL,
     "description" VARCHAR(255),
     "conditions" JSONB NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "segments_pkey" PRIMARY KEY ("id")
 );
@@ -336,7 +337,7 @@ CREATE TABLE "flag_evaluation_stats" (
     "environment_id" UUID NOT NULL,
     "variant_key" VARCHAR(100) NOT NULL,
     "eval_count" BIGINT NOT NULL DEFAULT 0,
-    "bucket_hour" TIMESTAMP(3) NOT NULL,
+    "bucket_hour" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "flag_evaluation_stats_pkey" PRIMARY KEY ("id")
 );
@@ -349,7 +350,7 @@ CREATE TABLE "config_change_log" (
     "payload" JSONB NOT NULL,
     "config_version" INTEGER NOT NULL,
     "actor_user_id" UUID,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "config_change_log_pkey" PRIMARY KEY ("id")
 );
@@ -368,7 +369,7 @@ CREATE TABLE "rollout_sessions" (
     "control_mode" "ControlMode" NOT NULL,
     "status" "RolloutStatus" NOT NULL DEFAULT 'PENDING',
     "current_traffic_percentage" DECIMAL(5,2) NOT NULL DEFAULT 0,
-    "baseline_percentage" DECIMAL(5,2) NOT NULL DEFAULT 0,
+    "baseline_percentage" DECIMAL(5,2),
     "version_new" VARCHAR(255),
     "version_old" VARCHAR(255),
     "thresholds" JSONB NOT NULL,
@@ -379,15 +380,15 @@ CREATE TABLE "rollout_sessions" (
     "metric_window_seconds" INTEGER NOT NULL DEFAULT 60,
     "warm_up_requests" INTEGER NOT NULL DEFAULT 100,
     "max_duration_seconds" INTEGER NOT NULL DEFAULT 86400,
-    "last_step_at" TIMESTAMP(3),
+    "last_step_at" TIMESTAMPTZ(3),
     "last_decision" JSONB,
     "version" INTEGER NOT NULL DEFAULT 0,
     "claimed_by" VARCHAR(100),
-    "claimed_until" TIMESTAMP(3),
+    "claimed_until" TIMESTAMPTZ(3),
     "fail_reason" "FailReason",
     "created_by" UUID NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
     CONSTRAINT "rollout_sessions_pkey" PRIMARY KEY ("id")
 );
@@ -398,13 +399,13 @@ CREATE TABLE "rollout_events" (
     "session_id" UUID NOT NULL,
     "action" "RolloutAction" NOT NULL,
     "is_intent" BOOLEAN NOT NULL DEFAULT false,
-    "processed_at" TIMESTAMP(3),
+    "processed_at" TIMESTAMPTZ(3),
     "traffic_percentage" DECIMAL(5,2) NOT NULL,
     "metric_snapshot" JSONB,
     "reason" VARCHAR(255),
     "triggered_by" "TriggeredBy" NOT NULL,
     "actor_user_id" UUID,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "rollout_events_pkey" PRIMARY KEY ("id")
 );
@@ -413,19 +414,19 @@ CREATE TABLE "rollout_events" (
 CREATE TABLE "deployment_events" (
     "id" UUID NOT NULL,
     "project_id" UUID NOT NULL,
-    "environment_id" UUID,
+    "environment_id" UUID NOT NULL,
     "deployment_id" UUID NOT NULL,
     "event_type" "DeploymentEventType" NOT NULL,
     "workload_name" VARCHAR(253),
     "pipeline_id" VARCHAR(255),
     "image_tag" VARCHAR(255),
     "commit_sha" VARCHAR(40),
-    "commit_timestamp" TIMESTAMP(3),
+    "commit_timestamp" TIMESTAMPTZ(3),
     "restores_deployment_id" UUID,
     "rollout_session_id" UUID,
     "triggered_by" "DeploymentTrigger" NOT NULL,
     "metadata" JSONB,
-    "occurred_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "occurred_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "deployment_events_pkey" PRIMARY KEY ("id")
 );
@@ -444,7 +445,7 @@ CREATE TABLE "audit_logs" (
     "after" JSONB,
     "ip_address" INET,
     "user_agent" VARCHAR(255),
-    "occurred_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "occurred_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id")
 );
@@ -484,9 +485,6 @@ CREATE UNIQUE INDEX "domain_configs_project_id_domain_type_key" ON "domain_confi
 
 -- CreateIndex
 CREATE INDEX "capability_bindings_capability_id_idx" ON "capability_bindings"("capability_id");
-
--- CreateIndex
-CREATE UNIQUE INDEX "capability_bindings_domain_config_id_capability_id_environm_key" ON "capability_bindings"("domain_config_id", "capability_id", "environment_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "capability_preferences_project_id_capability_id_key" ON "capability_preferences"("project_id", "capability_id");
@@ -566,6 +564,9 @@ CREATE INDEX "audit_logs_project_id_occurred_at_idx" ON "audit_logs"("project_id
 -- CreateIndex
 CREATE INDEX "audit_logs_actor_user_id_occurred_at_idx" ON "audit_logs"("actor_user_id", "occurred_at");
 
+-- CreateIndex
+CREATE INDEX "audit_logs_target_type_target_id_occurred_at_idx" ON "audit_logs"("target_type", "target_id", "occurred_at" DESC);
+
 -- AddForeignKey
 ALTER TABLE "project_members" ADD CONSTRAINT "project_members_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -618,6 +619,9 @@ ALTER TABLE "provisioned_resources" ADD CONSTRAINT "provisioned_resources_projec
 ALTER TABLE "feature_flags" ADD CONSTRAINT "feature_flags_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "feature_flags" ADD CONSTRAINT "feature_flags_default_variant_id_fkey" FOREIGN KEY ("default_variant_id") REFERENCES "flag_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "flag_variants" ADD CONSTRAINT "flag_variants_flag_id_fkey" FOREIGN KEY ("flag_id") REFERENCES "feature_flags"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -627,10 +631,10 @@ ALTER TABLE "flag_env_configs" ADD CONSTRAINT "flag_env_configs_flag_id_fkey" FO
 ALTER TABLE "flag_env_configs" ADD CONSTRAINT "flag_env_configs_environment_id_fkey" FOREIGN KEY ("environment_id") REFERENCES "environments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "flag_targeting_rules" ADD CONSTRAINT "flag_targeting_rules_flag_env_config_id_fkey" FOREIGN KEY ("flag_env_config_id") REFERENCES "flag_env_configs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "flag_env_configs" ADD CONSTRAINT "flag_env_configs_default_variant_id_fkey" FOREIGN KEY ("default_variant_id") REFERENCES "flag_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "flag_targeting_rules" ADD CONSTRAINT "flag_targeting_rules_variant_id_fkey" FOREIGN KEY ("variant_id") REFERENCES "flag_variants"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "flag_targeting_rules" ADD CONSTRAINT "flag_targeting_rules_flag_env_config_id_fkey" FOREIGN KEY ("flag_env_config_id") REFERENCES "flag_env_configs"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "segments" ADD CONSTRAINT "segments_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -645,16 +649,22 @@ ALTER TABLE "flag_evaluation_stats" ADD CONSTRAINT "flag_evaluation_stats_enviro
 ALTER TABLE "config_change_log" ADD CONSTRAINT "config_change_log_environment_id_fkey" FOREIGN KEY ("environment_id") REFERENCES "environments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "config_change_log" ADD CONSTRAINT "config_change_log_actor_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_environment_id_fkey" FOREIGN KEY ("environment_id") REFERENCES "environments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_environment_id_fkey" FOREIGN KEY ("environment_id") REFERENCES "environments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_flag_env_config_id_fkey" FOREIGN KEY ("flag_env_config_id") REFERENCES "flag_env_configs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_targeting_rule_id_fkey" FOREIGN KEY ("targeting_rule_id") REFERENCES "flag_targeting_rules"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_target_variant_id_fkey" FOREIGN KEY ("target_variant_id") REFERENCES "flag_variants"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "rollout_sessions" ADD CONSTRAINT "rollout_sessions_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -669,7 +679,7 @@ ALTER TABLE "rollout_events" ADD CONSTRAINT "rollout_events_actor_user_id_fkey" 
 ALTER TABLE "deployment_events" ADD CONSTRAINT "deployment_events_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "deployment_events" ADD CONSTRAINT "deployment_events_environment_id_fkey" FOREIGN KEY ("environment_id") REFERENCES "environments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "deployment_events" ADD CONSTRAINT "deployment_events_environment_id_fkey" FOREIGN KEY ("environment_id") REFERENCES "environments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -678,4 +688,4 @@ ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_project_id_fkey" FOREIGN KEY
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_actor_user_id_fkey" FOREIGN KEY ("actor_user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_environment_id_fkey" FOREIGN KEY ("environment_id") REFERENCES "environments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_environment_id_fkey" FOREIGN KEY ("environment_id") REFERENCES "environments"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
