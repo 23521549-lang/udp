@@ -9,6 +9,7 @@ import {
   SDK_KEY,
   TOTAL_BUCKETS,
 } from "@udp/config";
+import { flagServeDbSchema, type FlagServe } from "@udp/shared-types/evaluation";
 import { createPgAdapter } from "../src/adapter.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 
@@ -167,6 +168,26 @@ async function seedUsersAndProject() {
 // ============================================================
 
 /**
+ * Validate `serve` TRƯỚC khi ghi xuống JSONB.
+ *
+ * Vì sao seed cũng phải validate chứ không chỉ service: cột `serve` là JSONB, nên
+ * database nhận bất cứ hình dạng nào. Một lần gõ nhầm 20000/70000 sẽ được ghi
+ * êm ru, và bug chỉ lộ ra khi SDK chia nhóm sai tỉ lệ — rất khó truy ngược.
+ *
+ * Dùng `safeParse` chứ không `parse`: seed được thiết kế idempotent và chạy lại
+ * nhiều lần, nên khi hỏng phải nói rõ hỏng ở đâu thay vì ném một `ZodError` thô
+ * giữa chừng.
+ */
+function checkedServe(serve: FlagServe): FlagServe {
+  const result = flagServeDbSchema.safeParse(serve);
+  if (!result.success) {
+    const reason = result.error.issues.map((i) => i.message).join("; ");
+    throw new Error(`serve không hợp lệ (${JSON.stringify(serve)}): ${reason}`);
+  }
+  return result.data;
+}
+
+/**
  * Flag `dark-mode` minh họa mô hình rule hai nửa của §6.4.
  *
  * Điểm đáng chú ý là rule thứ hai: canary 20% được biểu diễn bằng
@@ -250,7 +271,7 @@ async function seedDarkModeFlag(projectId: string, ownerId: string) {
           ruleType: "USER_BASED",
           condition: { userIds: ["user-1", "user-2"] },
           // NỬA HAI: phục vụ gì — một variant duy nhất
-          serve: { kind: "variant", variantId: onId },
+          serve: checkedServe({ kind: "variant", variantId: onId }),
           variantId: onId,
           // Salt cố định trong seed để chạy lại vẫn ra cùng nhóm. Ở code thật,
           // salt sinh ngẫu nhiên MỘT LẦN lúc tạo rule và KHÔNG đổi khi chỉnh
@@ -267,13 +288,17 @@ async function seedDarkModeFlag(projectId: string, ownerId: string) {
           // NỬA HAI: phân phối 20/80. Tổng weight = TOTAL_BUCKETS, không phải 100 —
           // 100_000 bucket cho phép ngưỡng tới 0,001%, nhu cầu thật khi canary
           // trên traffic lớn (§6.4).
-          serve: {
+          //
+          // Dùng phép chia số nguyên thay vì `0.2 * TOTAL_BUCKETS`: nhân số thực
+          // may mắn ra đúng với 0.2 và 0.8, nhưng `0.07 * 100_000` cho
+          // 7000.000000000001 và `z.number().int()` sẽ từ chối. Bom hẹn giờ.
+          serve: checkedServe({
             kind: "distribution",
             weights: [
-              { variantId: onId, weight: 0.2 * TOTAL_BUCKETS },
-              { variantId: offId, weight: 0.8 * TOTAL_BUCKETS },
+              { variantId: onId, weight: (TOTAL_BUCKETS / 100) * 20 },
+              { variantId: offId, weight: (TOTAL_BUCKETS / 100) * 80 },
             ],
-          },
+          }),
           bucketSalt: "seed-rule-canary",
           description: "Canary 20% — đây là rule mà rollout FLAG_LEVEL sẽ ramp",
           priority: 1,

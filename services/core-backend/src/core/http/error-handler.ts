@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { isProduction } from "@udp/config";
 import { AppError } from "../errors.js";
 import { logger } from "../logger.js";
+import { buildProblem, sendProblem } from "./problem.js";
 
 /**
  * Bọc handler async để lỗi được chuyển tới errorHandler.
@@ -18,12 +19,16 @@ export const asyncHandler =
   };
 
 export const notFoundHandler: RequestHandler = (req, res) => {
-  res.status(404).json({
-    error: {
-      code: "NOT_FOUND",
-      message: `Không có route ${req.method} ${req.path}`,
-    },
-  });
+  sendProblem(
+    res,
+    buildProblem({
+      req,
+      status: 404,
+      title: "Route not found",
+      detail: `Không có route ${req.method} ${req.path}`,
+      typeSlug: "not-found",
+    }),
+  );
 };
 
 /**
@@ -43,30 +48,38 @@ function isMalformedJson(err: unknown): boolean {
 }
 
 /** Middleware xử lý lỗi — phải đăng ký CUỐI CÙNG, sau mọi route */
-export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (isMalformedJson(err)) {
-    res.status(400).json({
-      error: {
-        code: "VALIDATION_FAILED",
-        message: "Body không phải JSON hợp lệ",
-      },
-    });
+    sendProblem(
+      res,
+      buildProblem({
+        req,
+        status: 400,
+        title: "Malformed JSON body",
+        detail: "Body không phải JSON hợp lệ",
+        typeSlug: "malformed-json",
+      }),
+    );
     return;
   }
 
   // Lỗi validate từ Zod → 400 kèm chi tiết từng trường, để form phía client
   // hiển thị được lỗi ngay dưới ô nhập tương ứng.
   if (err instanceof ZodError) {
-    res.status(400).json({
-      error: {
-        code: "VALIDATION_FAILED",
-        message: "Dữ liệu gửi lên không hợp lệ",
-        details: err.issues.map((issue) => ({
+    sendProblem(
+      res,
+      buildProblem({
+        req,
+        status: 400,
+        title: "Request validation failed",
+        detail: "Dữ liệu gửi lên không hợp lệ",
+        typeSlug: "validation-failed",
+        errors: err.issues.map((issue) => ({
           field: issue.path.join("."),
           message: issue.message,
         })),
-      },
-    });
+      }),
+    );
     return;
   }
 
@@ -75,10 +88,19 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
    * Không phân tầng thì log đầy 401 do gõ nhầm mật khẩu và bug thật lẫn vào giữa.
    */
   if (err instanceof AppError) {
-    logger.warn({ err, code: err.code }, "Business error");
-    res.status(err.statusCode).json({
-      error: { code: err.code, message: err.message, details: err.details },
-    });
+    logger.warn({ err, kind: err.kind, code: err.problemCode }, "Business error");
+    sendProblem(
+      res,
+      buildProblem({
+        req,
+        status: err.statusCode,
+        // Có mã nghiệp vụ thì `title` lấy từ catalog; không thì dùng kind làm nhãn
+        ...(err.problemCode === undefined
+          ? { title: err.kind, typeSlug: err.kind.toLowerCase().replaceAll("_", "-") }
+          : { code: err.problemCode }),
+        detail: err.message,
+      }),
+    );
     return;
   }
 
@@ -88,10 +110,14 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
    * đường dẫn file, tên bảng, thậm chí chuỗi kết nối database.
    */
   logger.error({ err }, "Unexpected error");
-  res.status(500).json({
-    error: {
-      code: "INTERNAL",
-      message: isProduction ? "Lỗi hệ thống" : (err as Error).message,
-    },
-  });
+  sendProblem(
+    res,
+    buildProblem({
+      req,
+      status: 500,
+      title: "Internal server error",
+      detail: isProduction ? "Lỗi hệ thống" : (err as Error).message,
+      typeSlug: "internal",
+    }),
+  );
 };

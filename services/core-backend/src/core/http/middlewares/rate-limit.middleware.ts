@@ -1,14 +1,31 @@
+import type { Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { RATE_LIMIT } from "@udp/config";
+import { buildProblem, sendProblem } from "../problem.js";
 
+/**
+ * Dùng `handler` chứ KHÔNG dùng `message`.
+ *
+ * `message` là một object tĩnh, được đóng băng lúc khởi tạo middleware — trước
+ * khi có bất kỳ request nào. Nghĩa là nó không thể mang `instance` (URI của
+ * request) hay `traceId`, hai trường mà RFC 9457 và §9 yêu cầu. `handler` nhận
+ * được `req` nên dựng được `ProblemDetails` đầy đủ, giống hệt năm chỗ phát sinh
+ * lỗi còn lại.
+ */
 const shared = {
   standardHeaders: true,
   legacyHeaders: false,
-  message: {
-    error: {
-      code: "RATE_LIMITED",
-      message: "Quá nhiều yêu cầu, vui lòng thử lại sau",
-    },
+  handler: (req: Request, res: Response): void => {
+    sendProblem(
+      res,
+      buildProblem({
+        req,
+        status: 429,
+        title: "Too many requests",
+        detail: "Quá nhiều yêu cầu, vui lòng thử lại sau",
+        typeSlug: "rate-limited",
+      }),
+    );
   },
 } as const;
 

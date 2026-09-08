@@ -45,6 +45,9 @@ importers:
       '@udp/config':
         specifier: workspace:*
         version: link:../config
+      '@udp/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
       pg:
         specifier: ^8.13.1
         version: 8.23.0
@@ -71,6 +74,19 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  packages/shared-types:
+    dependencies:
+      '@udp/config':
+        specifier: workspace:*
+        version: link:../config
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   services/core-backend:
     dependencies:
       '@udp/config':
@@ -79,6 +95,9 @@ importers:
       '@udp/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@udp/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
