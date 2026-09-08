@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "UDP — Configurable DevOps Platform with Integrated Feature Flags and Progressive Delivery",
+  "//engines": "20.11 chứ không phải 20: packages/db/prisma.config.ts dùng import.meta.dirname, có từ Node 20.11. Khai >=20 là hứa sai — Node 20.9 trả undefined rồi lỗi ở một chỗ khác hẳn",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.11.0"
   },
   "packageManager": "pnpm@9.12.0",
   "scripts": {

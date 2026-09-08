@@ -9,16 +9,16 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "//": "dotenv -e ../../.env nạp .env ở GỐC workspace — không giữ bản sao DATABASE_URL trong packages/db",
+    "//": "Không script nào tự nạp .env: prisma.config.ts nạp cho đường CLI, @udp/config/env nạp cho đường seed. Một việc, một nơi làm",
     "//migrate": "migrate/studio dùng DATABASE_URL_DIRECT: chúng chạy nhiều statement nên không an toàn qua pooler transaction mode (ADR-05, §15.3)",
     "generate": "prisma generate",
-    "validate": "dotenv -e ../../.env -- prisma validate",
-    "migrate": "dotenv -e ../../.env -- prisma migrate dev",
-    "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
-    "migrate:reset": "dotenv -e ../../.env -- prisma migrate reset",
-    "studio": "dotenv -e ../../.env -- prisma studio",
+    "validate": "prisma validate",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "migrate:reset": "prisma migrate reset",
+    "studio": "prisma studio",
     "format": "prisma format",
-    "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts",
+    "seed": "tsx prisma/seed.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -32,12 +32,9 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/pg": "^8.11.10",
     "bcryptjs": "^2.4.3",
-    "dotenv-cli": "^7.4.2",
+    "dotenv": "^16.4.5",
     "prisma": "^7.10.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"
-  },
-  "prisma": {
-    "seed": "dotenv -e ../../.env -- tsx prisma/seed.ts"
   }
 }

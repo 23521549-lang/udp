@@ -1,10 +1,14 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    // rootDir phải bao được CẢ src/ lẫn prisma/. Để "./src" thì prisma/seed.ts
-    // nằm ngoài rootDir và tsc báo TS6059 ngay khi build lần đầu.
+    // rootDir phải bao được CẢ src/, prisma/ lẫn prisma.config.ts ở gốc package.
+    // Để "./src" thì prisma/seed.ts nằm ngoài rootDir và tsc báo TS6059 ngay khi
+    // build lần đầu.
     "rootDir": ".",
     "outDir": "./dist"
   },
-  "include": ["src/**/*.ts", "prisma/**/*.ts"]
+  // prisma.config.ts PHẢI nằm trong include. Thiếu nó, typecheck báo sạch trong khi
+  // file này không resolve nổi module — đúng cách bug "Cannot find module dotenv"
+  // lọt qua Plan #2 và chỉ lộ ra khi chạy prisma thật.
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "prisma.config.ts"]
 }
