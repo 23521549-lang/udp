@@ -60,14 +60,23 @@ beforeAll(() => {
   prose = stripCodeBlocks(lines).join("\n");
 
   const cut = prose.indexOf(CHANGELOG_MARKER);
-  if (cut < 0) throw new Error(`Không tìm thấy mốc lịch sử phiên bản: ${CHANGELOG_MARKER}`);
+  if (cut < 0)
+    throw new Error(
+      `Không tìm thấy mốc lịch sử phiên bản: ${CHANGELOG_MARKER}`,
+    );
   current = prose.slice(0, cut);
 
   definedSections = distinct(doc.matchAll(/^#{2,4}\s+(\d+(?:\.\d+)*)\.?\s/gm));
-  definedInvariants = distinct(doc.matchAll(/^\|\s*\*{0,2}(I\d+[a-c]?)\*{0,2}\s*\|/gm));
-  definedMeasurements = distinct(doc.matchAll(/^\|\s*\*{0,2}(E\d+)\*{0,2}\s*\|/gm));
+  definedInvariants = distinct(
+    doc.matchAll(/^\|\s*\*{0,2}(I\d+[a-c]?)\*{0,2}\s*\|/gm),
+  );
+  definedMeasurements = distinct(
+    doc.matchAll(/^\|\s*\*{0,2}(E\d+)\*{0,2}\s*\|/gm),
+  );
   definedAdrs = distinct(doc.matchAll(/^#{2,4}\s+(ADR-\d+)/gm));
-  definedCrashPoints = distinct(doc.matchAll(/^\|\s*\*{0,2}(K\d+)\*{0,2}\s*\|/gm));
+  definedCrashPoints = distinct(
+    doc.matchAll(/^\|\s*\*{0,2}(K\d+)\*{0,2}\s*\|/gm),
+  );
 });
 
 describe("A4 — mọi tham chiếu chéo đều trỏ tới thứ có thật", () => {
@@ -97,20 +106,27 @@ describe("A5 — con số tài liệu tự tuyên bố phải khớp thực tế
    */
   function claimed(anchor: RegExp): number {
     const found = [...prose.matchAll(anchor)].map((m) => Number(m[1]));
-    if (found.length === 0) throw new Error(`Không tìm thấy câu tuyên bố khớp ${anchor}`);
+    if (found.length === 0)
+      throw new Error(`Không tìm thấy câu tuyên bố khớp ${anchor}`);
     const unique = [...new Set(found)];
     if (unique.length > 1) {
-      throw new Error(`Tài liệu tự nói hai con số khác nhau cho ${anchor}: ${unique.join(", ")}`);
+      throw new Error(
+        `Tài liệu tự nói hai con số khác nhau cho ${anchor}: ${unique.join(", ")}`,
+      );
     }
     return unique[0] as number;
   }
 
   it("số bất biến", () => {
-    expect(definedInvariants.size).toBe(claimed(/Tổng cuối: \*\*(\d+) bất biến\*\*/g));
+    expect(definedInvariants.size).toBe(
+      claimed(/Tổng cuối: \*\*(\d+) bất biến\*\*/g),
+    );
   });
 
   it("số phép đo", () => {
-    expect(definedMeasurements.size).toBe(claimed(/Tổng cuối:[^\n]*?(\d+) phép đo/g));
+    expect(definedMeasurements.size).toBe(
+      claimed(/Tổng cuối:[^\n]*?(\d+) phép đo/g),
+    );
   });
 
   it("số ADR", () => {
@@ -125,11 +141,15 @@ describe("A5 — con số tài liệu tự tuyên bố phải khớp thực tế
     // Nguồn sự thật là code: `problem.ts` đã có chốt đếm lúc nạp module, nên
     // import nó vào đây là để nối hai chốt lại với nhau thành một vòng khép kín.
     const { ERROR_CATALOG } = await import("@udp/shared-types/problem");
-    expect(Object.keys(ERROR_CATALOG).length).toBe(claimed(/\*\*Danh mục (\d+) mã\*\*/g));
+    expect(Object.keys(ERROR_CATALOG).length).toBe(
+      claimed(/\*\*Danh mục (\d+) mã\*\*/g),
+    );
   });
 
   it("số domain khớp DOMAIN_CATALOG_SEED", async () => {
     const { DOMAIN_CATALOG_SEED } = await import("@udp/config");
-    expect(DOMAIN_CATALOG_SEED.length).toBe(claimed(/\*\*(\d+) domain\*\*, khớp/g));
+    expect(DOMAIN_CATALOG_SEED.length).toBe(
+      claimed(/\*\*(\d+) domain\*\*, khớp/g),
+    );
   });
 });

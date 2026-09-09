@@ -62,7 +62,12 @@ export async function updateQuota(
   request: Request,
 ): Promise<PublicProject> {
   const current = await repository.findQuotaAndTtl(id);
-  return repository.updateQuota(id, input.resourceQuota, current?.resourceQuota, request);
+  return repository.updateQuota(
+    id,
+    input.resourceQuota,
+    current?.resourceQuota,
+    request,
+  );
 }
 
 export async function updateTtl(
@@ -72,7 +77,12 @@ export async function updateTtl(
 ): Promise<PublicProject> {
   const current = await repository.findQuotaAndTtl(id);
   const expiresAt = input.expiresAt === null ? null : new Date(input.expiresAt);
-  return repository.updateTtl(id, expiresAt, { expiresAt: current?.expiresAt ?? null }, request);
+  return repository.updateTtl(
+    id,
+    expiresAt,
+    { expiresAt: current?.expiresAt ?? null },
+    request,
+  );
 }
 
 /**

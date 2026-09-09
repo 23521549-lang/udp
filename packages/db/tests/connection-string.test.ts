@@ -22,7 +22,9 @@ describe("sanitizeConnectionString", () => {
   });
 
   it("giữ nguyên các tham số không liên quan tới TLS", () => {
-    const out = sanitizeConnectionString(`${BASE}?application_name=udp&sslmode=require&pgbouncer=true`);
+    const out = sanitizeConnectionString(
+      `${BASE}?application_name=udp&sslmode=require&pgbouncer=true`,
+    );
     const params = new URL(out).searchParams;
     expect(params.get("application_name")).toBe("udp");
     expect(params.get("pgbouncer")).toBe("true");
@@ -35,23 +37,33 @@ describe("sanitizeConnectionString", () => {
       `${BASE}?a=1&sslmode=require`,
       `${BASE}?a=1&sslmode=require&b=2`,
     ]) {
-      expect(new URL(sanitizeConnectionString(url)).searchParams.has("sslmode")).toBe(false);
+      expect(
+        new URL(sanitizeConnectionString(url)).searchParams.has("sslmode"),
+      ).toBe(false);
     }
   });
 
   // NÉM chứ không gỡ im lặng: gỡ im lặng để người viết cấu hình tin rằng thiết
   // lập TLS của họ có hiệu lực, trong khi nó vừa bị bỏ qua.
-  for (const param of ["ssl", "sslcert", "sslkey", "sslrootcert", "sslnegotiation"]) {
+  for (const param of [
+    "ssl",
+    "sslcert",
+    "sslkey",
+    "sslrootcert",
+    "sslnegotiation",
+  ]) {
     it(`NÉM khi chuỗi kết nối mang ${param}`, () => {
-      expect(() => sanitizeConnectionString(`${BASE}?${param}=x`)).toThrow(/TLS/);
+      expect(() => sanitizeConnectionString(`${BASE}?${param}=x`)).toThrow(
+        /TLS/,
+      );
     });
   }
 
   it("nêu TÊN tham số vi phạm trong thông báo", () => {
     // Người đọc lỗi phải biết gỡ cái gì khỏi .env, không phải đi dò.
-    expect(() => sanitizeConnectionString(`${BASE}?ssl=true&sslrootcert=/x`)).toThrow(
-      /ssl, sslrootcert/,
-    );
+    expect(() =>
+      sanitizeConnectionString(`${BASE}?ssl=true&sslrootcert=/x`),
+    ).toThrow(/ssl, sslrootcert/);
   });
 
   it("DB_TLS_OPTIONS luôn bật xác thực chứng chỉ và có CA ghim", () => {

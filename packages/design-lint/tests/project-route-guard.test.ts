@@ -32,7 +32,8 @@ const SRC = join(ROOT, "services", "core-backend", "src");
  */
 const EXEMPT: Record<string, string> = {
   "POST /": "Tạo project — chưa có project nào để kiểm vai trò",
-  "GET /": "Danh sách project của chính người gọi — repository lọc theo ProjectMember",
+  "GET /":
+    "Danh sách project của chính người gọi — repository lọc theo ProjectMember",
 };
 
 const GUARD = "requireMinProjectRole";
@@ -51,7 +52,8 @@ function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   const walk = (d: string): void => {
     for (const entry of readdirSync(d)) {
-      if (entry === "node_modules" || entry === "dist" || entry === "generated") continue;
+      if (entry === "node_modules" || entry === "dist" || entry === "generated")
+        continue;
       const full = join(d, entry);
       if (statSync(full).isDirectory()) walk(full);
       else if (entry.endsWith(".ts")) out.push(full);
@@ -76,17 +78,20 @@ const all = files.map((f) => f.text).join("\n");
  * (`/members`, `/transfer-ownership`) KHÔNG chứa `:id` khi đọc riêng lẻ, nên
  * một lint chỉ soi chuỗi đường dẫn sẽ bỏ sót toàn bộ.
  */
-const mountedAtProjects = [...all.matchAll(/app\.use\([^,]*\/projects`?,\s*(\w+)\)/g)].map(
-  (m) => m[1] as string,
-);
+const mountedAtProjects = [
+  ...all.matchAll(/app\.use\([^,]*\/projects`?,\s*(\w+)\)/g),
+].map((m) => m[1] as string);
 
-const scopedSubRouters = [...all.matchAll(/(\w+)\.use\("\/:id",\s*(\w+)\)/g)].map(
-  (m) => m[2] as string,
-);
+const scopedSubRouters = [
+  ...all.matchAll(/(\w+)\.use\("\/:id",\s*(\w+)\)/g),
+].map((m) => m[2] as string);
 
 function routesOf(): Route[] {
   const out: Route[] = [];
-  const pattern = new RegExp(`(\\w+)\\.(${METHODS})\\(\\s*"([^"]*)",([\\s\\S]*?)\\n\\);`, "g");
+  const pattern = new RegExp(
+    `(\\w+)\\.(${METHODS})\\(\\s*"([^"]*)",([\\s\\S]*?)\\n\\);`,
+    "g",
+  );
 
   for (const file of files) {
     for (const m of file.text.matchAll(pattern)) {
@@ -106,7 +111,8 @@ const routes = routesOf();
 
 /** Route thuộc vùng project: router gắn ở `/projects`, hoặc router con dưới `/:id` */
 const projectRoutes = routes.filter(
-  (r) => mountedAtProjects.includes(r.router) || scopedSubRouters.includes(r.router),
+  (r) =>
+    mountedAtProjects.includes(r.router) || scopedSubRouters.includes(r.router),
 );
 
 const keyOf = (r: Route): string => `${r.method} ${r.path}`;
@@ -134,8 +140,12 @@ describe("I10 — mọi route có id project đều qua requireMinProjectRole", 
     // được miễn vừa nhận `:id` là đúng lỗ hổng mà §12 T4 mô tả.
     const wrong = projectRoutes
       .filter((r) => EXEMPT[keyOf(r)] !== undefined)
-      .filter((r) => r.path.includes(":id") || scopedSubRouters.includes(r.router))
-      .map((r) => `${r.file}: ${keyOf(r)} được miễn trừ nhưng vẫn mang id project`);
+      .filter(
+        (r) => r.path.includes(":id") || scopedSubRouters.includes(r.router),
+      )
+      .map(
+        (r) => `${r.file}: ${keyOf(r)} được miễn trừ nhưng vẫn mang id project`,
+      );
 
     expect(wrong).toEqual([]);
   });

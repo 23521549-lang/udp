@@ -53,8 +53,12 @@ export async function record(input: {
       userId: input.userId,
       tokenHash: hashToken(input.token),
       expiresAt: input.expiresAt,
-      ...(input.ctx.userAgent === undefined ? {} : { userAgent: input.ctx.userAgent }),
-      ...(input.ctx.ipAddress === undefined ? {} : { ipAddress: input.ctx.ipAddress }),
+      ...(input.ctx.userAgent === undefined
+        ? {}
+        : { userAgent: input.ctx.userAgent }),
+      ...(input.ctx.ipAddress === undefined
+        ? {}
+        : { ipAddress: input.ctx.ipAddress }),
     },
   });
 }
@@ -71,7 +75,14 @@ export interface SessionRow {
 export const findById = (sessionId: string): Promise<SessionRow | null> =>
   prisma.refreshSession.findUnique({
     where: { id: sessionId },
-    select: { id: true, userId: true, familyId: true, tokenHash: true, expiresAt: true, revokedAt: true },
+    select: {
+      id: true,
+      userId: true,
+      familyId: true,
+      tokenHash: true,
+      expiresAt: true,
+      revokedAt: true,
+    },
   });
 
 /**
@@ -97,7 +108,10 @@ export const revokeSession = async (sessionId: string): Promise<void> => {
 };
 
 /** Đánh dấu phiên cũ đã bị thay bởi phiên mới — dấu vết để lần lại cả họ */
-export const markRotated = async (oldId: string, newId: string): Promise<void> => {
+export const markRotated = async (
+  oldId: string,
+  newId: string,
+): Promise<void> => {
   await prisma.refreshSession.update({
     where: { id: oldId },
     data: { revokedAt: new Date(), replacedById: newId },

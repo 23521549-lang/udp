@@ -19,7 +19,9 @@ describe("ipKey", () => {
   });
 
   it("IPv6 đầy đủ gộp về bốn nhóm đầu", () => {
-    expect(ipKey("2001:0db8:85a3:0000:1111:2222:3333:4444")).toBe("2001:0db8:85a3:0000::/64");
+    expect(ipKey("2001:0db8:85a3:0000:1111:2222:3333:4444")).toBe(
+      "2001:0db8:85a3:0000::/64",
+    );
   });
 
   it("IPv6 rút gọn được KHAI TRIỂN trước khi cắt", () => {
@@ -31,15 +33,19 @@ describe("ipKey", () => {
 
   it("mọi địa chỉ trong cùng /64 cho CÙNG một khoá", () => {
     const keys = new Set(
-      ["2001:db8:abcd:1234::1", "2001:db8:abcd:1234::2", "2001:db8:abcd:1234:ffff:ffff:ffff:ffff"].map(
-        ipKey,
-      ),
+      [
+        "2001:db8:abcd:1234::1",
+        "2001:db8:abcd:1234::2",
+        "2001:db8:abcd:1234:ffff:ffff:ffff:ffff",
+      ].map(ipKey),
     );
     expect(keys.size).toBe(1);
   });
 
   it("hai /64 khác nhau cho hai khoá khác nhau", () => {
-    expect(ipKey("2001:db8:abcd:1234::1")).not.toBe(ipKey("2001:db8:abcd:1235::1"));
+    expect(ipKey("2001:db8:abcd:1234::1")).not.toBe(
+      ipKey("2001:db8:abcd:1235::1"),
+    );
   });
 
   it("bỏ zone id", () => {

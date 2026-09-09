@@ -39,18 +39,20 @@ export const flagServeUnion = z.discriminatedUnion("kind", [
       variantId: z.string().uuid(),
     })
     .strict(),
-  z.object({
-    kind: z.literal("distribution"),
-    weights: z
-      .array(
-        z.object({
-          variantId: z.string().uuid(),
-          // 0,001% mỗi đơn vị, nên biểu diễn được canary dưới 1%
-          weight: z.number().int().min(0).max(TOTAL_BUCKETS),
-        }),
-      )
-      .min(1),
-  }).strict(),
+  z
+    .object({
+      kind: z.literal("distribution"),
+      weights: z
+        .array(
+          z.object({
+            variantId: z.string().uuid(),
+            // 0,001% mỗi đơn vị, nên biểu diễn được canary dưới 1%
+            weight: z.number().int().min(0).max(TOTAL_BUCKETS),
+          }),
+        )
+        .min(1),
+    })
+    .strict(),
 ]);
 
 /**
@@ -156,10 +158,7 @@ export type ResolutionReason =
  * nhưng ý nghĩa vận hành hoàn toàn khác nhau (§6.1).
  */
 export type ResolutionErrorCode =
-  | "FLAG_NOT_FOUND"
-  | "TYPE_MISMATCH"
-  | "PROVIDER_NOT_READY"
-  | "GENERAL";
+  "FLAG_NOT_FOUND" | "TYPE_MISMATCH" | "PROVIDER_NOT_READY" | "GENERAL";
 
 /** Thông tin phụ đi kèm mỗi lần đánh giá, dùng để chẩn đoán */
 export interface FlagMetadata {

@@ -79,10 +79,17 @@ export async function register(
   });
 
   const family = sessions.newFamily();
-  return { user, tokens: await issueTokens(user, family, ctx), familyId: family.familyId };
+  return {
+    user,
+    tokens: await issueTokens(user, family, ctx),
+    familyId: family.familyId,
+  };
 }
 
-export async function login(input: LoginInput, ctx: sessions.SessionContext = {}): Promise<AuthResult> {
+export async function login(
+  input: LoginInput,
+  ctx: sessions.SessionContext = {},
+): Promise<AuthResult> {
   const record = await repository.findWithPasswordHash(input.email);
 
   if (!record) {
@@ -97,7 +104,11 @@ export async function login(input: LoginInput, ctx: sessions.SessionContext = {}
   if (!isValid) throw new UnauthenticatedError(INVALID_CREDENTIALS);
 
   const family = sessions.newFamily();
-  return { user, tokens: await issueTokens(user, family, ctx), familyId: family.familyId };
+  return {
+    user,
+    tokens: await issueTokens(user, family, ctx),
+    familyId: family.familyId,
+  };
 }
 
 /**
@@ -129,7 +140,10 @@ export async function refresh(
     throw new UnauthenticatedError("Phiên đăng nhập không hợp lệ");
   }
 
-  if (session.revokedAt !== null || session.tokenHash !== sessions.hashToken(refreshToken)) {
+  if (
+    session.revokedAt !== null ||
+    session.tokenHash !== sessions.hashToken(refreshToken)
+  ) {
     await sessions.revokeFamily(session.familyId);
     throw new UnauthenticatedError("Phiên đăng nhập không hợp lệ");
   }

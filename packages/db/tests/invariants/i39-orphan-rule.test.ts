@@ -30,12 +30,15 @@ let ids: {
 
 beforeAll(async () => {
   client = await openClient();
+  // Bon truong duoi la subselect nen chung CO THE tra NULL khi seed thieu — do
+  // dung la thu ma phep guard ben duoi kiem. Khai `string` tron lam guard tro
+  // thanh "dieu kien thua" duoi mat linter du no dang bat mot ca that.
   const res = await client.query<{
     flag_id: string;
-    own_variant: string;
-    foreign_variant: string;
-    rule_id: string;
-    env_config_id: string;
+    own_variant: string | null;
+    foreign_variant: string | null;
+    rule_id: string | null;
+    env_config_id: string | null;
   }>(`
     WITH a AS (SELECT id FROM feature_flags WHERE key = 'dark-mode'),
          b AS (SELECT id FROM feature_flags WHERE key = 'checkout-algorithm')
@@ -58,7 +61,16 @@ beforeAll(async () => {
   const row = res.rows[0];
   // Guard mọi trường, không chỉ rule_id: thiếu bất kỳ cái nào cũng cho ra một
   // chuỗi lỗi khó hiểu ở giữa test thay vì một câu nói rõ phải làm gì.
-  if (row === undefined || Object.values(row).some((v) => v === null)) {
+  // Kiem tung truong thay vi Object.values().some(): mot phep some() khong thu
+  // hep duoc kieu, nen bon dong gan ben duoi van bi TypeScript coi la
+  // `string | null`. Liet ke ra vua thu hep duoc vua noi ro thieu cai gi.
+  if (
+    row === undefined ||
+    row.own_variant === null ||
+    row.foreign_variant === null ||
+    row.rule_id === null ||
+    row.env_config_id === null
+  ) {
     throw new Error(
       `Database chưa seed đủ — chạy pnpm db:seed trước (nhận: ${JSON.stringify(row)})`,
     );
@@ -73,16 +85,30 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  /**
+   * Tat luat o DUNG mot dong, va day la ly do.
+   *
+   * TypeScript coi bien nay la da gan chac chan vi `beforeAll` co gan no.
+   * Nhung neu chinh `beforeAll` nem — khong noi duoc database, sai mat khau,
+   * seed thieu — thi `afterAll` VAN chay voi bien chua gan. Bo `?.` di thi
+   * loi that su bi che boi mot `TypeError` trong buoc don dep, va nguoi doc
+   * log thay sai cho hoan toan.
+   *
+   * Doi kieu thanh `| undefined` la cach dung ve mat kieu nhung bat 64 cho
+   * dung khac trong bo test nay phai thu hep — cai gia lon hon nhieu so voi
+   * mot dong tat luat co giai thich.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   await client?.end();
 });
 
 /** Đặt `serve` của rule mẫu bằng biểu thức SQL, luôn rollback sau đó */
 function setServe(serveSql: string, extra: unknown[] = []) {
   return inRollback(client, () =>
-    client.query(`UPDATE flag_targeting_rules SET serve = ${serveSql} WHERE id = $1`, [
-      ids.ruleId,
-      ...extra,
-    ]),
+    client.query(
+      `UPDATE flag_targeting_rules SET serve = ${serveSql} WHERE id = $1`,
+      [ids.ruleId, ...extra],
+    ),
   );
 }
 
@@ -95,16 +121,18 @@ describe("I39(a) — chặn lưu rule trỏ variant không hợp lệ", () => {
   });
 
   it("variant của flag KHÁC", async () => {
-    const r = await setServe("jsonb_build_object('kind','variant','variantId',$2::text)", [
-      ids.foreignVariantId,
-    ]);
+    const r = await setServe(
+      "jsonb_build_object('kind','variant','variantId',$2::text)",
+      [ids.foreignVariantId],
+    );
     expect(r.error?.code).toBe(ORPHAN);
   });
 
   it("variant hợp lệ của chính flag mình thì qua", async () => {
-    const r = await setServe("jsonb_build_object('kind','variant','variantId',$2::text)", [
-      ids.ownVariantId,
-    ]);
+    const r = await setServe(
+      "jsonb_build_object('kind','variant','variantId',$2::text)",
+      [ids.ownVariantId],
+    );
     expect(r.error).toBeUndefined();
   });
 });
@@ -116,7 +144,9 @@ describe("I39(b) — chặn xóa variant còn được tham chiếu (VARIANT_IN_
         "UPDATE flag_targeting_rules SET serve = jsonb_build_object('kind','variant','variantId',$2::text) WHERE id = $1",
         [ids.ruleId, ids.ownVariantId],
       );
-      await client.query("DELETE FROM flag_variants WHERE id = $1", [ids.ownVariantId]);
+      await client.query("DELETE FROM flag_variants WHERE id = $1", [
+        ids.ownVariantId,
+      ]);
       // Constraint trigger hoãn tới COMMIT; ép chạy ngay để không phải commit thật.
       await client.query("SET CONSTRAINTS ALL IMMEDIATE");
     });
@@ -135,7 +165,9 @@ describe("I39(b2) — chặn xóa variant được tham chiếu qua distribution
            jsonb_build_array(jsonb_build_object('variantId',$2::text,'weight',100000))) WHERE id = $1`,
         [ids.ruleId, ids.ownVariantId],
       );
-      await client.query("DELETE FROM flag_variants WHERE id = $1", [ids.ownVariantId]);
+      await client.query("DELETE FROM flag_variants WHERE id = $1", [
+        ids.ownVariantId,
+      ]);
       await client.query("SET CONSTRAINTS ALL IMMEDIATE");
     });
     expect(r.error?.code).toBe(IN_USE);
@@ -146,13 +178,16 @@ describe("I39(b2) — chặn xóa variant được tham chiếu qua distribution
     // trigger lo JSONB. Mã ở đây là 23503 (foreign_key_violation), KHÁC UDP01 —
     // và đó là bằng chứng FK Restrict thật sự đang làm việc.
     const def = await client.query<{ id: string }>(
-      `SELECT default_variant_id AS id FROM feature_flags WHERE id = $1`, [ids.flagId],
+      `SELECT default_variant_id AS id FROM feature_flags WHERE id = $1`,
+      [ids.flagId],
     );
     const defaultVariantId = def.rows[0]?.id;
     expect(defaultVariantId, "seed phải đặt default_variant_id").toBeTruthy();
 
     const r = await inRollback(client, () =>
-      client.query("DELETE FROM flag_variants WHERE id = $1", [defaultVariantId]),
+      client.query("DELETE FROM flag_variants WHERE id = $1", [
+        defaultVariantId,
+      ]),
     );
     expect(r.error?.code).toBe("23503");
   });
@@ -163,20 +198,20 @@ describe("I39(c) — default variant phải THUỘC flag đó", () => {
   // §6.7 không có ràng buộc khai báo nào giữ được, phải là trigger.
   it("flag trỏ default sang variant của flag khác", async () => {
     const r = await inRollback(client, () =>
-      client.query("UPDATE feature_flags SET default_variant_id = $2 WHERE id = $1", [
-        ids.flagId,
-        ids.foreignVariantId,
-      ]),
+      client.query(
+        "UPDATE feature_flags SET default_variant_id = $2 WHERE id = $1",
+        [ids.flagId, ids.foreignVariantId],
+      ),
     );
     expect(r.error?.code).toBe(ORPHAN);
   });
 
   it("env config trỏ default sang variant của flag khác", async () => {
     const r = await inRollback(client, () =>
-      client.query("UPDATE flag_env_configs SET default_variant_id = $2 WHERE id = $1", [
-        ids.envConfigId,
-        ids.foreignVariantId,
-      ]),
+      client.query(
+        "UPDATE flag_env_configs SET default_variant_id = $2 WHERE id = $1",
+        [ids.envConfigId, ids.foreignVariantId],
+      ),
     );
     expect(r.error?.code).toBe(ORPHAN);
   });
@@ -184,15 +219,27 @@ describe("I39(c) — default variant phải THUỘC flag đó", () => {
 
 describe("I39(d) — serve sai hình dạng phải bị CHẶN, không im lặng cho qua", () => {
   const badShapes: ReadonlyArray<readonly [string, string]> = [
-    ["kind sai chính tả", "jsonb_build_object('kind','varaint','variantId',gen_random_uuid()::text)"],
+    [
+      "kind sai chính tả",
+      "jsonb_build_object('kind','varaint','variantId',gen_random_uuid()::text)",
+    ],
     ["JSON null", "'null'::jsonb"],
     ["mảng thay vì object", "'[]'::jsonb"],
     ["thiếu kind", "jsonb_build_object('variantId',gen_random_uuid()::text)"],
     ["variant thiếu variantId", "jsonb_build_object('kind','variant')"],
-    ["variantId không phải uuid", "jsonb_build_object('kind','variant','variantId','khong-phai-uuid')"],
+    [
+      "variantId không phải uuid",
+      "jsonb_build_object('kind','variant','variantId','khong-phai-uuid')",
+    ],
     ["distribution thiếu weights", "jsonb_build_object('kind','distribution')"],
-    ["weights là mảng rỗng", "jsonb_build_object('kind','distribution','weights','[]'::jsonb)"],
-    ["weights không phải mảng", "jsonb_build_object('kind','distribution','weights','{}'::jsonb)"],
+    [
+      "weights là mảng rỗng",
+      "jsonb_build_object('kind','distribution','weights','[]'::jsonb)",
+    ],
+    [
+      "weights không phải mảng",
+      "jsonb_build_object('kind','distribution','weights','{}'::jsonb)",
+    ],
   ];
 
   for (const [name, sql] of badShapes) {
@@ -232,7 +279,9 @@ describe("I39(d) — serve sai hình dạng phải bị CHẶN, không im lặng
 describe("I39(e) — không được chặn nhầm thao tác hợp lệ", () => {
   it("xóa cả FeatureFlag vẫn chạy trót (variant và rule cùng cascade)", async () => {
     const r = await inRollback(client, async () => {
-      await client.query("DELETE FROM feature_flags WHERE id = $1", [ids.flagId]);
+      await client.query("DELETE FROM feature_flags WHERE id = $1", [
+        ids.flagId,
+      ]);
       await client.query("SET CONSTRAINTS ALL IMMEDIATE");
     });
     expect(r.error).toBeUndefined();

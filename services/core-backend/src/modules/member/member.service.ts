@@ -1,5 +1,9 @@
 import type { Request } from "express";
-import { ConflictError, NotFoundError, ValidationError } from "../../core/errors.js";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../../core/errors.js";
 import { prisma } from "../../core/db.js";
 import { auditEntry } from "../audit/audit.service.js";
 import type {
@@ -92,7 +96,9 @@ export async function updateRole(
    * **ít nhất một** — nó sẽ không chặn, và project mồ côi vĩnh viễn.
    */
   if (current.projectRole === "OWNER") {
-    throw new ValidationError("Đổi vai trò chủ sở hữu phải qua POST /transfer-ownership");
+    throw new ValidationError(
+      "Đổi vai trò chủ sở hữu phải qua POST /transfer-ownership",
+    );
   }
 
   const [member] = await prisma.$transaction([
@@ -119,7 +125,11 @@ export async function updateRole(
   return member;
 }
 
-export async function remove(projectId: string, userId: string, request: Request): Promise<void> {
+export async function remove(
+  projectId: string,
+  userId: string,
+  request: Request,
+): Promise<void> {
   const current = await prisma.projectMember.findUnique({
     where: { projectId_userId: { projectId, userId } },
     select: { projectRole: true },
@@ -130,11 +140,15 @@ export async function remove(projectId: string, userId: string, request: Request
   }
 
   if (current.projectRole === "OWNER") {
-    throw new ConflictError("Không xoá được chủ sở hữu — chuyển quyền cho người khác trước");
+    throw new ConflictError(
+      "Không xoá được chủ sở hữu — chuyển quyền cho người khác trước",
+    );
   }
 
   await prisma.$transaction([
-    prisma.projectMember.delete({ where: { projectId_userId: { projectId, userId } } }),
+    prisma.projectMember.delete({
+      where: { projectId_userId: { projectId, userId } },
+    }),
     prisma.auditLog.create({
       data: {
         project: { connect: { id: projectId } },

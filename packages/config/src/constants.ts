@@ -71,14 +71,24 @@ const toLabel = (value: string, max: number): string =>
  * Vẫn ném khi kết quả không hợp lệ. Không phải phòng xa thừa: chuỗi này đi
  * thẳng vào API server, nên chỗ rẻ nhất để phát hiện sai là ngay đây.
  */
-export function k8sNamespaceFor(projectName: string, projectId: string, envName: string): string {
+export function k8sNamespaceFor(
+  projectName: string,
+  projectId: string,
+  envName: string,
+): string {
   const project = toLabel(projectName, PROJECT_SLUG_MAX) || "p";
   const env = toLabel(envName, ENV_SLUG_MAX) || "e";
-  const suffix = projectId.replace(/-/g, "").slice(0, PROJECT_ID_SUFFIX_LENGTH).toLowerCase();
+  const suffix = projectId
+    .replace(/-/g, "")
+    .slice(0, PROJECT_ID_SUFFIX_LENGTH)
+    .toLowerCase();
 
   const namespace = `udp-${project}-${suffix}-${env}`;
 
-  if (namespace.length > K8S_NAMESPACE_MAX_LENGTH || !DNS_1123_LABEL.test(namespace)) {
+  if (
+    namespace.length > K8S_NAMESPACE_MAX_LENGTH ||
+    !DNS_1123_LABEL.test(namespace)
+  ) {
     throw new Error(
       `Không sinh được namespace hợp lệ từ project "${projectName}" và environment ` +
         `"${envName}": kết quả "${namespace}" không phải nhãn DNS-1123.`,
@@ -347,7 +357,19 @@ export const DEFAULT_RESOURCE_QUOTA = {
   maxLoadBalancers: 3,
 } as const;
 
-/** TTL mặc định cho project ở môi trường lab (giờ). null = không hết hạn */
+/**
+ * TTL mặc định cho project ở môi trường lab (giờ). null = không hết hạn.
+ *
+ * CHUA CO NGUOI DUNG, va do la co y. `POST /projects` khong dat `expires_at`
+ * vi chua co job nao hanh dong theo han do: `project-ttl.job` cua §3.1 doi ha
+ * tang pg-boss, ma pg-boss lai doi Cloud Adapter moi co viec that de lam. Dat
+ * mot han ma khong ai canh bao hay don theo la tao ao giac — nguoi dung thay
+ * project "het han sau 6 gio" roi khong co gi xay ra ca.
+ *
+ * Nguoi dung dau tien se la `project-ttl.job`. Giu hang so o day chu khong xoa
+ * vi §4.4 da chot gia tri nay; xoa di roi them lai la mat mot quyet dinh thiet
+ * ke da co.
+ */
 export const DEFAULT_PROJECT_TTL_HOURS = 6;
 
 // ============================================================

@@ -44,7 +44,11 @@ interface Actor {
 
 const setCookies = (res: request.Response): string[] => {
   const raw: unknown = res.get("set-cookie");
-  return Array.isArray(raw) ? (raw as string[]) : typeof raw === "string" ? [raw] : [];
+  return Array.isArray(raw)
+    ? (raw as string[])
+    : typeof raw === "string"
+      ? [raw]
+      : [];
 };
 
 async function newActor(): Promise<Actor> {
@@ -68,11 +72,13 @@ const as = (actor: Actor, req: request.Test): request.Test =>
 function newProject(owner: Actor, name?: string): request.Test {
   return as(
     owner,
-    request(app).post(`${API}/projects`).send({
-      name: name ?? `proj-${randomUUID().slice(0, 8)}`,
-      creationMode: "CREATE_NEW",
-      languageRuntime: "nodejs",
-    }),
+    request(app)
+      .post(`${API}/projects`)
+      .send({
+        name: name ?? `proj-${randomUUID().slice(0, 8)}`,
+        creationMode: "CREATE_NEW",
+        languageRuntime: "nodejs",
+      }),
   );
 }
 
@@ -90,7 +96,9 @@ afterAll(async () => {
     const projectIds = projects.map((p) => p.id);
 
     // Thứ tự ngược của quan hệ: audit giữ project, project giữ user.
-    await admin.auditLog.deleteMany({ where: { projectId: { in: projectIds } } });
+    await admin.auditLog.deleteMany({
+      where: { projectId: { in: projectIds } },
+    });
     await admin.project.deleteMany({ where: { id: { in: projectIds } } });
     await admin.user.deleteMany({ where: { id: { in: ids } } });
   }
@@ -112,13 +120,17 @@ describe("tạo project", () => {
 
     // §8.3: production KHÔNG được tự deploy từ webhook. Mặc định của schema là
     // `true`, nên nếu service quên đặt tường minh thì dòng này đỏ.
-    const prod = res.body.environments.find((e: { name: string }) => e.name === "prod");
+    const prod = res.body.environments.find(
+      (e: { name: string }) => e.name === "prod",
+    );
     expect(prod.autoDeploy).toBe(false);
     expect(prod.isProduction).toBe(true);
 
     // Ba namespace phải PHÂN BIỆT và hợp lệ DNS-1123 — bản sinh namespace cũ
     // cho ba chuỗi giống hệt nhau khi tên project dài.
-    const namespaces = res.body.environments.map((e: { k8sNamespace: string }) => e.k8sNamespace);
+    const namespaces = res.body.environments.map(
+      (e: { k8sNamespace: string }) => e.k8sNamespace,
+    );
     expect(new Set(namespaces).size).toBe(3);
     for (const ns of namespaces) {
       expect(ns).toMatch(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/);
@@ -133,7 +145,9 @@ describe("tạo project", () => {
       "Dự án quản lý bán hàng trực tuyến cho doanh nghiệp vừa và nhỏ",
     ).expect(201);
 
-    const namespaces = res.body.environments.map((e: { k8sNamespace: string }) => e.k8sNamespace);
+    const namespaces = res.body.environments.map(
+      (e: { k8sNamespace: string }) => e.k8sNamespace,
+    );
     expect(new Set(namespaces).size).toBe(3);
     for (const ns of namespaces) {
       expect(ns).toMatch(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/);
@@ -162,11 +176,13 @@ describe("tạo project", () => {
     const owner = await newActor();
     await as(
       owner,
-      request(app).post(`${API}/projects`).send({
-        name: `imp-${randomUUID().slice(0, 8)}`,
-        creationMode: "IMPORT_EXISTING",
-        languageRuntime: "nodejs",
-      }),
+      request(app)
+        .post(`${API}/projects`)
+        .send({
+          name: `imp-${randomUUID().slice(0, 8)}`,
+          creationMode: "IMPORT_EXISTING",
+          languageRuntime: "nodejs",
+        }),
     ).expect(400);
   });
 });
@@ -177,7 +193,10 @@ describe("cô lập giữa các tenant", () => {
     const stranger = await newActor();
     const { body } = await newProject(owner).expect(201);
 
-    await as(stranger, request(app).get(`${API}/projects/${body.project.id}`)).expect(404);
+    await as(
+      stranger,
+      request(app).get(`${API}/projects/${body.project.id}`),
+    ).expect(404);
   });
 
   it("GET /projects chỉ trả project mà mình là thành viên", async () => {
@@ -185,16 +204,27 @@ describe("cô lập giữa các tenant", () => {
     const stranger = await newActor();
     const { body } = await newProject(owner).expect(201);
 
-    const mine = await as(owner, request(app).get(`${API}/projects`)).expect(200);
-    expect(mine.body.projects.map((p: { id: string }) => p.id)).toContain(body.project.id);
+    const mine = await as(owner, request(app).get(`${API}/projects`)).expect(
+      200,
+    );
+    expect(mine.body.projects.map((p: { id: string }) => p.id)).toContain(
+      body.project.id,
+    );
 
-    const theirs = await as(stranger, request(app).get(`${API}/projects`)).expect(200);
-    expect(theirs.body.projects.map((p: { id: string }) => p.id)).not.toContain(body.project.id);
+    const theirs = await as(
+      stranger,
+      request(app).get(`${API}/projects`),
+    ).expect(200);
+    expect(theirs.body.projects.map((p: { id: string }) => p.id)).not.toContain(
+      body.project.id,
+    );
   });
 
   it("id không phải UUID trả 400, không phải 500", async () => {
     const owner = await newActor();
-    await as(owner, request(app).get(`${API}/projects/khong-phai-uuid`)).expect(400);
+    await as(owner, request(app).get(`${API}/projects/khong-phai-uuid`)).expect(
+      400,
+    );
   });
 });
 
@@ -222,8 +252,14 @@ describe("phân quyền theo vai trò", () => {
       },
     };
 
-    await as(viewer, request(app).patch(`${API}/projects/${id}/quota`).send(quota)).expect(403);
-    await as(owner, request(app).patch(`${API}/projects/${id}/quota`).send(quota)).expect(200);
+    await as(
+      viewer,
+      request(app).patch(`${API}/projects/${id}/quota`).send(quota),
+    ).expect(403);
+    await as(
+      owner,
+      request(app).patch(`${API}/projects/${id}/quota`).send(quota),
+    ).expect(200);
   });
 
   it("MAINTAINER vẫn không thêm được thành viên — §2.2 để việc đó cho OWNER", async () => {
@@ -279,7 +315,9 @@ describe("chuyển quyền sở hữu", () => {
 
     await as(
       owner,
-      request(app).post(`${API}/projects/${id}/transfer-ownership`).send({ userId: heir.userId }),
+      request(app)
+        .post(`${API}/projects/${id}/transfer-ownership`)
+        .send({ userId: heir.userId }),
     ).expect(200);
 
     const members = await admin.projectMember.findMany({
@@ -290,11 +328,16 @@ describe("chuyển quyền sở hữu", () => {
 
     expect(owners).toHaveLength(1);
     expect(owners[0]?.userId).toBe(heir.userId);
-    expect(members.find((m) => m.userId === owner.userId)?.projectRole).toBe("MAINTAINER");
+    expect(members.find((m) => m.userId === owner.userId)?.projectRole).toBe(
+      "MAINTAINER",
+    );
 
     // Cột denormalized phải đi cùng — nếu quên, hai nguồn sự thật lệch nhau và
     // không ràng buộc nào trong database phát hiện được.
-    const project = await admin.project.findUnique({ where: { id }, select: { ownerId: true } });
+    const project = await admin.project.findUnique({
+      where: { id },
+      select: { ownerId: true },
+    });
     expect(project?.ownerId).toBe(heir.userId);
   });
 
@@ -332,7 +375,10 @@ describe("xoá mềm", () => {
     await as(owner, request(app).delete(`${API}/projects/${id}`)).expect(204);
     await as(owner, request(app).get(`${API}/projects/${id}`)).expect(404);
 
-    const row = await admin.project.findUnique({ where: { id }, select: { status: true } });
+    const row = await admin.project.findUnique({
+      where: { id },
+      select: { status: true },
+    });
     expect(row?.status).toBe("DELETED");
   });
 
@@ -341,7 +387,10 @@ describe("xoá mềm", () => {
     const name = `recycle-${randomUUID().slice(0, 8)}`;
     const first = await newProject(owner, name).expect(201);
 
-    await as(owner, request(app).delete(`${API}/projects/${first.body.project.id}`)).expect(204);
+    await as(
+      owner,
+      request(app).delete(`${API}/projects/${first.body.project.id}`),
+    ).expect(204);
     await newProject(owner, name).expect(201);
   });
 });
@@ -352,7 +401,10 @@ describe("nhật ký kiểm toán", () => {
     const { body } = await newProject(owner).expect(201);
     const id = body.project.id as string;
 
-    const res = await as(owner, request(app).get(`${API}/projects/${id}/audit`)).expect(200);
+    const res = await as(
+      owner,
+      request(app).get(`${API}/projects/${id}/audit`),
+    ).expect(200);
     const actions = res.body.entries.map((e: { action: string }) => e.action);
 
     expect(actions).toContain("project.create");
@@ -375,7 +427,9 @@ describe("nhật ký kiểm toán", () => {
 
     await as(
       owner,
-      request(app).get(`${API}/projects/${body.project.id}/audit?from=2026-09-09`),
+      request(app).get(
+        `${API}/projects/${body.project.id}/audit?from=2026-09-09`,
+      ),
     ).expect(400);
   });
 });
@@ -389,12 +443,18 @@ describe("Idempotency-Key tren POST /members", () => {
     const key = randomUUID();
     const payload = { email: invitee.email, projectRole: "VIEWER" };
 
-    const first = await as(owner, request(app).post(`${API}/projects/${id}/members`))
+    const first = await as(
+      owner,
+      request(app).post(`${API}/projects/${id}/members`),
+    )
       .set("Idempotency-Key", key)
       .send(payload)
       .expect(201);
 
-    const second = await as(owner, request(app).post(`${API}/projects/${id}/members`))
+    const second = await as(
+      owner,
+      request(app).post(`${API}/projects/${id}/members`),
+    )
       .set("Idempotency-Key", key)
       .send(payload)
       .expect(201);
@@ -424,7 +484,10 @@ describe("Idempotency-Key tren POST /members", () => {
       .send({ email: first.email, projectRole: "VIEWER" })
       .expect(201);
 
-    const res = await as(owner, request(app).post(`${API}/projects/${id}/members`))
+    const res = await as(
+      owner,
+      request(app).post(`${API}/projects/${id}/members`),
+    )
       .set("Idempotency-Key", key)
       .send({ email: second.email, projectRole: "VIEWER" })
       .expect(422);
@@ -437,7 +500,10 @@ describe("Idempotency-Key tren POST /members", () => {
     const invitee = await newActor();
     const { body } = await newProject(owner).expect(201);
 
-    await as(owner, request(app).post(`${API}/projects/${body.project.id}/members`))
+    await as(
+      owner,
+      request(app).post(`${API}/projects/${body.project.id}/members`),
+    )
       .send({ email: invitee.email, projectRole: "VIEWER" })
       .expect(201);
   });
@@ -447,7 +513,10 @@ describe("Idempotency-Key tren POST /members", () => {
     const invitee = await newActor();
     const { body } = await newProject(owner).expect(201);
 
-    await as(owner, request(app).post(`${API}/projects/${body.project.id}/members`))
+    await as(
+      owner,
+      request(app).post(`${API}/projects/${body.project.id}/members`),
+    )
       .set("Idempotency-Key", "khong-phai-uuid")
       .send({ email: invitee.email, projectRole: "VIEWER" })
       .expect(400);

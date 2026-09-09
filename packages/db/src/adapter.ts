@@ -75,7 +75,10 @@ export function createPgAdapter({
  * SET CONSTRAINTS — không phải tự dựng lại và không có cớ hạ `rejectUnauthorized`.
  * Hạ chuẩn ở test là hạ chuẩn ở đúng nơi lẽ ra phải canh nó.
  */
-export const DB_TLS_OPTIONS = { ca: supabaseRootCa, rejectUnauthorized: true } as const;
+export const DB_TLS_OPTIONS = {
+  ca: supabaseRootCa,
+  rejectUnauthorized: true,
+} as const;
 
 /**
  * Tham số TLS trong chuỗi kết nối mà `pg` để GHI ĐÈ object `ssl` truyền vào.
@@ -91,7 +94,13 @@ export const DB_TLS_OPTIONS = { ca: supabaseRootCa, rejectUnauthorized: true } a
  * nên chuỗi kết nối THẮNG. Đây đúng là thứ mô hình đe dọa T2 (§12) dựa vào để
  * chống MITM, nên nó không được phép tắt bằng một tham số URL.
  */
-const TLS_OVERRIDE_PARAMS = ["ssl", "sslcert", "sslkey", "sslrootcert", "sslnegotiation"] as const;
+const TLS_OVERRIDE_PARAMS = [
+  "ssl",
+  "sslcert",
+  "sslkey",
+  "sslrootcert",
+  "sslnegotiation",
+] as const;
 
 /**
  * Chuẩn hoá chuỗi kết nối trước khi đưa cho `node-postgres`.

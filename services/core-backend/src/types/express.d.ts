@@ -9,7 +9,6 @@ import type { AccessTokenPayload } from "../core/security/tokens.js";
  * đúng tại nơi cần nó nhất là logic phân quyền.
  */
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       user?: AccessTokenPayload;

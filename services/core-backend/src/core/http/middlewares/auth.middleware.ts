@@ -2,6 +2,8 @@ import type { RequestHandler } from "express";
 import { COOKIE_NAMES } from "@udp/config";
 import { prisma } from "../../db.js";
 import { ForbiddenError, UnauthenticatedError } from "../../errors.js";
+import type { Request } from "express";
+import type { AccessTokenPayload } from "../../security/tokens.js";
 import { verifyAccessToken } from "../../security/tokens.js";
 
 /**
@@ -23,6 +25,26 @@ export const requireAuth: RequestHandler = (req, _res, next) => {
   req.user = verifyAccessToken(token);
   next();
 };
+
+/**
+ * Người gọi đã xác thực, dưới dạng kiểu KHÔNG optional.
+ *
+ * `req.user` khai là optional vì đúng như vậy: trước `requireAuth` nó chưa tồn
+ * tại. Nhưng handler nào chạy sau `requireAuth` lại phải viết `req.user!` để
+ * dùng — và dấu `!` ở đúng đường phân quyền là chỗ tệ nhất để tắt kiểm tra
+ * kiểu, vì nó nói "tin tôi đi, middleware đã chạy" mà không ai kiểm được lời
+ * hứa đó khi thứ tự middleware đổi.
+ *
+ * Hàm này biến lời hứa thành phép kiểm: sai thứ tự thì nhận 401 rõ ràng thay
+ * vì `TypeError: Cannot read properties of undefined`. Cùng khuôn với
+ * `projectIdParam` bên `project-role.middleware`.
+ */
+export function requireUser(req: Request): AccessTokenPayload {
+  if (!req.user) {
+    throw new UnauthenticatedError("Chưa đăng nhập");
+  }
+  return req.user;
+}
 
 /**
  * Quyền quản trị TOÀN HỆ THỐNG.

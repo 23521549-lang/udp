@@ -36,13 +36,21 @@ async function registerUser(): Promise<{
     .send({ email, password: PASSWORD, name: "Test User" })
     .expect(201);
   created.push(email);
-  return { email, cookies: setCookies(res), csrfToken: res.body.csrfToken as string };
+  return {
+    email,
+    cookies: setCookies(res),
+    csrfToken: res.body.csrfToken as string,
+  };
 }
 
 /** supertest khai `get()` trả string | string[]; chuẩn hoá về mảng một lần */
 const setCookies = (res: request.Response): string[] => {
   const raw: unknown = res.get("set-cookie");
-  return Array.isArray(raw) ? (raw as string[]) : typeof raw === "string" ? [raw] : [];
+  return Array.isArray(raw)
+    ? (raw as string[])
+    : typeof raw === "string"
+      ? [raw]
+      : [];
 };
 
 /** Lấy giá trị một cookie từ header Set-Cookie */
@@ -186,14 +194,20 @@ describe("xoay vòng refresh token và phát hiện tái sử dụng", () => {
 describe("CSRF", () => {
   it("/logout bị chặn khi thiếu header CSRF", async () => {
     const { cookies } = await registerUser();
-    await request(app).post(`${API}/auth/logout`).set("Cookie", cookies).expect(403);
+    await request(app)
+      .post(`${API}/auth/logout`)
+      .set("Cookie", cookies)
+      .expect(403);
   });
 
   it("/auth/refresh KHÔNG còn được miễn CSRF", async () => {
     // Lập luận miễn trừ cũ ("chưa có phiên để lạm dụng") sai với chính endpoint
     // này: nó chạy được LÀ NHỜ cookie phiên đã tồn tại.
     const { cookies } = await registerUser();
-    await request(app).post(`${API}/auth/refresh`).set("Cookie", cookies).expect(403);
+    await request(app)
+      .post(`${API}/auth/refresh`)
+      .set("Cookie", cookies)
+      .expect(403);
   });
 
   it("cookie tossing bị chặn: cookie VÀ header cùng một giá trị tự chọn", async () => {

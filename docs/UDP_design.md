@@ -6505,6 +6505,12 @@ Hằng đêm → toàn bộ adapter contract test
 Trước bảo vệ → chạy trên cloud thật, 3 nhà cung cấp, ghi lại toàn bộ số đo
 ```
 
+> **Trạng thái hiện tại, và một sai lệch có chủ đích so với sơ đồ trên.** Đã dựng: `lint` (ESLint + typescript-eslint với luật type-aware), `typecheck`, `format:check`, và **dựng lại toàn bộ chuỗi migration từ một database trống** — xem `pnpm db:verify-chain`. Chưa dựng: build image, `kind` + adapter contract test, E2E rút gọn, và toàn bộ nhánh hằng đêm; cả bốn đều đợi Cloud Adapter và Domain Adapter ra đời, vì trước đó chúng không có gì để kiểm.
+
+> Sai lệch: bảng §13.1 và dòng đầu của sơ đồ trên ghi **Testcontainers**, nhưng phần dựng lại chuỗi migration dùng một **database dùng-một-lần tạo ngay trên chính instance PostgreSQL đang dùng** (`CREATE DATABASE` → `migrate deploy` → seed → test → `DROP DATABASE ... WITH (FORCE)`). Ba lý do, hai trong số đó là thứ Testcontainers không làm được: (1) nó chạy được ở nơi **không có Docker**; (2) nó kiểm trên **đúng phiên bản và đúng nền tảng đang dùng** (PostgreSQL 17.6 sau Supavisor) thay vì một container xấp xỉ; (3) các role riêng của nhà cung cấp (`anon`, `authenticated`, `service_role`) **có tồn tại** ở đó, nên khẳng định "không role NÀO KHÁC được cấp quyền trên schema public" của **I22** vẫn kiểm thật — trên một container sạch, ba role đó không tồn tại và khẳng định ấy xanh vĩnh viễn mà chẳng kiểm gì. Đổi lại, lượt kiểm cần quyền `CREATEDB`.
+
+> Một điều lượt kiểm ấy cố tình **không** làm: chạy `db:service-login`. Role trong PostgreSQL là đối tượng cấp **cluster**, không phải cấp database — đã đo: từ một database vừa tạo, cả ba role `udp_s*` đều nhìn thấy được và `SET ROLE` chạy bình thường. Cấp lại LOGIN trong lượt kiểm vì thế sẽ xoay mật khẩu của chính role mà môi trường thật đang dùng. Không mất gì: seed và mọi test đều nối bằng `DATABASE_URL_DIRECT` rồi dùng `SET LOCAL ROLE` để kiểm GRANT.
+
 ---
 
 ## 14. Kế hoạch đánh giá thực nghiệm

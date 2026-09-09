@@ -1,7 +1,12 @@
 import type { RequestHandler } from "express";
 import type { ProjectRole } from "@udp/db";
 import { prisma } from "../../db.js";
-import { ForbiddenError, NotFoundError, UnauthenticatedError, ValidationError } from "../../errors.js";
+import {
+  ForbiddenError,
+  NotFoundError,
+  UnauthenticatedError,
+  ValidationError,
+} from "../../errors.js";
 
 /**
  * Quyền TRONG MỘT PROJECT — cặp đôi của `requirePlatformAdmin`.
@@ -50,7 +55,9 @@ export const PROJECT_ID_PARAM = "id";
  * của `@udp/db` nên rơi xuống nhánh cuối và thành **500 "Lỗi hệ thống"** — một
  * URL gõ sai bị báo cáo như sự cố máy chủ.
  */
-function projectIdOf(req: { params: Record<string, string | undefined> }): string {
+function projectIdOf(req: {
+  params: Record<string, string | undefined>;
+}): string {
   const raw = req.params[PROJECT_ID_PARAM];
 
   if (raw === undefined || !UUID.test(raw)) {

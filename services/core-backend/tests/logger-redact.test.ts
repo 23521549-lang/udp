@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { REDACT_ALLOWLIST, REDACTED_KEY_PATTERNS, REDACTED_PLACEHOLDER } from "@udp/config";
+import {
+  REDACT_ALLOWLIST,
+  REDACTED_KEY_PATTERNS,
+  REDACTED_PLACEHOLDER,
+} from "@udp/config";
 import { isSensitive, redact, redactPaths } from "../src/core/logger.js";
 
 /**
@@ -30,16 +34,18 @@ describe("redact — hai bản khai không được lệch nhau", () => {
     // Test cũ khẳng định sshKey/privateKey/apiKey "phải bị che" trong khi pino
     // không hề che chúng — xanh, và cảm giác an toàn là giả.
     const leaves = redactPaths.map(leafOf);
-    const uncovered = REDACTED_KEY_PATTERNS.filter((p) => !leaves.some((l) => p.test(l))).map(
-      (p) => p.source,
-    );
+    const uncovered = REDACTED_KEY_PATTERNS.filter(
+      (p) => !leaves.some((l) => p.test(l)),
+    ).map((p) => p.source);
     expect(uncovered).toEqual([]);
   });
 
   it("không đường dẫn nào của pino lại bị allowlist miễn trừ", () => {
     // Chiều ngược lại. Một khoá vừa được pino che vừa được `redact()` bỏ qua là
     // hai bản khai nói ngược nhau, và ta sẽ không biết bên nào đúng.
-    const contradictions = redactPaths.map(leafOf).filter((leaf) => !isSensitive(leaf));
+    const contradictions = redactPaths
+      .map(leafOf)
+      .filter((leaf) => !isSensitive(leaf));
     expect(contradictions).toEqual([]);
   });
 });
@@ -49,7 +55,11 @@ describe("redact — che đúng thứ cần che", () => {
     const out = redact({
       email: "a@b.c",
       password: "hunter2",
-      nested: { sshKey: "ssh-rsa AAA", encryptedDek: "abc", keyPrefix: "udp_sk_a" },
+      nested: {
+        sshKey: "ssh-rsa AAA",
+        encryptedDek: "abc",
+        keyPrefix: "udp_sk_a",
+      },
       list: [{ apiToken: "t" }],
     });
 
@@ -116,7 +126,8 @@ describe("redact — che đúng thứ cần che", () => {
     // Một mục allowlist không khớp pattern nào thì không miễn trừ gì cả — nó chỉ
     // làm người đọc sau tưởng chỗ đó có ngoại lệ. Với danh sách mang tính bảo
     // mật, mỗi dòng phải có lý do tồn tại kiểm chứng được.
-    const sample = (source: string): string => source.replace(/[\^$]/g, "").replace(/_\?/g, "_");
+    const sample = (source: string): string =>
+      source.replace(/[\^$]/g, "").replace(/_\?/g, "_");
     const useless = REDACT_ALLOWLIST.filter(
       (a) => !REDACTED_KEY_PATTERNS.some((p) => p.test(sample(a.source))),
     );

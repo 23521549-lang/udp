@@ -16,7 +16,9 @@ export async function assertConnectedAs(
   client: PrismaClient,
   expectedRole: string,
 ): Promise<void> {
-  const rows = await client.$queryRaw<{ current_user: string }[]>`SELECT current_user`;
+  const rows = await client.$queryRaw<
+    { current_user: string }[]
+  >`SELECT current_user`;
   const actual = rows[0]?.current_user;
 
   if (actual !== expectedRole) {

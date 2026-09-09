@@ -9,7 +9,11 @@ import {
 import { idempotent } from "../../core/http/middlewares/idempotency.middleware.js";
 import { validateBody } from "../../core/http/validate.js";
 import * as memberService from "./member.service.js";
-import { addMemberSchema, transferOwnershipSchema, updateMemberSchema } from "./member.types.js";
+import {
+  addMemberSchema,
+  transferOwnershipSchema,
+  updateMemberSchema,
+} from "./member.types.js";
 
 /**
  * Router thành viên, gắn dưới `/projects/:id`.
@@ -90,7 +94,11 @@ memberRouter.post(
   requireMinProjectRole("OWNER"),
   validateBody(transferOwnershipSchema),
   asyncHandler(async (req, res) => {
-    const member = await memberService.transferOwnership(projectIdParam(req), req.body, req);
+    const member = await memberService.transferOwnership(
+      projectIdParam(req),
+      req.body,
+      req,
+    );
     res.json({ member });
   }),
 );

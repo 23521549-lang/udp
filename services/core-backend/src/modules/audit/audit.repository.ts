@@ -28,7 +28,10 @@ const AUDIT_FIELDS = {
  * **`to` là mốc loại trừ.** Với `lte`, một khoảng `[from, to]` của hai lần gọi
  * liên tiếp sẽ chồng lấn đúng một mốc và trả trùng bản ghi biên.
  */
-export const list = (projectId: string, query: AuditQuery): Promise<PublicAuditEntry[]> => {
+export const list = (
+  projectId: string,
+  query: AuditQuery,
+): Promise<PublicAuditEntry[]> => {
   const occurredAt: Prisma.DateTimeFilter = {
     ...(query.from === undefined ? {} : { gte: new Date(query.from) }),
     ...(query.to === undefined ? {} : { lt: new Date(query.to) }),
@@ -39,7 +42,9 @@ export const list = (projectId: string, query: AuditQuery): Promise<PublicAuditE
       projectId,
       ...(query.action === undefined ? {} : { action: query.action }),
       ...(query.actor === undefined ? {} : { actorUserId: query.actor }),
-      ...(query.from === undefined && query.to === undefined ? {} : { occurredAt }),
+      ...(query.from === undefined && query.to === undefined
+        ? {}
+        : { occurredAt }),
     },
     select: AUDIT_FIELDS,
     orderBy: [{ occurredAt: "desc" }, { id: "desc" }],

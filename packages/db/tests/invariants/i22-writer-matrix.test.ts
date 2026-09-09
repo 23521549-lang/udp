@@ -26,15 +26,27 @@ const READ_ONLY: Grant = { SELECT: "*" };
 
 /** Tám cột điều khiển rollout — chỉ Service 3 được ghi (§1.2) */
 const S3_ROLLOUT_COLUMNS = [
-  "claimed_by", "claimed_until", "current_traffic_percentage", "fail_reason",
-  "last_decision", "last_step_at", "status", "version",
+  "claimed_by",
+  "claimed_until",
+  "current_traffic_percentage",
+  "fail_reason",
+  "last_decision",
+  "last_step_at",
+  "status",
+  "version",
 ];
 
 const MATRIX: Record<string, Record<string, Grant>> = {
   udp_s1: {
-    users: FULL, project_members: FULL, projects: FULL, cloud_credentials: FULL,
-    domain_configs: FULL, capability_bindings: FULL, capability_preferences: FULL,
-    provisioning_jobs: FULL, provisioned_resources: FULL,
+    users: FULL,
+    project_members: FULL,
+    projects: FULL,
+    cloud_credentials: FULL,
+    domain_configs: FULL,
+    capability_bindings: FULL,
+    capability_preferences: FULL,
+    provisioning_jobs: FULL,
+    provisioned_resources: FULL,
     // Phien refresh thuoc vong doi tai khoan. S2/S3 KHONG co quyen nao o day,
     // ke ca SELECT: bang chua hash token phien, va khong nhiem vu nao cua hai
     // service do can doc no — cung lap luan voi cloud_credentials.
@@ -45,22 +57,46 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     // DELETE thi can, vi don hang qua han lam ngay tren duong ghi (§2.2).
     idempotency_keys: { SELECT: "*", INSERT: "*", DELETE: "*" },
     // config_version/config_hash thuộc S2 (và S3 trong nhánh kill-switch)
-    environments: { SELECT: "*", INSERT: "*", DELETE: "*", UPDATE: { allExcept: ["config_version", "config_hash"] } },
-    rollout_sessions: { SELECT: "*", INSERT: "*", DELETE: "*", UPDATE: { allExcept: S3_ROLLOUT_COLUMNS } },
-    audit_logs: APPEND_ONLY, deployment_events: APPEND_ONLY, rollout_events: APPEND_ONLY,
+    environments: {
+      SELECT: "*",
+      INSERT: "*",
+      DELETE: "*",
+      UPDATE: { allExcept: ["config_version", "config_hash"] },
+    },
+    rollout_sessions: {
+      SELECT: "*",
+      INSERT: "*",
+      DELETE: "*",
+      UPDATE: { allExcept: S3_ROLLOUT_COLUMNS },
+    },
+    audit_logs: APPEND_ONLY,
+    deployment_events: APPEND_ONLY,
+    rollout_events: APPEND_ONLY,
     domain_catalog: READ_ONLY,
     // S1 đọc bảng của S2 để hiển thị trên Portal
-    feature_flags: READ_ONLY, flag_variants: READ_ONLY, flag_env_configs: READ_ONLY,
-    flag_targeting_rules: READ_ONLY, segments: READ_ONLY, sdk_keys: READ_ONLY,
-    flag_evaluation_stats: READ_ONLY, config_change_log: READ_ONLY,
+    feature_flags: READ_ONLY,
+    flag_variants: READ_ONLY,
+    flag_env_configs: READ_ONLY,
+    flag_targeting_rules: READ_ONLY,
+    segments: READ_ONLY,
+    sdk_keys: READ_ONLY,
+    flag_evaluation_stats: READ_ONLY,
+    config_change_log: READ_ONLY,
   },
   udp_s2: {
-    feature_flags: FULL, flag_variants: FULL, flag_env_configs: FULL,
-    flag_targeting_rules: FULL, segments: FULL, sdk_keys: FULL, flag_evaluation_stats: FULL,
+    feature_flags: FULL,
+    flag_variants: FULL,
+    flag_env_configs: FULL,
+    flag_targeting_rules: FULL,
+    segments: FULL,
+    sdk_keys: FULL,
+    flag_evaluation_stats: FULL,
     config_change_log: APPEND_ONLY,
     environments: { SELECT: "*", UPDATE: ["config_hash", "config_version"] },
-    projects: READ_ONLY, domain_catalog: READ_ONLY,
-    audit_logs: APPEND_ONLY, deployment_events: APPEND_ONLY,
+    projects: READ_ONLY,
+    domain_catalog: READ_ONLY,
+    audit_logs: APPEND_ONLY,
+    deployment_events: APPEND_ONLY,
   },
   udp_s3: {
     rollout_sessions: { SELECT: "*", UPDATE: S3_ROLLOUT_COLUMNS },
@@ -69,13 +105,18 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     flag_targeting_rules: { SELECT: "*", UPDATE: ["serve"] },
     environments: { SELECT: "*", UPDATE: ["config_hash", "config_version"] },
     config_change_log: { INSERT: "*" },
-    projects: READ_ONLY, domain_configs: READ_ONLY, capability_bindings: READ_ONLY,
-    feature_flags: READ_ONLY, flag_variants: READ_ONLY, flag_env_configs: READ_ONLY,
+    projects: READ_ONLY,
+    domain_configs: READ_ONLY,
+    capability_bindings: READ_ONLY,
+    feature_flags: READ_ONLY,
+    flag_variants: READ_ONLY,
+    flag_env_configs: READ_ONLY,
     domain_catalog: READ_ONLY,
     // Rule dang rollout co the tham chieu segment (rule_type = SEGMENT); thieu
     // quyen nay thi reconciler chet bang 42501 giua vong lap.
     segments: READ_ONLY,
-    audit_logs: APPEND_ONLY, deployment_events: APPEND_ONLY,
+    audit_logs: APPEND_ONLY,
+    deployment_events: APPEND_ONLY,
   },
 };
 
@@ -105,7 +146,12 @@ beforeAll(async () => {
   // KHÔNG chứa DELETE, vì trong SQL, DELETE là quyền chỉ tồn tại ở mức bảng,
   // không có phiên bản theo cột. Đọc mỗi view đầu sẽ thấy DELETE ở đâu cũng
   // trống và tưởng là thiếu quyền.
-  const byColumn = await client.query<{ grantee: string; table_name: string; privilege_type: string; cols: string[] }>(
+  const byColumn = await client.query<{
+    grantee: string;
+    table_name: string;
+    privilege_type: string;
+    cols: string[];
+  }>(
     `SELECT grantee, table_name, privilege_type, array_agg(column_name::text ORDER BY column_name) AS cols
        FROM information_schema.column_privileges
       WHERE grantee = ANY($1::text[]) AND table_schema = 'public'
@@ -113,9 +159,18 @@ beforeAll(async () => {
       GROUP BY grantee, table_name, privilege_type`,
     [ROLES],
   );
-  actual = new Map(byColumn.rows.map((r) => [`${r.grantee}|${r.table_name}|${r.privilege_type}`, r.cols]));
+  actual = new Map(
+    byColumn.rows.map((r) => [
+      `${r.grantee}|${r.table_name}|${r.privilege_type}`,
+      r.cols,
+    ]),
+  );
 
-  const byTable = await client.query<{ grantee: string; table_name: string; privilege_type: string }>(
+  const byTable = await client.query<{
+    grantee: string;
+    table_name: string;
+    privilege_type: string;
+  }>(
     `SELECT DISTINCT grantee, table_name, privilege_type
        FROM information_schema.role_table_grants
       WHERE grantee = ANY($1::text[]) AND table_schema = 'public'
@@ -124,11 +179,28 @@ beforeAll(async () => {
   );
   // Quy về cùng hình dạng "danh sách cột" để phần so sánh chỉ có một nhánh.
   for (const r of byTable.rows) {
-    actual.set(`${r.grantee}|${r.table_name}|${r.privilege_type}`, [...(columnsOf.get(r.table_name) ?? [])].sort());
+    actual.set(
+      `${r.grantee}|${r.table_name}|${r.privilege_type}`,
+      [...(columnsOf.get(r.table_name) ?? [])].sort(),
+    );
   }
 });
 
 afterAll(async () => {
+  /**
+   * Tat luat o DUNG mot dong, va day la ly do.
+   *
+   * TypeScript coi bien nay la da gan chac chan vi `beforeAll` co gan no.
+   * Nhung neu chinh `beforeAll` nem — khong noi duoc database, sai mat khau,
+   * seed thieu — thi `afterAll` VAN chay voi bien chua gan. Bo `?.` di thi
+   * loi that su bi che boi mot `TypeError` trong buoc don dep, va nguoi doc
+   * log thay sai cho hoan toan.
+   *
+   * Doi kieu thanh `| undefined` la cach dung ve mat kieu nhung bat 64 cho
+   * dung khac trong bo test nay phai thu hep — cai gia lon hon nhieu so voi
+   * mot dong tat luat co giai thich.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   await client?.end();
 });
 
@@ -143,7 +215,8 @@ function expand(table: string, spec: ColSpec): string[] {
 describe("I22 — ma trận writer §1.2", () => {
   it("ba role tồn tại", async () => {
     const r = await client.query<{ rolname: string }>(
-      `SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[]) ORDER BY rolname`, [ROLES],
+      `SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[]) ORDER BY rolname`,
+      [ROLES],
     );
     expect(r.rows.map((x) => x.rolname)).toEqual(ROLES);
   });
@@ -152,7 +225,9 @@ describe("I22 — ma trận writer §1.2", () => {
     for (const [table, grant] of Object.entries(tables)) {
       for (const [priv, spec] of Object.entries(grant) as [Priv, ColSpec][]) {
         it(`${role} có ${priv} trên ${table} đúng phạm vi cột`, () => {
-          expect(actual.get(`${role}|${table}|${priv}`) ?? []).toEqual(expand(table, spec));
+          expect(actual.get(`${role}|${table}|${priv}`) ?? []).toEqual(
+            expand(table, spec),
+          );
         });
       }
     }
@@ -187,7 +262,9 @@ describe("I22 — ma trận writer §1.2", () => {
 
   it("Service 3 KHÔNG chạm được cloud_credentials, kể cả SELECT", () => {
     // ADR-06: quyền vào cluster đi qua endpoint nội bộ của S1, không qua DB.
-    const touched = [...actual.keys()].filter((k) => k.startsWith("udp_s3|cloud_credentials|"));
+    const touched = [...actual.keys()].filter((k) =>
+      k.startsWith("udp_s3|cloud_credentials|"),
+    );
     expect(touched).toEqual([]);
   });
 
@@ -196,7 +273,8 @@ describe("I22 — ma trận writer §1.2", () => {
     for (const table of ["audit_logs", "deployment_events"]) {
       for (const role of ROLES) {
         for (const priv of ["UPDATE", "DELETE"]) {
-          if (actual.has(`${role}|${table}|${priv}`)) violations.push(`${role}|${table}|${priv}`);
+          if (actual.has(`${role}|${table}|${priv}`))
+            violations.push(`${role}|${table}|${priv}`);
         }
       }
     }

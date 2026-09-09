@@ -4,7 +4,11 @@ import { DEFAULT_ENVIRONMENTS, k8sNamespaceFor } from "@udp/config";
 import type { CreationMode, Prisma } from "@udp/db";
 import { prisma } from "../../core/db.js";
 import { auditEntry } from "../audit/audit.service.js";
-import type { PublicEnvironment, PublicProject, ResourceQuota } from "./project.types.js";
+import type {
+  PublicEnvironment,
+  PublicProject,
+  ResourceQuota,
+} from "./project.types.js";
 
 /**
  * Tầng dữ liệu của project.
@@ -101,7 +105,10 @@ export async function createWithDefaults(
         }),
       },
     },
-    select: { ...PUBLIC_FIELDS, environments: { select: ENV_FIELDS, orderBy: { rank: "asc" } } },
+    select: {
+      ...PUBLIC_FIELDS,
+      environments: { select: ENV_FIELDS, orderBy: { rank: "asc" } },
+    },
   });
 }
 
@@ -125,14 +132,23 @@ export const findById = (
 ): Promise<(PublicProject & { environments: PublicEnvironment[] }) | null> =>
   prisma.project.findUnique({
     where: { id },
-    select: { ...PUBLIC_FIELDS, environments: { select: ENV_FIELDS, orderBy: { rank: "asc" } } },
+    select: {
+      ...PUBLIC_FIELDS,
+      environments: { select: ENV_FIELDS, orderBy: { rank: "asc" } },
+    },
   });
 
 /** Chỉ để dựng ảnh `before` của audit — không trả ra API */
 export const findQuotaAndTtl = (
   id: string,
-): Promise<{ resourceQuota: Prisma.JsonValue; expiresAt: Date | null } | null> =>
-  prisma.project.findUnique({ where: { id }, select: { resourceQuota: true, expiresAt: true } });
+): Promise<{
+  resourceQuota: Prisma.JsonValue;
+  expiresAt: Date | null;
+} | null> =>
+  prisma.project.findUnique({
+    where: { id },
+    select: { resourceQuota: true, expiresAt: true },
+  });
 
 interface AuditedUpdate {
   id: string;
@@ -173,7 +189,13 @@ export const updateQuota = (
 ): Promise<PublicProject> =>
   updateWithAudit(
     { resourceQuota },
-    { id, action: "project.quota.update", before, after: resourceQuota, request },
+    {
+      id,
+      action: "project.quota.update",
+      before,
+      after: resourceQuota,
+      request,
+    },
   );
 
 export const updateTtl = (
@@ -182,7 +204,10 @@ export const updateTtl = (
   before: unknown,
   request: Request,
 ): Promise<PublicProject> =>
-  updateWithAudit({ expiresAt }, { id, action: "project.ttl.update", before, after: { expiresAt }, request });
+  updateWithAudit(
+    { expiresAt },
+    { id, action: "project.ttl.update", before, after: { expiresAt }, request },
+  );
 
 /**
  * Xoá mềm.
@@ -191,5 +216,11 @@ export const updateTtl = (
  * `ON DELETE RESTRICT`, và chính hàm này vừa ghi một hàng audit trỏ vào project
  * đó. §2.3 nói rõ đấy là chủ đích — sổ kiểm toán phải sống lâu hơn thứ nó ghi.
  */
-export const softDelete = (id: string, request: Request): Promise<PublicProject> =>
-  updateWithAudit({ status: "DELETED" }, { id, action: "project.delete", request });
+export const softDelete = (
+  id: string,
+  request: Request,
+): Promise<PublicProject> =>
+  updateWithAudit(
+    { status: "DELETED" },
+    { id, action: "project.delete", request },
+  );

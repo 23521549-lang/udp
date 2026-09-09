@@ -22,7 +22,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "service-login": "tsx scripts/service-login.ts"
+    "service-login": "tsx scripts/service-login.ts",
+    "verify-chain": "tsx scripts/verify-chain.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

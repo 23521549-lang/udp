@@ -16,7 +16,12 @@ import { redact } from "../../core/logger.js";
  */
 
 /** Giới hạn của schema — §2.2. Cắt ở đây chứ không để Postgres ném 22001 */
-const MAX = { action: 100, targetType: 50, targetId: 100, userAgent: 255 } as const;
+const MAX = {
+  action: 100,
+  targetType: 50,
+  targetId: 100,
+  userAgent: 255,
+} as const;
 
 export interface AuditInput {
   /** Quy ước §2.2: `<thực_thể>.<động_từ>`, ví dụ `project.create`, `member.add` */
@@ -56,7 +61,9 @@ const uaOf = (req: Request | undefined): string | undefined =>
  * động nghiệp vụ. Nhờ vậy không cần `$transaction` tương tác — vốn giữ một
  * connection suốt nhiều round-trip, mà pool mặc định chỉ có 5.
  */
-export function auditEntry(input: AuditInput): Prisma.AuditLogCreateWithoutProjectInput {
+export function auditEntry(
+  input: AuditInput,
+): Prisma.AuditLogCreateWithoutProjectInput {
   const actorUserId = input.actorUserId ?? input.request?.user?.sub;
   const ip = ipOf(input.request);
   const ua = uaOf(input.request);
@@ -73,14 +80,20 @@ export function auditEntry(input: AuditInput): Prisma.AuditLogCreateWithoutProje
     targetType: input.targetType.slice(0, MAX.targetType),
     targetId: input.targetId.slice(0, MAX.targetId),
     actorType: input.actorType ?? "USER",
-    ...(actorUserId === undefined ? {} : { actor: { connect: { id: actorUserId } } }),
+    ...(actorUserId === undefined
+      ? {}
+      : { actor: { connect: { id: actorUserId } } }),
     ...(input.environmentId === undefined
       ? {}
       : { environment: { connect: { id: input.environmentId } } }),
     // `redact()` là hàng rào duy nhất — schema.prisma ghi rõ before/after PHẢI
     // đi qua nó. Viết một bản khác ở đây là mở đúng lỗ mà nó bịt.
-    ...(input.before === undefined ? {} : { before: redact(input.before) as Prisma.InputJsonValue }),
-    ...(input.after === undefined ? {} : { after: redact(input.after) as Prisma.InputJsonValue }),
+    ...(input.before === undefined
+      ? {}
+      : { before: redact(input.before) as Prisma.InputJsonValue }),
+    ...(input.after === undefined
+      ? {}
+      : { after: redact(input.after) as Prisma.InputJsonValue }),
     ...(ip === undefined ? {} : { ipAddress: ip }),
     ...(ua === undefined ? {} : { userAgent: ua }),
   };

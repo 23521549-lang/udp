@@ -1,6 +1,10 @@
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { parseWriterMatrix, readDesignDoc, type WriterMatrixRow } from "../src/design-doc.js";
+import {
+  parseWriterMatrix,
+  readDesignDoc,
+  type WriterMatrixRow,
+} from "../src/design-doc.js";
 import { modelToTableMap, openClient } from "../src/db-schema.js";
 
 /**
@@ -29,7 +33,10 @@ function writerRoleOf(row: WriterMatrixRow): Role | "split" | "append-only" {
   if (/Append-only/i.test(row.writer)) return "append-only";
   if (/Chia theo cột/i.test(row.writer)) return "split";
   const m = /Service\s*(\d)/.exec(row.writer) ?? /\bS(\d)\b/.exec(row.writer);
-  if (m?.[1] === undefined) throw new Error(`§1.2: không xác định được writer — ${row.writer.slice(0, 80)}`);
+  if (m?.[1] === undefined)
+    throw new Error(
+      `§1.2: không xác định được writer — ${row.writer.slice(0, 80)}`,
+    );
   return `udp_s${m[1]}` as Role;
 }
 
@@ -59,16 +66,26 @@ beforeAll(async () => {
       GROUP BY grantee, table_name, privilege_type`,
     [ROLES],
   );
-  grants = new Map(res.rows.map((r) => [`${r.grantee}|${r.table_name}|${r.privilege_type}`, r.cols]));
+  grants = new Map(
+    res.rows.map((r) => [
+      `${r.grantee}|${r.table_name}|${r.privilege_type}`,
+      r.cols,
+    ]),
+  );
 
-  const del = await client.query<{ grantee: string; table_name: string; privilege_type: string }>(
+  const del = await client.query<{
+    grantee: string;
+    table_name: string;
+    privilege_type: string;
+  }>(
     `SELECT DISTINCT grantee, table_name, privilege_type
        FROM information_schema.role_table_grants
       WHERE grantee = ANY($1::text[]) AND table_schema = 'public'
         AND privilege_type NOT IN ('SELECT','INSERT','UPDATE')`,
     [ROLES],
   );
-  for (const r of del.rows) grants.set(`${r.grantee}|${r.table_name}|${r.privilege_type}`, ["*"]);
+  for (const r of del.rows)
+    grants.set(`${r.grantee}|${r.table_name}|${r.privilege_type}`, ["*"]);
 
   const cols = await client.query<{ table_name: string; column_name: string }>(
     `SELECT table_name, column_name FROM information_schema.columns
@@ -76,11 +93,28 @@ beforeAll(async () => {
   );
   tableColumns = new Map();
   for (const r of cols.rows) {
-    tableColumns.set(r.table_name, [...(tableColumns.get(r.table_name) ?? []), r.column_name]);
+    tableColumns.set(r.table_name, [
+      ...(tableColumns.get(r.table_name) ?? []),
+      r.column_name,
+    ]);
   }
 });
 
 afterAll(async () => {
+  /**
+   * Tat luat o DUNG mot dong, va day la ly do.
+   *
+   * TypeScript coi bien nay la da gan chac chan vi `beforeAll` co gan no.
+   * Nhung neu chinh `beforeAll` nem — khong noi duoc database, sai mat khau,
+   * seed thieu — thi `afterAll` VAN chay voi bien chua gan. Bo `?.` di thi
+   * loi that su bi che boi mot `TypeError` trong buoc don dep, va nguoi doc
+   * log thay sai cho hoan toan.
+   *
+   * Doi kieu thanh `| undefined` la cach dung ve mat kieu nhung bat 64 cho
+   * dung khac trong bo test nay phai thu hep — cai gia lon hon nhieu so voi
+   * mot dong tat luat co giai thich.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   await client?.end();
 });
 
@@ -99,12 +133,15 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
     const problems: string[] = [];
     for (const row of rows) {
       const who = writerRoleOf(row);
-      const roles: Role[] = who === "append-only" ? [...ROLES] : who === "split" ? [] : [who];
+      const roles: Role[] =
+        who === "append-only" ? [...ROLES] : who === "split" ? [] : [who];
       for (const role of roles) {
         for (const model of modelsOf(row)) {
           const table = modelToTable.get(model) as string;
           if (!grants.has(`${role}|${table}|INSERT`)) {
-            problems.push(`${role} thiếu INSERT trên ${table} (§1.2 khai nó là writer)`);
+            problems.push(
+              `${role} thiếu INSERT trên ${table} (§1.2 khai nó là writer)`,
+            );
           }
         }
       }
@@ -134,8 +171,13 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
           for (const priv of ["UPDATE", "DELETE"] as const) {
             const cols = grants.get(`${other}|${table}|${priv}`);
             if (cols === undefined) continue;
-            const isWholeTable = cols[0] === "*" || (columnCount > 0 && cols.length >= columnCount);
-            if (isWholeTable) problems.push(`${other} có ${priv} toàn bảng ${table}, nhưng §1.2 giao cho ${who}`);
+            const isWholeTable =
+              cols[0] === "*" ||
+              (columnCount > 0 && cols.length >= columnCount);
+            if (isWholeTable)
+              problems.push(
+                `${other} có ${priv} toàn bảng ${table}, nhưng §1.2 giao cho ${who}`,
+              );
           }
         }
       }
@@ -148,10 +190,14 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
     expect(row, "§1.2 phải có hàng chia theo cột").toBeDefined();
 
     // Ô đó liệt kê đúng những cột S3 sở hữu, mỗi cột trong một cặp nháy ngược.
-    const declared = [...(row as WriterMatrixRow).writer.matchAll(/`([a-z_]+)`/g)]
+    const declared = [
+      ...(row as WriterMatrixRow).writer.matchAll(/`([a-z_]+)`/g),
+    ]
       .map((m) => m[1] as string)
       .sort();
-    const actual = [...(grants.get("udp_s3|rollout_sessions|UPDATE") ?? [])].sort();
+    const actual = [
+      ...(grants.get("udp_s3|rollout_sessions|UPDATE") ?? []),
+    ].sort();
 
     expect(actual).toEqual(declared);
   });
@@ -168,7 +214,10 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
     const dotted = [...cell.matchAll(/`([a-z_]+)\.([a-z_]+)`/g)].map(
       (m) => [m[1] as string, m[2] as string] as const,
     );
-    expect(dotted.length, "§1.2 phải nêu ngoại lệ dạng `bảng.cột`").toBeGreaterThan(0);
+    expect(
+      dotted.length,
+      "§1.2 phải nêu ngoại lệ dạng `bảng.cột`",
+    ).toBeGreaterThan(0);
 
     // Các cột cùng bảng có thể được nêu tiếp bằng nháy ngược trần ngay sau đó
     const byTable = new Map<string, Set<string>>();
@@ -192,8 +241,12 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
       const actual = new Set(grants.get(`udp_s3|${table}|UPDATE`) ?? []);
       const missing = [...cols].filter((c) => !actual.has(c));
       const extra = [...actual].filter((c) => !cols.has(c));
-      if (missing.length) problems.push(`udp_s3 thiếu UPDATE(${missing.join(",")}) trên ${table}`);
-      if (extra.length) problems.push(`udp_s3 THỪA UPDATE(${extra.join(",")}) trên ${table}`);
+      if (missing.length)
+        problems.push(
+          `udp_s3 thiếu UPDATE(${missing.join(",")}) trên ${table}`,
+        );
+      if (extra.length)
+        problems.push(`udp_s3 THỪA UPDATE(${extra.join(",")}) trên ${table}`);
     }
     expect(problems).toEqual([]);
 
@@ -203,7 +256,9 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
     const s3UpdateTables = [...grants.keys()]
       .filter((k) => k.startsWith("udp_s3|") && k.endsWith("|UPDATE"))
       .map((k) => k.split("|")[1] as string);
-    const undocumented = s3UpdateTables.filter((t) => !byTable.has(t) && t !== "rollout_sessions");
+    const undocumented = s3UpdateTables.filter(
+      (t) => !byTable.has(t) && t !== "rollout_sessions",
+    );
     expect(undocumented, "S3 ghi được bảng mà §1.2 không nhắc").toEqual([]);
   });
 });

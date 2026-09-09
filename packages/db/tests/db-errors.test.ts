@@ -23,6 +23,20 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  /**
+   * Tat luat o DUNG mot dong, va day la ly do.
+   *
+   * TypeScript coi bien nay la da gan chac chan vi `beforeAll` co gan no.
+   * Nhung neu chinh `beforeAll` nem — khong noi duoc database, sai mat khau,
+   * seed thieu — thi `afterAll` VAN chay voi bien chua gan. Bo `?.` di thi
+   * loi that su bi che boi mot `TypeError` trong buoc don dep, va nguoi doc
+   * log thay sai cho hoan toan.
+   *
+   * Doi kieu thanh `| undefined` la cach dung ve mat kieu nhung bat 64 cho
+   * dung khac trong bo test nay phai thu hep — cai gia lon hon nhieu so voi
+   * mot dong tat luat co giai thich.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   await prisma?.$disconnect();
 });
 
@@ -34,7 +48,12 @@ describe("dbErrorCode — SQLSTATE của trigger tới được tầng ứng d�
       .update({
         where: { id: rule.id },
         // uuid hợp lệ về định dạng nhưng không thuộc flag nào
-        data: { serve: { kind: "variant", variantId: "00000000-0000-4000-8000-0000000000ff" } },
+        data: {
+          serve: {
+            kind: "variant",
+            variantId: "00000000-0000-4000-8000-0000000000ff",
+          },
+        },
       })
       .then(
         () => undefined,
@@ -53,7 +72,10 @@ describe("dbErrorCode — SQLSTATE của trigger tới được tầng ứng d�
     expect(mapped?.detail).toContain("00000000-0000-4000-8000-0000000000ff");
     expect(mapped?.detail).not.toContain("prisma.");
     expect(mapped?.detail).not.toContain("Invalid `");
-    expect(mapped?.detail.startsWith("ORPHAN_RULE:"), "tiền tố mã phải bị cắt").toBe(false);
+    expect(
+      mapped?.detail.startsWith("ORPHAN_RULE:"),
+      "tiền tố mã phải bị cắt",
+    ).toBe(false);
   });
 
   it("lỗi không phải của UDP trả undefined chứ không đoán bừa", () => {
@@ -64,7 +86,9 @@ describe("dbErrorCode — SQLSTATE của trigger tới được tầng ứng d�
   });
 
   it("nhận cả SQLSTATE phẳng từ pg.Client, không chỉ dạng lồng của Prisma", () => {
-    expect(dbConstraintError({ code: "UDP01", message: "ORPHAN_RULE: x" })).toEqual({
+    expect(
+      dbConstraintError({ code: "UDP01", message: "ORPHAN_RULE: x" }),
+    ).toEqual({
       code: "ORPHAN_RULE",
       detail: "x",
     });
@@ -76,7 +100,9 @@ describe("dbErrorCode — SQLSTATE của trigger tới được tầng ứng d�
     // lệnh nào — Prisma ném DriverAdapterError với `code` và `meta` đều undefined,
     // SQLSTATE nằm ở `cause.code`. Bản mapper đầu tiên không biết dạng này, nên
     // mọi VARIANT_IN_USE rơi xuống nhánh 500. Test này ghim nó lại.
-    const flag = await prisma.featureFlag.findFirstOrThrow({ where: { key: "dark-mode" } });
+    const flag = await prisma.featureFlag.findFirstOrThrow({
+      where: { key: "dark-mode" },
+    });
     const rule = await prisma.flagTargetingRule.findFirstOrThrow({
       where: { flagEnvConfig: { flagId: flag.id } },
     });
@@ -92,7 +118,10 @@ describe("dbErrorCode — SQLSTATE của trigger tới được tầng ứng d�
         });
         await tx.flagVariant.delete({ where: { id: variant.id } });
       })
-      .then(() => undefined, (e: unknown) => e);
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      );
 
     const mapped = dbConstraintError(err);
     expect(mapped?.code).toBe("VARIANT_IN_USE");
@@ -102,7 +131,10 @@ describe("dbErrorCode — SQLSTATE của trigger tới được tầng ứng d�
   it("UDP02 là mã RIÊNG, không gộp vào ORPHAN_RULE", () => {
     // Hai tình huống khác nhau ở `retryable`: gửi lại một rule sai vẫn sai, còn
     // xoá variant thì gỡ rule đang trỏ tới nó rồi thử lại là được.
-    const mapped = dbConstraintError({ code: "UDP02", message: "VARIANT_IN_USE: y" });
+    const mapped = dbConstraintError({
+      code: "UDP02",
+      message: "VARIANT_IN_USE: y",
+    });
     expect(mapped).toEqual({ code: "VARIANT_IN_USE", detail: "y" });
   });
 });

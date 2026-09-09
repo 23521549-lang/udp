@@ -64,7 +64,8 @@ function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   const walk = (d: string): void => {
     for (const entry of readdirSync(d)) {
-      if (entry === "node_modules" || entry === "dist" || entry === "generated") continue;
+      if (entry === "node_modules" || entry === "dist" || entry === "generated")
+        continue;
       const full = join(d, entry);
       if (statSync(full).isDirectory()) walk(full);
       else if (entry.endsWith(".ts")) out.push(full);

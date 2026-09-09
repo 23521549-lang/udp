@@ -37,12 +37,18 @@ export const createProjectSchema = z
    * project IMPORT_EXISTING không có repo sẽ chỉ hỏng lúc provisioning — xa
    * chỗ người dùng gõ sai, và lúc đó đã tạo hàng trong database rồi.
    */
-  .refine((data) => data.creationMode !== "IMPORT_EXISTING" || data.repoUrl !== undefined, {
-    message: "Chế độ IMPORT_EXISTING phải kèm repoUrl",
-    path: ["repoUrl"],
-  });
+  .refine(
+    (data) =>
+      data.creationMode !== "IMPORT_EXISTING" || data.repoUrl !== undefined,
+    {
+      message: "Chế độ IMPORT_EXISTING phải kèm repoUrl",
+      path: ["repoUrl"],
+    },
+  );
 
-export const updateQuotaSchema = z.object({ resourceQuota: resourceQuotaSchema });
+export const updateQuotaSchema = z.object({
+  resourceQuota: resourceQuotaSchema,
+});
 
 /**
  * `expiresAt` nhận ISO-8601 **có offset**, hoặc `null` để bỏ hạn.
@@ -56,11 +62,17 @@ export const updateQuotaSchema = z.object({ resourceQuota: resourceQuotaSchema }
 export const updateTtlSchema = z.object({
   expiresAt: z
     .string()
-    .datetime({ offset: true, message: "expiresAt phải là ISO-8601 kèm offset múi giờ" })
+    .datetime({
+      offset: true,
+      message: "expiresAt phải là ISO-8601 kèm offset múi giờ",
+    })
     .nullable()
-    .refine((value) => value === null || new Date(value).getTime() > Date.now(), {
-      message: "expiresAt phải ở tương lai",
-    }),
+    .refine(
+      (value) => value === null || new Date(value).getTime() > Date.now(),
+      {
+        message: "expiresAt phải ở tương lai",
+      },
+    ),
 });
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;

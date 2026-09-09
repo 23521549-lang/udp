@@ -11,7 +11,10 @@ import {
   SDK_KEY,
   TOTAL_BUCKETS,
 } from "@udp/config";
-import { flagServeDbSchema, type FlagServe } from "@udp/shared-types/evaluation";
+import {
+  flagServeDbSchema,
+  type FlagServe,
+} from "@udp/shared-types/evaluation";
 import { createPgAdapter } from "../src/adapter.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 
@@ -244,7 +247,8 @@ async function seedDarkModeFlag(projectId: string) {
 
   const variantId = (key: string): string => {
     const found = darkMode.variants.find((v) => v.key === key);
-    if (!found) throw new Error(`Không tìm thấy variant "${key}" của dark-mode`);
+    if (!found)
+      throw new Error(`Không tìm thấy variant "${key}" của dark-mode`);
     return found.id;
   };
 
@@ -356,8 +360,16 @@ async function seedCheckoutFlag(projectId: string): Promise<void> {
       variants: {
         create: [
           { id: ID.variantCheckoutLegacy, key: "legacy", value: "legacy" },
-          { id: ID.variantCheckoutOptimized, key: "optimized", value: "optimized" },
-          { id: ID.variantCheckoutExperimental, key: "experimental", value: "experimental" },
+          {
+            id: ID.variantCheckoutOptimized,
+            key: "optimized",
+            value: "optimized",
+          },
+          {
+            id: ID.variantCheckoutExperimental,
+            key: "experimental",
+            value: "experimental",
+          },
         ],
       },
     },
@@ -365,7 +377,8 @@ async function seedCheckoutFlag(projectId: string): Promise<void> {
   });
 
   const legacy = checkout.variants.find((v) => v.key === "legacy");
-  if (!legacy) throw new Error('Không tìm thấy variant "legacy" của checkout-algorithm');
+  if (!legacy)
+    throw new Error('Không tìm thấy variant "legacy" của checkout-algorithm');
 
   await prisma.featureFlag.update({
     where: { id: checkout.id },

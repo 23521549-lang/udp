@@ -1,4 +1,10 @@
-import type { ErrorRequestHandler, RequestHandler } from "express";
+import type {
+  ErrorRequestHandler,
+  NextFunction,
+  Request,
+  RequestHandler,
+  Response,
+} from "express";
 import { ZodError } from "zod";
 import { isProduction } from "@udp/config";
 import { dbConstraintError, httpStatusOf } from "@udp/db";
@@ -13,8 +19,23 @@ import { buildProblem, sendProblem } from "./problem.js";
  * lỗi sẽ treo request cho tới khi client timeout, và không có dòng log nào —
  * loại lỗi tốn nhiều giờ để tìm ra.
  */
+/**
+ * Handler ĐƯỢC PHÉP trả Promise. `RequestHandler` của Express khai trả `void`,
+ * nên nhận `async` vào một tham số kiểu đó là để kiểu nói dối: nó bảo người đọc
+ * "hàm này không trả gì" trong khi nó trả một Promise mà Express sẽ vứt đi.
+ * Runtime ở đây vẫn đúng nhờ `.catch(next)` ngay dưới, nhưng chính lời nói dối
+ * ấy sinh ra 19 cảnh báo `no-misused-promises` ở mọi nơi gọi — và tệ hơn, nó
+ * làm người viết route mới tin rằng trả Promise cho Express là chuyện bình
+ * thường ở mọi chỗ khác.
+ */
+type AsyncRequestHandler = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => Promise<void> | void;
+
 export const asyncHandler =
-  (fn: RequestHandler): RequestHandler =>
+  (fn: AsyncRequestHandler): RequestHandler =>
   (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
@@ -97,7 +118,12 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     // pino `redact.paths` KHÔNG thay được: nó là wildcard một cấp, còn
     // `details` lồng sâu tuỳ ý.
     logger.warn(
-      { err, kind: err.kind, code: err.problemCode, details: redact(err.details) },
+      {
+        err,
+        kind: err.kind,
+        code: err.problemCode,
+        details: redact(err.details),
+      },
       "Business error",
     );
     sendProblem(
@@ -107,7 +133,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
         status: err.statusCode,
         // Có mã nghiệp vụ thì `title` lấy từ catalog; không thì dùng kind làm nhãn
         ...(err.problemCode === undefined
-          ? { title: err.kind, typeSlug: err.kind.toLowerCase().replaceAll("_", "-") }
+          ? {
+              title: err.kind,
+              typeSlug: err.kind.toLowerCase().replaceAll("_", "-"),
+            }
           : { code: err.problemCode }),
         detail: err.message,
       }),

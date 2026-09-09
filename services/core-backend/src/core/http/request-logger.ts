@@ -14,7 +14,7 @@ export const requestLogger: RequestHandler = pinoHttp({
 
   autoLogging: {
     ignore: (req) => {
-      const path = (req.url ?? "").split("?")[0] ?? "";
+      const path = req.url.split("?")[0] ?? "";
       return SILENT_PATHS.has(path);
     },
   },

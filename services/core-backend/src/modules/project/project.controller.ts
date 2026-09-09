@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { asyncHandler } from "../../core/http/error-handler.js";
-import { requireAuth } from "../../core/http/middlewares/auth.middleware.js";
+import {
+  requireAuth,
+  requireUser,
+} from "../../core/http/middlewares/auth.middleware.js";
 import {
   projectIdParam,
   requireMinProjectRole,
@@ -10,7 +13,11 @@ import * as auditRepository from "../audit/audit.repository.js";
 import { auditQuerySchema, type AuditQuery } from "../audit/audit.types.js";
 import { memberRouter } from "../member/member.controller.js";
 import * as projectService from "./project.service.js";
-import { createProjectSchema, updateQuotaSchema, updateTtlSchema } from "./project.types.js";
+import {
+  createProjectSchema,
+  updateQuotaSchema,
+  updateTtlSchema,
+} from "./project.types.js";
 
 export const projectRouter: Router = Router();
 
@@ -27,7 +34,7 @@ projectRouter.post(
   asyncHandler(async (req, res) => {
     const { environments, ...project } = await projectService.create(
       req.body,
-      req.user!.sub,
+      requireUser(req).sub,
       req,
     );
     // §8.1: 201 kèm cả danh sách environment, vì wizard của Portal hiển thị
@@ -46,7 +53,9 @@ projectRouter.get(
   "/",
   requireAuth,
   asyncHandler(async (req, res) => {
-    res.json({ projects: await projectService.listForUser(req.user!.sub) });
+    res.json({
+      projects: await projectService.listForUser(requireUser(req).sub),
+    });
   }),
 );
 
@@ -55,7 +64,9 @@ projectRouter.get(
   requireAuth,
   requireMinProjectRole("VIEWER"),
   asyncHandler(async (req, res) => {
-    const { environments, ...project } = await projectService.getById(projectIdParam(req));
+    const { environments, ...project } = await projectService.getById(
+      projectIdParam(req),
+    );
     res.json({ project, environments });
   }),
 );
@@ -67,7 +78,13 @@ projectRouter.patch(
   requireMinProjectRole("OWNER"),
   validateBody(updateQuotaSchema),
   asyncHandler(async (req, res) => {
-    res.json({ project: await projectService.updateQuota(projectIdParam(req), req.body, req) });
+    res.json({
+      project: await projectService.updateQuota(
+        projectIdParam(req),
+        req.body,
+        req,
+      ),
+    });
   }),
 );
 
@@ -82,7 +99,13 @@ projectRouter.patch(
   requireMinProjectRole("OWNER"),
   validateBody(updateTtlSchema),
   asyncHandler(async (req, res) => {
-    res.json({ project: await projectService.updateTtl(projectIdParam(req), req.body, req) });
+    res.json({
+      project: await projectService.updateTtl(
+        projectIdParam(req),
+        req.body,
+        req,
+      ),
+    });
   }),
 );
 

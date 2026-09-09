@@ -47,7 +47,12 @@ export async function inRollback<T>(
     return { value };
   } catch (err) {
     const e = err as { code?: string; message: string };
-    return { error: { ...(e.code === undefined ? {} : { code: e.code }), message: e.message } };
+    return {
+      error: {
+        ...(e.code === undefined ? {} : { code: e.code }),
+        message: e.message,
+      },
+    };
   } finally {
     await client.query("ROLLBACK");
   }

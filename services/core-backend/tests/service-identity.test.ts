@@ -16,7 +16,9 @@ describe("chốt khẳng định danh tính KHÔNG phải trang trí", () => {
     // Mô phỏng cấu hình sai phổ biến nhất: quên đặt DATABASE_URL_S1 nên chuỗi
     // kết nối rơi về user owner. Không có chốt này, ứng dụng chạy bình thường
     // với TOÀN QUYỀN và không có gì báo — ma trận writer im lặng mất hiệu lực.
-    await expect(assertConnectedAs(prisma, "udp_s2")).rejects.toThrow(/udp_s1.*udp_s2|udp_s2/s);
+    await expect(assertConnectedAs(prisma, "udp_s2")).rejects.toThrow(
+      /udp_s1.*udp_s2|udp_s2/s,
+    );
   });
 
   it("không ném khi role đúng", async () => {
@@ -26,7 +28,9 @@ describe("chốt khẳng định danh tính KHÔNG phải trang trí", () => {
 
 describe("danh tính kết nối của Service 1", () => {
   it("nối bằng udp_s1, KHÔNG phải owner", async () => {
-    const rows = await prisma.$queryRaw<{ current_user: string }[]>`SELECT current_user`;
+    const rows = await prisma.$queryRaw<
+      { current_user: string }[]
+    >`SELECT current_user`;
     expect(rows[0]?.current_user).toBe("udp_s1");
   });
 
@@ -50,6 +54,8 @@ describe("danh tính kết nối của Service 1", () => {
   it("KHÔNG đọc được cloud_credentials của chính mình? — CÓ, đó là lãnh địa S1", async () => {
     // Đối chứng cho phép thử trên: S1 ĐƯỢC đọc credential (ADR-06 chỉ cấm S3).
     // Không có ca này thì test âm ở trên có thể xanh vì mọi thứ đều bị chặn.
-    await expect(prisma.cloudCredential.count()).resolves.toBeGreaterThanOrEqual(0);
+    await expect(
+      prisma.cloudCredential.count(),
+    ).resolves.toBeGreaterThanOrEqual(0);
   });
 });

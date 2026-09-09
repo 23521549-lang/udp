@@ -45,11 +45,23 @@ const shutdown = (signal: string) => {
     process.exit(1);
   }, 10_000);
 
-  server.close(async () => {
-    await prisma.$disconnect();
-    clearTimeout(forceExit);
-    logger.info("Đã đóng sạch");
-    process.exit(0);
+  /**
+   * Callback của `server.close` khai kiểu `(err?) => void`. Truyền một hàm
+   * `async` vào đó là gửi một Promise cho bên KHÔNG await nó: nếu
+   * `$disconnect()` ném lúc tắt máy, đó là một unhandled rejection ngay trong
+   * đường tắt êm — vốn là đường phải im lặng nhất.
+   */
+  server.close(() => {
+    void prisma
+      .$disconnect()
+      .catch((err: unknown) => {
+        logger.error({ err }, "Lỗi khi đóng kết nối database");
+      })
+      .finally(() => {
+        clearTimeout(forceExit);
+        logger.info("Đã đóng sạch");
+        process.exit(0);
+      });
   });
 };
 

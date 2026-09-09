@@ -22,16 +22,21 @@
     "dev:portal": "pnpm --filter @udp/portal dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "//lint": "Chua co linter. 5 package deu da co ma nguon, nen day la NO ky thuat that chu khong con la \"chua den luc\" — eslint + typescript-eslint nen them truoc service nghiep vu dau tien.",
     "test": "pnpm -r --if-present test",
-    "db:service-login": "pnpm --filter @udp/db service-login"
+    "db:service-login": "pnpm --filter @udp/db service-login",
+    "db:verify-chain": "pnpm --filter @udp/db verify-chain"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
+    "eslint": "^9",
     "prettier": "^3.3.3",
     "tsx": "^4.19.1",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8"
   }
 }

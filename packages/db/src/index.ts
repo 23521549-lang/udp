@@ -38,7 +38,10 @@ export interface PrismaClientOptions {
  * còn thấp hơn nhiều so với Postgres tự dựng, nên điều này càng quan trọng.
  */
 export function createPrismaClient(options: PrismaClientOptions): PrismaClient {
-  const cache = globalThis as unknown as Record<string, PrismaClient | undefined>;
+  const cache = globalThis as unknown as Record<
+    string,
+    PrismaClient | undefined
+  >;
   const cached = cache[options.cacheKey];
   if (cached !== undefined) return cached;
 
@@ -77,7 +80,11 @@ if (typeof BigInt.prototype.toJSON !== "function") {
   };
 }
 
-export { createPgAdapter, DB_TLS_OPTIONS, sanitizeConnectionString } from "./adapter.js";
+export {
+  createPgAdapter,
+  DB_TLS_OPTIONS,
+  sanitizeConnectionString,
+} from "./adapter.js";
 export { assertConnectedAs } from "./identity.js";
 export { dbConstraintError, httpStatusOf, UDP_SQLSTATE } from "./errors.js";
 export type { DbConstraintError } from "./errors.js";

@@ -3,7 +3,10 @@ import { COOKIE_NAMES } from "@udp/config";
 import { UnauthenticatedError } from "../../core/errors.js";
 import { clearAuthCookies, setAuthCookies } from "../../core/http/cookies.js";
 import { asyncHandler } from "../../core/http/error-handler.js";
-import { requireAuth } from "../../core/http/middlewares/auth.middleware.js";
+import {
+  requireAuth,
+  requireUser,
+} from "../../core/http/middlewares/auth.middleware.js";
 import { authRateLimiter } from "../../core/http/middlewares/rate-limit.middleware.js";
 import { validateBody } from "../../core/http/validate.js";
 import * as authService from "./auth.service.js";
@@ -24,7 +27,10 @@ export const authRouter: Router = Router();
  * khi người dùng nghi tài khoản bị chiếm, danh sách "thiết bị nào đang đăng
  * nhập" là thứ đầu tiên họ cần nhìn.
  */
-function sessionContext(req: Request): { userAgent?: string; ipAddress?: string } {
+function sessionContext(req: Request): {
+  userAgent?: string;
+  ipAddress?: string;
+} {
   const ua = req.get("user-agent");
   return {
     ...(ua === undefined ? {} : { userAgent: ua.slice(0, 255) }),
@@ -37,7 +43,10 @@ authRouter.post(
   authRateLimiter,
   validateBody(registerSchema),
   asyncHandler(async (req, res) => {
-    const { user, tokens, familyId } = await authService.register(req.body, sessionContext(req));
+    const { user, tokens, familyId } = await authService.register(
+      req.body,
+      sessionContext(req),
+    );
     const csrfToken = setAuthCookies(res, tokens, familyId);
     res.status(201).json({ user, csrfToken });
   }),
@@ -48,7 +57,10 @@ authRouter.post(
   authRateLimiter,
   validateBody(loginSchema),
   asyncHandler(async (req, res) => {
-    const { user, tokens, familyId } = await authService.login(req.body, sessionContext(req));
+    const { user, tokens, familyId } = await authService.login(
+      req.body,
+      sessionContext(req),
+    );
     const csrfToken = setAuthCookies(res, tokens, familyId);
     res.json({ user, csrfToken });
   }),
@@ -71,7 +83,7 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     // CSRF đã được kiểm ở tầng app cho mọi route không nằm trong danh sách miễn
     // trừ — /logout cố ý KHÔNG được miễn.
-    const token: unknown = req.cookies?.[COOKIE_NAMES.refreshToken];
+    const token: unknown = req.cookies[COOKIE_NAMES.refreshToken];
     await authService.logout(typeof token === "string" ? token : undefined);
     clearAuthCookies(res);
     res.status(204).end();
@@ -82,12 +94,15 @@ authRouter.post(
   "/refresh",
   authRateLimiter,
   asyncHandler(async (req, res) => {
-    const token: unknown = req.cookies?.[COOKIE_NAMES.refreshToken];
+    const token: unknown = req.cookies[COOKIE_NAMES.refreshToken];
     if (typeof token !== "string" || token.length === 0) {
       throw new UnauthenticatedError("Không có refresh token");
     }
 
-    const { user, tokens, familyId } = await authService.refresh(token, sessionContext(req));
+    const { user, tokens, familyId } = await authService.refresh(
+      token,
+      sessionContext(req),
+    );
     const csrfToken = setAuthCookies(res, tokens, familyId);
     res.json({ user, csrfToken });
   }),
@@ -100,7 +115,7 @@ authRouter.get(
   asyncHandler(async (req, res) => {
     // requireAuth đã bảo đảm req.user tồn tại; dấu ! ở đây là an toàn và
     // được giới hạn trong đúng một dòng.
-    const user = await authService.getCurrentUser(req.user!.sub);
+    const user = await authService.getCurrentUser(requireUser(req).sub);
     res.json({ user });
   }),
 );

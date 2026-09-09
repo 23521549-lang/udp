@@ -26,7 +26,9 @@ beforeAll(async () => {
   const rule = await client.query<{ id: string }>(
     `SELECT id FROM flag_targeting_rules LIMIT 1`,
   );
-  const env = await client.query<{ id: string }>(`SELECT id FROM environments LIMIT 1`);
+  const env = await client.query<{ id: string }>(
+    `SELECT id FROM environments LIMIT 1`,
+  );
   if (rule.rows[0] === undefined || env.rows[0] === undefined) {
     throw new Error("Database chưa seed — chạy `pnpm db:seed` trước");
   }
@@ -35,6 +37,20 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  /**
+   * Tat luat o DUNG mot dong, va day la ly do.
+   *
+   * TypeScript coi bien nay la da gan chac chan vi `beforeAll` co gan no.
+   * Nhung neu chinh `beforeAll` nem — khong noi duoc database, sai mat khau,
+   * seed thieu — thi `afterAll` VAN chay voi bien chua gan. Bo `?.` di thi
+   * loi that su bi che boi mot `TypeError` trong buoc don dep, va nguoi doc
+   * log thay sai cho hoan toan.
+   *
+   * Doi kieu thanh `| undefined` la cach dung ve mat kieu nhung bat 64 cho
+   * dung khac trong bo test nay phai thu hep — cai gia lon hon nhieu so voi
+   * mot dong tat luat co giai thich.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   await client?.end();
 });
 
@@ -51,10 +67,14 @@ afterAll(async () => {
 async function asRole(role: string, body: () => Promise<unknown>) {
   return inRollback(client, async () => {
     await client.query(`SET LOCAL ROLE ${role}`);
-    const who = await client.query<{ current_user: string }>("SELECT current_user");
+    const who = await client.query<{ current_user: string }>(
+      "SELECT current_user",
+    );
     const actual = who.rows[0]?.current_user;
     if (actual !== role) {
-      throw new Error(`SET ROLE không có hiệu lực: current_user = ${actual}, cần ${role}`);
+      throw new Error(
+        `SET ROLE không có hiệu lực: current_user = ${actual}, cần ${role}`,
+      );
     }
     return body();
   });
@@ -99,7 +119,10 @@ describe("I30(b) — ngoài ba quyền đó, database từ chối", () => {
   // 42501 = insufficient_privilege
   it("S3 KHÔNG sửa được cột khác của rule (priority)", async () => {
     const r = await asRole("udp_s3", () =>
-      client.query(`UPDATE flag_targeting_rules SET priority = 99 WHERE id = $1`, [ruleId]),
+      client.query(
+        `UPDATE flag_targeting_rules SET priority = 99 WHERE id = $1`,
+        [ruleId],
+      ),
     );
     expect(r.error?.code).toBe("42501");
   });
@@ -113,13 +136,17 @@ describe("I30(b) — ngoài ba quyền đó, database từ chối", () => {
 
   it("S3 KHÔNG sửa được cột khác của environment (name)", async () => {
     const r = await asRole("udp_s3", () =>
-      client.query(`UPDATE environments SET name = 'hacked' WHERE id = $1`, [envId]),
+      client.query(`UPDATE environments SET name = 'hacked' WHERE id = $1`, [
+        envId,
+      ]),
     );
     expect(r.error?.code).toBe("42501");
   });
 
   it("S3 KHÔNG đọc được cloud_credentials (ADR-06)", async () => {
-    const r = await asRole("udp_s3", () => client.query(`SELECT id FROM cloud_credentials LIMIT 1`));
+    const r = await asRole("udp_s3", () =>
+      client.query(`SELECT id FROM cloud_credentials LIMIT 1`),
+    );
     expect(r.error?.code).toBe("42501");
   });
 
@@ -163,11 +190,17 @@ describe("I30(d) — luật GIÁ TRỊ, thứ GRANT không diễn đạt đượ
          RETURNING id`,
       );
       const sessionId = session.rows[0]?.id;
-      if (sessionId === undefined) throw new Error("Không dựng được rollout_session — database chưa seed?");
+      if (sessionId === undefined)
+        throw new Error(
+          "Không dựng được rollout_session — database chưa seed?",
+        );
 
       await client.query(`SET LOCAL ROLE ${role}`);
-      const who = await client.query<{ current_user: string }>("SELECT current_user");
-      if (who.rows[0]?.current_user !== role) throw new Error(`SET ROLE không có hiệu lực`);
+      const who = await client.query<{ current_user: string }>(
+        "SELECT current_user",
+      );
+      if (who.rows[0]?.current_user !== role)
+        throw new Error(`SET ROLE không có hiệu lực`);
 
       await client.query(
         `INSERT INTO rollout_events
@@ -227,7 +260,9 @@ describe("I30(d) — luật GIÁ TRỊ, thứ GRANT không diễn đạt đượ
         [sessionId, intent.rows[0]?.id],
       );
 
-      await client.query(`DELETE FROM rollout_sessions WHERE id = $1`, [sessionId]);
+      await client.query(`DELETE FROM rollout_sessions WHERE id = $1`, [
+        sessionId,
+      ]);
     });
     expect(r.error).toBeUndefined();
   });
@@ -257,7 +292,9 @@ describe("I30(d) — luật GIÁ TRỊ, thứ GRANT không diễn đạt đượ
         [sessionId, intent.rows[0]?.id],
       );
       // Xoá RIÊNG intent — bản ghi "traffic đã đổi" sẽ mất chủ nếu cho phép
-      await client.query(`DELETE FROM rollout_events WHERE id = $1`, [intent.rows[0]?.id]);
+      await client.query(`DELETE FROM rollout_events WHERE id = $1`, [
+        intent.rows[0]?.id,
+      ]);
     });
     expect(r.error?.code).toBe("23503");
   });
@@ -282,7 +319,10 @@ describe("I22(b) — grant theo cột phải phủ HẾT bảng", () => {
         [table],
       );
       const have = new Set(granted.rows.map((r) => r.column_name));
-      const orphans = all.rows.map((r) => r.column_name).filter((c) => !have.has(c)).sort();
+      const orphans = all.rows
+        .map((r) => r.column_name)
+        .filter((c) => !have.has(c))
+        .sort();
       expect(orphans, "cột không thuộc về service nào").toEqual([]);
     });
   }
@@ -298,14 +338,18 @@ describe("I30(c) — hướng ngược lại: S2 không lấn sang lãnh địa 
 
   it("S1 KHÔNG sửa được config_version (đó là con trỏ đọc của ADR-05)", async () => {
     const r = await asRole("udp_s1", () =>
-      client.query(`UPDATE environments SET config_version = 1 WHERE id = $1`, [envId]),
+      client.query(`UPDATE environments SET config_version = 1 WHERE id = $1`, [
+        envId,
+      ]),
     );
     expect(r.error?.code).toBe("42501");
   });
 
   it("S1 KHÔNG sửa được cột điều khiển traffic của rollout", async () => {
     const r = await asRole("udp_s1", () =>
-      client.query(`UPDATE rollout_sessions SET current_traffic_percentage = 100`),
+      client.query(
+        `UPDATE rollout_sessions SET current_traffic_percentage = 100`,
+      ),
     );
     expect(r.error?.code).toBe("42501");
   });
@@ -334,7 +378,9 @@ describe("I30(c) — hướng ngược lại: S2 không lấn sang lãnh địa 
   });
 
   it("S2 KHÔNG đọc được cloud_credentials", async () => {
-    const r = await asRole("udp_s2", () => client.query(`SELECT id FROM cloud_credentials LIMIT 1`));
+    const r = await asRole("udp_s2", () =>
+      client.query(`SELECT id FROM cloud_credentials LIMIT 1`),
+    );
     expect(r.error?.code).toBe("42501");
   });
 

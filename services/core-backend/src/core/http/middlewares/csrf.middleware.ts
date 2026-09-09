@@ -2,7 +2,10 @@ import { timingSafeEqual } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import { COOKIE_NAMES, CSRF_HEADER } from "@udp/config";
 import { csrfTokenFor } from "../cookies.js";
-import { verifyAccessToken, verifyRefreshToken } from "../../security/tokens.js";
+import {
+  verifyAccessToken,
+  verifyRefreshToken,
+} from "../../security/tokens.js";
 import { ForbiddenError } from "../../errors.js";
 
 /** GET/HEAD/OPTIONS không đổi trạng thái nên không cần bảo vệ CSRF */
@@ -50,7 +53,7 @@ function safeEquals(a: string, b: string): boolean {
  * dùng ra ngoài sau mười lăm phút.
  */
 function familyIdOf(req: Request): string | undefined {
-  const access: unknown = req.cookies?.[COOKIE_NAMES.accessToken];
+  const access: unknown = req.cookies[COOKIE_NAMES.accessToken];
   if (typeof access === "string") {
     try {
       return verifyAccessToken(access).fid;
@@ -59,7 +62,7 @@ function familyIdOf(req: Request): string | undefined {
     }
   }
 
-  const refresh: unknown = req.cookies?.[COOKIE_NAMES.refreshToken];
+  const refresh: unknown = req.cookies[COOKIE_NAMES.refreshToken];
   if (typeof refresh === "string") {
     try {
       return verifyRefreshToken(refresh).fid;

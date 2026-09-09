@@ -58,24 +58,24 @@ pnpm dev:core
 > Ba service còn lại (`dev:flags`, `dev:pd`, `dev:portal`) và Portal chưa có mã
 > nguồn — thư mục mới chỉ được đặt chỗ, chạy các lệnh đó sẽ báo không tìm thấy package.
 
-| Dịch vụ | URL |
-| ------- | --- |
-| Core Backend | http://localhost:3001 |
-| Prometheus | http://localhost:9090 |
-| Portal, Flag Service, PD Controller | chưa hiện thực |
-| Prisma Studio | `pnpm db:studio` |
+| Dịch vụ                             | URL                   |
+| ----------------------------------- | --------------------- |
+| Core Backend                        | http://localhost:3001 |
+| Prometheus                          | http://localhost:9090 |
+| Portal, Flag Service, PD Controller | chưa hiện thực        |
+| Prisma Studio                       | `pnpm db:studio`      |
 
 ## Lệnh thường dùng
 
-| Lệnh | Tác dụng |
-| ---- | -------- |
-| `pnpm dev:infra` / `pnpm dev:infra:down` | Bật/tắt Prometheus |
-| `pnpm db:migrate` | Tạo và áp dụng migration |
-| `pnpm db:generate` | Sinh lại Prisma Client sau khi sửa schema |
-| `pnpm db:seed` | Nạp dữ liệu mẫu (idempotent) |
-| `pnpm db:studio` | Mở giao diện xem dữ liệu |
-| `pnpm typecheck` | Kiểm tra kiểu toàn workspace |
-| `pnpm test` | Chạy test — gồm bất biến I22/I30/I39 chạy trên database thật |
+| Lệnh                                     | Tác dụng                                                     |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| `pnpm dev:infra` / `pnpm dev:infra:down` | Bật/tắt Prometheus                                           |
+| `pnpm db:migrate`                        | Tạo và áp dụng migration                                     |
+| `pnpm db:generate`                       | Sinh lại Prisma Client sau khi sửa schema                    |
+| `pnpm db:seed`                           | Nạp dữ liệu mẫu (idempotent)                                 |
+| `pnpm db:studio`                         | Mở giao diện xem dữ liệu                                     |
+| `pnpm typecheck`                         | Kiểm tra kiểu toàn workspace                                 |
+| `pnpm test`                              | Chạy test — gồm bất biến I22/I30/I39 chạy trên database thật |
 
 ## Lưu ý bảo mật
 

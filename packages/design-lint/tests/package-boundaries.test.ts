@@ -49,9 +49,10 @@ function readWorkspacePackages(): Pkg[] {
       out.push({
         name: json.name,
         dir,
-        deps: Object.keys({ ...json.dependencies, ...json.devDependencies }).filter((d) =>
-          d.startsWith("@udp/"),
-        ),
+        deps: Object.keys({
+          ...json.dependencies,
+          ...json.devDependencies,
+        }).filter((d) => d.startsWith("@udp/")),
       });
     }
   }
@@ -88,7 +89,8 @@ describe("ranh giới package", () => {
         return;
       }
       state.set(name, "visiting");
-      for (const dep of byName.get(name)?.deps ?? []) visit(dep, [...path, name]);
+      for (const dep of byName.get(name)?.deps ?? [])
+        visit(dep, [...path, name]);
       state.set(name, "done");
     };
 
@@ -116,8 +118,11 @@ describe("ranh giới package", () => {
     const st = byName.get("@udp/shared-types") as Pkg;
     const offenders: string[] = [];
     for (const file of sourceFiles(st.dir)) {
-      for (const m of readFileSync(file, "utf8").matchAll(/from\s+"(@udp\/config[^"]*)"/g)) {
-        if (m[1] !== "@udp/config/constants") offenders.push(`${file.replace(ROOT, "")}: ${m[1]}`);
+      for (const m of readFileSync(file, "utf8").matchAll(
+        /from\s+"(@udp\/config[^"]*)"/g,
+      )) {
+        if (m[1] !== "@udp/config/constants")
+          offenders.push(`${file.replace(ROOT, "")}: ${m[1]}`);
       }
     }
     expect(offenders).toEqual([]);
@@ -128,12 +133,15 @@ describe("ranh giới package", () => {
     for (const p of packages) {
       const imported = new Set<string>();
       for (const file of sourceFiles(p.dir)) {
-        for (const m of readFileSync(file, "utf8").matchAll(/from\s+"(@udp\/[^"/]+)/g)) {
+        for (const m of readFileSync(file, "utf8").matchAll(
+          /from\s+"(@udp\/[^"/]+)/g,
+        )) {
           if (m[1] !== undefined) imported.add(m[1]);
         }
       }
       for (const dep of imported) {
-        if (!p.deps.includes(dep)) problems.push(`${p.name} import ${dep} nhưng không khai`);
+        if (!p.deps.includes(dep))
+          problems.push(`${p.name} import ${dep} nhưng không khai`);
       }
     }
     expect(problems).toEqual([]);

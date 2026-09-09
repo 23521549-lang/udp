@@ -27,29 +27,104 @@ export interface DomainCatalogEntry {
 
 export const DOMAIN_CATALOG_SEED: readonly DomainCatalogEntry[] = [
   // --- Tier 1: không có chúng thì không deploy được gì ---
-  { domainType: "CONTAINER_REGISTRY", tier: "CORE", displayName: "Container Registry", defaultOrder: 10 },
+  {
+    domainType: "CONTAINER_REGISTRY",
+    tier: "CORE",
+    displayName: "Container Registry",
+    defaultOrder: 10,
+  },
   { domainType: "CICD", tier: "CORE", displayName: "CI/CD", defaultOrder: 20 },
-  { domainType: "INFRA", tier: "CORE", displayName: "Infrastructure as Code", defaultOrder: 30 },
+  {
+    domainType: "INFRA",
+    tier: "CORE",
+    displayName: "Infrastructure as Code",
+    defaultOrder: 30,
+  },
 
   // --- Tier 2: cần cho vận hành thật, và cho hai đóng góp C1 + C2 ---
-  { domainType: "MONITORING", tier: "STANDARD", displayName: "Monitoring", defaultOrder: 40 },
-  { domainType: "LOGGING", tier: "STANDARD", displayName: "Logging", defaultOrder: 50 },
-  { domainType: "TRACING", tier: "STANDARD", displayName: "Tracing", defaultOrder: 60 },
-  { domainType: "SERVICE_MESH", tier: "STANDARD", displayName: "Service Mesh", defaultOrder: 70 },
+  {
+    domainType: "MONITORING",
+    tier: "STANDARD",
+    displayName: "Monitoring",
+    defaultOrder: 40,
+  },
+  {
+    domainType: "LOGGING",
+    tier: "STANDARD",
+    displayName: "Logging",
+    defaultOrder: 50,
+  },
+  {
+    domainType: "TRACING",
+    tier: "STANDARD",
+    displayName: "Tracing",
+    defaultOrder: 60,
+  },
+  {
+    domainType: "SERVICE_MESH",
+    tier: "STANDARD",
+    displayName: "Service Mesh",
+    defaultOrder: 70,
+  },
   /// Tách khỏi Service Mesh ở v4: mesh cho `mesh.traffic-split`, ingress cho
   /// `ingress.traffic-split`. Flagger và Argo Rollouts chấp nhận MỘT TRONG HAI
   /// (`anyOf`), nên gộp chung thì không biểu diễn được ràng buộc thật của chúng.
-  { domainType: "INGRESS", tier: "STANDARD", displayName: "Ingress", defaultOrder: 80 },
-  { domainType: "PROGRESSIVE_DELIVERY", tier: "STANDARD", displayName: "Progressive Delivery", defaultOrder: 90 },
-  { domainType: "GITOPS", tier: "STANDARD", displayName: "GitOps", defaultOrder: 100 },
-  { domainType: "SECRETS", tier: "STANDARD", displayName: "Secrets Management", defaultOrder: 110 },
-  { domainType: "SECURITY", tier: "STANDARD", displayName: "Security Scanning", defaultOrder: 120 },
-  { domainType: "POLICY", tier: "STANDARD", displayName: "Policy & Governance", defaultOrder: 130 },
-  { domainType: "DATABASE", tier: "STANDARD", displayName: "Database Operators", defaultOrder: 140 },
+  {
+    domainType: "INGRESS",
+    tier: "STANDARD",
+    displayName: "Ingress",
+    defaultOrder: 80,
+  },
+  {
+    domainType: "PROGRESSIVE_DELIVERY",
+    tier: "STANDARD",
+    displayName: "Progressive Delivery",
+    defaultOrder: 90,
+  },
+  {
+    domainType: "GITOPS",
+    tier: "STANDARD",
+    displayName: "GitOps",
+    defaultOrder: 100,
+  },
+  {
+    domainType: "SECRETS",
+    tier: "STANDARD",
+    displayName: "Secrets Management",
+    defaultOrder: 110,
+  },
+  {
+    domainType: "SECURITY",
+    tier: "STANDARD",
+    displayName: "Security Scanning",
+    defaultOrder: 120,
+  },
+  {
+    domainType: "POLICY",
+    tier: "STANDARD",
+    displayName: "Policy & Governance",
+    defaultOrder: 130,
+  },
+  {
+    domainType: "DATABASE",
+    tier: "STANDARD",
+    displayName: "Database Operators",
+    defaultOrder: 140,
+  },
 
   // --- Tier 3: hướng phát triển, chưa bắt buộc trong phạm vi khóa luận ---
-  { domainType: "COST", tier: "ADVANCED", displayName: "Cost Management", defaultOrder: 150 },
-  { domainType: "ARTIFACT_REGISTRY", tier: "ADVANCED", displayName: "Artifact & Package Registry", defaultOrder: 160 },
+  {
+    domainType: "COST",
+    tier: "ADVANCED",
+    displayName: "Cost Management",
+    defaultOrder: 150,
+  },
+  {
+    domainType: "ARTIFACT_REGISTRY",
+    tier: "ADVANCED",
+    displayName: "Artifact & Package Registry",
+    defaultOrder: 160,
+  },
 ] as const;
 
 /**

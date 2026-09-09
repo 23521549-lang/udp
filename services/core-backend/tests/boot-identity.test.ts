@@ -71,49 +71,46 @@ function bootWith(databaseUrlS1: string): Promise<BootResult> {
 }
 
 describe("chốt danh tính chặn ngay ở cửa khởi động", () => {
-  it(
-    "thoát mã 1 và KHÔNG mở cổng khi chuỗi kết nối rơi về owner",
-    async () => {
-      /**
-       * Chuỗi owner lấy qua `@udp/config` chứ không đọc `process.env` thô: file
-       * test này không import gì từ `src/`, nên nếu không có lời import ấy thì
-       * dotenv chưa hề chạy và `DATABASE_URL` là `undefined` — đã đo, lần chạy
-       * đầu tiên của test này đỏ đúng vì lý do đó.
-       *
-       * Tiền đề còn lại phải khẳng định tường minh: hai chuỗi phải KHÁC nhau.
-       * Nếu trùng thì tiến trình con khởi động bình thường và test đỏ ở dòng
-       * `survived` với một thông báo khó hiểu; nói thẳng ra ở đây rẻ hơn.
-       */
-      expect(
-        env.DATABASE_URL,
-        "DATABASE_URL trùng DATABASE_URL_S1 — không dựng được cấu hình sai để kiểm",
-      ).not.toBe(env.DATABASE_URL_S1);
+  it("thoát mã 1 và KHÔNG mở cổng khi chuỗi kết nối rơi về owner", async () => {
+    /**
+     * Chuỗi owner lấy qua `@udp/config` chứ không đọc `process.env` thô: file
+     * test này không import gì từ `src/`, nên nếu không có lời import ấy thì
+     * dotenv chưa hề chạy và `DATABASE_URL` là `undefined` — đã đo, lần chạy
+     * đầu tiên của test này đỏ đúng vì lý do đó.
+     *
+     * Tiền đề còn lại phải khẳng định tường minh: hai chuỗi phải KHÁC nhau.
+     * Nếu trùng thì tiến trình con khởi động bình thường và test đỏ ở dòng
+     * `survived` với một thông báo khó hiểu; nói thẳng ra ở đây rẻ hơn.
+     */
+    expect(
+      env.DATABASE_URL,
+      "DATABASE_URL trùng DATABASE_URL_S1 — không dựng được cấu hình sai để kiểm",
+    ).not.toBe(env.DATABASE_URL_S1);
 
-      const boot = await bootWith(env.DATABASE_URL);
+    const boot = await bootWith(env.DATABASE_URL);
 
-      expect(boot.survived, "tiến trình vẫn sống sau 30 giây — chốt đã bị gỡ, cổng đã mở").toBe(
-        false,
-      );
-      expect(boot.code).toBe(1);
+    expect(
+      boot.survived,
+      "tiến trình vẫn sống sau 30 giây — chốt đã bị gỡ, cổng đã mở",
+    ).toBe(false);
+    expect(boot.code).toBe(1);
 
-      /**
-       * Mã thoát 1 một mình CHƯA ĐỦ: `index.ts` hỏng vì bất cứ lý do nào khác —
-       * thiếu biến môi trường, lỗi cú pháp — cũng cho mã 1. Phải đọc được đúng
-       * lời than về lệch role, nếu không test sẽ pass vì lý do sai. Đó đúng là
-       * cái bẫy I39(b) từng dính: nó xanh vì FK chặn trước, không phải vì
-       * trigger chạy.
-       */
-      expect(boot.output).toContain("danh tính kết nối database sai");
-      expect(boot.output).toContain("postgres");
-      expect(boot.output).toContain("udp_s1");
+    /**
+     * Mã thoát 1 một mình CHƯA ĐỦ: `index.ts` hỏng vì bất cứ lý do nào khác —
+     * thiếu biến môi trường, lỗi cú pháp — cũng cho mã 1. Phải đọc được đúng
+     * lời than về lệch role, nếu không test sẽ pass vì lý do sai. Đó đúng là
+     * cái bẫy I39(b) từng dính: nó xanh vì FK chặn trước, không phải vì
+     * trigger chạy.
+     */
+    expect(boot.output).toContain("danh tính kết nối database sai");
+    expect(boot.output).toContain("postgres");
+    expect(boot.output).toContain("udp_s1");
 
-      /**
-       * Dòng then chốt của cả file: chốt phải chạy TRƯỚC `listen()`. Nếu ai đó
-       * dời nó xuống sau, mã thoát vẫn là 1 và ba khẳng định trên vẫn xanh —
-       * nhưng cổng đã kịp mở và phục vụ. Đây là chỗ duy nhất bắt được điều đó.
-       */
-      expect(boot.output).not.toContain("đã khởi động");
-    },
-    60_000,
-  );
+    /**
+     * Dòng then chốt của cả file: chốt phải chạy TRƯỚC `listen()`. Nếu ai đó
+     * dời nó xuống sau, mã thoát vẫn là 1 và ba khẳng định trên vẫn xanh —
+     * nhưng cổng đã kịp mở và phục vụ. Đây là chỗ duy nhất bắt được điều đó.
+     */
+    expect(boot.output).not.toContain("đã khởi động");
+  }, 60_000);
 });

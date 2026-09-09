@@ -22,8 +22,14 @@ import type { ActorType } from "@udp/db";
 export const auditQuerySchema = z.object({
   action: z.string().trim().min(1).max(100).optional(),
   actor: z.string().uuid("actor phải là UUID của người dùng").optional(),
-  from: z.string().datetime({ offset: true, message: "from phải là ISO-8601 kèm offset" }).optional(),
-  to: z.string().datetime({ offset: true, message: "to phải là ISO-8601 kèm offset" }).optional(),
+  from: z
+    .string()
+    .datetime({ offset: true, message: "from phải là ISO-8601 kèm offset" })
+    .optional(),
+  to: z
+    .string()
+    .datetime({ offset: true, message: "to phải là ISO-8601 kèm offset" })
+    .optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 

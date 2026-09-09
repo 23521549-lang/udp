@@ -6,3 +6,10 @@ pnpm-lock.yaml
 # .prisma có formatter riêng: chạy `pnpm --filter @udp/db format`
 *.prisma
 packages/db/prisma/migrations/
+
+# Tai lieu thiet ke KHONG di qua Prettier, hai ly do doc lap:
+#  1. No dung CRLF, con .prettierrc dat endOfLine="lf" — chay mot lan la doi
+#     toan bo 6800 dong, nhan chim moi diff that su ve sau.
+#  2. Bang trong do duoc @udp/design-lint doc bang may de doi chieu voi schema.
+#     Reflow bang la doi dau vao cua mot bo kiem dang chay.
+docs/UDP_design.md

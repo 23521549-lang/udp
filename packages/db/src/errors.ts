@@ -94,7 +94,9 @@ interface PrismaDriverError extends PgLikeError {
  * qua đúng đường này**. Thiếu nhánh đó thì `VARIANT_IN_USE` không bao giờ tới
  * được tầng HTTP và người dùng nhận 500 cho một lỗi họ sửa được.
  */
-function rawErrorOf(err: unknown): { state: string; message: string } | undefined {
+function rawErrorOf(
+  err: unknown,
+): { state: string; message: string } | undefined {
   if (typeof err !== "object" || err === null) return undefined;
   const e = err as PrismaDriverError;
 
@@ -105,7 +107,7 @@ function rawErrorOf(err: unknown): { state: string; message: string } | undefine
     e.meta?.driverAdapterError?.cause,
     e.cause,
     e,
-  ].filter((c): c is PgLikeError => c !== undefined && c !== null);
+  ].filter((c): c is PgLikeError => c != null);
 
   for (const candidate of candidates) {
     const state = candidate.code;
@@ -166,7 +168,10 @@ function prismaConstraintError(err: unknown): DbConstraintError | undefined {
 
   return {
     code,
-    detail: fields.length > 0 ? `Đã tồn tại bản ghi với ${fields.join(", ")}` : "Đã tồn tại",
+    detail:
+      fields.length > 0
+        ? `Đã tồn tại bản ghi với ${fields.join(", ")}`
+        : "Đã tồn tại",
   };
 }
 

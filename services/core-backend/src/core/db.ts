@@ -1,5 +1,9 @@
 import { env } from "@udp/config";
-import { assertConnectedAs, createPrismaClient, type PrismaClient } from "@udp/db";
+import {
+  assertConnectedAs,
+  createPrismaClient,
+  type PrismaClient,
+} from "@udp/db";
 
 /**
  * Kết nối database của Service 1.
@@ -22,4 +26,5 @@ export const prisma: PrismaClient = createPrismaClient({
 });
 
 /** Gọi lúc khởi động — xem `assertConnectedAs` để biết vì sao nó phải ném */
-export const assertServiceIdentity = (): Promise<void> => assertConnectedAs(prisma, "udp_s1");
+export const assertServiceIdentity = (): Promise<void> =>
+  assertConnectedAs(prisma, "udp_s1");

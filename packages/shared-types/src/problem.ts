@@ -63,24 +63,39 @@ export const ERROR_CATALOG = {
   // ---- Capability validator (§5.3). Bảy mã này là tập mà oracle của E8 phải
   // sinh ra đủ khi kiểm độ phủ validator (bất biến I35) ----
   MISSING_CAPABILITY: {
-    httpStatus: 422, retryable: false, fixableBy: "user",
-    title: "Missing capability", docSection: "§5.3",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Missing capability",
+    docSection: "§5.3",
   },
   MISSING_ANY_OF: {
-    httpStatus: 422, retryable: false, fixableBy: "user",
-    title: "Missing one of required capabilities", docSection: "§5.3",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Missing one of required capabilities",
+    docSection: "§5.3",
   },
   VERSION_MISMATCH: {
-    httpStatus: 422, retryable: false, fixableBy: "user",
-    title: "Capability version mismatch", docSection: "§5.3",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Capability version mismatch",
+    docSection: "§5.3",
   },
   CONFLICT: {
-    httpStatus: 422, retryable: false, fixableBy: "user",
-    title: "Exclusive capability conflict", docSection: "§5.3",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Exclusive capability conflict",
+    docSection: "§5.3",
   },
   AMBIGUOUS_PROVIDER: {
-    httpStatus: 422, retryable: false, fixableBy: "user",
-    title: "Ambiguous capability provider", docSection: "§5.3",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Ambiguous capability provider",
+    docSection: "§5.3",
   },
   /**
    * CẢNH BÁO chứ không phải lỗi — `httpStatus: 200` là CÓ CHỦ Ý.
@@ -89,12 +104,18 @@ export const ERROR_CATALOG = {
    * làm vậy sẽ có ngày trả `application/problem+json` kèm status 200.
    */
   RECOMMENDED_MISSING: {
-    httpStatus: 200, retryable: false, fixableBy: "user",
-    title: "Recommended capability missing", docSection: "§5.3",
+    httpStatus: 200,
+    retryable: false,
+    fixableBy: "user",
+    title: "Recommended capability missing",
+    docSection: "§5.3",
   },
   CYCLIC_DEPENDENCY: {
-    httpStatus: 500, retryable: false, fixableBy: "nobody",
-    title: "Cyclic capability dependency", docSection: "§5.3",
+    httpStatus: 500,
+    retryable: false,
+    fixableBy: "nobody",
+    title: "Cyclic capability dependency",
+    docSection: "§5.3",
   },
 
   // ---- Feature flag (§6) ----
@@ -103,8 +124,11 @@ export const ERROR_CATALOG = {
    * tức là trái I36. Bổ sung thành mã thứ 19.
    */
   ORPHAN_RULE: {
-    httpStatus: 422, retryable: false, fixableBy: "user",
-    title: "Rule references a non-existent variant", docSection: "§6.7",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Rule references a non-existent variant",
+    docSection: "§6.7",
   },
   /**
    * [v4] Mã thứ 20. TÁCH khỏi ORPHAN_RULE có chủ đích, vì hai tình huống khác
@@ -117,36 +141,57 @@ export const ERROR_CATALOG = {
    * Portal biết nên hiện nút "Sửa rule" hay nút "Thử lại".
    */
   VARIANT_IN_USE: {
-    httpStatus: 409, retryable: true, fixableBy: "user",
-    title: "Variant is still referenced by a rule", docSection: "§6.7",
+    httpStatus: 409,
+    retryable: true,
+    fixableBy: "user",
+    title: "Variant is still referenced by a rule",
+    docSection: "§6.7",
   },
   METRICS_NOT_AVAILABLE: {
-    httpStatus: 422, retryable: true, fixableBy: "user",
-    title: "Metrics source has no data for this target", docSection: "§6.6, §8.5",
+    httpStatus: 422,
+    retryable: true,
+    fixableBy: "user",
+    title: "Metrics source has no data for this target",
+    docSection: "§6.6, §8.5",
   },
   TRACKED_FLAG_LIMIT: {
-    httpStatus: 409, retryable: false, fixableBy: "user",
-    title: "Too many flags tracked in this environment", docSection: "§6.6",
+    httpStatus: 409,
+    retryable: false,
+    fixableBy: "user",
+    title: "Too many flags tracked in this environment",
+    docSection: "§6.6",
   },
 
   // ---- Cloud adapter và quota (§4) ----
   INSUFFICIENT_PERMISSIONS: {
-    httpStatus: 422, retryable: false, fixableBy: "user",
-    title: "Cloud credential lacks required permissions", docSection: "§4.2",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Cloud credential lacks required permissions",
+    docSection: "§4.2",
   },
   QUOTA_EXCEEDED: {
-    httpStatus: 422, retryable: false, fixableBy: "user",
-    title: "Resource quota exceeded", docSection: "§4.4",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Resource quota exceeded",
+    docSection: "§4.4",
   },
   CLUSTER_UNREACHABLE: {
-    httpStatus: 503, retryable: true, fixableBy: "admin",
-    title: "Tenant cluster unreachable", docSection: "§4.6",
+    httpStatus: 503,
+    retryable: true,
+    fixableBy: "admin",
+    title: "Tenant cluster unreachable",
+    docSection: "§4.6",
   },
 
   // ---- Progressive delivery và đồng thời (§7) ----
   ROLLOUT_IN_PROGRESS: {
-    httpStatus: 409, retryable: true, fixableBy: "user",
-    title: "A rollout is already in progress", docSection: "§8.6",
+    httpStatus: 409,
+    retryable: true,
+    fixableBy: "user",
+    title: "A rollout is already in progress",
+    docSection: "§8.6",
   },
   /**
    * [v4] Mã thứ 21. Vi phạm ràng buộc UNIQUE bất kỳ — tên project trùng, key
@@ -161,32 +206,50 @@ export const ERROR_CATALOG = {
    * status, và bảo client retry một request không bao giờ đúng.
    */
   DUPLICATE_RESOURCE: {
-    httpStatus: 409, retryable: false, fixableBy: "user",
-    title: "Resource already exists", docSection: "§2.2",
+    httpStatus: 409,
+    retryable: false,
+    fixableBy: "user",
+    title: "Resource already exists",
+    docSection: "§2.2",
   },
   OPTIMISTIC_LOCK: {
-    httpStatus: 409, retryable: true, fixableBy: "user",
-    title: "Resource was modified by someone else", docSection: "§2.2",
+    httpStatus: 409,
+    retryable: true,
+    fixableBy: "user",
+    title: "Resource was modified by someone else",
+    docSection: "§2.2",
   },
   /** Fencing đã chặn một worker tỉnh muộn — không phải lỗi người dùng (I23) */
   PRECONDITION_FAILED: {
-    httpStatus: 412, retryable: false, fixableBy: "nobody",
-    title: "Precondition failed", docSection: "§7.1, I23",
+    httpStatus: 412,
+    retryable: false,
+    fixableBy: "nobody",
+    title: "Precondition failed",
+    docSection: "§7.1, I23",
   },
   PROVIDER_UNAVAILABLE: {
-    httpStatus: 503, retryable: true, fixableBy: "admin",
-    title: "Dependent service unavailable", docSection: "§7.6",
+    httpStatus: 503,
+    retryable: true,
+    fixableBy: "admin",
+    title: "Dependent service unavailable",
+    docSection: "§7.6",
   },
 
   // ---- Giao thức HTTP và bảo mật ----
   /** Cùng key nhưng khác body — lỗi lập trình của client, không phải của người dùng */
   IDEMPOTENCY_KEY_REUSED: {
-    httpStatus: 422, retryable: false, fixableBy: "nobody",
-    title: "Idempotency key reused with a different body", docSection: "§9",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "nobody",
+    title: "Idempotency key reused with a different body",
+    docSection: "§9",
   },
   EGRESS_BLOCKED: {
-    httpStatus: 422, retryable: false, fixableBy: "user",
-    title: "Outbound address blocked by egress guard", docSection: "§12 T11",
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Outbound address blocked by egress guard",
+    docSection: "§12 T11",
   },
 } as const satisfies Record<string, ErrorCodeSpec>;
 

@@ -38,12 +38,15 @@ export function modelToTableMap(): Map<string, string> {
     if (model === undefined || body === undefined) continue;
     const mapped = /@@map\("([^"]+)"\)/.exec(body)?.[1];
     if (mapped === undefined) {
-      throw new Error(`model ${model} không có @@map — quy ước của repo là mọi model đều khai`);
+      throw new Error(
+        `model ${model} không có @@map — quy ước của repo là mọi model đều khai`,
+      );
     }
     map.set(model, mapped);
   }
 
-  if (map.size === 0) throw new Error("Không đọc được model nào từ schema.prisma");
+  if (map.size === 0)
+    throw new Error("Không đọc được model nào từ schema.prisma");
   return map;
 }
 
@@ -57,13 +60,18 @@ export interface DbColumn {
 export async function openClient(): Promise<Client> {
   const url = process.env["DATABASE_URL_DIRECT"];
   if (!url) throw new Error("DATABASE_URL_DIRECT chưa được đặt");
-  const client = new Client({ connectionString: sanitizeConnectionString(url), ssl: DB_TLS_OPTIONS });
+  const client = new Client({
+    connectionString: sanitizeConnectionString(url),
+    ssl: DB_TLS_OPTIONS,
+  });
   await client.connect();
   return client;
 }
 
 /** Toàn bộ cột của schema `public`, nhóm theo tên bảng */
-export async function readDbColumns(client: Client): Promise<Map<string, DbColumn[]>> {
+export async function readDbColumns(
+  client: Client,
+): Promise<Map<string, DbColumn[]>> {
   const res = await client.query<{
     table_name: string;
     column_name: string;

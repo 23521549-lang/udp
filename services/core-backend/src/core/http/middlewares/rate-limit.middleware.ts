@@ -66,19 +66,28 @@ export function ipKey(raw: string): string {
     const [head = "", tail = ""] = ip.split("::");
     const h = head === "" ? [] : head.split(":");
     const t = tail === "" ? [] : tail.split(":");
-    groups = [...h, ...Array<string>(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
+    groups = [
+      ...h,
+      ...Array<string>(Math.max(0, 8 - h.length - t.length)).fill("0"),
+      ...t,
+    ];
   } else {
     groups = ip.split(":");
   }
 
-  return `${groups.slice(0, 4).map((g) => (g === "" ? "0" : g)).join(":")}::/64`;
+  return `${groups
+    .slice(0, 4)
+    .map((g) => (g === "" ? "0" : g))
+    .join(":")}::/64`;
 }
 
 function authRateKey(req: Request): string {
   const ip = ipKey(req.ip ?? "");
   const body: unknown = req.body;
   const email =
-    typeof body === "object" && body !== null && typeof (body as { email?: unknown }).email === "string"
+    typeof body === "object" &&
+    body !== null &&
+    typeof (body as { email?: unknown }).email === "string"
       ? (body as { email: string }).email.trim().toLowerCase()
       : "";
   if (email === "") return ip;

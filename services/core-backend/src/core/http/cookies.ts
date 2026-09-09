@@ -19,7 +19,9 @@ const MS_PER_SECOND = 1_000;
  * thứ gì được ký bằng cùng khoá gốc. Rẻ hơn một biến môi trường thứ hai mà
  * người vận hành phải nhớ xoay.
  */
-const CSRF_KEY = createHmac("sha256", env.JWT_ACCESS_SECRET).update("udp-csrf-v1").digest();
+const CSRF_KEY = createHmac("sha256", env.JWT_ACCESS_SECRET)
+  .update("udp-csrf-v1")
+  .digest();
 
 /**
  * Token CSRF của một PHIÊN — tính lại được, nên không cần lưu ở đâu.
@@ -67,7 +69,11 @@ export interface AuthTokens {
  * Đặt ba cookie và trả về CSRF token để controller gửi kèm trong body —
  * Portal cần giá trị này ngay lần đầu, trước khi kịp đọc cookie.
  */
-export function setAuthCookies(res: Response, tokens: AuthTokens, familyId: string): string {
+export function setAuthCookies(
+  res: Response,
+  tokens: AuthTokens,
+  familyId: string,
+): string {
   res.cookie(COOKIE_NAMES.accessToken, tokens.accessToken, {
     ...baseOptions(),
     maxAge: accessMaxAgeMs,

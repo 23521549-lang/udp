@@ -69,9 +69,13 @@ export function parseErd(lines: string[]): ErdEntity[] {
       throw new Error(`§2.1: dòng lạ ngoài entity — ${line}`);
     }
 
-    const attr = /^(\w+)\s+(\w+)(?:\s+(PK|FK|UK))?(?:\s+"([^"]*)")?$/.exec(line);
+    const attr = /^(\w+)\s+(\w+)(?:\s+(PK|FK|UK))?(?:\s+"([^"]*)")?$/.exec(
+      line,
+    );
     if (attr?.[1] === undefined || attr[2] === undefined) {
-      throw new Error(`§2.1: không đọc được thuộc tính của ${current.name} — ${line}`);
+      throw new Error(
+        `§2.1: không đọc được thuộc tính của ${current.name} — ${line}`,
+      );
     }
     current.attributes.push({
       type: attr[1],
@@ -126,7 +130,11 @@ export function parseColumnTables(lines: string[]): DocTable[] {
     let inTable = false;
     let done = false;
 
-    for (let j = i + 1; j < lines.length && !/^#{2,4}\s/.test(lines[j] ?? ""); j++) {
+    for (
+      let j = i + 1;
+      j < lines.length && !/^#{2,4}\s/.test(lines[j] ?? "");
+      j++
+    ) {
       const line = lines[j] ?? "";
       if (!line.startsWith("|")) {
         // Bảng đầu tiên kết thúc ở dòng không phải bảng
@@ -150,13 +158,21 @@ export function parseColumnTables(lines: string[]): DocTable[] {
       if (!inTable) continue;
 
       if (!/^[a-z_][a-z0-9_]*$/.test(first)) {
-        throw new Error(`§2.2 ${name}: ô đầu không phải tên cột — ${first.slice(0, 60)}`);
+        throw new Error(
+          `§2.2 ${name}: ô đầu không phải tên cột — ${first.slice(0, 60)}`,
+        );
       }
-      columns.push({ name: first, type: cells[1] ?? "", constraint: cells[2] ?? "" });
+      columns.push({
+        name: first,
+        type: cells[1] ?? "",
+        constraint: cells[2] ?? "",
+      });
     }
 
     if (columns.length === 0) {
-      throw new Error(`§2.2 ${name}: không đọc được cột nào — thêm vào NOT_A_TABLE nếu đúng là không phải bảng`);
+      throw new Error(
+        `§2.2 ${name}: không đọc được cột nào — thêm vào NOT_A_TABLE nếu đúng là không phải bảng`,
+      );
     }
     tables.push({ name, columns });
   }
@@ -171,18 +187,28 @@ export interface WriterMatrixRow {
 
 /** Phân tích ma trận writer §1.2 — nguồn sự thật của bất biến I22 */
 export function parseWriterMatrix(lines: string[]): WriterMatrixRow[] {
-  const header = lines.findIndex((l) => /^\|\s*Bảng\s*\|\s*Writer\s*\|/.test(l));
+  const header = lines.findIndex((l) =>
+    /^\|\s*Bảng\s*\|\s*Writer\s*\|/.test(l),
+  );
   if (header < 0) throw new Error("§1.2: không tìm thấy bảng ma trận writer");
 
   const rows: WriterMatrixRow[] = [];
-  for (let i = header + 2; i < lines.length && (lines[i] ?? "").startsWith("|"); i++) {
+  for (
+    let i = header + 2;
+    i < lines.length && (lines[i] ?? "").startsWith("|");
+    i++
+  ) {
     const cells = (lines[i] ?? "")
       .split("|")
       .slice(1, -1)
       .map((c) => c.trim());
-    const tables = [...(cells[0] ?? "").matchAll(/`(\w+)`/g)].map((m) => m[1] as string);
+    const tables = [...(cells[0] ?? "").matchAll(/`(\w+)`/g)].map(
+      (m) => m[1] as string,
+    );
     if (tables.length === 0) {
-      throw new Error(`§1.2: hàng không nêu bảng nào — ${(cells[0] ?? "").slice(0, 60)}`);
+      throw new Error(
+        `§1.2: hàng không nêu bảng nào — ${(cells[0] ?? "").slice(0, 60)}`,
+      );
     }
     rows.push({ tables, writer: cells[1] ?? "", reader: cells[2] ?? "" });
   }

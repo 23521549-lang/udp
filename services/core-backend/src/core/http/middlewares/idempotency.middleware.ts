@@ -3,6 +3,7 @@ import type { RequestHandler, Response } from "express";
 import { prisma } from "../../db.js";
 import { UnprocessableError, ValidationError } from "../../errors.js";
 import { logger } from "../../logger.js";
+import { requireUser } from "./auth.middleware.js";
 import { projectIdParam } from "./project-role.middleware.js";
 
 /**
@@ -43,7 +44,9 @@ function canonical(value: unknown): unknown {
 }
 
 const hashOf = (body: unknown): string =>
-  createHash("sha256").update(JSON.stringify(canonical(body) ?? null)).digest("hex");
+  createHash("sha256")
+    .update(JSON.stringify(canonical(body) ?? null))
+    .digest("hex");
 
 /**
  * Ghi lại response, rồi MỚI gửi đi.
@@ -62,7 +65,13 @@ const hashOf = (body: unknown): string =>
  */
 function captureResponse(
   res: Response,
-  row: { projectId: string; userId: string; endpoint: string; key: string; bodyHash: string },
+  row: {
+    projectId: string;
+    userId: string;
+    endpoint: string;
+    key: string;
+    bodyHash: string;
+  },
 ): void {
   const original = res.json.bind(res);
 
@@ -93,7 +102,10 @@ function captureResponse(
           },
         });
       } catch (err: unknown) {
-        logger.warn({ err, endpoint: row.endpoint }, "Không lưu được khoá idempotency");
+        logger.warn(
+          { err, endpoint: row.endpoint },
+          "Không lưu được khoá idempotency",
+        );
       }
       original(body);
     })();
@@ -109,7 +121,10 @@ function captureResponse(
  * mà không ai nhớ còn tệ hơn. Phạm vi giới hạn trong cùng `(project, endpoint)`
  * nên chi phí bị chặn trên, và nó chỉ chạy đúng lúc có tải thật.
  */
-async function sweepExpired(projectId: string, endpoint: string): Promise<void> {
+async function sweepExpired(
+  projectId: string,
+  endpoint: string,
+): Promise<void> {
   try {
     await prisma.idempotencyKey.deleteMany({
       where: { projectId, endpoint, expiresAt: { lt: new Date() } },
@@ -142,7 +157,7 @@ export const idempotent =
       // Middleware này luôn chạy sau requireAuth và requireMinProjectRole, nên
       // cả hai giá trị dưới đây đã được xác thực.
       const projectId = projectIdParam(req);
-      const userId = req.user!.sub;
+      const userId = requireUser(req).sub;
       const bodyHash = hashOf(req.body);
 
       const existing = await prisma.idempotencyKey.findUnique({
@@ -154,7 +169,12 @@ export const idempotent =
             idempotencyKey: raw,
           },
         },
-        select: { bodyHash: true, responseStatus: true, responseBody: true, expiresAt: true },
+        select: {
+          bodyHash: true,
+          responseStatus: true,
+          responseBody: true,
+          expiresAt: true,
+        },
       });
 
       if (existing !== null && existing.expiresAt.getTime() > Date.now()) {
