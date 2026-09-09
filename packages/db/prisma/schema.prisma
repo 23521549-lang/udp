@@ -299,13 +299,13 @@ model DomainCatalog {
   /// CICD, CONTAINER_REGISTRY, INFRA, GITOPS, MONITORING, LOGGING, TRACING,
   /// SERVICE_MESH, INGRESS, SECRETS, SECURITY, POLICY, DATABASE,
   /// PROGRESSIVE_DELIVERY, COST, ARTIFACT_REGISTRY — 16 domain (§5.5)
-  domainType   String  @id @map("domain_type") @db.VarChar(50)
+  domainType   String     @id @map("domain_type") @db.VarChar(50)
   tier         DomainTier
-  displayName  String  @map("display_name") @db.VarChar(100)
+  displayName  String     @map("display_name") @db.VarChar(100)
   /// Chỉ để sắp xếp hiển thị và phá hòa trong cùng một bậc topo.
   /// KHÔNG quyết định thứ tự deploy — thứ tự đó do đồ thị capability sinh ra (§5.3).
-  defaultOrder Int     @map("default_order")
-  isAvailable  Boolean @default(true) @map("is_available")
+  defaultOrder Int        @map("default_order")
+  isAvailable  Boolean    @default(true) @map("is_available")
 
   domainConfigs DomainConfig[]
 
@@ -334,6 +334,7 @@ model User {
   auditLogs       AuditLog[]
   configChanges   ConfigChangeLog[]
   refreshSessions RefreshSession[]
+  idempotencyKeys IdempotencyKey[]
 
   @@map("users")
 }
@@ -355,18 +356,18 @@ model User {
 ///                 tại — thu hồi CẢ HỌ. Đây là cách duy nhất phát hiện trộm
 ///                 token mà không cần người dùng báo.
 model RefreshSession {
-  id        String @id @default(uuid(7)) @db.Uuid
-  userId    String @map("user_id") @db.Uuid
-  familyId  String @map("family_id") @db.Uuid
+  id       String @id @default(uuid(7)) @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  familyId String @map("family_id") @db.Uuid
 
   /// SHA-256 hex của token đã ký. UNIQUE để một token không gắn hai phiên.
   tokenHash String @unique @map("token_hash") @db.Char(64)
 
-  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(3)
   /// Khác NULL = đã thu hồi. Trình lại token đã thu hồi ⇒ thu hồi cả family.
-  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(3)
   /// Phiên đã thay thế phiên này khi xoay vòng — dấu vết để lần lại cả họ.
-  replacedById String? @map("replaced_by_id") @db.Uuid
+  replacedById String?   @map("replaced_by_id") @db.Uuid
 
   /// Chỉ để hiển thị danh sách thiết bị trên Portal, không dùng để xác thực:
   /// cả hai đều do client khai và giả mạo được.
@@ -386,7 +387,6 @@ model RefreshSession {
   @@map("refresh_sessions")
 }
 
-
 model ProjectMember {
   id          String      @id @default(uuid()) @db.Uuid
   projectId   String      @map("project_id") @db.Uuid
@@ -400,6 +400,37 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([userId])
   @@map("project_members")
+}
+
+/// Lop luu cua header `Idempotency-Key` (§9, §2.2).
+///
+/// Vi sao la mot BANG chu khong phai cache trong bo nho: hai tien trinh core-backend
+/// dang chay khong chia se bo nho, nen mot cache cuc bo se de lot dung truong hop
+/// header nay sinh ra de chan — nguoi dung bam hai lan va hai request roi vao hai
+/// pod khac nhau. §9 cung goi day la "lop chan thu hai o tang database".
+model IdempotencyKey {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  projectId String @map("project_id") @db.Uuid
+  /// Khoa phai phan theo NGUOI GOI — xem ghi chu cot user_id o §2.2.
+  userId    String @map("user_id") @db.Uuid
+
+  endpoint       String @db.VarChar(120)
+  idempotencyKey String @map("idempotency_key") @db.VarChar(120)
+  bodyHash       String @map("body_hash") @db.Char(64)
+
+  responseStatus Int  @map("response_status")
+  responseBody   Json @map("response_body")
+
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId, endpoint, idempotencyKey], map: "idx_idempotency_scope")
+  @@index([expiresAt])
+  @@map("idempotency_keys")
 }
 
 model Project {
@@ -446,6 +477,7 @@ model Project {
   rolloutSessions  RolloutSession[]
   deploymentEvents DeploymentEvent[]
   auditLogs        AuditLog[]
+  idempotencyKeys  IdempotencyKey[]
 
   @@index([ownerId, status])
   @@index([expiresAt])
@@ -458,7 +490,7 @@ model Environment {
   id           String  @id @default(uuid()) @db.Uuid
   projectId    String  @map("project_id") @db.Uuid
   name         String  @db.VarChar(50)
-  k8sNamespace String  @map("k8s_namespace") @db.VarChar(63)
+  k8sNamespace String  @unique @map("k8s_namespace") @db.VarChar(63)
   isProduction Boolean @default(false) @map("is_production")
   rank         Int
   /// Deploy tự động từ webhook có được phép ở environment này không (§8.3)
@@ -485,7 +517,7 @@ model Environment {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  project            Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project            Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sdkKeys            SdkKey[]
   flagEnvConfigs     FlagEnvConfig[]
   evaluationStats    FlagEvaluationStat[]
@@ -513,7 +545,7 @@ model SdkKey {
   /// là lưu số không thông tin, và mọi khoá cùng loại hiện ra giống hệt nhau
   /// trên UI. Đuôi khoá là thứ Stripe và GitHub cũng dùng, nên người dùng đã
   /// quen đối chiếu theo nó.
-  keySuffix  String    @map("key_suffix") @db.VarChar(16)
+  keySuffix     String     @map("key_suffix") @db.VarChar(16)
   label         String?    @db.VarChar(100)
   lastUsedAt    DateTime?  @map("last_used_at") @db.Timestamptz(3)
   revokedAt     DateTime?  @map("revoked_at") @db.Timestamptz(3)
@@ -533,23 +565,23 @@ model SdkKey {
 // ============================================================
 
 model CloudCredential {
-  id       String         @id @default(uuid()) @db.Uuid
-  projectId String        @map("project_id") @db.Uuid
-  provider CloudProvider
-  mode     CredentialMode
+  id        String         @id @default(uuid()) @db.Uuid
+  projectId String         @map("project_id") @db.Uuid
+  provider  CloudProvider
+  mode      CredentialMode
 
   /// §4.3 — Envelope encryption AES-256-GCM có AAD. DEK riêng từng project,
   /// KEK ở ngoài database. Một bản dump database MỘT MÌNH là vô dụng.
-  encryptedPayload String @map("encrypted_payload")
-  encryptedDek     String @map("encrypted_dek")
-  kekVersion       Int    @default(1) @map("kek_version")
+  encryptedPayload String        @map("encrypted_payload")
+  encryptedDek     String        @map("encrypted_dek")
+  kekVersion       Int           @default(1) @map("kek_version")
   /// Cho phép xoay DEK (re-encrypt payload) độc lập với xoay KEK
-  dekVersion       Int    @default(1) @map("dek_version")
+  dekVersion       Int           @default(1) @map("dek_version")
   /// aws-role | aws-key | gcp-wif | gcp-key | azure-federated | azure-secret.
   /// Portal đọc cột này để cảnh báo khi project dùng khóa tĩnh thay vì federated.
   authKind         CloudAuthKind @map("auth_kind")
-  nonce            String @db.Char(24)
-  authTag          String @map("auth_tag") @db.Char(24)
+  nonce            String        @db.Char(24)
+  authTag          String        @map("auth_tag") @db.Char(24)
 
   /// SHA-256 của định danh public — so sánh credential mà không cần giải mã
   fingerprint     String    @db.Char(64)
@@ -611,14 +643,14 @@ model CapabilityBinding {
   environmentId String? @map("environment_id") @db.Uuid
 
   /// metrics.query, mesh.traffic-split, traffic.control, registry.oci...
-  capabilityId String @map("capability_id") @db.VarChar(50)
+  capabilityId  String @map("capability_id") @db.VarChar(50)
   /// "monitoring:prometheus-grafana"
-  providedBy String @map("provided_by") @db.VarChar(100)
+  providedBy    String @map("provided_by") @db.VarChar(100)
   /// Semver của capability. Cần để phân biệt PromQL (2.x) với DQL (1.x): Flagger
   /// khai `constraint: "^2"` nên Datadog không thỏa (§5.3).
   schemaVersion String @map("schema_version") @db.VarChar(10)
 
-  endpoint String? @db.VarChar(500)
+  endpoint   String?  @db.VarChar(500)
   /// Trường đánh dấu secret được mã hóa như §4.3
   attributes Json?
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -711,11 +743,11 @@ model ProvisioningJob {
 /// lại được và hệ thống vẫn hội tụ đúng — đó là điểm crash K10 và là mệnh đề trung
 /// tâm của đóng góp C3.
 model ProvisionedResource {
-  id        String  @id @default(uuid(7)) @db.Uuid
+  id        String @id @default(uuid(7)) @db.Uuid
   /// NULL sau khi job bị xóa: sổ phải sống lâu hơn job đã tạo ra nó, nếu không
   /// mất luôn khả năng dọn tài nguyên cloud.
-  jobId     String  @map("job_id") @db.Uuid
-  projectId String  @map("project_id") @db.Uuid
+  jobId     String @map("job_id") @db.Uuid
+  projectId String @map("project_id") @db.Uuid
 
   step ProvisionStep
   /// vpc, subnet, nat-gateway, cluster, nodegroup, k8s-loadbalancer... (§4.2)
@@ -740,9 +772,9 @@ model ProvisionedResource {
   /// NOT NULL + Restrict: mọi tài nguyên trong sổ đều đến từ MỘT job, hàng không
   /// có job là hàng vô nghĩa. Job cascade từ Project, mà Project không bao giờ
   /// xóa cứng (§2.3), nên job cũng không bao giờ bị xóa — Restrict không chặn ai.
-  job     ProvisioningJob  @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  job     ProvisioningJob @relation(fields: [jobId], references: [id], onDelete: Restrict)
   /// Restrict: không cho xóa project khi sổ còn tài nguyên chưa dọn.
-  project Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
 
   @@index([projectId, status])
   @@index([jobId])
@@ -755,16 +787,16 @@ model ProvisionedResource {
 // ============================================================
 
 model FeatureFlag {
-  id                String              @id @default(uuid()) @db.Uuid
-  projectId         String              @map("project_id") @db.Uuid
-  key               String              @db.VarChar(255)
-  description       String?
-  flagType          FlagType            @map("flag_type")
+  id               String              @id @default(uuid()) @db.Uuid
+  projectId        String              @map("project_id") @db.Uuid
+  key              String              @db.VarChar(255)
+  description      String?
+  flagType         FlagType            @map("flag_type")
   /// FK THẬT, không phải chuỗi key. v3 lưu key nên trỏ được tới variant đã xóa
   /// và làm evaluator crash (§6.5). Restrict chặn xóa variant còn được tham chiếu
   /// — nửa thứ hai của ORPHAN_RULE (§6.7).
-  defaultVariantId  String?             @map("default_variant_id") @db.Uuid
-  lifecycleStatus   FlagLifecycleStatus @default(DRAFT) @map("lifecycle_status")
+  defaultVariantId String?             @map("default_variant_id") @db.Uuid
+  lifecycleStatus  FlagLifecycleStatus @default(DRAFT) @map("lifecycle_status")
 
   /// Thuộc tính dùng để hash khi chia nhóm. Cấu hình được vì B2B cần rollout theo
   /// accountId (cả công ty cùng thấy hoặc cùng không), không phải theo userId (§6.4).
@@ -776,11 +808,11 @@ model FeatureFlag {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  project    Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  variants       FlagVariant[] @relation("FlagVariants")
-  defaultVariant FlagVariant?  @relation("FlagDefaultVariant", fields: [defaultVariantId], references: [id], onDelete: Restrict)
-  envConfigs FlagEnvConfig[]
-  evalStats  FlagEvaluationStat[]
+  project        Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  variants       FlagVariant[]        @relation("FlagVariants")
+  defaultVariant FlagVariant?         @relation("FlagDefaultVariant", fields: [defaultVariantId], references: [id], onDelete: Restrict)
+  envConfigs     FlagEnvConfig[]
+  evalStats      FlagEvaluationStat[]
 
   @@unique([projectId, key])
   @@index([projectId, lifecycleStatus])
@@ -805,20 +837,20 @@ model FlagVariant {
 
 /// ADR-04 — Trạng thái của một flag ở MỘT environment.
 model FlagEnvConfig {
-  id            String  @id @default(uuid()) @db.Uuid
-  flagId        String  @map("flag_id") @db.Uuid
-  environmentId String  @map("environment_id") @db.Uuid
-  isEnabled     Boolean @default(false) @map("is_enabled")
+  id               String  @id @default(uuid()) @db.Uuid
+  flagId           String  @map("flag_id") @db.Uuid
+  environmentId    String  @map("environment_id") @db.Uuid
+  isEnabled        Boolean @default(false) @map("is_enabled")
   defaultVariantId String? @map("default_variant_id") @db.Uuid
 
   /// Optimistic lock ở mức environment: sửa flag ở dev không chặn người sửa prod
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  flag        FeatureFlag         @relation(fields: [flagId], references: [id], onDelete: Cascade)
-  environment Environment         @relation(fields: [environmentId], references: [id], onDelete: Cascade)
-  rules       FlagTargetingRule[]
-  rollouts    RolloutSession[]
-  defaultVariant FlagVariant? @relation("EnvDefaultVariant", fields: [defaultVariantId], references: [id], onDelete: Restrict)
+  flag           FeatureFlag         @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  environment    Environment         @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  rules          FlagTargetingRule[]
+  rollouts       RolloutSession[]
+  defaultVariant FlagVariant?        @relation("EnvDefaultVariant", fields: [defaultVariantId], references: [id], onDelete: Restrict)
 
   @@unique([flagId, environmentId])
   @@index([environmentId, isEnabled])
@@ -828,8 +860,8 @@ model FlagEnvConfig {
 /// §6.4, §6.5 — Rule gồm HAI NỬA TÁCH RỜI: ai khớp (ruleType + condition) và
 /// phục vụ gì (serve).
 model FlagTargetingRule {
-  id              String   @id @default(uuid()) @db.Uuid
-  flagEnvConfigId String   @map("flag_env_config_id") @db.Uuid
+  id              String @id @default(uuid()) @db.Uuid
+  flagEnvConfigId String @map("flag_env_config_id") @db.Uuid
 
   /// NỬA MỘT — ai khớp
   ruleType  RuleType @map("rule_type")
@@ -977,16 +1009,16 @@ model RolloutSession {
   metricQueries Json? @map("metric_queries")
 
   /// --- Nhịp: HAI con số TÁCH RỜI, và đây là điểm sửa quan trọng nhất của v4 ---
-  stepPercent Decimal @map("step_percent") @db.Decimal(5, 2)
+  stepPercent             Decimal @map("step_percent") @db.Decimal(5, 2)
   /// Thời gian tối thiểu ở một bậc TRƯỚC KHI promote
-  stepIntervalSeconds Int @default(300) @map("step_interval_seconds")
+  stepIntervalSeconds     Int     @default(300) @map("step_interval_seconds")
   /// Nhịp ĐO metrics, độc lập với dwell ở trên.
   /// v3 để dwell chặn trước decide() nên sau mỗi promote không có phép đo nào
   /// trong 5 phút — MTTD tối thiểu 10 phút, tự phá lập luận "rollback trong một
   /// vòng SSE" và làm phép đo E5 vô nghĩa.
-  analysisIntervalSeconds Int @default(30) @map("analysis_interval_seconds")
+  analysisIntervalSeconds Int     @default(30) @map("analysis_interval_seconds")
   /// Cửa sổ truy vấn metric. Validator ép >= 4 x scrapeInterval đo được từ probe().
-  metricWindowSeconds Int @default(60) @map("metric_window_seconds")
+  metricWindowSeconds     Int     @default(60) @map("metric_window_seconds")
 
   warmUpRequests     Int @default(100) @map("warm_up_requests")
   maxDurationSeconds Int @default(86400) @map("max_duration_seconds")
@@ -1081,9 +1113,9 @@ model RolloutEvent {
 // ============================================================
 
 model DeploymentEvent {
-  id            String  @id @default(uuid(7)) @db.Uuid
-  projectId     String  @map("project_id") @db.Uuid
-  environmentId String  @map("environment_id") @db.Uuid
+  id            String @id @default(uuid(7)) @db.Uuid
+  projectId     String @map("project_id") @db.Uuid
+  environmentId String @map("environment_id") @db.Uuid
 
   /// Gom DEPLOY_START / DEPLOY_SUCCESS / DEPLOY_FAILURE của CÙNG MỘT lần deploy.
   /// Thiếu nó thì Deployment Frequency đếm cả START lẫn SUCCESS thành hai lần deploy.
@@ -1112,10 +1144,10 @@ model DeploymentEvent {
   occurredAt  DateTime          @default(now()) @map("occurred_at") @db.Timestamptz(3)
 
   /// Restrict: giữ vĩnh viễn để tính DORA kể cả khi project bị xóa
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Restrict)
   /// Restrict: DORA chỉ tính deploy vào production, nên hàng mất environment_id
   /// là hàng không phân loại được. SetNull còn là một UPDATE trên bảng append-only.
-  environment Environment  @relation(fields: [environmentId], references: [id], onDelete: Restrict)
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Restrict)
 
   /// DORA loc theo (project, environment) roi sap theo thoi gian. Hai index
   /// hai cot khong phuc vu duoc truy van do, phai la composite ba cot (§2.2).

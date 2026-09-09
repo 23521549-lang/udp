@@ -84,6 +84,19 @@ export class NotFoundError extends AppError {
 }
 
 /** Dùng cho optimistic lock — xem §8.4, khi hai người cùng sửa một flag */
+/**
+ * 422 — request đọc hiểu được nhưng sai về mặt ngữ nghĩa.
+ *
+ * Tách khỏi `ValidationError` (400) vì `ERROR_CATALOG` đặt nhiều mã ở đúng 422:
+ * `IDEMPOTENCY_KEY_REUSED`, `QUOTA_EXCEEDED`, `INSUFFICIENT_PERMISSIONS`. Không
+ * có lớp này thì mã trong catalog nói 422 còn HTTP thật trả 400, và client tra
+ * catalog theo `code` sẽ thấy hai con số khác nhau cho cùng một lỗi.
+ */
+export class UnprocessableError extends AppError {
+  readonly statusCode = 422;
+  readonly kind = "VALIDATION_FAILED" as const;
+}
+
 export class ConflictError extends AppError {
   readonly statusCode = 409;
   readonly kind = "CONFLICT" as const;

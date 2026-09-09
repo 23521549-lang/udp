@@ -5,14 +5,9 @@
 -- database cưỡng chế, có test I22". Không có migration này thì I22 và I30
 -- vĩnh viễn không thể pass, và ma trận writer chỉ là một bảng trong tài liệu.
 --
--- Role tạo NOLOGIN ở migration này. Quyền đăng nhập được cấp RIÊNG bằng
--- `pnpm db:service-login`, không phải ở đây: migration là file được commit và
--- chạy ở mọi môi trường, nên một ALTER ROLE ... PASSWORD trong đó là đưa
--- credential vào lịch sử kho mã vĩnh viễn.
---
--- [Cập nhật] Service 1 nay ĐÃ nối bằng `udp_s1` — xem services/core-backend/
--- src/core/db.ts và bất biến kiểm ở tests/service-identity.test.ts. Ma trận
--- writer không còn chỉ đúng bên trong SET ROLE của test.
+-- Role tạo NOLOGIN có chủ đích. Chưa service nào kết nối bằng chúng — chuỗi
+-- kết nối riêng cho từng service thuộc plan Service 2 / Service 3. Nhưng grant
+-- thì kiểm được ngay từ bây giờ bằng SET ROLE, nên bất biến không phải đợi.
 -- ============================================================
 
 DO $$

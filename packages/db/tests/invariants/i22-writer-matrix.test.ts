@@ -39,6 +39,11 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     // ke ca SELECT: bang chua hash token phien, va khong nhiem vu nao cua hai
     // service do can doc no — cung lap luan voi cloud_credentials.
     refresh_sessions: FULL,
+    // Ghi mot lan, khong viet lai: mot hang o day la ban ghi "lan dau da tra ve
+    // dung cai nay". Cho UPDATE nghia la mot request sau doi duoc thu ma request
+    // phat lai nhan duoc — pha dung tinh chat bang nay sinh ra de bao dam.
+    // DELETE thi can, vi don hang qua han lam ngay tren duong ghi (§2.2).
+    idempotency_keys: { SELECT: "*", INSERT: "*", DELETE: "*" },
     // config_version/config_hash thuộc S2 (và S3 trong nhánh kill-switch)
     environments: { SELECT: "*", INSERT: "*", DELETE: "*", UPDATE: { allExcept: ["config_version", "config_hash"] } },
     rollout_sessions: { SELECT: "*", INSERT: "*", DELETE: "*", UPDATE: { allExcept: S3_ROLLOUT_COLUMNS } },

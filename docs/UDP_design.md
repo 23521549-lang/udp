@@ -105,7 +105,7 @@ graph TD
 
 | Bảng | Writer | Reader |
 | ---- | ------ | ------ |
-| `User`, `ProjectMember`, `Project`, `CloudCredential`, `DomainConfig`, `CapabilityBinding`, `CapabilityPreference`, `Environment` (trừ hai cột `config_version` và `config_hash`), `ProvisioningJob`, `ProvisionedResource`, `RefreshSession` | Service 1 | S2 (`Project`, `Environment`), S3 (`Project`, `DomainConfig`, `CapabilityBinding`). S3 **không** đọc `CloudCredential`: quyền vào cluster được cấp qua endpoint nội bộ của S1 (ADR-06) |
+| `User`, `ProjectMember`, `Project`, `CloudCredential`, `DomainConfig`, `CapabilityBinding`, `CapabilityPreference`, `Environment` (trừ hai cột `config_version` và `config_hash`), `ProvisioningJob`, `ProvisionedResource`, `RefreshSession`, `IdempotencyKey` | Service 1 | S2 (`Project`, `Environment`), S3 (`Project`, `DomainConfig`, `CapabilityBinding`). S3 **không** đọc `CloudCredential`: quyền vào cluster được cấp qua endpoint nội bộ của S1 (ADR-06) |
 | `Environment.config_version`, `FeatureFlag`, `FlagVariant`, `FlagEnvConfig`, `FlagTargetingRule`, `Segment`, `SdkKey`, `FlagEvaluationStat`, `ConfigChangeLog` | Service 2 | S1 (hiển thị), S3 (đọc rule đang rollout). **Một ngoại lệ có chủ đích:** để dùng làm kill-switch **chỉ** khi Service 2 không phản hồi (nhánh `DEPENDENCY_DOWN`, §7.6), S3 được cấp **đúng ba quyền hẹp**, không hơn: `UPDATE` mức cột trên `flag_targeting_rules.serve`, `UPDATE` mức cột trên `environments.config_version` và `config_hash`, và `INSERT` trên `config_change_log`. Ba quyền này là **tối thiểu để chạy được kỷ luật transaction của ADR-05** — thiếu quyền cấp version thì S3 ghi `serve` mà replica của S2 không bao giờ thấy, tức là kill-switch im lặng không có tác dụng. Không có ngoại lệ này thì hành động *an toàn* nhất của hệ thống lại phụ thuộc vào availability của một service khác. S3 vẫn phải theo đúng kỷ luật transaction của ADR-05 (khóa `Environment` trước, ghi outbox cuối) để replica của S2 lan truyền đúng khi hồi phục. Bất biến I30 |
 | `RolloutSession` | **Chia theo cột**: S1 tạo hàng và ghi các cột cấu hình; S3 là writer duy nhất của `status`, `current_traffic_percentage`, `fail_reason`, `last_decision`, `last_step_at`, `claimed_by`, `claimed_until`, `version` | |
 | `RolloutEvent` | S1 ghi `is_intent = true`; S3 ghi `is_intent = false` | |
@@ -550,6 +550,19 @@ erDiagram
         timestamp created_at
     }
 
+    IdempotencyKey {
+        uuid id PK
+        uuid project_id FK
+        uuid user_id FK
+        string endpoint "phuong thuc + duong dan, vi du POST /projects/:id/members"
+        string idempotency_key "UUID do client sinh"
+        string body_hash "sha256 hex cua body da chuan hoa"
+        int response_status
+        jsonb response_body "response cu, phat lai nguyen van"
+        timestamp expires_at "song 24 gio"
+        timestamp created_at
+    }
+
     SdkKey {
         uuid id PK
         uuid environment_id FK
@@ -882,7 +895,7 @@ ON ProjectMember (project_id) WHERE project_role = 'OWNER';
 | id             | UUID         | PK                                       |                                                                     |
 | project_id     | UUID         | FK → Project ON DELETE CASCADE, NOT NULL |                                                                     |
 | name           | VARCHAR(50)  | NOT NULL                                 | `'dev'`, `'staging'`, `'prod'` — unique theo project                |
-| k8s_namespace  | VARCHAR(63)  | NOT NULL                                 | Namespace tương ứng trên cluster; mặc định `udp-{project}-{env}`    |
+| k8s_namespace  | VARCHAR(63)  | NOT NULL, UNIQUE                         | Namespace trên cluster. Sinh bằng `k8sNamespaceFor()` của `@udp/config`: bỏ dấu tiếng Việt, cắt phần tên project xuống 20 ký tự **trước** khi nối hậu tố, chèn 6 ký tự đầu của `project_id`, rồi mới nối `-{env}`. Ba chi tiết đó không phải tuỳ chọn phong cách — xem ghi chú dưới bảng |
 | is_production  | BOOLEAN      | NOT NULL, DEFAULT false                  | Gate các hành động nguy hiểm + yêu cầu role cao hơn                 |
 | rank           | INTEGER      | NOT NULL                                 | Thứ tự promotion: dev(0) → staging(1) → prod(2)                     |
 | auto_deploy    | BOOLEAN      | NOT NULL, DEFAULT true                   | **[NEW v4]** `false` ⇒ webhook CI/CD ghi `DeploymentEvent` với `event_type = 'DEPLOY_PENDING'` và **không** deploy; phải có `POST /deployments/:id/approve` mới chạy (§8.3). Ghi chứ không nuốt là điểm mấu chốt: bỏ qua im lặng thì CI tưởng đã deploy, UDP không có bản ghi nào, và DORA đếm thiếu. Cùng khuôn `RolloutEvent.is_intent` — ghi ý định, thực thi tách rời. Portal đặt sẵn `false` khi `is_production` |
@@ -892,7 +905,10 @@ ON ProjectMember (project_id) WHERE project_role = 'OWNER';
 
 ```sql
 CREATE UNIQUE INDEX idx_env_name_per_project ON Environment (project_id, name);
+CREATE UNIQUE INDEX idx_env_namespace ON Environment (k8s_namespace);
 ```
+
+> **Vì sao quy tắc sinh namespace phải viết ra ở đây.** Bản `udp-{project}-{env}` cắt cụt bằng `slice(0, 63)` hỏng theo ba cách đã đo được: (1) tên project dài 64 ký tự làm `dev`, `staging` và `prod` ra **cùng một chuỗi** vì hậu tố env bị cắt mất — hai environment lẽ ra cô lập nhau lại dùng chung một namespace, phá thẳng ADR-04 và T10; (2) `"Dự án Bán hàng"` và `"Dứ àn Bán hàng"` cùng ra `udp-d---n-b-n-h-ng-dev` vì mọi ký tự có dấu đều thành `-`; (3) tên dài 58 hoặc 63 ký tự cho ra chuỗi **kết thúc bằng `-`**, vi phạm DNS-1123 nên API server từ chối — mà lỗi chỉ nổ lúc provisioning, rất xa chỗ gây ra nó. Cắt tên project **trước** khi nối env chặn (1); bỏ dấu chặn (2); `trim` dấu `-` hai đầu chặn (3); 6 ký tự của `project_id` chặn va chạm giữa hai project khác nhau; và `UNIQUE` ở trên là lớp cuối, vì namespace là định danh **toàn cluster** chứ không phải theo project.
 
 > Khi tạo project, UDP tự sinh 3 environment mặc định (`dev`, `staging`, `prod`). Environment là ranh giới cô lập của: namespace K8s, SDK key, cấu hình flag, targeting rule, rollout session và DORA metrics. Tạo environment mới sau này (`POST /environments`) gọi `POST /internal/environments/:id/backfill` của Service 2 để tạo `FlagEnvConfig` (tắt) cho mọi flag đang có — v3 thiếu endpoint này nên S1 không có cách hợp lệ để tạo hàng trong bảng của S2.
 
@@ -914,6 +930,31 @@ Trước bảng này, `POST /auth/logout` chỉ xoá cookie phía trình duyệt
 | created_at     | TIMESTAMPTZ | NOT NULL, DEFAULT NOW()                  | |
 
 > **Ba lớp kiểm khi refresh, mỗi lớp bắt một thứ khác nhau:** (1) chữ ký JWT — token có phải do ta cấp; (2) hàng phiên — đã thu hồi chưa, còn hạn không, thứ chữ ký **không** nói được; (3) `token_hash` khớp — hàng phiên đúng là hàng của TOKEN NÀY. Thiếu lớp 3 thì `sid` là ràng buộc duy nhất, mà `sid` nằm trong payload đã ký nên token gốc và token đã xoay đều qua được.
+
+
+#### `IdempotencyKey` — [NEW v4: lop luu cua header Idempotency-Key §9]
+
+§9 quy định mọi `POST` tạo tài nguyên tốn tiền hoặc không đảo ngược được đều nhận header `Idempotency-Key`, và nói rõ "unique partial index ở tầng database là lớp chặn thứ hai". Bảng này chính là chỗ đó — trước nó, quy định kia không có nơi nào để sống.
+
+| Cột | Kiểu | Constraint | Ghi chú |
+| --- | ---- | ---------- | ------- |
+| id              | UUID         | PK                                          | |
+| project_id      | UUID         | FK → Project ON DELETE CASCADE, NOT NULL    | Mọi endpoint trong bảng Idempotency-Key của §9 đều thuộc một project |
+| user_id         | UUID         | FK → User ON DELETE CASCADE, NOT NULL       | **Khoá phải phân theo người gọi.** §9 chỉ nói `(project_id, endpoint, hash(body))`; nhưng `Idempotency-Key` do client tự sinh, nên hai thành viên của cùng project vô tình trùng UUID sẽ khiến người thứ hai nhận response của người thứ nhất kèm `Idempotency-Replayed: true` — hành động của họ **không xảy ra** mà giao diện báo thành công. Thêm `user_id` vào khoá đóng hẳn đường đó |
+| endpoint        | VARCHAR(120) | NOT NULL                                    | Phương thức + mẫu đường dẫn. Cùng một key ở hai endpoint khác nhau là hai ý định khác nhau |
+| idempotency_key | VARCHAR(120) | NOT NULL                                    | Giá trị header, UUID do client sinh. Tên đầy đủ chứ không rút gọn thành `key`: §9 cảnh báo nó **khác** `resourceIdempotencyKey` của Cloud Adapter (§4.1) — cái kia là khoá nghiệp vụ sống suốt vòng đời tài nguyên, cái này là khoá giao thức HTTP sống 24 giờ |
+| body_hash       | CHAR(64)     | NOT NULL                                    | SHA-256 của body đã chuẩn hoá. Cùng key **cùng** body ⇒ phát lại response cũ; cùng key **khác** body ⇒ `422 IDEMPOTENCY_KEY_REUSED`, vì đó là lỗi lập trình của client |
+| response_status | INTEGER      | NOT NULL                                    | Trạng thái HTTP đã trả lần đầu |
+| response_body   | JSONB        | NOT NULL                                    | Response đã trả lần đầu, phát lại nguyên văn |
+| expires_at      | TIMESTAMPTZ  | NOT NULL                                    | 24 giờ theo §9. Hàng quá hạn coi như không tồn tại |
+| created_at      | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                     | |
+
+```sql
+CREATE UNIQUE INDEX idx_idempotency_scope
+  ON IdempotencyKey (project_id, user_id, endpoint, idempotency_key);
+```
+
+> **Dọn hàng quá hạn không cần cron.** Chưa có hạ tầng pg-boss, nên thay vì thêm một cron chưa có chỗ chạy, mỗi lần ghi khoá mới sẽ xoá luôn các hàng đã quá hạn **của cùng `(project_id, endpoint)`**. Việc dọn vì thế tự giới hạn phạm vi, chạy đúng lúc có tải, và không để lại một job mồ côi phải nhớ. Khi §3.1 `jobs/` ra đời có thể thay bằng cron nếu cần.
 
 #### `SdkKey` — [NEW: vá B1 — ADR-03]
 
@@ -966,6 +1007,13 @@ CREATE INDEX idx_sdkkey_lookup ON SdkKey (key_hash) WHERE revoked_at IS NULL;
 | cluster_access   | JSONB        | NULLABLE                  | **[NEW v4 — ADR-06]** `{ mode: 'direct' \| 'agent', apiEndpoint, caData, controlPlaneSA }` — **không** chứa token           |
 | domain_set_version | INTEGER    | NOT NULL, DEFAULT 0       | **[NEW v4]** Optimistic lock cho cả tập DomainConfig — xem `DomainConfig`                                                  |
 | updated_at       | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()   |                                                                                                                           |
+
+```sql
+CREATE UNIQUE INDEX idx_project_name_per_owner
+  ON Project (owner_id, name) WHERE status <> 'DELETED';
+```
+
+> **Vì sao unique theo chủ sở hữu chứ không toàn hệ thống.** `ERROR_CATALOG.DUPLICATE_RESOURCE` lấy ví dụ mở đầu là "tên project trùng", nhưng trước index này **không ràng buộc nào** cưỡng chế điều đó — tài liệu hứa một thứ database không giữ. Phạm vi là `(owner_id, name)`: hai người dùng khác nhau vẫn được đặt tên giống nhau, vì tên project là nhãn riêng của họ chứ không phải định danh toàn cầu. Điều kiện `WHERE status <> 'DELETED'` để xoá rồi tạo lại cùng tên vẫn được — nếu không, soft-delete sẽ âm thầm chiếm giữ tên vĩnh viễn.
 
 > **Soft-delete:** `status = 'DELETED'` — Project không bị xóa khỏi DB, giữ để audit. Bảng con cascade hard-delete, trừ **ba** bảng sổ `ProvisionedResource`, `DeploymentEvent` và `AuditLog` — cả ba dùng `ON DELETE RESTRICT`, xem §2.3.
 
@@ -4962,7 +5010,7 @@ interface ErrorCodeSpec {
 | `POST /projects/:id/domains/:type/upgrade` | Hai lần `helm upgrade` chồng nhau |
 | `POST /projects/:id/members` | Gửi hai lời mời |
 
-Ngữ nghĩa: key được lưu cùng `(project_id, endpoint, hash(body))` trong **24 giờ**. Gọi lại với **cùng key và cùng body** trả về **đúng response cũ** kèm `Idempotency-Replayed: true`, chứ không phải 409 — người dùng bấm hai lần do mạng chậm không đáng bị báo lỗi. Cùng key nhưng **khác body** trả `422`, vì đó là lỗi lập trình của client. Unique partial index ở tầng database (§2) là lớp chặn thứ hai, phòng khi key hết hạn hoặc client quên gửi.
+Ngữ nghĩa: key được lưu cùng `(project_id, user_id, endpoint, hash(body))` trong **24 giờ** — `user_id` nằm trong khoá vì `Idempotency-Key` do client tự sinh, nên hai thành viên cùng project vô tình trùng UUID sẽ khiến người thứ hai nhận response của người thứ nhất và tưởng thao tác của mình đã chạy. Gọi lại với **cùng key và cùng body** trả về **đúng response cũ** kèm `Idempotency-Replayed: true`, chứ không phải 409 — người dùng bấm hai lần do mạng chậm không đáng bị báo lỗi. Cùng key nhưng **khác body** trả `422`, vì đó là lỗi lập trình của client. Unique partial index ở tầng database (§2) là lớp chặn thứ hai, phòng khi key hết hạn hoặc client quên gửi.
 
 > Header này khác với `idempotencyKey` truyền xuống Cloud Adapter (§4.1): cái sau là khóa **nghiệp vụ** dùng để `lookup()` tài nguyên đã tạo trên cloud và sống suốt vòng đời tài nguyên, cái này là khóa **giao thức HTTP** sống 24 giờ. Đặt trùng tên trong code là một cái bẫy nên §3.1 gọi chúng là `httpIdempotencyKey` và `resourceIdempotencyKey`.
 
@@ -6652,6 +6700,8 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | Chuyển giao chậm tối đa 60 giây khi worker chết (lease) | Đánh đổi cố hữu của lease so với advisory lock | Rút ngắn lease và tăng tần suất gia hạn |
 | Polling nền chạy liên tục kể cả khi hệ thống nhàn rỗi | Chi phí truy vấn không đáng kể, nhưng database không bao giờ ngủ | Chu kỳ poll thích ứng: giãn ra khi không có thay đổi |
 | `ConfigChangeLog` giữ 7 ngày | Đủ cho mọi kịch bản replica offline hợp lý | Tăng thời gian giữ, hoặc chuyển sang lưu trữ lạnh |
+| `DELETE /projects/:id` xoá mềm nhưng **chưa** enqueue teardown | §9 mô tả endpoint này là "soft-delete + enqueue teardown", nhưng hạ tầng `jobs/` (pg-boss, §3.1) chưa tồn tại nên chưa có hàng đợi để đẩy việc vào. Ghi nhận thay vì im lặng bỏ qua: tài nguyên cloud của một project đã xoá mềm hiện **không** tự được dọn | Dựng `jobs/boss.ts` và `teardown.job.ts`, enqueue ngay trong lệnh xoá mềm (cùng transaction, đúng ADR-02), rồi gỡ mục này |
+| `POST /projects/:id/members` đòi người được mời **đã có tài khoản** | §9 gọi đây là "mời theo email", nhưng cùng lý do với mục đăng ký ở đầu §16: chưa có hạ tầng mail. Một lời mời treo mà không đường nào gửi đi thì tệ hơn một lỗi 404 rõ ràng, và không bảng nào lưu nó | Khi có mail: thêm bảng lời mời, gửi thư kèm token, và cho phép mời địa chỉ chưa đăng ký |
 
 ---
 

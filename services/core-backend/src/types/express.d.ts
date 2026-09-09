@@ -1,3 +1,4 @@
+import type { ProjectRole } from "@udp/db";
 import type { AccessTokenPayload } from "../core/security/tokens.js";
 
 /**
@@ -12,6 +13,14 @@ declare global {
   namespace Express {
     interface Request {
       user?: AccessTokenPayload;
+      /**
+       * Vai tro cua nguoi goi TRONG project cua route nay.
+       *
+       * Chi co mat sau khi `requireMinProjectRole` chay xong. Tuyet doi khong
+       * gan `undefined` tuong minh o dau: voi `exactOptionalPropertyTypes`, do
+       * la loi bien dich chu khong phai cach xoa truong.
+       */
+      projectRole?: ProjectRole;
     }
   }
 }

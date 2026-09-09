@@ -7,6 +7,7 @@ import {
   DEFAULT_STICKINESS_ATTRIBUTE,
   DOMAIN_CATALOG_SEED,
   env,
+  k8sNamespaceFor,
   SDK_KEY,
   TOTAL_BUCKETS,
 } from "@udp/config";
@@ -70,12 +71,6 @@ const DEV_SERVER_KEY = `${SDK_KEY.serverPrefix}dev_0000000000000000000000000000`
 
 const sha256 = (value: string): string =>
   createHash("sha256").update(value).digest("hex");
-
-const slugifyNamespace = (project: string, env: string): string =>
-  `udp-${project}-${env}`
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .slice(0, 63);
 
 // ============================================================
 // Danh mục domain
@@ -167,6 +162,10 @@ async function seedUsersAndProject() {
         rank: spec.rank,
         isProduction: spec.isProduction,
         autoDeploy: !spec.isProduction,
+        // Quy tac sinh namespace da doi (xem k8sNamespaceFor). Khong dat o day
+        // thi database giu chuoi cu vinh vien, va seed van "idempotent" — nhung
+        // idempotent ve trang thai CU, dung loi ma chinh khoi chu thich nay canh.
+        k8sNamespace: k8sNamespaceFor(project.name, project.id, spec.name),
       },
       create: {
         projectId: project.id,
@@ -175,7 +174,7 @@ async function seedUsersAndProject() {
         isProduction: spec.isProduction,
         // Production không cho deploy tự động từ webhook (§8.3)
         autoDeploy: !spec.isProduction,
-        k8sNamespace: slugifyNamespace(project.name, spec.name),
+        k8sNamespace: k8sNamespaceFor(project.name, project.id, spec.name),
       },
     });
   }

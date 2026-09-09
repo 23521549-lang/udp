@@ -10,6 +10,7 @@ import { generalRateLimiter } from "./core/http/middlewares/rate-limit.middlewar
 import { healthRouter } from "./modules/health/health.controller.js";
 import { metricsRouter } from "./modules/health/metrics.controller.js";
 import { authRouter } from "./modules/auth/auth.controller.js";
+import { projectRouter } from "./modules/project/project.controller.js";
 
 const API_PREFIX = "/api/v1";
 
@@ -81,6 +82,7 @@ export function createApp(): Express {
   app.use(API_PREFIX, createCsrfProtection(CSRF_EXEMPT_PATHS));
 
   app.use(`${API_PREFIX}/auth`, authRouter);
+  app.use(`${API_PREFIX}/projects`, projectRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler); // PHẢI đăng ký cuối cùng

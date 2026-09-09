@@ -20,8 +20,73 @@ export const DEFAULT_ENVIRONMENTS = [
   { name: "prod", rank: 2, isProduction: true },
 ] as const;
 
-/** Mẫu sinh namespace K8s: udp-{project}-{env}, tối đa 63 ký tự theo chuẩn K8s */
+/** Nhãn DNS-1123: chữ thường, số, gạch ngang; bắt đầu và kết thúc bằng chữ-số */
 export const K8S_NAMESPACE_MAX_LENGTH = 63;
+
+/** Cắt phần tên project TRƯỚC khi nối hậu tố — xem `k8sNamespaceFor` */
+const PROJECT_SLUG_MAX = 20;
+const ENV_SLUG_MAX = 12;
+const PROJECT_ID_SUFFIX_LENGTH = 6;
+
+const DNS_1123_LABEL = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+
+/**
+ * Bỏ dấu tiếng Việt rồi rút về nhãn DNS-1123.
+ *
+ * `normalize("NFD")` tách nguyên âm khỏi dấu thanh để `\p{M}` xoá được phần
+ * dấu. Riêng `đ`/`Đ` không phải nguyên âm ghép nên NFD không tách ra, phải thay
+ * tay — thiếu dòng đó thì mọi chữ `đ` biến thành gạch ngang.
+ */
+const toLabel = (value: string, max: number): string =>
+  value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[đĐ]/g, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, max)
+    .replace(/-+$/g, "");
+
+/**
+ * Sinh namespace K8s cho một environment.
+ *
+ * Bản trước — `udp-{project}-{env}` rồi `slice(0, 63)` — hỏng ba cách, cả ba
+ * đều đã đo được chứ không phải suy đoán:
+ *
+ *  1. Tên project dài 64 ký tự làm `dev`, `staging` và `prod` ra CÙNG MỘT
+ *     chuỗi, vì phép cắt ăn mất đúng phần hậu tố phân biệt chúng. Hai
+ *     environment lẽ ra cô lập lại dùng chung một namespace — phá ranh giới của
+ *     ADR-04 và T10, và không index nào bắt được.
+ *  2. `"Dự án Bán hàng"` và `"Dứ àn Bán hàng"` cùng ra `udp-d---n-b-n-h-ng-dev`,
+ *     vì mọi ký tự có dấu đều bị thay bằng `-`.
+ *  3. Tên dài 58 hoặc 63 ký tự cho ra chuỗi kết thúc bằng `-`, vi phạm
+ *     DNS-1123 — API server từ chối, nhưng mãi tới lúc provisioning, rất xa chỗ
+ *     gây ra lỗi.
+ *
+ * Ba biện pháp tương ứng: cắt tên project TRƯỚC khi nối env, bỏ dấu thay vì
+ * thay bằng `-`, và trim gạch ngang sau mỗi lần cắt. Sáu ký tự đầu của
+ * `projectId` chặn va chạm giữa hai project khác tên nhưng cùng slug.
+ *
+ * Vẫn ném khi kết quả không hợp lệ. Không phải phòng xa thừa: chuỗi này đi
+ * thẳng vào API server, nên chỗ rẻ nhất để phát hiện sai là ngay đây.
+ */
+export function k8sNamespaceFor(projectName: string, projectId: string, envName: string): string {
+  const project = toLabel(projectName, PROJECT_SLUG_MAX) || "p";
+  const env = toLabel(envName, ENV_SLUG_MAX) || "e";
+  const suffix = projectId.replace(/-/g, "").slice(0, PROJECT_ID_SUFFIX_LENGTH).toLowerCase();
+
+  const namespace = `udp-${project}-${suffix}-${env}`;
+
+  if (namespace.length > K8S_NAMESPACE_MAX_LENGTH || !DNS_1123_LABEL.test(namespace)) {
+    throw new Error(
+      `Không sinh được namespace hợp lệ từ project "${projectName}" và environment ` +
+        `"${envName}": kết quả "${namespace}" không phải nhãn DNS-1123.`,
+    );
+  }
+
+  return namespace;
+}
 
 // ============================================================
 // Feature flag (Design v4 §6)
