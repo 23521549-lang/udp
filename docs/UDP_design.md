@@ -101,7 +101,7 @@ graph TD
 
 - Bảng **có UPDATE** có **đúng một service được quyền ghi**, hoặc chia theo cột như `RolloutSession`.
 - Bảng **append-only** (`AuditLog`, `DeploymentEvent`, `ConfigChangeLog`) cho phép **nhiều service INSERT trực tiếp trong transaction của chính mình**. Lý do: v3 bắt Service 2 ghi audit "qua API của Service 1" — đó là dual-write: thay đổi flag thành công nhưng gọi API thất bại thì mất audit, hoặc gọi trước rồi transaction rollback thì audit sai. Đúng bài toán ADR-02 tránh.
-- Quy tắc được **cưỡng chế bằng Postgres role** (`udp_s1`, `udp_s2`, `udp_s3`) với `GRANT` theo bảng và **column-level GRANT** cho `RolloutSession`; bất biến I22 (§13.3) đọc `information_schema.role_table_grants` và so với ma trận dưới đây, thay vì chỉ "kiểm tra trong code review".
+- Quy tắc được **cưỡng chế bằng Postgres role** (`udp_s1`, `udp_s2`, `udp_s3`) với `GRANT` theo bảng và **column-level GRANT** cho `RolloutSession`. Mỗi service nối bằng **chuỗi kết nối riêng mang role của chính nó** (`DATABASE_URL_S1`…), và khẳng định `current_user` lúc khởi động rồi mới mở cổng — nếu không, chuỗi kết nối rơi về owner sẽ làm toàn bộ GRANT vô nghĩa mà không có gì báo. Quyền đăng nhập cấp bằng `pnpm db:service-login`, không nằm trong migration, để mật khẩu không vào lịch sử kho mã; bất biến I22 (§13.3) đọc `information_schema.role_table_grants` và so với ma trận dưới đây, thay vì chỉ "kiểm tra trong code review".
 
 | Bảng | Writer | Reader |
 | ---- | ------ | ------ |

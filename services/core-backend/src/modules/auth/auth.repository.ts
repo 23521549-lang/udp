@@ -1,4 +1,4 @@
-import { prisma } from "@udp/db";
+import { prisma } from "../../core/db.js";
 import type { PublicUser } from "./auth.types.js";
 
 /**

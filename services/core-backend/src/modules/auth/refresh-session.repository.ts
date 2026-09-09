@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { prisma } from "@udp/db";
+import { prisma } from "../../core/db.js";
 
 /**
  * Phiên refresh token: cấp, xoay vòng, thu hồi.

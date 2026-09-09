@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { prisma } from "@udp/db";
+import { prisma } from "../../core/db.js";
 import { asyncHandler } from "../../core/http/error-handler.js";
 
 export const healthRouter: Router = Router();

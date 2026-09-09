@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { COOKIE_NAMES } from "@udp/config";
-import { prisma } from "@udp/db";
+import { prisma } from "../../db.js";
 import { ForbiddenError, UnauthenticatedError } from "../../errors.js";
 import { verifyAccessToken } from "../../security/tokens.js";
 

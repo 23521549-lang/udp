@@ -12,13 +12,24 @@ import { PrismaClient } from "./generated/prisma/client.js";
  * ghi bản ghi nghiệp vụ trong một transaction" của ADR-02 không thành lập, và ta
  * phải chuyển sang mô hình outbox có relay — thêm một thành phần và một lớp trễ.
  *
- * Chuỗi kết nối dùng ở đây là `DATABASE_URL` (pooled). Migrate, seed và pg-boss
- * dùng `DATABASE_URL_DIRECT` (session mode) vì chúng cần trạng thái session tồn
- * tại qua nhiều statement — xem prisma.config.ts và §15.3.
+ * Chuỗi kết nối do NGƯỜI GỌI truyền vào, không đọc từ env ở đây.
+ *
+ * Đó là điều kiện để ma trận writer §1.2 có hiệu lực: mỗi service nối bằng
+ * ROLE CỦA RIÊNG NÓ (`udp_s1` / `udp_s2` / `udp_s3`), nên GRANT theo cột trở
+ * thành ràng buộc thật chứ không phải một bảng trong tài liệu. Một singleton
+ * dùng chung trong package này sẽ ép cả ba service dùng một danh tính, và toàn
+ * bộ 187 test canh GRANT chỉ còn đúng bên trong `SET ROLE` của chính chúng.
+ *
+ * Migrate, seed và pg-boss vẫn dùng `DATABASE_URL_DIRECT` (session mode) với
+ * user owner: chúng cần trạng thái session qua nhiều statement, và seed ghi vào
+ * lãnh địa của cả ba service — xem prisma.config.ts và §15.3.
  */
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+export interface PrismaClientOptions {
+  connectionString: string;
+  max: number;
+  /** Khoá giữ instance trên globalThis — mỗi service một khoá riêng */
+  cacheKey: string;
+}
 
 /**
  * Vì sao giữ instance trên globalThis: trong dev, hot-reload nạp lại module nhiều
@@ -26,23 +37,21 @@ const globalForPrisma = globalThis as unknown as {
  * sau vài chục lần sửa file. Với free tier của Postgres managed, hạn mức kết nối
  * còn thấp hơn nhiều so với Postgres tự dựng, nên điều này càng quan trọng.
  */
-function createPrismaClient(): PrismaClient {
-  const adapter = createPgAdapter({
-    connectionString: env.DATABASE_URL,
-    max: env.DATABASE_POOL_MAX,
-  });
+export function createPrismaClient(options: PrismaClientOptions): PrismaClient {
+  const cache = globalThis as unknown as Record<string, PrismaClient | undefined>;
+  const cached = cache[options.cacheKey];
+  if (cached !== undefined) return cached;
 
-  return new PrismaClient({
-    adapter,
+  const client = new PrismaClient({
+    adapter: createPgAdapter({
+      connectionString: options.connectionString,
+      max: options.max,
+    }),
     log: isDevelopment ? ["query", "warn", "error"] : ["warn", "error"],
   });
-}
 
-export const prisma: PrismaClient =
-  globalForPrisma.prisma ?? createPrismaClient();
-
-if (!isProduction) {
-  globalForPrisma.prisma = prisma;
+  if (!isProduction) cache[options.cacheKey] = client;
+  return client;
 }
 
 /**
@@ -69,6 +78,7 @@ if (typeof BigInt.prototype.toJSON !== "function") {
 }
 
 export { createPgAdapter, DB_TLS_OPTIONS, sanitizeConnectionString } from "./adapter.js";
+export { assertConnectedAs } from "./identity.js";
 export { dbConstraintError, httpStatusOf, UDP_SQLSTATE } from "./errors.js";
 export type { DbConstraintError } from "./errors.js";
 export * from "./generated/prisma/client.js";

@@ -93,6 +93,14 @@ const envSchema = z.object({
 
   // ---------- Database ----------
   /** Kết nối POOLED (transaction mode) — dùng cho truy vấn CRUD thường */
+  /**
+   * Chuỗi kết nối pooled của user OWNER.
+   *
+   * Từ khi mỗi service nối bằng role riêng (§1.2), biến này KHÔNG còn là kết nối
+   * runtime của service nào. Nó còn lại hai vai: làm khuôn cho `db:service-login`
+   * suy ra host/cổng/tenant khi dựng chuỗi kết nối của từng role, và là đường
+   * quản trị cho công cụ. Giữ bắt buộc vì thiếu nó thì không cấp được role nào.
+   */
   DATABASE_URL: z.string().url().startsWith("postgresql://"),
   /**
    * Kết nối SESSION MODE — bắt buộc, và thường KHÁC `DATABASE_URL`.
@@ -125,6 +133,17 @@ const envSchema = z.object({
    * connections` lúc chạy, không phải lúc build, nên rất tốn thời gian truy vết.
    */
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(5),
+  /**
+   * Chuỗi kết nối của Service 1 — nối bằng role `udp_s1`, KHÔNG phải owner.
+   *
+   * BẮT BUỘC, không có fallback về `DATABASE_URL`. Fallback ở đây sẽ làm ma
+   * trận writer §1.2 hỏng im lặng: owner có toàn quyền nên mọi GRANT theo cột
+   * trở nên vô nghĩa, mà ứng dụng vẫn chạy bình thường và test vẫn xanh. Đúng
+   * loại lỗi mà v4 đã bỏ fallback `DATABASE_URL_DIRECT` để tránh.
+   *
+   * Sinh bằng `pnpm db:service-login`.
+   */
+  DATABASE_URL_S1: z.string().url().startsWith("postgresql://"),
 
   // ---------- Auth ----------
   JWT_ACCESS_SECRET: z

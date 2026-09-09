@@ -1,7 +1,26 @@
 import { env } from "@udp/config";
-import { prisma } from "@udp/db";
+import { assertServiceIdentity, prisma } from "./core/db.js";
 import { createApp } from "./app.js";
 import { logger } from "./core/logger.js";
+
+/**
+ * Khẳng định danh tính kết nối TRƯỚC khi mở cổng.
+ *
+ * Nếu chuỗi kết nối rơi về user owner — quên đặt `DATABASE_URL_S1`, hoặc copy
+ * nhầm — thì ma trận writer §1.2 mất hiệu lực hoàn toàn mà không có gì báo:
+ * owner có toàn quyền nên mọi GRANT theo cột trở nên vô nghĩa, ứng dụng chạy
+ * bình thường, và test vẫn xanh vì chúng dùng `SET ROLE` riêng. Sập lúc boot
+ * với một câu rõ ràng là cách duy nhất để chuyện đó không im lặng.
+ */
+try {
+  await assertServiceIdentity();
+  logger.info({ role: "udp_s1" }, "Danh tính kết nối database đã xác nhận");
+} catch (err) {
+  // Bắt để ra MỘT dòng log đọc được, thay vì một unhandled rejection kèm stack
+  // mà người trực đêm phải tự dịch.
+  logger.fatal({ err }, "Không khởi động: danh tính kết nối database sai");
+  process.exit(1);
+}
 
 const app = createApp();
 const server = app.listen(env.CORE_BACKEND_PORT, () => {

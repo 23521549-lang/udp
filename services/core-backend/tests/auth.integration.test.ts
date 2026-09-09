@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { prisma } from "@udp/db";
+import { prisma } from "../src/core/db.js";
 import { createApp } from "../src/app.js";
 
 /**

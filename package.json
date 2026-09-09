@@ -25,7 +25,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "//lint": "Chua co linter. 5 package deu da co ma nguon, nen day la NO ky thuat that chu khong con la \"chua den luc\" — eslint + typescript-eslint nen them truoc service nghiep vu dau tien.",
-    "test": "pnpm -r --if-present test"
+    "test": "pnpm -r --if-present test",
+    "db:service-login": "pnpm --filter @udp/db service-login"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
