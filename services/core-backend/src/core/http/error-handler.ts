@@ -1,8 +1,9 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { ZodError } from "zod";
 import { isProduction } from "@udp/config";
+import { dbConstraintError, httpStatusOf } from "@udp/db";
 import { AppError } from "../errors.js";
-import { logger } from "../logger.js";
+import { logger, redact } from "../logger.js";
 import { buildProblem, sendProblem } from "./problem.js";
 
 /**
@@ -88,7 +89,17 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
    * Không phân tầng thì log đầy 401 do gõ nhầm mật khẩu và bug thật lẫn vào giữa.
    */
   if (err instanceof AppError) {
-    logger.warn({ err, kind: err.kind, code: err.problemCode }, "Business error");
+    // `details` đi qua redact() ở ĐÂY, không trông vào lời hứa của người ném.
+    //
+    // Ba chỗ trong codebase từng ghi "PHẢI đã qua redact()" — và `redact()` có
+    // ĐÚNG 0 người gọi. Một quy ước không ai cưỡng chế thì chỉ là chú thích.
+    // Chạy nó ở điểm hội tụ: mọi AppError đều qua đây, nên không lối nào lách.
+    // pino `redact.paths` KHÔNG thay được: nó là wildcard một cấp, còn
+    // `details` lồng sâu tuỳ ý.
+    logger.warn(
+      { err, kind: err.kind, code: err.problemCode, details: redact(err.details) },
+      "Business error",
+    );
     sendProblem(
       res,
       buildProblem({
@@ -99,6 +110,33 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
           ? { title: err.kind, typeSlug: err.kind.toLowerCase().replaceAll("_", "-") }
           : { code: err.problemCode }),
         detail: err.message,
+      }),
+    );
+    return;
+  }
+
+  /**
+   * Ràng buộc do database cưỡng chế (trigger, constraint tự định nghĩa).
+   *
+   * PHẢI đứng trước nhánh 500 bên dưới. Không có nhánh này, một rule trỏ variant
+   * lạ sẽ trả "Lỗi hệ thống" — sai cả status lẫn ý nghĩa, vì đó là lỗi người
+   * dùng sửa được, và 500 còn bảo client cứ retry một request không bao giờ đúng.
+   */
+  const dbError = dbConstraintError(err);
+  if (dbError !== undefined) {
+    logger.warn({ err, code: dbError.code }, "Database constraint violation");
+    sendProblem(
+      res,
+      buildProblem({
+        req,
+        status: httpStatusOf(dbError.code),
+        code: dbError.code,
+        // `detail` giữ NGUYÊN ở production, khác với nhánh 500 bên dưới. Không
+        // mâu thuẫn: chuỗi này là câu RAISE do chính ta viết trong migration,
+        // không phải message của Prisma — nó không mang đường dẫn file hay tên
+        // bảng nội bộ. Và mã này khai `fixableBy: "user"`, nên nói "rule trỏ
+        // variant không tồn tại" mà không nói variant NÀO là bỏ người dùng bế tắc.
+        detail: dbError.detail,
       }),
     );
     return;

@@ -25,10 +25,20 @@ import { TOTAL_BUCKETS } from "@udp/config/constants";
  * `z.discriminatedUnion` khác. Ai cần duyệt các nhánh thì dùng biến này.
  */
 export const flagServeUnion = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("variant"),
-    variantId: z.string().uuid(),
-  }),
+  /**
+   * `.strict()` ở CẢ HAI nhánh.
+   *
+   * Không có nó, `{ kind: "variant", variantId, weights: [...] }` parse thành
+   * công và `weights` bị nuốt im lặng — Portal dựng một distribution nhưng gán
+   * nhầm `kind` sẽ ghi ra một rule phục vụ 100% một variant, thay vì nhận 422.
+   * Đây là file tự nhận là chốt chặn cuối cho hình dạng `serve`.
+   */
+  z
+    .object({
+      kind: z.literal("variant"),
+      variantId: z.string().uuid(),
+    })
+    .strict(),
   z.object({
     kind: z.literal("distribution"),
     weights: z
@@ -40,7 +50,7 @@ export const flagServeUnion = z.discriminatedUnion("kind", [
         }),
       )
       .min(1),
-  }),
+  }).strict(),
 ]);
 
 /**
@@ -64,12 +74,35 @@ export const flagServeUnion = z.discriminatedUnion("kind", [
  */
 export const flagServeDbSchema = flagServeUnion.superRefine((serve, ctx) => {
   if (serve.kind !== "distribution") return;
+
   const sum = serve.weights.reduce((acc, w) => acc + w.weight, 0);
   if (sum !== TOTAL_BUCKETS) {
     ctx.addIssue({
       code: "custom",
+      path: ["weights"],
       message: `Tổng trọng số phải bằng ${TOTAL_BUCKETS}, đang là ${sum}`,
     });
+  }
+
+  /**
+   * Mỗi variant xuất hiện ĐÚNG MỘT lần.
+   *
+   * Bất biến I1 ("khoảng tích lũy chỉ *dịch* chứ không *đảo*") giả định điều
+   * này. Với hai mục trùng, ramp của C1 không biết sửa mục nào, và evaluator
+   * cộng dồn sẽ gán hai khoảng rời rạc cho cùng một variant — người dùng rơi
+   * vào khoảng thứ hai vẫn thấy đúng variant đó, nên lỗi không lộ ra ở kết quả
+   * mà chỉ lộ ở phân bố, tức là gần như không lộ.
+   */
+  const seen = new Set<string>();
+  for (const [index, w] of serve.weights.entries()) {
+    if (seen.has(w.variantId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["weights", index, "variantId"],
+        message: `variantId ${w.variantId} xuất hiện nhiều lần`,
+      });
+    }
+    seen.add(w.variantId);
   }
 });
 

@@ -71,7 +71,7 @@ export const DEFAULT_ROLLOUT_THRESHOLDS = {
    * sẵn có: so tuyệt đối sẽ rollback nhầm ở service vốn đã có 4% lỗi, và bỏ sót
    * ở service vốn chỉ có 0,01%.
    */
-  relativeErrorRate: 2,
+  relativeErrorRate: 1.5,
   latencyP99Ms: 1000,
   /**
    * Số lỗi TỐI THIỂU mới coi là vượt ngưỡng. Ở 100 request, độ phân giải của
@@ -127,11 +127,29 @@ export const MAX_TRACKED_FLAGS_PER_ENV = 3;
 // Điều phối worker — cơ chế lease (Design v4 ADR-05)
 // ============================================================
 
-export const LEASE = {
+/**
+ * Lease của RolloutSession — vòng điều khiển chạy mỗi 5 giây nên mất lease phải
+ * phát hiện nhanh.
+ */
+export const ROLLOUT_LEASE = {
   /** Thời gian giữ lease mỗi lần claim */
   durationSeconds: 60,
   /** Chu kỳ gia hạn — phải NHỎ HƠN NHIỀU so với durationSeconds */
   renewIntervalMs: 20_000,
+} as const;
+
+/**
+ * Lease của ProvisioningJob — KHÁC ROLLOUT_LEASE, và khác có chủ đích (§2.2).
+ *
+ * Một bước provisioning gọi API cloud có thể mất vài phút (tạo cluster, chờ
+ * load balancer cấp IP). Dùng chung 60 giây thì worker vẫn đang sống sẽ bị coi
+ * là chết giữa chừng, và một worker thứ hai nhảy vào tạo tài nguyên trùng — đúng
+ * kịch bản tốn tiền thật mà ADR-02 sinh ra để chặn. Gia hạn cùng nhịp `touch()`
+ * của pg-boss.
+ */
+export const JOB_LEASE = {
+  durationSeconds: 300,
+  renewIntervalMs: 30_000,
 } as const;
 
 // ============================================================
@@ -169,6 +187,11 @@ export const AUTH = {
   passwordMinLength: 8,
   passwordMaxLength: 72,
   /** Số byte ngẫu nhiên của CSRF token */
+  /**
+   * KHÔNG dùng nữa. Token CSRF không còn là chuỗi ngẫu nhiên mà là HMAC của
+   * `family_id` (§1.2) — độ dài do SHA-256 quyết định, không phải hằng số này.
+   * Giữ lại để lần sau không ai thêm lại một token ngẫu nhiên trần.
+   */
   csrfTokenBytes: 32,
 } as const;
 
@@ -189,6 +212,17 @@ export const CSRF_HEADER = "X-CSRF-Token";
 export const RATE_LIMIT = {
   auth: { windowMs: 15 * 60_000, max: 20 },
   general: { windowMs: 60_000, max: 300 },
+  /**
+   * Giới hạn cho SDK (§2.2). Hai tầng vì hai mối lo khác nhau: `perKey` chặn một
+   * khách hàng ngốn hết tài nguyên chung, `perKeyIp` chặn một máy đơn lẻ dùng
+   * key hợp lệ để dội. Chỉ có `perKey` thì một IP hỏng làm cả tổ chức bị khoá.
+   */
+  sdk: {
+    perKey: { windowMs: 60_000, max: 100 },
+    perKeyIp: { windowMs: 60_000, max: 600 },
+    /** Số kết nối SSE đồng thời tối đa cho mỗi IP */
+    maxStreamsPerIp: 5,
+  },
 } as const;
 
 // ============================================================
@@ -213,8 +247,14 @@ export const SDK_KEY = {
   clientPrefix: "udp_ck_",
   /** Số byte ngẫu nhiên của key */
   randomBytes: 32,
-  /** Số ký tự đầu lưu lại để hiển thị trong UI */
-  displayPrefixLength: 12,
+  /**
+   * Số ký tự CUỐI lưu lại để hiển thị trong UI.
+   *
+   * Đuôi chứ không phải đầu: khoá có dạng `udp_sk_{env}_{random}`, nên tám ký
+   * tự đầu là `udp_sk_l` cho MỌI khoá server ở live — lưu chúng không phân
+   * biệt được khoá nào với khoá nào, tức là hỏng đúng mục đích của cột.
+   */
+  displaySuffixLength: 6,
   /** Throttle cập nhật last_used_at để không ghi DB mỗi request */
   lastUsedThrottleMs: 60_000,
 } as const;
@@ -260,9 +300,44 @@ export const REDACTED_KEY_PATTERNS = [
   /api_key/i,
   /private_?key/i,
   /serviceaccountjson/i,
-  /encrypted_?payload/i,
   /accesskey/i,
   /clientsecret/i,
+  /** Header xác thực và cookie phiên — lọt vào AuditLog qua payload request */
+  /authorization/i,
+  /cookie/i,
+  /**
+   * Mọi trường có tên KẾT THÚC bằng "key": sshKey, dekKey, webhookKey,
+   * kubeconfigKey, privateKey. Cố tình rộng — với một biện pháp bảo mật thì
+   * chặn-mặc-định là hướng đúng: bỏ sót một khoá là rò rỉ, che nhầm một nhãn
+   * chỉ là hiển thị xấu. Những cái che nhầm được liệt kê ở REDACT_ALLOWLIST
+   * ngay dưới, nơi mỗi ngoại lệ phải được viết ra và đọc lại.
+   */
+  /.+key$/i,
+  /** Mọi thứ bắt đầu bằng "encrypted" là ciphertext: encryptedPayload, encryptedDek */
+  /^encrypted/i,
+] as const;
+
+/**
+ * Khoá KHÔNG BAO GIỜ được che, dù khớp pattern ở trên.
+ *
+ * Đây là những cái tên kết thúc bằng "key" nhưng mang định danh để HIỂN THỊ và
+ * TRUY VẾT chứ không mang bí mật. Che chúng đi không làm hệ thống an toàn hơn,
+ * mà làm mất đúng thứ cần để đọc log: `idempotencyKey` là chìa khoá lần ra job
+ * trùng của ADR-02, `targetingKey` là thuộc tính hash mặc định của OpenFeature,
+ * `variantKey`/`flagKey` là nhãn của mọi thống kê đánh giá flag.
+ *
+ * Danh sách này là ngoại lệ có kiểm soát, nên nó phải NGẮN và mỗi mục phải giải
+ * thích được. Thêm một dòng ở đây là một quyết định bảo mật, không phải dọn dẹp.
+ */
+export const REDACT_ALLOWLIST = [
+  // `key` tran KHONG can o day: /.+key$/i doi it nhat mot ky tu dung truoc, nen
+  // no von khong khop. Mot dong allowlist khong mien tru gi la dong gay hieu nham.
+  /^idempotency_?key$/i,
+  /^variant_?key$/i,
+  /^flag_?key$/i,
+  /^targeting_?key$/i,
+  /^bucket_?key$/i,
+  /^stickiness_?key$/i,
 ] as const;
 
 export const REDACTED_PLACEHOLDER = "[REDACTED]";

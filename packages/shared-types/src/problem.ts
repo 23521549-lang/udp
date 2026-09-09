@@ -47,7 +47,7 @@ export interface ErrorCodeSpec {
 }
 
 /**
- * Danh mục 19 mã lỗi (§9).
+ * Danh mục 21 mã lỗi (§9).
  *
  * CẢNH BÁO CHO NGƯỜI SỬA FILE NÀY — hai chữ `as const satisfies` là bắt buộc.
  *
@@ -56,7 +56,7 @@ export interface ErrorCodeSpec {
  * trong khi mọi thứ vẫn biên dịch xanh** — một mã bịa ra sẽ lọt qua. Đã kiểm chứng
  * bằng `tsc` trên TypeScript 5.9.
  *
- *   `as const`  giữ literal để `keyof` ra union 19 khoá
+ *   `as const`  giữ literal để `keyof` ra union 21 khoá
  *   `satisfies` kiểm hình dạng mà KHÔNG làm mất literal
  */
 export const ERROR_CATALOG = {
@@ -106,6 +106,20 @@ export const ERROR_CATALOG = {
     httpStatus: 422, retryable: false, fixableBy: "user",
     title: "Rule references a non-existent variant", docSection: "§6.7",
   },
+  /**
+   * [v4] Mã thứ 20. TÁCH khỏi ORPHAN_RULE có chủ đích, vì hai tình huống khác
+   * nhau đúng ở chỗ quan trọng nhất với người gọi:
+   *
+   *   ORPHAN_RULE     request SAI NỘI DUNG — gửi lại y nguyên vẫn hỏng
+   *   VARIANT_IN_USE  request ĐÚNG, trạng thái xung đột — gỡ rule rồi thử lại là được
+   *
+   * Gộp chúng làm mất `retryable` và `suggestedAction`, hai trường §9 sinh ra để
+   * Portal biết nên hiện nút "Sửa rule" hay nút "Thử lại".
+   */
+  VARIANT_IN_USE: {
+    httpStatus: 409, retryable: true, fixableBy: "user",
+    title: "Variant is still referenced by a rule", docSection: "§6.7",
+  },
   METRICS_NOT_AVAILABLE: {
     httpStatus: 422, retryable: true, fixableBy: "user",
     title: "Metrics source has no data for this target", docSection: "§6.6, §8.5",
@@ -134,6 +148,22 @@ export const ERROR_CATALOG = {
     httpStatus: 409, retryable: true, fixableBy: "user",
     title: "A rollout is already in progress", docSection: "§8.6",
   },
+  /**
+   * [v4] Mã thứ 21. Vi phạm ràng buộc UNIQUE bất kỳ — tên project trùng, key
+   * flag trùng, email đã đăng ký.
+   *
+   * Không gộp vào `CONFLICT`: mã đó dành riêng cho xung đột capability độc
+   * quyền ở §5.3 và mang 422. Cũng không gộp vào `OPTIMISTIC_LOCK`: cái đó
+   * `retryable` vì refetch rồi gửi lại là xong, còn ở đây gửi lại y nguyên vẫn
+   * trùng — người dùng phải ĐỔI giá trị.
+   *
+   * Trước khi có mã này, mọi P2002 rơi xuống nhánh 500 "Lỗi hệ thống": sai
+   * status, và bảo client retry một request không bao giờ đúng.
+   */
+  DUPLICATE_RESOURCE: {
+    httpStatus: 409, retryable: false, fixableBy: "user",
+    title: "Resource already exists", docSection: "§2.2",
+  },
   OPTIMISTIC_LOCK: {
     httpStatus: 409, retryable: true, fixableBy: "user",
     title: "Resource was modified by someone else", docSection: "§2.2",
@@ -161,13 +191,13 @@ export const ERROR_CATALOG = {
 } as const satisfies Record<string, ErrorCodeSpec>;
 
 /**
- * Union 19 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
+ * Union 21 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
  * `ProblemDetails.code` sẽ KHÔNG BIÊN DỊCH ĐƯỢC, không cần test nào.
  */
 export type ErrorCode = keyof typeof ERROR_CATALOG;
 
 /** Kiểm lúc nạp module — thà sập lúc khởi động còn hơn thiếu mã mà không ai biết */
-const EXPECTED_ERROR_CODES = 19;
+const EXPECTED_ERROR_CODES = 21;
 if (Object.keys(ERROR_CATALOG).length !== EXPECTED_ERROR_CODES) {
   throw new Error(
     `ERROR_CATALOG có ${Object.keys(ERROR_CATALOG).length} mã, §9 nói ${EXPECTED_ERROR_CODES}.`,
@@ -212,7 +242,7 @@ export interface ProblemDetails {
   /** URI của chính request gây lỗi */
   instance?: string | undefined;
   /**
-   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong 19 mã
+   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong 21 mã
    * phủ được — bắt buộc `code` sẽ làm những trường hợp đó không biểu diễn nổi.
    */
   code?: ErrorCode | undefined;

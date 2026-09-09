@@ -19,10 +19,17 @@ export const validateBody =
     next();
   };
 
-/** Tương tự cho query string — dùng khi có phân trang, bộ lọc */
+/**
+ * Tương tự cho query string — dùng khi có phân trang, bộ lọc.
+ *
+ * GÁN ĐÈ chứ không `Object.assign`. Bản trước merge kết quả parse lên object
+ * gốc nên trường thừa vẫn nằm nguyên đó, tức là mất đúng tính chất mà khối chú
+ * thích đầu file quảng cáo — chống mass assignment. Chưa route nào dùng hàm
+ * này, nên đó là một quả mìn đặt sẵn cho người gọi đầu tiên.
+ */
 export const validateQuery =
   <T>(schema: ZodSchema<T>): RequestHandler =>
   (req, _res, next) => {
-    Object.assign(req.query, schema.parse(req.query));
+    req.query = schema.parse(req.query) as typeof req.query;
     next();
   };

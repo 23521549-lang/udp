@@ -65,6 +65,30 @@ enum ExpiryAction {
 // ENUM — cloud, domain, job
 // ============================================================
 
+/// §2.4 — tập ĐÓNG do UDP sở hữu, nên là enum. Đối lập với `domain_type`:
+/// tập đó do Domain Adapter mở rộng nên phải là bảng danh mục, nếu không thì
+/// "thêm domain = 0 file ngoài thư mục adapter" (I28, chỉ số 0 file của C2)
+/// không còn đúng.
+enum DomainTier {
+  CORE
+  STANDARD
+  ADVANCED
+}
+
+/// Cách một credential xác thực với cloud. Enum chứ không phải bảng danh mục:
+/// tập này bị chặn trên bởi `CloudProvider` — vốn đã là enum — nên thêm một
+/// nhà cung cấp đã cần migration, và một bảng riêng cho auth_kind không tránh
+/// được migration nào mà chỉ thêm một join. Chỉ số "0 file" của C2 nói về
+/// Domain Adapter, không nói về Cloud Adapter.
+enum CloudAuthKind {
+  AWS_ROLE
+  AWS_KEY
+  GCP_WIF
+  GCP_KEY
+  AZURE_FEDERATED
+  AZURE_SECRET
+}
+
 enum CloudProvider {
   AWS
   GCP
@@ -230,6 +254,10 @@ enum TriggeredBy {
 // ============================================================
 
 enum DeploymentEventType {
+  /// §2.2 — environment có `auto_deploy = false` thì webhook CI/CD ghi trạng
+  /// thái này thay vì deploy. Không có nó, sự kiện bị nuốt im lặng: CI tưởng đã
+  /// deploy, UDP không có bản ghi nào, và DORA đếm thiếu.
+  DEPLOY_PENDING
   DEPLOY_START
   DEPLOY_SUCCESS
   DEPLOY_FAILURE
@@ -272,7 +300,7 @@ model DomainCatalog {
   /// SERVICE_MESH, INGRESS, SECRETS, SECURITY, POLICY, DATABASE,
   /// PROGRESSIVE_DELIVERY, COST, ARTIFACT_REGISTRY — 16 domain (§5.5)
   domainType   String  @id @map("domain_type") @db.VarChar(50)
-  tier         String  @db.VarChar(20)
+  tier         DomainTier
   displayName  String  @map("display_name") @db.VarChar(100)
   /// Chỉ để sắp xếp hiển thị và phá hòa trong cùng một bậc topo.
   /// KHÔNG quyết định thứ tự deploy — thứ tự đó do đồ thị capability sinh ra (§5.3).
@@ -305,9 +333,59 @@ model User {
   rolloutEvents   RolloutEvent[]
   auditLogs       AuditLog[]
   configChanges   ConfigChangeLog[]
+  refreshSessions RefreshSession[]
 
   @@map("users")
 }
+
+/// Phiên refresh token — một hàng cho mỗi lần cấp.
+///
+/// Trước khi có bảng này, `/logout` chỉ xoá cookie phía trình duyệt: ai lấy được
+/// refresh token một lần thì tự cấp access token suốt 7 ngày, và không thao tác
+/// nào trong hệ thống — kể cả đổi mật khẩu — làm nó chết. Cũng không có tín hiệu
+/// nào để biết token đã bị nhân bản.
+///
+/// Hai cột làm nên giá trị của bảng:
+///
+///   `token_hash`  Chỉ lưu SHA-256. Một bản dump database không cho phép mạo
+///                 danh ai, giống hệt lý do `password_hash` không lưu plaintext.
+///
+///   `family_id`   Mọi lần xoay vòng giữ nguyên family. Nếu một token ĐÃ BỊ THAY
+///                 THẾ được trình lại, đó là bằng chứng có hai bản sao đang tồn
+///                 tại — thu hồi CẢ HỌ. Đây là cách duy nhất phát hiện trộm
+///                 token mà không cần người dùng báo.
+model RefreshSession {
+  id        String @id @default(uuid(7)) @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+  familyId  String @map("family_id") @db.Uuid
+
+  /// SHA-256 hex của token đã ký. UNIQUE để một token không gắn hai phiên.
+  tokenHash String @unique @map("token_hash") @db.Char(64)
+
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  /// Khác NULL = đã thu hồi. Trình lại token đã thu hồi ⇒ thu hồi cả family.
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  /// Phiên đã thay thế phiên này khi xoay vòng — dấu vết để lần lại cả họ.
+  replacedById String? @map("replaced_by_id") @db.Uuid
+
+  /// Chỉ để hiển thị danh sách thiết bị trên Portal, không dùng để xác thực:
+  /// cả hai đều do client khai và giả mạo được.
+  userAgent String? @map("user_agent") @db.VarChar(255)
+  ipAddress String? @map("ip_address") @db.Inet
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replacedBy RefreshSession?  @relation("Rotation", fields: [replacedById], references: [id], onDelete: SetNull)
+  replaces   RefreshSession[] @relation("Rotation")
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  /// Dọn phiên hết hạn theo lịch — không để bảng phình vô hạn
+  @@index([expiresAt])
+  @@map("refresh_sessions")
+}
+
 
 model ProjectMember {
   id          String      @id @default(uuid()) @db.Uuid
@@ -430,7 +508,12 @@ model SdkKey {
   keyType       SdkKeyType @map("key_type")
   /// Chỉ lưu hash. Plaintext hiện ĐÚNG MỘT LẦN lúc tạo và không nằm trong database.
   keyHash       String     @unique @map("key_hash") @db.Char(64)
-  keyPrefix     String     @map("key_prefix") @db.VarChar(16)
+  /// SÁU ký tự CUỐI, không phải ký tự đầu. Khoá có dạng `udp_sk_{env}_{random}`
+  /// nên mọi ký tự đầu đều suy ra được từ `key_type` và environment — lưu chúng
+  /// là lưu số không thông tin, và mọi khoá cùng loại hiện ra giống hệt nhau
+  /// trên UI. Đuôi khoá là thứ Stripe và GitHub cũng dùng, nên người dùng đã
+  /// quen đối chiếu theo nó.
+  keySuffix  String    @map("key_suffix") @db.VarChar(16)
   label         String?    @db.VarChar(100)
   lastUsedAt    DateTime?  @map("last_used_at") @db.Timestamptz(3)
   revokedAt     DateTime?  @map("revoked_at") @db.Timestamptz(3)
@@ -464,7 +547,7 @@ model CloudCredential {
   dekVersion       Int    @default(1) @map("dek_version")
   /// aws-role | aws-key | gcp-wif | gcp-key | azure-federated | azure-secret.
   /// Portal đọc cột này để cảnh báo khi project dùng khóa tĩnh thay vì federated.
-  authKind         String @map("auth_kind") @db.VarChar(20)
+  authKind         CloudAuthKind @map("auth_kind")
   nonce            String @db.Char(24)
   authTag          String @map("auth_tag") @db.Char(24)
 
@@ -628,10 +711,10 @@ model ProvisioningJob {
 /// lại được và hệ thống vẫn hội tụ đúng — đó là điểm crash K10 và là mệnh đề trung
 /// tâm của đóng góp C3.
 model ProvisionedResource {
-  id        String  @id @default(uuid()) @db.Uuid
+  id        String  @id @default(uuid(7)) @db.Uuid
   /// NULL sau khi job bị xóa: sổ phải sống lâu hơn job đã tạo ra nó, nếu không
   /// mất luôn khả năng dọn tài nguyên cloud.
-  jobId     String? @map("job_id") @db.Uuid
+  jobId     String  @map("job_id") @db.Uuid
   projectId String  @map("project_id") @db.Uuid
 
   step ProvisionStep
@@ -654,8 +737,10 @@ model ProvisionedResource {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  /// SetNull chứ không Cascade: xóa job KHÔNG được xóa sổ.
-  job     ProvisioningJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  /// NOT NULL + Restrict: mọi tài nguyên trong sổ đều đến từ MỘT job, hàng không
+  /// có job là hàng vô nghĩa. Job cascade từ Project, mà Project không bao giờ
+  /// xóa cứng (§2.3), nên job cũng không bao giờ bị xóa — Restrict không chặn ai.
+  job     ProvisioningJob  @relation(fields: [jobId], references: [id], onDelete: Restrict)
   /// Restrict: không cho xóa project khi sổ còn tài nguyên chưa dọn.
   project Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
 
@@ -930,8 +1015,12 @@ model RolloutSession {
 
   project       Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   environment   Environment        @relation(fields: [environmentId], references: [id], onDelete: Cascade)
-  flagEnvConfig FlagEnvConfig?     @relation(fields: [flagEnvConfigId], references: [id])
-  targetingRule FlagTargetingRule? @relation(fields: [targetingRuleId], references: [id])
+  /// Cascade chứ KHÔNG SetNull. SetNull là lỗ thật: xóa rule/flag khi rollout
+  /// đang IN_PROGRESS sẽ âm thầm đổi khóa của idx_one_active_rollout_per_target
+  /// về chuỗi rỗng, và mất luôn cột v4 thêm vào để executor biết PATCH rule nào.
+  /// Chốt "không xóa khi đang rollout" nằm ở tầng app: mã ROLLOUT_IN_PROGRESS.
+  flagEnvConfig FlagEnvConfig?     @relation(fields: [flagEnvConfigId], references: [id], onDelete: Cascade)
+  targetingRule FlagTargetingRule? @relation(fields: [targetingRuleId], references: [id], onDelete: Cascade)
   targetVariant FlagVariant?       @relation(fields: [targetVariantId], references: [id])
   createdBy     User               @relation(fields: [createdById], references: [id])
   events        RolloutEvent[]
@@ -949,7 +1038,7 @@ model RolloutSession {
 ///   false = ĐÃ THỰC THI trên cluster, do Service 3 ghi.
 /// Nhờ tách này chỉ tồn tại MỘT writer duy nhất tới đối tượng điều khiển traffic.
 model RolloutEvent {
-  id                String        @id @default(uuid()) @db.Uuid
+  id                String        @id @default(uuid(7)) @db.Uuid
   sessionId         String        @map("session_id") @db.Uuid
   action            RolloutAction
   isIntent          Boolean       @default(false) @map("is_intent")
@@ -962,10 +1051,19 @@ model RolloutEvent {
   reason            String?       @db.VarChar(255)
   triggeredBy       TriggeredBy   @map("triggered_by")
   actorUserId       String?       @map("actor_user_id") @db.Uuid
+  /// Event thực thi này đang thi hành intent nào. NULL = reconciler tự quyết.
+  ///
+  /// Nhờ cột này `triggered_by` trở thành SUY RA ĐƯỢC thay vì một nguồn sự thật
+  /// thứ ba, quy trách nhiệm là chính xác thay vì suy đoán theo thời gian, và
+  /// `created_at` của hai event cho thẳng độ trễ từ lúc người dùng bấm tới lúc
+  /// traffic thật đổi — con số §8.5 cần cho E5 mà trước đó không đo được.
+  causedByEventId   String?       @map("caused_by_event_id") @db.Uuid
   createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  session RolloutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  actor   User?          @relation(fields: [actorUserId], references: [id])
+  session   RolloutSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  actor     User?          @relation(fields: [actorUserId], references: [id])
+  causedBy  RolloutEvent?  @relation("IntentExecution", fields: [causedByEventId], references: [id], onDelete: Restrict)
+  execution RolloutEvent[] @relation("IntentExecution")
 
   @@index([sessionId, createdAt])
   /// Reconciler tìm intent chưa xử lý ở mỗi vòng
@@ -983,7 +1081,7 @@ model RolloutEvent {
 // ============================================================
 
 model DeploymentEvent {
-  id            String  @id @default(uuid()) @db.Uuid
+  id            String  @id @default(uuid(7)) @db.Uuid
   projectId     String  @map("project_id") @db.Uuid
   environmentId String  @map("environment_id") @db.Uuid
 
@@ -1019,6 +1117,9 @@ model DeploymentEvent {
   /// là hàng không phân loại được. SetNull còn là một UPDATE trên bảng append-only.
   environment Environment  @relation(fields: [environmentId], references: [id], onDelete: Restrict)
 
+  /// DORA loc theo (project, environment) roi sap theo thoi gian. Hai index
+  /// hai cot khong phuc vu duoc truy van do, phai la composite ba cot (§2.2).
+  @@index([projectId, environmentId, occurredAt(sort: Desc)])
   @@index([projectId, occurredAt])
   @@index([environmentId, occurredAt])
   @@index([deploymentId])
@@ -1026,7 +1127,7 @@ model DeploymentEvent {
 }
 
 model AuditLog {
-  id            String    @id @default(uuid()) @db.Uuid
+  id            String    @id @default(uuid(7)) @db.Uuid
   projectId     String?   @map("project_id") @db.Uuid
   actorUserId   String?   @map("actor_user_id") @db.Uuid
   actorType     ActorType @map("actor_type")

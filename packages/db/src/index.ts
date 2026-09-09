@@ -68,6 +68,8 @@ if (typeof BigInt.prototype.toJSON !== "function") {
   };
 }
 
-export { createPgAdapter } from "./adapter.js";
+export { createPgAdapter, DB_TLS_OPTIONS, sanitizeConnectionString } from "./adapter.js";
+export { dbConstraintError, httpStatusOf, UDP_SQLSTATE } from "./errors.js";
+export type { DbConstraintError } from "./errors.js";
 export * from "./generated/prisma/client.js";
 export * from "./generated/prisma/enums.js";

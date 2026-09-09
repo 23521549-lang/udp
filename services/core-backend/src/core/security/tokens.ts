@@ -10,10 +10,29 @@ export interface AccessTokenPayload {
   sub: string;
   email: string;
   platformRole: PlatformRole;
+  /** Họ phiên — xem ghi chú ở `RefreshTokenPayload.fid` */
+  fid: string;
 }
 
 export interface RefreshTokenPayload {
   sub: string;
+  /**
+   * Phiên nào đã cấp token này — khoá tra `RefreshSession`.
+   *
+   * Không có nó thì không thu hồi được từng phiên, và không phát hiện được tái
+   * sử dụng: mọi token của một user trông giống hệt nhau.
+   */
+  sid: string;
+  /**
+   * Họ phiên. GIỐNG NHAU ở access token và refresh token, và KHÔNG đổi qua các
+   * lần xoay vòng.
+   *
+   * Nhờ tính ổn định đó, token CSRF dẫn xuất từ `fid` là MỘT giá trị dùng được
+   * ở mọi route suốt vòng đời phiên. Buộc CSRF vào access token thì sau 15 phút
+   * cookie đó hết hạn, và `/auth/refresh` — endpoint duy nhất cứu được phiên —
+   * lại không kiểm CSRF được: người dùng bị đăng xuất dù refresh token còn 7 ngày.
+   */
+  fid: string;
 }
 
 export const signAccessToken = (payload: AccessTokenPayload): string =>

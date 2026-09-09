@@ -19,8 +19,12 @@ scrape_configs:
           - host.docker.internal:3003 # pd-controller
 
   # Ứng dụng mẫu — nguồn metrics cho flag-level progressive delivery (C1).
-  # Phải expose http_server_request_duration_seconds kèm nhãn
-  # feature_flag_key / feature_flag_variant do UDPTelemetryHook gắn vào.
+  # Phải expose http_server_request_duration_seconds kèm MỘT nhãn cố định
+  # `ff` mang chuỗi "<flagKey>=<variant>", do UDPRequestLabelHook gắn vào (§6.6).
+  #
+  # KHÔNG dùng cặp nhãn feature_flag_key / feature_flag_variant như v3: một
+  # request đánh giá 20 flag thì cặp nhãn đó không biểu diễn nổi bằng một series,
+  # và hai lược đồ nhãn mâu thuẫn nhau. PromQL của §7 truy vấn ff="$flagKey=$variant".
   - job_name: sample-app
     static_configs:
       - targets:

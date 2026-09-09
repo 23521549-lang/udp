@@ -6,6 +6,7 @@ import {
   DEFAULT_RESOURCE_QUOTA,
   DEFAULT_STICKINESS_ATTRIBUTE,
   DOMAIN_CATALOG_SEED,
+  env,
   SDK_KEY,
   TOTAL_BUCKETS,
 } from "@udp/config";
@@ -48,6 +49,14 @@ const ID = {
   flagDarkMode: "00000000-0000-4000-8000-000000000020",
   flagCheckout: "00000000-0000-4000-8000-000000000021",
   segmentBeta: "00000000-0000-4000-8000-000000000030",
+  // Variant cũng phải cố định. Để database tự sinh thì `serve` JSONB của rule
+  // chứa UUID khác nhau trên mỗi máy, và không ai diff được hai database nữa —
+  // đúng thứ nguyên tắc 1 ở đầu file muốn tránh.
+  variantDarkOn: "00000000-0000-4000-8000-000000000040",
+  variantDarkOff: "00000000-0000-4000-8000-000000000041",
+  variantCheckoutLegacy: "00000000-0000-4000-8000-000000000042",
+  variantCheckoutOptimized: "00000000-0000-4000-8000-000000000043",
+  variantCheckoutExperimental: "00000000-0000-4000-8000-000000000044",
 } as const;
 
 /** Mật khẩu dev — chỉ dùng ở máy cá nhân */
@@ -100,11 +109,15 @@ async function seedDomainCatalog(): Promise<void> {
 // ============================================================
 
 async function seedUsersAndProject() {
-  const passwordHash = await bcrypt.hash(DEV_PASSWORD, 12);
+  // BCRYPT_ROUNDS chứ không phải 12 ghim cứng — nguyên tắc 2 của chính file này.
+  const passwordHash = await bcrypt.hash(DEV_PASSWORD, env.BCRYPT_ROUNDS);
 
   const owner = await prisma.user.upsert({
     where: { id: ID.userOwner },
-    update: {},
+    // Banner cuối seed IN RA mật khẩu và vai trò. Để `update: {}` thì đổi
+    // DEV_PASSWORD rồi seed lại sẽ in mật khẩu MỚI trong khi database còn hash
+    // CŨ — đăng nhập thất bại và nguyên nhân nằm ở chỗ khác hẳn.
+    update: { passwordHash, platformRole: "USER" },
     create: {
       id: ID.userOwner,
       email: "dev@udp.local",
@@ -116,7 +129,7 @@ async function seedUsersAndProject() {
 
   await prisma.user.upsert({
     where: { id: ID.userAdmin },
-    update: {},
+    update: { passwordHash, platformRole: "PLATFORM_ADMIN" },
     create: {
       id: ID.userAdmin,
       email: "admin@udp.local",
@@ -147,7 +160,14 @@ async function seedUsersAndProject() {
   for (const spec of DEFAULT_ENVIRONMENTS) {
     await prisma.environment.upsert({
       where: { projectId_name: { projectId: project.id, name: spec.name } },
-      update: {},
+      // Đổi rank / isProduction trong DEFAULT_ENVIRONMENTS rồi seed lại PHẢI có
+      // tác dụng. Để `update: {}` thì database giữ giá trị cũ và không báo gì —
+      // seed vẫn "idempotent", nhưng idempotent về trạng thái CŨ.
+      update: {
+        rank: spec.rank,
+        isProduction: spec.isProduction,
+        autoDeploy: !spec.isProduction,
+      },
       create: {
         projectId: project.id,
         name: spec.name,
@@ -201,7 +221,7 @@ function checkedServe(serve: FlagServe): FlagServe {
  * Và quan trọng nhất: `serve.weights` CHÍNH LÀ thứ mà rollout FLAG_LEVEL ramp
  * (§7.7). Không tách hai nửa thì đóng góp C1 không có chỗ để tác động.
  */
-async function seedDarkModeFlag(projectId: string, ownerId: string) {
+async function seedDarkModeFlag(projectId: string) {
   const darkMode = await prisma.featureFlag.upsert({
     where: { id: ID.flagDarkMode },
     update: {},
@@ -215,8 +235,8 @@ async function seedDarkModeFlag(projectId: string, ownerId: string) {
       stickinessAttribute: DEFAULT_STICKINESS_ATTRIBUTE,
       variants: {
         create: [
-          { key: BOOLEAN_VARIANTS.ON, value: true },
-          { key: BOOLEAN_VARIANTS.OFF, value: false },
+          { id: ID.variantDarkOn, key: BOOLEAN_VARIANTS.ON, value: true },
+          { id: ID.variantDarkOff, key: BOOLEAN_VARIANTS.OFF, value: false },
         ],
       },
     },
@@ -336,9 +356,9 @@ async function seedCheckoutFlag(projectId: string): Promise<void> {
       stickinessAttribute: "accountId",
       variants: {
         create: [
-          { key: "legacy", value: "legacy" },
-          { key: "optimized", value: "optimized" },
-          { key: "experimental", value: "experimental" },
+          { id: ID.variantCheckoutLegacy, key: "legacy", value: "legacy" },
+          { id: ID.variantCheckoutOptimized, key: "optimized", value: "optimized" },
+          { id: ID.variantCheckoutExperimental, key: "experimental", value: "experimental" },
         ],
       },
     },
@@ -377,12 +397,15 @@ async function seedSdkKey(
 ): Promise<void> {
   await prisma.sdkKey.upsert({
     where: { keyHash: sha256(DEV_SERVER_KEY) },
-    update: {},
+    // keySuffix nằm ở CẢ update lẫn create. Hàng đã tồn tại từ trước lần đổi cột
+    // sẽ giữ giá trị cũ (tám ký tự ĐẦU) nếu chỉ đặt ở nhánh create, và seed mất
+    // tính idempotent đúng ở chỗ nguyên tắc 1 của file này tuyên bố nó có.
+    update: { keySuffix: DEV_SERVER_KEY.slice(-SDK_KEY.displaySuffixLength) },
     create: {
       environmentId,
       keyType: "SERVER",
       keyHash: sha256(DEV_SERVER_KEY),
-      keyPrefix: DEV_SERVER_KEY.slice(0, SDK_KEY.displayPrefixLength),
+      keySuffix: DEV_SERVER_KEY.slice(-SDK_KEY.displaySuffixLength),
       label: "seed — dev server key",
       createdById,
     },
@@ -401,7 +424,7 @@ async function main(): Promise<void> {
   });
 
   await seedSdkKey(devEnv.id, owner.id);
-  await seedDarkModeFlag(project.id, owner.id);
+  await seedDarkModeFlag(project.id);
   await seedCheckoutFlag(project.id);
   await seedSegment(project.id);
 

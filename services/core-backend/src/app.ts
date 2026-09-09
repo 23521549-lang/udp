@@ -16,18 +16,20 @@ const API_PREFIX = "/api/v1";
 /**
  * Endpoint khởi tạo phiên — miễn kiểm tra CSRF.
  *
- * Lúc gọi những endpoint này, client CHƯA có CSRF cookie nên không thể gửi
- * header khớp. Chúng cũng chưa có phiên nào để lạm dụng, nên miễn trừ không
- * tạo ra lỗ hổng. Mọi endpoint khác đều được bảo vệ mặc định.
+ * Lúc gọi hai endpoint này, client CHƯA có CSRF cookie nên không thể gửi header
+ * khớp, và cũng chưa có phiên nào để lạm dụng. Mọi endpoint khác được bảo vệ
+ * mặc định.
  *
- * `/logout` KHÔNG nằm trong danh sách này: lúc đó phiên đã tồn tại và một trang
- * web khác có thể ép người dùng đăng xuất nếu không kiểm tra.
+ * `/auth/refresh` ĐÃ BỊ GỠ khỏi danh sách. Lập luận cũ ("chưa có phiên để lạm
+ * dụng") sai với chính nó: refresh chạy được LÀ NHỜ cookie phiên `udp_refresh`
+ * đã tồn tại, và client đã có `udp_csrf` từ lần đăng nhập trước nên hoàn toàn
+ * gửi được header. Trước khi gỡ, thứ duy nhất bảo vệ nó là `SameSite=Lax` —
+ * tức là dựa vào một lớp khác chứ không phải lớp được thiết kế cho việc đó.
+ *
+ * `/logout` cũng không nằm trong danh sách: phiên đã tồn tại và một trang web
+ * khác có thể ép người dùng đăng xuất nếu không kiểm tra.
  */
-const CSRF_EXEMPT_PATHS = [
-  "/auth/register",
-  "/auth/login",
-  "/auth/refresh",
-] as const;
+const CSRF_EXEMPT_PATHS = ["/auth/register", "/auth/login"] as const;
 
 /**
  * Tạo Express app.
@@ -40,9 +42,16 @@ export function createApp(): Express {
 
   app.disable("x-powered-by");
 
-  // Đứng sau reverse proxy thì req.ip phải lấy từ X-Forwarded-For, nếu không
-  // rate limiter coi toàn bộ traffic là một IP duy nhất và chặn nhầm tất cả.
-  if (env.NODE_ENV === "production") app.set("trust proxy", 1);
+  /**
+   * Số hop lấy từ cấu hình, KHÔNG ghim cứng 1 và không suy từ NODE_ENV.
+   *
+   * `req.ip` là khoá của rate limiter, và Express suy nó từ `X-Forwarded-For`
+   * theo đúng con số này. Đặt cao hơn thực tế nghĩa là tin một entry do CLIENT
+   * ghi — kẻ tấn công tự chọn IP cho mỗi request và rate limit thành trang trí.
+   * Bản trước ghim `1`, đúng khi có duy nhất một proxy; với CDN + ingress (hai
+   * hop) hoặc pod tiếp cận được trực tiếp trong cluster thì nó sai.
+   */
+  app.set("trust proxy", env.TRUST_PROXY_HOPS);
 
   app.use(helmet());
   app.use(

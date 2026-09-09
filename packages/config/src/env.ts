@@ -25,6 +25,36 @@ loadDotenv({ path: resolve(here, "../../../.env") });
 
 const bool = z.enum(["true", "false"]).transform((v) => v === "true");
 
+/**
+ * Khoá đối xứng mã hoá base64, PHẢI giải ra đúng `bytes` byte.
+ *
+ * Kiểm cả tính hợp lệ của base64 lẫn độ dài sau khi giải: AES-256-GCM đòi đúng
+ * 32 byte, và một chuỗi ngắn hơn không làm thư viện báo lỗi mà chỉ làm khoá yếu
+ * đi một cách âm thầm.
+ */
+function base64Key(bytes: number) {
+  return z.string().superRefine((value, ctx) => {
+    let decoded: Buffer;
+    try {
+      decoded = Buffer.from(value, "base64");
+    } catch {
+      ctx.addIssue({ code: "custom", message: "không phải base64 hợp lệ" });
+      return;
+    }
+    // Buffer.from bỏ qua ký tự lạ thay vì ném, nên phải so vòng ngược lại
+    if (decoded.toString("base64").replace(/=+$/, "") !== value.replace(/=+$/, "")) {
+      ctx.addIssue({ code: "custom", message: "không phải base64 hợp lệ" });
+      return;
+    }
+    if (decoded.length !== bytes) {
+      ctx.addIssue({
+        code: "custom",
+        message: `phải giải ra đúng ${bytes} byte, đang là ${decoded.length}`,
+      });
+    }
+  });
+}
+
 const port = z.coerce.number().int().min(1).max(65_535);
 
 const SECONDS_PER_UNIT = { s: 1, m: 60, h: 3_600, d: 86_400 } as const;
@@ -106,12 +136,25 @@ const envSchema = z.object({
   /** Đọc vào dạng "15m", dùng ra dạng số giây */
   JWT_ACCESS_TTL: durationSeconds.default("15m"),
   JWT_REFRESH_TTL: durationSeconds.default("7d"),
-  BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
+  /**
+   * Sàn 12 theo §2.2, không phải 10. Default đúng nhưng sàn sai là loại lỗi im
+   * lặng nhất: chỉ lộ ra khi ai đó đặt BCRYPT_ROUNDS=10 ở production, và lúc đó
+   * không có gì chặn lại.
+   */
+  BCRYPT_ROUNDS: z.coerce.number().int().min(12).max(15).default(12),
 
   // ---------- Envelope encryption (§4.3) ----------
   UDP_KEK_VERSION: z.coerce.number().int().positive().default(1),
-  /** KEK 32 byte mã hoá base64 — kiểm tra độ dài sau khi giải mã ở refine dưới */
-  UDP_KEK_V1: z.string().min(1),
+  /**
+   * KEK 32 byte mã hoá base64 — kiểm NGAY TẠI ĐÂY, không hứa hẹn ở đâu khác.
+   *
+   * Bản trước ghi "kiểm tra độ dài sau khi giải mã ở refine dưới" trong khi
+   * không có refine nào, và `.env.example` để sẵn một chuỗi 30 ký tự không
+   * phải base64 — copy rồi chạy là hệ thống khởi động XANH với KEK rác, mã hoá
+   * credential cloud của khách bằng khoá sai độ dài. Đúng loại lỗi mà cả file
+   * này sinh ra để chặn.
+   */
+  UDP_KEK_V1: base64Key(32),
 
   // ---------- Bí mật nội bộ giữa 3 service ----------
   INTERNAL_SERVICE_SECRET: z.string().min(32),
@@ -129,11 +172,30 @@ const envSchema = z.object({
 
   // ---------- CORS / Cookie ----------
   CORS_ORIGIN: z.string().url(),
+  /**
+   * KHÔNG dùng nữa — giữ lại để nói rõ vì sao nó biến mất.
+   *
+   * Khai `domain` trên cookie biến chúng từ host-only thành domain-scoped: mọi
+   * subdomain đọc và gửi được, và vì `udp_csrf` cố ý không httpOnly, một trang
+   * trên subdomain bất kỳ chỉ cần `document.cookie` là vượt được CSRF. Cookie
+   * giờ để host-only. Nếu sau này Portal thật sự phải nằm ở subdomain khác API,
+   * cách đúng là CORS kèm credentials, không phải nới phạm vi cookie.
+   */
   COOKIE_DOMAIN: z.string().default("localhost"),
   COOKIE_SECURE: bool.default("false"),
+  /**
+   * Số proxy tin cậy đứng trước ứng dụng.
+   *
+   * Rate limit đếm theo `req.ip`, mà `req.ip` do Express suy từ `X-Forwarded-For`
+   * theo đúng con số này. Đặt cao hơn thực tế nghĩa là tin một entry do CLIENT
+   * ghi, và kẻ tấn công tự chọn IP để mỗi request rơi vào một bucket mới — rate
+   * limit thành trang trí. Đặt thấp hơn thực tế thì mọi request chung một IP
+   * proxy và người dùng thật chặn lẫn nhau. Không có giá trị nào đúng cho mọi
+   * nơi triển khai, nên nó phải là biến chứ không phải hằng số trong code.
+   */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
 
   // ---------- Progressive delivery ----------
-  RECONCILE_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
 
   // ---------- Change feed (ADR-05) ----------
   /**
@@ -165,7 +227,44 @@ const envSchema = z.object({
   MANAGED_AZURE_CLIENT_ID: z.string().optional(),
   MANAGED_AZURE_CLIENT_SECRET: z.string().optional(),
   MANAGED_AZURE_SUBSCRIPTION_ID: z.string().optional(),
-});
+})
+  /**
+   * Ràng buộc LIÊN BIẾN — thứ không kiểm được khi xét từng biến một.
+   *
+   * Cả ba đều là loại lỗi im lặng: hệ thống chạy bình thường, không có gì báo,
+   * và hậu quả chỉ lộ ra khi bị tấn công hoặc khi đã muộn.
+   */
+  .superRefine((env, ctx) => {
+    if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["JWT_REFRESH_SECRET"],
+        message:
+          "phải KHÁC JWT_ACCESS_SECRET — dùng chung thì refresh token (7 ngày) " +
+          "verify được như access token, và hạn 15 phút mất tác dụng hoàn toàn",
+      });
+    }
+
+    if (env.NODE_ENV === "production" && !env.COOKIE_SECURE) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["COOKIE_SECURE"],
+        message:
+          "phải là true ở production — nếu không, cookie phiên đi qua HTTP thuần " +
+          "và một lần nghe lén là mất phiên",
+      });
+    }
+
+    // UDP_KEK_VERSION tồn tại để xoay KEK. Đặt version 2 mà không có UDP_KEK_V2
+    // thì lúc chạy tra ra undefined — xoay khoá làm hệ thống hỏng âm thầm.
+    if (env.UDP_KEK_VERSION !== 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["UDP_KEK_VERSION"],
+        message: `chỉ hỗ trợ version 1 — chưa khai biến UDP_KEK_V${env.UDP_KEK_VERSION}`,
+      });
+    }
+  });
 
 const parsed = envSchema.safeParse(process.env);
 

@@ -1,8 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "./src",
+    // rootDir phải bao cả src/ lẫn tests/ và vitest.config.ts ở gốc package —
+    // cùng lý do như packages/db. Để "./src" thì tsc báo TS6059 cho mọi file
+    // nằm ngoài, và typecheck sẽ lặng lẽ không kiểm test.
+    "rootDir": ".",
     "outDir": "./dist"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
 }

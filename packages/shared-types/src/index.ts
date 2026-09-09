@@ -4,7 +4,10 @@
  * Nguyên tắc của package này: chỉ chứa thứ mà **từ hai bên trở lên** cùng cần.
  * Type chỉ một service dùng thì thuộc về service đó, không thuộc về đây.
  *
- * Hai ràng buộc bắt buộc:
+ * Hai ràng buộc bắt buộc — được CƯỠNG CHẾ bởi test `package-boundaries` trong
+ * `@udp/design-lint`, không chỉ ghi ở đây. Một lần đã suýt xoá file này vì
+ * "không ai import barrel"; ràng buộc nằm trong chú thích thì mất theo file,
+ * ràng buộc nằm trong test thì không.
  *
  *   1. KHÔNG import `@udp/db`, kể cả chỉ để lấy enum của Prisma. Đó là chỗ duy
  *      nhất tạo được vòng phụ thuộc `db → shared-types → db`.

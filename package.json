@@ -24,7 +24,7 @@
     "typecheck": "pnpm -r typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
-    "//lint": "eslint sẽ được thêm cùng service đầu tiên — hiện chưa package nào có mã nguồn để lint",
+    "//lint": "Chua co linter. 5 package deu da co ma nguon, nen day la NO ky thuat that chu khong con la \"chua den luc\" — eslint + typescript-eslint nen them truoc service nghiep vu dau tien.",
     "test": "pnpm -r --if-present test"
   },
   "devDependencies": {

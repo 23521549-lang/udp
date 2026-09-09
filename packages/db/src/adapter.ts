@@ -62,22 +62,62 @@ export function createPgAdapter({
   max,
 }: PgAdapterOptions): PrismaPg {
   return new PrismaPg({
-    connectionString: stripSslMode(connectionString),
-    ssl: { ca: supabaseRootCa, rejectUnauthorized: true },
+    connectionString: sanitizeConnectionString(connectionString),
+    ssl: DB_TLS_OPTIONS,
     max,
   });
 }
 
 /**
- * Gỡ `sslmode` khỏi chuỗi kết nối.
+ * Tùy chọn TLS dùng CHUNG cho mọi kết nối tới database.
  *
- * `DATABASE_URL` đã cố ý không mang nó, nhưng `DATABASE_URL_DIRECT` thì CÓ, vì
- * Prisma CLI cần (engine Rust của Prisma xử lý được chuỗi chứng chỉ Supabase).
- * Seed và các script quản trị dùng chuỗi DIRECT nhưng chạy qua `node-postgres`,
- * nên phải gỡ ở đây thay vì bắt mỗi bên gọi tự nhớ.
+ * Export ra để test bất biến — vốn cần `pg.Client` trần cho SET ROLE và
+ * SET CONSTRAINTS — không phải tự dựng lại và không có cớ hạ `rejectUnauthorized`.
+ * Hạ chuẩn ở test là hạ chuẩn ở đúng nơi lẽ ra phải canh nó.
  */
-function stripSslMode(connectionString: string): string {
+export const DB_TLS_OPTIONS = { ca: supabaseRootCa, rejectUnauthorized: true } as const;
+
+/**
+ * Tham số TLS trong chuỗi kết nối mà `pg` để GHI ĐÈ object `ssl` truyền vào.
+ *
+ * Đã đo trên `pg-connection-string@2.14.0` — mỗi dòng dưới đây là một đường vứt
+ * bỏ CA ghim mà không có một tiếng báo nào:
+ *
+ *   ?ssl=true          → ssl = true            (không CA, không pin)
+ *   ?sslrootcert=<f>   → ssl = { ca: <f> }     (thay CA, mất rejectUnauthorized)
+ *   ?sslcert / ?sslkey → ssl = {}              (mất rejectUnauthorized)
+ *
+ * `pg/lib/connection-parameters.js` làm `Object.assign({}, config, parse(url))`,
+ * nên chuỗi kết nối THẮNG. Đây đúng là thứ mô hình đe dọa T2 (§12) dựa vào để
+ * chống MITM, nên nó không được phép tắt bằng một tham số URL.
+ */
+const TLS_OVERRIDE_PARAMS = ["ssl", "sslcert", "sslkey", "sslrootcert", "sslnegotiation"] as const;
+
+/**
+ * Chuẩn hoá chuỗi kết nối trước khi đưa cho `node-postgres`.
+ *
+ * Hai xử lý khác nhau, có chủ đích:
+ *
+ *   `sslmode`  — GỠ im lặng. `DATABASE_URL_DIRECT` cố ý mang nó vì Prisma CLI
+ *                cần (engine Rust xử lý được chuỗi chứng chỉ Supabase), nhưng
+ *                seed và script quản trị dùng cùng chuỗi đó qua node-postgres.
+ *                Gỡ ở đây thay vì bắt mỗi bên gọi tự nhớ.
+ *
+ *   Còn lại    — NÉM. Không có lý do hợp lệ nào để cấu hình TLS qua URL trong
+ *                dự án này, và gỡ im lặng sẽ để người viết cấu hình tin rằng
+ *                thiết lập của họ có hiệu lực. Thà sập lúc khởi động.
+ */
+export function sanitizeConnectionString(connectionString: string): string {
   const url = new URL(connectionString);
+
+  const offending = TLS_OVERRIDE_PARAMS.filter((p) => url.searchParams.has(p));
+  if (offending.length > 0) {
+    throw new Error(
+      `Chuỗi kết nối chứa tham số TLS ${offending.join(", ")} — chúng ghi đè CA đã ghim ` +
+        `và tắt xác thực chứng chỉ. Bỏ chúng khỏi biến môi trường; TLS do DB_TLS_OPTIONS quyết định.`,
+    );
+  }
+
   url.searchParams.delete("sslmode");
   return url.toString();
 }
