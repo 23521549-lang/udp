@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { NotFoundError } from "../../core/errors.js";
+import { NotFoundError } from "@udp/http";
 import * as repository from "./project.repository.js";
 import type {
   CreateProjectInput,

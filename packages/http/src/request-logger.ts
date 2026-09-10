@@ -1,6 +1,6 @@
 import { pinoHttp } from "pino-http";
 import type { RequestHandler } from "express";
-import { logger } from "../logger.js";
+import { logger } from "./logger.js";
 
 /**
  * Endpoint hạ tầng — bị hạ tầng gọi liên tục và không mang thông tin nghiệp vụ.

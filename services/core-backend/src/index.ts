@@ -1,7 +1,7 @@
 import { env } from "@udp/config";
 import { assertServiceIdentity, prisma } from "./core/db.js";
 import { createApp } from "./app.js";
-import { logger } from "./core/logger.js";
+import { logger } from "@udp/http";
 
 /**
  * Khẳng định danh tính kết nối TRƯỚC khi mở cổng.

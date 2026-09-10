@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
 import { COOKIE_NAMES } from "@udp/config";
 import { prisma } from "../../db.js";
-import { ForbiddenError, UnauthenticatedError } from "../../errors.js";
+import { ForbiddenError, UnauthenticatedError } from "@udp/http";
 import type { Request } from "express";
 import type { AccessTokenPayload } from "../../security/tokens.js";
 import { verifyAccessToken } from "../../security/tokens.js";

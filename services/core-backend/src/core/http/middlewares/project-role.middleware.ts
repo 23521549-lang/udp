@@ -6,7 +6,7 @@ import {
   NotFoundError,
   UnauthenticatedError,
   ValidationError,
-} from "../../errors.js";
+} from "@udp/http";
 
 /**
  * Quyền TRONG MỘT PROJECT — cặp đôi của `requirePlatformAdmin`.

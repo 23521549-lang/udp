@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { collectDefaultMetrics, register } from "prom-client";
-import { asyncHandler } from "../../core/http/error-handler.js";
+import { asyncHandler } from "@udp/http";
 
 // Prometheus đã cấu hình scrape cổng 3001 trong docker/prometheus.yml
 collectDefaultMetrics({ prefix: "udp_core_" });

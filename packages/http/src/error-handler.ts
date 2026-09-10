@@ -8,8 +8,8 @@ import type {
 import { ZodError } from "zod";
 import { isProduction } from "@udp/config";
 import { dbConstraintError, httpStatusOf } from "@udp/db";
-import { AppError } from "../errors.js";
-import { logger, redact } from "../logger.js";
+import { AppError } from "./errors.js";
+import { logger, redact } from "./logger.js";
 import { buildProblem, sendProblem } from "./problem.js";
 
 /**

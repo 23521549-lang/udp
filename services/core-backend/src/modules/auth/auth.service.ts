@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { env } from "@udp/config";
-import { ConflictError, UnauthenticatedError } from "../../core/errors.js";
+import { ConflictError, UnauthenticatedError } from "@udp/http";
 import * as sessions from "./refresh-session.repository.js";
 import {
   dummyVerify,

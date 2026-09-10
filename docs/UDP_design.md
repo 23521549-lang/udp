@@ -3286,8 +3286,32 @@ interface BucketInput {
   bucketSalt: string;
 }
 
+/**
+ * [v4.1] Bam tren BYTE UTF-8, khong bam tren chuoi JS.
+ *
+ * `murmurhash3js` doc khoa bang `charCodeAt(i) & 0xff`, tuc cat moi ky tu con
+ * byte thap cua UTF-16. Da do: `hash("Nguyen" co dau) === hash("NguyAn")`, va
+ * 95/95 cap ky tu `C` vs `C+0x100` deu va cham. Ba hau qua, ca ba deu im lang:
+ *
+ *   1. Hai tenant ten khac nhau roi dung cung bucket — canary 10% boc trung
+ *      hoac truot ca cum thay vi lay mau ngau nhien.
+ *   2. Cung mot nguoi dung tren iOS (NFD) va Android (NFC) nhan HAI variant
+ *      khac nhau. Bat bien I2 (sticky theo user) vo ma khong ai thay.
+ *   3. SDK ngon ngu khac dung murmur3 chuan tren byte UTF-8 se ra bucket khac
+ *      cho MOI chuoi co dau. Bat bien I26 (local == OFREP) vo.
+ *
+ * Khong test tieng Anh nao lo ra duoc ba dieu tren.
+ *
+ * Cach vá: chuan hoa NFC roi ma hoa UTF-8, doc lai bang `latin1` de moi code
+ * unit dung bang mot byte. Da do: voi ASCII ket qua KHONG DOI (2000/2000), nen
+ * tuong thich nguoc va khop murmur3 chuan; voi tieng Viet het va cham; NFD va
+ * NFC cho cung hash; phan bo van deu (9.91% roi vao 10% dau tren 20 000 user).
+ */
+const utf8Bytes = (value: string): string =>
+  Buffer.from(value.normalize("NFC"), "utf8").toString("latin1");
+
 function bucketOf({ stickyValue, flagKey, bucketSalt }: BucketInput): number {
-  return murmur.x86.hash32(`${bucketSalt}:${flagKey}:${stickyValue}`) % TOTAL_BUCKETS;
+  return murmur.x86.hash32(utf8Bytes(`${bucketSalt}:${flagKey}:${stickyValue}`)) % TOTAL_BUCKETS;
 }
 
 type Pick =

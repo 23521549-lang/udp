@@ -111,6 +111,65 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)
 
+  packages/flag-evaluator:
+    dependencies:
+      '@udp/config':
+        specifier: workspace:^
+        version: link:../config
+      '@udp/shared-types':
+        specifier: workspace:^
+        version: link:../shared-types
+      murmurhash3js:
+        specifier: ^3.0.1
+        version: 3.0.1
+    devDependencies:
+      '@types/murmurhash3js':
+        specifier: ^3.0.7
+        version: 3.0.7
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
+
+  packages/http:
+    dependencies:
+      '@udp/config':
+        specifier: workspace:^
+        version: link:../config
+      '@udp/db':
+        specifier: workspace:*
+        version: link:../db
+      '@udp/shared-types':
+        specifier: workspace:^
+        version: link:../shared-types
+      pino:
+        specifier: ^9.5.0
+        version: 9.14.0
+      pino-http:
+        specifier: ^10.3.0
+        version: 10.5.0
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.25
+      express:
+        specifier: ^4.21.2
+        version: 4.22.2
+      pino-pretty:
+        specifier: ^11.3.0
+        version: 11.3.0
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
+
   packages/shared-types:
     dependencies:
       '@udp/config':
@@ -132,6 +191,9 @@ importers:
       '@udp/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@udp/http':
+        specifier: workspace:*
+        version: link:../../packages/http
       '@udp/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -195,6 +257,55 @@ importers:
         version: 7.2.2
       tsx:
         specifier: ^4.19.1
+        version: 4.23.12
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
+
+  services/flag-service:
+    dependencies:
+      '@udp/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@udp/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@udp/flag-evaluator':
+        specifier: workspace:*
+        version: link:../../packages/flag-evaluator
+      '@udp/http':
+        specifier: workspace:*
+        version: link:../../packages/http
+      '@udp/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
+      express:
+        specifier: ^4.21.2
+        version: 4.22.2
+      helmet:
+        specifier: ^8.0.0
+        version: 8.3.0
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.25
+      '@types/supertest':
+        specifier: ^6.0.2
+        version: 6.0.3
+      pino-pretty:
+        specifier: ^11.3.0
+        version: 11.3.0
+      supertest:
+        specifier: ^7.0.0
+        version: 7.2.2
+      tsx:
+        specifier: ^4.19.2
         version: 4.23.12
       typescript:
         specifier: ^5.6.3
@@ -945,6 +1056,9 @@ packages:
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
 
+  '@types/murmurhash3js@3.0.7':
+    resolution: {integrity: sha512-jN3Z37nILIW1DZyP6N/NK+aw/zjFHPVb7hjrmdw7jx7FayrhKgkNpo6ZDwAsH8HSANjebBOxoXXtA39gKwyeGw==}
+
   '@types/node@22.20.1':
     resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
 
@@ -971,6 +1085,9 @@ packages:
 
   '@types/superagent@8.1.11':
     resolution: {integrity: sha512-KA7srSW/HENDtOw9DOqaFLgWuMqN9WgjEw62lh9dpvRaZDkhdOkazASd7X7i2eMUYLHa1U37ZttnePsH5zTDHw==}
+
+  '@types/supertest@6.0.3':
+    resolution: {integrity: sha512-8WzXq62EXFhJ7QsH3Ocb/iKQ/Ty9ZVWnVzoTKc9tyyFRRF3a74Tk2+TLFgaFFw364Ere+npzHKEJ6ga2LzIL7w==}
 
   '@types/supertest@7.2.1':
     resolution: {integrity: sha512-4CbBvoYVLHL7+yhbYrZET0vsvuyXTC05aRe7dNQkwMzm56auceoy6Yu3K50uZmwfHna1os3CMSgM/3QVkUtPTw==}
@@ -1903,6 +2020,10 @@ packages:
 
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
+
+  murmurhash3js@3.0.1:
+    resolution: {integrity: sha512-KL8QYUaxq7kUbcl0Yto51rMcYt7E/4N4BG3/c96Iqw1PQrTRspu8Cpx4TZ4Nunib1d4bEkIH3gjCYlP2RLBdow==}
+    engines: {node: '>=0.10.0'}
 
   mysql2@3.15.3:
     resolution: {integrity: sha512-FBrGau0IXmuqg4haEZRBfHNWB5mUARw6hNwPDXXGg0XzVJ50mr/9hb267lvpVMnhZ1FON3qNd4Xfcez1rbFwSg==}
@@ -3052,6 +3173,8 @@ snapshots:
 
   '@types/ms@2.1.0': {}
 
+  '@types/murmurhash3js@3.0.7': {}
+
   '@types/node@22.20.1':
     dependencies:
       undici-types: 6.21.0
@@ -3091,6 +3214,11 @@ snapshots:
       '@types/methods': 1.1.4
       '@types/node': 22.20.1
       form-data: 4.0.6
+
+  '@types/supertest@6.0.3':
+    dependencies:
+      '@types/methods': 1.1.4
+      '@types/superagent': 8.1.11
 
   '@types/supertest@7.2.1':
     dependencies:
@@ -4122,6 +4250,8 @@ snapshots:
   ms@2.0.0: {}
 
   ms@2.1.3: {}
+
+  murmurhash3js@3.0.1: {}
 
   mysql2@3.15.3:
     dependencies:

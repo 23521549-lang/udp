@@ -159,6 +159,18 @@ const envSchema = z
      * Sinh bằng `pnpm db:service-login`.
      */
     DATABASE_URL_S1: z.string().url().startsWith("postgresql://"),
+    /**
+     * Chuoi ket noi cua Service 2 — noi bang role `udp_s2`.
+     *
+     * Cung ly do voi S1: khong fallback. Nhung o day con mot ly do rieng —
+     * `udp_s2` chi duoc UPDATE dung HAI cot cua `environments`
+     * (`config_version`, `config_hash`). Neu chuoi ket noi roi ve owner thi
+     * gioi han ay bien mat, va mot loi lap trinh cua S2 ghi de `name` hay
+     * `k8s_namespace` cua environment se thanh cong im lang.
+     *
+     * Sinh bang `pnpm db:service-login udp_s2`.
+     */
+    DATABASE_URL_S2: z.string().url().startsWith("postgresql://"),
 
     // ---------- Auth ----------
     JWT_ACCESS_SECRET: z

@@ -1,0 +1,26 @@
+{
+  "name": "@udp/flag-evaluator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@udp/config": "workspace:^",
+    "@udp/shared-types": "workspace:^",
+    "murmurhash3js": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/murmurhash3js": "^3.0.7",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

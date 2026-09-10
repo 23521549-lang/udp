@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import { env } from "@udp/config";
 import type { PlatformRole } from "@udp/db";
-import { UnauthenticatedError } from "../errors.js";
+import { UnauthenticatedError } from "@udp/http";
 
 const ISSUER = "udp";
 

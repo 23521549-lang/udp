@@ -4,7 +4,7 @@ import {
   REDACTED_KEY_PATTERNS,
   REDACTED_PLACEHOLDER,
 } from "@udp/config";
-import { isSensitive, redact, redactPaths } from "../src/core/logger.js";
+import { isSensitive, redact, redactPaths } from "../src/logger.js";
 
 /**
  * Hai bản khai về "khoá nào là nhạy cảm" phải nói cùng một điều.

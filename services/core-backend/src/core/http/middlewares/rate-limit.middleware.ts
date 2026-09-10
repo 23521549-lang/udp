@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import { RATE_LIMIT } from "@udp/config";
-import { buildProblem, sendProblem } from "../problem.js";
+import { buildProblem, sendProblem } from "@udp/http";
 
 /**
  * Dùng `handler` chứ KHÔNG dùng `message`.

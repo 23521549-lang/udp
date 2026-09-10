@@ -1,14 +1,14 @@
 import { Router, type Request } from "express";
 import { COOKIE_NAMES } from "@udp/config";
-import { UnauthenticatedError } from "../../core/errors.js";
+import { UnauthenticatedError } from "@udp/http";
 import { clearAuthCookies, setAuthCookies } from "../../core/http/cookies.js";
-import { asyncHandler } from "../../core/http/error-handler.js";
+import { asyncHandler } from "@udp/http";
 import {
   requireAuth,
   requireUser,
 } from "../../core/http/middlewares/auth.middleware.js";
 import { authRateLimiter } from "../../core/http/middlewares/rate-limit.middleware.js";
-import { validateBody } from "../../core/http/validate.js";
+import { validateBody } from "@udp/http";
 import * as authService from "./auth.service.js";
 import { loginSchema, registerSchema } from "./auth.types.js";
 

@@ -6,7 +6,7 @@ import {
   verifyAccessToken,
   verifyRefreshToken,
 } from "../../security/tokens.js";
-import { ForbiddenError } from "../../errors.js";
+import { ForbiddenError } from "@udp/http";
 
 /** GET/HEAD/OPTIONS không đổi trạng thái nên không cần bảo vệ CSRF */
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);

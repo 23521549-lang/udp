@@ -1,6 +1,6 @@
 import type { Request } from "express";
 import type { ActorType, Prisma } from "@udp/db";
-import { redact } from "../../core/logger.js";
+import { redact } from "@udp/http";
 
 /**
  * Nhật ký kiểm toán.

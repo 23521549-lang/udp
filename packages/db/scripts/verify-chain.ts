@@ -70,6 +70,7 @@ const childEnv: NodeJS.ProcessEnv = {
   // Chỉ cần hợp lệ về cú pháp để `@udp/config` qua được bước validate; trỏ vào
   // chính database tạm để không lời gọi nhầm nào chạm tới database thật.
   DATABASE_URL_S1: urlFor(process.env["DATABASE_URL_S1"] ?? adminUrl),
+  DATABASE_URL_S2: urlFor(process.env["DATABASE_URL_S2"] ?? adminUrl),
 };
 
 const step = (
