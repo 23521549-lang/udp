@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { dbConstraintError } from "../src/errors.js";
+import { dbAvailabilityError, dbConstraintError } from "../src/errors.js";
 import { createPgAdapter } from "../src/adapter.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { connectionString } from "./helpers/db.js";
@@ -136,5 +136,79 @@ describe("dbErrorCode — SQLSTATE của trigger tới được tầng ứng d�
       message: "VARIANT_IN_USE: y",
     });
     expect(mapped).toEqual({ code: "VARIANT_IN_USE", detail: "y" });
+  });
+});
+
+describe("dbAvailabilityError — cạn pool là 503, bug của transaction vẫn là 500", () => {
+  it("cạn pool THẬT: $transaction hết maxWait ra PROVIDER_UNAVAILABLE", async () => {
+    /**
+     * Cạn pool thật chứ không dựng một object giả: nhánh này khớp theo THÔNG ĐIỆP của
+     * Prisma, nên chỉ một lần gọi thật mới nói được thông điệp đó còn đúng chữ hay
+     * không. Nâng phiên bản Prisma mà câu chữ đổi thì test này đỏ — thay vì hệ
+     * thống âm thầm trượt 503 về 500.
+     */
+    const tiny = new PrismaClient({
+      adapter: createPgAdapter({
+        connectionString: connectionString(),
+        max: 1,
+      }),
+    });
+
+    try {
+      /**
+       * Giữ khe DUY NHẤT của pool trong 2 giây.
+       *
+       * `$executeRaw` chứ không `$queryRaw`: `pg_sleep` trả về một cột kiểu `void`,
+       * và `$queryRaw` cố giải tuần tự cột đó rồi ném — khiến CHÍNH transaction giữ
+       * khe hỏng, và test đỏ vì một lý do không liên quan gì tới điều nó kiểm.
+       * `$executeRaw` chỉ đếm số hàng, không đọc cột nào.
+       */
+      const holder = tiny.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT pg_sleep(2)`;
+        },
+        { timeout: 10_000 },
+      );
+      await new Promise((r) => setTimeout(r, 400));
+
+      const err = await tiny
+        .$transaction(() => Promise.resolve(), { maxWait: 200 })
+        .then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+      await holder;
+
+      expect(
+        err,
+        "pool 1 khe đang bị giữ mà transaction thứ hai vẫn mở được",
+      ).toBeDefined();
+      expect(dbAvailabilityError(err)?.code).toBe("PROVIDER_UNAVAILABLE");
+      // Không được lọt vào nhánh ràng buộc — hai nhánh log ở hai mức khác nhau
+      expect(dbConstraintError(err)).toBeUndefined();
+    } finally {
+      await tiny.$disconnect();
+    }
+  });
+
+  it("các lớp con KHÁC của P2028 không bị coi là quá tải", () => {
+    /**
+     * Nguyên văn hai trong sáu lớp con còn lại, lấy từ runtime 7.10. Cả hai là bug của
+     * người viết code — dùng transaction đã đóng hoặc đã hết hạn. Báo 503 retryable
+     * cho chúng là bảo người gọi thử lại một bug mãi mãi.
+     */
+    const closed = {
+      code: "P2028",
+      message:
+        "Transaction API error: Transaction already closed: A query cannot be executed on a committed transaction.",
+    };
+    const expired = {
+      code: "P2028",
+      message:
+        "Transaction API error: A query cannot be executed on an expired transaction. The timeout for this transaction was 5000 ms, however 6012 ms passed since the start of the transaction.",
+    };
+
+    expect(dbAvailabilityError(closed)).toBeUndefined();
+    expect(dbAvailabilityError(expired)).toBeUndefined();
   });
 });

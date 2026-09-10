@@ -54,7 +54,7 @@ export interface CreateProjectData {
  * Vì sao nested write chứ không phải `$transaction` tương tác: một transaction
  * tương tác giữ nguyên một connection suốt cả sáu round-trip, mà `maxWait` mặc
  * định là 2 giây và pool mặc định chỉ 5 kết nối. Sáu người tạo project cùng lúc
- * là đủ để người thứ sáu nhận P2024 rồi thành 500. Nested write vẫn nằm trong
+ * là đủ để người thứ sáu nhận P2028 và bị từ chối. Nested write vẫn nằm trong
  * một transaction ngầm của Prisma nên tính nguyên tử không đổi, mà chỉ tốn một
  * lượt đi về.
  *

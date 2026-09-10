@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import { env } from "@udp/config";
 import { UnauthenticatedError, ValidationError } from "@udp/http";
+import { UUID_PATTERN } from "../core/uuid.js";
 
 /**
  * Xác thực lời gọi máy-tới-máy vào `/internal/*` (§9, §12 T12).
@@ -10,9 +11,9 @@ import { UnauthenticatedError, ValidationError } from "@udp/http";
  * chính là *SA token của Kubernetes + TokenReview*, cộng NetworkPolicy, và với
  * `PATCH /internal/rules/:id` còn thêm một điều kiện nữa: S2 phải kiểm `ruleId`
  * có thuộc `RolloutSession` mà bên gọi đang giữ lease hay không — "chỉ có token
- * hợp lệ là chưa đủ". §9 cho phép "mTLS **hoặc** shared secret", nên bí mật dùng
- * chung là hợp lệ, nhưng nó là lớp phòng khi NetworkPolicy bị cấu hình sai chứ
- * không phải lớp duy nhất.
+ * hợp lệ là chưa đủ" (phép kiểm đó: `assertFencing` ở `modules/rule/`). §9 cho
+ * phép "mTLS **hoặc** shared secret", nên bí mật dùng chung là hợp lệ, nhưng nó
+ * là lớp phòng khi NetworkPolicy bị cấu hình sai chứ không phải lớp duy nhất.
  *
  * Chưa có cluster nên chưa có TokenReview để gọi. Đặt guard ở đúng chỗ §3.2 chỉ
  * định để ngày thêm TokenReview không phải sửa một call-site nào.
@@ -33,7 +34,6 @@ const HEADER = "X-Internal-Secret";
  * Service 3 khi rollout", vì lúc đó không có người dùng nào bấm gì cả.
  */
 const ACTOR_HEADER = "X-Udp-Actor-Id";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * So sánh hằng thời gian.
@@ -72,7 +72,7 @@ export function actorOf(req: Request): string | undefined {
   const raw = req.get(ACTOR_HEADER);
   if (raw === undefined || raw.length === 0) return undefined;
 
-  if (!UUID.test(raw)) {
+  if (!UUID_PATTERN.test(raw)) {
     throw new ValidationError(`${ACTOR_HEADER} phải là UUID`);
   }
 

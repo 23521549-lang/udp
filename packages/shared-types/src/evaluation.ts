@@ -18,6 +18,26 @@ import { TOTAL_BUCKETS } from "@udp/config/constants";
 // ============================================================
 
 /**
+ * Mảng `weights` của một `distribution`, hình dạng DB.
+ *
+ * Tách thành biến riêng vì có HAI bên nhận nó: nhánh `distribution` của `serve`
+ * bên dưới, và body ramp của Service 3 (§7.3) — body đó chỉ gửi `weights`, không
+ * gửi cả `serve`. Chép đôi thì hai trần `weight` trôi khỏi nhau im lặng.
+ *
+ * Chỉ kiểm TỪNG phần tử. Tổng và tính duy nhất phải nhìn cả mảng nên sống ở
+ * `flagServeDbSchema`; bên nhận body ramp chạy lại đúng schema đó.
+ */
+export const distributionWeightsDbSchema = z
+  .array(
+    z.object({
+      variantId: z.string().uuid(),
+      // 0,001% mỗi đơn vị, nên biểu diễn được canary dưới 1%
+      weight: z.number().int().min(0).max(TOTAL_BUCKETS),
+    }),
+  )
+  .min(1);
+
+/**
  * Union THÔ, giữ riêng ở một biến.
  *
  * Vì sao không gộp luôn với phần kiểm tổng bên dưới: `.superRefine()` trả về
@@ -42,15 +62,7 @@ export const flagServeUnion = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("distribution"),
-      weights: z
-        .array(
-          z.object({
-            variantId: z.string().uuid(),
-            // 0,001% mỗi đơn vị, nên biểu diễn được canary dưới 1%
-            weight: z.number().int().min(0).max(TOTAL_BUCKETS),
-          }),
-        )
-        .min(1),
+      weights: distributionWeightsDbSchema,
     })
     .strict(),
 ]);
@@ -194,6 +206,35 @@ export type FlagServe = z.infer<typeof flagServeDbSchema>;
 
 /** Hình dạng wire — cùng lý do `type` alias như `FlagServe` ở trên */
 export type FlagServeWire = z.infer<typeof flagServeWireSchema>;
+
+/**
+ * Đưa `serve` về THỨ TỰ CHUẨN trước khi ghi: `weights` sắp theo `variantId`.
+ *
+ * §6.4: "Thứ tự `weights` cố định theo `variantId` nên khoảng tích lũy chỉ dịch,
+ * không đảo" — và evaluator "không sort lúc chạy". Nên thứ tự phải được ép ở
+ * tầng GHI, bởi đúng một hàm. Đã đo: giữ nguyên `bucketSalt` và phần trăm, chỉ đảo
+ * thứ tự `weights`, làm 100% người đang thấy `on` đổi nhóm (I1).
+ *
+ * Tầng ghi không trông vào kỷ luật của bên gọi được: chính body ramp mẫu của
+ * Service 3 ở §7.3 là `[target, other]`, không theo `variantId`. Không sắp ở đây
+ * thì một nửa số rule sẽ được lưu sai thứ tự, tuỳ vào UUID nào lớn hơn.
+ *
+ * KHÔNG đặt vào `flagServeDbSchema`: schema đó còn dùng để ĐỌC. Ép thứ tự ở đó
+ * thì một hàng cũ sai thứ tự sẽ làm cả environment không phục vụ được — đổi một
+ * lỗi âm thầm lấy một sự cố toàn phần.
+ *
+ * So bằng `<` chứ không `localeCompare`, cùng lý do với `canonicalJson`: thứ tự
+ * của `localeCompare` phụ thuộc ICU của từng tiến trình.
+ */
+export function canonicalizeServe(serve: FlagServe): FlagServe {
+  if (serve.kind === "variant") return serve;
+  return {
+    kind: "distribution",
+    weights: [...serve.weights].sort((a, b) =>
+      a.variantId < b.variantId ? -1 : a.variantId > b.variantId ? 1 : 0,
+    ),
+  };
+}
 
 // ============================================================
 // Kết quả đánh giá — hợp đồng chung của SDK và Service 2 (§6.1, §6.5)

@@ -1,0 +1,22 @@
+-- [v4.1] Service 2 đọc đúng NĂM cột của rollout_sessions (§1.2, §12.1 T12, I23).
+--
+-- `PATCH /internal/rules/:id` phải kiểm hai điều trong MỘT truy vấn, và cả hai
+-- đều nằm trên hàng RolloutSession:
+--   * T12 — rule có thuộc session mà bên gọi đang giữ lease không
+--           (id, targeting_rule_id, status, claimed_until)
+--   * I23 — fencing token trong If-Match có còn là version hiện tại không
+--           (version)
+--
+-- Liệt kê TĨNH, không dựng động như khối DO của `service_roles`: ý đồ ở đây là
+-- đúng năm cột có tên, không phải "mọi cột trừ". Cột thêm vào bảng này về sau
+-- KHÔNG được tự rơi vào quyền của S2.
+--
+-- Không có `claimed_by`: If-Match không mang định danh worker, nên không có gì
+-- để so với nó. Không có `flag_env_config_id`: mọi phép kiểm của S2 đều theo
+-- rule. Postgres đòi quyền SELECT trên cả những cột chỉ xuất hiện trong WHERE,
+-- và năm cột này phủ đủ mọi truy vấn của S2 — không hơn.
+--
+-- Chỉ SELECT. Ranh giới writer của §1.2 giữ nguyên: S3 vẫn là writer duy nhất
+-- của các cột điều khiển, S1 vẫn là writer của các cột cấu hình.
+GRANT SELECT (id, targeting_rule_id, status, version, claimed_until)
+  ON rollout_sessions TO udp_s2;

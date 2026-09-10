@@ -113,7 +113,8 @@ export interface Snapshot {
  *   - **`undefined` biến mất im lặng**: `JSON.stringify({a:1,b:undefined})` cho
  *     `{"a":1}`, nên "trường vắng mặt" và "trường bằng undefined" ra cùng chuỗi
  *     trong khi chúng đến từ hai truy vấn `select` khác nhau.
- *   - **Số thực**: `0.1+0.2` ra `"0.30000000000000004"`, `1e21` ra `"1e+21"`.
+ *   - **NaN và Infinity biến mất im lặng**: `JSON.stringify({a: NaN})` cho
+ *     `{"a":null}`, nên một giá trị hỏng trông y hệt một `null` có chủ đích.
  *   - **Unicode**: NFC và NFD của cùng một tên cho hai chuỗi khác nhau; iOS gửi
  *     NFD còn Android gửi NFC.
  *
@@ -128,11 +129,29 @@ function canonical(value: unknown, path: string): unknown {
   if (typeof value === "string") return value.normalize("NFC");
   if (typeof value === "boolean") return value;
 
+  /**
+   * Số tuần tự theo RFC 8785 (JSON Canonicalization Scheme) — và đó chính là thứ
+   * `JSON.stringify` đã làm, nên nhánh này chỉ cần trả nguyên giá trị.
+   *
+   * RFC 8785 định nghĩa cách viết số BẰNG đúng thuật toán Number→String của
+   * ECMAScript (§3.2.2.3), chính để mọi ngôn ngữ — kể cả SDK không viết bằng JS — ra
+   * cùng một chuỗi: biểu diễn ngắn nhất vẫn đọc ngược lại đúng giá trị double đó.
+   * `0.1 + 0.2` ra `0.30000000000000004` ở MỌI nơi theo đúng quy tắc, nên hash không
+   * "đổi theo nền tảng" như bản trước lo.
+   *
+   * Bản trước từ chối mọi số không nguyên, và cái giá là một lỗi thật: tạo flag
+   * `NUMBER` với variant `0.15`, hay một điều kiện `score gte 0.75`, đều ném ngay
+   * trong transaction ghi và thành 500. Không hash nào đang có bị đổi khi nới ra: mọi
+   * giá trị như vậy trước đây đều ném, nên chưa từng được lưu.
+   *
+   * Vẫn từ chối NaN và Infinity: JSON không biểu diễn được chúng, và
+   * `JSON.stringify` lặng lẽ đổi chúng thành `null`.
+   */
   if (typeof value === "number") {
-    if (!Number.isInteger(value)) {
+    if (!Number.isFinite(value)) {
       throw new Error(
-        `Snapshot chứa số không nguyên tại ${path}: ${String(value)}. ` +
-          `Số thực không có biểu diễn thập phân ổn định, nên hash sẽ đổi theo nền tảng.`,
+        `Snapshot chứa số không hữu hạn tại ${path}: ${String(value)}. ` +
+          `JSON không biểu diễn được NaN hay Infinity — JSON.stringify đổi chúng thành null im lặng.`,
       );
     }
     return value;

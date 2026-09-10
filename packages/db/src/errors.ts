@@ -145,6 +145,53 @@ export function dbConstraintError(err: unknown): DbConstraintError | undefined {
 }
 
 /**
+ * Thông điệp DUY NHẤT của `P2028` có nghĩa là "quá tải".
+ *
+ * `P2028` là lớp cha `TransactionManagerError` của Prisma, và đã đọc thẳng runtime
+ * 7.10: nó có BẢY lớp con. Chỉ một cái nói "không mở được transaction trong
+ * `maxWait`" — tức pool đang cạn, và thử lại sau là đúng cách chữa. Sáu cái còn lại
+ * là transaction không tồn tại, đã commit, đã rollback, hết `timeout`, lỗi nhất
+ * quán nội bộ, mức cô lập sai: đều là bug hoặc chưa rõ. Ánh xạ cả họ sang 503
+ * `retryable` là bảo người gọi thử lại một bug mãi mãi.
+ *
+ * Khớp theo thông điệp là mong manh — Prisma đổi câu chữ thì nhánh này im lặng
+ * trượt về 500. Vì vậy có một test làm CẠN POOL THẬT (`db-errors.test.ts`): đổi
+ * câu chữ thì test đó đỏ, không phải hệ thống.
+ *
+ * `P2024` KHÔNG có ở đây dù tài liệu Prisma cũ gọi nó là lỗi hết giờ chờ pool: đã
+ * grep runtime 7.10 của `@prisma/client` lẫn `adapter-pg`, chuỗi đó không tồn tại
+ * trên đường truy vấn — chỉ còn trong schema engine của migrate.
+ */
+const POOL_EXHAUSTED = "Unable to start a transaction in the given time";
+
+export interface DbAvailabilityError {
+  code: "PROVIDER_UNAVAILABLE";
+  detail: string;
+}
+
+/**
+ * Database không phục vụ được lúc này — khác hẳn một ràng buộc bị vi phạm.
+ *
+ * Tách khỏi `dbConstraintError` vì hai nhánh khác nhau ở mọi trục mà tầng HTTP
+ * quan tâm: ràng buộc là lỗi NGƯỜI DÙNG sửa được (log `warn`, `detail` nói rõ
+ * sai chỗ nào), còn cạn pool là lỗi VẬN HÀNH (log `error` để cảnh báo, người
+ * dùng chỉ cần biết thử lại sau). Gộp chung một hàm là để tên hàm nói dối.
+ */
+export function dbAvailabilityError(
+  err: unknown,
+): DbAvailabilityError | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const e = err as { code?: unknown; message?: unknown };
+  if (e.code !== "P2028" || typeof e.message !== "string") return undefined;
+  if (!e.message.includes(POOL_EXHAUSTED)) return undefined;
+
+  return {
+    code: "PROVIDER_UNAVAILABLE",
+    detail: "Hệ thống đang quá tải, vui lòng thử lại sau",
+  };
+}
+
+/**
  * Nhận diện lỗi ràng buộc do chính Prisma báo, trước khi xét SQLSTATE.
  *
  * `detail` chỉ nêu TÊN TRƯỜNG bị trùng, lấy từ `meta.target`. Tên trường vốn là

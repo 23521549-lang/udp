@@ -77,8 +77,24 @@ describe("từ chối những giá trị không băm ổn định được", () 
     );
   });
 
-  it("ném khi gặp số không nguyên", () => {
-    expect(() => canonicalJson({ rate: 0.1 + 0.2 })).toThrow(/số không nguyên/);
+  it("số thực tuần tự theo RFC 8785 — tất định, không ném", () => {
+    /**
+     * Các cặp dưới đây là dạng chuẩn mà RFC 8785 quy định, nên một SDK viết bằng
+     * ngôn ngữ khác cũng phải ra đúng từng chuỗi này. Bản trước ném với mọi số không
+     * nguyên, và cái giá là flag NUMBER mang giá trị 0.15 không tạo được.
+     */
+    expect(canonicalJson({ v: 0.15 })).toBe('{"v":0.15}');
+    expect(canonicalJson({ v: 0.1 + 0.2 })).toBe('{"v":0.30000000000000004}');
+    expect(canonicalJson({ v: 1e21 })).toBe('{"v":1e+21}');
+    expect(canonicalJson({ v: 1e-7 })).toBe('{"v":1e-7}');
+    expect(canonicalJson({ v: -0 })).toBe('{"v":0}');
+  });
+
+  it("ném khi gặp NaN hoặc Infinity — JSON.stringify đổi chúng thành null im lặng", () => {
+    expect(() => canonicalJson({ v: Number.NaN })).toThrow(/NaN/);
+    expect(() => canonicalJson({ v: Number.POSITIVE_INFINITY })).toThrow(
+      /Infinity/,
+    );
   });
 
   it("ném khi gặp bigint", () => {

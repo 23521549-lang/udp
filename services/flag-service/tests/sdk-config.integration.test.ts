@@ -4,6 +4,7 @@ import { createPrismaClient } from "@udp/db";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { stableOwner } from "./helpers/fixture.js";
 
 /**
  * `GET /sdk/config` qua HTTP thật.
@@ -68,7 +69,7 @@ const makeProject = async (
 };
 
 beforeAll(async () => {
-  const owner = await admin.user.findFirstOrThrow({ select: { id: true } });
+  const owner = await stableOwner(admin);
 
   const mine = await makeProject(owner.id, "own");
   const theirs = await makeProject(owner.id, "other");

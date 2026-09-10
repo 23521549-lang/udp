@@ -93,6 +93,10 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     flag_evaluation_stats: FULL,
     config_change_log: APPEND_ONLY,
     environments: { SELECT: "*", UPDATE: ["config_hash", "config_version"] },
+    // [v4.1] ĐỌC đúng năm cột: T12 (lease) + I23 (fencing) trong một truy vấn (§1.2)
+    rollout_sessions: {
+      SELECT: ["claimed_until", "id", "status", "targeting_rule_id", "version"],
+    },
     projects: READ_ONLY,
     domain_catalog: READ_ONLY,
     audit_logs: APPEND_ONLY,

@@ -7,8 +7,8 @@ import type {
 } from "express";
 import { ZodError } from "zod";
 import { isProduction } from "@udp/config";
-import { dbConstraintError, httpStatusOf } from "@udp/db";
-import { AppError } from "./errors.js";
+import { dbAvailabilityError, dbConstraintError, httpStatusOf } from "@udp/db";
+import { AppError, OptimisticLockError } from "./errors.js";
 import { logger, redact } from "./logger.js";
 import { buildProblem, sendProblem } from "./problem.js";
 
@@ -139,6 +139,14 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
             }
           : { code: err.problemCode }),
         detail: err.message,
+        /**
+         * §8.4: "409 Conflict + bản mới nhất để hiển thị diff". Qua `redact()` như
+         * mọi thứ rời điểm hội tụ này — bản ghi flag hay rule không mang bí mật, nhưng
+         * chốt này không được trông vào điều đó.
+         */
+        ...(err instanceof OptimisticLockError
+          ? { current: redact(err.current) }
+          : {}),
       }),
     );
     return;
@@ -166,6 +174,29 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
         // bảng nội bộ. Và mã này khai `fixableBy: "user"`, nên nói "rule trỏ
         // variant không tồn tại" mà không nói variant NÀO là bỏ người dùng bế tắc.
         detail: dbError.detail,
+      }),
+    );
+    return;
+  }
+
+  /**
+   * Database không phục vụ được — cạn pool (§9 `PROVIDER_UNAVAILABLE`, 503 retryable).
+   *
+   * Tách khỏi nhánh ràng buộc ở trên vì khác hẳn về VẬN HÀNH: đây là lỗi hạ
+   * tầng mà người vận hành phải thấy, nên log mức `error` chứ không `warn`. Trước
+   * nhánh này, cạn pool rơi xuống 500 "Lỗi hệ thống" — sai status, và bảo client
+   * đừng thử lại đúng ở ca mà thử lại chính là cách chữa.
+   */
+  const unavailable = dbAvailabilityError(err);
+  if (unavailable !== undefined) {
+    logger.error({ err }, "Database unavailable — pool exhausted");
+    sendProblem(
+      res,
+      buildProblem({
+        req,
+        status: httpStatusOf(unavailable.code),
+        code: unavailable.code,
+        detail: unavailable.detail,
       }),
     );
     return;

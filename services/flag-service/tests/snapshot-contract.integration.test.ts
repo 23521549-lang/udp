@@ -5,6 +5,7 @@ import { configHashOf, type Snapshot } from "@udp/flag-evaluator";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { stableOwner } from "./helpers/fixture.js";
 import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
 
 /**
@@ -45,7 +46,7 @@ let envId: string;
 let envIds: string[];
 
 beforeAll(async () => {
-  const owner = await admin.user.findFirstOrThrow({ select: { id: true } });
+  const owner = await stableOwner(admin);
   const suffix = randomUUID().slice(0, 8);
 
   const project = await admin.project.create({

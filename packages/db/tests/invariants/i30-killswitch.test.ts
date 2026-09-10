@@ -104,10 +104,16 @@ describe("I30(a) — ba quyền kill-switch dùng được", () => {
   });
 
   it("S3 ghi được config_change_log", async () => {
+    /**
+     * `rule.ramped`, không phải `kill_switch` như bản trước: kill-switch là một lần
+     * ramp về baseline, và §7.6 (v4.1) buộc nó ghi một giá trị TRONG từ vựng §2.2.
+     * Một test mô hình hoá giá trị ngoài từ vựng là đang dạy người đọc điều ngược lại.
+     * Test này chỉ kiểm GRANT nên payload rỗng là đủ.
+     */
     const r = await asRole("udp_s3", () =>
       client.query(
         `INSERT INTO config_change_log (environment_id, change_type, payload, config_version, created_at)
-         VALUES ($1, 'kill_switch', '{}'::jsonb, 999999, now())`,
+         VALUES ($1, 'rule.ramped', '{}'::jsonb, 999999, now())`,
         [envId],
       ),
     );

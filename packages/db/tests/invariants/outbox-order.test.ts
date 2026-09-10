@@ -38,7 +38,15 @@ beforeAll(async () => {
    * được UPDATE hai cột `config_version`/`config_hash`. Việc canh GRANT là của
    * I22; test này canh THỨ TỰ GHI, nên dùng owner để dựng bối cảnh.
    */
-  const owner = await prisma.user.findFirstOrThrow({ select: { id: true } });
+  /**
+   * User CŨ NHẤT, không phải user bất kỳ: `pnpm -r test` chạy core-backend song
+   * song trên cùng database, và nó tạo rồi dọn user tạm. Nhặt nhầm user tạm làm
+   * chủ thì project fixture biến mất giữa chừng — xem `flag-service/tests/helpers`.
+   */
+  const owner = await prisma.user.findFirstOrThrow({
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
   const project = await prisma.project.create({
     data: {
       ownerId: owner.id,
@@ -184,5 +192,31 @@ describe("ADR-05 — thứ tự bốn bước của outbox writer", () => {
     for (const [i, row] of after.entries()) {
       expect(row.configVersion).toBe(before[i]?.configVersion);
     }
+  });
+});
+
+describe("ADR-05 — không lần ghi nào được lọt khỏi outbox", () => {
+  it("danh sách environment rỗng bị TỪ CHỐI — và mutate KHÔNG được chạy", async () => {
+    /**
+     * Trước chốt này, mảng rỗng vẫn chạy `mutate` mà không khoá, không tăng
+     * version, không ghi outbox. Khẳng định `mutate` không chạy mới là thứ quan trọng:
+     * chỉ khẳng định "có ném" thì một bản cài đặt ném SAU khi đã ghi cũng qua.
+     */
+    const calls: string[] = [];
+
+    await expect(
+      writeWithOutbox(prisma, {
+        environmentIds: [],
+        changeType: "flag.updated",
+        mutate: () => {
+          calls.push("mutate");
+          return Promise.resolve();
+        },
+        stateOf: () =>
+          Promise.resolve({ configHash: "d".repeat(64), delta: {} }),
+      }),
+    ).rejects.toThrow(/rỗng/);
+
+    expect(calls).toEqual([]);
   });
 });

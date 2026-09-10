@@ -3,6 +3,7 @@ import {
   type Snapshot,
   type SnapshotFlag,
 } from "@udp/flag-evaluator";
+import { CONFIG_CHANGE_TYPES, type ConfigChangeType } from "@udp/shared-types";
 import { beforeEach, describe, expect, it } from "vitest";
 import type {
   ChangeFeed,
@@ -232,25 +233,30 @@ describe("quy tắc rơi tầng", () => {
     expect(readCounters().changefeed_fallback_total).toBe(1);
   });
 
-  it("change_type lạ (kill_switch của S3) thì rơi tầng, TUYỆT ĐỐI không ném", async () => {
+  it("change_type lạ thì rơi tầng, TUYỆT ĐỐI không ném", async () => {
     /**
-     * `i30-killswitch.test.ts` ghi ra `change_type = 'kill_switch'`, một giá trị
-     * không có trong `ConfigChangeType`, vì Service 3 ghi thẳng database ở nhánh
-     * `DEPENDENCY_DOWN` (§7.6). Một `switch` vét cạn có `default: throw` sẽ ném
-     * đúng lúc kill-switch vừa được bật vì Service 2 đang chết.
+     * Từ vựng §2.2 lớn dần — v4.1 vừa thêm `rule.ramped`. Replica chạy phiên bản
+     * cũ gặp giá trị mới phải rơi về snapshot chứ không chết: §16 bắt triển khai
+     * "replica trước, writer sau", và nhánh này là lưới an toàn khi thứ tự đó bị
+     * làm ngược. Một `switch` vét cạn có `default: throw` biến một lần triển khai
+     * sai thứ tự thành một replica ngừng cập nhật.
      */
+    const UNKNOWN = "flag.renamed";
+    expect(CONFIG_CHANGE_TYPES).not.toContain(UNKNOWN);
+
     const after = [flag("a", true)];
     const h = harness({
       deltaMode: true,
       cached: { version: 7, flags: [flag("a", false)] },
       target: { configVersion: 8, configHash: configHashOf(snap(after)) },
-      records: [deltaRow(8, "kill_switch", flag("a", true))],
+      records: [deltaRow(8, UNKNOWN, flag("a", true))],
     });
 
     await h.cache.get(ENV, "SERVER");
     h.state.setStored(8, after);
 
     await expect(h.watcher.tick()).resolves.toBeUndefined();
+    expect(readCounters().changefeed_fallback_total).toBe(1);
 
     expect(h.cache.peek(ENV, "SERVER")?.configVersion).toBe(8);
     expect(h.cache.peek(ENV, "SERVER")?.snapshot.flags).toEqual(after);
@@ -441,5 +447,65 @@ describe("config_hash rỗng", () => {
 
     expect(verifyHash(snap([]), "a".repeat(64))).toBe("mismatch");
     expect(readCounters().changefeed_hash_mismatch_total).toBe(1);
+  });
+});
+
+describe("tầng 2 áp được ba change_type của đường ghi rule (Plan #12, Mục 4)", () => {
+  it.each([
+    "rule.replaced",
+    "rule.ramped",
+    "envconfig.toggled",
+  ] satisfies ConfigChangeType[])(
+    "%s: áp delta, KHÔNG rơi về snapshot",
+    async (changeType) => {
+      /**
+       * Thiếu một `case` ở poller thì mọi lần sửa rule đều rơi về snapshot — hệ
+       * thống vẫn ĐÚNG, mọi test khác vẫn xanh, chỉ là tầng 2 không tồn tại cho
+       * đúng loại thay đổi mà C1 sinh ra nhiều nhất; ba lần liên tiếp là ngắt
+       * mạch tầng 2 của environment đó.
+       */
+      const after = [flag("a", true)];
+      const h = harness({
+        deltaMode: true,
+        cached: { version: 7, flags: [flag("a", false)] },
+        target: { configVersion: 8, configHash: configHashOf(snap(after)) },
+        records: [deltaRow(8, changeType, flag("a", true))],
+      });
+
+      await h.cache.get(ENV, "SERVER");
+      const before = h.state.loads;
+      await h.watcher.tick();
+
+      expect(h.state.loads).toBe(before);
+      expect(h.cache.peek(ENV, "SERVER")?.snapshot.flags).toEqual(after);
+      expect(readCounters().changefeed_fallback_total).toBe(0);
+    },
+  );
+
+  it("payload của rule.ramped mang thêm rolloutSessionId vẫn áp được", async () => {
+    const after = [flag("a", true)];
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 8, configHash: configHashOf(snap(after)) },
+      records: [
+        {
+          configVersion: 8,
+          changeType: "rule.ramped",
+          payload: JSON.parse(
+            JSON.stringify({
+              rolloutSessionId: "0190a1b2-c3d4-4e5f-8a6b-7c8d9e0f1a2b",
+              flag: flag("a", true),
+            }),
+          ) as ChangeRecord["payload"],
+        },
+      ],
+    });
+
+    await h.cache.get(ENV, "SERVER");
+    await h.watcher.tick();
+
+    expect(h.cache.peek(ENV, "SERVER")?.configVersion).toBe(8);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
   });
 });

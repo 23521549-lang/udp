@@ -107,7 +107,7 @@ graph TD
 | ---- | ------ | ------ |
 | `User`, `ProjectMember`, `Project`, `CloudCredential`, `DomainConfig`, `CapabilityBinding`, `CapabilityPreference`, `Environment` (trừ hai cột `config_version` và `config_hash`), `ProvisioningJob`, `ProvisionedResource`, `RefreshSession`, `IdempotencyKey` | Service 1 | S2 (`Project`, `Environment`), S3 (`Project`, `DomainConfig`, `CapabilityBinding`). S3 **không** đọc `CloudCredential`: quyền vào cluster được cấp qua endpoint nội bộ của S1 (ADR-06) |
 | `Environment.config_version`, `FeatureFlag`, `FlagVariant`, `FlagEnvConfig`, `FlagTargetingRule`, `Segment`, `SdkKey`, `FlagEvaluationStat`, `ConfigChangeLog` | Service 2 | S1 (hiển thị), S3 (đọc rule đang rollout). **Một ngoại lệ có chủ đích:** để dùng làm kill-switch **chỉ** khi Service 2 không phản hồi (nhánh `DEPENDENCY_DOWN`, §7.6), S3 được cấp **đúng ba quyền hẹp**, không hơn: `UPDATE` mức cột trên `flag_targeting_rules.serve`, `UPDATE` mức cột trên `environments.config_version` và `config_hash`, và `INSERT` trên `config_change_log`. Ba quyền này là **tối thiểu để chạy được kỷ luật transaction của ADR-05** — thiếu quyền cấp version thì S3 ghi `serve` mà replica của S2 không bao giờ thấy, tức là kill-switch im lặng không có tác dụng. Không có ngoại lệ này thì hành động *an toàn* nhất của hệ thống lại phụ thuộc vào availability của một service khác. S3 vẫn phải theo đúng kỷ luật transaction của ADR-05 (khóa `Environment` trước, ghi outbox cuối) để replica của S2 lan truyền đúng khi hồi phục. Bất biến I30 |
-| `RolloutSession` | **Chia theo cột**: S1 tạo hàng và ghi các cột cấu hình; S3 là writer duy nhất của `status`, `current_traffic_percentage`, `fail_reason`, `last_decision`, `last_step_at`, `claimed_by`, `claimed_until`, `version` | |
+| `RolloutSession` | **Chia theo cột**: S1 tạo hàng và ghi các cột cấu hình; S3 là writer duy nhất của `status`, `current_traffic_percentage`, `fail_reason`, `last_decision`, `last_step_at`, `claimed_by`, `claimed_until`, `version` | **[v4.1]** S2 **đọc đúng năm cột** — `id`, `targeting_rule_id`, `status`, `version`, `claimed_until` — để `PATCH /internal/rules/:id` kiểm lease (T12) và so fencing token (I23) trong **một** truy vấn. Chỉ SELECT. Bản trước định lưu thêm một `rollout_lock` trên rule; bỏ, vì `RolloutSession.version` đã **là** fencing token, và một bản sao trên rule sẽ ôi thiu đúng ở nhánh kill-switch §7.6 — S3 ghi thẳng `serve` mà không có quyền ghi cột đó |
 | `RolloutEvent` | S1 ghi `is_intent = true`; S3 ghi `is_intent = false` | |
 | `AuditLog`, `DeploymentEvent` | **Append-only, nhiều writer**: S1, S2, S3 đều INSERT trực tiếp | |
 
@@ -1257,7 +1257,7 @@ v3 mô hình hóa rule là *hoặc* `PERCENTAGE` *hoặc* `ATTRIBUTE_BASED`, kh�
 | serve               | JSONB        | NOT NULL                                       | **Phục vụ gì**: `{ kind: 'variant', variantId }` hoặc `{ kind: 'distribution', weights: [{ variantId, weight }] }` với tổng `weight` = 100 000 (đơn vị 0,001%) |
 | bucket_salt         | VARCHAR(36)  | NOT NULL                                       | Sinh 1 lần khi tạo rule; hai rule phân phối khác nhau chọn hai nhóm khác nhau |
 | description         | VARCHAR(255) | NULLABLE                                       |                                                                               |
-| priority            | INTEGER      | NOT NULL                                       | Nhỏ hơn = ưu tiên cao hơn                                                     |
+| priority            | INTEGER      | NOT NULL                                       | Nhỏ hơn = ưu tiên cao hơn. **[v4.1]** KHÔNG unique — hai rule hoà nhau là hợp lệ, nên thứ tự chuẩn của cả evaluator lẫn `config_hash` là `(priority, id)`; thiếu vế `id` thì hai tiến trình băm cùng nội dung theo hai thứ tự khác nhau |
 
 ```sql
 CREATE INDEX idx_rule_flagenv_priority ON FlagTargetingRule (flag_env_config_id, priority ASC);
@@ -1373,8 +1373,8 @@ Append-only. Mỗi thay đổi cấu hình flag ghi **một dòng ở đây tron
 | id             | BIGSERIAL    | PK                                           | Chỉ để hiển thị — **không dùng làm con trỏ đọc**                   |
 | environment_id | UUID         | FK → Environment ON DELETE CASCADE, NOT NULL |                                                                     |
 | config_version | INTEGER      | NOT NULL                                     | **Con trỏ đọc.** Giá trị `Environment.config_version` **sau** thay đổi này. Liên tục theo environment vì được cấp dưới row-lock giữ tới commit |
-| change_type    | VARCHAR(50)  | NOT NULL                                     | `flag.created`, `flag.updated`, `flag.archived`, `rule.replaced`, `envconfig.toggled`, `variant.updated`, `segment.updated`, `sdkkey.revoked` |
-| payload        | JSONB        | NOT NULL                                     | Delta đầy đủ — replica cập nhật cache mà không phải đọc lại toàn bộ |
+| change_type    | VARCHAR(50)  | NOT NULL                                     | `flag.created`, `flag.updated`, `flag.archived`, `rule.replaced`, `rule.ramped`, `envconfig.toggled`, `variant.updated`, `segment.updated`, `sdkkey.revoked`. **[v4.1]** `rule.ramped` do Service 3 ghi khi ramp trọng số (C1), tách khỏi `rule.replaced` của người sửa rule — để sổ kiểm toán trả lời được thay đổi nào do rollout gây ra. Tập này có chốt: danh sách chạy được `CONFIG_CHANGE_TYPES` trong `@udp/shared-types` phải trùng đúng nó (design-lint) |
+| payload        | JSONB        | NOT NULL                                     | Delta đầy đủ — replica cập nhật cache mà không phải đọc lại toàn bộ. **[v4.1]** Hình dạng `{ flag: <entry hình dạng dây §9> }`; áp delta = thay entry cùng `key`. `rule.ramped` mang thêm `rolloutSessionId` để truy ngược rollout nào đã ramp mà không phải join sang bảng của S3 |
 | actor_user_id  | UUID         | FK → User, NULLABLE                          | **[NEW v4]** Ai đổi (NULL = Service 3 khi rollout) — trả lời "vì sao user thấy X" theo cả chiều thời gian |
 | created_at     | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                      | Để dọn                                                              |
 
@@ -1815,11 +1815,12 @@ packages/                        ← dùng chung giữa ba service
 
 ```
 src/
-├── flag/                       ← CRUD FeatureFlag + FlagVariant (chặn xóa variant còn tham chiếu)
-├── env-config/                 ← FlagEnvConfig: bật/tắt và default variant theo env; backfill khi có env mới
-├── rule/
-│   ├── rule.validator.ts       ← variantId thuộc flag? tổng weight = 100 000? condition đúng schema?
-│   └── segment.service.ts      ← bảng Segment; sửa segment ⇒ outbox cho mọi env có rule dùng nó
+├── modules/                    ← [v4.1] nghiệp vụ, tách khỏi mặt tiền HTTP (internal/, sdk/) — cùng khuôn Service 1
+│   ├── flag/                   ← CRUD FeatureFlag + FlagVariant (chặn xóa variant còn tham chiếu)
+│   ├── env-config/             ← FlagEnvConfig: bật/tắt và default variant theo env; backfill khi có env mới
+│   └── rule/
+│       ├── rule.validator.ts   ← variantId thuộc flag? tổng weight = 100 000? condition đúng schema?
+│       └── segment.service.ts  ← bảng Segment; sửa segment ⇒ outbox cho mọi env có rule dùng nó
 ├── evaluation/
 │   ├── evaluator.ts            ← MỘT evaluator cho cả local (SERVER) và OFREP (CLIENT), trả ResolutionDetails
 │   ├── hash.ts                 ← MurmurHash3, bucket 0–99 999, salt theo rule
@@ -3828,7 +3829,7 @@ async function promote(session: RolloutSession, fence: Fence, metrics: MetricSna
   fence.assert();
 
   // (2) Side effect mang expectedVersion — bên nhận từ chối nếu đã có phiên bản mới hơn:
-  //     - S2: PATCH /internal/rules/:id với If-Match: "<sessionId>:<version>"; S2 lưu rollout_lock trên rule
+  //     - S2: PATCH /internal/rules/:id với If-Match: "<sessionId>:<version>"; S2 so với RolloutSession.version [v4.1]
   //     - Argo: đọc status.currentStepIndex, chỉ promote nếu == chỉ số mong đợi; patch mang resourceVersion
   const applied = await executor.applyTraffic(session, next, { expectedVersion: session.version });
   if (applied.status === "PRECONDITION_FAILED") return;      // bên khác đã đổi; vòng sau đọc trạng thái quan sát được
@@ -4018,7 +4019,8 @@ await flagService.patch(`/internal/rules/${session.targetingRuleId}`, {
             { variantId: otherVariantId,          weight: 100_000 - nextPercent * 1000 }],
   reason: `rollout:${session.id} step`,
 }, { headers: { "If-Match": `"${session.id}:${session.version}"` } });
-// Service 2: kiểm rule.rollout_lock = { sessionId, version }; version cũ hơn ⇒ 412 Precondition Failed.
+// Service 2 [v4.1]: đọc RolloutSession theo sessionId — lease còn hạn, đúng rule, status đang hoạt động,
+// và version BẰNG đúng giá trị trong If-Match; khác ⇒ 412 Precondition Failed.
 // Thành công ⇒ transaction ADR-05 (khóa env → đổi rule → outbox), NOTIFY, SSE đẩy tới mọi SDK.
 // Rollback = đặt weight về baseline_percentage → có hiệu lực gần như tức thì,
 // không cần rolling update, không chờ pod khởi động lại.
@@ -4130,7 +4132,7 @@ Portal **không bao giờ** gọi thẳng Kubernetes. Nó ghi *ý định*; Serv
 | `PROMOTE` | Ghi intent `PROMOTE(100)` | Áp dụng 100% lên cluster (hoặc gọi `argo rollouts promote --full`), rồi `status = DONE` |
 | `ROLLBACK` | Ghi intent `ROLLBACK` | Đưa traffic về 0 (SERVICE_LEVEL) hoặc về `baseline_percentage` (FLAG_LEVEL), `status = FAILED`, `fail_reason = MANUAL` |
 
-**Khi hành động an toàn phụ thuộc vào service khác [v4]:** rollback FLAG_LEVEL là `PATCH` sang Service 2; nếu Service 2 chết thì v3 không có nhánh xử lý — hành động an toàn phụ thuộc vào availability của service khác. v4: executor retry với backoff trong tối đa `rollbackRetrySeconds` (mặc định 120); hết hạn ⇒ `status = FAILED`, `fail_reason = DEPENDENCY_DOWN`, ghi `RolloutEvent(DEPENDENCY_DOWN)`, phát alert `udp_rollback_blocked_total` (P1). Ngoài ra Service 3 giữ **kill-switch trực tiếp**: với quyền column-level chỉ trên `flag_targeting_rules.serve` và transaction đúng kỷ luật ADR-05 (khóa `Environment` → đổi `serve` → ghi outbox), Service 3 được phép ghi thẳng DB **chỉ trong nhánh DEPENDENCY_DOWN** — outbox + poll của các replica Service 2 còn sống (hoặc khi hồi phục) vẫn lan truyền đúng. Đây là ngoại lệ có chủ đích của quy tắc writer, ghi ở §1.2 và có test **I30** — bao gồm cả chiều ngược lại: khi Service 2 còn sống, `GRANT` mức cột phải chặn S3 sửa bất cứ thứ gì ngoài `serve`.
+**Khi hành động an toàn phụ thuộc vào service khác [v4]:** rollback FLAG_LEVEL là `PATCH` sang Service 2; nếu Service 2 chết thì v3 không có nhánh xử lý — hành động an toàn phụ thuộc vào availability của service khác. v4: executor retry với backoff trong tối đa `rollbackRetrySeconds` (mặc định 120); hết hạn ⇒ `status = FAILED`, `fail_reason = DEPENDENCY_DOWN`, ghi `RolloutEvent(DEPENDENCY_DOWN)`, phát alert `udp_rollback_blocked_total` (P1). Ngoài ra Service 3 giữ **kill-switch trực tiếp**: với quyền column-level chỉ trên `flag_targeting_rules.serve` và transaction đúng kỷ luật ADR-05 (khóa `Environment` → đổi `serve` → ghi outbox), Service 3 được phép ghi thẳng DB **chỉ trong nhánh DEPENDENCY_DOWN** — outbox + poll của các replica Service 2 còn sống (hoặc khi hồi phục) vẫn lan truyền đúng. Đây là ngoại lệ có chủ đích của quy tắc writer, ghi ở §1.2 và có test **I30** — bao gồm cả chiều ngược lại: khi Service 2 còn sống, `GRANT` mức cột phải chặn S3 sửa bất cứ thứ gì ngoài `serve`. **[v4.1] Hai việc kill-switch phải tự làm**, vì nó là writer DUY NHẤT đi vòng qua Service 2 — mà Service 2 làm hai việc này cho mọi đường ghi khác: (1) sắp `weights` theo `variantId` (§6.4 — sai thứ tự là đảo nhóm người dùng, vỡ I1); (2) ghi `change_type = 'rule.ramped'`, không phải một giá trị ngoài từ vựng §2.2. Ngày dựng kill-switch, trigger `trg_rule_serve_variants` phải thêm phép kiểm thứ tự — hôm nay chưa có writer nào đi vòng qua Service 2 nên chưa có gì để chặn.
 
 **Độ trễ và cách xử lý:** intent được xử lý ở vòng quét kế tiếp (≤ 5 giây, `LOOP_INTERVAL_MS`). Service 1 còn phát `NOTIFY rollout_intent` ngay sau khi ghi (qua `pg.Client` riêng trên `DATABASE_URL_DIRECT` — ADR-05); Service 3 `LISTEN` và đánh thức vòng lặp tức thì. Kênh polling vẫn giữ nguyên làm phương án dự phòng — nếu notification bị mất, hệ thống vẫn đúng, chỉ chậm hơn.
 
@@ -4919,7 +4921,7 @@ PATCH  /internal/flag-envs/:id                     [NEW] bật/tắt theo env
 PUT    /internal/flag-envs/:id/rules               [NEW] bulk + optimistic lock
 PATCH  /internal/rules/:ruleId                     [v4] PD Controller ramp serve.weights (C1).
                                                    BẮT BUỘC header If-Match: "<sessionId>:<version>";
-                                                   S2 giữ rollout_lock trên rule và trả 412
+                                                   S2 so với RolloutSession.version [v4.1] và trả 412
                                                    Precondition Failed nếu version đã cũ —
                                                    đây là chốt chặn worker tỉnh muộn (I17, I23)
 POST   /internal/rollouts/:sessionId/track         [NEW v4] S1 gọi khi tạo rollout FLAG_LEVEL:
@@ -4971,6 +4973,8 @@ interface ProblemDetails {
   code?: string;                 // MISSING_CAPABILITY | VERSION_MISMATCH | ...
   errors?: FieldError[];         // lỗi Zod theo từng trường
   suggestedAction?: SuggestedAction;
+  /** [v4.1] CHỈ với OPTIMISTIC_LOCK: bản mới nhất của resource để hiển thị diff (§8.4) */
+  current?: unknown;
   traceId: string;               // luôn có, để đối chiếu với log
 }
 ```
@@ -5151,6 +5155,11 @@ interface SdkConfigResponse {
    * [v4.1] Định nghĩa chính xác, vì I15c đòi Service 2 và SDK cho ra CÙNG TỪNG BIT:
    *
    *     configHash = sha256(canonicalJson({ flags, segments, trackedFlags }))
+   *
+   * `canonicalJson` [v4.1] là một phần của hợp đồng, vì SDK ở ngôn ngữ khác phải
+   * dựng lại đúng nó: khoá object sắp theo mã đơn vị UTF-16 (không `localeCompare`),
+   * chuỗi chuẩn hoá NFC, số tuần tự theo RFC 8785 (JCS) — tức thuật toán Number→String
+   * của ECMAScript. NaN, Infinity và bigint bị từ chối.
    *
    * Tức là băm CHÍNH payload này, trừ ba trường — không phải băm một "snapshot nội
    * bộ" nào khác. SDK chỉ có thứ nó nhận trên dây; bắt nó dựng lại một hình dạng
@@ -6764,6 +6773,7 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | Flag list chưa có full-text search ở tầng DB | `limit` + `search` đủ với quy mô hiện tại | PostgreSQL full-text search |
 | Đánh giá DX với mẫu thuận tiện n = 10–15 | Không thể tiếp cận nhóm developer chuyên nghiệp quy mô lớn | Khảo sát diện rộng, kiểm định thống kê |
 | Độ trễ lan truyền cấu hình 500ms khi không có `NOTIFY` (ADR-05) | Đổi lấy khả năng triển khai ở mọi nhà cung cấp; vẫn dưới ngưỡng người dùng cảm nhận | Rút ngắn chu kỳ poll, hoặc thay `ChangeFeed` bằng Redis Streams khi E9 cho thấy cần |
+| **[v4.1]** Thêm một `change_type` (như `rule.ramped`) không tương thích ngược với replica đang chạy | Replica phiên bản cũ gặp giá trị lạ sẽ rơi về snapshot — vẫn đúng, chỉ chậm hơn một vòng poll, đúng lời hứa "tầng 2 không thể làm hỏng trạng thái" của ADR-05; sau 3 lần là ngắt mạch tầng 2 của environment đó 5 phút | Triển khai **replica (bên đọc) trước, writer sau**; mỗi lần thêm `change_type` đều phải theo thứ tự này |
 | Chuyển giao chậm tối đa 60 giây khi worker chết (lease) | Đánh đổi cố hữu của lease so với advisory lock | Rút ngắn lease và tăng tần suất gia hạn |
 | Polling nền chạy liên tục kể cả khi hệ thống nhàn rỗi | Chi phí truy vấn không đáng kể, nhưng database không bao giờ ngủ | Chu kỳ poll thích ứng: giãn ra khi không có thay đổi |
 | `ConfigChangeLog` giữ 7 ngày | Đủ cho mọi kịch bản replica offline hợp lý | Tăng thời gian giữ, hoặc chuyển sang lưu trữ lạnh |

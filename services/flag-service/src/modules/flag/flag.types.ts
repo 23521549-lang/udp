@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FLAG_TYPES, FLAG_VALUE_SCHEMAS } from "@udp/shared-types";
 import type { FlagLifecycleStatus, FlagType } from "@udp/db";
 
 /**
@@ -30,7 +31,8 @@ export const createFlagSchema = z
   .object({
     projectId: z.string().uuid(),
     key: flagKey,
-    flagType: z.enum(["BOOLEAN", "STRING", "NUMBER", "JSON"]),
+    /** Một danh sách cho cả hệ thống — chốt với enum Prisma ở design-lint */
+    flagType: z.enum(FLAG_TYPES),
     /**
      * TUỲ CHỌN với `BOOLEAN`: §2.2 nói flag boolean tự sinh hai variant `on` và
      * `off`. Bắt người gọi khai lại hai thứ đó là mời họ khai sai.
@@ -59,6 +61,21 @@ export const createFlagSchema = z
         path: ["variants"],
         message: "Key variant bị trùng",
       });
+    }
+
+    /**
+     * Giá trị phải khớp kiểu flag (§2.2). Thiếu chốt này thì flag `STRING` nhận được
+     * variant mang số, và lỗi chỉ lộ ra ở SDK của khách dưới dạng `TYPE_MISMATCH` —
+     * xa khỏi chỗ gây ra nó, và sau khi nó đã được phục vụ cho mọi người dùng.
+     */
+    for (const [i, v] of (data.variants ?? []).entries()) {
+      if (!FLAG_VALUE_SCHEMAS[data.flagType].safeParse(v.value).success) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["variants", i, "value"],
+          message: `Giá trị không khớp kiểu flag ${data.flagType}`,
+        });
+      }
     }
 
     if (

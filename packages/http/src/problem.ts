@@ -51,6 +51,8 @@ export interface BuildProblemInput {
   suggestedAction?: ProblemDetails["suggestedAction"];
   /** Dùng cho lỗi giao thức không có mã nghiệp vụ, vd "not-found", "internal" */
   typeSlug?: string;
+  /** Chỉ với `OPTIMISTIC_LOCK`: bản mới nhất để hiển thị diff (§8.4) */
+  current?: unknown;
 }
 
 /**
@@ -70,6 +72,7 @@ export function buildProblem({
   errors,
   suggestedAction,
   typeSlug = "about:blank",
+  current,
 }: BuildProblemInput): ProblemDetails {
   const resolvedTitle = title ?? (code ? ERROR_CATALOG[code].title : "Error");
 
@@ -82,6 +85,7 @@ export function buildProblem({
     ...(code === undefined ? {} : { code }),
     ...(errors === undefined ? {} : { errors }),
     ...(suggestedAction === undefined ? {} : { suggestedAction }),
+    ...(current === undefined ? {} : { current }),
     traceId: traceIdOf(req),
   };
 }

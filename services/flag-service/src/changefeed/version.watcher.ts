@@ -213,8 +213,8 @@ export function createVersionWatcher({
    *    đúng là thứ §1.4 thêm jitter để phá.
    * 2. **Chồng vòng.** `setInterval` bắn bất kể vòng trước xong chưa. Khi
    *    database chậm, các vòng chồng lên nhau và cùng rút từ pool 5 khe — chính
-   *    là đường cạn pool, mà `P2024` lại không có trong bảng ánh xạ lỗi nên
-   *    `/internal/flags` sẽ trả 500. Lên lịch ở `finally` làm hình dạng đó không
+   *    là đường cạn pool: `$transaction` của `/internal/flags` hết `maxWait` và
+   *    người ghi nhận 503. Lên lịch ở `finally` làm hình dạng đó không
    *    tồn tại.
    *
    * `unref()` để vòng lặp không giữ tiến trình sống: nó là công việc nền, không

@@ -311,6 +311,11 @@ export interface ProblemDetails {
   code?: ErrorCode | undefined;
   errors?: FieldError[] | undefined;
   suggestedAction?: SuggestedAction | undefined;
+  /**
+   * Trường mở rộng của RFC 9457, CHỈ có với `OPTIMISTIC_LOCK`: bản mới nhất của
+   * resource để Portal hiển thị diff (§8.4 "409 Conflict + bản mới nhất").
+   */
+  current?: unknown;
   /** Luôn có, để đối chiếu với log. Đây là thứ người dùng đọc cho support */
   traceId: string;
 }

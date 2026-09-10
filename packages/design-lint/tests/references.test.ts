@@ -146,6 +146,22 @@ describe("A5 — con số tài liệu tự tuyên bố phải khớp thực tế
     );
   });
 
+  it("từ vựng change_type khớp CONFIG_CHANGE_TYPES — đủ và đúng từng giá trị", async () => {
+    /**
+     * So TẬP, không chỉ số lượng như phép kiểm mã lỗi ở trên: đổi tên một giá
+     * trị mà giữ nguyên số lượng vẫn là trôi. Phải có chốt này thì mới thêm được
+     * `rule.ramped` mà không cài nợ — trước đó §2.2 và union trong code là hai danh
+     * sách không gì so với nhau, đúng hình dạng của lỗi PAUSED ở v3.
+     */
+    const { CONFIG_CHANGE_TYPES } =
+      await import("@udp/shared-types/change-feed");
+    const row = readDesignDoc().find((l) => l.startsWith("| change_type"));
+    expect(row, "không tìm thấy dòng change_type ở §2.2").toBeDefined();
+
+    const documented = distinct((row ?? "").matchAll(/`([a-z]+\.[a-z]+)`/g));
+    expect(documented).toEqual(new Set(CONFIG_CHANGE_TYPES));
+  });
+
   it("số domain khớp DOMAIN_CATALOG_SEED", async () => {
     const { DOMAIN_CATALOG_SEED } = await import("@udp/config");
     expect(DOMAIN_CATALOG_SEED.length).toBe(

@@ -35,6 +35,7 @@ export type AppErrorKind =
   | "FORBIDDEN"
   | "NOT_FOUND"
   | "CONFLICT"
+  | "PRECONDITION_FAILED"
   | "RATE_LIMITED"
   | "INTERNAL";
 
@@ -83,7 +84,6 @@ export class NotFoundError extends AppError {
   readonly kind = "NOT_FOUND" as const;
 }
 
-/** Dùng cho optimistic lock — xem §8.4, khi hai người cùng sửa một flag */
 /**
  * 422 — request đọc hiểu được nhưng sai về mặt ngữ nghĩa.
  *
@@ -97,7 +97,52 @@ export class UnprocessableError extends AppError {
   readonly kind = "VALIDATION_FAILED" as const;
 }
 
+/**
+ * 409 — xung đột trạng thái: request đúng, nhưng trạng thái hiện tại không cho phép.
+ *
+ * Optimistic lock có lớp riêng — `OptimisticLockError` bên dưới — vì nó phải mang
+ * theo bản mới nhất. (Chú thích "dùng cho optimistic lock" từng nằm lạc phía trên
+ * `UnprocessableError`.)
+ */
 export class ConflictError extends AppError {
   readonly statusCode = 409;
   readonly kind = "CONFLICT" as const;
+}
+
+/**
+ * 409 `OPTIMISTIC_LOCK` — người khác đã lưu trước, KÈM bản mới nhất (§8.4).
+ *
+ * §8.4 nói đúng chữ "409 Conflict + bản mới nhất để hiển thị diff": người dùng cần
+ * thấy người kia đã lưu GÌ để quyết định, không chỉ biết mình đã thua. Trước lớp này,
+ * bản mới nhất được nhét vào `details` của một `ConflictError` — mà `details` chỉ đi vào
+ * log, không bao giờ lên dây. Câu chú thích "trả 409 kèm bản mới nhất" vì thế đã
+ * không đúng từ Plan #10.
+ *
+ * `current` là một trường RIÊNG, không phải `details`: `details` có thể chứa bất cứ
+ * gì người ném muốn ghi log, còn `current` là đúng bản ghi mà người gọi đang sửa —
+ * thứ duy nhất vừa an toàn vừa có nghĩa để gửi lại cho họ.
+ */
+export class OptimisticLockError extends ConflictError {
+  constructor(
+    message: string,
+    readonly current: unknown,
+  ) {
+    super(message, undefined, "OPTIMISTIC_LOCK");
+  }
+}
+
+/**
+ * 412 — fencing token đã cũ (I23).
+ *
+ * Tách khỏi `ConflictError` (409) vì hai thứ khác nhau đúng ở chỗ người gọi cần
+ * biết: 409 `OPTIMISTIC_LOCK` bảo "tải lại rồi thử lại", còn 412 bảo "một worker
+ * khác đã thay mặt anh — DỪNG". Catalog khai mã này `retryable: false`,
+ * `fixableBy: "nobody"`: worker tỉnh muộn mà thử lại là ghi đè đúng thứ fencing
+ * sinh ra để bảo vệ. §7.1 xử lý nó bằng đúng một dòng `return`.
+ *
+ * Luôn ném kèm `problemCode: "PRECONDITION_FAILED"` để `title` lấy từ catalog.
+ */
+export class PreconditionFailedError extends AppError {
+  readonly statusCode = 412;
+  readonly kind = "PRECONDITION_FAILED" as const;
 }

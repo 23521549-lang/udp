@@ -1,5 +1,6 @@
 import type { Prisma } from "./generated/prisma/client.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
+import type { ConfigChangeType } from "@udp/shared-types/change-feed";
 
 /**
  * Kỷ luật ghi của ADR-05 — nơi DUY NHẤT được tăng `config_version`.
@@ -16,20 +17,12 @@ import type { PrismaClient } from "./generated/prisma/client.js";
  */
 
 /**
- * Từ vựng ĐÓNG của `ConfigChangeLog.change_type` (§2.2).
- *
- * Cột là `VARCHAR(50)` chứ không phải enum của Postgres, nên database không
- * chặn được giá trị lạ. Union này là chốt chặn duy nhất, và nó ở tầng kiểu.
+ * Từ vựng ĐÓNG của `ConfigChangeLog.change_type` (§2.2) — nay là danh sách CHẠY
+ * ĐƯỢC trong `@udp/shared-types/change-feed`, để `design-lint` so được nó với tài
+ * liệu. Union cũ ở đây chỉ tồn tại lúc biên dịch nên không gì so được nó với §2.2.
+ * Re-export ở đây để API công khai của `@udp/db` giữ nguyên.
  */
-export type ConfigChangeType =
-  | "flag.created"
-  | "flag.updated"
-  | "flag.archived"
-  | "rule.replaced"
-  | "envconfig.toggled"
-  | "variant.updated"
-  | "segment.updated"
-  | "sdkkey.revoked";
+export type { ConfigChangeType };
 
 export interface OutboxWrite<T> {
   /** Mọi environment bị ảnh hưởng. Tạo flag mới chạm TẤT CẢ environment của project. */
@@ -104,6 +97,21 @@ export async function writeWithOutbox<T>(
   client: PrismaClient,
   write: OutboxWrite<T>,
 ): Promise<T> {
+  /**
+   * Danh sách RỖNG là LỖI LẬP TRÌNH, không phải "không có gì để làm".
+   *
+   * Không có chốt này, `mutate` vẫn chạy — nhưng không khoá environment nào,
+   * không tăng version nào, không ghi dòng outbox nào. Tức là một lần ghi lọt
+   * hoàn toàn khỏi ADR-05: thay đổi có thật trong database mà không replica nào
+   * được báo, và `config_hash` mô tả một trạng thái đã không còn đúng.
+   */
+  if (write.environmentIds.length === 0) {
+    throw new Error(
+      "writeWithOutbox gọi với danh sách environment rỗng — mọi thay đổi cấu " +
+        "hình phải chạm ít nhất một environment, nếu không nó lọt khỏi ADR-05",
+    );
+  }
+
   /**
    * Khoá theo THỨ TỰ TẤT ĐỊNH.
    *

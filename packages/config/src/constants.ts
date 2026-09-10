@@ -214,6 +214,42 @@ export const ROLLOUT_LEASE = {
 } as const;
 
 /**
+ * Status mà một `RolloutSession` còn "sống" — vị từ DUY NHẤT, dùng ở mọi nơi.
+ *
+ * Đúng tập của truy vấn giành lease (§7.1) và của hai partial index trên
+ * `rollout_sessions` (§2.2). Ba giá trị, không phải hai, vì mỗi giá trị đã từng là một
+ * lỗi thật:
+ *
+ *   - `PENDING`: bước ramp ĐẦU TIÊN gửi PATCH sang Service 2 lúc session còn
+ *     `PENDING` — `start()` áp bậc đầu rồi mới đổi status (§7.7). Thiếu nó thì
+ *     rollout không bao giờ bắt đầu được.
+ *   - `PAUSED`: v3 để truy vấn claim chỉ lấy `PENDING, IN_PROGRESS`, nên session
+ *     `PAUSED` không bao giờ được claim và intent RESUME/ROLLBACK trên nó không
+ *     bao giờ chạy (§7.1, bảng vá lỗi). Service 2 kiểm thiếu `PAUSED` là cài lại
+ *     đúng lỗi đó ở phía bên kia: rollback một rollout đang tạm dừng bị chặn.
+ *
+ * Một danh sách, không phải hai: lỗi v3 sinh ra đúng từ hai danh sách trôi khỏi
+ * nhau. Ba chỗ SQL kia không import được hằng số TypeScript, nên chú thích này là
+ * nơi trỏ tới chúng.
+ */
+/**
+ * Trần số rule của MỘT env-config trong một lời `PUT .../rules`.
+ *
+ * Không có trong thiết kế — là lựa chọn kỹ thuật, và lý do là phép đo: mỗi rule đổi
+ * tốn một lượt đi về (~42ms tới Supabase) trong lúc ĐANG GIỮ khoá environment, và khoá
+ * đó chặn luôn PATCH ramp của Service 3. Không có trần thì một request mười nghìn
+ * rule giữ khoá tới hết ngân sách 20 giây, rồi chết bằng `P2028`. 100 rule là ~4 giây
+ * trong ca xấu nhất — dư cho mọi cấu hình thật, còn xa ngân sách.
+ */
+export const MAX_RULES_PER_ENV_CONFIG = 100;
+
+export const ACTIVE_ROLLOUT_STATUSES = [
+  "PENDING",
+  "IN_PROGRESS",
+  "PAUSED",
+] as const;
+
+/**
  * Lease của ProvisioningJob — KHÁC ROLLOUT_LEASE, và khác có chủ đích (§2.2).
  *
  * Một bước provisioning gọi API cloud có thể mất vài phút (tạo cluster, chờ

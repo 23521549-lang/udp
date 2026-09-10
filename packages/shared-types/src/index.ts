@@ -45,8 +45,23 @@ export type {
   ResolutionReason,
 } from "./evaluation.js";
 export {
+  canonicalizeServe,
+  distributionWeightsDbSchema,
   flagServeDbSchema,
   flagServeUnion,
   flagServeWireSchema,
   flagServeWireUnion,
 } from "./evaluation.js";
+
+export type { ConfigChangeType } from "./change-feed.js";
+
+export { FLAG_TYPES, FLAG_VALUE_SCHEMAS } from "./flag-value.js";
+
+export type { RuleType } from "./condition.js";
+export {
+  ATTRIBUTE_OPERATORS,
+  conditionIssue,
+  conditionSchemas,
+  RULE_TYPES,
+} from "./condition.js";
+export { CONFIG_CHANGE_TYPES } from "./change-feed.js";

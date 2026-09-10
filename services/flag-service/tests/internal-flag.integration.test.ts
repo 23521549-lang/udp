@@ -4,6 +4,7 @@ import { createPrismaClient } from "@udp/db";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { stableOwner } from "./helpers/fixture.js";
 
 /**
  * `/internal/flags` qua HTTP thật.
@@ -34,7 +35,7 @@ let envIds: string[];
 let actorId: string;
 
 beforeAll(async () => {
-  const owner = await admin.user.findFirstOrThrow({ select: { id: true } });
+  const owner = await stableOwner(admin);
   actorId = owner.id;
 
   const suffix = randomUUID().slice(0, 8);
@@ -236,6 +237,8 @@ describe("sửa flag — optimistic lock", () => {
       .send({ lastKnownUpdatedAt: stale, description: "sửa muộn" })
       .expect(409);
     expect(conflict.body.code).toBe("OPTIMISTIC_LOCK");
+    // §8.4: kèm bản mới nhất để hiển thị diff — trước đây nó mất dọc đường
+    expect(conflict.body.current.id).toBe(flagId);
 
     const fresh = await admin.featureFlag.findUniqueOrThrow({
       where: { id: flagId },
@@ -258,5 +261,54 @@ describe("sửa flag — optimistic lock", () => {
       .set("X-Internal-Secret", SECRET)
       .send({ lastKnownUpdatedAt: new Date().toISOString() })
       .expect(400);
+  });
+});
+
+describe("giá trị variant phải khớp kiểu flag (§2.2)", () => {
+  it("flag STRING mang variant giá trị số ⇒ 400, không phải một lỗi TYPE_MISMATCH ở SDK sau này", async () => {
+    await post(
+      newFlag({
+        flagType: "STRING",
+        variants: [
+          { key: "a", value: "x" },
+          { key: "b", value: 42 },
+        ],
+      }),
+    ).expect(400);
+  });
+
+  it("flag JSON mang variant là mảng ⇒ 400 — JSON là object (resolveObjectValue)", async () => {
+    await post(
+      newFlag({
+        flagType: "JSON",
+        variants: [
+          { key: "a", value: { theme: "dark" } },
+          { key: "b", value: ["không", "phải", "object"] },
+        ],
+      }),
+    ).expect(400);
+  });
+
+  it("flag NUMBER mang giá trị thập phân ⇒ 201, và config_hash băm được (RFC 8785)", async () => {
+    /**
+     * Trước v4.1 đây là 500: `canonicalJson` từ chối mọi số không nguyên, và nó chạy
+     * BÊN TRONG transaction ghi (bước 3 của ADR-05) — nên không tạo được flag giá
+     * hoặc tỉ lệ nào. 201 ở đây chứng minh cả chuỗi: validate, ghi, băm, outbox.
+     */
+    await post(
+      newFlag({
+        flagType: "NUMBER",
+        variants: [
+          { key: "low", value: 0.15 },
+          { key: "high", value: 0.3 },
+        ],
+      }),
+    ).expect(201);
+
+    const rows = await admin.environment.findMany({
+      where: { id: { in: envIds } },
+      select: { configHash: true },
+    });
+    for (const row of rows) expect(row.configHash).toMatch(/^[0-9a-f]{64}$/);
   });
 });

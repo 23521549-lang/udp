@@ -46,7 +46,7 @@ export interface ChangeFeed {
    * là RTT chứ không phải công việc), nên cách thứ hai tốn gấp N lần mà không
    * đổi lại gì. Với pool 5 khe và chu kỳ 500ms, N truy vấn mỗi vòng làm cạn pool
    * ở khoảng N = 48 environment — và cái cạn cùng pool đó là đường ghi
-   * `/internal/flags`, vốn ném `P2024` mà bảng ánh xạ lỗi chưa biết, tức là 500.
+   * `/internal/flags`: `$transaction` hết `maxWait` sẽ ném `P2028` và người ghi nhận 503.
    */
   statesOf(
     environmentIds: readonly string[],

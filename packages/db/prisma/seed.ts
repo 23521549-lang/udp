@@ -12,6 +12,7 @@ import {
   TOTAL_BUCKETS,
 } from "@udp/config";
 import {
+  canonicalizeServe,
   flagServeDbSchema,
   type FlagServe,
 } from "@udp/shared-types/evaluation";
@@ -201,7 +202,11 @@ async function seedUsersAndProject() {
  * giữa chừng.
  */
 function checkedServe(serve: FlagServe): FlagServe {
-  const result = flagServeDbSchema.safeParse(serve);
+  /**
+   * Qua `canonicalizeServe` TRƯỚC khi validate: seed là một đường ghi `serve` như
+   * mọi đường khác, và thứ tự `weights` phải được ép ở tầng ghi (§6.4).
+   */
+  const result = flagServeDbSchema.safeParse(canonicalizeServe(serve));
   if (!result.success) {
     const reason = result.error.issues.map((i) => i.message).join("; ");
     throw new Error(`serve không hợp lệ (${JSON.stringify(serve)}): ${reason}`);

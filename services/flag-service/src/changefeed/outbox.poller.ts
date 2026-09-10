@@ -72,13 +72,14 @@ function flagOf(payload: Prisma.JsonValue): SnapshotEntry | null {
 /**
  * Áp MỘT dòng lên danh sách flag.
  *
- * Trả `null` cho `change_type` chưa biết — KHÔNG ném, và đây không phải chuyện
- * phong cách. `i30-killswitch.test.ts` ghi ra `change_type = 'kill_switch'`, một
- * giá trị không có trong `ConfigChangeType`, vì Service 3 ghi thẳng database
- * trong nhánh `DEPENDENCY_DOWN` (§7.6). Một `switch` vét cạn có `default: throw`
- * sẽ ném đúng trên dòng quan trọng nhất hệ thống — lúc kill-switch vừa được bật
- * vì Service 2 đang chết. Rơi về snapshot thì kill-switch vẫn tới nơi, chỉ chậm
- * hơn một vòng poll.
+ * `change_type` chưa biết trả `"unknown-change-type"` — KHÔNG ném, và đây không
+ * phải chuyện phong cách. Từ vựng §2.2 lớn dần (v4.1 thêm `rule.ramped`), và một
+ * replica chạy phiên bản cũ gặp giá trị mới phải rơi về snapshot chứ không chết.
+ * §16 bắt triển khai "replica trước, writer sau"; nhánh này là lưới an toàn khi
+ * thứ tự đó bị làm ngược. Service 3 cũng là writer của sổ này (kill-switch §7.6,
+ * ghi thẳng database lúc Service 2 đang chết) — một `switch` vét cạn có
+ * `default: throw` sẽ ném đúng lúc đó. Rơi về snapshot thì thay đổi vẫn tới nơi,
+ * chỉ chậm hơn một vòng.
  */
 function applyRecord(
   flags: readonly SnapshotEntry[],
@@ -87,7 +88,16 @@ function applyRecord(
   switch (record.changeType) {
     case "flag.created":
     case "flag.updated":
-    case "flag.archived": {
+    case "flag.archived":
+    /**
+     * Ba loại của đường ghi rule mang CÙNG hình dạng `{ flag: entry }` (§2.2):
+     * `SnapshotFlag` đã chứa cả `isEnabled` lẫn `rules[]`, nên thay entry theo
+     * `key` là đúng cho bật/tắt, cho thay danh sách rule, và cho ramp trọng số.
+     * Trường thêm như `rolloutSessionId` của `rule.ramped` được `flagOf` bỏ qua.
+     */
+    case "rule.replaced":
+    case "rule.ramped":
+    case "envconfig.toggled": {
       const flag = flagOf(record.payload);
       if (flag === null) return "malformed-payload";
       return [...flags.filter((f) => f.key !== flag.key), flag];
