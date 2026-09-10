@@ -86,6 +86,8 @@ export {
   sanitizeConnectionString,
 } from "./adapter.js";
 export { assertConnectedAs } from "./identity.js";
+export { writeWithOutbox } from "./outbox.js";
+export type { ConfigChangeType, OutboxWrite } from "./outbox.js";
 export { dbConstraintError, httpStatusOf, UDP_SQLSTATE } from "./errors.js";
 export type { DbConstraintError } from "./errors.js";
 export * from "./generated/prisma/client.js";

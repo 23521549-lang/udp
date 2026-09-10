@@ -10,3 +10,11 @@
 
 export { bucketOf, type BucketInput } from "./hash.js";
 export { pickVariant, type VariantPick } from "./distribution.js";
+export {
+  canonicalJson,
+  configHashOf,
+  normalizeSnapshot,
+  type SnapshotEntry,
+  type SnapshotFlag,
+  type SnapshotTombstone,
+} from "./snapshot.js";

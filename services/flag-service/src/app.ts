@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import helmet from "helmet";
 import { errorHandler, notFoundHandler, requestLogger } from "@udp/http";
+import { internalFlagRouter } from "./internal/flag.controller.js";
 
 /**
  * Ứng dụng của Service 2.
@@ -33,6 +34,13 @@ export function createApp(): Express {
   app.get("/healthz", (_req, res) => {
     res.json({ status: "ok" });
   });
+
+  /**
+   * `/internal/*` KHONG duoc phoi ra Internet — §9 noi ro. O tang ha tang, dieu
+   * do do NetworkPolicy va Ingress dam bao; o day chi co bi mat dung chung, la
+   * lop phong khi hai thu kia bi cau hinh sai.
+   */
+  app.use("/internal", internalFlagRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler); // PHẢI đăng ký cuối cùng
