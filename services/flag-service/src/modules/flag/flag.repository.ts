@@ -161,6 +161,13 @@ export async function snapshotOf(
               condition: true,
               serve: true,
             },
+            /**
+             * Thứ tự TẤT ĐỊNH ngay từ truy vấn, dù `normalizeSnapshot` cũng sắp
+             * lại. Postgres không bảo đảm thứ tự khi thiếu `ORDER BY`, và thứ tự
+             * nó trả về đổi sau mỗi lần UPDATE — nên để nguyên là mời một khác
+             * biệt không tất định vào đúng đầu vào của hàm băm.
+             */
+            orderBy: [{ priority: "asc" }, { id: "asc" }],
           },
         },
       },

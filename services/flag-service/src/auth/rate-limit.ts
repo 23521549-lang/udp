@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import rateLimit from "express-rate-limit";
 import { RATE_LIMIT } from "@udp/config";
-import { ipKey, rateLimitProblemHandler } from "@udp/http";
+import { rateLimitProblemHandler } from "@udp/http";
 
 /**
  * Giới hạn tần suất cho `/sdk/*` — theo KHOÁ, không theo IP (§3.2, §2.2).
@@ -43,30 +43,20 @@ const keyPrint = (req: Request): string =>
     .slice(0, 22);
 
 /**
- * Hai limiter chồng nhau, đúng như §2.2 khai — và một ghi chú phải đọc trước khi
- * đổi số.
+ * Hạn mức của SERVER key trên `/sdk/config` và `/sdk/stream` — 100/phút/khoá.
  *
- * Chú thích của hằng số nói `perKey` chặn "một khách hàng ngốn hết tài nguyên
- * chung", còn `perKeyIp` chặn "một máy đơn lẻ dùng key hợp lệ để dội". Với ý đó
- * thì hạn mức của `perKey` (cả khách hàng) phải LỚN hơn `perKeyIp` (một máy).
- * Con số hiện tại ngược lại: `perKey.max = 100` còn `perKeyIp.max = 600` trong
- * cùng cửa sổ 60 giây, nên `perKey` luôn chạm trước và `perKeyIp` không bao giờ
- * có tác dụng.
+ * CHỈ một limiter, và điều đó có chủ đích. §2.2 khai `perKeyIp` (600/phút) cho
+ * **CLIENT key trên OFREP**, một bề mặt khác với một loại khoá khác — không phải
+ * một trục thứ hai chồng lên endpoint này. Nối nó vào đây thì nó vừa sai chỗ vừa
+ * không bao giờ chạm tới, vì 600 luôn lớn hơn 100: một limiter chết mang hình
+ * dạng một biện pháp an ninh.
  *
- * Vẫn nối cả hai đúng như thiết kế khai, chứ KHÔNG tự hoán đổi hai con số: giới
- * hạn hiệu dụng là 100/phút/khoá — an toàn, chỉ là chặt hơn ý định. Đây là chỗ
- * cần một quyết định về thiết kế, không phải một lần sửa lặng lẽ trong code.
+ * Nó sẽ được dựng cùng `ofrep/ofrep.controller.ts`, nơi trục IP là bắt buộc chứ
+ * không phải bổ sung — khoá CLIENT nằm trong trình duyệt nên ai cũng đọc được.
  */
 export const sdkPerKeyLimiter: RequestHandler = rateLimit({
   ...shared,
   windowMs: RATE_LIMIT.sdk.perKey.windowMs,
   limit: RATE_LIMIT.sdk.perKey.max,
   keyGenerator: keyPrint,
-});
-
-export const sdkPerKeyIpLimiter: RequestHandler = rateLimit({
-  ...shared,
-  windowMs: RATE_LIMIT.sdk.perKeyIp.windowMs,
-  limit: RATE_LIMIT.sdk.perKeyIp.max,
-  keyGenerator: (req) => `${keyPrint(req)}|${ipKey(req.ip ?? "")}`,
 });

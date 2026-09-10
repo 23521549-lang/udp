@@ -180,12 +180,35 @@ describe("tạo flag", () => {
 
     expect(res.body.flag.id).toBeTruthy();
 
-    const log = await admin.configChangeLog.findFirst({
-      where: { environmentId: { in: envIds }, changeType: "flag.created" },
-      orderBy: { createdAt: "desc" },
-      select: { actorUserId: true },
+    /**
+     * Tìm dòng outbox bằng `(environmentId, configVersion)`, KHÔNG bằng
+     * `orderBy: createdAt desc`.
+     *
+     * `created_at` khai `@default(now())` nhưng Prisma sinh giá trị đó ở phía
+     * CLIENT và gửi xuống như bind parameter — `DEFAULT CURRENT_TIMESTAMP` của
+     * cột không bao giờ chạy. Nên "mới nhất" theo cột đó là "theo đồng hồ của
+     * tiến trình đã ghi", mà nhiều replica thì nhiều đồng hồ. Cặp
+     * `(environmentId, configVersion)` là `@@unique`, nên nó chỉ đúng MỘT dòng
+     * và không phụ thuộc đồng hồ của ai cả.
+     */
+    const envId = envIds[0]!;
+    const current = await admin.environment.findUniqueOrThrow({
+      where: { id: envId },
+      select: { configVersion: true },
     });
-    expect(log?.actorUserId).toBe(actorId);
+
+    const log = await admin.configChangeLog.findUniqueOrThrow({
+      where: {
+        environmentId_configVersion: {
+          environmentId: envId,
+          configVersion: current.configVersion,
+        },
+      },
+      select: { actorUserId: true, changeType: true },
+    });
+
+    expect(log.changeType).toBe("flag.created");
+    expect(log.actorUserId).toBe(actorId);
   });
 
   it("trùng key trong cùng project thì 409 DUPLICATE_RESOURCE", async () => {

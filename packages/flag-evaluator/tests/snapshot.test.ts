@@ -129,6 +129,43 @@ describe("sắp xếp", () => {
     expect(normalized.trackedFlags).toEqual(["alpha", "zebra"]);
   });
 
+  it("hai rule HOÀ priority vẫn cho cùng một hash", () => {
+    /**
+     * `priority` KHÔNG có ràng buộc UNIQUE — `schema.prisma` chỉ khai
+     * `@@index([flagEnvConfigId, priority])`. Nên hai rule hoà nhau là hợp lệ, và
+     * lúc đó thứ tự mảng đến từ Postgres, vốn không được bảo đảm và đổi sau mỗi
+     * lần UPDATE.
+     *
+     * `Array.sort` của JavaScript ỔN ĐỊNH, nên sắp chỉ theo `priority` sẽ GIỮ
+     * NGUYÊN thứ tự đầu vào khi hoà — tức là giữ nguyên một thứ tự tuỳ ý. Service 2
+     * và SDK khi đó băm cùng một nội dung theo hai thứ tự khác nhau, `config_hash`
+     * lệch VĨNH VIỄN, và triệu chứng là ngắt mạch tầng 2 mỗi 5 phút mãi mãi —
+     * trong khi không có bug thật nào ở đâu cả.
+     */
+    const a = snapshot({
+      flags: [
+        flag({
+          rules: [
+            rule({ id: "r-a", priority: 5 }),
+            rule({ id: "r-b", priority: 5 }),
+          ],
+        }),
+      ],
+    });
+    const b = snapshot({
+      flags: [
+        flag({
+          rules: [
+            rule({ id: "r-b", priority: 5 }),
+            rule({ id: "r-a", priority: 5 }),
+          ],
+        }),
+      ],
+    });
+
+    expect(configHashOf(a)).toBe(configHashOf(b));
+  });
+
   it("KHÔNG sắp weights — thứ tự đó mang ngữ nghĩa", () => {
     /**
      * Hai cấu hình dưới đây gán người dùng vào hai variant khác nhau, nên chúng

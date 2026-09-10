@@ -121,6 +121,60 @@ export function createVersionWatcher({
     await fallbackToSnapshot(entry, "hash-mismatch-periodic");
   };
 
+  /**
+   * Xử lý MỘT mục cache trong một vòng.
+   *
+   * Tách khỏi vòng lặp để lỗi của một environment không thoát ra ngoài và cuốn
+   * theo những environment còn lại — xem chỗ bắt lỗi trong `tick`.
+   */
+  const handle = async (
+    entry: ConfigEntry,
+    state: EnvironmentState | undefined,
+  ): Promise<void> => {
+    /**
+     * Environment biến mất khỏi database — project đã bị xoá.
+     *
+     * Không nạp lại (sẽ ném), không xoá khỏi cache (guard SDK key đã từ chối mọi
+     * request tới nó trước khi chạm tới đây). Bỏ qua là đúng: mục cache chết sẽ
+     * tự hết khi tiến trình khởi động lại.
+     */
+    if (state === undefined) return;
+
+    if (state.configVersion === entry.configVersion) {
+      await verifyIfDue(entry, state);
+      return;
+    }
+
+    if (state.configVersion < entry.configVersion) {
+      await fallbackToSnapshot(entry, "version-lui");
+      return;
+    }
+
+    /**
+     * Còn delta chưa đọc.
+     *
+     * `recordFallback` CHỈ gọi khi tầng 2 đang bật và đang được phép chạy. Ở chế
+     * độ `snapshot`, lấy snapshot không phải "rơi tầng" mà là đường chính thức —
+     * đếm nó vào `changefeed_fallback_total` sẽ làm bộ đếm tăng ở mọi thay đổi
+     * flag trong cấu hình MẶC ĐỊNH, và biến một chỉ số cảnh báo thành tiếng ồn.
+     */
+    if (deltaMode && !breaker.isOpen(entry.environmentId)) {
+      const outcome = await pollDeltas(feed, entry, state);
+
+      if (outcome.kind === "applied") {
+        cache.put(outcome.entry);
+        breaker.recordSuccess(entry.environmentId);
+        return;
+      }
+
+      breaker.recordFallback(entry.environmentId);
+      await fallbackToSnapshot(entry, outcome.reason);
+      return;
+    }
+
+    await fallbackToSnapshot(entry, "snapshot-mode");
+  };
+
   const tick = async (): Promise<void> => {
     const tracked = cache.tracked();
     if (tracked.length === 0) return;
@@ -130,51 +184,24 @@ export function createVersionWatcher({
     ]);
 
     for (const entry of tracked) {
-      const state = states.get(entry.environmentId);
-
       /**
-       * Environment biến mất khỏi database — project đã bị xoá.
+       * Một environment hỏng KHÔNG được làm đói những environment còn lại.
        *
-       * Không nạp lại (sẽ ném), không xoá khỏi cache (guard SDK key sẽ từ chối
-       * mọi request tới nó trước khi chạm tới đây). Bỏ qua là đúng: mục cache
-       * chết sẽ tự hết khi tiến trình khởi động lại.
+       * `cache.reload` gọi `snapshotOf`, mà `snapshotOf` NÉM có chủ đích khi dữ
+       * liệu không dựng nổi hình dạng dây: variant mồ côi, `conditions` sai kiểu,
+       * flag không có variant mặc định. Không bắt ở đây thì lỗi ấy thoát khỏi cả
+       * vòng lặp — mọi environment đứng sau nó trong `Map` bị bỏ qua, và vòng kế
+       * tiếp lại gặp đúng nó trước, nên chúng đói VĨNH VIỄN. Một flag hỏng ở một
+       * project sẽ đóng băng cấu hình của mọi project khác trên replica này.
        */
-      if (state === undefined) continue;
-
-      if (state.configVersion === entry.configVersion) {
-        await verifyIfDue(entry, state);
-        continue;
+      try {
+        await handle(entry, states.get(entry.environmentId));
+      } catch (err) {
+        logger.error(
+          { err, environmentId: entry.environmentId },
+          "Bỏ qua environment này trong vòng poll — những environment khác vẫn chạy",
+        );
       }
-
-      if (state.configVersion < entry.configVersion) {
-        await fallbackToSnapshot(entry, "version-lui");
-        continue;
-      }
-
-      /**
-       * Còn delta chưa đọc.
-       *
-       * `recordFallback` CHỈ gọi khi tầng 2 đang bật và đang được phép chạy. Ở
-       * chế độ `snapshot`, lấy snapshot không phải "rơi tầng" mà là đường chính
-       * thức — đếm nó vào `changefeed_fallback_total` sẽ làm bộ đếm tăng ở mọi
-       * thay đổi flag trong cấu hình MẶC ĐỊNH, và biến một chỉ số cảnh báo thành
-       * tiếng ồn.
-       */
-      if (deltaMode && !breaker.isOpen(entry.environmentId)) {
-        const outcome = await pollDeltas(feed, entry, state);
-
-        if (outcome.kind === "applied") {
-          cache.put(outcome.entry);
-          breaker.recordSuccess(entry.environmentId);
-          continue;
-        }
-
-        breaker.recordFallback(entry.environmentId);
-        await fallbackToSnapshot(entry, outcome.reason);
-        continue;
-      }
-
-      await fallbackToSnapshot(entry, "snapshot-mode");
     }
   };
 

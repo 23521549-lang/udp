@@ -288,9 +288,24 @@ export const RATE_LIMIT = {
   auth: { windowMs: 15 * 60_000, max: 20 },
   general: { windowMs: 60_000, max: 300 },
   /**
-   * Giới hạn cho SDK (§2.2). Hai tầng vì hai mối lo khác nhau: `perKey` chặn một
-   * khách hàng ngốn hết tài nguyên chung, `perKeyIp` chặn một máy đơn lẻ dùng
-   * key hợp lệ để dội. Chỉ có `perKey` thì một IP hỏng làm cả tổ chức bị khoá.
+   * Giới hạn cho SDK (§2.2, bảng "Khác biệt giữa hai loại key").
+   *
+   * Hai hằng số này là hạn mức của HAI LOẠI KHOÁ trên HAI BỀ MẶT khác nhau —
+   * KHÔNG phải hai tầng chồng lên cùng một endpoint. Bản trước mô tả chúng như
+   * hai trục chồng nhau, và cách đọc đó dẫn thẳng tới việc nối cả hai limiter
+   * lên `/sdk/config`, nơi trục thứ hai vừa sai chỗ vừa không bao giờ chạm tới.
+   *
+   *   - `perKey` — **SERVER key**, trên `GET /sdk/config` và `GET /sdk/stream`.
+   *     100/phút là dư xa cho một backend: SDK giữ cache in-process và chỉ tải
+   *     lại khi version đổi, còn bản thân phép đánh giá chạy tại chỗ nên không
+   *     sinh request nào. Đếm theo KHOÁ chứ không theo IP vì SDK chạy sau NAT
+   *     hoặc trong cluster — trục IP ở đây gom cả một cụm vào một bucket.
+   *
+   *   - `perKeyIp` — **CLIENT key**, trên OFREP và `/sdk/stream?mode=notify`.
+   *     Cao hơn hẳn vì mỗi người dùng cuối là một request: một khoá CLIENT phục
+   *     vụ cả một website. Trục IP ở đây là BẮT BUỘC, không phải bổ sung — khoá
+   *     CLIENT nằm trong trình duyệt nên ai cũng đọc được, và không có trục IP
+   *     thì một người lấy được khoá sẽ khoá cả tổ chức bằng đúng một máy.
    */
   sdk: {
     perKey: { windowMs: 60_000, max: 100 },

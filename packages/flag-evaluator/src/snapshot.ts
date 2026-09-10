@@ -159,7 +159,8 @@ export const canonicalJson = (value: unknown): string =>
   JSON.stringify(canonical(value, "$"));
 
 /**
- * Sắp flag theo `key`, rule theo `priority` (§2.2 nói đúng hai điều này), segment
+ * Sắp flag theo `key`, rule theo `(priority, id)` (§2.2 nói `priority`; `id` là
+ * khóa phụ bắt buộc — xem chú thích tại chỗ sắp), segment
  * theo `id`, và `trackedFlags` theo thứ tự chuỗi.
  *
  * Bốn thứ đó sắp được vì thứ tự của chúng KHÔNG mang nghĩa — chúng là tập hợp,
@@ -179,7 +180,26 @@ export function normalizeSnapshot(snapshot: Snapshot): Snapshot {
           ? entry
           : {
               ...entry,
-              rules: [...entry.rules].sort((x, y) => x.priority - y.priority),
+              /**
+               * Sắp theo `(priority, id)` — KHÔNG chỉ theo `priority`.
+               *
+               * `priority` không có ràng buộc UNIQUE (`schema.prisma` chỉ có
+               * `@@index([flagEnvConfigId, priority])`), nên hai rule hoà nhau là
+               * hợp lệ. `Array.sort` của JavaScript ỔN ĐỊNH, nên khi hoà nó giữ
+               * nguyên thứ tự đầu vào — mà thứ tự đầu vào là thứ tự Postgres trả
+               * về, vốn không được bảo đảm và đổi sau mỗi lần UPDATE.
+               *
+               * Hệ quả nếu thiếu vế `id`: Service 2 và SDK băm cùng một nội dung
+               * theo hai thứ tự khác nhau ⇒ `config_hash` lệch VĨNH VIỄN ⇒ rơi
+               * tầng mỗi vòng ⇒ ngắt mạch 5 phút ⇒ lặp mãi. Không có bug thật nào
+               * ở đâu cả, và `changefeed_hash_mismatch_total` chỉ vào hư không.
+               *
+               * `id` dùng được làm khoá phụ vì §9 đưa nó lên dây — SDK có đúng
+               * trường đó để sắp y hệt.
+               */
+              rules: [...entry.rules].sort(
+                (x, y) => x.priority - y.priority || cmp(x.id, y.id),
+              ),
             },
       ),
     /**

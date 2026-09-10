@@ -5,7 +5,7 @@ import { configHashOf, type Snapshot } from "@udp/flag-evaluator";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { snapshotOf } from "../src/modules/flag/flag.repository.js";
+import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
 
 /**
  * Hợp đồng trên dây của ADR-05.
@@ -19,6 +19,13 @@ import { snapshotOf } from "../src/modules/flag/flag.repository.js";
  *    là SDK không bao giờ tính ra được con số đó.
  * 2. `payload` của outbox phải là DELTA, không phải thông báo. §2.2 khai nó là
  *    "delta đầy đủ để replica cập nhật cache mà không phải đọc lại toàn bộ".
+ *
+ * Snapshot đọc qua `prismaEntryLoader` — ĐÚNG đường production dùng — chứ không
+ * gọi thẳng `snapshotOf`. Gọi thẳng là hai truy vấn rời ở mức `ReadCommitted`,
+ * nên một lần ghi chen vào giữa cho ra snapshot trộn hai trạng thái và hash lệch
+ * với `config_hash`. Khẳng định một tính chất bằng một đường mà production không
+ * đi thì test vừa không chứng minh được điều cần, vừa chập chờn dưới tải song
+ * song — đã thấy đúng hình dạng đó khi chạy `pnpm -r test`.
  */
 
 const app = createApp();
@@ -29,6 +36,9 @@ const admin = createPrismaClient({
   max: 3,
   cacheKey: `__udp_prisma_wiretest_${randomUUID()}`,
 });
+
+/** Đọc `(version, hash, snapshot)` trong MỘT ảnh chụp — y như `/sdk/config` */
+const readEntry = prismaEntryLoader(admin);
 
 let projectId: string;
 let envId: string;
@@ -106,7 +116,7 @@ describe("snapshot mang ĐÚNG hình dạng dây (§9)", () => {
   it("không có trường nào ngoài tập §9 khai — kể cả id nội bộ", async () => {
     await createFlag(`shape-${randomUUID().slice(0, 8)}`).expect(201);
 
-    const snapshot = await snapshotOf(admin, envId);
+    const { snapshot } = await readEntry(envId);
     expect(snapshot.flags.length).toBeGreaterThan(0);
 
     for (const entry of snapshot.flags) {
@@ -132,7 +142,7 @@ describe("snapshot mang ĐÚNG hình dạng dây (§9)", () => {
   });
 
   it("snapshot có mặt `segments` và `trackedFlags` — hai trường đi vào hash", async () => {
-    const snapshot = await snapshotOf(admin, envId);
+    const { snapshot } = await readEntry(envId);
     expect(Array.isArray(snapshot.segments)).toBe(true);
     expect(Array.isArray(snapshot.trackedFlags)).toBe(true);
   });
@@ -142,12 +152,8 @@ describe("config_hash là hash của snapshot trên dây", () => {
   it("hash tính lại từ snapshot khớp con số S2 đã ghi", async () => {
     await createFlag(`hash-${randomUUID().slice(0, 8)}`).expect(201);
 
-    const row = await admin.environment.findUniqueOrThrow({
-      where: { id: envId },
-      select: { configHash: true },
-    });
-
-    expect(configHashOf(await snapshotOf(admin, envId))).toBe(row.configHash);
+    const entry = await readEntry(envId);
+    expect(configHashOf(entry.snapshot)).toBe(entry.configHash);
   });
 });
 
@@ -161,7 +167,7 @@ describe("payload của outbox là DELTA, không phải thông báo", () => {
      * payload. Hash tính ra sẽ lệch ở MỌI lần tạo flag, và ba lần lệch liên tiếp
      * là ngắt mạch tầng 2 vĩnh viễn.
      */
-    const before = await snapshotOf(admin, envId);
+    const before = (await readEntry(envId)).snapshot;
 
     const key = `delta-${randomUUID().slice(0, 8)}`;
     await createFlag(key).expect(201);

@@ -367,6 +367,66 @@ describe("chống bão snapshot", () => {
   });
 });
 
+describe("cô lập lỗi giữa các environment", () => {
+  it("một environment hỏng KHÔNG làm đói những environment còn lại", async () => {
+    /**
+     * `snapshotOf` ném có chủ đích khi dữ liệu không dựng nổi hình dạng dây —
+     * variant mồ côi, `conditions` sai kiểu, flag thiếu variant mặc định. Nếu
+     * `tick` không cô lập từng environment, lỗi đó thoát khỏi cả vòng lặp: mọi
+     * environment đứng SAU nó bị bỏ qua, và vòng kế tiếp lại gặp đúng nó trước.
+     * Chúng đói vĩnh viễn — một flag hỏng ở một project đóng băng cấu hình của
+     * mọi project khác trên replica này.
+     *
+     * `BAD` được nạp vào cache TRƯỚC nên nó đứng đầu thứ tự duyệt của `Map`.
+     */
+    const BAD = "22222222-2222-4222-8222-222222222222";
+    const GOOD = "33333333-3333-4333-8333-333333333333";
+
+    let broken = false;
+    const loaded: string[] = [];
+
+    const load: EntryLoader = (environmentId) => {
+      if (broken && environmentId === BAD) {
+        return Promise.reject(new Error('Flag "x": không có variant mặc định'));
+      }
+      loaded.push(environmentId);
+      return Promise.resolve({
+        environmentId,
+        environmentName: "dev",
+        configVersion: 1,
+        configHash: configHashOf(snap([])),
+        snapshot: snap([]),
+      });
+    };
+
+    const cache = createSnapshotCache(load);
+    await cache.get(BAD, "SERVER");
+    await cache.get(GOOD, "SERVER");
+    broken = true;
+
+    const watcher = createVersionWatcher({
+      feed: {
+        // Cả hai đều đã sang version 2 ⇒ cả hai cần nạp lại
+        statesOf: (ids) =>
+          Promise.resolve(
+            new Map(
+              ids.map((id) => [id, { configVersion: 2, configHash: "" }]),
+            ),
+          ),
+        deltasSince: () => Promise.resolve([]),
+      },
+      cache,
+      breaker: createCircuitBreaker(),
+      deltaMode: false,
+    });
+
+    await expect(watcher.tick()).resolves.toBeUndefined();
+
+    expect(loaded.filter((id) => id === GOOD)).toHaveLength(2);
+    expect(loaded.filter((id) => id === BAD)).toHaveLength(1);
+  });
+});
+
 describe("config_hash rỗng", () => {
   it("là 'CHƯA CÓ MỐC', không phải lệch", () => {
     /**

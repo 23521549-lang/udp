@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { asyncHandler } from "@udp/http";
-import { sdkPerKeyIpLimiter, sdkPerKeyLimiter } from "../auth/rate-limit.js";
+import { sdkPerKeyLimiter } from "../auth/rate-limit.js";
 import { requireSdkKey, sdkKeyOf } from "../auth/sdk-key.guard.js";
 import { configCache } from "../changefeed/index.js";
 import { CONFIG_CACHE_HEADERS, etagOf } from "./config-version.js";
@@ -23,7 +23,9 @@ export const sdkRouter: Router = Router();
  *
  * 1. **Rate limit trước.** Khoá đếm lấy từ header nên không cần database; đặt
  *    sau guard thì mỗi request bị chặn vẫn phải trả tiền cho một truy vấn ~52ms,
- *    tức là kẻ dội vẫn đạt được điều nó muốn.
+ *    tức là kẻ dội vẫn đạt được điều nó muốn. MỘT limiter thôi: 100/phút/khoá
+ *    là hạn mức của SERVER key theo §2.2, còn 600/phút/(khoá, IP) thuộc về CLIENT
+ *    key trên OFREP.
  * 2. **Guard, chỉ nhận `SERVER`.** §9 viết thẳng: "CHỈ cấp cho SERVER key.
  *    CLIENT key không bao giờ chạm endpoint này (ADR-03)". Khoá CLIENT dùng
  *    OFREP và nhận kết quả đã đánh giá — không rule nào rời server (I11, T1).
@@ -33,7 +35,6 @@ export const sdkRouter: Router = Router();
 sdkRouter.get(
   "/config",
   sdkPerKeyLimiter,
-  sdkPerKeyIpLimiter,
   requireSdkKey("SERVER"),
   asyncHandler(async (req, res) => {
     const { environmentId, keyType } = sdkKeyOf(req);
