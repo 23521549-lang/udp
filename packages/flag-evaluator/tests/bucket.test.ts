@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TOTAL_BUCKETS } from "@udp/config/constants";
-import type { FlagServe } from "@udp/shared-types";
+import type { FlagServeWire } from "@udp/shared-types";
 import { bucketOf, pickVariant } from "../src/index.js";
 
 /**
@@ -10,19 +10,27 @@ import { bucketOf, pickVariant } from "../src/index.js";
  * test trên hàng chục nghìn mẫu thay vì vài ca lẻ.
  */
 
-const A = "00000000-0000-4000-8000-00000000000a";
-const B = "00000000-0000-4000-8000-00000000000b";
-const C = "00000000-0000-4000-8000-00000000000c";
+/**
+ * Khoá variant, không phải id.
+ *
+ * `pickVariant` chạy trên hình dạng wire (§9): SDK không bao giờ thấy id nội bộ
+ * (ADR-03, I11). Phép chia bucket không đụng tới định danh variant — nó chỉ băm
+ * `(bucketSalt, flagKey, stickyValue)` — nên đổi từ UUID sang khoá không làm dịch
+ * một bucket nào; mọi con số dưới đây giữ nguyên ý nghĩa.
+ */
+const A = "variant-a";
+const B = "variant-b";
+const C = "variant-c";
 
-const dist = (...weights: [string, number][]): FlagServe => ({
+const dist = (...weights: [string, number][]): FlagServeWire => ({
   kind: "distribution",
-  weights: weights.map(([variantId, weight]) => ({ variantId, weight })),
+  weights: weights.map(([variantKey, weight]) => ({ variantKey, weight })),
 });
 
-/** Tập user nhận `variantId` với một cấu hình serve cho trước */
+/** Tập user nhận `variantKey` với một cấu hình serve cho trước */
 function audience(
-  serve: FlagServe,
-  variantId: string,
+  serve: FlagServeWire,
+  variantKey: string,
   count: number,
   salt = "salt-1",
 ): Set<string> {
@@ -34,7 +42,7 @@ function audience(
       flagKey: "dark-mode",
       bucketSalt: salt,
     });
-    if (pick.kind !== "no-sticky" && pick.variantId === variantId) {
+    if (pick.kind !== "no-sticky" && pick.variantKey === variantKey) {
       out.add(stickyValue);
     }
   }
@@ -184,9 +192,9 @@ describe("người dùng ẩn danh", () => {
   it("serve kiểu variant vẫn áp dụng cho người ẩn danh", () => {
     expect(
       pickVariant(
-        { kind: "variant", variantId: A },
+        { kind: "variant", variantKey: A },
         { stickyValue: undefined, flagKey: "f", bucketSalt: "s" },
       ),
-    ).toEqual({ kind: "variant", variantId: A });
+    ).toEqual({ kind: "variant", variantKey: A });
   });
 });

@@ -14,7 +14,10 @@ export {
   canonicalJson,
   configHashOf,
   normalizeSnapshot,
+  type Snapshot,
   type SnapshotEntry,
   type SnapshotFlag,
+  type SnapshotRule,
+  type SnapshotSegment,
   type SnapshotTombstone,
 } from "./snapshot.js";

@@ -39,8 +39,14 @@ export type {
   EvaluationContext,
   FlagMetadata,
   FlagServe,
+  FlagServeWire,
   ResolutionDetails,
   ResolutionErrorCode,
   ResolutionReason,
 } from "./evaluation.js";
-export { flagServeDbSchema, flagServeUnion } from "./evaluation.js";
+export {
+  flagServeDbSchema,
+  flagServeUnion,
+  flagServeWireSchema,
+  flagServeWireUnion,
+} from "./evaluation.js";

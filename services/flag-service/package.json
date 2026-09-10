@@ -18,6 +18,7 @@
     "@udp/http": "workspace:*",
     "@udp/shared-types": "workspace:*",
     "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
     "helmet": "^8.0.0",
     "zod": "^3.23.8"
   },

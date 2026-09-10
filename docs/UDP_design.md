@@ -1835,7 +1835,7 @@ src/
 ├── sdk/
 │   ├── sdk.controller.ts       ← GET /sdk/config, GET /sdk/stream, POST /sdk/stats
 │   ├── sse.manager.ts          ← kết nối SSE theo (envId, keyType, sdkKeyId); heartbeat 20s; đóng stream khi key bị thu hồi
-│   └── config-version.ts       ← ETag = (config_version, keyType)
+│   └── config-version.ts       ← ETag trên dây = config_version; (envId, keyType) là khóa CACHE
 ├── changefeed/                 ← ADR-05: ba tầng có tự kiểm, con trỏ config_version
 │   ├── change-feed.interface.ts     ← trừu tượng hóa để thay bằng Redis Streams nếu cần
 │   ├── version.watcher.ts           ← TẦNG 1: poll config_version + config_hash mỗi 500ms
@@ -4896,6 +4896,16 @@ SDK — app của developer gọi trực tiếp
 ────────────────────────────────────────────────────────────────
 GET    /sdk/config                     [UPDATED] thay cho /sdk/flags?projectId=
                                        Hỗ trợ If-None-Match → 304, trả ETag = config_version
+                                       [v4.1] ETag PHẢI có ngoặc kép: `ETag: "47"`. Thiếu
+                                       ngoặc thì client đúng chuẩn vẫn tự thêm vào
+                                       `If-None-Match`, nên 304 không bao giờ khớp và
+                                       polling fallback 30s tải full snapshot vĩnh viễn.
+                                       Kèm `Cache-Control: private, no-cache` và
+                                       `Vary: Authorization` — một URL DUY NHẤT phục vụ mọi
+                                       environment (env suy từ key), nên cache dùng chung có
+                                       thể trả cấu hình của env khác: đó là I14. Dùng
+                                       `no-cache` chứ không `no-store`, vì `no-store` cấm
+                                       luôn việc lưu — mà lưu chính là thứ làm 304 có nghĩa.
 GET    /sdk/stream?since=<version>     [UPDATED] SSE; Last-Event-ID; heartbeat 20s;
                                        tự đẩy full snapshot nếu since đã lỗi thời
 POST   /sdk/stats                      [NEW] SDK báo cáo eval count tổng hợp mỗi 60s
@@ -5135,7 +5145,25 @@ interface DomainValidationResponse {
  */
 interface SdkConfigResponse {
   configVersion: number;  // = ETag, con trỏ đọc của change feed (ADR-05)
-  configHash: string;     // [v4] sha256 snapshot chuẩn hóa — checksum NỘI DUNG
+  /**
+   * [v4] Checksum NỘI DUNG — `config_version` chỉ là số đếm.
+   *
+   * [v4.1] Định nghĩa chính xác, vì I15c đòi Service 2 và SDK cho ra CÙNG TỪNG BIT:
+   *
+   *     configHash = sha256(canonicalJson({ flags, segments, trackedFlags }))
+   *
+   * Tức là băm CHÍNH payload này, trừ ba trường — không phải băm một "snapshot nội
+   * bộ" nào khác. SDK chỉ có thứ nó nhận trên dây; bắt nó dựng lại một hình dạng
+   * khác rồi mong hai bên khớp là mong may mắn. Băm đúng thứ đã gửi thì khớp bằng
+   * cấu trúc.
+   *
+   * Vì sao loại đúng ba trường: `configVersion` và `configHash` tự tham chiếu; còn
+   * `environment` (tên) do Service 1 sở hữu, mà S1 KHÔNG có quyền ghi `config_hash`
+   * (§1.2 cấp `UPDATE` mọi cột TRỪ `config_version` và `config_hash`). Để tên env
+   * vào hash là tạo ra một trường mà một writer đổi được nhưng không cập nhật được
+   * checksum — lệch vĩnh viễn, và không writer nào sửa được.
+   */
+  configHash: string;
   environment: string;
   /** [v4] Flag đang có rollout: SDK gắn nhãn ff cho đúng những flag này (§6.6) */
   trackedFlags: string[];
@@ -5158,10 +5186,19 @@ interface SdkConfigResponse {
        * v3 chỉ có `variantKey` nên không biểu diễn được "10% người dùng ở VN",
        * và chia 3 variant bằng chuỗi rule cho ra 33/22/45 thay vì 33/33/34.
        * Đây cũng là trường mà C1 ramp: rollout FLAG_LEVEL đổi `weights`.
+       *
+       * [v4.1] `weights` là MẢNG, không phải `Record`. Thứ tự mang NGỮ NGHĨA:
+       * evaluator cộng dồn theo thứ tự để chia bucket, nên `[{A,10000},{B,90000}]`
+       * và `[{B,90000},{A,10000}]` gán mọi người dùng sang hai variant khác nhau.
+       * `Record` không mang được thứ tự đó; khóa dạng số còn bị mọi engine JS sắp
+       * lại theo số bất kể thứ tự chèn; và `canonicalJson` sắp khóa object. Ba thứ
+       * đó cộng lại làm hai cấu hình KHÁC hành vi ra CÙNG `config_hash` — đúng chỗ
+       * I15a sinh ra để bắt.
        */
       serve:
         | { kind: "variant"; variantKey: string }
-        | { kind: "distribution"; weights: Record<string, number> };  // tổng = 100000
+        | { kind: "distribution"; weights: { variantKey: string; weight: number }[] };
+                                                    // tổng weight = 100000
       bucketSalt: string;
       priority: number;
     }[];

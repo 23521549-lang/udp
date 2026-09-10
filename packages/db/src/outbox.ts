@@ -39,13 +39,28 @@ export interface OutboxWrite<T> {
   actorUserId?: string;
   /** Bước 2 — thay đổi nghiệp vụ thật */
   mutate: (tx: Prisma.TransactionClient) => Promise<T>;
-  /** Bước 3 — hash của snapshot SAU thay đổi, tính riêng cho từng environment */
-  hashOf: (
+  /**
+   * Bước 3 VÀ bước 4 — cả hai đều là hàm của trạng thái SAU thay đổi, ở một
+   * environment cụ thể.
+   *
+   * Vì sao một hàm chứ không phải hai: `config_hash` và `payload` cùng đọc đúng
+   * một snapshot. Tách đôi thì hoặc đọc snapshot hai lần dưới row-lock — mà
+   * `snapshotOf` là truy vấn nặng nhất trong transaction — hoặc bên tính delta
+   * không có snapshot để dựng delta từ đó, và sẽ ghi ra một thông báo "có gì đó
+   * đổi" thay vì một delta. Cột `payload` của §2.2 nói rõ nó là "delta đầy đủ để
+   * replica cập nhật cache mà không phải đọc lại toàn bộ"; một thông báo thì
+   * không làm được điều đó, và tầng 2 của ADR-05 sẽ trùng vai tầng 3.
+   *
+   * `configHash` do bên gọi tính, không phải `@udp/db` tính: package này giữ KỶ
+   * LUẬT TRANSACTION, còn "snapshot là gì" và "delta là gì" thuộc về service sở
+   * hữu nghiệp vụ đó. Đảo lại thì `@udp/db` phải phụ thuộc
+   * `@udp/flag-evaluator`, và Service 3 — writer thứ hai của đường này (§7.6) —
+   * kéo theo cả lõi đánh giá flag mà nó không dùng.
+   */
+  stateOf: (
     tx: Prisma.TransactionClient,
     environmentId: string,
-  ) => Promise<string>;
-  /** Delta ghi vào outbox, riêng cho từng environment */
-  payloadFor: (environmentId: string) => Prisma.InputJsonValue;
+  ) => Promise<{ configHash: string; delta: Prisma.InputJsonValue }>;
 }
 
 /**
@@ -116,7 +131,7 @@ export async function writeWithOutbox<T>(
 
     // ---- Bước 3 và 4 --------------------------------------------------------
     for (const { environmentId, configVersion } of stamped) {
-      const configHash = await write.hashOf(tx, environmentId);
+      const { configHash, delta } = await write.stateOf(tx, environmentId);
 
       await tx.environment.update({
         where: { id: environmentId },
@@ -128,7 +143,7 @@ export async function writeWithOutbox<T>(
           environmentId,
           configVersion,
           changeType: write.changeType,
-          payload: write.payloadFor(environmentId),
+          payload: delta,
           // Spread có điều kiện: với `exactOptionalPropertyTypes`, gán
           // `actorUserId: undefined` là lỗi biên dịch chứ không phải "bỏ trống".
           ...(write.actorUserId === undefined

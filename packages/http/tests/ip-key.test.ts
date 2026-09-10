@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ipKey } from "../src/core/http/middlewares/rate-limit.middleware.js";
+import { ipKey } from "../src/ip-key.js";
 
 /**
  * Gộp IPv6 về /64 — thứ dễ viết sai nhất trong cả middleware.

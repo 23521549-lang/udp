@@ -1,6 +1,10 @@
-import { configHashOf } from "@udp/flag-evaluator";
+import {
+  canonicalJson,
+  configHashOf,
+  type Snapshot,
+} from "@udp/flag-evaluator";
 import { ConflictError, NotFoundError } from "@udp/http";
-import { writeWithOutbox } from "@udp/db";
+import { writeWithOutbox, type Prisma } from "@udp/db";
 import { prisma } from "../../core/db.js";
 import * as repository from "./flag.repository.js";
 import type {
@@ -17,11 +21,59 @@ import type {
  * đã được `@udp/db` giữ, service chỉ nói *thay đổi gì* và *ở environment nào*.
  */
 
-const hashOf = async (
-  tx: Parameters<typeof repository.snapshotOf>[0],
-  environmentId: string,
-): Promise<string> =>
-  configHashOf(await repository.snapshotOf(tx, environmentId));
+/**
+ * Delta ghi vào outbox: TOÀN BỘ entry của flag bị ảnh hưởng, ở hình dạng dây.
+ *
+ * §2.2 khai `payload` là "delta đầy đủ để replica cập nhật cache mà không phải
+ * đọc lại toàn bộ". Bản trước ghi `{key, flagType}` cho `flag.created` và
+ * `{flagId, changed: [...]}` cho `flag.updated` — cả hai đều nói *cái gì đã
+ * đổi*, không nói *đổi thành gì*. Replica nhận chúng vẫn phải đọc lại toàn bộ,
+ * nên tầng 2 tốn thêm một vòng database mà không nhanh hơn tầng 1; và nó trùng
+ * vai tầng 3, vốn được ADR-05 khai rõ là "ĐÁNH THỨC vòng poll, không mang dữ
+ * liệu". Hai tầng không thể cùng một việc.
+ *
+ * Áp delta = thay entry cùng `key` trong cache. Phép đó idempotent và không phụ
+ * thuộc thứ tự giữa các flag — đúng thứ I15c cần để "áp N delta cho ra đúng
+ * snapshot tại cùng version".
+ *
+ * Đi qua `canonicalJson` rồi `JSON.parse` chứ không ép kiểu thẳng, vì hai lý do
+ * cộng lại: snapshot mang `unknown` ở đúng những chỗ ứng với cột JSONB nên
+ * không chứng minh được với TypeScript rằng nó là JSON, và `canonicalJson` từ
+ * chối đúng những giá trị `JSON.stringify` sẽ nuốt im lặng (`undefined`, số
+ * không nguyên, `bigint`). Giá phải trả là một lượt tuần tự hoá cho MỘT flag.
+ */
+function deltaOf(snapshot: Snapshot, flagKey: string): Prisma.InputJsonValue {
+  const flag = snapshot.flags.find((f) => f.key === flagKey);
+
+  if (flag === undefined) {
+    throw new Error(
+      `Không tìm thấy flag "${flagKey}" trong snapshot vừa dựng — mutate và ` +
+        `delta đang nói về hai thứ khác nhau`,
+    );
+  }
+
+  return JSON.parse(canonicalJson({ flag })) as Prisma.InputJsonValue;
+}
+
+/**
+ * Bước 3 và bước 4 của ADR-05, cả hai từ MỘT lần đọc snapshot.
+ *
+ * `snapshotOf` là truy vấn nặng nhất chạy dưới row-lock. Tính hash và dựng delta
+ * là hai phép chiếu của cùng một trạng thái, nên đọc hai lần là trả giá đôi cho
+ * cùng một thứ, ngay tại chỗ đắt nhất.
+ */
+const stateFor =
+  (flagKey: string) =>
+  async (
+    tx: Parameters<typeof repository.snapshotOf>[0],
+    environmentId: string,
+  ): Promise<{ configHash: string; delta: Prisma.InputJsonValue }> => {
+    const snapshot = await repository.snapshotOf(tx, environmentId);
+    return {
+      configHash: configHashOf(snapshot),
+      delta: deltaOf(snapshot, flagKey),
+    };
+  };
 
 /**
  * Tạo flag.
@@ -54,8 +106,7 @@ export async function create(
     mutate: async (tx) => {
       created = await repository.createFlag(tx, input, environmentIds);
     },
-    hashOf,
-    payloadFor: () => ({ key: input.key, flagType: input.flagType }),
+    stateOf: stateFor(input.key),
   });
 
   if (created === undefined) {
@@ -135,8 +186,7 @@ export async function update(
         },
       });
     },
-    hashOf,
-    payloadFor: () => ({ flagId, changed: Object.keys(input) }),
+    stateOf: stateFor(current.key),
   });
 
   if (updated === undefined)

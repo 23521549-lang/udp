@@ -105,11 +105,13 @@ describe("ADR-05 — thứ tự bốn bước của outbox writer", () => {
           },
         });
       },
-      hashOf: (_tx, environmentId) => {
+      stateOf: (_tx, environmentId) => {
         order.push(`hash:${environmentId.slice(0, 4)}`);
-        return Promise.resolve("a".repeat(64));
+        return Promise.resolve({
+          configHash: "a".repeat(64),
+          delta: { probe: true },
+        });
       },
-      payloadFor: () => ({ probe: true }),
     });
 
     // Điều duy nhất test này khẳng định về thứ tự, và là điều plan gốc làm sai:
@@ -132,8 +134,8 @@ describe("ADR-05 — thứ tự bốn bước của outbox writer", () => {
       environmentIds: envIds,
       changeType: "envconfig.toggled",
       mutate: () => Promise.resolve(),
-      hashOf: () => Promise.resolve(hash),
-      payloadFor: (environmentId) => ({ environmentId }),
+      stateOf: (_tx, environmentId) =>
+        Promise.resolve({ configHash: hash, delta: { environmentId } }),
     });
 
     const after = await prisma.environment.findMany({
@@ -166,8 +168,8 @@ describe("ADR-05 — thứ tự bốn bước của outbox writer", () => {
         environmentIds: envIds,
         changeType: "flag.updated",
         mutate: () => Promise.reject(new Error("hỏng giữa chừng")),
-        hashOf: () => Promise.resolve("c".repeat(64)),
-        payloadFor: () => ({}),
+        stateOf: () =>
+          Promise.resolve({ configHash: "c".repeat(64), delta: {} }),
       }),
     ).rejects.toThrow("hỏng giữa chừng");
 

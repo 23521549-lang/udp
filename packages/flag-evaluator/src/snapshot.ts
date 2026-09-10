@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { FlagServeWire } from "@udp/shared-types";
 
 /**
  * Chuẩn hoá snapshot và tính `config_hash` (§2.2, ADR-05).
@@ -14,23 +15,43 @@ import { createHash } from "node:crypto";
  * delta hỏng), và chỉ checksum nội dung bắt được.
  */
 
-/** Flag bình thường trong snapshot */
+/**
+ * Một rule trong snapshot — đúng hình dạng §9 gửi trên dây.
+ *
+ * `serve` là `FlagServeWire` chứ không phải `FlagServe`: bản DB mang `variantId`,
+ * và id nội bộ không rời server (ADR-03, I11).
+ */
+export interface SnapshotRule {
+  id: string;
+  /** "ALL" | "USER_BASED" | "ATTRIBUTE_BASED" | "SEGMENT" (§9) */
+  type: string;
+  condition: unknown;
+  serve: FlagServeWire;
+  bucketSalt: string;
+  priority: number;
+}
+
+/**
+ * Flag bình thường trong snapshot — ĐÚNG hình dạng §9 gửi trên dây.
+ *
+ * Vì sao hình dạng dây chứ không phải hình dạng thuận tay cho truy vấn: SDK chỉ
+ * có thứ nó NHẬN. Bắt nó dựng lại một hình dạng nội bộ nào khác rồi mong hai bên
+ * ra cùng một hash là mong may mắn — mà I15c nói "cùng từng bit". Bản trước mang
+ * `variants[].id`, `defaultVariantId` và `envDefaultVariantId`, ba trường không
+ * bao giờ xuất hiện trên dây, nên SDK không có cách nào tính ra con số S2 ghi.
+ *
+ * `variants` là bảng TRA (khóa → giá trị), không mang thứ tự, nên `canonicalJson`
+ * sắp khóa nó là an toàn. Khác hẳn `serve.weights` — xem `normalizeSnapshot`.
+ */
 export interface SnapshotFlag {
   key: string;
-  flagType: string;
-  stickinessAttribute: string;
-  defaultVariantId: string | null;
-  variants: { id: string; key: string; value: unknown }[];
+  /** Bốn giá trị của §9; để `string` vì union này đã sống ở enum Prisma */
+  type: string;
   isEnabled: boolean;
-  envDefaultVariantId: string | null;
-  rules: {
-    id: string;
-    ruleType: string;
-    priority: number;
-    bucketSalt: string;
-    condition: unknown;
-    serve: unknown;
-  }[];
+  stickinessAttribute: string;
+  variants: Record<string, unknown>;
+  defaultVariantKey: string;
+  rules: SnapshotRule[];
 }
 
 /**
@@ -48,6 +69,38 @@ export interface SnapshotTombstone {
 }
 
 export type SnapshotEntry = SnapshotFlag | SnapshotTombstone;
+
+/** Segment gắn theo PROJECT, không theo environment (§2.2) */
+export interface SnapshotSegment {
+  id: string;
+  conditions: unknown[];
+}
+
+/**
+ * Toàn bộ thứ được băm thành `config_hash` (§9, v4.1).
+ *
+ *     configHash = sha256(canonicalJson({ flags, segments, trackedFlags }))
+ *
+ * Đây là payload `/sdk/config` TRỪ ba trường, và ba trường bị loại mỗi cái một
+ * lý do riêng:
+ *
+ *   - `configVersion`, `configHash` — tự tham chiếu.
+ *   - `environment` (tên) — do Service 1 sở hữu, mà S1 KHÔNG có quyền ghi
+ *     `config_hash` (§1.2 cấp `UPDATE` mọi cột TRỪ `config_version` và
+ *     `config_hash`). Để nó vào hash là tạo ra một trường mà một writer đổi được
+ *     nhưng không cập nhật được checksum: lệch vĩnh viễn, không writer nào sửa
+ *     được, và triệu chứng là ngắt mạch tầng delta mỗi 5 phút mãi mãi.
+ *
+ * `segments` PHẢI có mặt: `segment.updated` là một `change_type` hợp lệ và một
+ * lần sửa segment đổi kết quả đánh giá. Thiếu nó thì checksum nội dung mù đúng
+ * một loại thay đổi — mà mù có chọn lọc còn tệ hơn không có checksum, vì nó tạo
+ * niềm tin sai.
+ */
+export interface Snapshot {
+  flags: SnapshotEntry[];
+  segments: SnapshotSegment[];
+  trackedFlags: string[];
+}
 
 /**
  * Dạng chuẩn của một giá trị bất kỳ, đệ quy.
@@ -106,28 +159,45 @@ export const canonicalJson = (value: unknown): string =>
   JSON.stringify(canonical(value, "$"));
 
 /**
- * Sắp flag theo `key` và rule theo `priority` (§2.2 nói đúng hai điều này).
+ * Sắp flag theo `key`, rule theo `priority` (§2.2 nói đúng hai điều này), segment
+ * theo `id`, và `trackedFlags` theo thứ tự chuỗi.
+ *
+ * Bốn thứ đó sắp được vì thứ tự của chúng KHÔNG mang nghĩa — chúng là tập hợp,
+ * và hai bên đọc từ hai truy vấn khác nhau thì thứ tự trả về không đáng tin.
  *
  * KHÔNG sắp `weights`. Thứ tự mảng đó mang ngữ nghĩa — đảo nó là gán mọi người
  * dùng sang variant khác — nên sắp ở đây sẽ làm hai cấu hình có hành vi khác
  * nhau ra cùng `config_hash`, tức I15a mù đúng chỗ nguy hiểm nhất. Thứ tự chuẩn
  * của `weights` phải được ép ở tầng GHI, không phải ở tầng băm.
  */
-export function normalizeSnapshot(entries: SnapshotEntry[]): SnapshotEntry[] {
-  return [...entries]
-    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
-    .map((entry) =>
-      "archived" in entry
-        ? entry
-        : {
-            ...entry,
-            rules: [...entry.rules].sort((x, y) => x.priority - y.priority),
-          },
-    );
+export function normalizeSnapshot(snapshot: Snapshot): Snapshot {
+  return {
+    flags: [...snapshot.flags]
+      .sort((a, b) => cmp(a.key, b.key))
+      .map((entry) =>
+        "archived" in entry
+          ? entry
+          : {
+              ...entry,
+              rules: [...entry.rules].sort((x, y) => x.priority - y.priority),
+            },
+      ),
+    /**
+     * Segment sắp theo `id`, không theo `name`: `name` sửa được, `id` thì không.
+     * Sắp theo một khóa đổi được nghĩa là đổi tên segment làm hash nhảy dù không
+     * có gì trong hành vi đánh giá thay đổi.
+     */
+    segments: [...snapshot.segments].sort((a, b) => cmp(a.id, b.id)),
+    /** Tập, nên thứ tự không mang nghĩa — sắp để hai bên không lệch vì thứ tự */
+    trackedFlags: [...snapshot.trackedFlags].sort(cmp),
+  };
 }
 
+/** So sánh theo mã đơn vị, cùng lý do với `canonical`: không dùng `localeCompare` */
+const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 /** SHA-256 hex của snapshot đã chuẩn hoá — vừa đúng 64 ký tự của `VARCHAR(64)` */
-export const configHashOf = (entries: SnapshotEntry[]): string =>
+export const configHashOf = (snapshot: Snapshot): string =>
   createHash("sha256")
-    .update(canonicalJson(normalizeSnapshot(entries)))
+    .update(canonicalJson(normalizeSnapshot(snapshot)))
     .digest("hex");

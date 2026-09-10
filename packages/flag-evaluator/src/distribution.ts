@@ -1,18 +1,29 @@
-import type { FlagServe } from "@udp/shared-types";
+import type { FlagServeWire } from "@udp/shared-types";
 import { bucketOf, type BucketInput } from "./hash.js";
 
 /**
  * Chọn variant từ `rule.serve` (§6.4).
+ *
+ * Trả `variantKey` chứ không phải `variantId`, vì hàm này chạy ở CẢ HAI phía:
+ * trong Service 2 cho đường OFREP, và trong SDK của khách cho local evaluation.
+ * SDK không bao giờ thấy id nội bộ (ADR-03, I11) nên id không dùng được làm ngôn
+ * ngữ chung; khóa cũng chính là thứ đi vào nhãn metrics `ff` của §6.6.
+ *
+ * Cho hai bên chạy đúng MỘT hàm này trên đúng MỘT hình dạng là cách I26 (local
+ * evaluation và OFREP cho cùng kết quả) đúng bằng cấu trúc, không phải bằng test.
  */
 export type VariantPick =
-  | { kind: "variant"; variantId: string }
-  | { kind: "distribution"; variantId: string }
+  | { kind: "variant"; variantKey: string }
+  | { kind: "distribution"; variantKey: string }
   /** Không có giá trị stickiness — người gọi phải bỏ qua rule này, xem dưới */
   | { kind: "no-sticky" };
 
-export function pickVariant(serve: FlagServe, input: BucketInput): VariantPick {
+export function pickVariant(
+  serve: FlagServeWire,
+  input: BucketInput,
+): VariantPick {
   if (serve.kind === "variant") {
-    return { kind: "variant", variantId: serve.variantId };
+    return { kind: "variant", variantKey: serve.variantKey };
   }
 
   /**
@@ -45,18 +56,22 @@ export function pickVariant(serve: FlagServe, input: BucketInput): VariantPick {
   for (const slice of serve.weights) {
     cumulative += slice.weight;
     if (bucket < cumulative) {
-      return { kind: "distribution", variantId: slice.variantId };
+      return { kind: "distribution", variantKey: slice.variantKey };
     }
   }
 
   /**
-   * Không tới được: `flagServeDbSchema` bắt buộc tổng weight bằng đúng
+   * Không tới được: `flagServeWireSchema` bắt buộc tổng weight bằng đúng
    * `TOTAL_BUCKETS`, mà `bucket` luôn nhỏ hơn con số đó. Ném thay vì trả một
    * variant tuỳ tiện — nếu dòng này chạy thì bất biến ở tầng ghi đã vỡ, và im
    * lặng phục vụ sai variant còn tệ hơn một lỗi rõ ràng.
+   *
+   * Đây cũng là lý do payload nhận từ mạng phải đi qua `flagServeWireSchema`
+   * trước khi tới đây: không kiểm ở biên thì dòng này là nơi lỗi lộ ra, mà nó
+   * lộ ra bên trong tiến trình của khách hàng.
    */
   throw new Error(
     `serve.weights tổng không đủ ${String(cumulative)} cho bucket ${String(bucket)} — ` +
-      `dữ liệu đã lọt qua flagServeDbSchema mà không đúng bất biến của nó`,
+      `dữ liệu đã lọt qua flagServeWireSchema mà không đúng bất biến của nó`,
   );
 }

@@ -71,13 +71,38 @@ export const flagServeUnion = z.discriminatedUnion("kind", [
  * để khoảng tích lũy chỉ *dịch* chứ không *đảo*; sắp lại là bốc lại nhóm người dùng
  * và làm vỡ bất biến **I1** một cách âm thầm.
  *
- * Hậu tố `Db` phân biệt với hình dạng **wire** ở §9, vốn dùng `variantKey` và
- * `Record<string, number>` — khác hẳn, và nhầm hai cái là ghi sai dữ liệu.
+ * Hậu tố `Db` phân biệt với hình dạng **wire** ở §9 (`flagServeWireSchema` bên
+ * dưới), vốn dùng `variantKey` thay `variantId` — nhầm hai cái là ghi sai dữ
+ * liệu. Cả hai đều giữ `weights` là MẢNG: §9 trước v4.1 khai
+ * `Record<string, number>`, đã sửa vì `Record` không mang được thứ tự.
  */
 export const flagServeDbSchema = flagServeUnion.superRefine((serve, ctx) => {
   if (serve.kind !== "distribution") return;
+  refineDistribution(
+    serve.weights,
+    serve.weights.map((w) => w.variantId),
+    "variantId",
+    ctx,
+  );
+});
 
-  const sum = serve.weights.reduce((acc, w) => acc + w.weight, 0);
+/**
+ * Hai phép kiểm của một `distribution`, tách riêng vì CÓ HAI hình dạng `serve`.
+ *
+ * Bản DB khóa theo `variantId`, bản wire khóa theo `variantKey`. Nội dung kiểm
+ * giống hệt nhau, nên chép đôi là tạo hai nơi có thể trôi khỏi nhau — mà thứ
+ * trôi ở đây không lộ ra ở kết quả, chỉ lộ ở phân bố.
+ *
+ * Nhận sẵn mảng `ids` thay vì một hàm trích: với `noUncheckedIndexedAccess`,
+ * trích theo chỉ số bên trong sẽ đòi một `!` mà `no-non-null-assertion` cấm.
+ */
+function refineDistribution(
+  weights: readonly { weight: number }[],
+  ids: readonly string[],
+  idField: "variantId" | "variantKey",
+  ctx: z.RefinementCtx,
+): void {
+  const sum = weights.reduce((acc, w) => acc + w.weight, 0);
   if (sum !== TOTAL_BUCKETS) {
     ctx.addIssue({
       code: "custom",
@@ -96,17 +121,64 @@ export const flagServeDbSchema = flagServeUnion.superRefine((serve, ctx) => {
    * mà chỉ lộ ở phân bố, tức là gần như không lộ.
    */
   const seen = new Set<string>();
-  for (const [index, w] of serve.weights.entries()) {
-    if (seen.has(w.variantId)) {
+  for (const [index, id] of ids.entries()) {
+    if (seen.has(id)) {
       ctx.addIssue({
         code: "custom",
-        path: ["weights", index, "variantId"],
-        message: `variantId ${w.variantId} xuất hiện nhiều lần`,
+        path: ["weights", index, idField],
+        message: `${idField} ${id} xuất hiện nhiều lần`,
       });
     }
-    seen.add(w.variantId);
+    seen.add(id);
   }
-});
+}
+
+/**
+ * Hình dạng **wire** của `serve` (§9) — thứ SDK nhận, và thứ evaluator chạy trên.
+ *
+ * Khác bản DB đúng một chỗ: `variantKey` thay `variantId`. Đó là ADR-03 và I11 —
+ * id nội bộ không rời server. SDK chỉ cần khóa, để tra `variants` và để gắn nhãn
+ * metrics `ff = "<flagKey>=<variant>"` (§6.6).
+ *
+ * Vì sao có schema wire chứ không chỉ có kiểu: đây là **hợp đồng liên tiến trình**.
+ * SDK parse thứ nhận được từ mạng; một `weights` tổng không đủ 100000 lọt qua sẽ
+ * làm `pickVariant` ném ở đúng nhánh nó tuyên bố "không tới được". Kiểm ở biên
+ * mạng rẻ hơn nhiều so với truy một lỗi trong tiến trình của khách hàng.
+ */
+export const flagServeWireUnion = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("variant"),
+      // FlagVariant.key là VARCHAR(100)
+      variantKey: z.string().min(1).max(100),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("distribution"),
+      weights: z
+        .array(
+          z.object({
+            variantKey: z.string().min(1).max(100),
+            weight: z.number().int().min(0).max(TOTAL_BUCKETS),
+          }),
+        )
+        .min(1),
+    })
+    .strict(),
+]);
+
+export const flagServeWireSchema = flagServeWireUnion.superRefine(
+  (serve, ctx) => {
+    if (serve.kind !== "distribution") return;
+    refineDistribution(
+      serve.weights,
+      serve.weights.map((w) => w.variantKey),
+      "variantKey",
+      ctx,
+    );
+  },
+);
 
 /**
  * PHẢI là `type` alias, KHÔNG được là `interface`.
@@ -119,6 +191,9 @@ export const flagServeDbSchema = flagServeUnion.superRefine((serve, ctx) => {
  * Đã kiểm chứng bằng `tsc`.
  */
 export type FlagServe = z.infer<typeof flagServeDbSchema>;
+
+/** Hình dạng wire — cùng lý do `type` alias như `FlagServe` ở trên */
+export type FlagServeWire = z.infer<typeof flagServeWireSchema>;
 
 // ============================================================
 // Kết quả đánh giá — hợp đồng chung của SDK và Service 2 (§6.1, §6.5)

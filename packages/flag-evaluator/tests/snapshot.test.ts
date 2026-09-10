@@ -3,8 +3,9 @@ import {
   canonicalJson,
   configHashOf,
   normalizeSnapshot,
-  type SnapshotEntry,
+  type Snapshot,
   type SnapshotFlag,
+  type SnapshotRule,
 } from "../src/snapshot.js";
 
 /**
@@ -12,32 +13,41 @@ import {
  * hai dựng snapshot rồi băm, và I15c đòi kết quả bằng nhau **từng bit**. Mọi
  * test dưới đây kiểm đúng một câu hỏi: cùng NỘI DUNG thì có cùng hash không, và
  * khác nội dung thì có khác hash không.
+ *
+ * Fixture cố ý dùng ĐÚNG hình dạng §9 gửi trên dây — `variantKey`, `variants` là
+ * bảng tra, không có id nội bộ nào. Nếu fixture ở đây còn dựng được một hình
+ * dạng mà SDK không bao giờ nhận được, thì test có xanh cũng không chứng minh
+ * được điều I15c cần.
  */
+
+const rule = (over: Partial<SnapshotRule> = {}): SnapshotRule => ({
+  id: "r1",
+  type: "ALL",
+  priority: 0,
+  bucketSalt: "s1",
+  condition: {},
+  serve: {
+    kind: "distribution",
+    weights: [{ variantKey: "on", weight: 100_000 }],
+  },
+  ...over,
+});
 
 const flag = (over: Partial<SnapshotFlag> = {}): SnapshotFlag => ({
   key: "dark-mode",
-  flagType: "BOOLEAN",
-  stickinessAttribute: "targetingKey",
-  defaultVariantId: "v-off",
-  variants: [
-    { id: "v-on", key: "on", value: true },
-    { id: "v-off", key: "off", value: false },
-  ],
+  type: "BOOLEAN",
   isEnabled: true,
-  envDefaultVariantId: null,
-  rules: [
-    {
-      id: "r1",
-      ruleType: "ALL",
-      priority: 0,
-      bucketSalt: "s1",
-      condition: {},
-      serve: {
-        kind: "distribution",
-        weights: [{ variantId: "v-on", weight: 20_000 }],
-      },
-    },
-  ],
+  stickinessAttribute: "targetingKey",
+  variants: { on: true, off: false },
+  defaultVariantKey: "off",
+  rules: [rule()],
+  ...over,
+});
+
+const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
+  flags: [flag()],
+  segments: [],
+  trackedFlags: [],
   ...over,
 });
 
@@ -80,38 +90,43 @@ describe("từ chối những giá trị không băm ổn định được", () 
 
 describe("sắp xếp", () => {
   it("flag sắp theo key, rule sắp theo priority", () => {
-    const unsorted = normalizeSnapshot([
-      flag({ key: "zebra" }),
-      flag({
-        key: "alpha",
-        rules: [
-          {
-            id: "b",
-            ruleType: "ALL",
-            priority: 5,
-            bucketSalt: "s",
-            condition: {},
-            serve: {},
-          },
-          {
-            id: "a",
-            ruleType: "ALL",
-            priority: 1,
-            bucketSalt: "s",
-            condition: {},
-            serve: {},
-          },
+    const normalized = normalizeSnapshot(
+      snapshot({
+        flags: [
+          flag({ key: "zebra" }),
+          flag({
+            key: "alpha",
+            rules: [
+              rule({ id: "b", priority: 5 }),
+              rule({ id: "a", priority: 1 }),
+            ],
+          }),
         ],
       }),
-    ]);
+    );
 
-    expect(unsorted.map((e) => e.key)).toEqual(["alpha", "zebra"]);
-    const first = unsorted[0];
+    expect(normalized.flags.map((e) => e.key)).toEqual(["alpha", "zebra"]);
+    const first = normalized.flags[0];
     expect(
       first !== undefined && "rules" in first
         ? first.rules.map((r) => r.id)
         : [],
     ).toEqual(["a", "b"]);
+  });
+
+  it("segment sắp theo id, trackedFlags sắp theo chuỗi", () => {
+    const normalized = normalizeSnapshot(
+      snapshot({
+        segments: [
+          { id: "s-z", conditions: [] },
+          { id: "s-a", conditions: [] },
+        ],
+        trackedFlags: ["zebra", "alpha"],
+      }),
+    );
+
+    expect(normalized.segments.map((s) => s.id)).toEqual(["s-a", "s-z"]);
+    expect(normalized.trackedFlags).toEqual(["alpha", "zebra"]);
   });
 
   it("KHÔNG sắp weights — thứ tự đó mang ngữ nghĩa", () => {
@@ -120,80 +135,112 @@ describe("sắp xếp", () => {
      * PHẢI có hash khác nhau. Nếu `normalizeSnapshot` sắp `weights`, hash sẽ
      * giống hệt và I15a mù đúng chỗ nguy hiểm nhất: replica áp delta sai thứ tự
      * vẫn báo là đã đồng bộ.
+     *
+     * Đây cũng là lý do §9 phải khai `weights` là MẢNG. Bản trước khai
+     * `Record<string, number>`; một `Record` không mang được thứ tự này, và
+     * `canonicalJson` còn sắp khoá object, nên hai cấu hình dưới đây sẽ ra CÙNG
+     * một hash — test này sẽ đỏ, đúng như nó phải thế.
      */
-    const forward = [
-      flag({
-        rules: [
-          {
-            id: "r",
-            ruleType: "ALL",
-            priority: 0,
-            bucketSalt: "s",
-            condition: {},
-            serve: {
-              kind: "distribution",
-              weights: [
-                { variantId: "a", weight: 10_000 },
-                { variantId: "b", weight: 90_000 },
-              ],
-            },
-          },
-        ],
-      }),
-    ];
-    const reversed = [
-      flag({
-        rules: [
-          {
-            id: "r",
-            ruleType: "ALL",
-            priority: 0,
-            bucketSalt: "s",
-            condition: {},
-            serve: {
-              kind: "distribution",
-              weights: [
-                { variantId: "b", weight: 90_000 },
-                { variantId: "a", weight: 10_000 },
-              ],
-            },
-          },
-        ],
-      }),
-    ];
+    const forward = snapshot({
+      flags: [
+        flag({
+          rules: [
+            rule({
+              serve: {
+                kind: "distribution",
+                weights: [
+                  { variantKey: "on", weight: 10_000 },
+                  { variantKey: "off", weight: 90_000 },
+                ],
+              },
+            }),
+          ],
+        }),
+      ],
+    });
+    const reversed = snapshot({
+      flags: [
+        flag({
+          rules: [
+            rule({
+              serve: {
+                kind: "distribution",
+                weights: [
+                  { variantKey: "off", weight: 90_000 },
+                  { variantKey: "on", weight: 10_000 },
+                ],
+              },
+            }),
+          ],
+        }),
+      ],
+    });
 
     expect(configHashOf(forward)).not.toBe(configHashOf(reversed));
   });
 });
 
 describe("hash phản ứng với mọi trường có nghĩa", () => {
-  it("đổi default variant của environment thì hash phải đổi", () => {
+  it("đổi default variant thì hash phải đổi", () => {
     /**
-     * Đây là kịch bản hỏng cụ thể nếu bỏ sót trường: người dùng đổi default của
+     * Kịch bản hỏng cụ thể nếu bỏ sót trường: người dùng đổi default của
      * `FlagEnvConfig`, `config_version` tăng nhưng hash không đổi. Replica áp
      * delta, tính lại hash, thấy KHỚP, và tự tin là đã đồng bộ trong khi đang
      * phục vụ default cũ. I15a sinh ra để bắt đúng chuyện này.
+     *
+     * Trên dây chỉ có MỘT trường `defaultVariantKey`: phép chọn giữa override
+     * của environment và default của flag (§6.5 — `envConfig.defaultVariantId ??
+     * flag.defaultVariantId`) đã xảy ra ở tầng chiếu. Nên test này canh đúng thứ
+     * SDK thấy, thay vì canh hai trường mà SDK không bao giờ nhận.
      */
-    expect(configHashOf([flag()])).not.toBe(
-      configHashOf([flag({ envDefaultVariantId: "v-on" })]),
+    expect(configHashOf(snapshot())).not.toBe(
+      configHashOf(snapshot({ flags: [flag({ defaultVariantKey: "on" })] })),
+    );
+  });
+
+  it("đổi segment thì hash phải đổi", () => {
+    /**
+     * `segment.updated` là một `change_type` hợp lệ và một lần sửa segment đổi
+     * kết quả đánh giá của mọi rule `SEGMENT`. Bản trước KHÔNG có `segments`
+     * trong snapshot, nên checksum nội dung mù đúng loại thay đổi đó — mù có
+     * chọn lọc còn tệ hơn không có checksum, vì nó tạo niềm tin sai.
+     */
+    expect(configHashOf(snapshot({ segments: [] }))).not.toBe(
+      configHashOf(
+        snapshot({ segments: [{ id: "s-1", conditions: [{ k: "v" }] }] }),
+      ),
+    );
+  });
+
+  it("đổi trackedFlags thì hash phải đổi", () => {
+    /**
+     * §6.6: thêm flag vào tập tracked tăng `config_version` trong CÙNG transaction
+     * như mọi thay đổi khác, để nó thừa hưởng bảo đảm của ADR-05 thay vì là một
+     * kênh thứ hai phải tự kiểm. Thừa hưởng nghĩa là phải nằm trong checksum.
+     */
+    expect(configHashOf(snapshot({ trackedFlags: [] }))).not.toBe(
+      configHashOf(snapshot({ trackedFlags: ["dark-mode"] })),
     );
   });
 
   it("bia mộ của flag đã lưu trữ có mặt và ảnh hưởng tới hash", () => {
-    const withTombstone = configHashOf([
-      flag(),
-      { key: "old-flag", archived: true },
-    ]);
-    expect(withTombstone).not.toBe(configHashOf([flag()]));
+    const withTombstone = configHashOf(
+      snapshot({ flags: [flag(), { key: "old-flag", archived: true }] }),
+    );
+    expect(withTombstone).not.toBe(configHashOf(snapshot()));
   });
 
   it("hash dài đúng 64 ký tự — vừa VARCHAR(64)", () => {
-    expect(configHashOf([flag()])).toMatch(/^[0-9a-f]{64}$/);
+    expect(configHashOf(snapshot())).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("cùng nội dung, khác thứ tự đầu vào, cho cùng hash", () => {
-    const a = configHashOf([flag({ key: "b" }), flag({ key: "a" })]);
-    const b = configHashOf([flag({ key: "a" }), flag({ key: "b" })]);
+    const a = configHashOf(
+      snapshot({ flags: [flag({ key: "b" }), flag({ key: "a" })] }),
+    );
+    const b = configHashOf(
+      snapshot({ flags: [flag({ key: "a" }), flag({ key: "b" })] }),
+    );
     expect(a).toBe(b);
   });
 });

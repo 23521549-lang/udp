@@ -1,6 +1,7 @@
 import { env } from "@udp/config";
 import { logger } from "@udp/http";
 import { assertServiceIdentity, prisma } from "./core/db.js";
+import { changeFeedWatcher } from "./changefeed/index.js";
 import { createApp } from "./app.js";
 
 /**
@@ -31,6 +32,20 @@ const server = app.listen(env.FLAG_SERVICE_PORT, () => {
   );
 });
 
+/**
+ * Vòng poll của change feed bắt đầu Ở ĐÂY, không phải trong `createApp()`.
+ *
+ * `app.ts` đã tự nói ra khuôn: `createApp()` tách khỏi `listen()` để test tích hợp
+ * dựng được app trong bộ nhớ. Một `createApp()` khởi động timer sẽ bắn truy vấn
+ * suốt mọi file test — đo được là ~24 vòng cho một file test 13 giây — trên đúng
+ * pool 5 khe mà test đang dùng, mà không làm test đỏ. Tải chạy ngầm không ai thấy
+ * là loại tệ hơn một test treo.
+ *
+ * Sau `listen` chứ không trước: vòng poll chỉ phục vụ những environment đang có
+ * SDK đọc, mà chưa mở cổng thì chưa có ai đọc.
+ */
+changeFeedWatcher.start();
+
 /** Tắt êm — xem ghi chú cùng chỗ ở core-backend */
 const shutdown = (signal: string) => {
   logger.info({ signal }, "Nhận tín hiệu dừng, đang đóng...");
@@ -39,6 +54,14 @@ const shutdown = (signal: string) => {
     logger.error("Không đóng kịp trong 10 giây, thoát cưỡng bức");
     process.exit(1);
   }, 10_000);
+
+  /**
+   * Dừng vòng poll TRƯỚC khi đóng kết nối database.
+   *
+   * Ngược lại thì một vòng đang bay sẽ chạm pool vừa đóng và ném — một lỗi nổi lên
+   * đúng trên đường lẽ ra phải im lặng nhất.
+   */
+  changeFeedWatcher.stop();
 
   server.close(() => {
     void prisma
