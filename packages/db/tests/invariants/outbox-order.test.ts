@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  CONFIG_CHANGE_CHANNEL,
+  parseConfigChangeNotice,
+  type ConfigChangeNotice,
+} from "@udp/shared-types/change-feed";
+import type { Client } from "pg";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createPrismaClient, writeWithOutbox } from "../../src/index.js";
 import type { PrismaClient } from "../../src/index.js";
+import { openClient } from "../helpers/db.js";
 
 /**
  * Kỷ luật ghi của ADR-05 — bốn bước, và thứ tự là toàn bộ giá trị của nó.
@@ -103,6 +110,7 @@ describe("ADR-05 — thứ tự bốn bước của outbox writer", () => {
     await writeWithOutbox(prisma, {
       environmentIds: envIds,
       changeType: "flag.created",
+      notify: false,
       mutate: async (tx) => {
         order.push("mutate");
         await tx.featureFlag.create({
@@ -141,6 +149,7 @@ describe("ADR-05 — thứ tự bốn bước của outbox writer", () => {
     await writeWithOutbox(prisma, {
       environmentIds: envIds,
       changeType: "envconfig.toggled",
+      notify: false,
       mutate: () => Promise.resolve(),
       stateOf: (_tx, environmentId) =>
         Promise.resolve({ configHash: hash, delta: { environmentId } }),
@@ -175,6 +184,7 @@ describe("ADR-05 — thứ tự bốn bước của outbox writer", () => {
       writeWithOutbox(prisma, {
         environmentIds: envIds,
         changeType: "flag.updated",
+        notify: false,
         mutate: () => Promise.reject(new Error("hỏng giữa chừng")),
         stateOf: () =>
           Promise.resolve({ configHash: "c".repeat(64), delta: {} }),
@@ -208,6 +218,7 @@ describe("ADR-05 — không lần ghi nào được lọt khỏi outbox", () => 
       writeWithOutbox(prisma, {
         environmentIds: [],
         changeType: "flag.updated",
+        notify: false,
         mutate: () => {
           calls.push("mutate");
           return Promise.resolve();
@@ -218,5 +229,102 @@ describe("ADR-05 — không lần ghi nào được lọt khỏi outbox", () => 
     ).rejects.toThrow(/rỗng/);
 
     expect(calls).toEqual([]);
+  });
+});
+
+describe("tầng 3 — NOTIFY phát TRONG transaction ghi (ADR-05)", () => {
+  /**
+   * Bên nghe mở kết nối session riêng — đúng hình dạng kênh LISTEN của Service 2.
+   * Lọc theo environment của CHÍNH file này: mọi writer khác trên cùng database
+   * cũng phát trên kênh này, và `pnpm -r test` chạy nhiều package song song.
+   */
+  let listener: Client;
+  const notices: ConfigChangeNotice[] = [];
+
+  beforeAll(async () => {
+    listener = await openClient();
+    listener.on("notification", (message) => {
+      const notice =
+        message.payload === undefined
+          ? null
+          : parseConfigChangeNotice(message.payload);
+      if (notice !== null && envIds.includes(notice.environmentId)) {
+        notices.push(notice);
+      }
+    });
+    await listener.query(
+      `LISTEN ${listener.escapeIdentifier(CONFIG_CHANGE_CHANNEL)}`,
+    );
+  });
+
+  afterAll(async () => {
+    // Cùng lý do với afterAll ở trên: beforeAll ném thì listener chưa gán
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    await listener?.end();
+  });
+
+  beforeEach(() => {
+    notices.length = 0;
+  });
+
+  /** Chờ tới khi đủ `expected` notice hoặc hết `waitMs` — notice tới sau commit ~150ms */
+  const settle = async (expected: number, waitMs: number): Promise<void> => {
+    const deadline = Date.now() + waitMs;
+    while (notices.length < expected && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  };
+
+  const noop = {
+    mutate: () => Promise.resolve(),
+    stateOf: () => Promise.resolve({ configHash: "e".repeat(64), delta: {} }),
+  };
+
+  it("ghi chạm hai environment ⇒ đúng hai notice, mang đúng version vừa cấp", async () => {
+    await writeWithOutbox(prisma, {
+      environmentIds: envIds,
+      changeType: "envconfig.toggled",
+      notify: true,
+      ...noop,
+    });
+    const after = await prisma.environment.findMany({
+      where: { id: { in: envIds } },
+      select: { id: true, configVersion: true },
+    });
+
+    await settle(envIds.length, 3_000);
+    // Chờ thêm một nhịp: một notice THỪA cũng là lỗi, không chỉ thiếu
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(
+      notices
+        .map((n) => `${n.environmentId}:${String(n.configVersion)}`)
+        .sort(),
+    ).toEqual(after.map((e) => `${e.id}:${String(e.configVersion)}`).sort());
+  });
+
+  it("notify: false ⇒ không notice nào — writer tự quyết, không có mặc định ngầm", async () => {
+    await writeWithOutbox(prisma, {
+      environmentIds: envIds,
+      changeType: "envconfig.toggled",
+      notify: false,
+      ...noop,
+    });
+    await settle(1, 1_500);
+    expect(notices).toEqual([]);
+  });
+
+  it("mutate ném ⇒ không notice nào — transaction rollback không đánh thức ai", async () => {
+    await expect(
+      writeWithOutbox(prisma, {
+        environmentIds: envIds,
+        changeType: "flag.updated",
+        notify: true,
+        mutate: () => Promise.reject(new Error("hỏng giữa chừng")),
+        stateOf: noop.stateOf,
+      }),
+    ).rejects.toThrow("hỏng giữa chừng");
+    await settle(1, 1_500);
+    expect(notices).toEqual([]);
   });
 });

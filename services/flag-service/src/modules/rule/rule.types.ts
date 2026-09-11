@@ -6,6 +6,7 @@ import {
   flagServeDbSchema,
   RULE_TYPES,
 } from "@udp/shared-types";
+import { INT4_MAX, INT4_MIN } from "../../core/int4.js";
 
 /**
  * Hợp đồng của `PUT /internal/flag-envs/:id/rules` (§9, §8.4).
@@ -16,9 +17,6 @@ import {
  * không xáo lại nhóm người dùng (I1)". Nên mỗi rule mang theo danh tính của nó:
  * có `id` là rule đang có, không có `id` là rule mới.
  */
-
-const INT4_MIN = -2_147_483_648;
-const INT4_MAX = 2_147_483_647;
 
 const ruleInput = z
   .object({

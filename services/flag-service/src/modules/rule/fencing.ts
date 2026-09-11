@@ -1,4 +1,5 @@
 import { ValidationError } from "@udp/http";
+import { INT4_MAX } from "../../core/int4.js";
 
 /**
  * Fencing token của I23 — `If-Match: "<sessionId>:<version>"` (§7.3, §9).
@@ -33,9 +34,6 @@ export interface FencingToken {
  */
 const TOKEN =
   /^"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(0|[1-9][0-9]{0,9})"$/i;
-
-/** `RolloutSession.version` là INTEGER */
-const INT4_MAX = 2_147_483_647;
 
 /**
  * THIẾU header là 400, không phải "ghi không điều kiện".

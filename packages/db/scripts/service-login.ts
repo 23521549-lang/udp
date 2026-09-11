@@ -15,11 +15,13 @@ import { DB_TLS_OPTIONS, sanitizeConnectionString } from "../src/adapter.js";
  * vĩnh viễn.
  *
  *   pnpm db:service-login                    # udp_s1, ghi thẳng vào .env
- *   pnpm db:service-login udp_s2             # role khác
+ *   pnpm db:service-login udp_s2             # role khác — udp_s2 ghi HAI chuỗi (DIRECT_VAR)
  *   pnpm db:service-login -- --print         # in ra thay vì ghi (xem cảnh báo dưới)
- *   pnpm db:service-login -- --template=<url> --env-file=<path>
+ *   pnpm db:service-login -- --template=<url> [--template-direct=<url>] --env-file=<path>
  *
- * Hai cờ sau dành cho `db:verify-chain`, và chúng tồn tại vì một lý do cụ thể:
+ * Các cờ khuôn dành cho lúc đích đến là một database tạm không có trong `.env`
+ * (bản đầu của `db:verify-chain` từng gọi script này — nay thì không, xem chú thích
+ * ở đó), và chúng tồn tại vì một lý do cụ thể:
  * bản trước lấy chuỗi ADMIN từ `DATABASE_URL_DIRECT` nhưng lấy KHUÔN của chuỗi
  * sinh ra từ `DATABASE_URL` — hai biến khác nguồn. Trỏ `DATABASE_URL_DIRECT`
  * sang một database tạm trong khi `.env` vẫn còn `DATABASE_URL` của Supabase
@@ -101,6 +103,36 @@ if (explicitTemplate === undefined) {
   }
 }
 
+/**
+ * Role nào có thêm chuỗi SESSION MODE của riêng nó — kênh LISTEN của tầng 3.
+ *
+ * Hai chuỗi của cùng một role PHẢI sinh trong CÙNG một lần chạy: mật khẩu vừa xoay
+ * chỉ tồn tại ở lần chạy này, nên ghi một chuỗi rồi để chuỗi kia giữ mật khẩu cũ là
+ * để kênh nghe hỏng xác thực ở lần khởi động kế tiếp.
+ */
+const DIRECT_VAR: Readonly<Partial<Record<string, string>>> = {
+  udp_s2: "DATABASE_URL_S2_DIRECT",
+};
+const directVar = DIRECT_VAR[role];
+const explicitDirectTemplate = flag("template-direct");
+
+/**
+ * Có khuôn pooled tường minh mà thiếu khuôn session thì chuỗi session sẽ lấy khuôn
+ * từ `DATABASE_URL_DIRECT` thật trong khi chuỗi kia trỏ nơi khác — hai chuỗi của
+ * cùng một role trỏ hai database. Từ chối TRƯỚC khi xoay mật khẩu.
+ */
+if (
+  directVar !== undefined &&
+  explicitTemplate !== undefined &&
+  explicitDirectTemplate === undefined
+) {
+  console.error(
+    `${role} cần HAI chuỗi (pooled và session). Có --template thì phải kèm ` +
+      `--template-direct=<url session>, nếu không ${directVar} sẽ trỏ về .env thật.`,
+  );
+  process.exit(1);
+}
+
 const admin = new Client({
   connectionString: sanitizeConnectionString(adminUrl),
   ssl: DB_TLS_OPTIONS,
@@ -129,12 +161,26 @@ await admin.end();
  * (`<role>.<project-ref>`). Đã đo: `udp_s1.<ref>` nối được và `current_user`
  * đúng là `udp_s1`, còn `udp_s1` trần bị từ chối với "no tenant identifier".
  */
-const ref = url.username.includes(".") ? url.username.split(".")[1] : undefined;
-url.username = ref === undefined ? role : `${role}.${ref}`;
-url.password = password;
+const withRole = (template: URL): string => {
+  const u = new URL(template.toString());
+  const ref = u.username.includes(".") ? u.username.split(".")[1] : undefined;
+  u.username = ref === undefined ? role : `${role}.${ref}`;
+  u.password = password;
+  return u.toString();
+};
 
-const varName = `DATABASE_URL_${role.slice(-2).toUpperCase()}`;
-const line = `${varName}="${url.toString()}"`;
+const entries: [name: string, value: string][] = [
+  [`DATABASE_URL_${role.slice(-2).toUpperCase()}`, withRole(url)],
+];
+if (directVar !== undefined) {
+  entries.push([
+    directVar,
+    withRole(
+      new URL(sanitizeConnectionString(explicitDirectTemplate ?? adminUrl)),
+    ),
+  ]);
+}
+const lines = entries.map(([name, value]) => `${name}="${value}"`);
 
 /**
  * Mặc định GHI vào `.env`, không in ra.
@@ -144,18 +190,36 @@ const line = `${varName}="${url.toString()}"`;
  * thật sự phải dán tay sang nơi khác.
  */
 if (args.includes("--print")) {
-  console.log(`\nĐã cấp LOGIN cho ${role}. Dán dòng sau vào .env:\n`);
-  console.log(`${line}\n`);
+  console.log(`\nĐã cấp LOGIN cho ${role}. Dán vào .env:\n`);
+  console.log(`${lines.join("\n")}\n`);
 } else {
-  const current = readFileSync(outPath, "utf8");
-  const eol = current.includes("\r\n") ? "\r\n" : "\n";
-  const pattern = new RegExp(`^${varName}=.*$`, "m");
+  let next = readFileSync(outPath, "utf8");
+  const eol = next.includes("\r\n") ? "\r\n" : "\n";
 
-  const next = pattern.test(current)
-    ? current.replace(pattern, line)
-    : `${current.trimEnd()}${eol}${eol}${line}${eol}`;
+  for (const line of lines) {
+    const name = line.slice(0, line.indexOf("="));
+    /**
+     * `^TÊN=` — dấu `=` ngay sau tên, nên `DATABASE_URL_S2` không khớp nhầm dòng
+     * `DATABASE_URL_S2_DIRECT`. Thay bằng HÀM chứ không bằng chuỗi: chuỗi thay thế
+     * của `replace` hiểu `$&`, `$1`… như mẫu đặc biệt.
+     */
+    const pattern = new RegExp(`^${name}=.*$`, "m");
+    next = pattern.test(next)
+      ? next.replace(pattern, () => line)
+      : `${next.trimEnd()}${eol}${eol}${line}${eol}`;
+  }
 
   writeFileSync(outPath, next.replace(/\r?\n/g, eol), "utf8");
-  console.log(`\nĐã cấp LOGIN cho ${role} và ghi ${varName} vào ${outPath}.`);
+  console.log(
+    `\nĐã cấp LOGIN cho ${role} và ghi ${entries.map(([n]) => n).join(", ")} vào ${outPath}.`,
+  );
   console.log("Mật khẩu KHÔNG được in ra — chạy lại script này để xoay.\n");
+  /**
+   * Đã gặp (Plan #13): lần nối ngay sau khi xoay bị `28P01 password authentication
+   * failed`, vài phút sau thì nối được với đúng chuỗi đó — pooler giữ mật khẩu cũ
+   * một lúc. Báo trước để người chạy không đi sửa một thứ không hỏng.
+   */
+  console.log(
+    "Pooler có thể mất một lúc mới nhận mật khẩu mới — 28P01 ngay sau khi xoay thì đợi rồi thử lại.\n",
+  );
 }

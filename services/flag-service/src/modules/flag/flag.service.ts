@@ -1,6 +1,6 @@
 import { NotFoundError, OptimisticLockError } from "@udp/http";
-import { writeWithOutbox } from "@udp/db";
 import { prisma } from "../../core/db.js";
+import { writeConfigChange } from "../../core/outbox.js";
 import { stateFor } from "../../evaluation/snapshot-builder.js";
 import * as repository from "./flag.repository.js";
 import type {
@@ -41,7 +41,7 @@ export async function create(
 
   let created: PublicFlag | undefined;
 
-  await writeWithOutbox(prisma, {
+  await writeConfigChange({
     environmentIds,
     changeType: "flag.created",
     ...(actorUserId === undefined ? {} : { actorUserId }),
@@ -83,7 +83,7 @@ export async function update(
   );
   let updated: PublicFlag | undefined;
 
-  await writeWithOutbox(prisma, {
+  await writeConfigChange({
     environmentIds,
     changeType: "flag.updated",
     ...(actorUserId === undefined ? {} : { actorUserId }),

@@ -53,7 +53,7 @@ export {
   flagServeWireUnion,
 } from "./evaluation.js";
 
-export type { ConfigChangeType } from "./change-feed.js";
+export type { ConfigChangeNotice, ConfigChangeType } from "./change-feed.js";
 
 export { FLAG_TYPES, FLAG_VALUE_SCHEMAS } from "./flag-value.js";
 
@@ -64,4 +64,9 @@ export {
   conditionSchemas,
   RULE_TYPES,
 } from "./condition.js";
-export { CONFIG_CHANGE_TYPES } from "./change-feed.js";
+export {
+  CONFIG_CHANGE_CHANNEL,
+  CONFIG_CHANGE_TYPES,
+  formatConfigChangeNotice,
+  parseConfigChangeNotice,
+} from "./change-feed.js";

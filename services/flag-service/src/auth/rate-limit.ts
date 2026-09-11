@@ -43,7 +43,8 @@ const keyPrint = (req: Request): string =>
     .slice(0, 22);
 
 /**
- * Hạn mức của SERVER key trên `/sdk/config` và `/sdk/stream` — 100/phút/khoá.
+ * Hạn mức của SERVER key trên `/sdk/config` — 100/phút/khoá. Việc MỞ
+ * `/sdk/stream` có limiter riêng, `sdkStreamOpenLimiter` bên dưới.
  *
  * CHỈ một limiter, và điều đó có chủ đích. §2.2 khai `perKeyIp` (600/phút) cho
  * **CLIENT key trên OFREP**, một bề mặt khác với một loại khoá khác — không phải
@@ -58,5 +59,21 @@ export const sdkPerKeyLimiter: RequestHandler = rateLimit({
   ...shared,
   windowMs: RATE_LIMIT.sdk.perKey.windowMs,
   limit: RATE_LIMIT.sdk.perKey.max,
+  keyGenerator: keyPrint,
+});
+
+/**
+ * Hạn mức MỞ `GET /sdk/stream` của SERVER key — bucket RIÊNG, 1 000 lần/phút/khoá.
+ *
+ * Chung bucket với `/sdk/config` thì một lần replica restart là bão 429 dây
+ * chuyền: N tiến trình dùng chung khoá nối lại cùng lúc, phần vượt bị chặn, SDK
+ * rơi về polling `/sdk/config` trên CHÍNH bucket đó và cũng bị chặn — cấu hình
+ * đứng im nhiều phút, kill-switch không tới. Trần stream ĐỒNG THỜI của mỗi khoá
+ * nằm ở hub (`RATE_LIMIT.sdk.maxStreamsPerKey`), vì chỉ hub biết stream nào còn mở.
+ */
+export const sdkStreamOpenLimiter: RequestHandler = rateLimit({
+  ...shared,
+  windowMs: RATE_LIMIT.sdk.streamOpensPerKey.windowMs,
+  limit: RATE_LIMIT.sdk.streamOpensPerKey.max,
   keyGenerator: keyPrint,
 });

@@ -120,11 +120,14 @@ const envSchema = z
     /**
      * Kết nối SESSION MODE — bắt buộc, và thường KHÁC `DATABASE_URL`.
      *
-     * Ba thứ cần nó vì chúng giữ trạng thái qua nhiều statement trong cùng một
+     * Hai thứ cần nó vì chúng giữ trạng thái qua nhiều statement trong cùng một
      * session, thứ mà pooler ở transaction mode phá vỡ (§15.3):
      *   - Prisma Migrate: một migration là nhiều statement + advisory lock của Prisma
      *   - pg-boss: `migrate` và `supervise` cũng nhiều statement (ADR-02 điều kiện 1)
-     *   - Kênh `LISTEN`: đăng ký gắn với MỘT backend cụ thể; trả kết nối về pool là mất
+     *
+     * Kênh `LISTEN` của tầng 3 cũng cần session mode, nhưng KHÔNG đi bằng chuỗi này:
+     * chuỗi này là owner, còn kênh nghe chạy bằng role của chính service — xem
+     * `DATABASE_URL_S2_DIRECT`.
      *
      * Với Supabase free tier, đây là **session pooler** (cổng 5432 trên
      * `pooler.supabase.com`), KHÔNG phải `db.<ref>.supabase.co:5432` — host đó chỉ
@@ -171,6 +174,24 @@ const envSchema = z
      * Sinh bang `pnpm db:service-login udp_s2`.
      */
     DATABASE_URL_S2: z.string().url().startsWith("postgresql://"),
+    /**
+     * Kênh LISTEN của tầng 3 (ADR-05) — role `udp_s2`, SESSION MODE (cổng 5432).
+     *
+     * Vì sao một chuỗi riêng: `LISTEN` gắn với MỘT backend nên không đi qua pooler
+     * transaction mode được — đã đo: qua 6543 không nhận notification nào trong 5
+     * giây, qua 5432 nhận sau ~150ms. Và vì sao không dùng `DATABASE_URL_DIRECT`:
+     * chuỗi đó là owner, đưa nó vào runtime của S2 là bỏ ranh giới quyền mà
+     * `DATABASE_URL_S2` dựng lên. Kết nối nghe chạy bằng chính `udp_s2`, và S2
+     * khẳng định `current_user` của nó trước khi mở cổng.
+     *
+     * Chỉ bắt buộc khi `CHANGEFEED_NOTIFY_ENABLED` bật — xem luật liên biến bên
+     * dưới. Sinh CÙNG LÚC với `DATABASE_URL_S2` bằng `pnpm db:service-login udp_s2`.
+     */
+    DATABASE_URL_S2_DIRECT: z
+      .string()
+      .url()
+      .startsWith("postgresql://")
+      .optional(),
 
     // ---------- Auth ----------
     JWT_ACCESS_SECRET: z
@@ -249,7 +270,18 @@ const envSchema = z
      * Cho phép đo đối chứng hai chế độ trên cùng hệ thống — phép đo E4 (§14).
      */
     CHANGEFEED_MODE: z.enum(["snapshot", "delta"]).default("snapshot"),
-    /** Bật LISTEN/NOTIFY làm tầng 3. Tắt khi triển khai sau pooler. */
+    /**
+     * Tầng 3 (ADR-05) — bật/tắt CẢ HAI phía: writer phát `NOTIFY` trong transaction
+     * ghi, và replica S2 `LISTEN` qua `DATABASE_URL_S2_DIRECT`.
+     *
+     * Hai phía đi cùng một cờ vì cả hai đều có giá: `NOTIFY` bắt commit của mọi
+     * transaction có nó xếp hàng qua một khoá toàn cục của PostgreSQL
+     * (`PreCommit_Notify` trong `async.c`). Tắt cờ mà writer vẫn phát thì cấu hình
+     * "không NOTIFY" của phép đo E4 vẫn trả giá đó — không phải đối chứng sạch.
+     *
+     * Tắt khi chỉ có chuỗi qua pooler transaction mode: hệ thống vẫn đúng, độ trễ
+     * nền quay về chu kỳ poll 500ms.
+     */
     CHANGEFEED_NOTIFY_ENABLED: bool.default("true"),
 
     // ---------- Job queue ----------
@@ -277,8 +309,10 @@ const envSchema = z
   /**
    * Ràng buộc LIÊN BIẾN — thứ không kiểm được khi xét từng biến một.
    *
-   * Cả ba đều là loại lỗi im lặng: hệ thống chạy bình thường, không có gì báo,
-   * và hậu quả chỉ lộ ra khi bị tấn công hoặc khi đã muộn.
+   * Ba luật đầu là loại lỗi im lặng: hệ thống chạy bình thường, không có gì báo,
+   * và hậu quả chỉ lộ ra khi bị tấn công hoặc khi đã muộn. Luật cuối chặn một cấu
+   * hình nửa vời của tầng 3: bật cờ mà thiếu chuỗi thì kênh nghe hỏng ngay lúc
+   * Service 2 khởi động, xa chỗ phải sửa.
    */
   .superRefine((env, ctx) => {
     if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
@@ -310,6 +344,20 @@ const envSchema = z
         message: `chỉ hỗ trợ version 1 — chưa khai biến UDP_KEK_V${env.UDP_KEK_VERSION}`,
       });
     }
+
+    if (
+      env.CHANGEFEED_NOTIFY_ENABLED &&
+      env.DATABASE_URL_S2_DIRECT === undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DATABASE_URL_S2_DIRECT"],
+        message:
+          "bắt buộc khi CHANGEFEED_NOTIFY_ENABLED=true — kênh LISTEN của tầng 3 cần chuỗi " +
+          "SESSION MODE của role udp_s2 (`pnpm db:service-login udp_s2`), hoặc đặt " +
+          "CHANGEFEED_NOTIFY_ENABLED=false khi chỉ có chuỗi qua pooler",
+      });
+    }
   });
 
 const parsed = envSchema.safeParse(process.env);
@@ -329,7 +377,8 @@ export const env = Object.freeze(parsed.data);
 export type Env = typeof env;
 
 /**
- * Kết nối session mode cho migration, pg-boss và kênh NOTIFY (§15.3).
+ * Kết nối session mode (owner) cho migration và pg-boss (§15.3). Kênh LISTEN của
+ * tầng 3 KHÔNG dùng chuỗi này — nó chạy bằng role của service (`DATABASE_URL_S2_DIRECT`).
  * Không còn fallback về DATABASE_URL: env schema đã bắt buộc khai tường minh,
  * vì một fallback âm thầm sang pooled connection làm migration hỏng giữa chừng.
  */

@@ -72,7 +72,9 @@ const hashOf = (token: string): string =>
  * còn lại của `/sdk/config` sau khi snapshot đã nằm trong cache. Cache được thì
  * nhanh hơn hẳn. Nhưng cache khoá xác thực nghĩa là một khoá vừa bị THU HỒI vẫn
  * dùng được cho tới hết TTL, và thu hồi là hành động an ninh — người bấm nút đó
- * đang tin rằng nó có hiệu lực ngay.
+ * đang tin rằng nó có hiệu lực ngay. Stream đang mở cũng vậy: hub SSE hỏi lại
+ * khoá trước MỖI lần đẩy và đóng stream của khoá đã thu hồi trong
+ * ≤ `SSE.revocationCheckMs` — xem `activeKeysAmong`.
  *
  * Ngưỡng để đổi ý, ghi ra để lần sau không phải đoán: `RATE_LIMIT.sdk.perKey`
  * chặn ở 100 request mỗi phút cho mỗi khoá, tức ~1,7 request/giây/khoá. Pool 5
@@ -146,4 +148,23 @@ export function sdkKeyOf(req: Request): ResolvedSdkKey {
     );
   }
   return key;
+}
+
+/**
+ * Trong số các khoá này, khoá nào CÒN hiệu lực — tồn tại VÀ chưa thu hồi.
+ *
+ * Guard kiểm khoá ở mỗi REQUEST, nhưng một stream là một request sống hàng giờ
+ * (§12 T7). Hub SSE hỏi hàm này trước mỗi lần đẩy và theo chu kỳ
+ * `SSE.revocationCheckMs` — MỘT truy vấn cho mọi stream, không phải một truy vấn
+ * mỗi stream. Khoá bị XOÁ hẳn cũng rơi khỏi tập, cùng số phận với khoá thu hồi.
+ */
+export async function activeKeysAmong(
+  keyIds: readonly string[],
+): Promise<Set<string>> {
+  if (keyIds.length === 0) return new Set();
+  const rows = await prisma.sdkKey.findMany({
+    where: { id: { in: [...keyIds] }, revokedAt: null },
+    select: { id: true },
+  });
+  return new Set(rows.map((r) => r.id));
 }

@@ -1,6 +1,10 @@
 import type { Prisma } from "./generated/prisma/client.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
-import type { ConfigChangeType } from "@udp/shared-types/change-feed";
+import {
+  CONFIG_CHANGE_CHANNEL,
+  formatConfigChangeNotice,
+  type ConfigChangeType,
+} from "@udp/shared-types/change-feed";
 
 /**
  * Kỷ luật ghi của ADR-05 — nơi DUY NHẤT được tăng `config_version`.
@@ -30,6 +34,16 @@ export interface OutboxWrite<T> {
   changeType: ConfigChangeType;
   /** NULL nghĩa là Service 3 ghi trong lúc rollout (§2.2) */
   actorUserId?: string;
+  /**
+   * Tầng 3 (ADR-05): phát `NOTIFY` trong transaction này để đánh thức replica.
+   *
+   * BẮT BUỘC, không có mặc định: `NOTIFY` bắt commit xếp hàng qua một khoá toàn cục
+   * (`PreCommit_Notify` trong `async.c` giữ `AccessExclusiveLock` tới sau commit),
+   * nên mỗi writer phải tự nói nó có trả giá đó không — Service 2 truyền
+   * `CHANGEFEED_NOTIFY_ENABLED` qua `writeConfigChange` của nó. Một mặc định ngầm ở
+   * đây là quyết định hộ mọi writer tương lai, kể cả kill-switch của Service 3.
+   */
+  notify: boolean;
   /** Bước 2 — thay đổi nghiệp vụ thật */
   mutate: (tx: Prisma.TransactionClient) => Promise<T>;
   /**
@@ -61,7 +75,8 @@ export interface OutboxWrite<T> {
  *
  * Mặc định của Prisma là `timeout: 5000ms`. Đã đo RTT tới database ở Singapore
  * là ~50ms, tức 5 giây chỉ đủ 100 lượt đi về — và một lần tạo flag chạm N
- * environment tốn khoảng `3N + 2` lượt, chưa kể truy vấn bên trong `hashOf`.
+ * environment tốn khoảng `3N + 3` lượt (câu `NOTIFY` của tầng 3 là MỘT lượt cho cả
+ * lần ghi), chưa kể truy vấn bên trong `hashOf`.
  * Khai tường minh, rộng hơn, và nói rõ con số thay vì để mặc định âm thầm cắt
  * giữa chừng bằng `P2028` sau khi đã giữ khoá suốt thời gian đó.
  *
@@ -77,6 +92,9 @@ const TRANSACTION_BUDGET = { timeout: 20_000, maxWait: 5_000 } as const;
  *   2. thay đổi thật
  *   3. cập nhật `config_hash` = sha256(snapshot chuẩn hoá)
  *   4. `INSERT config_change_log` mang ĐÚNG version đó — ghi cuối cùng
+ *
+ * Rồi, nếu `notify`: `pg_notify` cho mọi environment của lần ghi — vẫn TRONG
+ * transaction, nên notification chỉ đi khi cả bốn bước đã commit.
  *
  * Ba chi tiết mà đổi thứ tự là hỏng, mỗi cái một kiểu:
  *
@@ -159,6 +177,19 @@ export async function writeWithOutbox<T>(
             : { actorUserId: write.actorUserId }),
         },
       });
+    }
+
+    // ---- Tầng 3: đánh thức replica — TRONG transaction ---------------------
+    // PostgreSQL chỉ giao notification lúc COMMIT, nên một lần ghi rollback không
+    // đánh thức ai (đã đo). MỘT câu cho mọi environment: một lượt đi về, không N.
+    // `$executeRaw` chứ không `$queryRaw`: `pg_notify` trả `void`, và Prisma không
+    // giải mã được cột kiểu đó (đã đo: P2010). Payload dựng bằng đúng hàm mà bên
+    // nghe dùng để đọc — lệch tên trường là lỗi biên dịch, không phải tầng 3 điếc.
+    if (write.notify) {
+      const notices = stamped.map(({ environmentId, configVersion }) =>
+        formatConfigChangeNotice({ environmentId, configVersion }),
+      );
+      await tx.$executeRaw`SELECT pg_notify(${CONFIG_CHANGE_CHANNEL}, p) FROM unnest(${notices}::text[]) AS p`;
     }
 
     return result;

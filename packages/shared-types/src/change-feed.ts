@@ -33,3 +33,62 @@ export const CONFIG_CHANGE_TYPES = [
 ] as const;
 
 export type ConfigChangeType = (typeof CONFIG_CHANGE_TYPES)[number];
+
+/**
+ * Kênh `NOTIFY` của tầng 3 (ADR-05) — tên giữ nguyên §6.3.
+ *
+ * Ở đây vì có ba bên cùng cần: writer (`writeWithOutbox` của `@udp/db`), replica
+ * Service 2 nghe, và kill-switch của Service 3 sau này. Tên kênh lệch một ký tự thì
+ * tầng 3 im lặng rơi về polling 500ms — không có lỗi nào báo.
+ */
+export const CONFIG_CHANGE_CHANNEL = "flag_changed";
+
+/** Payload của một notice: environment nào vừa lên version nào. KHÔNG mang cấu hình */
+export interface ConfigChangeNotice {
+  environmentId: string;
+  configVersion: number;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Dựng payload — writer PHẢI đi qua hàm này, không tự nối JSON. Hai đầu dùng chung
+ * một cặp hàm thì lệch tên trường là lỗi biên dịch, không phải tầng 3 điếc im lặng.
+ */
+export function formatConfigChangeNotice(notice: ConfigChangeNotice): string {
+  return JSON.stringify({
+    environmentId: notice.environmentId,
+    configVersion: notice.configVersion,
+  });
+}
+
+/**
+ * Đọc payload — sai hình dạng thì `null`, KHÔNG ném.
+ *
+ * Tầng 3 chỉ đánh thức, không mang dữ liệu: một notice hỏng không được làm hỏng
+ * replica, và vòng poll kế tiếp vẫn đúng dù notice bị bỏ.
+ */
+export function parseConfigChangeNotice(
+  payload: string,
+): ConfigChangeNotice | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+  if (value === null || typeof value !== "object") return null;
+
+  const { environmentId, configVersion } = value as Record<string, unknown>;
+  if (typeof environmentId !== "string" || !UUID.test(environmentId)) {
+    return null;
+  }
+  if (
+    typeof configVersion !== "number" ||
+    !Number.isSafeInteger(configVersion) ||
+    configVersion < 0
+  ) {
+    return null;
+  }
+  return { environmentId, configVersion };
+}

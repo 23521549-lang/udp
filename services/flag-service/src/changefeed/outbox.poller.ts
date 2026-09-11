@@ -43,7 +43,12 @@ export type FallbackReason =
   | "hash-mismatch";
 
 export type PollOutcome =
-  | { kind: "applied"; entry: ConfigEntry }
+  | {
+      kind: "applied";
+      entry: ConfigEntry;
+      /** Đúng những dòng đã áp, theo thứ tự — hub SSE chiếu chúng thành `changes[]` */
+      records: readonly ChangeRecord[];
+    }
   | { kind: "fallback"; reason: FallbackReason };
 
 /**
@@ -55,7 +60,7 @@ export type PollOutcome =
  * ngay sau khi áp: sai một byte ở bất kỳ đâu cũng làm hash lệch, và lệch thì rơi
  * tầng. Đó chính là mô hình "tầng 1 là bộ kiểm chứng của tầng 2" của ADR-05.
  */
-function flagOf(payload: Prisma.JsonValue): SnapshotEntry | null {
+export function flagOf(payload: Prisma.JsonValue): SnapshotEntry | null {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload))
     return null;
 
@@ -134,6 +139,7 @@ export async function pollDeltas(
 
   let cursor = cached.configVersion;
   let flags: readonly SnapshotEntry[] = cached.snapshot.flags;
+  const appliedRecords: ChangeRecord[] = [];
 
   for (const record of records) {
     /**
@@ -156,6 +162,7 @@ export async function pollDeltas(
 
     flags = applied;
     cursor = record.configVersion;
+    appliedRecords.push(record);
   }
 
   if (cursor !== target.configVersion) {
@@ -191,5 +198,6 @@ export async function pollDeltas(
       configHash: target.configHash,
       snapshot,
     },
+    records: appliedRecords,
   };
 }

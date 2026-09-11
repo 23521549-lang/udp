@@ -4,12 +4,17 @@ import {
   type SnapshotFlag,
 } from "@udp/flag-evaluator";
 import { CONFIG_CHANGE_TYPES, type ConfigChangeType } from "@udp/shared-types";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ChangeFeed,
   ChangeRecord,
   EnvironmentState,
 } from "../src/changefeed/change-feed.interface.js";
+import {
+  createConfigChangeEvents,
+  type ConfigChange,
+  type ConfigChangeEvents,
+} from "../src/changefeed/change-events.js";
 import { verifyHash } from "../src/changefeed/checksum.verifier.js";
 import { createCircuitBreaker } from "../src/changefeed/circuit-breaker.js";
 import { readCounters, resetCounters } from "../src/changefeed/metrics.js";
@@ -66,6 +71,7 @@ function harness(options: {
   cached: { version: number; flags: SnapshotFlag[] };
   target: EnvironmentState;
   records?: ChangeRecord[];
+  events?: ConfigChangeEvents;
 }) {
   const stored = {
     version: options.cached.version,
@@ -106,6 +112,7 @@ function harness(options: {
     cache,
     breaker,
     deltaMode: options.deltaMode,
+    ...(options.events === undefined ? {} : { events: options.events }),
   });
 
   return { state, cache, breaker, watcher };
@@ -507,5 +514,262 @@ describe("tầng 2 áp được ba change_type của đường ghi rule (Plan #1
 
     expect(h.cache.peek(ENV, "SERVER")?.configVersion).toBe(8);
     expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
+});
+
+describe("sự kiện thay đổi cho sdk/ (Plan #13, Mục 4)", () => {
+  const listen = (): { events: ConfigChangeEvents; seen: ConfigChange[] } => {
+    const events = createConfigChangeEvents();
+    const seen: ConfigChange[] = [];
+    events.subscribe((change) => {
+      seen.push(change);
+    });
+    return { events, seen };
+  };
+
+  it("áp delta ⇒ phát delta kèm ĐÚNG những dòng đã áp, previous và next", async () => {
+    const { events, seen } = listen();
+    const after = [flag("a", true)];
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 8, configHash: configHashOf(snap(after)) },
+      records: [deltaRow(8, "flag.updated", flag("a", true))],
+      events,
+    });
+
+    await h.cache.get(ENV, "SERVER");
+    await h.watcher.tick();
+
+    expect(seen).toMatchObject([
+      {
+        kind: "delta",
+        previous: { configVersion: 7 },
+        next: { configVersion: 8 },
+        records: [{ configVersion: 8, changeType: "flag.updated" }],
+      },
+    ]);
+  });
+
+  it("rơi về snapshot ⇒ phát snapshot mang bộ ba mới", async () => {
+    const { events, seen } = listen();
+    const after = [flag("a", true)];
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 9, configHash: configHashOf(snap(after)) },
+      // hổng: thiếu version 8
+      records: [deltaRow(9, "flag.updated", flag("a", true))],
+      events,
+    });
+
+    await h.cache.get(ENV, "SERVER");
+    h.state.setStored(9, after);
+    await h.watcher.tick();
+
+    expect(seen.map((c) => [c.kind, c.next.configVersion])).toEqual([
+      ["snapshot", 9],
+    ]);
+  });
+
+  it("nạp lại CÙNG version vì lệch hash VẪN phát snapshot — ca tự sửa của I15a", async () => {
+    /**
+     * Số đúng, nội dung sai: cache giữ `a=false` ở version 7 trong khi database
+     * nói hash của `a=true`. Bỏ qua sự kiện "vì version không đổi" là giữ mọi SDK
+     * ở lại đúng cái nội dung sai đó.
+     */
+    const { events, seen } = listen();
+    const truth = [flag("a", true)];
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 7, configHash: configHashOf(snap(truth)) },
+      events,
+    });
+
+    await h.cache.get(ENV, "SERVER");
+    h.state.setStored(7, truth);
+    await h.watcher.tick();
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.kind).toBe("snapshot");
+    expect(seen[0]?.next.configVersion).toBe(7);
+    expect(seen[0]?.next.snapshot.flags).toEqual(truth);
+  });
+
+  it("listener ném — đồng bộ hay bất đồng bộ — không chặn listener khác và không làm hỏng vòng", async () => {
+    const events = createConfigChangeEvents();
+    const seen: string[] = [];
+    events.subscribe(() => {
+      throw new Error("listener hỏng");
+    });
+    events.subscribe(() => Promise.reject(new Error("listener async hỏng")));
+    events.subscribe((change) => {
+      seen.push(change.kind);
+    });
+
+    const after = [flag("a", true)];
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 8, configHash: configHashOf(snap(after)) },
+      records: [deltaRow(8, "flag.updated", flag("a", true))],
+      events,
+    });
+
+    await h.cache.get(ENV, "SERVER");
+    await expect(h.watcher.tick()).resolves.toBeUndefined();
+    expect(seen).toEqual(["delta"]);
+    expect(h.cache.peek(ENV, "SERVER")?.configVersion).toBe(8);
+  });
+});
+
+describe("wake() — một cổng vào cho vòng poll (Plan #13, Mục 4)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const STATE = { configVersion: 1, configHash: configHashOf(snap([])) };
+
+  /** Watcher trên feed đếm số vòng; `hang` giữ `statesOf` treo tới khi `release()` */
+  const counting = (hang = false) => {
+    let calls = 0;
+    const pending: (() => void)[] = [];
+    const feed: ChangeFeed = {
+      statesOf: (ids) => {
+        calls += 1;
+        const result = new Map(ids.map((id) => [id, STATE]));
+        if (!hang) return Promise.resolve(result);
+        return new Promise((resolve) => {
+          pending.push(() => {
+            resolve(result);
+          });
+        });
+      },
+      deltasSince: () => Promise.resolve([]),
+    };
+    const cache = createSnapshotCache((environmentId) =>
+      Promise.resolve({
+        environmentId,
+        environmentName: "dev",
+        configVersion: 1,
+        configHash: STATE.configHash,
+        snapshot: snap([]),
+      }),
+    );
+    const watcher = createVersionWatcher({
+      feed,
+      cache,
+      breaker: createCircuitBreaker(),
+      deltaMode: false,
+    });
+    return {
+      watcher,
+      cache,
+      calls: () => calls,
+      release: () => {
+        pending.shift()?.();
+      },
+    };
+  };
+
+  it("chưa start: wake chạy ĐÚNG một vòng và không tự bật polling", async () => {
+    vi.useFakeTimers();
+    const w = counting();
+    await w.cache.get(ENV, "SERVER");
+
+    w.watcher.wake();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(w.calls()).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("20 lần wake liên tiếp không nhân chuỗi timer — chỉ còn MỘT timer chờ", async () => {
+    vi.useFakeTimers();
+    const w = counting();
+    await w.cache.get(ENV, "SERVER");
+
+    w.watcher.start();
+    for (let i = 0; i < 20; i += 1) {
+      w.watcher.wake();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+
+    expect(vi.getTimerCount()).toBe(1);
+    const before = w.calls();
+    // Một chu kỳ poll tối đa (500ms + jitter 200ms) chỉ được thêm ĐÚNG một vòng
+    await vi.advanceTimersByTimeAsync(700);
+    expect(w.calls()).toBe(before + 1);
+    w.watcher.stop();
+  });
+
+  it("wake trong lúc vòng đang bay: không chồng vòng, chạy lại đúng MỘT lần sau đó", async () => {
+    vi.useFakeTimers();
+    const w = counting(true);
+    await w.cache.get(ENV, "SERVER");
+
+    w.watcher.wake();
+    await vi.advanceTimersByTimeAsync(0);
+    w.watcher.wake();
+    w.watcher.wake();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(w.calls()).toBe(1);
+
+    w.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(w.calls()).toBe(2);
+
+    w.release();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(w.calls()).toBe(2);
+  });
+
+  it("sau stop: wake là no-op, và vòng đang bay xong cũng không lập lịch lại", async () => {
+    vi.useFakeTimers();
+    const w = counting(true);
+    await w.cache.get(ENV, "SERVER");
+
+    w.watcher.start();
+    await vi.advanceTimersByTimeAsync(700);
+    expect(w.calls()).toBe(1);
+
+    w.watcher.stop();
+    w.watcher.wake();
+    w.release();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(w.calls()).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("cache.holds — lọc notice của tầng 3", () => {
+  it("true khi đang giữ HOẶC đang nạp; false với environment lạ", async () => {
+    const OTHER = "44444444-4444-4444-8444-444444444444";
+    let finish: () => void = () => undefined;
+    const cache = createSnapshotCache(
+      (environmentId) =>
+        new Promise((resolve) => {
+          finish = () => {
+            resolve({
+              environmentId,
+              environmentName: "dev",
+              configVersion: 1,
+              configHash: "",
+              snapshot: snap([]),
+            });
+          };
+        }),
+    );
+
+    const loading = cache.get(ENV, "SERVER");
+    expect(cache.holds(ENV)).toBe(true);
+    expect(cache.holds(OTHER)).toBe(false);
+
+    finish();
+    await loading;
+    expect(cache.holds(ENV)).toBe(true);
+    expect(cache.holds(OTHER)).toBe(false);
   });
 });

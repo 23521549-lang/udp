@@ -100,8 +100,8 @@ graph TD
 **Database dùng chung:** PostgreSQL (1 instance). Quy tắc writer (v4, làm rõ):
 
 - Bảng **có UPDATE** có **đúng một service được quyền ghi**, hoặc chia theo cột như `RolloutSession`.
-- Bảng **append-only** (`AuditLog`, `DeploymentEvent`, `ConfigChangeLog`) cho phép **nhiều service INSERT trực tiếp trong transaction của chính mình**. Lý do: v3 bắt Service 2 ghi audit "qua API của Service 1" — đó là dual-write: thay đổi flag thành công nhưng gọi API thất bại thì mất audit, hoặc gọi trước rồi transaction rollback thì audit sai. Đúng bài toán ADR-02 tránh.
-- Quy tắc được **cưỡng chế bằng Postgres role** (`udp_s1`, `udp_s2`, `udp_s3`) với `GRANT` theo bảng và **column-level GRANT** cho `RolloutSession`. Mỗi service nối bằng **chuỗi kết nối riêng mang role của chính nó** (`DATABASE_URL_S1`…), và khẳng định `current_user` lúc khởi động rồi mới mở cổng — nếu không, chuỗi kết nối rơi về owner sẽ làm toàn bộ GRANT vô nghĩa mà không có gì báo. Quyền đăng nhập cấp bằng `pnpm db:service-login`, không nằm trong migration, để mật khẩu không vào lịch sử kho mã; bất biến I22 (§13.3) đọc `information_schema.role_table_grants` và so với ma trận dưới đây, thay vì chỉ "kiểm tra trong code review".
+- Bảng **append-only** (`AuditLog`, `DeploymentEvent`, `ConfigChangeLog`) cho phép **nhiều service INSERT trực tiếp trong transaction của chính mình**. Lý do: v3 bắt Service 2 ghi audit "qua API của Service 1" — đó là dual-write: thay đổi flag thành công nhưng gọi API thất bại thì mất audit, hoặc gọi trước rồi transaction rollback thì audit sai. Đúng bài toán ADR-02 tránh. **[v4.1]** Append-only nghĩa là không ai SỬA hay XOÁ tuỳ ý; riêng `ConfigChangeLog` được dọn dòng quá 7 ngày (§2.2), và không role nào có `DELETE` trên nó — Service 2 dọn qua hàm `udp_prune_config_change_log` (`SECURITY DEFINER`, retention cố định trong hàm), nên quyền được cấp đúng bằng "xoá dòng quá hạn", không hơn.
+- Quy tắc được **cưỡng chế bằng Postgres role** (`udp_s1`, `udp_s2`, `udp_s3`) với `GRANT` theo bảng và **column-level GRANT** cho `RolloutSession`. Mỗi service nối bằng **chuỗi kết nối riêng mang role của chính nó** (`DATABASE_URL_S1`…), và khẳng định `current_user` lúc khởi động rồi mới mở cổng — nếu không, chuỗi kết nối rơi về owner sẽ làm toàn bộ GRANT vô nghĩa mà không có gì báo. Quyền đăng nhập cấp bằng `pnpm db:service-login`, không nằm trong migration, để mật khẩu không vào lịch sử kho mã; bất biến I22 (§13.3) đọc `information_schema.role_table_grants` và so với ma trận dưới đây, thay vì chỉ "kiểm tra trong code review". **[v4.1]** I22 phủ cả **hàm `SECURITY DEFINER`**: hàm như vậy chạy bằng quyền của owner, nên một hàm quên `REVOKE ... FROM PUBLIC` là một đường ghi mà bảng quyền trên bảng không nhìn thấy — đã đo trên Supabase: hàm mới trong schema `public` mặc định cho cả `anon` EXECUTE qua `PUBLIC`.
 
 | Bảng | Writer | Reader |
 | ---- | ------ | ------ |
@@ -211,7 +211,7 @@ Hệ quả: một evaluator, một kết quả cho cả hai loại key (không c
 | `pg_advisory_lock` | Khóa gắn với **session**. Kết nối về pool nhưng khóa vẫn giữ; lệnh `unlock` sau đó đi vào backend khác ⇒ khóa kẹt vĩnh viễn, đồng thời backend cũ mang theo khóa sang phục vụ client khác |
 | Serverless autosuspend | Kết nối `LISTEN` bản chất là im lặng, bị nhà cung cấp coi là nhàn rỗi và cắt sau vài phút |
 
-**Quyết định:** đảo ngược quan hệ phụ thuộc. Hệ thống **đúng nhờ dữ liệu trong bảng**; `NOTIFY` chỉ là **bộ tăng tốc tùy chọn**. Mất nó thì độ trễ tăng từ vài mili-giây lên vài trăm mili-giây, không sai kết quả.
+**Quyết định:** đảo ngược quan hệ phụ thuộc. Hệ thống **đúng nhờ dữ liệu trong bảng**; `NOTIFY` chỉ là **bộ tăng tốc tùy chọn**. Mất nó thì độ trễ tăng từ vài chục mili-giây lên tối đa một chu kỳ poll (500ms), không sai kết quả. **[v4.1]** Đo trên Supabase: `NOTIFY` tới listener sau ~150–190ms.
 
 > Nguyên tắc: *đúng nhờ trạng thái bền vững, nhanh nhờ tín hiệu tức thời — không bao giờ đúng **nhờ** tín hiệu.*
 
@@ -310,7 +310,7 @@ Xấu nhất là chậm hơn và tốn băng thông hơn — không bao giờ sa
 | **Jitter 0–200ms** vào chu kỳ poll | Các instance không đồng pha, tránh đột biến tải |
 | **Thứ tự khóa cố định**: `UPDATE environments ... RETURNING config_version` là thao tác **đầu tiên** của mọi transaction đổi flag; outbox ghi **cuối cùng** | Mọi thay đổi flag đều chạm hàng này. Khóa nó đầu tiên biến nó thành điểm tuần tự hóa duy nhất — không thể deadlock giữa hai transaction cùng environment |
 
-**Kênh NOTIFY cần driver riêng:** Prisma không có API nhận notification. Service 2 và Service 3 giữ **một `pg.Client` riêng, session-pinned, qua `DATABASE_URL_DIRECT`** chỉ để `LISTEN`; mất kết nối này thì poll 500ms vẫn chạy.
+**Kênh NOTIFY cần driver riêng:** Prisma không có API nhận notification. Service nào nghe (Service 2 hôm nay, Service 3 khi có) giữ **một kết nối `pg` riêng, session-pinned, bằng CHÍNH role của nó** — với S2 là `DATABASE_URL_S2_DIRECT` (role `udp_s2`, cổng session) — chỉ để `LISTEN`; mất kết nối này thì poll 500ms vẫn chạy. **[v4.1]** Không dùng `DATABASE_URL_DIRECT`: chuỗi đó là owner, đưa vào runtime của một service là bỏ ranh giới quyền của §1.2; đã đo `udp_s2` LISTEN được qua cổng 5432 (nhận sau ~150ms) và không nhận gì qua 6543. Phía phát: `NOTIFY` chạy **TRONG** transaction ghi, ngay sau bước 4 — PostgreSQL chỉ giao notification khi commit, nên transaction rollback không đánh thức ai (đã đo); kênh `flag_changed`, payload `{"environmentId", "configVersion"}`, dựng và đọc bằng một cặp hàm của `@udp/shared-types`.
 
 **Chuyển chế độ để đo đối chứng:** biến môi trường `CHANGEFEED_MODE=snapshot|delta` cho phép bật/tắt tầng 2 mà không sửa code, phục vụ phép đo E4 (§14) — so sánh độ trễ lan truyền, băng thông và tải database giữa hai chế độ trên cùng một hệ thống.
 
@@ -324,11 +324,12 @@ Xấu nhất là chậm hơn và tốn băng thông hơn — không bao giờ sa
 | 2 | **Lease chuyển gánh nặng đúng đắn sang kỷ luật lập trình** — worker bị GC pause quá lease, worker khác nhận việc, worker cũ tỉnh dậy và cũng ghi | `version` đóng vai trò fencing token; **mọi** đường ghi phải kiểm version trước, **kể cả side effect ra ngoài** (PATCH sang Service 2 mang `If-Match`, promote Argo chỉ sau khi đọc `status.currentStepIndex`). Bất biến I17, I23 |
 | 3 | **Polling không bao giờ về 0** — 3 replica × 500ms ≈ 6 truy vấn/giây chạy suốt, kể cả khi hệ thống nhàn rỗi | Truy vấn có index và thường trả về rỗng nên chi phí không đáng kể; nhưng khiến database không bao giờ ngủ. Chu kỳ poll thích ứng (giãn tới 5s khi không có thay đổi) ở §17 |
 | 4 | **`ConfigChangeLog` cần được dọn** — replica offline lâu hơn thời gian giữ (7 ngày) sẽ thấy hổng | Hổng ⇒ snapshot. Bất biến I18 |
-| 5 | **Độ trễ nền cao hơn** — 5ms lên 500ms khi không có `NOTIFY` | Giữ `NOTIFY` làm bộ tăng tốc ở môi trường đo; báo cáo **cả hai** con số ở E4 kèm giải thích |
+| 5 | **Độ trễ nền cao hơn** — từ ~150ms (đo trên Supabase) lên tối đa 500ms khi không có `NOTIFY` | Giữ `NOTIFY` làm bộ tăng tốc ở môi trường đo; báo cáo **cả hai** con số ở E4 kèm giải thích |
 | 6 | **Thêm cơ chế phải kiểm thử** | Bất biến I15a/I15b/I15c và I16–I21 (§13.3) |
 | 7 | **`config_hash` tính trên snapshot chuẩn hóa tốn CPU** ở environment có hàng nghìn flag | Chỉ tính mỗi 60 giây và chỉ khi tầng 2 đang bật; đo ở E9 |
 | 8 | **Bão snapshot** — nhiều SDK cùng phát hiện version lệch và cùng lấy snapshot | Cache theo `(environmentId, keyType)` + jitter. Còn lại đột biến ở lần đầu sau khi flag-service restart |
-| 9 | **Cần hai chuỗi kết nối** (`DATABASE_URL` qua pooler, `DATABASE_URL_DIRECT` cho pg-boss, migration và `LISTEN`) | Ghi ở §15.3; hệ thống vẫn đúng nếu chỉ có chuỗi qua pooler, chỉ mất `NOTIFY` |
+| 9 | **Cần thêm chuỗi kết nối session** (`DATABASE_URL_DIRECT` của owner cho pg-boss và migration; `DATABASE_URL_S2_DIRECT` của `udp_s2` cho `LISTEN`) | Ghi ở §15.3; hệ thống vẫn đúng nếu chỉ có chuỗi qua pooler — đặt `CHANGEFEED_NOTIFY_ENABLED=false`, chỉ mất `NOTIFY` |
+| 10 | **[v4.1] Commit của mọi transaction có `NOTIFY` xếp hàng qua một khoá toàn cục** — `PreCommit_Notify` (`async.c`) lấy `LockSharedObject(DatabaseRelationId, …, AccessExclusiveLock)` và giữ tới sau commit, để hàng đợi notification đúng thứ tự commit | Chỉ phát `NOTIFY` khi `CHANGEFEED_NOTIFY_ENABLED` bật — cấu hình "không NOTIFY" của E4 vì thế không trả giá này; chi phí đo ở E9 |
 
 **Lợi ích còn lại sau khi trừ đi nhược điểm:** hệ thống triển khai được ở mọi nhà cung cấp, replay được sự kiện sau khi replica restart (điều mà Redis Pub/Sub cũng không có), và cả ba cơ chế đều nằm sau interface — nếu E9 đo ra rằng polling không đủ ở quy mô mục tiêu, việc thay bằng Redis Streams chỉ động vào một file, với số liệu làm căn cứ.
 
@@ -447,7 +448,7 @@ Mệnh đề đó đúng **theo cấu trúc**, không nhờ may mắn, vì tag `
 | **Backend**               | Node.js + TypeScript + Express              | SDK đầy đủ AWS/GCP/Azure, OpenFeature SDK            |
 | **Database**              | PostgreSQL                                  | Quan hệ rõ ràng, JSONB cho phần linh hoạt            |
 | **ORM**                   | Prisma ≥ 7 + `@prisma/adapter-pg`           | Type-safe; driver adapter cho phép pg-boss `send()` chạy trong cùng transaction (ADR-02) |
-| **Driver phụ**            | `pg` (node-postgres)                        | Một `pg.Client` session-pinned qua `DATABASE_URL_DIRECT` chỉ để `LISTEN` (ADR-05); Prisma không nhận được notification |
+| **Driver phụ**            | `pg` (node-postgres)                        | Một kết nối `pg` session-pinned bằng role của chính service (`DATABASE_URL_S2_DIRECT`) chỉ để `LISTEN` (ADR-05); Prisma không nhận được notification |
 | **Validate**              | Zod                                         | Schema validation cho JSONB ở tầng application       |
 | **Container**             | Docker                                      | Multi-stage build                                    |
 | **Orchestration**         | Kubernetes EKS/GKE/AKS                      |                                                      |
@@ -900,7 +901,7 @@ ON ProjectMember (project_id) WHERE project_role = 'OWNER';
 | rank           | INTEGER      | NOT NULL                                 | Thứ tự promotion: dev(0) → staging(1) → prod(2)                     |
 | auto_deploy    | BOOLEAN      | NOT NULL, DEFAULT true                   | **[NEW v4]** `false` ⇒ webhook CI/CD ghi `DeploymentEvent` với `event_type = 'DEPLOY_PENDING'` và **không** deploy; phải có `POST /deployments/:id/approve` mới chạy (§8.3). Ghi chứ không nuốt là điểm mấu chốt: bỏ qua im lặng thì CI tưởng đã deploy, UDP không có bản ghi nào, và DORA đếm thiếu. Cùng khuôn `RolloutEvent.is_intent` — ghi ý định, thực thi tách rời. Portal đặt sẵn `false` khi `is_production` |
 | config_version | INTEGER      | NOT NULL, DEFAULT 0                      | **[NEW v4 — ADR-05]** Con trỏ đọc và ETag của `/sdk/config`. **Chỉ Service 2 được ghi** (column-level GRANT). Tăng dưới row-lock, là thao tác đầu tiên của mọi transaction đổi flag |
-| config_hash    | VARCHAR(64)  | NOT NULL, DEFAULT ''                     | **[NEW v4]** SHA-256 của snapshot chuẩn hóa (flag sắp theo key, rule theo priority) — checksum **nội dung**, replica đối chiếu mỗi 60 giây. **VARCHAR chứ không CHAR [v4]:** `char(n)` được Postgres đệm dấu cách, nên `DEFAULT ''` đọc về phía ứng dụng là 64 dấu cách — một chuỗi **truthy** — trong khi `length()` trong SQL vẫn trả 0. Đã đo trên Supabase; SQL và JavaScript bất đồng là loại bug tốn hàng giờ |
+| config_hash    | VARCHAR(64)  | NOT NULL, DEFAULT ''                     | **[NEW v4]** SHA-256 của snapshot chuẩn hóa (luật chuẩn hoá đầy đủ ở `SdkConfigResponse`, §9) — checksum **nội dung**, replica đối chiếu mỗi 60 giây. **VARCHAR chứ không CHAR [v4]:** `char(n)` được Postgres đệm dấu cách, nên `DEFAULT ''` đọc về phía ứng dụng là 64 dấu cách — một chuỗi **truthy** — trong khi `length()` trong SQL vẫn trả 0. Đã đo trên Supabase; SQL và JavaScript bất đồng là loại bug tốn hàng giờ |
 | created_at     | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                  |                                                                     |
 
 ```sql
@@ -967,7 +968,7 @@ CREATE UNIQUE INDEX idx_idempotency_scope
 | key_suffix     | VARCHAR(16)  | NOT NULL                                     | **[v4]** Sáu ký tự **CUỐI**, hiển thị `udp_sk_live_…a1b2c3`. Không phải ký tự đầu: khoá có dạng `udp_sk_{env}_{random}` nên tám ký tự đầu là `udp_sk_l` cho MỌI khoá server ở live — lưu chúng thì cột này không phân biệt được khoá nào với khoá nào, tức là hỏng đúng mục đích nó sinh ra. Stripe và GitHub cũng hiển thị đuôi |
 | label          | VARCHAR(100) | NULLABLE                                     | Người dùng đặt tên: "backend prod", "mobile app"                     |
 | last_used_at   | TIMESTAMPTZ  | NULLABLE                                     | Cập nhật throttled (tối đa 1 lần/phút) để phát hiện key không dùng   |
-| revoked_at     | TIMESTAMPTZ  | NULLABLE                                     | Khác NULL ⇒ key bị từ chối ngay lập tức                              |
+| revoked_at     | TIMESTAMPTZ  | NULLABLE                                     | Khác NULL ⇒ request mới bị từ chối ngay lập tức; stream SSE đang mở không nhận thêm dữ liệu nào và bị đóng trong ≤ 5 giây (§6.3) |
 | created_by     | UUID         | FK → User, NOT NULL                          |                                                                      |
 | created_at     | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                      |                                                                      |
 
@@ -982,7 +983,7 @@ CREATE INDEX idx_sdkkey_lookup ON SdkKey (key_hash) WHERE revoked_at IS NULL;
 | Dùng ở | Backend của developer (Node/Python server) | Trình duyệt, mobile — nơi key **có thể bị đọc** |
 | Chế độ | **Local evaluation**: nhận toàn bộ rule, đánh giá tại chỗ | **Remote evaluation (OFREP)**: gửi context, nhận kết quả đã đánh giá; **không rule nào rời server** |
 | Endpoint | `GET /sdk/config`, `GET /sdk/stream` (delta) | `POST /ofrep/v1/evaluate/flags`, `POST /ofrep/v1/evaluate/flags/{key}`, `GET /sdk/stream?mode=notify` (chỉ báo đổi) |
-| Rate limit | 100 req/phút/key (config) + không giới hạn eval vì eval là in-process | 600 req/phút/**(key, IP)**; kết quả bulk được cache theo `(configVersion, hash(context))` nên đa số request là cache hit; tối đa 5 stream SSE đồng thời/IP |
+| Rate limit | 100 req/phút/key (config); **[v4.1]** mở stream 1 000 lần/phút/key và tối đa 1 000 stream SSE đồng thời/key/replica — limiter riêng; không giới hạn eval vì eval là in-process | 600 req/phút/**(key, IP)**; kết quả bulk được cache theo `(configVersion, hash(context))` nên đa số request là cache hit; tối đa 5 stream SSE đồng thời/IP |
 | PII | Có thể nhận danh sách userId (backend tin cậy) | Không bao giờ nhận rule; chỉ nhận `value / variant / reason` |
 | Kết quả | Một evaluator chung (§6.5) — kết quả **giống hệt** nhau cho cùng context | |
 
@@ -1385,7 +1386,7 @@ CREATE INDEX idx_changelog_prune  ON ConfigChangeLog (created_at);
 
 > **Vì sao con trỏ là `config_version` chứ không phải `id` hay `xid8`:** xem ADR-05(b). Tóm tắt: `id` phản ánh thứ tự bắt đầu transaction nên có thể bị bỏ sót; `xid8` (v3.2) đúng nhưng thừa và có thể sai thứ tự so với version; `config_version` được cấp dưới row-lock giữ tới commit nên **thứ tự version = thứ tự commit**, không có cửa sổ để lọt (bất biến I15b), và hổng trong chuỗi là tín hiệu để lấy snapshot (I18).
 
-> **Dọn dẹp:** job nền xóa dòng cũ hơn 7 ngày. Replica offline lâu hơn sẽ thấy hổng và tự lấy snapshot đầy đủ.
+> **Dọn dẹp:** job nền của Service 2 (`prune.job.ts`) xoá dòng cũ hơn 7 ngày, mỗi giờ, theo lô. Replica offline lâu hơn sẽ thấy hổng và tự lấy snapshot đầy đủ (I18). **[v4.1]** Không role nào có `DELETE` trên bảng này: S2 gọi hàm `udp_prune_config_change_log(max_rows)` — `SECURITY DEFINER`, `search_path` cố định, **retention 7 ngày viết cứng trong hàm** (S2 không truyền được "0 ngày" để xoá sạch sổ), `EXECUTE` chỉ cấp cho `udp_s2`, và I22 kiểm quyền trên hàm.
 
 #### `RolloutSession` — [v3: gắn environment, gắn variant, có optimistic lock và control mode]
 
@@ -1832,21 +1833,25 @@ src/
 ├── auth/
 │   ├── sdk-key.guard.ts        ← xác thực Bearer sdk key (hoặc ?key= cho CLIENT + SSE), resolve environment
 │   ├── internal-auth.guard.ts  ← [v4] S1/S3 gọi /internal/*: SA token + TokenReview, kiểm ruleId thuộc session đang lease
-│   └── rate-limit.ts           ← SERVER: theo key; CLIENT: theo (key, IP); số stream/IP
+│   └── rate-limit.ts           ← SERVER: theo key (config; mở stream là limiter riêng); CLIENT: theo (key, IP); số stream/IP
 ├── sdk/
+│   ├── index.ts                ← [v4.1] nơi ráp phía sdk: sse.manager + đăng ký nghe change-events
 │   ├── sdk.controller.ts       ← GET /sdk/config, GET /sdk/stream, POST /sdk/stats
-│   ├── sse.manager.ts          ← kết nối SSE theo (envId, keyType, sdkKeyId); heartbeat 20s; đóng stream khi key bị thu hồi
+│   ├── sse.manager.ts          ← kết nối SSE theo (envId, keyType, sdkKeyId); heartbeat 20s; kiểm khoá trước mỗi lần đẩy, đóng stream khi key bị thu hồi
+│   ├── sse.protocol.ts         ← [v4.1] định dạng event, con trỏ since/Last-Event-ID, header chống proxy đệm
+│   ├── config-body.ts          ← [v4.1] body DUY NHẤT cho /sdk/config và event snapshot
 │   └── config-version.ts       ← ETag trên dây = config_version; (envId, keyType) là khóa CACHE
 ├── changefeed/                 ← ADR-05: ba tầng có tự kiểm, con trỏ config_version
 │   ├── change-feed.interface.ts     ← trừu tượng hóa để thay bằng Redis Streams nếu cần
+│   ├── change-events.ts             ← [v4.1] watcher phát delta/snapshot cho sdk/ — changefeed KHÔNG import sdk
 │   ├── version.watcher.ts           ← TẦNG 1: poll config_version + config_hash mỗi 500ms
 │   ├── snapshot.cache.ts            ← cache theo (envId, keyType) + ETag, chống bão snapshot
 │   ├── outbox.poller.ts             ← TẦNG 2: WHERE config_version > $last ORDER BY config_version; hổng ⇒ snapshot
-│   ├── outbox.writer.ts             ← khóa Environment ĐẦU TIÊN, ghi ConfigChangeLog CUỐI CÙNG
+│   ├── (outbox writer)              ← [v4.1] nằm ở `@udp/db` (`writeWithOutbox`) vì S3 cũng là writer: khóa Environment ĐẦU TIÊN, ghi ConfigChangeLog CUỐI CÙNG, NOTIFY trong transaction
 │   ├── checksum.verifier.ts         ← so config_hash mỗi 60s, quyết định rơi tầng
 │   ├── circuit-breaker.ts           ← 3 lần fallback liên tiếp ⇒ tắt tầng 2 trong 5 phút
-│   ├── notify.accelerator.ts        ← TẦNG 3: LISTEN qua pg.Client riêng — chỉ đánh thức poller
-│   └── prune.job.ts                 ← dọn dòng cũ hơn 7 ngày
+│   ├── notify.accelerator.ts        ← TẦNG 3: LISTEN bằng role udp_s2 qua kết nối session riêng — chỉ đánh thức watcher
+│   └── prune.job.ts                 ← dọn dòng cũ hơn 7 ngày qua hàm udp_prune_config_change_log
 ├── telemetry/
 │   └── eval-stat.aggregator.ts ← gộp in-memory, flush lô 15s bằng một INSERT ... ON CONFLICT nhiều hàng
 ├── internal/                   ← Internal endpoints cho Core Backend và Service 3 gọi (If-Match version cho PATCH rules)
@@ -3189,7 +3194,7 @@ sequenceDiagram
 | Đầu ra | `ResolutionDetails` | `ResolutionDetails` **giống hệt** cho cùng context — cùng code, cùng hash, cùng salt |
 | Độ trễ | < 1ms | 1 RTT (cache hit ≈ 5ms) — có thể bulk-evaluate mọi flag một lần lúc tải trang |
 | Khi mất kết nối | Fail-static: dùng cache cuối | OFREP provider giữ kết quả cuối; `PROVIDER_STALE` |
-| Thu hồi key | SSE đóng ngay (`sdkkey.revoked` qua outbox tới mọi replica), request kế tiếp 401 | Request kế tiếp 401 |
+| Thu hồi key | Request kế tiếp 401; stream SSE đang mở không nhận thêm dữ liệu (khoá được kiểm trước mỗi lần đẩy) và bị đóng trong ≤ 5 giây [v4.1] | Request kế tiếp 401 |
 
 > **Đánh đổi được ghi nhận:** CLIENT key có thêm một RTT lúc khởi động và phụ thuộc Service 2 sống để đánh giá lại khi context đổi. Đây là đánh đổi mà mọi hệ feature flag đều chọn cho trình duyệt, vì cái giá ngược lại là rò dữ liệu cá nhân của người dùng cuối.
 
@@ -3215,8 +3220,7 @@ sequenceDiagram
 
     Note over PORTAL,DB: Bước 3 — Người dùng bật flag ở môi trường prod
     PORTAL->>S2B: PATCH /internal/flag-envs/:id { isEnabled: true }
-    S2B->>DB: Transaction: (1) UPDATE environments config_version+1 RETURNING v<br/>(2) UPDATE flag_env_configs (3) INSERT config_change_log(v)
-    S2B->>DB: NOTIFY flag_changed, payload = {envId, version} — chỉ đánh thức
+    S2B->>DB: Transaction: (1) UPDATE environments config_version+1 RETURNING v<br/>(2) UPDATE flag_env_configs (3) INSERT config_change_log(v)<br/>(4) NOTIFY flag_changed {environmentId, configVersion} — TRONG transaction, chỉ giao khi commit
 
     Note over DB,S2A: Bước 4 — Fan-out giữa các replica
     DB-->>S2A: LISTEN nhận được notification
@@ -3239,7 +3243,7 @@ Tầng 2 — NHANH     delta từ ConfigChangeLog, con trỏ theo config_version
                     yêu cầu LIÊN TỤC (n+1); hổng hoặc config_hash lệch
                     → tự rơi về tầng 1
 
-Tầng 3 — ĐÁNH THỨC NOTIFY gọi vòng poll dậy sớm  → độ trễ ~5ms
+Tầng 3 — ĐÁNH THỨC NOTIFY gọi vòng poll dậy sớm  → độ trễ ~150ms (đo trên Supabase)
                     không có ⇒ chờ hết chu kỳ    → độ trễ ≤ 500ms
 
 → Mất tầng 3 (pooler transaction mode, serverless autosuspend): CHẬM HƠN.
@@ -3265,6 +3269,23 @@ Tầng 3 — ĐÁNH THỨC NOTIFY gọi vòng poll dậy sớm  → độ trễ 
 | **Proxy đóng kết nối idle** (nginx, ALB thường 60s) | Heartbeat `:\n\n` mỗi 20 giây | Đồng thời cho SDK biết kết nối còn sống để không reconnect thừa |
 | **Proxy đệm SSE** (nginx ingress, một số CDN) | Response header `X-Accel-Buffering: no`, `Cache-Control: no-cache, no-transform`, `Content-Type: text/event-stream` [v4] | Không có `X-Accel-Buffering: no`, nginx gom event lại tới khi đầy buffer — SDK nhận muộn hàng chục giây mà không có lỗi nào |
 | **Môi trường chặn SSE** (một số corporate proxy, serverless runtime) | Polling fallback | SDK tự chuyển sang `GET /sdk/config` kèm `If-None-Match` mỗi 30s sau 3 lần SSE thất bại liên tiếp. `304 Not Modified` khi không đổi ⇒ chi phí gần bằng 0 |
+
+**Hợp đồng của `GET /sdk/stream` [v4.1]** — thứ provider §6.8 dựa vào, nên chốt từng câu:
+
+| Câu hỏi | Luật |
+| ------- | ---- |
+| Con trỏ lấy ở đâu | `Last-Event-ID` THẮNG `?since=`: `EventSource` tự gửi `Last-Event-ID` khi nối lại, còn URL vẫn giữ `since` của lần đầu. Nhận ba dạng `41`, `"41"`, `W/"41"` — `since` chép nguyên từ ETag vẫn dùng được. Sai dạng ⇒ 400 |
+| Không có con trỏ | Đẩy `snapshot` ngay |
+| Con trỏ < version của replica | Đẩy `snapshot` |
+| Con trỏ = version | Chỉ gửi header, ngay lập tức — SDK biết đã nối mà không phải chờ nhịp tim |
+| Con trỏ > version của replica | Replica này đang tụt (SDK lấy cấu hình ở replica khác). Đối chiếu version THẬT trong database: ≥ con trỏ ⇒ đánh thức watcher, KHÔNG gửi gì cho tới khi cache đuổi kịp; < con trỏ ⇒ environment bị restore ⇒ `snapshot`. Không bao giờ kéo SDK lùi về cấu hình cũ chỉ vì nối nhầm replica |
+| `event: snapshot` | `id` = `configVersion`; `data` đúng bằng body của `GET /sdk/config` |
+| `event: flag_changed` | `id` = `toVersion`; `data: { fromVersion, toVersion, configHash, changes: [{ configVersion, kind: "flag", flag }] }`. Chỉ gửi khi stream đang ở đúng `(version, hash)` của `fromVersion`, ngược lại gửi `snapshot`. `configHash` là hash TẠI `toVersion` — áp xong phải khớp (I15c). `kind` dành chỗ cho `segment` và `trackedFlags`; `changes` được phép rỗng. Không mang trường kiểm toán nào (như `rolloutSessionId`) |
+| `CHANGEFEED_MODE=snapshot` | Mọi thay đổi xuống dạng `snapshot` — đúng thứ E4 muốn đo băng thông |
+| `retry:` | Gửi ở đầu stream và trước khi đóng lúc tắt máy, giá trị ngẫu nhiên 1–10 giây — N tiến trình mất kết nối cùng lúc không nối lại cùng một mili-giây |
+| Thu hồi khoá | Khoá được kiểm trước MỖI lần đẩy — không dữ liệu mới nào tới khoá đã thu hồi; stream rỗi bị đóng trong ≤ 5 giây |
+| Hạn mức | Limiter riêng cho việc mở stream (1 000 lần/phút/khoá) và tối đa 1 000 stream đồng thời/khoá/replica; vượt ⇒ 429 kèm `Retry-After`. Replica đang tắt ⇒ 503 kèm `Retry-After` |
+| Client chậm | Backlog của một stream vượt 1 MiB ⇒ huỷ stream; client nối lại bằng `Last-Event-ID` và nhận `snapshot` mới. Tổng backlog mọi stream có trần 64 MiB mỗi tiến trình |
 
 **Vì sao SSE chứ không phải WebSocket:** chỉ cần đẩy một chiều server → SDK; SSE có sẵn cơ chế reconnect và `Last-Event-ID` trong chuẩn HTML, đi qua được HTTP/2 và mọi proxy hiểu HTTP thường.
 
@@ -3467,7 +3488,7 @@ const store = new AsyncLocalStorage<RequestFlagStore>();
 
 /**
  * trackedFlags: tập flag đang có RolloutSession FLAG_LEVEL active ở environment này.
- * Service 2 đẩy tập này xuống SDK qua SSE (event `tracked_flags`), nên developer không phải cấu hình.
+ * Service 2 đẩy tập này xuống SDK qua stream (§6.3 — phần tử `kind: "trackedFlags"` của `flag_changed`, hoặc `snapshot`), nên developer không phải cấu hình.
  * Giới hạn mặc định 3 flag/environment (RolloutSession bị từ chối nếu vượt) — cardinality có trần.
  */
 export class UDPRequestLabelHook implements Hook {
@@ -3634,6 +3655,17 @@ stateDiagram-v2
 
 **Nguyên tắc chi phối toàn bộ máy trạng thái:** trạng thái xấu nhất là **cũ**, không bao giờ là **sai** và không bao giờ là **sập**. Đây là ADR-05 áp cho phía client: đúng nhờ cache bền vững, nhanh nhờ SSE.
 
+**Luật phía provider khi đọc stream [v4.1]** — thiếu chúng thì máy trạng thái trên không hiện thực được chỉ từ tài liệu:
+
+- **RESYNC** = `GET /sdk/config` **không** kèm `If-None-Match`, hoặc mở stream mới **không** con trỏ. ETag là số đếm chứ không phải checksum, nên RESYNC kèm `If-None-Match` sẽ nhận 304 "xác nhận" đúng cái cache đang hỏng.
+- `configHash` rỗng nghĩa là environment **chưa có mốc** (chưa từng bị ghi) — không phải lệch; coi nó là lệch thì RESYNC vô tận.
+- `flag_changed` có `toVersion ≤ con trỏ` ⇒ bỏ qua (đến trễ hoặc trùng); `fromVersion ≠ con trỏ` ⇒ RESYNC.
+- `snapshot` luôn thay cache, **kể cả khi version thấp hơn con trỏ** — đó là environment bị restore, và server đã đối chiếu với database trước khi gửi.
+- Event lạ, hoặc phần tử `changes[]` có `kind` lạ ⇒ RESYNC, không bỏ qua im lặng.
+- `PROVIDER_CONFIGURATION_CHANGED.flagsChanged`: với `flag_changed` là tập `flag.key` trong `changes`; với `snapshot` là provider tự so cache cũ và mới.
+- Hash tính theo luật chuẩn hoá ở `SdkConfigResponse` (§9), không phải băm nguyên văn chuỗi nhận được.
+- Tôn trọng `retry:` của server khi nối lại.
+
 #### Cấu hình, và giá trị mặc định phải an toàn
 
 ```typescript
@@ -3671,7 +3703,7 @@ interface UDPProviderOptions {
 Đây là mắt xích mà §6.6 và §7.7 đều dựa vào nhưng chưa mục nào mô tả đầy đủ:
 
 1. Service 1 tạo `RolloutSession` scope `FLAG_LEVEL` → gọi `POST /internal/rollouts/:id/track` của Service 2 (§9)
-2. Service 2 thêm `flagKey` vào tập tracked của environment, **tăng `config_version` trong cùng transaction** như mọi thay đổi khác (ADR-05), rồi đẩy event SSE `tracked_flags`
+2. Service 2 thêm `flagKey` vào tập tracked của environment, **tăng `config_version` trong cùng transaction** như mọi thay đổi khác (ADR-05), rồi đẩy xuống SDK qua stream (§6.3: phần tử `kind: "trackedFlags"` trong `flag_changed`, hoặc `snapshot`)
 3. Provider nhận event, cập nhật `provider.trackedFlags` — một `Set` trong bộ nhớ
 4. `UDPRequestLabelHook` đọc `Set` đó ở mỗi lần đánh giá; flag không nằm trong đó thì **không gắn nhãn**, nên cardinality có trần cứng
 5. Rollout kết thúc → `untrack` → nhãn ngừng được sinh
@@ -4134,7 +4166,7 @@ Portal **không bao giờ** gọi thẳng Kubernetes. Nó ghi *ý định*; Serv
 
 **Khi hành động an toàn phụ thuộc vào service khác [v4]:** rollback FLAG_LEVEL là `PATCH` sang Service 2; nếu Service 2 chết thì v3 không có nhánh xử lý — hành động an toàn phụ thuộc vào availability của service khác. v4: executor retry với backoff trong tối đa `rollbackRetrySeconds` (mặc định 120); hết hạn ⇒ `status = FAILED`, `fail_reason = DEPENDENCY_DOWN`, ghi `RolloutEvent(DEPENDENCY_DOWN)`, phát alert `udp_rollback_blocked_total` (P1). Ngoài ra Service 3 giữ **kill-switch trực tiếp**: với quyền column-level chỉ trên `flag_targeting_rules.serve` và transaction đúng kỷ luật ADR-05 (khóa `Environment` → đổi `serve` → ghi outbox), Service 3 được phép ghi thẳng DB **chỉ trong nhánh DEPENDENCY_DOWN** — outbox + poll của các replica Service 2 còn sống (hoặc khi hồi phục) vẫn lan truyền đúng. Đây là ngoại lệ có chủ đích của quy tắc writer, ghi ở §1.2 và có test **I30** — bao gồm cả chiều ngược lại: khi Service 2 còn sống, `GRANT` mức cột phải chặn S3 sửa bất cứ thứ gì ngoài `serve`. **[v4.1] Hai việc kill-switch phải tự làm**, vì nó là writer DUY NHẤT đi vòng qua Service 2 — mà Service 2 làm hai việc này cho mọi đường ghi khác: (1) sắp `weights` theo `variantId` (§6.4 — sai thứ tự là đảo nhóm người dùng, vỡ I1); (2) ghi `change_type = 'rule.ramped'`, không phải một giá trị ngoài từ vựng §2.2. Ngày dựng kill-switch, trigger `trg_rule_serve_variants` phải thêm phép kiểm thứ tự — hôm nay chưa có writer nào đi vòng qua Service 2 nên chưa có gì để chặn.
 
-**Độ trễ và cách xử lý:** intent được xử lý ở vòng quét kế tiếp (≤ 5 giây, `LOOP_INTERVAL_MS`). Service 1 còn phát `NOTIFY rollout_intent` ngay sau khi ghi (qua `pg.Client` riêng trên `DATABASE_URL_DIRECT` — ADR-05); Service 3 `LISTEN` và đánh thức vòng lặp tức thì. Kênh polling vẫn giữ nguyên làm phương án dự phòng — nếu notification bị mất, hệ thống vẫn đúng, chỉ chậm hơn.
+**Độ trễ và cách xử lý:** intent được xử lý ở vòng quét kế tiếp (≤ 5 giây, `LOOP_INTERVAL_MS`). Service 1 còn phát `NOTIFY rollout_intent` **trong chính transaction ghi intent**, qua kết nối pooled thường của nó — `NOTIFY` đi qua pooler transaction mode được, chỉ `LISTEN` là không (đã đo, ADR-05); Service 3 `LISTEN` bằng role của chính nó (`DATABASE_URL_S3_DIRECT`, cùng khuôn với S2) và đánh thức vòng lặp tức thì. Kênh polling vẫn giữ nguyên làm phương án dự phòng — nếu notification bị mất, hệ thống vẫn đúng, chỉ chậm hơn.
 
 **Cưỡng chế quyền:** `PROMOTE` và `ROLLBACK` trên environment có `is_production = true` yêu cầu role `OWNER`/`MAINTAINER` (§2.2) và luôn được ghi `AuditLog` kèm `actor_user_id`.
 
@@ -4157,7 +4189,7 @@ sequenceDiagram
     else Có series
         S1->>S1: RolloutSession PENDING (S1 chỉ tạo hàng)
         S1->>S2: POST /internal/rollouts/:id/track — thêm checkout-v2 vào trackedFlags của env
-        S2->>APP: SSE tracked_flags
+        S2->>APP: SSE flag_changed (kind trackedFlags)
         S1-->>DEV: 201 {sessionId}
 
         S3->>S3: claim lease; PENDING → start(): lưu baseline_percentage = 0, PATCH weights on=10% (If-Match)
@@ -4525,8 +4557,8 @@ sequenceDiagram
         FS->>DB: Sinh bucket_salt cho rule MỚI
         Note over FS: Rule cũ GIỮ NGUYÊN bucket_salt<br/>→ đổi trọng số không xáo lại nhóm người dùng (I1)
         Note over FS,DB: THỨ TỰ TRANSACTION BẮT BUỘC (ADR-05):<br/>1. UPDATE environments SET config_version = config_version + 1 ... RETURNING → v<br/>2. Thay đổi thật (xóa rule cũ, chèn rule mới)<br/>3. Cập nhật config_hash = sha256(snapshot chuẩn hóa)<br/>4. INSERT config_change_log mang ĐÚNG v — ghi CUỐI CÙNG
-        FS->>DB: COMMIT
-        FS->>DB: NOTIFY flag_changed — chỉ ĐÁNH THỨC, không mang dữ liệu
+        FS->>DB: NOTIFY flag_changed — TRONG transaction, chỉ ĐÁNH THỨC, không mang dữ liệu [v4.1]
+        FS->>DB: COMMIT — notification chỉ được giao lúc này
         FS-->>BE: 200 OK
         BE->>AUD: flag.rule.update (before/after đã redact)
         BE-->>FE: 200 OK
@@ -4537,7 +4569,7 @@ sequenceDiagram
     FE->>BE: PATCH /projects/:id/flags/:flagId/envs/:envId {isEnabled: true}
     BE->>BE: env.is_production ⇒ cần MAINTAINER + xác nhận hai bước
     BE->>FS: PATCH /internal/flag-envs/:id
-    FS->>DB: Cùng thứ tự transaction như trên, rồi NOTIFY
+    FS->>DB: Cùng thứ tự transaction như trên, NOTIFY nằm trong transaction
     alt SDK dùng SERVER key — local evaluation
         FS->>APP: SSE flag_changed mang DELTA (chỉ tới SDK có key của ĐÚNG env này)
         Note over APP: Áp delta, kiểm con trỏ liên tục;<br/>hổng hoặc lệch config_hash ⇒ tự lấy snapshot (ADR-05)
@@ -4591,7 +4623,7 @@ sequenceDiagram
         opt scope = FLAG_LEVEL
             BE->>S2: POST /internal/rollouts/:id/track — thêm flag vào trackedFlags
             S2->>S2: Từ chối nếu env đã có 3 flag đang track (trần cardinality §6.6)
-            S2-->>APP: SSE tracked_flags — SDK bắt đầu gắn nhãn ff cho flag này
+            S2-->>APP: SSE flag_changed (kind trackedFlags) — SDK bắt đầu gắn nhãn ff cho flag này
         end
         BE-->>Dev: 201 {sessionId}
     end
@@ -4910,6 +4942,11 @@ GET    /sdk/config                     [UPDATED] thay cho /sdk/flags?projectId=
                                        luôn việc lưu — mà lưu chính là thứ làm 304 có nghĩa.
 GET    /sdk/stream?since=<version>     [UPDATED] SSE; Last-Event-ID; heartbeat 20s;
                                        tự đẩy full snapshot nếu since đã lỗi thời
+                                       [v4.1] CHỈ SERVER key (CLIENT `mode=notify` chờ
+                                       OFREP). Hợp đồng event và luật con trỏ ở §6.3.
+                                       400 con trỏ sai dạng; 429 + Retry-After khi vượt
+                                       hạn mức mở stream hoặc trần stream/khoá; 503 +
+                                       Retry-After khi replica đang tắt
 POST   /sdk/stats                      [NEW] SDK báo cáo eval count tổng hợp mỗi 60s
 
 Internal — chỉ Core Backend và PD Controller gọi (mTLS hoặc shared secret)
@@ -4926,7 +4963,7 @@ PATCH  /internal/rules/:ruleId                     [v4] PD Controller ramp serve
                                                    đây là chốt chặn worker tỉnh muộn (I17, I23)
 POST   /internal/rollouts/:sessionId/track         [NEW v4] S1 gọi khi tạo rollout FLAG_LEVEL:
                                                    thêm flag vào trackedFlags của environment,
-                                                   đẩy SSE `tracked_flags` xuống SDK. 409 nếu env
+                                                   đẩy xuống SDK qua stream (§6.3). 409 nếu env
                                                    đã đủ 3 flag (trần cardinality §6.6)
 POST   /internal/rollouts/:sessionId/untrack       [NEW v4] Gỡ nhãn khi rollout kết thúc, dù
                                                    thành công hay thất bại. Không gỡ thì trần
@@ -5161,7 +5198,7 @@ interface SdkConfigResponse {
    * chuỗi chuẩn hoá NFC, số tuần tự theo RFC 8785 (JCS) — tức thuật toán Number→String
    * của ECMAScript. NaN, Infinity và bigint bị từ chối.
    *
-   * Tức là băm CHÍNH payload này, trừ ba trường — không phải băm một "snapshot nội
+   * Tức là băm CHÍNH payload này (sau khi chuẩn hoá theo luật ngay dưới interface), trừ ba trường — không phải băm một "snapshot nội
    * bộ" nào khác. SDK chỉ có thứ nó nhận trên dây; bắt nó dựng lại một hình dạng
    * khác rồi mong hai bên khớp là mong may mắn. Băm đúng thứ đã gửi thì khớp bằng
    * cấu trúc.
@@ -5213,6 +5250,31 @@ interface SdkConfigResponse {
     }[];
   }[];
   segments: { id: string; conditions: unknown[] }[];
+}
+
+/**
+ * [v4.1] Luật CHUẨN HOÁ trước khi băm `configHash` — SDK ở ngôn ngữ khác phải làm
+ * đúng như vậy, nên chúng là một phần của hợp đồng:
+ *   - `flags` sắp theo `key`; `rules` trong mỗi flag sắp theo `(priority, id)`;
+ *     `segments` sắp theo `id`; `trackedFlags` sắp tăng dần.
+ *   - So chuỗi theo mã đơn vị UTF-16 (không `localeCompare`), rồi mới `canonicalJson`.
+ *   - `weights` KHÔNG sắp lại lúc băm — thứ tự đã được ép ở tầng ghi (§6.4) và mang
+ *     ngữ nghĩa.
+ */
+
+/** [v4.1] GET /sdk/stream — `event: snapshot`: `id` = configVersion, `data` = body của /sdk/config */
+type SdkStreamSnapshotEvent = SdkConfigResponse;
+
+/** [v4.1] GET /sdk/stream — `event: flag_changed`; luật dùng ở §6.3 và §6.8 */
+interface SdkStreamDeltaEvent {
+  fromVersion: number;   // stream PHẢI đang ở đây, nếu không server gửi snapshot
+  toVersion: number;     // = id của event
+  configHash: string;    // hash TẠI toVersion — áp xong phải khớp (I15c)
+  changes: {             // được phép rỗng
+    configVersion: number;
+    kind: "flag";        // dành chỗ cho "segment", "trackedFlags"; kind lạ ⇒ RESYNC
+    flag: SdkConfigResponse["flags"][number];
+  }[];
 }
 
 /**
@@ -6312,7 +6374,7 @@ UDP giữ credential cloud của người khác và có quyền thay đổi hạ
 | T4 | **Leo thang quyền ngang** | User A đọc/sửa project của User B bằng cách đổi `projectId` trên URL | `requireProjectRole` kiểm tra `ProjectMember` ở **mọi** endpoint có `:projectId`; test tích hợp quét toàn bộ route để bảo đảm không route nào thiếu (§13) |
 | T5 | **Leo thang quyền dọc** | DEVELOPER bật flag ở production | Ma trận quyền §2.2 + `env-guard` kiểm tra `Environment.is_production` |
 | T6 | **Giả mạo webhook** | Gửi POST giả để kích hoạt deploy image độc hại | Verify chữ ký theo từng nhà cung cấp, so sánh hằng thời gian; secret mã hóa, xoay vòng được; ghi nhận lần verify thất bại để phát hiện dò quét |
-| T7 | **Lạm dụng SDK endpoint** | Dùng key hợp lệ để bào tài nguyên | Rate limit theo key; `last_used_at` phát hiện bất thường; thu hồi key có hiệu lực ngay |
+| T7 | **Lạm dụng SDK endpoint** | Dùng key hợp lệ để bào tài nguyên | Rate limit theo key (mở stream có limiter và trần riêng); `last_used_at` phát hiện bất thường; thu hồi key: request mới bị từ chối ngay, stream đang mở không nhận thêm dữ liệu và đóng trong ≤ 5 giây |
 | T8 | **Tài nguyên mồ côi tiêu tiền** | Job chết giữa chừng | Sổ `ProvisionedResource` ghi **trước** lời gọi cloud + compensation theo thứ tự ngược + tag `udp.project` + `orphan-scan.job` + `GET /admin/orphan-resources` (§4.4, §8.1). Tài nguyên xóa không được đánh `ORPHAN_SUSPECTED` chứ không nuốt lỗi |
 | T9 | **CSRF trên Portal** | Trang độc dụ trình duyệt gọi API bằng cookie sẵn có | Cookie `httpOnly` + `SameSite=Lax` + header `X-CSRF-Token` (double-submit) — giữ nguyên từ v2 |
 | T10 | **Escape giữa các tenant trên cluster** | Workload của project A đọc secret của project B | Mỗi (project, environment) một namespace riêng + NetworkPolicy mặc định deny + ResourceQuota. **Giới hạn được ghi nhận:** đây là cô lập ở mức namespace, không phải mức kernel — xem §16 |
@@ -6520,10 +6582,10 @@ export function runCloudAdapterContract(adapter: CloudAdapter, env: LocalStackOr
 | I16 | **Lease hết hạn đúng lúc và session được nhận lại** | Kill worker đang giữ lease; khẳng định sau `leaseSeconds` có worker khác `claim` thành công, và không worker nào claim được trước thời điểm đó |
 | I17 | **Fencing chặn được worker tỉnh muộn** | Mô phỏng: worker A claim, tạm dừng; worker B claim sau khi lease hết; A tỉnh dậy và ghi ⇒ khẳng định lời ghi của A **bị từ chối** vì `version` đã đổi |
 | I18 | **Con trỏ hết hiệu lực thì fallback về snapshot** | Xóa toàn bộ `ConfigChangeLog` cũ hơn con trỏ của replica; khẳng định replica phát hiện và tự lấy snapshot đầy đủ thay vì im lặng bỏ qua |
-| I19 | **Transaction dài không chặn được đường lan truyền** | Mở một transaction dài 60 giây ở bảng khác (pg-boss, provisioning); đổi flag ở một environment; khẳng định thay đổi vẫn tới được SDK trong vòng 1 giây. Đây là tình huống mà con trỏ `xid8` của v3.2 sẽ đứng im vì `pg_snapshot_xmin` bị transaction dài giữ lại, còn con trỏ `config_version` thì không liên quan |
+| I19 | **Transaction dài không chặn được đường lan truyền** | Mở một transaction dài 60 giây ở bảng khác (pg-boss, provisioning); đổi flag ở một environment; khẳng định thay đổi vẫn tới được SDK trong vòng 1 giây. Đây là tình huống mà con trỏ `xid8` của v3.2 sẽ đứng im vì `pg_snapshot_xmin` bị transaction dài giữ lại, còn con trỏ `config_version` thì không liên quan. **[v4.1]** Test giữ transaction dài MỞ suốt lúc kiểm (tính chất là "trong lúc", không phải "bao lâu"), đo cả đường `NOTIFY` lẫn đường vòng poll |
 | I20 | **Thứ tự khóa nhất quán — không deadlock** | Chạy 50 transaction đồng thời sửa flag khác nhau trong cùng một environment; khẳng định không có deadlock và `config_version` tăng đúng 50 |
 | I21 | **Cache chặn được bão snapshot** | 200 client đồng thời phát hiện version lệch; khẳng định số truy vấn tới database là **1**, không phải 200 |
-| **I22** | **Ma trận writer được cưỡng chế ở tầng database, không phải ở code review** [v4] | Đọc `information_schema.role_table_grants` cho ba role `udp_s1`/`udp_s2`/`udp_s3` và so **từng ô** với bảng ở §1.2, gồm cả `GRANT` mức cột trên `RolloutSession`. Test fail khi có quyền thừa **hoặc** thiếu. Kiểm thêm bằng hành vi: kết nối bằng role `udp_s3` rồi thử `UPDATE feature_flags` và khẳng định database từ chối |
+| **I22** | **Ma trận writer được cưỡng chế ở tầng database, không phải ở code review** [v4] | Đọc `information_schema.role_table_grants` cho ba role `udp_s1`/`udp_s2`/`udp_s3` và so **từng ô** với bảng ở §1.2, gồm cả `GRANT` mức cột trên `RolloutSession`. Test fail khi có quyền thừa **hoặc** thiếu. Kiểm thêm bằng hành vi: kết nối bằng role `udp_s3` rồi thử `UPDATE feature_flags` và khẳng định database từ chối. **[v4.1]** Phủ cả hàm `SECURITY DEFINER` trong `public`: mọi hàm như vậy phải được khai, `EXECUTE` đúng role đã khai, và `PUBLIC` cùng các role của nền tảng (`anon`, `authenticated`, `service_role` nếu tồn tại) không có |
 | **I23** | **Bên nhận side effect từ chối fencing token cũ** [v4] | Worker A claim session (version = 5), tạm dừng; worker B claim sau khi lease hết (version = 6) và promote; A tỉnh dậy gọi `PATCH /internal/rules/:id` với `If-Match: "<id>:5"`. Khẳng định Service 2 trả **412 Precondition Failed** và **không** đổi `serve.weights`. Bất biến này là thứ giữ cho ADR-05 đúng ở phía *bên kia* lời gọi mạng, chỗ mà optimistic lock của database không với tới |
 | **I24** | **Không token nào vào cluster sống quá 1 giờ, và không cái nào chạm đĩa** [v4] | (a) Chạy luồng §8.3 rồi `grep` toàn bộ dump database và thư mục làm việc cho phần đầu của token, khẳng định không tìm thấy; (b) mock đồng hồ tiến 61 phút, khẳng định `ClusterAccess` xin token mới thay vì dùng lại; (c) khẳng định `expiresAt` trả về từ `POST /internal/clusters/:id/token` không bao giờ quá 1 giờ kể cả khi bên gọi xin dài hơn |
 | **I25** | **Ba bên chạm K8s không bao giờ ghi cùng một loại đối tượng** [v4] | Bật audit log của API server trên cluster `kind`, chạy E2E đầy đủ, rồi phân tích log: nhóm theo `(user, resource, verb)` và khẳng định ba tập rời nhau đúng như §1.2 và §12.2. Kiểm cả chiều ngược: thử cho Service 3 `patch` một `Deployment` và khẳng định **API server** trả 403 — nếu chỉ code chặn thì bất biến này là lời hứa, không phải bảo đảm |
@@ -6710,17 +6772,17 @@ Ba cluster EKS/GKE/AKS chạy liên tục kèm Istio, ELK, Vault vượt xa mứ
 
 ### 15.3 Ràng buộc khi chọn nhà cung cấp PostgreSQL
 
-Sau ADR-05, hệ thống **không còn bắt buộc** kết nối trực tiếp — lease và outbox chạy qua mọi pooler. Nhưng nếu muốn giữ `NOTIFY` làm bộ tăng tốc (độ trễ ~5ms thay vì ≤500ms), cần lưu ý:
+Sau ADR-05, hệ thống **không còn bắt buộc** kết nối trực tiếp — lease và outbox chạy qua mọi pooler. Nhưng nếu muốn giữ `NOTIFY` làm bộ tăng tốc (đo trên Supabase: ~150ms thay vì ≤500ms), cần lưu ý:
 
 | Nhà cung cấp | `LISTEN/NOTIFY` | Ghi chú |
 | ------------ | --------------- | ------- |
 | PostgreSQL trong Docker / trong cụm K8s | Có | Mặc định của môi trường dev và của bản triển khai demo |
-| Supabase cổng **5432** (direct) | Có | Dùng cổng này cho kết nối `NOTIFY` và cho migration |
+| Supabase cổng **5432** (session pooler) | Có | Dùng cổng này cho kết nối `LISTEN` (bằng role của service) và cho migration. `NOTIFY` thì phát được qua cả 6543 |
 | Supabase cổng **6543** (pooler transaction mode) | **Không** | Dùng cho truy vấn CRUD thường; hệ thống vẫn đúng, chỉ mất đường nhanh |
 | Neon endpoint pooled | **Không** | Ngoài ra autosuspend cắt kết nối `LISTEN` khi nhàn rỗi |
 | Aiven / Railway / RDS | Có | Postgres luôn chạy, không autosuspend |
 
-Cấu hình khuyến nghị khi triển khai: **hai chuỗi kết nối** — `DATABASE_URL` (pooled) cho truy vấn thường, `DATABASE_URL_DIRECT` cho migration, pg-boss và kênh `NOTIFY`. Nếu chỉ có một chuỗi qua pooler, hệ thống vẫn hoạt động đúng với độ trễ nền 500ms.
+Cấu hình khuyến nghị khi triển khai: chuỗi **pooled** của từng role cho truy vấn thường (`DATABASE_URL_S1`, `DATABASE_URL_S2`), `DATABASE_URL_DIRECT` (owner, session) cho migration và pg-boss, và chuỗi **session của role** cho kênh `LISTEN` (`DATABASE_URL_S2_DIRECT`). Nếu chỉ có chuỗi qua pooler, đặt `CHANGEFEED_NOTIFY_ENABLED=false`: hệ thống vẫn đúng, độ trễ nền 500ms — để cờ bật mà thiếu chuỗi session thì cấu hình bị từ chối ngay lúc khởi động.
 
 ### 15.4 Rủi ro và phương án dự phòng
 
@@ -6777,6 +6839,9 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | Chuyển giao chậm tối đa 60 giây khi worker chết (lease) | Đánh đổi cố hữu của lease so với advisory lock | Rút ngắn lease và tăng tần suất gia hạn |
 | Polling nền chạy liên tục kể cả khi hệ thống nhàn rỗi | Chi phí truy vấn không đáng kể, nhưng database không bao giờ ngủ | Chu kỳ poll thích ứng: giãn ra khi không có thay đổi |
 | `ConfigChangeLog` giữ 7 ngày | Đủ cho mọi kịch bản replica offline hợp lý | Tăng thời gian giữ, hoặc chuyển sang lưu trữ lạnh |
+| **[v4.1]** Một SERVER key ở chế độ polling phục vụ tối đa khoảng 50 tiến trình mỗi replica | Hạn mức `/sdk/config` là 100 lần/phút/khoá (§2.2) còn polling fallback gọi mỗi 30 giây; có từ khi dựng `/sdk/config`. Stream SSE không bị giới hạn này vì có limiter riêng | Tách khoá theo nhóm dịch vụ, hoặc nâng hạn mức theo số tiến trình khai báo |
+| **[v4.1]** Trần stream và limiter tính theo TỪNG replica | Bộ đếm nằm trong bộ nhớ tiến trình; trần thực tế nhân theo số replica | Kho đếm dùng chung (Redis) khi cần trần toàn cục |
+| **[v4.1]** Stream của khoá vừa thu hồi còn mở tối đa 5 giây | Khoá được kiểm trước mỗi lần đẩy nên không dữ liệu mới nào tới nó; chỉ kết nối rỗi còn sống thêm tối đa một chu kỳ kiểm | Đóng tức thì khi có writer của `sdkkey.revoked` (Service 2, gọi từ API SDK key của Service 1) |
 | `DELETE /projects/:id` xoá mềm nhưng **chưa** enqueue teardown | §9 mô tả endpoint này là "soft-delete + enqueue teardown", nhưng hạ tầng `jobs/` (pg-boss, §3.1) chưa tồn tại nên chưa có hàng đợi để đẩy việc vào. Ghi nhận thay vì im lặng bỏ qua: tài nguyên cloud của một project đã xoá mềm hiện **không** tự được dọn | Dựng `jobs/boss.ts` và `teardown.job.ts`, enqueue ngay trong lệnh xoá mềm (cùng transaction, đúng ADR-02), rồi gỡ mục này |
 | `POST /projects/:id/members` đòi người được mời **đã có tài khoản** | §9 gọi đây là "mời theo email", nhưng cùng lý do với mục đăng ký ở đầu §16: chưa có hạ tầng mail. Một lời mời treo mà không đường nào gửi đi thì tệ hơn một lỗi 404 rõ ràng, và không bảng nào lưu nó | Khi có mail: thêm bảng lời mời, gửi thư kèm token, và cho phép mời địa chỉ chưa đăng ký |
 

@@ -51,6 +51,14 @@ export interface SnapshotCache {
   put(entry: ConfigEntry): void;
   /** Những gì đang được giữ — tập environment mà watcher cần poll */
   tracked(): ConfigEntry[];
+  /**
+   * Replica này có đang giữ — hoặc đang NẠP — environment này không.
+   *
+   * Tầng 3 dùng để bỏ qua notice của environment mà không ai trên replica này đọc:
+   * mọi lần ghi trên mọi project đều phát trên cùng một kênh. Tính cả lần nạp đang
+   * bay, vì notice tới đúng lúc SDK đầu tiên vừa nối vẫn phải đánh thức.
+   */
+  holds(environmentId: string): boolean;
   clear(): void;
 }
 
@@ -114,6 +122,14 @@ export function createSnapshotCache(load: EntryLoader): SnapshotCache {
 
     tracked() {
       return [...entries.values()];
+    },
+
+    holds(environmentId) {
+      const prefix = `${environmentId}:`;
+      for (const key of entries.keys()) if (key.startsWith(prefix)) return true;
+      for (const key of inflight.keys())
+        if (key.startsWith(prefix)) return true;
+      return false;
     },
 
     clear() {

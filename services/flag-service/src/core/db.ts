@@ -24,6 +24,12 @@ export const prisma: PrismaClient = createPrismaClient({
   cacheKey: "__udp_prisma_s2",
 });
 
+/**
+ * Role mà MỌI kết nối của Service 2 phải mang — pool của Prisma lẫn kênh LISTEN
+ * của tầng 3. Một hằng cho cả hai chốt: hai chuỗi ký tự rời là hai chỗ để lệch.
+ */
+export const SERVICE_ROLE = "udp_s2";
+
 /** Gọi lúc khởi động — xem `assertConnectedAs` để biết vì sao nó phải ném */
 export const assertServiceIdentity = (): Promise<void> =>
-  assertConnectedAs(prisma, "udp_s2");
+  assertConnectedAs(prisma, SERVICE_ROLE);

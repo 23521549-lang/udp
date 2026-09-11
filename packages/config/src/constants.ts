@@ -282,8 +282,31 @@ export const CHANGE_FEED = {
   circuitBreakerThreshold: 3,
   /** Thời gian tắt tầng 2 sau khi ngắt mạch */
   circuitBreakerCooldownMs: 5 * 60_000,
-  /** Giữ ConfigChangeLog bao lâu trước khi dọn */
+  /**
+   * Giữ ConfigChangeLog bao lâu. PHẢI bằng số ngày viết cứng trong hàm
+   * `udp_prune_config_change_log` — `design-lint/tests/retention.test.ts` chốt trôi.
+   */
   retentionDays: 7,
+  /**
+   * Dọn `ConfigChangeLog` (§2.2) qua hàm `udp_prune_config_change_log` — S2 không
+   * có DELETE trên bảng. Mỗi lượt xoá theo lô để không giữ khoá lâu, và có trần số
+   * lô để một lượt không chạy vô hạn khi tồn đọng lớn.
+   */
+  prune: { intervalMs: 60 * 60_000, batchSize: 1_000, maxBatchesPerRun: 50 },
+  /**
+   * Kênh LISTEN của tầng 3. Mọi con số dưới đây là HẠN GIỜ, vì đã đo: một kết nối
+   * chết im (TCP còn sống, không byte nào về) làm `SELECT 1` treo vô hạn và
+   * `end()` treo — không có hạn thì tầng 3 điếc mãi mà vẫn trông khoẻ, và tắt máy
+   * mất trọn 10 giây rồi thoát cưỡng bức.
+   */
+  notify: {
+    reconnectInitialMs: 1_000,
+    reconnectMaxMs: 30_000,
+    healthCheckMs: 60_000,
+    healthCheckTimeoutMs: 5_000,
+    identityTimeoutMs: 5_000,
+    stopTimeoutMs: 1_000,
+  },
 } as const;
 
 // ============================================================
@@ -331,7 +354,9 @@ export const RATE_LIMIT = {
    * hai trục chồng nhau, và cách đọc đó dẫn thẳng tới việc nối cả hai limiter
    * lên `/sdk/config`, nơi trục thứ hai vừa sai chỗ vừa không bao giờ chạm tới.
    *
-   *   - `perKey` — **SERVER key**, trên `GET /sdk/config` và `GET /sdk/stream`.
+   *   - `perKey` — **SERVER key**, trên `GET /sdk/config`. Việc MỞ `GET /sdk/stream`
+   *     có limiter riêng (`streamOpensPerKey` bên dưới) — chung bucket thì một lần
+   *     restart replica là bão 429.
    *     100/phút là dư xa cho một backend: SDK giữ cache in-process và chỉ tải
    *     lại khi version đổi, còn bản thân phép đánh giá chạy tại chỗ nên không
    *     sinh request nào. Đếm theo KHOÁ chứ không theo IP vì SDK chạy sau NAT
@@ -346,8 +371,24 @@ export const RATE_LIMIT = {
   sdk: {
     perKey: { windowMs: 60_000, max: 100 },
     perKeyIp: { windowMs: 60_000, max: 600 },
-    /** Số kết nối SSE đồng thời tối đa cho mỗi IP */
+    /** CLIENT key: số kết nối SSE `mode=notify` đồng thời tối đa cho mỗi IP (§2.2) */
     maxStreamsPerIp: 5,
+    /**
+     * SERVER key: số lần MỞ `GET /sdk/stream` mỗi phút mỗi khoá — limiter RIÊNG,
+     * không chung bucket với `perKey` của `/sdk/config`.
+     *
+     * Chung bucket thì một lần replica restart là bão 429: N tiến trình dùng chung
+     * khoá nối lại cùng lúc, phần vượt 100 bị chặn, SDK rơi về polling `/sdk/config`
+     * trên CHÍNH bucket đó và cũng bị chặn — cấu hình đứng im nhiều phút, kill-switch
+     * không tới. 1 000/phút đủ cho E9 (1 000 SDK) nối lại trong một phút.
+     */
+    streamOpensPerKey: { windowMs: 60_000, max: 1000 },
+    /**
+     * SERVER key: số stream mở đồng thời tối đa của một khoá trên MỖI replica. Chặn
+     * một khoá bị lộ giữ vô hạn kết nối; vượt ⇒ 429 kèm `Retry-After`, SDK rơi về
+     * polling (§6.3). Đếm theo replica, nên trần thực tế nhân theo số replica (§16).
+     */
+    maxStreamsPerKey: 1000,
   },
 } as const;
 
@@ -362,6 +403,36 @@ export const SSE = {
   fallbackAfterFailures: 3,
   /** Chu kỳ polling khi SSE không khả dụng */
   pollingFallbackMs: 30_000,
+  /**
+   * Chu kỳ kiểm khoá của các stream ĐANG MỞ (§12 T7).
+   *
+   * Guard kiểm khoá ở mỗi request, nhưng một stream là một request sống hàng giờ.
+   * Mỗi lần đẩy thay đổi đã lọc khoá trước (không dữ liệu mới nào tới khoá đã thu
+   * hồi); chu kỳ này đóng nốt stream đang RỖI. Tách khỏi nhịp tim vì 20 giây là quá
+   * dài cho một hành động an ninh — mỗi vòng chỉ MỘT truy vấn cho mọi stream.
+   */
+  revocationCheckMs: 5_000,
+  /**
+   * Khoảng của trường `retry:` gửi ở đầu stream và trước khi đóng stream lúc tắt
+   * máy — chọn NGẪU NHIÊN trong khoảng này, để N tiến trình mất kết nối cùng lúc
+   * không nối lại cùng một mili-giây.
+   */
+  retryMs: { min: 1_000, max: 10_000 },
+  /**
+   * Backlog tối đa của MỘT stream, đo bằng `res.writableLength` (đã đo: phản ánh
+   * đúng phần đệm phía ứng dụng; `write() === false` thì KHÔNG phải tín hiệu client
+   * chậm). Vượt ⇒ huỷ stream; client nối lại bằng `Last-Event-ID` và nhận snapshot
+   * mới — snapshot là bản thay thế, giữ bản cũ đang kẹt không để làm gì.
+   */
+  maxBacklogBytesPerStream: 1024 * 1024,
+  /** Tổng backlog của mọi stream trong một tiến trình — trần bộ nhớ thật */
+  maxBacklogBytesTotal: 64 * 1024 * 1024,
+  /**
+   * Lúc tắt máy: sau `retry:` và `end()`, stream nào client chưa đọc hết thì bị
+   * huỷ sau chừng này — `end()` không bao giờ xong với client không đọc, và
+   * `server.close()` chờ theo tới lúc thoát cưỡng bức.
+   */
+  closeGraceMs: 1_000,
 } as const;
 
 // ============================================================

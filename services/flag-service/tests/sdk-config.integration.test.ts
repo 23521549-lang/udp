@@ -4,6 +4,7 @@ import { createPrismaClient } from "@udp/db";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { changeFeedWatcher } from "../src/changefeed/index.js";
 import { stableOwner } from "./helpers/fixture.js";
 
 /**
@@ -36,16 +37,24 @@ const SERVER_KEY = `udp_sk_test_${randomUUID()}`;
 const CLIENT_KEY = `udp_ck_test_${randomUUID()}`;
 const REVOKED_KEY = `udp_sk_test_${randomUUID()}`;
 const OTHER_KEY = `udp_sk_test_${randomUUID()}`;
+/** Khoá của env `prod` trong CÙNG project với `SERVER_KEY` */
+const PROD_KEY = `udp_sk_test_${randomUUID()}`;
 
 let projectIds: string[] = [];
 let envIds: string[] = [];
 let ownFlagKey: string;
 let otherFlagKey: string;
+let mineDevEnv: string;
 
 const makeProject = async (
   ownerId: string,
   tag: string,
-): Promise<{ projectId: string; envId: string }> => {
+  withProd = false,
+): Promise<{
+  projectId: string;
+  envId: string;
+  prodEnvId: string | undefined;
+}> => {
   const suffix = randomUUID().slice(0, 8);
   const project = await admin.project.create({
     data: {
@@ -57,24 +66,42 @@ const makeProject = async (
       environments: {
         create: [
           { name: "dev", rank: 0, k8sNamespace: `udp-sdk-${tag}-${suffix}` },
+          ...(withProd
+            ? [
+                {
+                  name: "prod",
+                  rank: 1,
+                  k8sNamespace: `udp-sdk-${tag}-${suffix}-prd`,
+                },
+              ]
+            : []),
         ],
       },
     },
-    select: { id: true, environments: { select: { id: true } } },
+    select: {
+      id: true,
+      environments: { select: { id: true }, orderBy: { rank: "asc" } },
+    },
   });
 
   const envId = project.environments[0]?.id;
   if (envId === undefined) throw new Error("fixture thiếu environment");
-  return { projectId: project.id, envId };
+  return {
+    projectId: project.id,
+    envId,
+    prodEnvId: project.environments[1]?.id,
+  };
 };
 
 beforeAll(async () => {
   const owner = await stableOwner(admin);
 
-  const mine = await makeProject(owner.id, "own");
+  const mine = await makeProject(owner.id, "own", true);
   const theirs = await makeProject(owner.id, "other");
+  if (mine.prodEnvId === undefined) throw new Error("fixture thiếu env prod");
   projectIds = [mine.projectId, theirs.projectId];
-  envIds = [mine.envId, theirs.envId];
+  envIds = [mine.envId, mine.prodEnvId, theirs.envId];
+  mineDevEnv = mine.envId;
 
   await admin.sdkKey.createMany({
     data: [
@@ -109,6 +136,14 @@ beforeAll(async () => {
         keyHash: sha256(OTHER_KEY),
         keySuffix: OTHER_KEY.slice(-6),
         label: "sdktest other project",
+        createdById: owner.id,
+      },
+      {
+        environmentId: mine.prodEnvId,
+        keyType: "SERVER",
+        keyHash: sha256(PROD_KEY),
+        keySuffix: PROD_KEY.slice(-6),
+        label: "sdktest prod cùng project",
         createdById: owner.id,
       },
     ],
@@ -221,6 +256,37 @@ describe("I14 — environment suy ra TỪ KHOÁ", () => {
 
     expect(keysOf(theirs)).toContain(otherFlagKey);
     expect(keysOf(theirs)).not.toContain(ownFlagKey);
+  });
+
+  it("khoá dev và khoá prod của CÙNG project thấy đúng environment của mình", async () => {
+    /**
+     * Ranh giới I14 hẹp nhất: cùng project, cùng flag, khác environment. Bật flag
+     * ở dev thì khoá prod vẫn phải thấy prod — nếu environment suy từ project
+     * thay vì từ khoá, hai khoá này sẽ thấy cùng một thứ.
+     */
+    const envConfig = await admin.flagEnvConfig.findFirstOrThrow({
+      where: { environmentId: mineDevEnv, flag: { key: ownFlagKey } },
+      select: { id: true },
+    });
+    await request(app)
+      .patch(`/internal/flag-envs/${envConfig.id}`)
+      .set("X-Internal-Secret", env.INTERNAL_SERVICE_SECRET)
+      .send({ isEnabled: true })
+      .expect(200);
+    // Cache của tiến trình theo kịp lần ghi — watcher không chạy nền trong test
+    await changeFeedWatcher.tick();
+
+    const dev = await get(SERVER_KEY).expect(200);
+    const prod = await get(PROD_KEY).expect(200);
+    expect(dev.body.environment).toBe("dev");
+    expect(prod.body.environment).toBe("prod");
+
+    const enabledIn = (r: request.Response): unknown =>
+      (r.body.flags as { key: string; isEnabled?: boolean }[]).find(
+        (f) => f.key === ownFlagKey,
+      )?.isEnabled;
+    expect(enabledIn(dev)).toBe(true);
+    expect(enabledIn(prod)).toBe(false);
   });
 });
 

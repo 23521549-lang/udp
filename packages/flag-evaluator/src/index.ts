@@ -21,3 +21,11 @@ export {
   type SnapshotSegment,
   type SnapshotTombstone,
 } from "./snapshot.js";
+export {
+  SDK_STREAM_EVENTS,
+  type SdkConfigResponse,
+  type SdkStreamChange,
+  type SdkStreamDelta,
+  type SdkStreamEventName,
+  type SdkStreamFlagChange,
+} from "./sdk-wire.js";

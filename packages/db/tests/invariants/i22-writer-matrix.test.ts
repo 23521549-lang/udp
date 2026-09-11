@@ -285,3 +285,68 @@ describe("I22 — ma trận writer §1.2", () => {
     expect(violations).toEqual([]);
   });
 });
+
+/**
+ * [v4.1] Hàm `SECURITY DEFINER` — đường ghi mà quyền trên BẢNG không nhìn thấy.
+ *
+ * Hàm như vậy chạy bằng quyền của owner, nên ai gọi được nó là làm được đúng những
+ * gì owner làm trong thân hàm. Một hàm quên `REVOKE ... FROM PUBLIC` là một cửa sau
+ * mà mọi phép kiểm trên `role_table_grants` ở trên vẫn xanh. Đã đo trên Supabase:
+ * hàm mới trong `public` mặc định cho cả `anon` EXECUTE qua `PUBLIC`.
+ *
+ * Cùng khuôn ghi sổ kép với MATRIX: danh sách dưới đây viết độc lập với migration.
+ */
+const DEFINER_FUNCTIONS: Record<string, readonly string[]> = {
+  // Dọn ConfigChangeLog quá 7 ngày (§2.2) — S2 không có DELETE trên bảng
+  "udp_prune_config_change_log(integer)": ["udp_s2"],
+};
+
+/** Role của nền tảng — nếu tồn tại thì KHÔNG được gọi hàm definer nào */
+const PLATFORM_ROLES = ["anon", "authenticated", "service_role"];
+
+describe("I22 — hàm SECURITY DEFINER trong schema public", () => {
+  it("mọi hàm definer đều được khai — không có hàm nào ngoài danh sách", async () => {
+    const r = await client.query<{ sig: string }>(
+      `SELECT p.oid::regprocedure::text AS sig
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.prosecdef
+        ORDER BY 1`,
+    );
+    expect(r.rows.map((x) => x.sig)).toEqual(
+      Object.keys(DEFINER_FUNCTIONS).sort(),
+    );
+  });
+
+  for (const [signature, allowed] of Object.entries(DEFINER_FUNCTIONS)) {
+    it(`${signature}: EXECUTE đúng ${allowed.join(", ")} — không PUBLIC, không role nền tảng`, async () => {
+      const present = await client.query<{ rolname: string }>(
+        `SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[]) ORDER BY 1`,
+        [[...ROLES, ...PLATFORM_ROLES]],
+      );
+      const granted: string[] = [];
+      for (const { rolname } of present.rows) {
+        const res = await client.query<{ ok: boolean }>(
+          `SELECT has_function_privilege($1, $2::regprocedure, 'EXECUTE') AS ok`,
+          [rolname, signature],
+        );
+        if (res.rows[0]?.ok === true) granted.push(rolname);
+      }
+      expect(granted).toEqual([...allowed].sort());
+
+      // PUBLIC không phải một hàng trong pg_roles — đọc thẳng ACL của hàm.
+      // proacl NULL nghĩa là quyền MẶC ĐỊNH, tức PUBLIC có EXECUTE.
+      const acl = await client.query<{ public_exec: boolean }>(
+        `SELECT EXISTS (
+            SELECT 1
+              FROM pg_proc p,
+                   aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+             WHERE p.oid = $1::regprocedure
+               AND a.grantee = 0
+               AND a.privilege_type = 'EXECUTE'
+          ) AS public_exec`,
+        [signature],
+      );
+      expect(acl.rows[0]?.public_exec).toBe(false);
+    });
+  }
+});

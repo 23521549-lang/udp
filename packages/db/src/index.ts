@@ -88,6 +88,8 @@ export {
 export { assertConnectedAs } from "./identity.js";
 export { writeWithOutbox } from "./outbox.js";
 export type { ConfigChangeType, OutboxWrite } from "./outbox.js";
+export { createSessionConnector } from "./session.js";
+export type { SessionClient, SessionConnector } from "./session.js";
 export {
   dbAvailabilityError,
   dbConstraintError,

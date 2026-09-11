@@ -1,5 +1,5 @@
 import { ACTIVE_ROLLOUT_STATUSES } from "@udp/config";
-import { writeWithOutbox, type Prisma } from "@udp/db";
+import type { Prisma } from "@udp/db";
 import {
   logger,
   NotFoundError,
@@ -8,6 +8,7 @@ import {
 } from "@udp/http";
 import { canonicalizeServe, flagServeDbSchema } from "@udp/shared-types";
 import { prisma } from "../../core/db.js";
+import { writeConfigChange } from "../../core/outbox.js";
 import { stateFor } from "../../evaluation/snapshot-builder.js";
 import type { FencingToken } from "./fencing.js";
 import * as repository from "./rule.repository.js";
@@ -43,7 +44,7 @@ export async function rampRule(
 
   let result: { rule: PublicRule } | undefined;
 
-  await writeWithOutbox(prisma, {
+  await writeConfigChange({
     environmentIds: [target.environmentId],
     changeType: "rule.ramped",
     mutate: async (tx) => {

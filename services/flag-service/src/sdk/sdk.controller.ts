@@ -1,9 +1,17 @@
 import { Router } from "express";
-import { asyncHandler } from "@udp/http";
-import { sdkPerKeyLimiter } from "../auth/rate-limit.js";
+import {
+  asyncHandler,
+  buildProblem,
+  rateLimitProblemHandler,
+  sendProblem,
+} from "@udp/http";
+import { sdkPerKeyLimiter, sdkStreamOpenLimiter } from "../auth/rate-limit.js";
 import { requireSdkKey, sdkKeyOf } from "../auth/sdk-key.guard.js";
 import { configCache } from "../changefeed/index.js";
+import { sdkConfigBody } from "./config-body.js";
 import { CONFIG_CACHE_HEADERS, etagOf } from "./config-version.js";
+import { sseHub } from "./index.js";
+import { parseCursor } from "./sse.protocol.js";
 
 /**
  * Bề mặt SDK (§9).
@@ -56,13 +64,43 @@ sdkRouter.get(
      * trong cache rồi. Thứ 304 tiết kiệm là băng thông — đúng điều §6.3 nhắm tới
      * khi nói "chi phí gần bằng 0".
      */
-    res.json({
-      configVersion: entry.configVersion,
-      configHash: entry.configHash,
-      environment: entry.environmentName,
-      trackedFlags: entry.snapshot.trackedFlags,
-      flags: entry.snapshot.flags,
-      segments: entry.snapshot.segments,
-    });
+    res.json(sdkConfigBody(entry));
+  }),
+);
+
+/**
+ * `GET /sdk/stream` — đường ĐẨY của SERVER key (§6.3).
+ *
+ * Cùng thứ tự middleware với `/config` và cùng lý do, với một khác biệt: limiter
+ * là bucket RIÊNG cho việc MỞ stream — xem `sdkStreamOpenLimiter`.
+ *
+ * Con trỏ được đọc SAU guard: 400 chỉ dành cho người đã xác thực, không thành một
+ * cách dò endpoint. Mọi thứ còn lại — giữ chỗ, header, luật con trỏ, sự kiện —
+ * là việc của hub; handler chỉ dịch kết cục "từ chối" thành problem+json.
+ */
+sdkRouter.get(
+  "/stream",
+  sdkStreamOpenLimiter,
+  requireSdkKey("SERVER"),
+  asyncHandler(async (req, res) => {
+    const cursor = parseCursor(req.get("Last-Event-ID"), req.query["since"]);
+    const result = await sseHub.open(res, sdkKeyOf(req), cursor);
+    if (result.kind === "accepted") return;
+
+    res.set("Retry-After", String(result.retryAfterSeconds));
+    if (result.status === 429) {
+      rateLimitProblemHandler(req, res);
+      return;
+    }
+    sendProblem(
+      res,
+      buildProblem({
+        req,
+        status: 503,
+        title: "Service unavailable",
+        detail: "Replica đang tắt — nối lại sau Retry-After giây",
+        typeSlug: "unavailable",
+      }),
+    );
   }),
 );

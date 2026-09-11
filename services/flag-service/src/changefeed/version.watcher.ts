@@ -2,6 +2,7 @@ import { CHANGE_FEED } from "@udp/config";
 import { logger } from "@udp/http";
 import { verifyHash } from "./checksum.verifier.js";
 import type { ChangeFeed, EnvironmentState } from "./change-feed.interface.js";
+import type { ConfigChangeEvents } from "./change-events.js";
 import type { CircuitBreaker } from "./circuit-breaker.js";
 import { pollDeltas } from "./outbox.poller.js";
 import type { ConfigEntry, SnapshotCache } from "./snapshot.cache.js";
@@ -24,8 +25,17 @@ import type { ConfigEntry, SnapshotCache } from "./snapshot.cache.js";
  */
 
 export interface VersionWatcher {
-  /** Một vòng. Tách khỏi lịch để test gọi thẳng thay vì chờ đồng hồ thật */
+  /**
+   * Một vòng, gọi THẲNG — không qua cổng chung. Tách khỏi lịch để test gọi thẳng
+   * thay vì chờ đồng hồ thật; mã chạy thật đi qua `start()` và `wake()`.
+   */
   tick(): Promise<void>;
+  /**
+   * Tầng 3: chạy một vòng NGAY, qua cổng chung với timer. Đang có vòng bay thì chạy
+   * lại đúng một lần ngay sau nó. Sau `stop()` là no-op; trước `start()` thì chạy
+   * đúng một vòng mà không tự bật polling.
+   */
+  wake(): void;
   start(): void;
   stop(): void;
 }
@@ -42,19 +52,38 @@ export interface WatcherDeps {
    * chứng E4 — vốn là toàn bộ lý do biến đó tồn tại.
    */
   deltaMode: boolean;
+  /**
+   * Nơi phát sự kiện "cấu hình đổi" cho `sdk/`. Tuỳ chọn, mặc định không ai nghe:
+   * test của tầng 1 và 2 dựng watcher mà không cần nó.
+   */
+  events?: ConfigChangeEvents;
   now?: () => number;
 }
+
+/** Mặc định khi không ai nghe — watcher không phải hỏi "có listener không" ở mỗi chỗ phát */
+const SILENT: ConfigChangeEvents = {
+  publish: () => undefined,
+  subscribe: () => () => undefined,
+};
 
 export function createVersionWatcher({
   feed,
   cache,
   breaker,
   deltaMode,
+  events = SILENT,
   now = Date.now,
 }: WatcherDeps): VersionWatcher {
   const lastVerifiedAt = new Map<string, number>();
   let timer: NodeJS.Timeout | undefined;
+  /** Đã `start()` — chỉ khi đó vòng kế tiếp mới được tự lập lịch */
+  let started = false;
+  /** Đã `stop()` — `wake()` của tầng 3 thành no-op */
   let stopped = false;
+  /** Vòng đang bay — CỔNG DUY NHẤT cho cả timer lẫn `wake()` */
+  let inFlight: Promise<void> | undefined;
+  /** Có `wake()` tới trong lúc vòng đang bay ⇒ chạy lại NGAY sau, đúng một lần */
+  let rerun = false;
 
   const keyOf = (entry: ConfigEntry): string =>
     `${entry.environmentId}:${entry.keyType}`;
@@ -79,7 +108,13 @@ export function createVersionWatcher({
       },
       "Change feed rơi về snapshot",
     );
-    await cache.reload(entry.environmentId, entry.keyType);
+    const next = await cache.reload(entry.environmentId, entry.keyType);
+    /**
+     * Phát SAU MỌI lần nạp lại vì rơi tầng — kể cả khi version và hash không đổi.
+     * Nhánh tự kiểm 60 giây nạp lại đúng khi nội dung SAI mà SỐ đúng (I15a): bỏ qua
+     * "vì version không đổi" là giữ SDK ở lại đúng cái nội dung sai đó.
+     */
+    events.publish({ kind: "snapshot", previous: entry, next });
   };
 
   /**
@@ -164,6 +199,14 @@ export function createVersionWatcher({
       if (outcome.kind === "applied") {
         cache.put(outcome.entry);
         breaker.recordSuccess(entry.environmentId);
+        // CÙNG khối đồng bộ với `put`: không `await` nào chen giữa, nên không ai đọc
+        // được bộ ba mới mà lỡ sự kiện của nó — hub SSE dựa vào đúng điều này
+        events.publish({
+          kind: "delta",
+          previous: entry,
+          next: outcome.entry,
+          records: outcome.records,
+        });
         return;
       }
 
@@ -221,39 +264,79 @@ export function createVersionWatcher({
    * phải lý do tồn tại của tiến trình. Cổng HTTP mới là thứ giữ tiến trình.
    */
   const scheduleNext = (): void => {
-    if (stopped) return;
+    // LUÔN huỷ timer cũ trước: đặt đè mà không huỷ là để lại một chuỗi timer thứ hai
+    clearTimeout(timer);
+    timer = undefined;
+    if (!started || stopped) return;
 
     const delay =
       CHANGE_FEED.pollIntervalMs + Math.random() * CHANGE_FEED.pollJitterMs;
 
     timer = setTimeout(() => {
+      timer = undefined;
       void runTick();
     }, delay);
     timer.unref();
   };
 
-  const runTick = (): Promise<void> =>
-    tick()
+  /**
+   * CỔNG DUY NHẤT vào một vòng — timer và `wake()` của tầng 3 đều đi qua đây.
+   *
+   * Hai lối vào mà không có cổng chung thì hỏng theo hai kiểu, cả hai đã mô phỏng:
+   * `wake` gọi thẳng `tick()` là chồng vòng (một env bị nạp lại hai lần, phát hai
+   * sự kiện, SSE gửi thêm một snapshot thừa); còn để vòng của `wake` tự lập lịch là
+   * nhân chuỗi timer (nhịp poll từ 1,3 lên 4,8 vòng/giây sau 20 lần wake, và vẫn còn
+   * vòng chạy sau `stop()`). Ở đây: đang có vòng bay thì chỉ đánh dấu `rerun`; xong
+   * vòng thì hoặc chạy lại ngay đúng một lần, hoặc lập lịch như thường.
+   */
+  const runTick = (): Promise<void> => {
+    if (inFlight !== undefined) {
+      rerun = true;
+      return inFlight;
+    }
+
+    inFlight = tick()
       .catch((err: unknown) => {
         logger.error({ err }, "Vòng poll của change feed hỏng");
       })
-      .finally(scheduleNext);
+      .finally(() => {
+        inFlight = undefined;
+        if (rerun && !stopped) {
+          rerun = false;
+          void runTick();
+          return;
+        }
+        rerun = false;
+        scheduleNext();
+      });
+
+    return inFlight;
+  };
 
   return {
     tick,
 
+    wake() {
+      if (stopped) return;
+      // Vòng này thay cho vòng đang chờ trên timer — không để hai chuỗi song song
+      clearTimeout(timer);
+      timer = undefined;
+      void runTick();
+    },
+
     start() {
-      if (timer !== undefined) return;
+      if (started) return;
+      started = true;
       stopped = false;
-      scheduleNext();
+      if (inFlight === undefined) scheduleNext();
     },
 
     stop() {
       stopped = true;
-      if (timer !== undefined) {
-        clearTimeout(timer);
-        timer = undefined;
-      }
+      started = false;
+      rerun = false;
+      clearTimeout(timer);
+      timer = undefined;
     },
   };
 }

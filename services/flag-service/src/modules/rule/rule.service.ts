@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { writeWithOutbox, type Prisma } from "@udp/db";
+import type { Prisma } from "@udp/db";
 import { ConflictError, NotFoundError, OptimisticLockError } from "@udp/http";
 import { prisma } from "../../core/db.js";
+import { writeConfigChange } from "../../core/outbox.js";
 import { stateFor } from "../../evaluation/snapshot-builder.js";
 import * as repository from "./rule.repository.js";
 import type { ReplaceRulesInput, PublicRule } from "./rule.types.js";
@@ -33,7 +34,7 @@ export async function replaceRules(
   const incoming = canonicalRules(input.rules);
   let result: { rules: PublicRule[]; updatedAt: Date } | undefined;
 
-  await writeWithOutbox(prisma, {
+  await writeConfigChange({
     environmentIds: [target.environmentId],
     changeType: "rule.replaced",
     ...(actorUserId === undefined ? {} : { actorUserId }),

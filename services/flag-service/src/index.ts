@@ -1,8 +1,13 @@
 import { env } from "@udp/config";
 import { logger } from "@udp/http";
-import { assertServiceIdentity, prisma } from "./core/db.js";
-import { changeFeedWatcher } from "./changefeed/index.js";
+import { assertServiceIdentity, prisma, SERVICE_ROLE } from "./core/db.js";
+import {
+  changeFeedWatcher,
+  notifyAccelerator,
+  pruneJob,
+} from "./changefeed/index.js";
 import { createApp } from "./app.js";
+import { sseHub } from "./sdk/index.js";
 
 /**
  * Khẳng định danh tính kết nối TRƯỚC khi mở cổng.
@@ -18,10 +23,39 @@ import { createApp } from "./app.js";
  */
 try {
   await assertServiceIdentity();
-  logger.info({ role: "udp_s2" }, "Danh tính kết nối database đã xác nhận");
+  logger.info({ role: SERVICE_ROLE }, "Danh tính kết nối database đã xác nhận");
 } catch (err) {
   logger.fatal({ err }, "Không khởi động: danh tính kết nối database sai");
   process.exit(1);
+}
+
+/**
+ * Kênh LISTEN của tầng 3 là kết nối THỨ HAI, mang chuỗi riêng
+ * (`DATABASE_URL_S2_DIRECT`), nên chốt ở trên KHÔNG phủ nó — phải chốt riêng,
+ * cùng lý do và cùng chỗ: trước khi mở cổng.
+ *
+ * Hai kết cục, hai phản ứng ngược nhau, có chủ đích:
+ *   - Sai role ⇒ KHÔNG khởi động. Chuỗi thứ hai rơi về owner là lỗi cấu hình cùng
+ *     loại với chuỗi thứ nhất rơi về owner.
+ *   - Không nối được ⇒ CHỈ cảnh báo. Tầng 3 là tuỳ chọn (ADR-05): thiếu nó thì
+ *     cấu hình vẫn đúng nhờ tầng 1, chỉ chậm hơn, và kênh sẽ tự nối lại. Chặn
+ *     khởi động vì nó là biến một bộ tăng tốc thành điểm chết của cả service.
+ */
+if (notifyAccelerator !== undefined) {
+  const identity = await notifyAccelerator.verifyIdentity();
+  if (identity.kind === "wrong-role") {
+    logger.fatal(
+      { actual: identity.actual, expected: SERVICE_ROLE },
+      "Không khởi động: danh tính kết nối database sai ở kênh LISTEN của tầng 3 (DATABASE_URL_S2_DIRECT)",
+    );
+    process.exit(1);
+  }
+  if (identity.kind === "unreachable") {
+    logger.warn(
+      { err: identity.error },
+      "Chưa nối được kênh LISTEN của tầng 3 — vẫn khởi động: tầng 1 giữ cấu hình đúng, kênh sẽ tự nối lại",
+    );
+  }
 }
 
 const app = createApp();
@@ -46,6 +80,15 @@ const server = app.listen(env.FLAG_SERVICE_PORT, () => {
  */
 changeFeedWatcher.start();
 
+/** Dọn outbox quá hạn — cùng lý do với vòng poll: bắt đầu sau `listen`, không trong `createApp()` */
+pruneJob.start();
+
+/**
+ * Tầng 3 nghe sau `listen`, cùng lý do với vòng poll: nó chỉ đánh thức vòng poll,
+ * mà vòng poll chỉ phục vụ environment đang có SDK đọc.
+ */
+notifyAccelerator?.start();
+
 /** Tắt êm — xem ghi chú cùng chỗ ở core-backend */
 const shutdown = (signal: string) => {
   logger.info({ signal }, "Nhận tín hiệu dừng, đang đóng...");
@@ -56,25 +99,40 @@ const shutdown = (signal: string) => {
   }, 10_000);
 
   /**
-   * Dừng vòng poll TRƯỚC khi đóng kết nối database.
+   * Thứ tự có chủ đích:
    *
-   * Ngược lại thì một vòng đang bay sẽ chạm pool vừa đóng và ném — một lỗi nổi lên
-   * đúng trên đường lẽ ra phải im lặng nhất.
+   *   1. Đóng mọi stream SSE (kèm `retry:`) rồi ngừng nhận request — hai lời gọi
+   *      LIỀN nhau: `server.close()` chờ mọi kết nối đóng, mà stream SSE không bao
+   *      giờ tự đóng; thiếu `closeAll()` thì tắt máy luôn mất trọn 10 giây rồi
+   *      thoát cưỡng bức. Từ đây mở stream mới nhận 503, nên không request nào
+   *      chạm tới những thứ sắp dừng dưới đây.
+   *   2. Tầng 3 → watcher → dọn outbox: thứ đánh thức dừng trước thứ bị đánh thức.
+   *      (Đảo lại vẫn an toàn — `wake()` sau `stop()` là no-op — nhưng sự an toàn
+   *      không nên phụ thuộc vào một chi tiết cài đặt.)
+   *   3. Đóng pool CUỐI CÙNG, khi cổng HTTP và kênh LISTEN đã đóng hẳn. Ngược lại
+   *      thì một vòng đang bay chạm pool vừa đóng và ném — một lỗi nổi lên đúng
+   *      trên đường lẽ ra phải im lặng nhất.
    */
-  changeFeedWatcher.stop();
-
-  server.close(() => {
-    void prisma
-      .$disconnect()
-      .catch((err: unknown) => {
-        logger.error({ err }, "Lỗi khi đóng kết nối database");
-      })
-      .finally(() => {
-        clearTimeout(forceExit);
-        logger.info("Đã đóng sạch");
-        process.exit(0);
-      });
+  sseHub.closeAll();
+  const httpClosed = new Promise<void>((resolve) => {
+    server.close(() => {
+      resolve();
+    });
   });
+  const listenerStopped = notifyAccelerator?.stop() ?? Promise.resolve();
+  changeFeedWatcher.stop();
+  pruneJob.stop();
+
+  void Promise.all([httpClosed, listenerStopped])
+    .then(() => prisma.$disconnect())
+    .catch((err: unknown) => {
+      logger.error({ err }, "Lỗi khi đóng kết nối database");
+    })
+    .finally(() => {
+      clearTimeout(forceExit);
+      logger.info("Đã đóng sạch");
+      process.exit(0);
+    });
 };
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
