@@ -9,7 +9,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "//": "Không script nào tự nạp .env: prisma.config.ts nạp cho đường CLI, @udp/config/env nạp cho đường seed. Một việc, một nơi làm",
+    "//": "Ai nạp .env: prisma.config.ts cho đường CLI của Prisma, @udp/config/env cho seed và runtime, còn script quản trị trong scripts/ tự nạp .env gốc (dotenv, không ghi đè biến đã có) vì chúng không import @udp/config — entry đó validate toàn bộ env lúc nạp và sẽ sập trước khi script kịp báo biến nào thiếu",
+    "//scratch": "test:scratch, verify-chain, scratch-drop, ci-bootstrap cùng dùng helpers/scratch-database.ts — một database dùng-một-lần trên chính Supabase (§13.5). test:scratch là đúng lệnh CI chạy; verify-chain là lượt nhanh cho người sửa migration",
     "//migrate": "migrate/studio dùng DATABASE_URL_DIRECT: chúng chạy nhiều statement nên không an toàn qua pooler transaction mode (ADR-05, §15.3)",
     "generate": "prisma generate",
     "validate": "prisma validate",
@@ -22,8 +23,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:scratch": "tsx scripts/test-scratch.ts",
     "service-login": "tsx scripts/service-login.ts",
-    "verify-chain": "tsx scripts/verify-chain.ts"
+    "verify-chain": "tsx scripts/verify-chain.ts",
+    "scratch-drop": "tsx scripts/scratch-drop.ts",
+    "ci-bootstrap": "tsx scripts/ci-bootstrap.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

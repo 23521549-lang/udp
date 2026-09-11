@@ -26,10 +26,12 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
-    "//lint": "Chua co linter. 5 package deu da co ma nguon, nen day la NO ky thuat that chu khong con la \"chua den luc\" — eslint + typescript-eslint nen them truoc service nghiep vu dau tien.",
+    "//test": "test chạy trên database dev đang dùng (nhanh, cho vòng lặp phát triển). test:scratch dựng database dùng-một-lần từ chuỗi migration, seed, chạy đủ mọi package rồi xoá — đúng lệnh CI chạy, cần chuỗi thật của ba role trong .env",
     "test": "pnpm -r --if-present test",
+    "test:scratch": "pnpm --filter @udp/db test:scratch",
     "db:service-login": "pnpm --filter @udp/db service-login",
-    "db:verify-chain": "pnpm --filter @udp/db verify-chain"
+    "db:verify-chain": "pnpm --filter @udp/db verify-chain",
+    "db:ci-bootstrap": "pnpm --filter @udp/db ci-bootstrap"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",

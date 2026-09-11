@@ -5,6 +5,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Làn hằng đêm của §13.5 (mới chỉ là lượt chạy lại bộ test đầy đủ, chưa có
+  # contract test hay E2E). Nó còn một việc thực dụng: project Supabase của CI
+  # là gói free, bị tạm dừng sau một tuần không hoạt động; lượt chạy hằng đêm
+  # giữ nó sống. 18:00 UTC là 01:00 giờ Việt Nam.
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -47,20 +54,42 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
 
-  chain:
-    name: migration chain replay
+  test:
+    name: full test suite on a scratch database
     runs-on: ubuntu-latest
-    # Job này cần quyền owner trên database, nên nó chỉ chạy khi secret có mặt.
-    # Không có secret thì bỏ qua trong im lặng thay vì đỏ — một fork hay một
-    # bản clone không nên hỏng chỉ vì thiếu thứ nó không được phép có.
+    # Toàn bộ 7 package, trên một database dùng-một-lần dựng từ chuỗi migration
+    # (nên "migration chain replay" là bước đầu của lượt này). Database nằm trên
+    # một project Supabase RIÊNG cho CI, đặt cùng vùng với runner: xem
+    # `packages/db/scripts/ci-bootstrap.ts` để biết vì sao và cách dựng nó.
+    #
+    # Chỉ một lượt chạm project CI tại một thời điểm: gói free có 60 kết nối, một
+    # lượt đã dùng ~33, hai lượt song song (push main + PR) là vượt. Không huỷ
+    # lượt đang chạy — xếp hàng; lượt CHỜ thì có thể bị lượt sau thay thế.
+    concurrency:
+      group: udp-ci-scratch-database
+      cancel-in-progress: false
+    # Job cần secret nên chỉ chạy khi có. Không có secret thì bỏ qua trong im
+    # lặng thay vì đỏ — một fork hay một bản clone không nên hỏng chỉ vì thiếu
+    # thứ nó không được phép có.
     env:
+      # Năm chuỗi này do `pnpm db:ci-bootstrap` sinh vào .env.ci rồi
+      # `gh secret set -f .env.ci` nạp lên. Ba chuỗi role là BẮT BUỘC: test của
+      # hai service nối bằng role của chính mình (§1.2) và chốt `current_user`
+      # lúc boot. Job cũ gán chuỗi owner cho S1/S2 — trái ADR-05 ("không đưa
+      # owner vào runtime của service"), và cũng làm 249 test service không thể
+      # chạy. Role là cấp cluster nên chuỗi role nối thẳng vào database scratch;
+      # GRANT cấp database thì migration dựng lại bên trong nó.
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DATABASE_URL_DIRECT: ${{ secrets.DATABASE_URL_DIRECT }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL_DIRECT }}
-      DATABASE_URL_S1: ${{ secrets.DATABASE_URL_DIRECT }}
-      DATABASE_URL_S2: ${{ secrets.DATABASE_URL_DIRECT }}
-      # Lượt kiểm không dựng Service 2 nên tắt tầng 3 — khi đó `@udp/config` không
-      # đòi `DATABASE_URL_S2_DIRECT` (chuỗi session cho kênh LISTEN của S2).
-      CHANGEFEED_NOTIFY_ENABLED: "false"
+      DATABASE_URL_S1: ${{ secrets.DATABASE_URL_S1 }}
+      DATABASE_URL_S2: ${{ secrets.DATABASE_URL_S2 }}
+      DATABASE_URL_S2_DIRECT: ${{ secrets.DATABASE_URL_S2_DIRECT }}
+      # Tầng 3 của ADR-05 bật: `tier3.integration.test.ts` khẳng định cờ này và
+      # đo đường NOTIFY thật trên database scratch.
+      CHANGEFEED_NOTIFY_ENABLED: "true"
+      # Tên tất định để bước dọn cuối job biết đúng database cần xoá khi lượt bị
+      # huỷ giữa chừng. Phải khớp SCRATCH_NAME_PATTERN của scratch-database.ts.
+      UDP_SCRATCH_DB_NAME: udp_scratch_ci_${{ github.run_id }}_${{ github.run_attempt }}
       # Các biến còn lại mà `@udp/config` bắt buộc. Đây là giá trị VỨT ĐI dùng
       # một lần: không secret nào trong số này chạm tới dữ liệu thật, và lượt
       # kiểm chỉ dựng lại lược đồ rồi xoá database đi.
@@ -86,6 +115,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
 
-      - name: pnpm db:verify-chain
+      - name: pnpm test:scratch
+        id: suite
         if: env.DATABASE_URL_DIRECT != ''
-        run: pnpm db:verify-chain
+        # Một `DROP` hay một kết nối treo không được đốt 6 giờ runner.
+        timeout-minutes: 40
+        run: pnpm test:scratch
+
+      # Lưới cho ca huỷ giữa chừng: khi job bị huỷ (`cancel-in-progress` ở trên,
+      # hoặc runner chết), runner gửi tín hiệu cho bash gốc của step rồi giết cả
+      # cây sau 10 giây — `finally` của test-scratch KHÔNG chạy, database ở lại
+      # trên Supabase. `always()` chạy cả khi huỷ (tài liệu GitHub), trong cửa sổ
+      # 5 phút, nên bước này phải ngắn. Bỏ qua khi bước test chưa từng chạy
+      # (huỷ lúc đang cài đặt): lúc đó chưa có database nào để dọn.
+      - name: drop the run's database if the job was cancelled or crashed
+        if: always() && env.DATABASE_URL_DIRECT != '' && steps.suite.outcome != 'skipped'
+        timeout-minutes: 3
+        run: pnpm --filter @udp/db scratch-drop

@@ -1,9 +1,11 @@
-import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
-import { Client } from "pg";
-import { DB_TLS_OPTIONS, sanitizeConnectionString } from "../src/adapter.js";
+import {
+  pointAt,
+  step,
+  withScratchDatabase,
+} from "./helpers/scratch-database.js";
 
 /**
  * Dựng lại TOÀN BỘ chuỗi migration từ số 0 và chứng minh nó chạy được.
@@ -25,6 +27,10 @@ import { DB_TLS_OPTIONS, sanitizeConnectionString } from "../src/adapter.js";
  *     I22 vẫn kiểm thật. Trên một container sạch, ba role đó không tồn tại và
  *     khẳng định ấy xanh vĩnh viễn mà chẳng kiểm gì.
  *   - Không phải hạ chuẩn TLS ở bất cứ đâu để chạy được.
+ *
+ * Đây là lượt kiểm NHANH cho người sửa migration (~2 phút, không cần mật khẩu
+ * của role nào). Bộ test đầy đủ trên cùng cơ chế là `pnpm test:scratch`; cơ chế
+ * dựng và xoá database nằm ở `helpers/scratch-database.ts`.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -53,26 +59,22 @@ if (!adminUrl) {
  * đều nối bằng `DATABASE_URL_DIRECT` (quyền owner) rồi dùng `SET LOCAL ROLE` để
  * kiểm GRANT — mà quyền `SET ROLE` cũng là cấp cluster nên đã sẵn có.
  */
+// Tên đặt thẳng, KHÔNG đọc `UDP_SCRATCH_DB_NAME`: biến đó là của bộ test đầy
+// đủ trong CI, và một biến còn sót trong shell không được đổi hành vi lệnh này.
 const scratch = `udp_verify_${String(Date.now())}`;
-const base = sanitizeConnectionString(adminUrl);
 
-const urlFor = (source: string): string => {
-  const url = new URL(sanitizeConnectionString(source));
-  url.pathname = `/${scratch}`;
-  return url.toString();
-};
-
-const scratchDirect = urlFor(adminUrl);
+const scratchDirect = pointAt(adminUrl, scratch);
 const childEnv: NodeJS.ProcessEnv = {
   ...process.env,
   DATABASE_URL: scratchDirect,
   DATABASE_URL_DIRECT: scratchDirect,
   // Chỉ cần hợp lệ về cú pháp để `@udp/config` qua được bước validate; trỏ vào
   // chính database tạm để không lời gọi nhầm nào chạm tới database thật.
-  DATABASE_URL_S1: urlFor(process.env["DATABASE_URL_S1"] ?? adminUrl),
-  DATABASE_URL_S2: urlFor(process.env["DATABASE_URL_S2"] ?? adminUrl),
-  DATABASE_URL_S2_DIRECT: urlFor(
+  DATABASE_URL_S1: pointAt(process.env["DATABASE_URL_S1"] ?? adminUrl, scratch),
+  DATABASE_URL_S2: pointAt(process.env["DATABASE_URL_S2"] ?? adminUrl, scratch),
+  DATABASE_URL_S2_DIRECT: pointAt(
     process.env["DATABASE_URL_S2_DIRECT"] ?? adminUrl,
+    scratch,
   ),
   // Lượt kiểm chỉ chạy test của `@udp/db` và `design-lint`, không dựng Service 2 —
   // tắt tầng 3 để `@udp/config` không phụ thuộc kênh LISTEN của `.env` thật. Test
@@ -80,58 +82,26 @@ const childEnv: NodeJS.ProcessEnv = {
   CHANGEFEED_NOTIFY_ENABLED: "false",
 };
 
-const step = (
-  label: string,
-  cmd: string,
-  args: string[],
-  cwd: string,
-): void => {
-  console.log(`\n=== ${label} ===`);
-  execFileSync(cmd, args, {
-    cwd,
-    env: childEnv,
-    stdio: "inherit",
-    shell: true,
-  });
-};
-
-const admin = new Client({ connectionString: base, ssl: DB_TLS_OPTIONS });
-await admin.connect();
-
-console.log(`Database dùng một lần: ${scratch}`);
-await admin.query(`CREATE DATABASE ${scratch}`);
-
-let failed: unknown;
 try {
-  step(
-    "1/4 áp toàn bộ migration lên database TRỐNG",
-    "prisma",
-    ["migrate", "deploy"],
-    DB_PKG,
-  );
-  step("2/4 seed", "tsx", ["prisma/seed.ts"], DB_PKG);
-  step("3/4 test @udp/db", "vitest", ["run"], DB_PKG);
-  step(
-    "4/4 test @udp/design-lint",
-    "vitest",
-    ["run"],
-    resolve(ROOT, "packages/design-lint"),
-  );
-} catch (err: unknown) {
-  failed = err;
-} finally {
-  /**
-   * `WITH (FORCE)` chứ không phải `DROP DATABASE` trần: đã đo, một kết nối còn
-   * treo từ bước trước là đủ để `DROP` thất bại và để lại database rác trên
-   * Supabase của người dùng. Dọn dẹp nằm trong `finally` vì một lượt kiểm thất
-   * bại càng cần được dọn — đó chính là lúc người ta quên.
-   */
-  await admin.query(`DROP DATABASE IF EXISTS ${scratch} WITH (FORCE)`);
-  await admin.end();
-  console.log(`\nĐã xoá ${scratch}.`);
-}
-
-if (failed !== undefined) {
+  await withScratchDatabase(adminUrl, scratch, async () => {
+    step(
+      "1/4 áp toàn bộ migration lên database TRỐNG",
+      "prisma",
+      ["migrate", "deploy"],
+      DB_PKG,
+      childEnv,
+    );
+    step("2/4 seed", "tsx", ["prisma/seed.ts"], DB_PKG, childEnv);
+    step("3/4 test @udp/db", "vitest", ["run"], DB_PKG, childEnv);
+    step(
+      "4/4 test @udp/design-lint",
+      "vitest",
+      ["run"],
+      resolve(ROOT, "packages/design-lint"),
+      childEnv,
+    );
+  });
+} catch {
   console.error("\nChuỗi migration KHÔNG dựng lại được từ đầu.");
   process.exit(1);
 }
