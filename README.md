@@ -92,7 +92,7 @@ pnpm dev:flags
 
 Mỗi push và mỗi PR chạy `typecheck`, `lint`, `format:check`, rồi `pnpm test:scratch`
 trên một **project Supabase riêng cho CI**, đặt cùng vùng với runner GitHub (`us-east-1`)
-để round trip tới database ở mức vài ms như khi triển khai thật. Dựng project ấy một lần:
+để round trip tới database ngắn (đo 71ms, so với ~220ms nếu CI phải nói chuyện với Singapore). Dựng project ấy một lần:
 
 1. Tạo project Supabase (gói free, vùng `us-east-1`), lấy hai chuỗi owner ở Connect:
    Transaction pooler (6543) làm `DATABASE_URL`, Session pooler (5432) làm

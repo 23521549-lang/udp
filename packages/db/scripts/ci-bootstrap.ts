@@ -28,7 +28,7 @@ import {
  *      GitHub, thuộc về người dùng.
  *
  * Vì sao project riêng thay vì Supabase dev: CI đặt được cùng vùng với runner
- * (round trip vài ms thay vì ~220ms Mỹ → Singapore, đúng hình học của triển khai
+ * (round trip đo 71ms thay vì ~220ms Mỹ → Singapore, gần hình học của triển khai
  * thật nơi S2 và PostgreSQL cùng vùng), mật khẩu của dev không bao giờ rời máy
  * dev, và hai ngân sách 60 kết nối tách nhau. Ba lý do của §13.5 (không Docker,
  * đúng PostgreSQL + Supavisor, có role của nền tảng cho I22) giữ nguyên vì cùng
