@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openClient } from "../helpers/db.js";
@@ -349,4 +352,138 @@ describe("I22 — hàm SECURITY DEFINER trong schema public", () => {
       expect(acl.rows[0]?.public_exec).toBe(false);
     });
   }
+});
+
+/**
+ * [v4.2] Ba lớp mà quyền trên BẢNG không nhìn thấy — đo ngày 12/09/2026 trên hai
+ * project Supabase: project MỚI cấp sẵn toàn quyền trên mọi đối tượng mới trong
+ * `public` cho `anon`, `authenticated`, `service_role` (6 dòng `pg_default_acl`)
+ * và cho cả ba lẫn PUBLIC USAGE trên schema; project dev không có gì trong số
+ * đó; database dùng-một-lần tạo từ `template1` không kế thừa default privilege
+ * nhưng vẫn mang PUBLIC USAGE mặc định của PostgreSQL 15+.
+ *
+ * Migration `public_schema_hardening` thu hồi tất cả. Ba test dưới đây canh kết
+ * quả (a, b) và chứng minh phép thu hồi có tác dụng trên đúng hình dạng "project
+ * mới" (c) — dựng lại trong một transaction rồi ROLLBACK, ngay trên database
+ * dùng-một-lần vốn không có hình dạng ấy.
+ *
+ * Khẳng định PHỦ ĐỊNH, không liệt kê "ACL chỉ có X": owner của `public` là
+ * `postgres` trên dev nhưng là `pg_database_owner` trên database mới, và `nspacl`
+ * NULL nghĩa là quyền MẶC ĐỊNH (PUBLIC có USAGE) — `aclexplode(NULL)` trả 0 hàng
+ * và một test liệt kê sẽ xanh sai. Vì thế đọc qua `acldefault` như test hàm
+ * definer ở trên.
+ */
+const HARDENING_SQL = readFileSync(
+  resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../prisma/migrations/20260912090000_public_schema_hardening/migration.sql",
+  ),
+  "utf8",
+);
+
+/** Role của nền tảng đang tồn tại trên cluster này */
+async function presentPlatformRoles(): Promise<string[]> {
+  const r = await client.query<{ rolname: string }>(
+    `SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[]) ORDER BY 1`,
+    [PLATFORM_ROLES],
+  );
+  return r.rows.map((x) => x.rolname);
+}
+
+describe("I22 [v4.2] — schema public và default privilege không mở cho role nền tảng", () => {
+  it("(a) không role nền tảng nào, và không PUBLIC, có USAGE trên schema public", async () => {
+    for (const role of await presentPlatformRoles()) {
+      const r = await client.query<{ ok: boolean }>(
+        `SELECT has_schema_privilege($1, 'public', 'USAGE') AS ok`,
+        [role],
+      );
+      expect(r.rows[0]?.ok, `${role} có USAGE trên public`).toBe(false);
+    }
+    const pub = await client.query<{ public_usage: boolean }>(
+      `SELECT EXISTS (
+          SELECT 1
+            FROM pg_namespace n,
+                 aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) a
+           WHERE n.nspname = 'public' AND a.grantee = 0
+        ) AS public_usage`,
+    );
+    expect(pub.rows[0]?.public_usage).toBe(false);
+  });
+
+  it("(a') ba role của UDP vẫn có USAGE — thu hồi PUBLIC không làm chúng mất lối vào", async () => {
+    for (const role of ROLES) {
+      const r = await client.query<{ ok: boolean }>(
+        `SELECT has_schema_privilege($1, 'public', 'USAGE') AS ok`,
+        [role],
+      );
+      expect(r.rows[0]?.ok, role).toBe(true);
+    }
+  });
+
+  it("(b) default privilege của role tạo đối tượng trong public không có role nền tảng hay PUBLIC", async () => {
+    const r = await client.query<{ who: string }>(
+      `SELECT DISTINCT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END AS who
+         FROM pg_default_acl d, aclexplode(d.defaclacl) a
+        WHERE d.defaclnamespace = 'public'::regnamespace
+          AND d.defaclrole IN (
+                SELECT c.relowner FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace
+                UNION SELECT current_user::regrole::oid)
+          AND (a.grantee = 0 OR a.grantee::regrole::text = ANY($1::text[]))
+        ORDER BY 1`,
+      [PLATFORM_ROLES],
+    );
+    expect(r.rows.map((x) => x.who)).toEqual([]);
+  });
+
+  it("(c) SQL của migration thu hồi được hình dạng 'project Supabase mới' — bảng thường trong public, không TEMP", async (ctx) => {
+    const roles = await presentPlatformRoles();
+    if (!roles.includes("anon")) {
+      // PostgreSQL thuần không có role của nền tảng; ca này chỉ có nghĩa trên Supabase
+      ctx.skip();
+      return;
+    }
+    const probe = `i22_probe_${Math.random().toString(16).slice(2, 10)}`;
+    await client.query("BEGIN");
+    try {
+      // Hình dạng "project mới": USAGE schema + default privilege + đối tượng mới
+      await client.query(`GRANT USAGE ON SCHEMA public TO anon`);
+      await client.query(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon`,
+      );
+      await client.query(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon`,
+      );
+      await client.query(`CREATE TABLE public.${probe} (id int)`);
+      await client.query(`CREATE SEQUENCE public.${probe}_seq`);
+
+      const priv = async (): Promise<[boolean, boolean, boolean]> => {
+        const r = await client.query<{ s: boolean; t: boolean; q: boolean }>(
+          `SELECT has_schema_privilege('anon', 'public', 'USAGE') AS s,
+                  has_table_privilege('anon', $1::regclass, 'SELECT') AS t,
+                  has_sequence_privilege('anon', $2::regclass, 'USAGE') AS q`,
+          [`public.${probe}`, `public.${probe}_seq`],
+        );
+        const row = r.rows[0];
+        if (row === undefined) throw new Error("không đọc được quyền");
+        return [row.s, row.t, row.q];
+      };
+
+      expect(await priv(), "mô phỏng chưa cấp được quyền").toEqual([
+        true,
+        true,
+        true,
+      ]);
+
+      await client.query(HARDENING_SQL);
+
+      expect(await priv()).toEqual([false, false, false]);
+      const left = await client.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_default_acl d, aclexplode(d.defaclacl) a
+          WHERE d.defaclnamespace = 'public'::regnamespace AND a.grantee::regrole::text = 'anon'`,
+      );
+      expect(left.rows[0]?.n).toBe(0);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  });
 });

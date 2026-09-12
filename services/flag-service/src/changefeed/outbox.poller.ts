@@ -24,7 +24,7 @@ import type { ConfigEntry } from "./snapshot.cache.js";
  * replica tụt lại rất xa mà vẫn cố áp từng dòng sẽ đọc về hàng nghìn payload,
  * mỗi payload là một entry flag đầy đủ. Lúc đó snapshot vừa rẻ hơn vừa cho kết
  * quả giống hệt. Con số 100 chọn theo hình dạng dữ liệu chứ không theo phép đo:
- * quá ngưỡng này thì một `snapshotOf` (hai truy vấn) gần như chắc chắn rẻ hơn.
+ * quá ngưỡng này thì một `snapshotOf` (một câu lệnh) gần như chắc chắn rẻ hơn.
  */
 const MAX_DELTA_BATCH = 100;
 

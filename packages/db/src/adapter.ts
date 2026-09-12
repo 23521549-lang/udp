@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { DB_POOL } from "@udp/config/constants";
 
 /**
  * Nơi DUY NHẤT biết cách mở kết nối tới database.
@@ -54,17 +55,36 @@ export interface PgAdapterOptions {
    * khi pg-boss và kênh LISTEN tham gia.
    */
   max: number;
+  /**
+   * Thời gian chờ MỘT khe trong pool trước khi bỏ cuộc. Mặc định
+   * `DB_POOL.acquireTimeoutMs`; chỉ test cạn pool mới truyền giá trị khác.
+   */
+  acquireTimeoutMs?: number;
 }
 
-/** Dựng adapter với TLS xác thực đầy đủ và trần pool tường minh. */
+/** Dựng adapter với TLS xác thực đầy đủ, trần pool và hạn chờ pool tường minh. */
 export function createPgAdapter({
   connectionString,
   max,
+  acquireTimeoutMs = DB_POOL.acquireTimeoutMs,
 }: PgAdapterOptions): PrismaPg {
   return new PrismaPg({
     connectionString: sanitizeConnectionString(connectionString),
     ssl: DB_TLS_OPTIONS,
     max,
+    /**
+     * Không có nó, một truy vấn gặp pool cạn xếp hàng VÔ HẠN. Trước đây chỉ
+     * transaction có `maxWait` (và chỉ đường đọc snapshot của S2 dùng
+     * transaction); một câu `$queryRaw` hay `findMany` trần không có hạn nào.
+     * Đặt ở tầng adapter thì mọi truy vấn của mọi service cùng một luật, và
+     * `dbAvailabilityError` dịch lỗi này (pg-pool: "timeout exceeded when
+     * trying to connect") thành 503 `PROVIDER_UNAVAILABLE` như với `P2028`.
+     *
+     * Ngữ nghĩa của pg-pool, đã đo: con số này tính cả thời gian MỞ một kết nối
+     * mới (TLS tới Supabase ~0,5s), không chỉ thời gian chờ khe rảnh. Vì thế nó
+     * phải rộng hơn handshake xa nhất — 5 giây là dư, 300ms là tự giết mình.
+     */
+    connectionTimeoutMillis: acquireTimeoutMs,
   });
 }
 

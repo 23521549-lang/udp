@@ -212,3 +212,66 @@ describe("dbAvailabilityError — cạn pool là 503, bug của transaction vẫ
     expect(dbAvailabilityError(expired)).toBeUndefined();
   });
 });
+
+describe("dbAvailabilityError — cạn pool NGOÀI transaction cũng là 503 [v4.2]", () => {
+  it("một truy vấn trần chờ khe quá acquireTimeoutMs ⇒ PROVIDER_UNAVAILABLE", async () => {
+    /**
+     * Từ [v4.2] đường nạp snapshot không còn transaction, nên `maxWait` không
+     * bảo vệ nó nữa; thay vào đó là `connectionTimeoutMillis` ở tầng adapter cho
+     * MỌI truy vấn. Test này canh hai thứ: hạn chờ đó có hiệu lực (không xếp
+     * hàng vô hạn), và thông điệp của `pg-pool` còn được nhận diện đúng chữ.
+     */
+    /**
+     * `connectionTimeoutMillis` của pg-pool tính cả thời gian MỞ kết nối mới
+     * (TLS tới Supabase ~0,5s từ máy dev), không chỉ thời gian chờ khe — đã đo:
+     * 300ms giết luôn transaction giữ chỗ trước khi nó kịp nối. 2 giây đủ cho
+     * handshake và vẫn ngắn hơn 4 giây pg_sleep, nên truy vấn thứ hai chắc chắn
+     * hết hạn TRONG lúc khe còn bị giữ.
+     */
+    const tiny = new PrismaClient({
+      adapter: createPgAdapter({
+        connectionString: connectionString(),
+        max: 1,
+        acquireTimeoutMs: 2_000,
+      }),
+    });
+
+    const holder = tiny
+      .$transaction(
+        async (tx) => {
+          await tx.$executeRaw`SELECT pg_sleep(4)`;
+        },
+        { maxWait: 5_000, timeout: 10_000 },
+      )
+      .then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+
+    try {
+      await new Promise((r) => setTimeout(r, 1_200));
+
+      const started = Date.now();
+      const err = await tiny.$queryRaw`SELECT 1`.then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      const waited = Date.now() - started;
+
+      expect(
+        err,
+        "pool 1 khe đang bị giữ mà truy vấn trần vẫn chạy được",
+      ).toBeDefined();
+      expect(waited).toBeGreaterThanOrEqual(1_500);
+      expect(waited).toBeLessThan(4_000);
+      expect(dbAvailabilityError(err)?.code).toBe("PROVIDER_UNAVAILABLE");
+      expect(
+        await holder,
+        "transaction giữ chỗ phải tự kết thúc êm",
+      ).toBeUndefined();
+    } finally {
+      await holder;
+      await tiny.$disconnect();
+    }
+  });
+});

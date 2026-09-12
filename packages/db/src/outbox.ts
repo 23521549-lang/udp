@@ -75,8 +75,8 @@ export interface OutboxWrite<T> {
  *
  * Mặc định của Prisma là `timeout: 5000ms`. Đã đo RTT tới database ở Singapore
  * là ~50ms, tức 5 giây chỉ đủ 100 lượt đi về — và một lần tạo flag chạm N
- * environment tốn khoảng `3N + 3` lượt (câu `NOTIFY` của tầng 3 là MỘT lượt cho cả
- * lần ghi), chưa kể truy vấn bên trong `hashOf`.
+ * environment tốn khoảng `4N + 3` lượt (câu `NOTIFY` của tầng 3 là MỘT lượt cho cả
+ * lần ghi; `stateOf` là MỘT câu lệnh cho mỗi environment từ [v4.2]).
  * Khai tường minh, rộng hơn, và nói rõ con số thay vì để mặc định âm thầm cắt
  * giữa chừng bằng `P2028` sau khi đã giữ khoá suốt thời gian đó.
  *

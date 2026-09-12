@@ -50,7 +50,18 @@ export function createPrismaClient(options: PrismaClientOptions): PrismaClient {
       connectionString: options.connectionString,
       max: options.max,
     }),
-    log: isDevelopment ? ["query", "warn", "error"] : ["warn", "error"],
+    /**
+     * Sự kiện `query` LUÔN bật, ở mọi môi trường: đó là đường duy nhất để đếm
+     * round trip (test I19 [v4.2] và I21, phép đo E4) mà không sửa code chạy
+     * thật. Chi phí là một lần phát sự kiện mỗi truy vấn khi có người nghe; xem
+     * `observeQueries`. In ra stdout thì chỉ ở development, như trước.
+     */
+    log: [
+      { emit: "event", level: "query" },
+      ...(isDevelopment ? (["query"] as const) : []),
+      "warn",
+      "error",
+    ],
   });
 
   if (!isProduction) cache[options.cacheKey] = client;
@@ -86,6 +97,8 @@ export {
   sanitizeConnectionString,
 } from "./adapter.js";
 export { assertConnectedAs } from "./identity.js";
+export { observeQueries } from "./observe.js";
+export type { QueryListener, QueryObservation } from "./observe.js";
 export { writeWithOutbox } from "./outbox.js";
 export type { ConfigChangeType, OutboxWrite } from "./outbox.js";
 export { createSessionConnector } from "./session.js";

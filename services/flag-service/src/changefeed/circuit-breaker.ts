@@ -7,7 +7,7 @@ import { incrementCounter } from "./metrics.js";
  * "Rơi về snapshot 3 lần liên tiếp ⇒ tắt tầng 2 cho environment đó 5 phút."
  *
  * Vì sao ngắt mạch chứ không cứ thử lại: rơi tầng không miễn phí. Mỗi lần rơi là
- * một `snapshotOf` đầy đủ — truy vấn nặng nhất hệ thống có — nên một environment
+ * một `snapshotOf` đầy đủ — câu lệnh nặng nhất hệ thống có — nên một environment
  * mà tầng 2 hỏng vĩnh viễn (dòng outbox bị dọn, `change_type` chưa hiểu, bug
  * trong phép áp delta) sẽ vừa trả tiền cho tầng 2 vừa trả tiền cho tầng 1 ở MỌI
  * vòng poll. Tắt tầng 2 làm nó chỉ còn trả tiền một lần, và vẫn ĐÚNG — đó là

@@ -101,8 +101,17 @@ try {
       childEnv,
     );
   });
-} catch {
+} catch (err: unknown) {
   console.error("\nBộ test đầy đủ KHÔNG xanh trên database scratch.");
+  /**
+   * Lỗi của một BƯỚC đã tự in ra stdio (stdio: inherit), nhưng lỗi của chính
+   * lượt chạy — chốt danh tính, tạo/xoá database — thì chưa ai in. Nuốt nó ở
+   * đây là để lại một dòng KHÔNG xanh không nói vì sao (đã gặp: log chỉ còn
+   * tên database và câu kết).
+   */
+  if (err instanceof Error && !err.message.startsWith("Command failed")) {
+    console.error(err.message);
+  }
   process.exit(1);
 }
 

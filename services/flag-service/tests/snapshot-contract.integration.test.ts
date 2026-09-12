@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { env } from "@udp/config";
-import { createPrismaClient } from "@udp/db";
+import { createPrismaClient, observeQueries } from "@udp/db";
 import { configHashOf, type Snapshot } from "@udp/flag-evaluator";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { stableOwner } from "./helpers/fixture.js";
 import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
+import { stateFor } from "../src/evaluation/snapshot-builder.js";
 
 /**
  * Hợp đồng trên dây của ADR-05.
@@ -21,12 +22,12 @@ import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
  * 2. `payload` của outbox phải là DELTA, không phải thông báo. §2.2 khai nó là
  *    "delta đầy đủ để replica cập nhật cache mà không phải đọc lại toàn bộ".
  *
- * Snapshot đọc qua `prismaEntryLoader` — ĐÚNG đường production dùng — chứ không
- * gọi thẳng `snapshotOf`. Gọi thẳng là hai truy vấn rời ở mức `ReadCommitted`,
- * nên một lần ghi chen vào giữa cho ra snapshot trộn hai trạng thái và hash lệch
- * với `config_hash`. Khẳng định một tính chất bằng một đường mà production không
- * đi thì test vừa không chứng minh được điều cần, vừa chập chờn dưới tải song
- * song — đã thấy đúng hình dạng đó khi chạy `pnpm -r test`.
+ * Snapshot đọc qua `prismaEntryLoader` — ĐÚNG đường production dùng. Từ [v4.2]
+ * đường đó là MỘT câu lệnh SQL, nên `(version, hash, snapshot)` cùng một ảnh chụp
+ * bằng cấu trúc; bản trước là hai truy vấn rời ở mức `ReadCommitted` và một lần
+ * ghi chen vào giữa cho ra snapshot trộn hai trạng thái — đã thấy đúng hình dạng
+ * đó khi chạy `pnpm -r test`. Khẳng định một tính chất bằng một đường mà
+ * production không đi thì test không chứng minh được điều cần.
  */
 
 const app = createApp();
@@ -232,5 +233,45 @@ describe("payload của outbox là DELTA, không phải thông báo", () => {
     const delta = log.payload as { flag: Record<string, unknown> };
     expect(delta.flag["variants"]).toEqual({ on: true, off: false });
     expect(delta.flag["defaultVariantKey"]).toBe("on");
+  });
+});
+
+/**
+ * Chốt cấu trúc của I19 [v4.2] và I21 (ADR-05): một lần nạp là MỘT câu lệnh.
+ *
+ * Đếm chỉ `SELECT`: `COMMIT` cũng được Prisma phát như một sự kiện query, còn
+ * `BEGIN` thì không (driver adapter mở transaction bên trong) — cả hai là điều
+ * khiển transaction, không phải round trip nạp dữ liệu. Cửa sổ nghe mở NGAY
+ * trước và đóng NGAY sau lời gọi cần đếm, để không nhặt nhầm truy vấn của test
+ * khác trên cùng client.
+ */
+const selectsDuring = async (
+  work: () => Promise<unknown>,
+): Promise<string[]> => {
+  const seen: string[] = [];
+  const stop = observeQueries(admin, (q) => seen.push(q.query));
+  try {
+    await work();
+  } finally {
+    stop();
+  }
+  return seen.filter((q) => /^\s*(\/\*[^]*?\*\/\s*)?SELECT/i.test(q));
+};
+
+describe("đường nạp snapshot là MỘT câu lệnh (I19 [v4.2], I21)", () => {
+  it("prismaEntryLoader phát đúng 1 truy vấn, mang nhãn udp:snapshot", async () => {
+    const selects = await selectsDuring(() => readEntry(envId));
+    expect(selects).toHaveLength(1);
+    expect(selects[0]).toContain("udp:snapshot");
+  });
+
+  it("stateFor trong transaction ghi phát đúng 1 truy vấn dưới row-lock", async () => {
+    const key = `one-${randomUUID().slice(0, 8)}`;
+    await createFlag(key).expect(201);
+    const selects = await selectsDuring(() =>
+      admin.$transaction((tx) => stateFor(key)(tx, envId)),
+    );
+    expect(selects).toHaveLength(1);
+    expect(selects[0]).toContain("udp:snapshot");
   });
 });

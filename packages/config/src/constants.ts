@@ -267,6 +267,19 @@ export const JOB_LEASE = {
 // Change feed — ba tầng có tự kiểm (Design v4 ADR-05)
 // ============================================================
 
+/**
+ * Pool kết nối database — luật chung cho cả ba service (áp ở `createPgAdapter`).
+ *
+ * `acquireTimeoutMs`: chờ một khe trong pool tối đa bao lâu trước khi trả 503.
+ * Bằng `maxWait` mà `writeWithOutbox` và đường đọc snapshot cũ đã dùng, để không
+ * có hai con số cho cùng một câu hỏi "quá tải là bao lâu". Trần số khe là biến
+ * môi trường (`DATABASE_POOL_MAX`) vì nó phụ thuộc gói database; còn đây là
+ * ngưỡng nghiệp vụ, không đổi theo nơi triển khai.
+ */
+export const DB_POOL = {
+  acquireTimeoutMs: 5_000,
+} as const;
+
 export const CHANGE_FEED = {
   /** Chu kỳ poll config_version (tầng 1) */
   pollIntervalMs: 500,

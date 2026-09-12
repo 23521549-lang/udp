@@ -8,6 +8,11 @@ import {
   type SnapshotSegment,
 } from "@udp/flag-evaluator";
 import { flagServeDbSchema, type FlagServeWire } from "@udp/shared-types";
+import {
+  snapshotRowOf,
+  type FlagRow,
+  type SnapshotRow,
+} from "./snapshot-row.js";
 
 /**
  * Dựng snapshot hình dạng dây, và từ nó ra `config_hash` cùng delta (§3.2
@@ -19,6 +24,11 @@ import { flagServeDbSchema, type FlagServeWire } from "@udp/shared-types";
  * module kia phải thò tay vào nội tạng của `flag` ngay lúc được viết ra. Nó cũng là
  * thứ `changefeed/` nạp vào cache — một hạ tầng không nên phụ thuộc vào một module
  * nghiệp vụ cụ thể.
+ *
+ * Hai nửa tách bạch: `snapshot-row.ts` ĐỌC (một câu lệnh SQL, đã validate),
+ * file này DỰNG (`snapshotFromRow`, hàm thuần). Tách như vậy để phần dựng —
+ * nơi mọi quyết định về hình dạng dây nằm — kiểm được bằng fixture mà không
+ * cần database, còn phần đọc kiểm bằng golden hash trên database thật.
  */
 
 /**
@@ -80,10 +90,8 @@ function serveOf(
   };
 }
 
-function segmentOf(row: {
-  id: string;
-  conditions: Prisma.JsonValue;
-}): SnapshotSegment {
+// `conditions?`: zod khai `unknown` thành khoá tuỳ chọn; thiếu thì nhánh dưới ném đúng thông điệp
+function segmentOf(row: { id: string; conditions?: unknown }): SnapshotSegment {
   if (!Array.isArray(row.conditions)) {
     throw new Error(
       `Segment ${row.id}: \`conditions\` không phải mảng. §2.2 khai đây là "mảng ` +
@@ -93,11 +101,65 @@ function segmentOf(row: {
   return { id: row.id, conditions: row.conditions };
 }
 
+function entryOf(flag: FlagRow): SnapshotEntry {
+  /**
+   * Flag đã lưu trữ vẫn có mặt, dưới dạng bia mộ (§6.5).
+   *
+   * Bỏ hẳn nó khỏi snapshot làm SDK trả `FLAG_NOT_FOUND` thay vì `DISABLED`
+   * — với người viết ứng dụng, cái đầu nghĩa là "gõ sai tên", cái sau nghĩa
+   * là "flag có thật, đang tắt". Hai câu trả lời khác nhau cho hai tình
+   * huống khác nhau.
+   */
+  if (flag.lifecycleStatus === "ARCHIVED") {
+    return { key: flag.key, archived: true };
+  }
+
+  const config = flag.envConfig;
+  const byId = new Map(flag.variants.map((v) => [v.id, v.key] as const));
+  const where = `Flag "${flag.key}"`;
+
+  /**
+   * Override của environment thắng default của flag (§6.5:
+   * `envConfig.defaultVariantId ?? flag.defaultVariantId`).
+   *
+   * Trên dây chỉ có MỘT trường, nên phép chọn đó phải xảy ra ở đây. Gửi cả
+   * hai xuống SDK là bắt hai bản cài đặt cùng nhớ thứ tự ưu tiên — và bên
+   * nào quên thì phục vụ sai default mà hash vẫn khớp.
+   */
+  const defaultVariantId = config?.defaultVariantId ?? flag.defaultVariantId;
+
+  if (defaultVariantId === null) {
+    throw new Error(
+      `${where}: không có variant mặc định. §9 khai \`defaultVariantKey\` là ` +
+        `bắt buộc vì đó là giá trị SDK trả khi không rule nào khớp; thiếu nó ` +
+        `thì flag không đánh giá được`,
+    );
+  }
+
+  return {
+    key: flag.key,
+    type: flag.flagType,
+    isEnabled: config?.isEnabled ?? false,
+    stickinessAttribute: flag.stickinessAttribute,
+    variants: Object.fromEntries(flag.variants.map((v) => [v.key, v.value])),
+    defaultVariantKey: variantKeyOf(byId, defaultVariantId, where),
+    rules: (config?.rules ?? []).map((rule): SnapshotRule => ({
+      id: rule.id,
+      type: rule.ruleType,
+      condition: rule.condition,
+      serve: serveOf(rule.serve, byId, `${where} rule ${rule.id}`),
+      bucketSalt: rule.bucketSalt,
+      priority: rule.priority,
+    })),
+  };
+}
+
 /**
- * Dựng snapshot của MỘT environment — đầu vào của `config_hash`, và là chính
- * payload `/sdk/config`.
+ * Dựng snapshot của MỘT environment từ hàng đã đọc — đầu vào của `config_hash`,
+ * và là chính payload `/sdk/config`. Hàm THUẦN: mọi quyết định về hình dạng dây
+ * nằm ở đây, và kiểm được bằng fixture.
  *
- * Bốn điều quyết định tính đúng của nó:
+ * Ba điều quyết định tính đúng của nó:
  *
  * 1. **Hình dạng là hình dạng DÂY (§9), không phải hình dạng thuận tay cho truy
  *    vấn.** `config_hash` là hợp đồng liên tiến trình: S2 ghi con số, còn SDK
@@ -106,132 +168,16 @@ function segmentOf(row: {
  *    trước băm `variants[].id`, `defaultVariantId` và `envDefaultVariantId`, ba
  *    trường không bao giờ rời server, nên SDK không có cách nào tính ra con số
  *    S2 ghi — I15c hỏng bằng cấu trúc chứ không phải bằng bug.
- * 2. **Mọi truy vấn đều kèm `environmentId`.** Bất biến I14 nói SDK key của
- *    `dev` không được đọc cấu hình `prod`. Snapshot là thứ SDK nhận, nên đây
- *    chính là nơi I14 được quyết định — một `where` thiếu điều kiện env ở đây là
- *    rò rỉ toàn bộ, không phải rò rỉ một phần.
- * 3. **Hai truy vấn, không phải N và cũng không phải ba.** Hàm này chạy BÊN
- *    TRONG transaction đang giữ row lock trên `environments`. Đã đo RTT tới
- *    database là ~50ms, nên mỗi lượt đi về đều tính. `segments` lấy lồng qua
- *    `project` chứ không phải một truy vấn thứ ba, dù nó thuộc về project chứ
- *    không thuộc environment.
- * 4. **`serve` được dịch id → key ngay tại đây.** Đây là ranh giới duy nhất mà
+ * 2. **Điều kiện environment nằm trong câu lệnh đọc** (`snapshot-row.ts`), nên
+ *    hàng vào đây đã là của đúng một environment — I14 được quyết định ở đó.
+ * 3. **`serve` được dịch id → key ngay tại đây.** Đây là ranh giới duy nhất mà
  *    hai hình dạng gặp nhau; để việc dịch trôi xuống controller là mở đường cho
  *    hai đường dịch khác nhau ở hai endpoint.
  */
-export async function snapshotOf(
-  tx: Prisma.TransactionClient,
-  environmentId: string,
-): Promise<Snapshot> {
-  const environment = await tx.environment.findUniqueOrThrow({
-    where: { id: environmentId },
-    select: {
-      projectId: true,
-      project: {
-        select: {
-          segments: {
-            select: { id: true, conditions: true },
-            orderBy: { id: "asc" },
-          },
-        },
-      },
-    },
-  });
-
-  const flags = await tx.featureFlag.findMany({
-    where: { projectId: environment.projectId },
-    select: {
-      key: true,
-      flagType: true,
-      lifecycleStatus: true,
-      stickinessAttribute: true,
-      defaultVariantId: true,
-      variants: { select: { id: true, key: true, value: true } },
-      envConfigs: {
-        where: { environmentId },
-        select: {
-          isEnabled: true,
-          defaultVariantId: true,
-          rules: {
-            select: {
-              id: true,
-              ruleType: true,
-              priority: true,
-              bucketSalt: true,
-              condition: true,
-              serve: true,
-            },
-            /**
-             * Thứ tự TẤT ĐỊNH ngay từ truy vấn, dù `normalizeSnapshot` cũng sắp
-             * lại. Postgres không bảo đảm thứ tự khi thiếu `ORDER BY`, và thứ tự
-             * nó trả về đổi sau mỗi lần UPDATE — nên để nguyên là mời một khác
-             * biệt không tất định vào đúng đầu vào của hàm băm.
-             */
-            orderBy: [{ priority: "asc" }, { id: "asc" }],
-          },
-        },
-      },
-    },
-  });
-
+export function snapshotFromRow(row: SnapshotRow): Snapshot {
   return {
-    flags: flags.map((flag): SnapshotEntry => {
-      /**
-       * Flag đã lưu trữ vẫn có mặt, dưới dạng bia mộ (§6.5).
-       *
-       * Bỏ hẳn nó khỏi snapshot làm SDK trả `FLAG_NOT_FOUND` thay vì `DISABLED`
-       * — với người viết ứng dụng, cái đầu nghĩa là "gõ sai tên", cái sau nghĩa
-       * là "flag có thật, đang tắt". Hai câu trả lời khác nhau cho hai tình
-       * huống khác nhau.
-       */
-      if (flag.lifecycleStatus === "ARCHIVED") {
-        return { key: flag.key, archived: true };
-      }
-
-      const config = flag.envConfigs[0];
-      const byId = new Map(flag.variants.map((v) => [v.id, v.key] as const));
-      const where = `Flag "${flag.key}"`;
-
-      /**
-       * Override của environment thắng default của flag (§6.5:
-       * `envConfig.defaultVariantId ?? flag.defaultVariantId`).
-       *
-       * Trên dây chỉ có MỘT trường, nên phép chọn đó phải xảy ra ở đây. Gửi cả
-       * hai xuống SDK là bắt hai bản cài đặt cùng nhớ thứ tự ưu tiên — và bên
-       * nào quên thì phục vụ sai default mà hash vẫn khớp.
-       */
-      const defaultVariantId =
-        config?.defaultVariantId ?? flag.defaultVariantId;
-
-      if (defaultVariantId === null) {
-        throw new Error(
-          `${where}: không có variant mặc định. §9 khai \`defaultVariantKey\` là ` +
-            `bắt buộc vì đó là giá trị SDK trả khi không rule nào khớp; thiếu nó ` +
-            `thì flag không đánh giá được`,
-        );
-      }
-
-      return {
-        key: flag.key,
-        type: flag.flagType,
-        isEnabled: config?.isEnabled ?? false,
-        stickinessAttribute: flag.stickinessAttribute,
-        variants: Object.fromEntries(
-          flag.variants.map((v) => [v.key, v.value]),
-        ),
-        defaultVariantKey: variantKeyOf(byId, defaultVariantId, where),
-        rules: (config?.rules ?? []).map((rule): SnapshotRule => ({
-          id: rule.id,
-          type: rule.ruleType,
-          condition: rule.condition,
-          serve: serveOf(rule.serve, byId, `${where} rule ${rule.id}`),
-          bucketSalt: rule.bucketSalt,
-          priority: rule.priority,
-        })),
-      };
-    }),
-
-    segments: environment.project.segments.map(segmentOf),
+    flags: row.flags.map(entryOf),
+    segments: row.segments.map(segmentOf),
 
     /**
      * RỖNG trong lát cắt này, và đó là câu trả lời đúng — không phải chỗ trống
@@ -250,6 +196,25 @@ export async function snapshotOf(
      */
     trackedFlags: [],
   };
+}
+
+/**
+ * Snapshot của một environment, đọc bằng MỘT câu lệnh rồi dựng.
+ *
+ * Chạy được trong transaction ghi (`stateFor`) — ở đó nó là truy vấn duy nhất
+ * dưới row-lock của `environments` ngoài chính các lệnh ghi.
+ */
+export async function snapshotOf(
+  tx: Prisma.TransactionClient,
+  environmentId: string,
+): Promise<Snapshot> {
+  const row = await snapshotRowOf(tx, environmentId);
+  if (row === undefined) {
+    throw new Error(
+      `Environment ${environmentId} không tồn tại — không dựng được snapshot`,
+    );
+  }
+  return snapshotFromRow(row);
 }
 
 /**

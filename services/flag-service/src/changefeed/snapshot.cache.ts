@@ -1,6 +1,7 @@
 import type { PrismaClient, SdkKeyType } from "@udp/db";
 import type { Snapshot } from "@udp/flag-evaluator";
-import { snapshotOf } from "../evaluation/snapshot-builder.js";
+import { snapshotFromRow } from "../evaluation/snapshot-builder.js";
+import { snapshotRowOf } from "../evaluation/snapshot-row.js";
 
 /**
  * Cache snapshot theo `(environmentId, keyType)` — biện pháp BẮT BUỘC của ADR-05.
@@ -140,51 +141,42 @@ export function createSnapshotCache(load: EntryLoader): SnapshotCache {
 }
 
 /**
- * Ngân sách của một lần đọc nhất quán.
+ * Đọc `(version, hash, snapshot)` của một environment trong MỘT ảnh chụp — bằng
+ * MỘT câu lệnh SQL.
  *
- * Ngắn hơn ngân sách ghi (20s) vì đây là đường phục vụ request: một SDK chờ 20
- * giây cho `/sdk/config` thì đã tự bỏ cuộc từ lâu, và transaction vẫn giữ chỗ
- * trong pool suốt thời gian đó.
- */
-const READ_BUDGET = {
-  maxWait: 5_000,
-  timeout: 10_000,
-  /**
-   * `RepeatableRead`, KHÔNG phải mặc định.
-   *
-   * Đây là nửa còn lại của phép sửa, và là nửa dễ bỏ sót nhất: gói hai câu lệnh
-   * vào một transaction ở mức `ReadCommitted` **không đủ**, vì `ReadCommitted`
-   * lấy một ảnh chụp MỚI cho từng câu lệnh. Một lần ghi chen giữa "đọc version"
-   * và "đọc snapshot" vẫn cho ra bộ ba lệch pha, y như khi không có transaction.
-   * `RepeatableRead` cố định một ảnh chụp cho cả transaction — đó mới là thứ làm
-   * `(version, hash, snapshot)` nói về cùng một khoảnh khắc.
-   *
-   * An toàn ở đây vì transaction này CHỈ ĐỌC: `40001` của `RepeatableRead` chỉ
-   * xảy ra khi ghi vào hàng đã bị transaction khác sửa.
-   */
-  isolationLevel: "RepeatableRead",
-} as const;
-
-/**
- * Đọc `(version, hash, snapshot)` của một environment trong MỘT ảnh chụp.
+ * Lịch sử của chỗ này là lịch sử của một bug: bản đầu đọc version rồi đọc
+ * snapshot ở hai câu lệnh rời, một lần ghi chen vào giữa cho ra **snapshot CŨ
+ * dưới ETag MỚI** (xem `ConfigEntry`). Bản hai gói hai câu vào một transaction
+ * `RepeatableRead` — đúng, nhưng tốn 9 truy vấn và một transaction cho mỗi lần
+ * nạp, và cùng đường ấy chạy dưới row-lock của mọi lần ghi. Bản này đọc tất cả
+ * trong một `SELECT`: PostgreSQL cho một câu lệnh thấy đúng một ảnh chụp
+ * (§13.2.1 của tài liệu 17, trích ở `snapshot-row.ts`), nên bộ ba cùng khoảnh
+ * khắc bằng cấu trúc — mạnh hơn `RepeatableRead` vì không còn khe nào để đặt
+ * sai mức cô lập.
  *
- * Tách khỏi `createSnapshotCache` để cache kiểm được mà không cần database, và
- * để chỗ duy nhất biết về mức cô lập nằm ở đây chứ không rải khắp nơi.
+ * Ngân sách chờ pool (`maxWait` của transaction cũ) không mất đi: nó chuyển
+ * xuống tầng adapter cho MỌI truy vấn của MỌI service (`DB_POOL.acquireTimeoutMs`
+ * trong `@udp/config/constants`), và `dbAvailabilityError` dịch nó thành 503 —
+ * xem `packages/db/src/adapter.ts`.
+ *
+ * Environment không tồn tại thì ném `Error` thường: watcher đã bỏ qua environment
+ * biến mất TRƯỚC khi nạp lại, còn `/sdk/config` và SSE đẩy lỗi lên error-handler
+ * thành 500 — không ai phân nhánh theo lớp lỗi ở đây.
  */
 export function prismaEntryLoader(client: PrismaClient): EntryLoader {
-  return (environmentId) =>
-    client.$transaction(async (tx) => {
-      const row = await tx.environment.findUniqueOrThrow({
-        where: { id: environmentId },
-        select: { name: true, configVersion: true, configHash: true },
-      });
-
-      return {
-        environmentId,
-        environmentName: row.name,
-        configVersion: row.configVersion,
-        configHash: row.configHash,
-        snapshot: await snapshotOf(tx, environmentId),
-      };
-    }, READ_BUDGET);
+  return async (environmentId) => {
+    const row = await snapshotRowOf(client, environmentId);
+    if (row === undefined) {
+      throw new Error(
+        `Environment ${environmentId} không tồn tại — không nạp được cấu hình`,
+      );
+    }
+    return {
+      environmentId,
+      environmentName: row.name,
+      configVersion: row.configVersion,
+      configHash: row.configHash,
+      snapshot: snapshotFromRow(row),
+    };
+  };
 }

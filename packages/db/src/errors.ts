@@ -164,6 +164,15 @@ export function dbConstraintError(err: unknown): DbConstraintError | undefined {
  */
 const POOL_EXHAUSTED = "Unable to start a transaction in the given time";
 
+/**
+ * Cùng tình huống, đường khác: truy vấn KHÔNG trong transaction chờ một khe của
+ * pool quá `DB_POOL.acquireTimeoutMs`. `pg-pool` ném `Error` thường với đúng câu
+ * này, không có `code`, và driver adapter chuyển tiếp nguyên văn (đo 12/09/2026
+ * trên Prisma 7.10 + `@prisma/adapter-pg`). Không nhận diện thì SDK gọi
+ * `/sdk/config` lúc quá tải nhận 500 thay vì 503 có `Retry-After`.
+ */
+const POOL_ACQUIRE_TIMEOUT = "timeout exceeded when trying to connect";
+
 export interface DbAvailabilityError {
   code: "PROVIDER_UNAVAILABLE";
   detail: string;
@@ -182,8 +191,11 @@ export function dbAvailabilityError(
 ): DbAvailabilityError | undefined {
   if (typeof err !== "object" || err === null) return undefined;
   const e = err as { code?: unknown; message?: unknown };
-  if (e.code !== "P2028" || typeof e.message !== "string") return undefined;
-  if (!e.message.includes(POOL_EXHAUSTED)) return undefined;
+  if (typeof e.message !== "string") return undefined;
+  const exhausted =
+    (e.code === "P2028" && e.message.includes(POOL_EXHAUSTED)) ||
+    e.message.includes(POOL_ACQUIRE_TIMEOUT);
+  if (!exhausted) return undefined;
 
   return {
     code: "PROVIDER_UNAVAILABLE",

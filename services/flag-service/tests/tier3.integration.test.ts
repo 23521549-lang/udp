@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { CHANGE_FEED, env } from "@udp/config";
-import { createPrismaClient, createSessionConnector } from "@udp/db";
+import {
+  createPrismaClient,
+  createSessionConnector,
+  observeQueries,
+} from "@udp/db";
 import type { SdkConfigResponse } from "@udp/flag-evaluator";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -20,7 +24,8 @@ import {
   type NotifyAccelerator,
 } from "../src/changefeed/notify.accelerator.js";
 import { createVersionWatcher } from "../src/changefeed/version.watcher.js";
-import { SERVICE_ROLE } from "../src/core/db.js";
+import { prisma, SERVICE_ROLE } from "../src/core/db.js";
+import { sseHub } from "../src/sdk/index.js";
 import { stableOwner } from "./helpers/fixture.js";
 import { openSse, type SseReader } from "./helpers/sse-reader.js";
 
@@ -267,5 +272,54 @@ describe("tầng 3 — NOTIFY đánh thức, không cần vòng poll", () => {
       await longTx;
     }
     s.close();
+  });
+});
+
+/**
+ * Chốt cấu trúc của I19 [v4.2]: thời gian tường ở trên là NỘI DUNG bất biến
+ * (transaction dài không chặn), còn đây là hàng rào chống hồi quy về số round
+ * trip, thứ mà đồng hồ không bắt được khi RTT nhỏ (thêm một truy vấn ở 40ms vẫn
+ * "< 1 giây"). Ở `CHANGEFEED_MODE=snapshot`, một `tick()` với đúng một
+ * environment đổi dùng đúng 2 câu `SELECT` trên client của S2: một đọc
+ * `config_version`/`config_hash` của mọi environment đang giữ (tầng 1), một câu
+ * lệnh nạp snapshot. Ở chế độ `delta` tập truy vấn khác (`deltasSince` thay cho
+ * snapshot), nên test chỉ có nghĩa ở chế độ mặc định.
+ *
+ * Điều kiện để phép đếm tất định: tầng 3 đã tắt, không còn stream nào (hub chỉ
+ * có timer khi có stream), watcher không chạy nền, và environment đang được cache
+ * giữ. Cửa sổ nghe chỉ bao quanh `tick()`.
+ */
+describe("chốt cấu trúc của I19 — một vòng tick ở chế độ snapshot dùng đúng 2 truy vấn", () => {
+  beforeAll(async () => {
+    expect(env.CHANGEFEED_MODE, "test này chỉ có nghĩa ở chế độ snapshot").toBe(
+      "snapshot",
+    );
+    await accelerator?.stop();
+    for (const reader of readers) reader.close();
+    const deadline = Date.now() + 5_000;
+    while (sseHub.size() > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(sseHub.size(), "hub vẫn còn stream, phép đếm sẽ nhiễu").toBe(0);
+    await configCache.get(envId, "SERVER");
+  });
+
+  it("statesOf + một câu lệnh snapshot, không hơn", async () => {
+    await write();
+
+    const seen: string[] = [];
+    const stop = observeQueries(prisma, (q) => seen.push(q.query));
+    try {
+      await changeFeedWatcher.tick();
+    } finally {
+      stop();
+    }
+
+    const selects = seen.filter((q) =>
+      /^\s*(\/\*[^]*?\*\/\s*)?SELECT/i.test(q),
+    );
+    expect(selects).toHaveLength(2);
+    expect(selects[0]).toMatch(/FROM "public"\."environments"/);
+    expect(selects[1]).toContain("udp:snapshot");
   });
 });
