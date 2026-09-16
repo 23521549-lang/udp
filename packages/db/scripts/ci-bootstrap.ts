@@ -22,8 +22,8 @@ import {
  *      đích không phải kiểm migration mà là để migration `service_roles` TẠO ba
  *      role `udp_s*` — role là cấp cluster nên tồn tại tiếp sau khi database
  *      scratch bị xoá.
- *   2. Cấp LOGIN cho `udp_s1` và `udp_s2` bằng chính `service-login.ts`, ghi ba
- *      chuỗi role vào `.env.ci` (không vào `.env` của dev).
+ *   2. Cấp LOGIN cho `udp_s1`, `udp_s2`, `udp_s3` bằng chính `service-login.ts`,
+ *      ghi bốn chuỗi role vào `.env.ci` (không vào `.env` của dev).
  *   3. In lệnh nạp secret. Không nạp hộ: đó là thay đổi cấu hình kho mã trên
  *      GitHub, thuộc về người dùng.
  *
@@ -116,7 +116,7 @@ try {
   // tồn tại vì đúng chỗ này. `service-login` đọc `.env` dev để lấy admin, nên
   // phải đè `DATABASE_URL_DIRECT` bằng owner của project CI trong env con
   // (dotenv không ghi đè biến đã có).
-  for (const role of ["udp_s1", "udp_s2"]) {
+  for (const role of ["udp_s1", "udp_s2", "udp_s3"]) {
     runNode(
       `2/2 cấp LOGIN cho ${role} trên project CI`,
       "scripts/service-login.ts",
@@ -136,7 +136,7 @@ try {
 }
 
 console.log(`
-Project CI đã sẵn sàng. ${envFile} giờ có đủ năm chuỗi. Nạp secret bằng:
+Project CI đã sẵn sàng. ${envFile} giờ có đủ sáu chuỗi. Nạp secret bằng:
 
   gh secret set -f ${envFile}
 

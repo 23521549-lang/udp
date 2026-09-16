@@ -107,7 +107,9 @@ const MATRIX: Record<string, Record<string, Grant>> = {
   },
   udp_s3: {
     rollout_sessions: { SELECT: "*", UPDATE: S3_ROLLOUT_COLUMNS },
-    rollout_events: APPEND_ONLY,
+    // [v4.2] S3 đánh dấu intent đã xử lý — đúng MỘT cột, một lần (§2.2, migration
+    // rollout_intent_processed); luật "một lần, chỉ hàng intent" nằm ở trigger
+    rollout_events: { SELECT: "*", INSERT: "*", UPDATE: ["processed_at"] },
     // Ngoại lệ kill-switch — ĐÚNG ba quyền, không hơn (§7.6, I30)
     flag_targeting_rules: { SELECT: "*", UPDATE: ["serve"] },
     environments: { SELECT: "*", UPDATE: ["config_hash", "config_version"] },

@@ -108,7 +108,7 @@ graph TD
 | `User`, `ProjectMember`, `Project`, `CloudCredential`, `DomainConfig`, `CapabilityBinding`, `CapabilityPreference`, `Environment` (trừ hai cột `config_version` và `config_hash`), `ProvisioningJob`, `ProvisionedResource`, `RefreshSession`, `IdempotencyKey` | Service 1 | S2 (`Project`, `Environment`), S3 (`Project`, `DomainConfig`, `CapabilityBinding`). S3 **không** đọc `CloudCredential`: quyền vào cluster được cấp qua endpoint nội bộ của S1 (ADR-06) |
 | `Environment.config_version`, `FeatureFlag`, `FlagVariant`, `FlagEnvConfig`, `FlagTargetingRule`, `Segment`, `SdkKey`, `FlagEvaluationStat`, `ConfigChangeLog` | Service 2 | S1 (hiển thị), S3 (đọc rule đang rollout). **Một ngoại lệ có chủ đích:** để dùng làm kill-switch **chỉ** khi Service 2 không phản hồi (nhánh `DEPENDENCY_DOWN`, §7.6), S3 được cấp **đúng ba quyền hẹp**, không hơn: `UPDATE` mức cột trên `flag_targeting_rules.serve`, `UPDATE` mức cột trên `environments.config_version` và `config_hash`, và `INSERT` trên `config_change_log`. Ba quyền này là **tối thiểu để chạy được kỷ luật transaction của ADR-05** — thiếu quyền cấp version thì S3 ghi `serve` mà replica của S2 không bao giờ thấy, tức là kill-switch im lặng không có tác dụng. Không có ngoại lệ này thì hành động *an toàn* nhất của hệ thống lại phụ thuộc vào availability của một service khác. S3 vẫn phải theo đúng kỷ luật transaction của ADR-05 (khóa `Environment` trước, ghi outbox cuối) để replica của S2 lan truyền đúng khi hồi phục. Bất biến I30 |
 | `RolloutSession` | **Chia theo cột**: S1 tạo hàng và ghi các cột cấu hình; S3 là writer duy nhất của `status`, `current_traffic_percentage`, `fail_reason`, `last_decision`, `last_step_at`, `claimed_by`, `claimed_until`, `version` | **[v4.1]** S2 **đọc đúng năm cột** — `id`, `targeting_rule_id`, `status`, `version`, `claimed_until` — để `PATCH /internal/rules/:id` kiểm lease (T12) và so fencing token (I23) trong **một** truy vấn. Chỉ SELECT. Bản trước định lưu thêm một `rollout_lock` trên rule; bỏ, vì `RolloutSession.version` đã **là** fencing token, và một bản sao trên rule sẽ ôi thiu đúng ở nhánh kill-switch §7.6 — S3 ghi thẳng `serve` mà không có quyền ghi cột đó |
-| `RolloutEvent` | S1 ghi `is_intent = true`; S3 ghi `is_intent = false` | |
+| `RolloutEvent` | S1 ghi `is_intent = true`; S3 ghi `is_intent = false` | **[v4.2]** S3 có thêm `UPDATE` mức cột trên `rollout_events.processed_at`, và trigger writer chỉ cho đặt nó **trên hàng intent, một lần, từ NULL sang khác NULL** — S3 đánh dấu intent đã xử lý trong cùng transaction với hiệu lực của nó, nên không có cửa sổ "intent chạy hai lần" và cũng không có đường sửa lại lịch sử |
 | `AuditLog`, `DeploymentEvent` | **Append-only, nhiều writer**: S1, S2, S3 đều INSERT trực tiếp | |
 
 > **Quy ước ghi `RolloutSession` / `RolloutEvent`** (vá tranh chấp writer): Service 1 chỉ được **tạo** session và **ghi RolloutEvent mang `is_intent = true`** (ý định của người dùng). Service 3 là bên duy nhất được **cập nhật trạng thái** và ghi event thực thi. Manual override từ Portal không apply K8s trực tiếp mà chỉ ghi *intent event*; Service 3 nhìn thấy intent ở vòng reconcile kế tiếp (≤ 5s, hoặc tức thì qua `NOTIFY rollout_intent`) và là bên duy nhất điều khiển traffic. Nhờ vậy chỉ tồn tại **một writer duy nhất tới đối tượng điều khiển traffic**, loại bỏ race giữa S1 và S3.
@@ -1398,7 +1398,7 @@ CREATE INDEX idx_changelog_prune  ON ConfigChangeLog (created_at);
 | flag_env_config_id         | UUID         | FK → FlagEnvConfig, NULLABLE                 | Bắt buộc khi `rollout_scope = 'FLAG_LEVEL'`                                |
 | targeting_rule_id          | UUID         | FK → FlagTargetingRule, NULLABLE             | **[NEW v4]** Rule có `serve.distribution` mà Service 3 điều chỉnh. v3 dùng `session.ruleId` trong code nhưng không có cột — executor không biết PATCH rule nào |
 | target_variant_id          | UUID         | FK → FlagVariant, NULLABLE                   | Variant đang được rollout dần (bắt buộc với `FLAG_LEVEL`)                  |
-| baseline_percentage        | NUMERIC(5,2) | NULLABLE                                     | **[NEW v4]** Phần trăm của `target_variant` **trước** rollout. Rollback đưa về đây, không phải về 0 — nếu flag đã ổn định ở 30% thì rollback không được tắt luôn 30% đó |
+| baseline_percentage        | NUMERIC(5,2) | NULLABLE                                     | **[NEW v4]** Phần trăm của `target_variant` **trước** rollout. Rollback đưa về đây, không phải về 0 — nếu flag đã ổn định ở 30% thì rollback không được tắt luôn 30% đó. **[v4.2]** Do **Service 1 ghi lúc tạo session** (đọc trọng số hiện tại của `target_variant` trong rule); Service 3 chỉ đọc — cột này không nằm trong tám cột S3 được ghi (§1.2) — và **HOLD với lý do rõ** khi NULL, vì không biết rollback về đâu thì không được bắt đầu |
 | rollout_scope              | ENUM         | NOT NULL                                     | `'FLAG_LEVEL'`, `'SERVICE_LEVEL'`                                          |
 | strategy                   | ENUM         | NOT NULL                                     | `'CANARY'`, `'ATTRIBUTE_SPLIT'`, `'BLUE_GREEN'` — xem ghi chú đổi tên §7.2 |
 | control_mode               | ENUM         | NOT NULL                                     | **[NEW — ADR-01]** `'udp-driven'` hoặc `'tool-driven'`                     |
@@ -1416,7 +1416,7 @@ CREATE INDEX idx_changelog_prune  ON ConfigChangeLog (created_at);
 | warm_up_requests           | INTEGER      | NOT NULL, DEFAULT 100                        | Request tối thiểu **ở nhánh mới trong cửa sổ** trước khi evaluate          |
 | max_duration_seconds       | INTEGER      | NOT NULL, DEFAULT 86400                      | Quá hạn ⇒ `FAILED` với `fail_reason = 'EXPIRED'` và **revert về baseline** |
 | last_step_at               | TIMESTAMPTZ  | NULLABLE                                     | **[NEW v4]** Lần cuối traffic đổi; phép đo chỉ tính từ `last_step_at + metric_window + scrape_lag` để không lẫn dữ liệu bậc trước |
-| last_decision              | JSONB        | NULLABLE                                     | **[NEW v4]** `{ decision, reason, at, metricSnapshot }` — cập nhật mỗi tick; **không** ghi `RolloutEvent(HOLD)` mỗi 30 giây (v3 sẽ sinh ~2 880 dòng/ngày/session) |
+| last_decision              | JSONB        | NULLABLE                                     | **[NEW v4]** `{ decision, reason, at, breach, breachStreak, breachAt, metricSnapshot }` — cập nhật mỗi tick; **[v4.2]** `at` là epoch ms của đồng hồ Service 3 (cùng đồng hồ với `analysis_interval`), `breachAt` là mốc của lần vượt ngưỡng **được đếm** gần nhất — chuỗi "liên tiếp" nối từ đó (§7.5), `metricSnapshot` đúng hình dạng `latestMetricSnapshot` của §9; ghi bằng điều kiện "lease còn của mình", **không** đẩy `version` (một quyết định HOLD không phải side effect, và version là token đang được S2 giữ); **không** ghi `RolloutEvent(HOLD)` mỗi 30 giây (v3 sẽ sinh ~2 880 dòng/ngày/session) |
 | version                    | INTEGER      | NOT NULL, DEFAULT 0                          | **[NEW — vá B5]** Optimistic lock **và fencing token** cho lease           |
 | claimed_by                 | VARCHAR(100) | NULLABLE                                     | **[NEW — ADR-05]** Định danh worker đang giữ lease                        |
 | claimed_until              | TIMESTAMPTZ  | NULLABLE                                     | **[NEW — ADR-05]** Lease hết hạn lúc nào — thay `pg_advisory_lock`        |
@@ -1450,7 +1450,7 @@ ON RolloutSession (status, claimed_until) WHERE status IN ('PENDING', 'IN_PROGRE
 | action             | ENUM         | NOT NULL                                        | `'PROMOTE'`, `'ROLLBACK'`, `'PAUSE'`, `'RESUME'`, `'COMPLETE'`, `'EXPIRE'`, `'DEPENDENCY_DOWN'` — **không có `HOLD`**: HOLD là trạng thái của tick, lưu ở `RolloutSession.last_decision` |
 | is_intent          | BOOLEAN      | NOT NULL, DEFAULT false                         | **[NEW]** `true` = người dùng yêu cầu (S1 ghi); `false` = đã thực thi xong trên cluster (S3 ghi) |
 | traffic_percentage | NUMERIC(5,2) | NOT NULL                                        | % traffic tại thời điểm event                                  |
-| metric_snapshot    | JSONB        | NULLABLE                                        | `{ errorRate, latencyP99Ms, requestCount, query, windowSec }`   |
+| metric_snapshot    | JSONB        | NULLABLE                                        | **[v4.2]** Đúng hình `latestMetricSnapshot` của §9 — cùng một hình với `last_decision.metricSnapshot`: `{ canary, baseline, zScore, queries, windowSeconds, at }` |
 | reason             | VARCHAR(255) | NULLABLE                                        | **[NEW]** Vì sao — `"errorRate 0.08 > threshold 0.05"`         |
 | triggered_by       | ENUM         | NOT NULL                                        | `'MANUAL'`, `'AUTO'`                                           |
 | processed_at       | TIMESTAMPTZ  | NULLABLE                                        | **[NEW v4]** Chỉ có nghĩa với event `is_intent = true`: thời điểm Service 3 đã nhặt và thực thi ý định đó. NULL = còn chờ. Đây là cột mà `idx_rollout_event_pending_intent` lọc, và `processed_at − created_at` cho độ trễ từ lúc người dùng bấm tới lúc traffic thật đổi (E5) |
@@ -1462,8 +1462,10 @@ ON RolloutSession (status, claimed_until) WHERE status IN ('PENDING', 'IN_PROGRE
 CREATE INDEX idx_rollout_event_session ON RolloutEvent (session_id, created_at DESC);
 
 -- Reconciler tìm intent chưa xử lý
+-- [v4.2] Khớp index Prisma sinh ra: (session_id, is_intent, processed_at) — vị từ của reconciler
+-- là `is_intent AND processed_at IS NULL`, không phải chỉ `is_intent`
 CREATE INDEX idx_rollout_event_pending_intent
-ON RolloutEvent (session_id, created_at DESC) WHERE is_intent = true;
+ON RolloutEvent (session_id, is_intent, processed_at);
 ```
 
 > **Vì sao tách `is_intent`:** trong v2, cả Portal lẫn Service 3 đều ghi `RolloutEvent` và đều apply K8s ⇒ có thể xảy ra: người dùng bấm ROLLBACK, đồng thời reconciler đang giữa chừng một PROMOTE ⇒ hai lệnh ghi đè nhau trên cluster. v3: Portal chỉ ghi *intent*; Service 3 đọc intent, thực thi, rồi ghi event thực thi. Một writer duy nhất tới K8s.
@@ -1558,7 +1560,7 @@ CREATE INDEX idx_audit_target ON AuditLog (target_type, target_id, occurred_at D
 | id                     | UUID         | PK                                    |                                                                               |
 | project_id             | UUID         | FK → Project, KHÔNG CASCADE, NOT NULL | Giữ lại kể cả khi project bị xóa                                              |
 | environment_id         | UUID         | FK → Environment, KHÔNG CASCADE, NOT NULL | **[NEW v4]** DORA chỉ tính deploy vào production; v3 không có cột này nên không lọc được |
-| deployment_id          | UUID         | NOT NULL                              | **[NEW v4]** Gom `DEPLOY_START` / `DEPLOY_SUCCESS` / `DEPLOY_FAILURE` của cùng một lần deploy |
+| deployment_id          | UUID         | NOT NULL                              | **[NEW v4]** Gom `DEPLOY_START` / `DEPLOY_SUCCESS` / `DEPLOY_FAILURE` của cùng một lần deploy. **[v4.2]** `ROLLBACK` của một rollout FLAG_LEVEL không thuộc lần deploy nào: Service 3 sinh `deployment_id` mới, `rollout_session_id` mới là khoá nối cho E5 và `metadata` mang `{ scope, flagKey, targetVariant, from, to, failReason }` |
 | event_type             | ENUM         | NOT NULL                              | `'DEPLOY_START'`, `'DEPLOY_SUCCESS'`, `'DEPLOY_FAILURE'`, `'ROLLBACK'`, `'FLAG_CHANGE'` |
 | workload_name          | VARCHAR(253) | NULLABLE                              | **[NEW v4]**                                                                  |
 | pipeline_id            | VARCHAR(255) | NULLABLE                              | ID CI/CD pipeline — idempotency **bằng unique index**, không phải bằng SELECT rồi INSERT |
@@ -1863,7 +1865,8 @@ src/
 ```
 src/
 ├── reconciler/
-│   ├── reconciler.ts           ← Loop analysis_interval (mặc định 30s): claim session bằng lease (§7.1)
+│   ├── reconciler.ts           ← Vòng quét mỗi 5s (LOOP_INTERVAL_MS); mỗi session tự quyết theo analysis_interval_seconds của nó (§7.1)
+│   ├── fence.ts                ← [v4.2] Fence: mất lease ⇒ mọi side effect sau đó ném, không chạy
 │   ├── lease.ts                ← claim / renew / release qua FOR UPDATE SKIP LOCKED; renew thất bại ⇒ hủy tick (ADR-05)
 │   ├── intent-processor.ts     ← đọc RolloutEvent.is_intent = true, thực thi rồi đánh dấu
 │   └── decision.ts             ← decide(): baseline, z-test, minErrors, streak, hasData (§7.4)
@@ -1873,6 +1876,7 @@ src/
 │   └── blue-green/             ← 100% một lần; chỉ manual promote/rollback
 ├── executors/                  ← ADR-01: mỗi scope một executor, không chồng lấn
 │   ├── flag-level.executor.ts  ← PATCH /internal/rules/:id với If-Match: version (C1); rollback về baseline_percentage
+│   └── (strategies/strategy.ts) ← [v4.2] RolloutStrategy { nextPercent, isComplete } + registry; chiến lược không có trong registry ⇒ HOLD
 │   ├── service-level-udp.ts    ← Rollout CR pause vô hạn + promote từng bậc sau khi đọc status.currentStepIndex
 │   └── service-level-tool.ts   ← read-only mirror status của Flagger/Argo Rollouts; promote/abort do người dùng bấm
 ├── traffic/
@@ -1880,9 +1884,13 @@ src/
 │   ├── argo-rollouts/          ← Patch đúng như kubectl-argo-rollouts: promote, promote --full, abort, retry
 │   └── flagger/                ← Đọc Canary status; webhook gate confirm-traffic-increase cho udp-driven qua Flagger
 ├── cluster-access/             ← [v4 — ADR-06] client dùng @udp/cluster-access, token từ POST /internal/clusters/:id/token của S1
-├── metrics/                    ← dùng @udp/metrics-provider; query-templates.ts theo OTel semconv, nhãn ff="<flagKey>=<variant>" (§6.6)
+├── metrics/                    ← provider.ts: một provider mỗi metric_queries.metricBase; truy vấn mẫu (OTel semconv, nhãn ff="<flagKey>=<variant>" §6.6) nằm ở packages/metrics-provider/src/query-templates.ts [v4.2]
 └── rollout-session/            ← Đọc RolloutSession + ghi RolloutEvent (is_intent = false), last_decision, updateIfVersion
 ```
+
+> **[v4.2] Trạng thái hiện thực (12/09/2026).** Đã dựng và có test: `reconciler/` (fence, lease, decision, intent-processor, reconciler), `strategies/canary/`, `executors/flag-level.executor.ts`, `metrics/` trên package `@udp/metrics-provider` (Prometheus thật + provider giả cho test), `rollout-session/` (SQL thô cho mọi lệnh ghi session — xem bên dưới), cùng `/healthz`, `/readyz`, `/metrics` và chốt `current_user = udp_s3` lúc boot. Test tích hợp dựng **Service 2 thật** trên cổng ngẫu nhiên và nối database bằng chính `udp_s3`, nên I6, I7, I16, I17, I22, I23, I27 và nhánh DEPENDENCY_DOWN của §7.6 được kiểm trên GRANT và fencing thật, không trên mock. `metric_queries.metricBase` (§7.4 "Override") đã có: một provider cho mỗi tên metric, tên được kiểm bằng `PROMETHEUS_METRIC_NAME` ở cả biên ghi lẫn nơi ghép PromQL. Bốn điều QA ba vòng tìm ra và đã sửa trước khi đóng plan: hàng claim xong mà không đọc được (thresholds có khoá lạ) thì ghi lý do rồi NHẢ lease thay vì bị claim lại mỗi 60 giây trong im lặng; số session xử lý đồng thời bị chặn theo pool (`ROLLOUT_POOL_HEADROOM`); gia hạn lease NÉM thì thử lại sớm và chỉ coi là mất khi quá thời gian sống của lease; intent không thi hành được vì cấu hình được đánh dấu đã xử lý kèm lý do, không chặn expiry và phân tích mãi. Chưa dựng: `attribute-split/`, `blue-green/` (FLAG_LEVEL chỉ có đường tay và chưa có endpoint đổi default variant — S3 HOLD với lý do rõ), `service-level-*`, `traffic/`, `cluster-access/` (ADR-06), kill-switch **I30 phần (a)**, kênh `LISTEN rollout_intent` (intent hôm nay được nhặt ở vòng quét 5 giây), và untrack flag khi rollout kết thúc. Phía Service 1, module rollout của Luồng 5 (tạo session kèm `baseline_percentage` và `probe()`, ghi intent, `track`) chưa có — Plan #18; tới lúc đó chỉ fixture test tạo session.
+>
+> **Hai điều đo được khi dựng, ghi lại để không ai làm ngược:** (1) Prisma `update()` trên `rollout_sessions` **luôn** bị 42501 dưới `udp_s3`, vì `@updatedAt` tự thêm `SET updated_at` mà cột đó thuộc Service 1 — mọi lệnh ghi session của S3 là SQL thô với danh sách SET tường minh, và `updated_at` của session **không đổi** khi S3 ghi (Portal đọc `last_decision.at` hoặc `last_step_at`). (2) Mọi mốc của lease (claim, renew, hết hạn) dùng `now()` của **database**, vì nhiều replica chỉ có một đồng hồ chung là đồng hồ đó; mọi mốc của nhịp phân tích (dwell, analysis, cửa sổ) dùng đồng hồ JS tiêm vào reconciler và `last_step_at` ghi bằng tham số JS để cùng đồng hồ — service ghi lệch giữa hai đồng hồ lúc boot.
 
 ---
 
@@ -2783,6 +2791,13 @@ interface MetricsProvider {
   readonly providerId: string; // "prometheus", "datadog", "victoria-metrics"
   /** [v4] Version của capability metrics.query mà provider này thỏa (PromQL = 2.x, DQL = 1.x) */
   readonly capabilityVersion: string;
+  /**
+   * [v4.2] Độ trễ scrape của nguồn (giây) — settleGate ở §7.5 chỉ đo khi cửa sổ nằm trọn sau
+   * last_step_at + window + scrapeLag. Đọc đồng bộ vì decide() là hàm thuần; Prometheus nạp
+   * con số thật từ /api/v1/targets (scrape interval lớn nhất của target đang sống) lúc khởi
+   * động và làm mới định kỳ (METRICS_PROVIDER.scrapeLagRefreshMs), mặc định 15 tới khi đọc được
+   */
+  readonly scrapeLagSeconds: number;
 
   errorRate(t: MetricTarget, windowSec: number): Promise<MetricSample>;
   latencyP99(t: MetricTarget, windowSec: number): Promise<MetricSample>;
@@ -3744,10 +3759,12 @@ Ngoài ra package chịu chung **I26** (local evaluation và OFREP cho cùng k�
 | SQL claim chỉ lấy `PENDING, IN_PROGRESS` trong khi `findReconcilable` gồm cả `PAUSED` | Session PAUSED **không bao giờ được claim** ⇒ intent RESUME/ROLLBACK trên session đang PAUSED không bao giờ chạy | Claim gồm `PAUSED` |
 | `if (secondsSinceLastStep < stepIntervalSeconds) return;` đứng **trước** `decide()` | Sau mỗi promote không có phép đo nào trong 5 phút; với `maxConsecutiveBreaches = 2`, MTTD tối thiểu 10 phút — tự phá lập luận "rollback trong một vòng SSE" và làm E5 vô nghĩa | `analysis_interval_seconds` (30s) tách khỏi `step_interval_seconds` (dwell trước khi promote). Breach kiểm mỗi vòng phân tích; promote chỉ khi đủ dwell |
 | Side effect (PATCH S2, promote Argo) chạy **trước** `updateIfVersion` | Worker tỉnh muộn sau GC pause bật lại 30% cho tính năng vừa bị rollback rồi mới bị DB từ chối | Fence kiểm lease **trước** side effect; side effect mang `expectedVersion` (`If-Match` sang S2; đọc `status.currentStepIndex` trước khi promote Argo) |
-| `renewLease` thất bại bị bỏ qua | Worker mất lease vẫn tiếp tục apply | `renewLease` 0 row ⇒ `fence.abort()` ⇒ mọi bước sau ném lỗi |
+| `renewLease` thất bại bị bỏ qua | Worker mất lease vẫn tiếp tục apply | `renewLease` 0 row ⇒ `fence.abort()` ⇒ mọi bước sau ném lỗi. **[v4.2]** Riêng renew NÉM (database chập chờn) thì thử lại sớm (`ROLLOUT_LEASE.renewErrorRetryMs`) và chỉ abort khi quá thời gian sống của lease kể từ lần gia hạn thành công cuối — bỏ một rollback đang chạy vì một round trip hỏng là cái giá không đáng, và `If-Match` + `updateIfVersion` vẫn là hai lưới cứng phía sau. Khi tắt service, fence của các session đang giữ đóng với lý do `shutdown` và lease được NHẢ để replica khác nhận ngay |
 
 ```typescript
-const LOOP_INTERVAL_MS = 5_000;   // vòng lặp quét mỗi 5s; mỗi session tự quyết theo analysis_interval_seconds của nó
+const LOOP_INTERVAL_MS = 5_000;   // KHOẢNG NGHỈ giữa hai vòng quét, không phải chu kỳ: vòng kế bắt đầu 5s sau khi vòng trước xong;
+                                  // mỗi session tự quyết theo analysis_interval_seconds của nó. Số session xử lý đồng thời
+                                  // trong một vòng chặn theo pool (ROLLOUT_POOL_HEADROOM) [v4.2]
 
 async function reconcileTick() {
   const candidates = await rolloutSessionRepo.findReconcilable();
@@ -3773,11 +3790,13 @@ async function reconcileOne(sessionId: string) {
     const intent = await rolloutEventRepo.findUnprocessedIntent(session.id);
     if (intent) return applyIntent(session, intent, fence);
     if (session.status === "PAUSED") return;
-    if (session.status === "PENDING") return start(session, fence);   // ghi baseline, áp bậc đầu
-
-    // 2. Hết hạn tổng thể — không để rollout treo vô thời hạn; EXPIRED cũng revert về baseline
+    // 2. Hết hạn tổng thể — kiểm TRƯỚC nhánh PAUSED/PENDING [v4.2]: không thì session chưa bao giờ
+    //    bắt đầu được (thiếu cấu hình, HOLD mỗi vòng) hay đang tạm dừng sẽ sống mãi. EXPIRED revert về
+    //    baseline nếu đã từng áp bậc; PENDING thì chỉ đóng, không PATCH, không DeploymentEvent.
     if (age(session) > session.maxDurationSeconds)
-      return finish(session, fence, "FAILED", "EXPIRED", "Vượt quá thời gian tối đa cho phép", { revert: true });
+      return finish(session, fence, "FAILED", "EXPIRED", "Vượt quá thời gian tối đa cho phép", { revert: session.status !== "PENDING" });
+    if (session.status === "PAUSED") return;
+    if (session.status === "PENDING") return start(session, fence);   // baseline do S1 ghi lúc tạo [v4.2]; áp bậc đầu
 
     // 3. Nhịp phân tích — ĐỘC LẬP với dwell time của bậc
     if (secondsSince(session.lastDecision?.at) < session.analysisIntervalSeconds) return;
@@ -3785,8 +3804,8 @@ async function reconcileOne(sessionId: string) {
     // 4. Phân tích metrics ở MỌI vòng — breach được phát hiện sau ≤ analysis_interval, không phải sau step_interval
     const decision = await decide(session, metricsProviderFor(session));
     await rolloutSessionRepo.setLastDecision(session.id, fence, decision);   // cột JSONB, không phải RolloutEvent
-    if (decision.kind === "ROLLBACK") return rollback(session, fence, decision.reason, decision.metrics);
-    if (decision.kind === "HOLD") return;
+    if (decision.decision === "ROLLBACK") return rollback(session, fence, decision.reason, decision.metrics);   // trường tên `decision`, đúng hợp đồng §2.2/§9 [v4.2]
+    if (decision.decision === "HOLD") return;
 
     // 5. PROMOTE chỉ khi đã ở bậc hiện tại đủ lâu
     if (secondsSince(session.lastStepAt) < session.stepIntervalSeconds) return;
@@ -3843,12 +3862,18 @@ async function decide(session: RolloutSession, provider: MetricsProvider): Promi
   if (!breached) return promoteOk(metrics);                    // streak reset
 
   // Không rollback ngay ở lần vượt ngưỡng đầu tiên — một spike thoáng qua không nên hủy cả rollout.
-  // Chỉ đếm là "liên tiếp" khi hai phép đo cách nhau ≥ một cửa sổ (không chồng lấn).
+  // Chỉ đếm là "liên tiếp" khi hai phép đo cách nhau ≥ một cửa sổ (không chồng lấn) — tính từ lần vượt
+  // ĐƯỢC ĐẾM gần nhất (prev.breachAt), KHÔNG từ lần đo ngay trước [v4.2]: nhịp đo (30s) ngắn hơn cửa sổ (60s),
+  // nên nối từ prev.at thì mọi lần đo đều "chồng lấn" với lần trước và chuỗi không bao giờ tới 2 — bản v4.1 của
+  // đoạn này có đúng lỗi đó, test tích hợp bắt được ngày 12/09/2026. Lần đo chồng lấn: không cộng, không xoá.
   const prev = session.lastDecision;
-  const streak = prev?.kind === "HOLD" && prev.breach && now() - prev.at >= win ? prev.breachStreak + 1 : 1;
+  const chained = prev?.decision === "HOLD" && prev.breach;
+  const anchor = chained ? (prev.breachAt ?? prev.at) : null;
+  const streak = !chained ? 1 : now() - anchor >= win ? prev.breachStreak + 1 : prev.breachStreak;
+  const breachAt = chained && now() - anchor < win ? anchor : now();
   if (streak >= t.maxConsecutiveBreaches)
     return rollbackDecision(`errorRate ${canaryRate.toFixed(4)} > ngưỡng trong ${streak} lần đo liên tiếp`, metrics);
-  return hold(`Vượt ngưỡng lần ${streak}/${t.maxConsecutiveBreaches}, chờ xác nhận`, { breach: true, breachStreak: streak, metrics });
+  return hold(`Vượt ngưỡng lần ${streak}/${t.maxConsecutiveBreaches}, chờ xác nhận`, { breach: true, breachStreak: streak, breachAt, metrics });
 }
 ```
 
@@ -3879,7 +3904,7 @@ async function promote(session: RolloutSession, fence: Fence, metrics: MetricSna
   });
   if (!updated) {
     // Không thể xảy ra nếu (1)(2) đúng — nhưng nếu xảy ra thì cluster và DB đã lệch: alert, vòng sau tự hội tụ từ trạng thái quan sát được
-    metrics.fencingViolationTotal.inc();
+    counters.fencingViolations.inc();   // udp_pd_fencing_violation_total [v4.2] — `metrics` ở đây là MetricSnapshot
     return;
   }
   await rolloutEventRepo.create({
@@ -4102,11 +4127,11 @@ sum(rate(http_server_request_duration_seconds_count{
 | Cơ chế | Mô tả |
 | ------ | ----- |
 | Truy vấn mẫu | Theo OTel semconv (`http.server.request.duration`), nhãn `ff` theo §6.6, khớp với Golden Path template |
-| Override | `RolloutSession.metric_queries` cho app dùng tên metric riêng (vd app cũ dùng `http_requests_total`) |
+| Override | `RolloutSession.metric_queries` cho app dùng tên metric riêng (vd app cũ dùng `http_requests`). **[v4.2]** Hình dạng `{ metricBase }` (`metricQueriesSchema`, tên phải khớp `PROMETHEUS_METRIC_NAME`); các truy vấn ghép từ `<metricBase>_count` / `<metricBase>_bucket` |
 | Kiểm tra trước | `probe()` chạy lúc tạo rollout: nếu không có series khớp **flagKey** (không phải variant) thì **chặn tạo rollout** kèm hướng dẫn, thay vì để kẹt `HOLD` mãi; probe trả `scrapeIntervalSec` để validator ép `metric_window ≥ 4 × scrape` |
 | **Ngưỡng tuyệt đối + `minErrors`** [v4] | `errorRate > threshold` **và** `errorCount ≥ minErrors` (mặc định 5). Ở 100 request, 1 lỗi = 1%; không có `minErrors`, ngưỡng 1% rollback vì một request |
 | **Ngưỡng tương đối + kiểm định hai tỉ lệ** [v4] | `errorRate(canary) > k × errorRate(baseline)` (mặc định k = 1.5) **và** z-test một phía `z > 1.645` (α = 0.05). Tránh rollback nhầm khi hệ thống vốn có nền lỗi, và tránh coi chênh lệch trong nhiễu là tín hiệu. **Đây không phải sequential testing** (LaunchDarkly/GrowthBook dùng để kiểm soát peeking qua nhiều lần đo) — ghi ở §16 là giới hạn, §17 là hướng mở |
-| Cửa sổ và độ trễ | Chỉ đo khi `now ≥ last_step_at + window + scrape_lag`; hai breach chỉ tính "liên tiếp" nếu cách nhau ≥ một cửa sổ (không chồng lấn) |
+| Cửa sổ và độ trễ | Chỉ đo khi `now ≥ last_step_at + window + scrape_lag`; hai breach chỉ tính "liên tiếp" nếu cách nhau ≥ một cửa sổ (không chồng lấn). **[v4.2]** Khoảng cách tính từ lần vượt **được đếm** gần nhất (`last_decision.breachAt`), không từ lần đo ngay trước: nhịp đo ngắn hơn cửa sổ nên lần đo chồng lấn là chuyện thường — nó không cộng chuỗi (cùng dữ liệu đếm hai lần) và cũng không xoá chuỗi (lỗi vẫn đang đó); chỉ một lần đo sạch mới xoá |
 | Ghi vết | Chuỗi truy vấn thật + cửa sổ thời gian được lưu vào `last_decision.metricSnapshot` và vào `RolloutEvent.metric_snapshot` khi chuyển trạng thái |
 
 ```typescript
@@ -4194,7 +4219,7 @@ sequenceDiagram
         S2->>APP: SSE flag_changed (kind trackedFlags)
         S1-->>DEV: 201 {sessionId}
 
-        S3->>S3: claim lease; PENDING → start(): lưu baseline_percentage = 0, PATCH weights on=10% (If-Match)
+        S3->>S3: claim lease; PENDING → start(): đọc baseline_percentage = 0 (S1 đã ghi lúc tạo), PATCH weights on=10% (If-Match)
         S3->>S3: status = IN_PROGRESS (S3 là writer duy nhất của status)
         S2->>APP: SSE flag_changed
         Note over APP: 10% người dùng thấy nhánh mới<br/>metric HTTP mang nhãn ff="checkout_v2=on"
@@ -4635,7 +4660,7 @@ sequenceDiagram
         S3->>S3: Mở fence; renew lease mỗi 20s, renew thất bại ⇒ fence.abort()
 
         S3->>S3: 1. Có intent chưa xử lý? → thực thi rồi kết thúc vòng
-        S3->>S3: 2. PAUSED → dừng. PENDING → start(): ghi baseline_percentage, áp bậc đầu
+        S3->>S3: 2. PAUSED → dừng. PENDING → start(): đọc baseline_percentage (S1 ghi lúc tạo; NULL ⇒ HOLD), áp bậc đầu
         S3->>S3: 3. Quá max_duration → FAILED/EXPIRED, CÓ revert về baseline
         S3->>S3: 4. Chưa tới analysis_interval kể từ lần đo trước → dừng vòng
 
@@ -4980,10 +5005,13 @@ GET    /internal/stale-flags?projectId=            [NEW]
 ### Service 3 — udp-progressive-delivery-controller
 
 ```
-Không phơi HTTP API nghiệp vụ. Chỉ có 2 endpoint vận hành:
-GET    /healthz     liveness
-GET    /metrics     Prometheus scrape — số session đang xử lý, độ trễ vòng lặp,
-                    số lần lock thất bại, số quyết định theo loại
+Không phơi HTTP API nghiệp vụ. Ba endpoint vận hành [v4.2]:
+GET    /healthz     liveness — không chạm database
+GET    /readyz      readiness — SELECT 1 qua pool; 503 ngay khi đang tắt (Kubernetes ngừng gửi traffic)
+GET    /metrics     Prometheus scrape — số session đang giữ lease, độ trễ vòng quét,
+                    số lần claim thất bại, số quyết định theo loại, kết cục mỗi lượt
+                    (udp_pd_sessions_processed_total{outcome}), udp_rollback_blocked_total,
+                    udp_pd_fencing_violation_total
 
 Đọc:      RolloutSession, DomainConfig, Project (Prisma, 30s hoặc khi nhận NOTIFY)
 Ghi:      RolloutEvent (triggered_by = AUTO), cập nhật RolloutSession có optimistic lock
@@ -5132,17 +5160,22 @@ interface RolloutDetailResponse {
     reason: string; // "Mới 34/100 request" | "errorRate 0.08 > 0.05, lần 2/2"
     /** [v4] Đếm số lần vượt ngưỡng liên tiếp — UI hiện "2/2, sắp rollback" */
     breachStreak?: number;
+    /** [v4.2] Lần đo này có vượt ngưỡng không; và mốc của lần vượt được đếm gần nhất (§7.5) */
+    breach?: boolean;
+    breachAt?: string | null;
+    /** ISO — Service 1 chuyển từ epoch ms của cột `last_decision.at` */
     at: string;
   };
   latestMetricSnapshot?: {
-    canary: { errorRate: number; latencyP99Ms: number; requestCount: number; hasData: boolean };
-    /** [v4] Không có nhánh đối chứng thì con số của canary không nói lên điều gì */
-    baseline: { errorRate: number; requestCount: number; hasData: boolean };
+    canary: { errorRate: number; latencyP99Ms?: number; requestCount: number; errorCount: number; hasData: boolean };
+    /** [v4] Không có nhánh đối chứng thì con số của canary không nói lên điều gì — `hasData = false`, các số là 0 */
+    baseline: { errorRate: number; requestCount: number; errorCount: number; hasData: boolean };
     /** [v4] Kết quả kiểm định hai tỉ lệ, one-sided α = 0.05 */
     zScore?: number;
-    /** Truy vấn thật đã chạy — người dùng phải kiểm chứng được quyết định của hệ thống */
-    queries: { canary: string; baseline: string };
+    /** Truy vấn thật đã chạy — người dùng phải kiểm chứng được quyết định của hệ thống. [v4.2] MẢNG: ba truy vấn cho canary (request, lỗi, p99), hai cho baseline */
+    queries: { canary: string[]; baseline: string[] };
     windowSeconds: number;
+    /** ISO — Service 1 chuyển từ epoch ms; Service 3 lưu số */
     at: string;
   };
   /** Intent do người dùng ghi nhưng controller chưa xử lý xong */
@@ -6569,8 +6602,8 @@ export function runCloudAdapterContract(adapter: CloudAdapter, env: LocalStackOr
 | I3 | **Salt khác nhau ⇒ nhóm khác nhau** — hai rule 10% không chọn cùng một nhóm người | Đo độ chồng lấn giữa hai tập, kỳ vọng ≈ 1% chứ không phải 100% |
 | I4 | **`udp-driven` không sinh khối `analysis`** (ADR-01) | Test tích hợp đọc CR đã sinh, khẳng định `spec.strategy.canary.analysis` là `undefined` |
 | I5 | **`tool-driven` không bị Service 3 ghi đè** | Chạy reconciler 10 vòng trên CR tool-driven, khẳng định không có API ghi nào ngoài đọc status |
-| I6 | **Không hai reconciler cùng promote** | Chạy 3 replica song song trên cùng session, khẳng định đúng một sự kiện PROMOTE mỗi bậc |
-| I7 | **`hasData = false` không bao giờ dẫn tới PROMOTE** | Mock MetricsProvider trả `hasData: false`, khẳng định quyết định là HOLD |
+| I6 | **Không hai reconciler cùng promote** | Chạy 3 replica song song trên cùng session, khẳng định đúng một sự kiện PROMOTE mỗi bậc. **[v4.2]** Ba reconciler với ba `workerId` trên cùng pool `udp_s3`, cả `reconcileOne` một session lẫn `tick()` trên nhiều session — loại trừ nằm ở hàng khoá, không ở tiến trình |
+| I7 | **`hasData = false` không bao giờ dẫn tới PROMOTE** | Mock MetricsProvider trả `hasData: false`, khẳng định quyết định là HOLD. **[v4.2]** Kiểm ở hai tầng: `decide()` thuần với `hasData: false` kèm số đọc được là "0 lỗi", và reconciler thật qua ba vòng đo không có series — traffic đứng yên, không event nào |
 | I8 | **Provision resume được** — kill worker giữa chừng rồi khởi động lại | Testcontainers: kill process ở state `CLUSTER`, khởi động lại, khẳng định không tạo lại VPC đã có |
 | I9 | **Compensation dọn đúng thứ tự ngược** | Ép fail ở bước cuối, khẳng định thứ tự lời gọi teardown |
 | I10 | **Mọi route có `:projectId` đều qua `requireProjectRole`** | Test quét bảng route, so với danh sách route được miễn trừ tường minh — bảo vệ khỏi việc quên middleware khi thêm route mới |
@@ -6595,7 +6628,7 @@ export function runCloudAdapterContract(adapter: CloudAdapter, env: LocalStackOr
 | **I27** | **Manual override luôn thắng và không bao giờ bị bỏ sót** [v4] | Ghi `RolloutEvent(is_intent = true)` trên session đang `PAUSED`, `IN_PROGRESS` và `PENDING`; khẳng định cả ba đều được reconciler nhặt trong ≤ `LOOP_INTERVAL_MS` và intent được xử lý **trước** phân tích metrics. Trường hợp `PAUSED` là bug thật của v3: SQL claim bỏ sót `PAUSED` nên lệnh RESUME/ROLLBACK trên session đang tạm dừng không bao giờ chạy |
 | **I28** | **Thêm adapter không chạm file nào ngoài thư mục của nó** [v4 — bằng chứng của C2] | Job CI đọc `git diff --name-only` của commit và, nếu commit có thêm thư mục dưới `modules/domain-adapter/`, khẳng định **mọi** file thay đổi đều nằm trong `modules/domain-adapter/<domain>/<tool>/`. Fail build nếu không. Đây là thứ biến chỉ số "0 file" của §5.3 từ một phép đo thành một bảo đảm. Chạy kèm một test dương tính: thêm một adapter giả `dummy/noop` trong CI và khẳng định nó tự xuất hiện ở `GET /domains/catalog` mà không sửa gì |
 | **I29** | **Đồng bộ `DomainCatalog` không bao giờ xóa hàng** [v4] | Khởi động với registry có 16 adapter, tạo `DomainConfig` dùng một domain, gỡ adapter đó khỏi registry rồi khởi động lại: khẳng định hàng vẫn còn với `is_available = false` và khóa ngoại của `DomainConfig` cũ **không** bị phá. Khẳng định thêm rằng không có endpoint HTTP nào ghi được vào bảng này |
-| **I30** | **Kill-switch của S3 hoạt động khi S2 chết, và chỉ khi đó** [v4] | (a) Tắt Service 2, kích hoạt rollback FLAG_LEVEL: khẳng định S3 retry tới `rollbackRetrySeconds` rồi ghi thẳng `flag_targeting_rules.serve` theo đúng kỷ luật ADR-05, đặt `fail_reason = DEPENDENCY_DOWN` và tăng `udp_rollback_blocked_total`; bật S2 lại và khẳng định replica của nó hội tụ về đúng giá trị mà S3 đã ghi. (b) Chiều ngược lại quan trọng hơn: khi S2 **còn sống**, kết nối bằng role `udp_s3` và thử `UPDATE flag_targeting_rules SET priority = ...` — khẳng định **database từ chối**, vì `GRANT` chỉ mở đúng cột `serve`. Ngoại lệ writer phải hẹp đúng bằng nhu cầu, và độ hẹp đó do Postgres cưỡng chế chứ không do code |
+| **I30** | **Kill-switch của S3 hoạt động khi S2 chết, và chỉ khi đó** [v4] | (a) Tắt Service 2, kích hoạt rollback FLAG_LEVEL: khẳng định S3 retry tới `rollbackRetrySeconds` rồi ghi thẳng `flag_targeting_rules.serve` theo đúng kỷ luật ADR-05, đặt `fail_reason = DEPENDENCY_DOWN` và tăng `udp_rollback_blocked_total`; bật S2 lại và khẳng định replica của nó hội tụ về đúng giá trị mà S3 đã ghi. (b) Chiều ngược lại quan trọng hơn: khi S2 **còn sống**, kết nối bằng role `udp_s3` và thử `UPDATE flag_targeting_rules SET priority = ...` — khẳng định **database từ chối**, vì `GRANT` chỉ mở đúng cột `serve`. Ngoại lệ writer phải hẹp đúng bằng nhu cầu, và độ hẹp đó do Postgres cưỡng chế chứ không do code. **[v4.2]** Phần (b) đã có test dưới `udp_s3` thật (I22, lease test: không sửa được cột cấu hình rollout lẫn `users`); phần (a) — đường ghi thẳng `serve` — chưa dựng, hôm nay DEPENDENCY_DOWN chỉ đánh dấu FAILED và tăng `udp_rollback_blocked_total` |
 | **I31** | **Ma trận khôi phục của Cloud Adapter đúng ở cả mười điểm crash** [v4 — bằng chứng của C3] | Chạy tự động toàn bộ lưới K1 tới K10 của §4.5 trên LocalStack: với mỗi step và mỗi điểm kill, giết tiến trình worker, khởi động lại, rồi khẳng định ba điều — (a) `listTaggedResources()` trả về **đúng số tài nguyên mong đợi**, không nhiều hơn, tức là không tạo trùng; (b) trạng thái trong sổ hội tụ về `READY` hoặc `DELETED`, không kẹt ở `CREATING`; (c) không có tài nguyên nào mang tag `udp.project` mà **không** có hàng tương ứng trong sổ. Hai ô bắt buộc phải xanh: **K3** (crash sau khi API trả về, trước khi ghi `provider_id`) và **K10** (mất sạch sổ, phải hội tụ được qua `rebuildLedgerFromCloud()`) — đó là hai chỗ state file thua |
 | **I32** | **Drift được phát hiện, và không bao giờ bị tự sửa** [v4 — bằng chứng của C3] | (a) Deploy một domain rồi `kubectl edit` sửa replica của Deployment do Helm tạo; khẳng định `detectDrift()` trả `drifted = true` kèm diff đúng chỗ đã sửa. (b) Deploy xong chạy `detectDrift()` ngay, khẳng định trả `false` — trôi giả ngay sau khi cài nghĩa là hàm chuẩn hóa sai, và người dùng sẽ học cách bỏ qua cảnh báo. (c) **Chiều quan trọng nhất:** để drift tồn tại qua ba chu kỳ quét, khẳng định hệ thống **không** tự ghi đè và không có lời gọi ghi nào lên cluster; chỉ có `DomainConfig.last_error` được cập nhật |
 | **I33** | **SDK không bao giờ ném lỗi ra ứng dụng của khách** [v4 — §6.8] | Property-based: bơm cache hỏng, flag thiếu variant, JSON sai kiểu, context rỗng, provider chưa `READY`; khẳng định **mọi** lời gọi trả `ResolutionDetails` hợp lệ với `errorCode` phù hợp và **không ngoại lệ nào thoát ra**. Đây là phần duy nhất của UDP chạy trong tiến trình của người khác, nên một lỗi ở đây làm sập ứng dụng của khách chứ không phải control plane |
@@ -6639,11 +6672,11 @@ Hằng đêm → toàn bộ adapter contract test
 Trước bảo vệ → chạy trên cloud thật, 3 nhà cung cấp, ghi lại toàn bộ số đo
 ```
 
-> **Trạng thái hiện tại, và một sai lệch có chủ đích so với sơ đồ trên.** Đã dựng: `lint` (ESLint + typescript-eslint với luật type-aware), `typecheck`, `format:check`, và **toàn bộ bộ test của mọi package chạy mỗi push và mỗi PR trên một database dùng-một-lần** — `pnpm test:scratch`, đúng lệnh CI chạy; dựng lại toàn bộ chuỗi migration từ database trống là bước đầu của lượt đó (`pnpm db:verify-chain` vẫn là lượt nhanh cục bộ cho người sửa migration, ~2 phút, không cần mật khẩu role). Lượt CI cần chuỗi thật của ba role (`DATABASE_URL_S1`, `DATABASE_URL_S2`, `DATABASE_URL_S2_DIRECT`) vì test của hai service nối bằng role của chính mình theo §1.2 và chốt `current_user` lúc boot; điều này đồng thời đóng một sai lệch cũ — job trước gán chuỗi owner cho `DATABASE_URL_S1/S2`, trái câu "không đưa owner vào runtime của service" của ADR-05. Database ấy nằm trên một **project Supabase riêng cho CI** (dựng một lần bằng `pnpm db:ci-bootstrap`), đặt cùng vùng với runner GitHub: mật khẩu của môi trường dev không rời máy dev, hai ngân sách 60 kết nối tách nhau, và round trip từ runner tới database ngắn hơn hẳn (đo 12/09/2026: 71ms từ runner Azure của GitHub tới `us-east-1`, so với 41–56ms từ máy dev tới Singapore và ~220ms nếu runner phải nói chuyện với Singapore), đủ gần hình học của triển khai thật để các khẳng định "trong vòng 1 giây" của I19 (đường ghi giữ row-lock vài round trip, NOTIFY, nạp snapshot một câu lệnh, SSE — xem §6.3 [v4.2]) chạy thật trên CI — lượt đầu: 3 test của tầng 3 xanh trong 18 giây. Số đo lượt đầu: 591 test, `@udp/db` 41s (108s khi CI còn chạy trên Singapore), `core-backend` 64s, `flag-service` 220s, cả job 5 phút 20 giây. Lượt `schedule` hằng đêm mới chỉ chạy lại bộ test này, và giữ project free của CI không bị tạm dừng sau một tuần không hoạt động. Chưa dựng: build image, `kind` + adapter contract test, E2E rút gọn; cả ba đều đợi Cloud Adapter và Domain Adapter ra đời, vì trước đó chúng không có gì để kiểm.
+> **Trạng thái hiện tại, và một sai lệch có chủ đích so với sơ đồ trên.** Đã dựng: `lint` (ESLint + typescript-eslint với luật type-aware), `typecheck`, `format:check`, và **toàn bộ bộ test của mọi package chạy mỗi push và mỗi PR trên một database dùng-một-lần** — `pnpm test:scratch`, đúng lệnh CI chạy; dựng lại toàn bộ chuỗi migration từ database trống là bước đầu của lượt đó (`pnpm db:verify-chain` vẫn là lượt nhanh cục bộ cho người sửa migration, ~2 phút, không cần mật khẩu role). Lượt CI cần bốn chuỗi thật của ba role (`DATABASE_URL_S1`, `DATABASE_URL_S2`, `DATABASE_URL_S2_DIRECT`, và `DATABASE_URL_S3` **[v4.2]**; chuỗi thứ năm `DATABASE_URL_S3_DIRECT` sẽ vào cùng kênh `LISTEN rollout_intent` của §7.6) vì test của ba service nối bằng role của chính mình theo §1.2 và chốt `current_user` lúc boot; điều này đồng thời đóng một sai lệch cũ — job trước gán chuỗi owner cho `DATABASE_URL_S1/S2`, trái câu "không đưa owner vào runtime của service" của ADR-05. Database ấy nằm trên một **project Supabase riêng cho CI** (dựng một lần bằng `pnpm db:ci-bootstrap`), đặt cùng vùng với runner GitHub: mật khẩu của môi trường dev không rời máy dev, hai ngân sách 60 kết nối tách nhau, và round trip từ runner tới database ngắn hơn hẳn (đo 12/09/2026: 71ms từ runner Azure của GitHub tới `us-east-1`, so với 41–56ms từ máy dev tới Singapore và ~220ms nếu runner phải nói chuyện với Singapore), đủ gần hình học của triển khai thật để các khẳng định "trong vòng 1 giây" của I19 (đường ghi giữ row-lock vài round trip, NOTIFY, nạp snapshot một câu lệnh, SSE — xem §6.3 [v4.2]) chạy thật trên CI — lượt đầu: 3 test của tầng 3 xanh trong 18 giây. Số đo lượt đầu: 591 test, `@udp/db` 41s (108s khi CI còn chạy trên Singapore), `core-backend` 64s, `flag-service` 220s, cả job 5 phút 20 giây. Lượt `schedule` hằng đêm mới chỉ chạy lại bộ test này, và giữ project free của CI không bị tạm dừng sau một tuần không hoạt động. Chưa dựng: build image, `kind` + adapter contract test, E2E rút gọn; cả ba đều đợi Cloud Adapter và Domain Adapter ra đời, vì trước đó chúng không có gì để kiểm.
 
 > Sai lệch: bảng §13.1 và dòng đầu của sơ đồ trên ghi **Testcontainers**, nhưng cả lượt dựng lại chuỗi migration lẫn bộ test đầy đủ đều dùng một **database dùng-một-lần tạo ngay trên chính instance PostgreSQL đang dùng** (`CREATE DATABASE` → `migrate deploy` → seed → test → `DROP DATABASE ... WITH (FORCE)`). Ba lý do, hai trong số đó là thứ Testcontainers không làm được: (1) nó chạy được ở nơi **không có Docker**; (2) nó kiểm trên **đúng phiên bản và đúng nền tảng đang dùng** (PostgreSQL 17.6 sau Supavisor) thay vì một container xấp xỉ; (3) các role riêng của nhà cung cấp (`anon`, `authenticated`, `service_role`) **có tồn tại** ở đó, nên khẳng định "không role NÀO KHÁC được cấp quyền trên schema public" của **I22** vẫn kiểm thật — trên một container sạch, ba role đó không tồn tại và khẳng định ấy xanh vĩnh viễn mà chẳng kiểm gì. Đổi lại, lượt kiểm cần quyền `CREATEDB`.
 
-> Một điều cả hai lượt cố tình **không** làm: chạy `db:service-login`. Role trong PostgreSQL là đối tượng cấp **cluster**, không phải cấp database — đã đo: từ một database vừa tạo, cả ba role `udp_s*` đều nhìn thấy được, `SET ROLE` chạy bình thường, và chuỗi kết nối của `udp_s1`/`udp_s2` nối thẳng vào database ấy qua cả hai pooler (6543 và 5432, kênh LISTEN nhận notification). Cấp lại LOGIN trong lượt kiểm vì thế sẽ xoay mật khẩu của chính role mà môi trường thật đang dùng. Lượt `db:verify-chain` không cần mật khẩu role nào: seed và test của `@udp/db`, `@udp/design-lint` nối bằng `DATABASE_URL_DIRECT` rồi dùng `SET LOCAL ROLE` để kiểm GRANT. Lượt đầy đủ `test:scratch` thì cần chuỗi thật của ba role, và trước khi chạy bước nào nó khẳng định **mọi** chuỗi kết nối trong env con trả về đúng `current_database()` và `current_user`: §1.2 chốt role lúc boot, còn chốt database là việc của lượt kiểm, vì thứ duy nhất đứng giữa bộ test và dữ liệu thật là phép đổi tên database trong chuỗi kết nối. Ba giới hạn đã đo của database dùng-một-lần, ghi ra để không ai tin nó mạnh hơn thực tế: (1) nó kế thừa role của cluster nhưng **không** kế thừa `ALTER DEFAULT PRIVILEGES` của database `postgres`. Điều này có hệ quả thật, đã đo trên hai project: `postgres` của project dev không có default privilege nào cho schema `public`, còn `postgres` của một project Supabase **mới** (`udp-ci`) mặc định cấp toàn quyền trên mọi bảng, sequence và hàm mới trong `public` cho `anon`, `authenticated`, `service_role` — database dùng-một-lần tạo từ `template1` thì không mang dòng nào trong số đó. Vì vậy I22 xanh trên CI là bằng chứng về **migration** (không GRANT thừa), không phải về môi trường; chạy migration của UDP thẳng lên `postgres` của một project mới sẽ làm mọi bảng UDP mở cho ba role nền tảng và I22 đỏ ở đó. **[v4.2]** Migration `public_schema_hardening` vì thế thu hồi default privilege của owner và quyền hiện có trên mọi bảng/sequence/hàm trong `public` khỏi ba role nền tảng, thu hồi USAGE trên schema khỏi ba role đó và khỏi PUBLIC, có điều kiện role tồn tại, rồi tự đọc lại ACL và gãy nếu còn — chạy ở mọi database được `migrate deploy` (database `postgres` của project CI không được migrate và không chạy test, nên giữ nguyên); I22 kiểm cả `pg_default_acl` lẫn ACL schema; (2) ACL của schema `public` khác nhau: ở `postgres` nền tảng đã thu hồi PUBLIC (`{postgres=UC, udp_s1..3=U}`), còn database mới mang mặc định PostgreSQL 15+ (`{pg_database_owner=UC, =U}`, PUBLIC có USAGE) — sau migration `public_schema_hardening` hai bên như nhau (PUBLIC không còn USAGE, chỉ owner và `udp_s1..3`), và I22 kiểm điều đó trực tiếp; (3) khi job CI bị huỷ giữa chừng, tiến trình bị giết trước khi kịp `DROP`, nên job có một bước `always()` xoá đúng database theo tên tất định `udp_scratch_ci_<run_id>_<run_attempt>`, và các chuỗi kết nối dẫn xuất (đã đổi tên database, GitHub không tự che) được che tường minh bằng `::add-mask::` trước bước đầu tiên.
+> Một điều cả hai lượt cố tình **không** làm: chạy `db:service-login`. Role trong PostgreSQL là đối tượng cấp **cluster**, không phải cấp database — đã đo: từ một database vừa tạo, cả ba role `udp_s*` đều nhìn thấy được, `SET ROLE` chạy bình thường, và chuỗi kết nối của `udp_s1`/`udp_s2` nối thẳng vào database ấy qua cả hai pooler (6543 và 5432, kênh LISTEN nhận notification). Cấp lại LOGIN trong lượt kiểm vì thế sẽ xoay mật khẩu của chính role mà môi trường thật đang dùng. Lượt `db:verify-chain` không cần mật khẩu role nào: seed và test của `@udp/db`, `@udp/design-lint` nối bằng `DATABASE_URL_DIRECT` rồi dùng `SET LOCAL ROLE` để kiểm GRANT. Lượt đầy đủ `test:scratch` thì cần chuỗi thật của cả ba role (bốn chuỗi, `pnpm db:ci-bootstrap` cấp cả ba), và trước khi chạy bước nào nó khẳng định **mọi** chuỗi kết nối trong env con trả về đúng `current_database()` và `current_user`: §1.2 chốt role lúc boot, còn chốt database là việc của lượt kiểm, vì thứ duy nhất đứng giữa bộ test và dữ liệu thật là phép đổi tên database trong chuỗi kết nối. Ba giới hạn đã đo của database dùng-một-lần, ghi ra để không ai tin nó mạnh hơn thực tế: (1) nó kế thừa role của cluster nhưng **không** kế thừa `ALTER DEFAULT PRIVILEGES` của database `postgres`. Điều này có hệ quả thật, đã đo trên hai project: `postgres` của project dev không có default privilege nào cho schema `public`, còn `postgres` của một project Supabase **mới** (`udp-ci`) mặc định cấp toàn quyền trên mọi bảng, sequence và hàm mới trong `public` cho `anon`, `authenticated`, `service_role` — database dùng-một-lần tạo từ `template1` thì không mang dòng nào trong số đó. Vì vậy I22 xanh trên CI là bằng chứng về **migration** (không GRANT thừa), không phải về môi trường; chạy migration của UDP thẳng lên `postgres` của một project mới sẽ làm mọi bảng UDP mở cho ba role nền tảng và I22 đỏ ở đó. **[v4.2]** Migration `public_schema_hardening` vì thế thu hồi default privilege của owner và quyền hiện có trên mọi bảng/sequence/hàm trong `public` khỏi ba role nền tảng, thu hồi USAGE trên schema khỏi ba role đó và khỏi PUBLIC, có điều kiện role tồn tại, rồi tự đọc lại ACL và gãy nếu còn — chạy ở mọi database được `migrate deploy` (database `postgres` của project CI không được migrate và không chạy test, nên giữ nguyên); I22 kiểm cả `pg_default_acl` lẫn ACL schema; (2) ACL của schema `public` khác nhau: ở `postgres` nền tảng đã thu hồi PUBLIC (`{postgres=UC, udp_s1..3=U}`), còn database mới mang mặc định PostgreSQL 15+ (`{pg_database_owner=UC, =U}`, PUBLIC có USAGE) — sau migration `public_schema_hardening` hai bên như nhau (PUBLIC không còn USAGE, chỉ owner và `udp_s1..3`), và I22 kiểm điều đó trực tiếp; (3) khi job CI bị huỷ giữa chừng, tiến trình bị giết trước khi kịp `DROP`, nên job có một bước `always()` xoá đúng database theo tên tất định `udp_scratch_ci_<run_id>_<run_attempt>`, và các chuỗi kết nối dẫn xuất (đã đổi tên database, GitHub không tự che) được che tường minh bằng `::add-mask::` trước bước đầu tiên.
 
 ---
 
@@ -6826,6 +6859,7 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | **Không có bước xem trước dạng `terraform plan`** | `estimateCost()` và thứ tự `ResourceStep` hiển thị ở bước Preview là một dạng plan thu gọn, không phải diff đầy đủ giữa trạng thái hiện tại và mong muốn. Với luồng "tạo mới" thì đủ; với "sửa hạ tầng đã có" thì không | Sinh diff từ `listTaggedResources()` so với tập `ResourceStep` mong muốn |
 | **`lookup()` tốn thêm một lời gọi API cho mỗi step** | Kể cả lần chạy đầu khi chắc chắn chưa có gì. Vài trăm mili-giây trên thao tác 10 tới 20 phút; đo và báo cáo tách riêng ở E2 | Bỏ qua `lookup()` ở lần chạy đầu khi sổ hoàn toàn trống, đổi lấy việc mất an toàn nếu sổ trống vì lý do khác |
 | **Domain Adapter phát hiện drift nhưng không tự sửa, khác với Cloud Adapter tự hội tụ** | Khác biệt có chủ đích chứ không phải thiếu nhất quán (§5.2): trôi cấu hình tooling thường là người vận hành cố ý vá nóng, còn VPC biến mất giữa lúc provisioning thì chỉ có một cách đọc. Phải giải thích được điểm này khi bảo vệ | Chế độ tự sửa bật được theo từng domain, kèm cửa sổ thời gian cho phép |
+| **Canary FLAG_LEVEL luôn là hai variant** [v4.2] | Rule của rollout phải là phân phối **đúng hai** variant (`[{on: p}, {off: 100000 − p}]`, §2.2); rule ba variant trở lên bị Service 3 HOLD với lý do rõ ở `last_decision`, không đoán — vì tăng một variant làm dịch khoảng của mọi variant đứng sau (mục ngay dưới) và "canary" theo §7.2 là hai mẫu của cùng quần thể | Chiến lược theo tập variant có thứ tự, khi có nhu cầu thật |
 | **Distribution nhiều hơn hai variant không sticky tuyệt đối** | Mô hình khoảng tích lũy: tăng trọng số một variant làm dịch khoảng của mọi variant đứng sau, nên người dùng có thể chuyển giữa hai variant mà không ai đụng tới (§6.4). Chấp nhận được vì canary luôn là hai nhánh, và đây là hành vi chung của LaunchDarkly cùng các hệ tương tự | Cấp cho mỗi variant một không gian hash riêng, đổi lấy việc mất khả năng biểu diễn phân phối tổng bằng 100% |
 | **Nhãn `ff` chỉ gắn cho tối đa 3 flag mỗi environment** | Trần cứng để cardinality cộng thêm chứ không bùng nổ (§6.6, đo ở E14). Rollout thứ tư bị từ chối kèm lý do | Nhãn động theo flag đang rollout với TTL, hoặc chuyển sang exemplar |
 | **Flag đánh giá sau khi response đã gửi, hoặc trong job nền, không được gắn nhãn** | Không có request store để ghi vào. Chỉ mất phần *attribution theo request*, counter của `MetricsHook` vẫn có. Ảnh hưởng: C1 không phủ được flag chỉ dùng trong worker nền | Store theo job, hoặc đo ở tầng khác cho workload không phải HTTP |
@@ -6871,6 +6905,8 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 _UDP Technical Design Document v4.0_
 
 **[v4.2] Đóng ADR-05 ở trạng thái mạnh nhất (12/09/2026):** đường nạp snapshot của Service 2 từ 9 truy vấn Prisma trong transaction `RepeatableRead` thành **một câu lệnh SQL** (957ms → 77ms trên env seed; §6.3), với golden hash do code cũ tính làm oracle cho I15c; I19 có thêm chốt cấu trúc đếm truy vấn (đúng 2 cho một vòng tick ở chế độ `snapshot`), I21 thành nghĩa đen; ngân sách chờ pool chuyển xuống tầng adapter cho mọi truy vấn (`DB_POOL.acquireTimeoutMs`, hết hạn ⇒ 503); migration `public_schema_hardening` thu hồi quyền mặc định của nền tảng trên schema `public` và I22 kiểm cả `pg_default_acl` lẫn ACL schema (§13.5).
+
+**[v4.2] Service 3 — nền tảng của C1 (12/09/2026):** `udp-progressive-delivery-controller` dựng theo đúng §7.1 với bốn lớp an toàn (lease `FOR UPDATE SKIP LOCKED` theo `now()` của database, fence trước side effect, `If-Match: "<sessionId>:<version>"` sang Service 2, `updateIfVersion`), `decide()` là hàm thuần với ba ngưỡng §7.4 và sáu vấn đề §7.5, canary FLAG_LEVEL hai variant qua `PATCH /internal/rules/:id` của Service 2 thật, intent §7.6 xử lý trước phân tích kể cả khi PAUSED, DEPENDENCY_DOWN sau `rollbackRetrySeconds`. Package `@udp/metrics-provider` tách riêng: `PrometheusMetricsProvider` (đọc `scrapeLagSeconds` từ `/api/v1/targets`, NaN/Inf/rỗng ⇒ `hasData = false`) và `FakeMetricsProvider` cho test. Ba thay đổi ở tầng dữ liệu: `udp_s3` có `UPDATE (processed_at)` trên `rollout_events` với trigger chỉ cho đặt một lần trên hàng intent; `baseline_percentage` do Service 1 ghi lúc tạo; `last_decision` có `breach`, `breachStreak`, `breachAt`. Một lỗi của chính bản thiết kế v4.1 được test tích hợp phát hiện và sửa ở §7.1/§7.5: chuỗi "liên tiếp" nối từ `prev.at` không bao giờ tới 2 khi nhịp đo ngắn hơn cửa sổ, tức auto-rollback không bao giờ nổ với cấu hình mặc định — nay nối từ `breachAt`. Chưa dựng, ghi ở §3.3: kill-switch I30 phần (a), `LISTEN rollout_intent`, SERVICE_LEVEL, ATTRIBUTE_SPLIT/BLUE_GREEN, ADR-06. Hai chỗ chính bản thiết kế được sửa theo QA: hết hạn tổng thể kiểm TRƯỚC nhánh PAUSED/PENDING (§7.1), và `metric_snapshot` của `RolloutEvent` cùng hình với `latestMetricSnapshot` của §9 (§2.2) thay vì hình v3 cũ.
 
 **Nguyên tắc bao trùm của v4:** không tuyên bố "đầu tiên" hay "chưa nền tảng nào". Mỗi đóng góp được phát biểu dưới dạng *khoảng trống cụ thể còn lại sau khi trừ đi công trình liên quan*, kèm phép đo chứng minh. Mọi yêu sách mạnh phải có **cơ chế cưỡng chế** đi kèm, không phải chỉ một phép đo.
 

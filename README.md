@@ -57,20 +57,24 @@ pnpm db:seed
 # 6. Cấp LOGIN cho role của từng service rồi chạy service
 pnpm db:service-login
 pnpm db:service-login udp_s2
+pnpm db:service-login udp_s3
 pnpm dev:core
 pnpm dev:flags
+pnpm dev:pd
 ```
 
-> `dev:pd` và `dev:portal` chưa có mã nguồn — thư mục mới chỉ được đặt chỗ, chạy
-> các lệnh đó sẽ báo không tìm thấy package.
+> `dev:portal` chưa có mã nguồn — thư mục mới chỉ được đặt chỗ, chạy lệnh đó sẽ
+> báo không tìm thấy package. PD Controller cần Flag Service đang chạy
+> (`FLAG_SERVICE_URL`) và Prometheus (`PROMETHEUS_URL`) để đo canary.
 
-| Dịch vụ               | URL                   |
-| --------------------- | --------------------- |
-| Core Backend          | http://localhost:3001 |
-| Flag Service          | http://localhost:3002 |
-| Prometheus            | http://localhost:9090 |
-| Portal, PD Controller | chưa hiện thực        |
-| Prisma Studio         | `pnpm db:studio`      |
+| Dịch vụ       | URL                   |
+| ------------- | --------------------- |
+| Core Backend  | http://localhost:3001 |
+| Flag Service  | http://localhost:3002 |
+| PD Controller | http://localhost:3003 |
+| Prometheus    | http://localhost:9090 |
+| Portal        | chưa hiện thực        |
+| Prisma Studio | `pnpm db:studio`      |
 
 ## Lệnh thường dùng
 
@@ -85,7 +89,7 @@ pnpm dev:flags
 | `pnpm test`                                  | Chạy test trên database dev đang dùng — nhanh, cho vòng lặp phát triển                       |
 | `pnpm test:scratch`                          | Toàn bộ test trên một database dùng-một-lần dựng từ chuỗi migration — đúng lệnh CI chạy      |
 | `pnpm db:verify-chain`                       | Dựng lại chuỗi migration từ database trống rồi chạy test của `db` và `design-lint` (~2 phút) |
-| `pnpm db:service-login [udp_s2]`             | Cấp LOGIN cho role của một service, ghi chuỗi kết nối vào `.env` (chạy lại là xoay mật khẩu) |
+| `pnpm db:service-login [udp_s2\|udp_s3]`     | Cấp LOGIN cho role của một service, ghi chuỗi kết nối vào `.env` (chạy lại là xoay mật khẩu) |
 | `pnpm db:ci-bootstrap -- --env-file=.env.ci` | Chuẩn bị project Supabase riêng cho CI, một lần (xem bên dưới)                               |
 
 ## CI
@@ -99,8 +103,11 @@ trên một **project Supabase riêng cho CI**, đặt cùng vùng với runner 
    `DATABASE_URL_DIRECT` **kèm `?sslmode=require`**. Ghi hai dòng đó vào `.env.ci`
    (đã bị `.gitignore` chặn).
 2. `pnpm db:ci-bootstrap -- --env-file=.env.ci` — áp migration để tạo role `udp_s*`,
-   cấp LOGIN cho `udp_s1` và `udp_s2`, ghi ba chuỗi role vào `.env.ci`.
-3. `gh secret set -f .env.ci` — nạp cả năm chuỗi lên GitHub.
+   cấp LOGIN cho `udp_s1`, `udp_s2` và `udp_s3`, ghi bốn chuỗi role vào `.env.ci`.
+3. `gh secret set -f .env.ci` — nạp cả sáu chuỗi lên GitHub.
+
+Thêm một service mới (như `udp_s3` ở Plan #16) thì chạy lại bước 2 và 3 trước khi
+push, không thì CI thiếu secret và `test:scratch` dừng ngay ở bước kiểm biến.
 
 Mỗi lượt CI dựng database `udp_scratch_ci_<run_id>_<run_attempt>` rồi xoá; job bị huỷ giữa
 chừng cũng được dọn bởi bước cuối. Lượt hằng đêm giữ project free của CI không bị tạm dừng.

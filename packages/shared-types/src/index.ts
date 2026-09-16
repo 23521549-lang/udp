@@ -15,10 +15,11 @@
  *      `@udp/config` — entry chính chạy env validation lúc nạp module và ném lỗi
  *      nếu thiếu biến.
  *
- * Chưa có ở vòng 1, hoãn có địa chỉ:
- *   - `AdapterResult`, `ResolvedCredential` (§4.1) → plan Cloud Adapter đầu tiên.
- *     `ResolvedCredential` không phải type thuần: nó có `dispose()` và bị cấm
- *     serialize (I12, I24), nên đặt vào một package "chỉ có type" là mất hợp đồng.
+ * `AdapterResult` (§4.1) vào đây ở Plan #16 cùng `@udp/metrics-provider` — người
+ * tiêu thụ đầu tiên là `probe()` của MetricsProvider. Chưa có, hoãn có địa chỉ:
+ *   - `ResolvedCredential` (§4.1) → plan Cloud Adapter đầu tiên. Nó không phải
+ *     type thuần: có `dispose()` và bị cấm serialize (I12, I24), nên đặt vào một
+ *     package "chỉ có type" là mất hợp đồng.
  *   - `CapabilityDeclaration`, `CapabilityBinding` (§5.3) → plan Domain Adapter.
  *
  * Lý do hoãn: chưa có adapter nào tồn tại. Type viết trước khi có người tiêu thụ
@@ -53,6 +54,13 @@ export {
   flagServeWireUnion,
 } from "./evaluation.js";
 
+export type { AdapterOperationStatus, AdapterResult } from "./adapter.js";
+export {
+  metricQueriesSchema,
+  PROMETHEUS_METRIC_NAME,
+  rolloutThresholdsSchema,
+} from "./rollout.js";
+export type { MetricQueries, RolloutThresholds } from "./rollout.js";
 export type { ConfigChangeNotice, ConfigChangeType } from "./change-feed.js";
 
 export { FLAG_TYPES, FLAG_VALUE_SCHEMAS } from "./flag-value.js";

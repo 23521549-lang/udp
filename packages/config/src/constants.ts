@@ -190,6 +190,40 @@ export const ROLLOUT_TIMING = {
 } as const;
 
 /**
+ * Thử lại side effect sang Service 2 (§7.6). Backoff phải nhỏ hơn NHIỀU so với
+ * `rollbackRetrySeconds`, không thì "thử lại tới hạn" chỉ còn một hai lần thử.
+ */
+export const ROLLOUT_RETRY = {
+  /** Hạn chờ một lời gọi PATCH sang S2 — S2 giữ row-lock environment, không được để treo */
+  executorTimeoutMs: 10_000,
+  initialBackoffMs: 1_000,
+  maxBackoffMs: 15_000,
+} as const;
+
+/**
+ * Kiểm định hai tỉ lệ của §7.4: một phía, α = 0.05 ⇒ z tới hạn 1.645. Không phải
+ * ngưỡng theo session: đây là mức ý nghĩa thống kê của phép kiểm, đổi nó là đổi
+ * phương pháp chứ không phải đổi cấu hình.
+ */
+export const ROLLOUT_ANALYSIS = {
+  zCritical: 1.645,
+} as const;
+
+/**
+ * Số session reconciler xử lý ĐỒNG THỜI trong một vòng quét tính theo pool:
+ * mỗi session đang chạy giữ một transaction (một khe) và gia hạn lease trên một
+ * khe khác; `/readyz` cần một khe nữa. Không giữ lại phần này thì lần gia hạn
+ * chờ khe quá `DB_POOL.acquireTimeoutMs`, ném, fence đóng, và session bị bỏ tới
+ * hết lease — đúng lúc nhiều rollout đang sống nhất.
+ */
+export const ROLLOUT_POOL_HEADROOM = 2;
+
+/** `rollout_events.reason` là VARCHAR(255) (§2.2) — cắt ở tầng ghi, không để 22001 */
+export const ROLLOUT_EVENT = {
+  reasonMaxLength: 255,
+} as const;
+
+/**
  * §6.6 — Trần số flag được gắn nhãn `ff` cùng lúc trong một environment.
  *
  * Đây là trần CỨNG chứ không phải gợi ý: số series histogram tỉ lệ với
@@ -211,6 +245,24 @@ export const ROLLOUT_LEASE = {
   durationSeconds: 60,
   /** Chu kỳ gia hạn — phải NHỎ HƠN NHIỀU so với durationSeconds */
   renewIntervalMs: 20_000,
+  /**
+   * Gia hạn NÉM (database chập chờn) thì thử lại sớm thay vì chờ chu kỳ kế: lease
+   * gần như chắc chắn còn (vừa gia hạn ≤ 20 giây trước, sống 60 giây), và bỏ một
+   * rollback đang chạy vì một round trip hỏng là cái giá không đáng. Chỉ khi quá
+   * `durationSeconds` kể từ lần gia hạn thành công cuối thì mới coi là mất.
+   */
+  renewErrorRetryMs: 2_000,
+} as const;
+
+/**
+ * Nguồn metrics (§5.4). `defaultScrapeLagSeconds` là scrape_interval phổ biến
+ * của Prometheus; provider đọc con số thật từ `/api/v1/targets` lúc khởi động và
+ * làm mới theo `scrapeLagRefreshMs`, vì `settleGate` ở §7.5 chờ đúng bằng nó.
+ */
+export const METRICS_PROVIDER = {
+  defaultScrapeLagSeconds: 15,
+  queryTimeoutMs: 5_000,
+  scrapeLagRefreshMs: 300_000,
 } as const;
 
 /**

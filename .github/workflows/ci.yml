@@ -72,9 +72,9 @@ jobs:
     # lặng thay vì đỏ — một fork hay một bản clone không nên hỏng chỉ vì thiếu
     # thứ nó không được phép có.
     env:
-      # Năm chuỗi này do `pnpm db:ci-bootstrap` sinh vào .env.ci rồi
-      # `gh secret set -f .env.ci` nạp lên. Ba chuỗi role là BẮT BUỘC: test của
-      # hai service nối bằng role của chính mình (§1.2) và chốt `current_user`
+      # Sáu chuỗi này do `pnpm db:ci-bootstrap` sinh vào .env.ci rồi
+      # `gh secret set -f .env.ci` nạp lên. Bốn chuỗi role là BẮT BUỘC: test của
+      # ba service nối bằng role của chính mình (§1.2) và chốt `current_user`
       # lúc boot. Job cũ gán chuỗi owner cho S1/S2 — trái ADR-05 ("không đưa
       # owner vào runtime của service"), và cũng làm 249 test service không thể
       # chạy. Role là cấp cluster nên chuỗi role nối thẳng vào database scratch;
@@ -84,6 +84,7 @@ jobs:
       DATABASE_URL_S1: ${{ secrets.DATABASE_URL_S1 }}
       DATABASE_URL_S2: ${{ secrets.DATABASE_URL_S2 }}
       DATABASE_URL_S2_DIRECT: ${{ secrets.DATABASE_URL_S2_DIRECT }}
+      DATABASE_URL_S3: ${{ secrets.DATABASE_URL_S3 }}
       # Tầng 3 của ADR-05 bật: `tier3.integration.test.ts` khẳng định cờ này và
       # đo đường NOTIFY thật trên database scratch.
       CHANGEFEED_NOTIFY_ENABLED: "true"

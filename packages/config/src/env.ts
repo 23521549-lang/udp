@@ -175,6 +175,17 @@ const envSchema = z
      */
     DATABASE_URL_S2: z.string().url().startsWith("postgresql://"),
     /**
+     * Chuỗi kết nối của Service 3 — nối bằng role `udp_s3`.
+     *
+     * Cùng luật với S1/S2: không fallback. `udp_s3` là role hẹp nhất (§1.2: tám
+     * cột của `rollout_sessions`, INSERT event, và đúng một cột `serve` của rule
+     * cho kill-switch). Rơi về owner là S3 ghi được mọi thứ, và một bug của
+     * reconciler sẽ sửa cấu hình flag của người dùng mà không ai chặn.
+     *
+     * Sinh bằng `pnpm db:service-login udp_s3`.
+     */
+    DATABASE_URL_S3: z.string().url().startsWith("postgresql://"),
+    /**
      * Kênh LISTEN của tầng 3 (ADR-05) — role `udp_s2`, SESSION MODE (cổng 5432).
      *
      * Vì sao một chuỗi riêng: `LISTEN` gắn với MỘT backend nên không đi qua pooler
