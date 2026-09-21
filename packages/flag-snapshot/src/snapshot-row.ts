@@ -24,12 +24,15 @@ import { z } from "zod";
  *   - MỌI tầng lồng có điều kiện environment/project của chính nó; riêng
  *     `flag_env_configs` lọc `environment_id = e.id` — đây là nơi I14 (SDK key
  *     của `dev` không đọc được cấu hình `prod`) được quyết định.
- *   - `COALESCE(…, '[]')` ở CẢ BỐN tầng: `json_agg` trên tập rỗng trả NULL, và
+ *   - `COALESCE(…, '[]')` ở MỌI tầng `json_agg`: trên tập rỗng nó trả NULL, và
  *     environment vừa tạo (0 flag) là ca phổ biến nhất trong fixture.
  *   - Thứ tự TẤT ĐỊNH ngay trong SQL (`flags` theo key, `rules` theo priority
- *     rồi id, `segments` theo id): Postgres không bảo đảm thứ tự khi thiếu
- *     `ORDER BY`, và thứ tự trả về đổi sau mỗi UPDATE — đầu vào của hàm băm
- *     không được phép có một khác biệt không tất định.
+ *     rồi id, `segments` theo id, `trackedFlags` theo key): Postgres không bảo
+ *     đảm thứ tự khi thiếu `ORDER BY`, và thứ tự trả về đổi sau mỗi UPDATE —
+ *     đầu vào của hàm băm không được phép có một khác biệt không tất định.
+ *     `trackedFlags` sắp `COLLATE "C"` vì nó đi thẳng lên dây như một mảng mà bên
+ *     đọc so bằng `<` của JS; collation `en_US` bỏ qua dấu `-` trong key flag nên
+ *     sắp khác (`a-c` / `ab`).
  *   - Kết quả đi qua zod TRƯỚC khi vào mapping: `$queryRaw` trả `unknown`, và
  *     một cột đổi tên trong migration phải nổ ở đây với tên trường, không nổ
  *     ở `pickVariant` trong tiến trình của khách.
@@ -73,6 +76,8 @@ export const snapshotRowSchema = z.object({
   configHash: z.string(),
   segments: z.array(z.object({ id: uuid, conditions: z.unknown() })),
   flags: z.array(flagRowSchema),
+  /** [v4.3] Key các flag đang track ở environment này, đã sắp `COLLATE "C"` */
+  trackedFlags: z.array(z.string()),
 });
 
 export type SnapshotRow = z.infer<typeof snapshotRowSchema>;
@@ -123,18 +128,33 @@ const snapshotSql = (environmentId: string): Prisma.Sql => Prisma.sql`
         ) ORDER BY f.key)
         FROM feature_flags f
        WHERE f.project_id = e.project_id
-    ), '[]'::json) AS flags
+    ), '[]'::json) AS flags,
+    COALESCE((
+      SELECT json_agg(tf.key ORDER BY tf.key COLLATE "C")
+        FROM flag_env_configs tc
+        JOIN feature_flags tf ON tf.id = tc.flag_id
+       WHERE tc.environment_id = e.id
+         AND tc.is_tracked
+    ), '[]'::json) AS "trackedFlags"
   FROM environments e
   WHERE e.id = ${environmentId}::uuid
 `;
+
+/**
+ * Bất kỳ client nào đọc được bảng cấu hình — client thường của S2, transaction
+ * ghi của S2, hoặc transaction kill-switch dưới `udp_s3` (có SELECT trên mọi bảng
+ * mà câu lệnh chạm, xem migration `service_roles`).
+ */
+export type SnapshotReader = Pick<Prisma.TransactionClient, "$queryRaw">;
 
 /**
  * Hàng snapshot của một environment, hoặc `undefined` nếu environment không tồn
  * tại. Chạy được cả trên client thường lẫn trong transaction ghi (`stateFor`):
  * `TransactionClient` là tập con cấu trúc của `PrismaClient`.
  */
+
 export async function snapshotRowOf(
-  db: Prisma.TransactionClient,
+  db: SnapshotReader,
   environmentId: string,
 ): Promise<SnapshotRow | undefined> {
   const rows = await db.$queryRaw<unknown[]>(snapshotSql(environmentId));

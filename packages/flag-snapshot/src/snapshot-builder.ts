@@ -1,4 +1,4 @@
-import type { Prisma } from "@udp/db";
+import type { OutboxState, Prisma } from "@udp/db";
 import {
   canonicalJson,
   configHashOf,
@@ -11,19 +11,17 @@ import { flagServeDbSchema, type FlagServeWire } from "@udp/shared-types";
 import {
   snapshotRowOf,
   type FlagRow,
+  type SnapshotReader,
   type SnapshotRow,
 } from "./snapshot-row.js";
 
 /**
- * Dựng snapshot hình dạng dây, và từ nó ra `config_hash` cùng delta (§3.2
- * `evaluation/snapshot-builder.ts`).
+ * Dựng snapshot hình dạng dây, và từ nó ra `config_hash` cùng delta (§8.4).
  *
- * Vì sao ở `evaluation/` chứ không trong `modules/flag/`: ba module nghiệp vụ cùng
- * cần nó — `flag`, `env-config`, `rule` — và §3.2 nói thẳng "Module A KHÔNG import
- * trực tiếp code nội bộ của Module B". Để nó trong repository của `flag` thì hai
- * module kia phải thò tay vào nội tạng của `flag` ngay lúc được viết ra. Nó cũng là
- * thứ `changefeed/` nạp vào cache — một hạ tầng không nên phụ thuộc vào một module
- * nghiệp vụ cụ thể.
+ * Người dùng: bốn module ghi và bộ nạp cache của Service 2, kill-switch của
+ * Service 3 (§7.6). Trước [v4.3] file này nằm ở `evaluation/` của Service 2 — đúng
+ * khi S2 là writer duy nhất; khi kill-switch cần tính CÙNG `config_hash` thì nó
+ * phải thành package dùng chung (xem `index.ts`).
  *
  * Hai nửa tách bạch: `snapshot-row.ts` ĐỌC (một câu lệnh SQL, đã validate),
  * file này DỰNG (`snapshotFromRow`, hàm thuần). Tách như vậy để phần dựng —
@@ -180,21 +178,17 @@ export function snapshotFromRow(row: SnapshotRow): Snapshot {
     segments: row.segments.map(segmentOf),
 
     /**
-     * RỖNG trong lát cắt này, và đó là câu trả lời đúng — không phải chỗ trống
-     * chờ lấp.
+     * [v4.3] Đọc từ `flag_env_configs.is_tracked`, cột mà CHỈ `track`/`untrack`
+     * của Service 2 ghi, trong transaction ADR-05 (§6.6). Câu SQL đã sắp theo
+     * `COLLATE "C"` — trùng phép so `<` của JS mà `configHashOf` và bên đọc delta
+     * dùng.
      *
-     * §6.6 cho tập này đúng MỘT nguồn: Service 1 gọi
-     * `POST /internal/rollouts/:id/track` (§9), và Service 2 thêm flag vào tập
-     * trong một transaction ADR-05. Endpoint đó chưa có, nên tập rỗng.
-     *
-     * Đừng rút nó từ `rollout_sessions.status`, dù từ v4.1 `udp_s2` đọc được cột
+     * Đừng rút tập này từ `rollout_sessions.status`, dù `udp_s2` đọc được cột
      * đó để kiểm fencing. Status do Service 3 ghi, NGOÀI đường ghi của ADR-05:
      * rollout bắt đầu hay kết thúc thì snapshot đổi mà `config_version` đứng yên,
-     * và `config_hash` đã ghi mô tả một trạng thái không còn đúng (I15a). §6.6 đặt
-     * tập này trên đường lan truyền chung chính là để nó thừa hưởng bảo đảm đó
-     * thay vì là một kênh thứ hai phải tự kiểm.
+     * và `config_hash` đã ghi mô tả một trạng thái không còn đúng (I15a).
      */
-    trackedFlags: [],
+    trackedFlags: row.trackedFlags,
   };
 }
 
@@ -205,7 +199,7 @@ export function snapshotFromRow(row: SnapshotRow): Snapshot {
  * dưới row-lock của `environments` ngoài chính các lệnh ghi.
  */
 export async function snapshotOf(
-  tx: Prisma.TransactionClient,
+  tx: SnapshotReader,
   environmentId: string,
 ): Promise<Snapshot> {
   const row = await snapshotRowOf(tx, environmentId);
@@ -270,13 +264,29 @@ function deltaOf(
  */
 export const stateFor =
   (flagKey: string, extra: Readonly<Record<string, string>> = {}) =>
-  async (
-    tx: Prisma.TransactionClient,
-    environmentId: string,
-  ): Promise<{ configHash: string; delta: Prisma.InputJsonValue }> => {
+  async (tx: SnapshotReader, environmentId: string): Promise<OutboxState> => {
     const snapshot = await snapshotOf(tx, environmentId);
     return {
       configHash: configHashOf(snapshot),
       delta: deltaOf(snapshot, flagKey, extra),
     };
   };
+
+/**
+ * Bước 3 và 4 cho `rollout.tracked` / `rollout.untracked` (§6.6 [v4.3]).
+ *
+ * Delta là TOÀN BỘ tập tracked của environment sau thay đổi, không phải "thêm
+ * X" hay "bớt Y": áp delta = thay tập. Phép đó idempotent và không phụ thuộc
+ * thứ tự — cùng nguyên tắc với entry flag ở `deltaOf` — nên replica lỡ một dòng
+ * vẫn hội tụ ở dòng kế, và bên đọc không phải biết tập trước đó là gì.
+ */
+export async function trackedStateOf(
+  tx: SnapshotReader,
+  environmentId: string,
+): Promise<OutboxState> {
+  const snapshot = await snapshotOf(tx, environmentId);
+  return {
+    configHash: configHashOf(snapshot),
+    delta: { trackedFlags: [...snapshot.trackedFlags] },
+  };
+}

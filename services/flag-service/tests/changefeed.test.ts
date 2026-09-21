@@ -517,6 +517,92 @@ describe("tầng 2 áp được ba change_type của đường ghi rule (Plan #1
   });
 });
 
+describe("tầng 2 áp được tập trackedFlags [v4.3] (§6.6)", () => {
+  const trackedRow = (
+    configVersion: number,
+    changeType: "rollout.tracked" | "rollout.untracked",
+    trackedFlags: string[],
+  ): ChangeRecord => ({
+    configVersion,
+    changeType,
+    payload: { trackedFlags },
+  });
+
+  it("flag đổi rồi tập tracked đổi trong cùng một lô ⇒ áp cả hai, hash khớp, không rơi tầng", async () => {
+    const after: Snapshot = {
+      flags: [flag("a", true)],
+      segments: [],
+      trackedFlags: ["a", "b-c"],
+    };
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 9, configHash: configHashOf(after) },
+      records: [
+        deltaRow(8, "rule.ramped", flag("a", true)),
+        trackedRow(9, "rollout.tracked", ["a", "b-c"]),
+      ],
+    });
+
+    await h.cache.get(ENV, "SERVER");
+    const before = h.state.loads;
+    await h.watcher.tick();
+
+    expect(h.state.loads).toBe(before);
+    expect(h.cache.peek(ENV, "SERVER")?.snapshot).toEqual(after);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
+
+  it("untrack thay CẢ tập — kể cả về rỗng", async () => {
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: {
+        configVersion: 8,
+        configHash: configHashOf(snap([flag("a", false)])),
+      },
+      records: [trackedRow(8, "rollout.untracked", [])],
+    });
+
+    await h.cache.get(ENV, "SERVER");
+    await h.watcher.tick();
+
+    expect(h.cache.peek(ENV, "SERVER")?.snapshot.trackedFlags).toEqual([]);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
+
+  it.each([
+    ["chưa sắp", { trackedFlags: ["b", "a"] }],
+    ["trùng", { trackedFlags: ["a", "a"] }],
+    ["phần tử không phải chuỗi", { trackedFlags: ["a", 1] }],
+    ["thiếu trường", { flags: ["a"] }],
+  ])(
+    "payload %s ⇒ rơi về snapshot, không áp một tập sai",
+    async (_label, payload) => {
+      const h = harness({
+        deltaMode: true,
+        cached: { version: 7, flags: [flag("a", false)] },
+        target: {
+          configVersion: 8,
+          configHash: configHashOf(snap([flag("a", false)])),
+        },
+        records: [
+          {
+            configVersion: 8,
+            changeType: "rollout.tracked",
+            payload,
+          },
+        ],
+      });
+
+      await h.cache.get(ENV, "SERVER");
+      await h.watcher.tick();
+
+      expect(readCounters().changefeed_fallback_total).toBe(1);
+    },
+  );
+});
+
 describe("sự kiện thay đổi cho sdk/ (Plan #13, Mục 4)", () => {
   const listen = (): { events: ConfigChangeEvents; seen: ConfigChange[] } => {
     const events = createConfigChangeEvents();

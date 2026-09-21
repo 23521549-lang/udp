@@ -78,9 +78,33 @@ describe("chốt danh tính của Service 3 chặn ngay ở cửa khởi động
     expect(boot.output).not.toContain("đã khởi động");
   }, 60_000);
 
-  it("khởi động bình thường với udp_s3 và ghi lệch đồng hồ", async () => {
-    const boot = await bootWith({ LOG_LEVEL: "info" }, (output) =>
-      output.includes("đã khởi động"),
+  it("thoát mã 1 khi kênh LISTEN rollout_intent nối bằng owner — chuỗi thứ hai cũng phải mang udp_s3", async () => {
+    expect(
+      env.DATABASE_URL_DIRECT,
+      "DATABASE_URL_DIRECT trùng DATABASE_URL_S3_DIRECT — không dựng được cấu hình sai để kiểm",
+    ).not.toBe(env.DATABASE_URL_S3_DIRECT);
+
+    const boot = await bootWith({
+      LOG_LEVEL: "info",
+      ROLLOUT_INTENT_LISTEN_ENABLED: "true",
+      DATABASE_URL_S3_DIRECT: env.DATABASE_URL_DIRECT,
+    });
+
+    expect(boot.survived, "chốt của kênh LISTEN đã bị gỡ").toBe(false);
+    expect(boot.code).toBe(1);
+    // Chốt thứ nhất (pool) phải QUA — không thì ca này đỏ vì lý do của ca trên
+    expect(boot.output).toContain("Danh tính kết nối database đã xác nhận");
+    expect(boot.output).toContain("kênh LISTEN rollout_intent");
+    expect(boot.output).toContain("postgres");
+    expect(boot.output).not.toContain("đã khởi động");
+  }, 60_000);
+
+  it("khởi động bình thường với udp_s3, ghi lệch đồng hồ, và kênh rollout_intent thật sự nghe", async () => {
+    const boot = await bootWith(
+      { LOG_LEVEL: "info", ROLLOUT_INTENT_LISTEN_ENABLED: "true" },
+      (output) =>
+        output.includes("đã khởi động") &&
+        output.includes("Kênh LISTEN của rollout_intent đang nghe"),
     );
     expect(boot.survived, boot.output).toBe(true);
     expect(boot.output).toContain("Danh tính kết nối database đã xác nhận");

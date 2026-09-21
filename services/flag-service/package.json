@@ -15,6 +15,7 @@
     "@udp/config": "workspace:*",
     "@udp/db": "workspace:*",
     "@udp/flag-evaluator": "workspace:*",
+    "@udp/flag-snapshot": "workspace:*",
     "@udp/http": "workspace:*",
     "@udp/shared-types": "workspace:*",
     "express": "^4.21.2",

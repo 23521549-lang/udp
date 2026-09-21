@@ -15,7 +15,7 @@ import { DB_TLS_OPTIONS, sanitizeConnectionString } from "../src/adapter.js";
  * vĩnh viễn.
  *
  *   pnpm db:service-login                    # udp_s1, ghi thẳng vào .env
- *   pnpm db:service-login udp_s2             # role khác — udp_s2 ghi HAI chuỗi (DIRECT_VAR)
+ *   pnpm db:service-login udp_s2             # role khác — udp_s2, udp_s3 ghi HAI chuỗi (DIRECT_VAR)
  *   pnpm db:service-login -- --print         # in ra thay vì ghi (xem cảnh báo dưới)
  *   pnpm db:service-login -- --template=<url> [--template-direct=<url>] --env-file=<path>
  *
@@ -104,7 +104,8 @@ if (explicitTemplate === undefined) {
 }
 
 /**
- * Role nào có thêm chuỗi SESSION MODE của riêng nó — kênh LISTEN của tầng 3.
+ * Role nào có thêm chuỗi SESSION MODE của riêng nó — kênh LISTEN: tầng 3 của S2,
+ * `rollout_intent` của S3 [v4.3].
  *
  * Hai chuỗi của cùng một role PHẢI sinh trong CÙNG một lần chạy: mật khẩu vừa xoay
  * chỉ tồn tại ở lần chạy này, nên ghi một chuỗi rồi để chuỗi kia giữ mật khẩu cũ là
@@ -112,6 +113,7 @@ if (explicitTemplate === undefined) {
  */
 const DIRECT_VAR: Readonly<Partial<Record<string, string>>> = {
   udp_s2: "DATABASE_URL_S2_DIRECT",
+  udp_s3: "DATABASE_URL_S3_DIRECT",
 };
 const directVar = DIRECT_VAR[role];
 const explicitDirectTemplate = flag("template-direct");

@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import { env } from "@udp/config";
 import { createPrismaClient, observeQueries } from "@udp/db";
 import { configHashOf, type Snapshot } from "@udp/flag-evaluator";
+import { stateFor } from "@udp/flag-snapshot";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { stableOwner } from "./helpers/fixture.js";
 import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
-import { stateFor } from "../src/evaluation/snapshot-builder.js";
 
 /**
  * Hợp đồng trên dây của ADR-05.

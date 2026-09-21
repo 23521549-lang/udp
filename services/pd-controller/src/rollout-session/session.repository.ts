@@ -1,5 +1,9 @@
-import { ACTIVE_ROLLOUT_STATUSES } from "@udp/config";
-import { Prisma, type FailReason, type RolloutStatus } from "@udp/db";
+import {
+  ACTIVE_ROLLOUT_STATUS_SQL,
+  Prisma,
+  type FailReason,
+  type RolloutStatus,
+} from "@udp/db";
 import { ZodError } from "zod";
 import type { DbClient } from "../core/db.js";
 import { sessionRowSchema, type Decision, type SessionRow } from "./types.js";
@@ -69,9 +73,7 @@ const COLUMNS = Prisma.sql`
   created_at                        AS "createdAt"
 `;
 
-const ACTIVE = Prisma.sql`status IN (${Prisma.join(
-  ACTIVE_ROLLOUT_STATUSES.map((s) => Prisma.sql`${s}::"RolloutStatus"`),
-)})`;
+const ACTIVE = Prisma.sql`status IN (${ACTIVE_ROLLOUT_STATUS_SQL})`;
 
 function parseRows(rows: unknown[]): SessionRow[] {
   return rows.map((row) => sessionRowSchema.parse(row));

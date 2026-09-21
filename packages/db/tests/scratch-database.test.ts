@@ -127,7 +127,11 @@ describe("scratchEnv", () => {
 
   it("đổi MỌI chuỗi kết nối, kể cả biến chưa có tên trong danh sách nào", () => {
     const out = scratchEnv(
-      { ...base, DATABASE_URL_S3: "postgresql://udp_s3.abc:x@h:6543/postgres" },
+      {
+        ...base,
+        DATABASE_URL_S3: "postgresql://udp_s3.abc:x@h:6543/postgres",
+        DATABASE_URL_S3_DIRECT: "postgresql://udp_s3.abc:x@h:5432/postgres",
+      },
       "udp_scratch_9",
     );
     for (const key of [
@@ -137,6 +141,7 @@ describe("scratchEnv", () => {
       "DATABASE_URL_S2",
       "DATABASE_URL_S2_DIRECT",
       "DATABASE_URL_S3",
+      "DATABASE_URL_S3_DIRECT",
     ]) {
       expect(new URL(out[key] ?? "").pathname, key).toBe("/udp_scratch_9");
     }

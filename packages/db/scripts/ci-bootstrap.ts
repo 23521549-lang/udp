@@ -23,7 +23,8 @@ import {
  *      role `udp_s*` — role là cấp cluster nên tồn tại tiếp sau khi database
  *      scratch bị xoá.
  *   2. Cấp LOGIN cho `udp_s1`, `udp_s2`, `udp_s3` bằng chính `service-login.ts`,
- *      ghi bốn chuỗi role vào `.env.ci` (không vào `.env` của dev).
+ *      ghi năm chuỗi role vào `.env.ci` (không vào `.env` của dev): pooled của ba
+ *      role, và chuỗi session của `udp_s2` (tầng 3) và `udp_s3` (`rollout_intent`).
  *   3. In lệnh nạp secret. Không nạp hộ: đó là thay đổi cấu hình kho mã trên
  *      GitHub, thuộc về người dùng.
  *
@@ -136,7 +137,7 @@ try {
 }
 
 console.log(`
-Project CI đã sẵn sàng. ${envFile} giờ có đủ sáu chuỗi. Nạp secret bằng:
+Project CI đã sẵn sàng. ${envFile} giờ có đủ bảy chuỗi. Nạp secret bằng:
 
   gh secret set -f ${envFile}
 

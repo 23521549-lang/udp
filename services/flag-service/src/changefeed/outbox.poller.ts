@@ -1,5 +1,9 @@
 import type { Prisma } from "@udp/db";
-import type { Snapshot, SnapshotEntry } from "@udp/flag-evaluator";
+import type {
+  SdkStreamChange,
+  Snapshot,
+  SnapshotEntry,
+} from "@udp/flag-evaluator";
 import { verifyHash } from "./checksum.verifier.js";
 import type {
   ChangeFeed,
@@ -75,21 +79,47 @@ export function flagOf(payload: Prisma.JsonValue): SnapshotEntry | null {
 }
 
 /**
- * Áp MỘT dòng lên danh sách flag.
+ * Rút tập tracked ra khỏi payload `rollout.tracked` / `rollout.untracked` (§6.6
+ * [v4.3]) — kiểm nông như `flagOf`, cộng một điều kiện mà hash KHÔNG bắt được
+ * thay: mảng đã sắp tăng dần nghiêm ngặt. `configHashOf` tự sắp lại trước khi
+ * băm, nên một payload sai thứ tự vẫn khớp hash — nhưng lên dây nguyên như thế,
+ * và provider so tập bằng thứ tự thì lệch.
+ */
+export function trackedFlagsOf(payload: Prisma.JsonValue): string[] | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload))
+    return null;
+
+  const tracked: unknown = (payload as { trackedFlags?: unknown }).trackedFlags;
+  if (!Array.isArray(tracked)) return null;
+
+  const keys: string[] = [];
+  for (const key of tracked) {
+    if (typeof key !== "string" || key.length === 0) return null;
+    const prev = keys.at(-1);
+    if (prev !== undefined && !(prev < key)) return null;
+    keys.push(key);
+  }
+  return keys;
+}
+
+/**
+ * Chiếu MỘT dòng outbox thành một phần tử `changes[]` của stream (§6.3) — nơi
+ * DUY NHẤT hiểu `change_type`. Poller áp đúng phần tử này lên cache, hub SSE gửi
+ * đúng phần tử này xuống SDK: hai bên không thể hiểu cùng một dòng theo hai cách.
  *
  * `change_type` chưa biết trả `"unknown-change-type"` — KHÔNG ném, và đây không
- * phải chuyện phong cách. Từ vựng §2.2 lớn dần (v4.1 thêm `rule.ramped`), và một
- * replica chạy phiên bản cũ gặp giá trị mới phải rơi về snapshot chứ không chết.
- * §16 bắt triển khai "replica trước, writer sau"; nhánh này là lưới an toàn khi
- * thứ tự đó bị làm ngược. Service 3 cũng là writer của sổ này (kill-switch §7.6,
- * ghi thẳng database lúc Service 2 đang chết) — một `switch` vét cạn có
- * `default: throw` sẽ ném đúng lúc đó. Rơi về snapshot thì thay đổi vẫn tới nơi,
- * chỉ chậm hơn một vòng.
+ * phải chuyện phong cách. Từ vựng §2.2 lớn dần (v4.1 thêm `rule.ramped`, v4.3
+ * thêm `rollout.*`), và một replica chạy phiên bản cũ gặp giá trị mới phải rơi về
+ * snapshot chứ không chết. §16 bắt triển khai "replica trước, writer sau"; nhánh
+ * này là lưới an toàn khi thứ tự đó bị làm ngược. Service 3 cũng là writer của sổ
+ * này (kill-switch §7.6, ghi thẳng database lúc Service 2 đang chết) — một
+ * `switch` vét cạn có `default: throw` sẽ ném đúng lúc đó. Rơi về snapshot thì
+ * thay đổi vẫn tới nơi, chỉ chậm hơn một vòng.
  */
-function applyRecord(
-  flags: readonly SnapshotEntry[],
+export function changeOf(
   record: ChangeRecord,
-): SnapshotEntry[] | FallbackReason {
+): SdkStreamChange | FallbackReason {
+  const configVersion = record.configVersion;
   switch (record.changeType) {
     case "flag.created":
     case "flag.updated":
@@ -104,11 +134,38 @@ function applyRecord(
     case "rule.ramped":
     case "envconfig.toggled": {
       const flag = flagOf(record.payload);
-      if (flag === null) return "malformed-payload";
-      return [...flags.filter((f) => f.key !== flag.key), flag];
+      return flag === null
+        ? "malformed-payload"
+        : { configVersion, kind: "flag", flag };
+    }
+    case "rollout.tracked":
+    case "rollout.untracked": {
+      const trackedFlags = trackedFlagsOf(record.payload);
+      return trackedFlags === null
+        ? "malformed-payload"
+        : { configVersion, kind: "trackedFlags", trackedFlags };
     }
     default:
       return "unknown-change-type";
+  }
+}
+
+/** Áp một phần tử lên snapshot — hàm thuần, idempotent theo từng loại */
+export function applyChange(
+  snapshot: Snapshot,
+  change: SdkStreamChange,
+): Snapshot {
+  switch (change.kind) {
+    case "flag":
+      return {
+        ...snapshot,
+        flags: [
+          ...snapshot.flags.filter((f) => f.key !== change.flag.key),
+          change.flag,
+        ],
+      };
+    case "trackedFlags":
+      return { ...snapshot, trackedFlags: [...change.trackedFlags] };
   }
 }
 
@@ -138,7 +195,7 @@ export async function pollDeltas(
   );
 
   let cursor = cached.configVersion;
-  let flags: readonly SnapshotEntry[] = cached.snapshot.flags;
+  let snapshot: Snapshot = cached.snapshot;
   const appliedRecords: ChangeRecord[] = [];
 
   for (const record of records) {
@@ -155,12 +212,12 @@ export async function pollDeltas(
       return { kind: "fallback", reason: "gap" };
     }
 
-    const applied = applyRecord(flags, record);
-    if (typeof applied === "string") {
-      return { kind: "fallback", reason: applied };
+    const change = changeOf(record);
+    if (typeof change === "string") {
+      return { kind: "fallback", reason: change };
     }
 
-    flags = applied;
+    snapshot = applyChange(snapshot, change);
     cursor = record.configVersion;
     appliedRecords.push(record);
   }
@@ -168,8 +225,6 @@ export async function pollDeltas(
   if (cursor !== target.configVersion) {
     return { kind: "fallback", reason: "incomplete" };
   }
-
-  const snapshot: Snapshot = { ...cached.snapshot, flags: [...flags] };
 
   /**
    * Đối chiếu NGAY, không đợi vòng 60 giây.

@@ -2,6 +2,7 @@ import { env } from "@udp/config";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
 import { prisma } from "../../src/core/db.js";
 import { createFlagLevelExecutor } from "../../src/executors/flag-level.executor.js";
+import { createKillSwitch } from "../../src/executors/kill-switch.js";
 import {
   createReconciler,
   type Reconciler,
@@ -45,24 +46,33 @@ export interface TestController {
   workerId: string;
 }
 
-export type ControllerOptions = Partial<ReconcilerDeps> & { clock?: Clock };
+export type ControllerOptions = Partial<ReconcilerDeps> & {
+  clock?: Clock;
+  /** Dựng reconciler như trước v4.3 — không có kill-switch */
+  withoutKillSwitch?: boolean;
+};
 
 export function testController(
   flagServiceUrl: string,
   options: ControllerOptions = {},
 ): TestController {
-  const { clock = fakeClock(), ...overrides } = options;
+  const {
+    clock = fakeClock(),
+    withoutKillSwitch = false,
+    ...overrides
+  } = options;
   const provider = new FakeMetricsProvider({ scrapeLagSeconds: 15 });
   const workerId =
     overrides.workerId ??
     `test:${String(process.pid)}:${Math.random().toString(16).slice(2, 8)}`;
+  const executor = createFlagLevelExecutor({
+    baseUrl: flagServiceUrl,
+    secret: env.INTERNAL_SERVICE_SECRET,
+    timeoutMs: 5_000,
+  });
   const reconciler = createReconciler({
     db: prisma,
-    executor: createFlagLevelExecutor({
-      baseUrl: flagServiceUrl,
-      secret: env.INTERNAL_SERVICE_SECRET,
-      timeoutMs: 5_000,
-    }),
+    executor,
     providerFor: () => provider,
     now: () => clock.now(),
     sleep: (ms) => {
@@ -70,6 +80,9 @@ export function testController(
       return Promise.resolve();
     },
     maxInFlight: 3,
+    ...(withoutKillSwitch
+      ? {}
+      : { killSwitch: createKillSwitch({ db: prisma, notify: false }) }),
     ...overrides,
     workerId,
   });

@@ -1,5 +1,5 @@
 import { ROLLOUT_LEASE, ROLLOUT_TIMING } from "@udp/config";
-import type { PrismaClient } from "@udp/db";
+import type { Prisma, PrismaClient } from "@udp/db";
 import { logger } from "@udp/http";
 import type { DbClient } from "../core/db.js";
 import { metrics } from "../core/metrics.js";
@@ -9,6 +9,10 @@ import {
   type ApplyOutcome,
   type FlagLevelExecutor,
 } from "../executors/flag-level.executor.js";
+import type {
+  KillSwitch,
+  KillSwitchOutcome,
+} from "../executors/kill-switch.js";
 import type { MetricsProviderFor } from "../metrics/provider.js";
 import {
   findUnprocessedIntent,
@@ -71,13 +75,33 @@ export interface ReconcilerDeps {
   rollbackRetrySeconds?: number;
   /** Số session xử lý đồng thời trong một vòng — theo pool, xem `ROLLOUT_POOL_HEADROOM` */
   maxInFlight?: number;
+  /** §7.6 — ghi thẳng `serve` khi S2 chết; vắng thì DEPENDENCY_DOWN giữ traffic nguyên */
+  killSwitch?: KillSwitch;
+  /**
+   * [v4.3] Gọi với env-config của session khi một lượt đóng session FLAG_LEVEL
+   * (DONE/FAILED) — nơi gỡ nhãn `ff` (§6.6). Chạy SAU khi lượt đã xong và lease
+   * đã nhả; ném thì chỉ log — việc gỡ nhãn có lưới quét riêng.
+   */
+  onTerminal?: (flagEnvConfigId: string) => void;
 }
 
 export interface Reconciler {
   /** Một vòng quét: claim mọi session đến hạn, xử lý từng cái, cô lập lỗi */
   tick(): Promise<void>;
-  /** Một session — mở ra để test điều khiển từng bước */
+  /** Một session — mở ra để test điều khiển từng bước; không qua semaphore */
   reconcileOne(sessionId: string): Promise<void>;
+  /**
+   * [v4.3] Xử lý một session NGAY (kênh `rollout_intent`, §7.6) — qua cùng
+   * semaphore với vòng quét. Session đang chạy thì chạy lại đúng một lượt sau khi
+   * lượt hiện tại xong: intent ghi giữa chừng không phải chờ vòng quét kế.
+   */
+  wake(sessionId: string): void;
+  /**
+   * Một vòng quét ngay, ngoài nhịp — sau khi kênh `rollout_intent` (nối lại) nghe
+   * được, để bù intent ghi trong lúc kênh đứt. Vòng đang chạy thì không chồng
+   * thêm vòng thứ hai; `stop()` chờ nó như vòng theo nhịp.
+   */
+  nudge(): void;
   start(): void;
   /** Ngừng lên lịch, đóng fence của các session đang giữ với lý do shutdown, CHỜ vòng đang chạy */
   stop(): Promise<void>;
@@ -97,6 +121,7 @@ export type Outcome =
   | "hold"
   | "dwell"
   | "promoted"
+  | "completed"
   | "rolled-back"
   | "dependency-down"
   | "precondition-failed"
@@ -107,30 +132,64 @@ export type Outcome =
 
 export const SHUTDOWN_REASON = "shutdown";
 
-/** Chạy `fn` trên từng phần tử, tối đa `limit` cái cùng lúc, không dừng khi một cái ném */
-async function runLimited<T>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-): Promise<PromiseSettledResult<void>[]> {
-  const results: PromiseSettledResult<void>[] = [];
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      const item = items[next] as T;
-      next += 1;
-      try {
-        await fn(item);
-        results.push({ status: "fulfilled", value: undefined });
-      } catch (err: unknown) {
-        results.push({ status: "rejected", reason: err });
-      }
-    }
+/** Một lần đóng session FAILED — xem `closeFailed` */
+interface FailedClose {
+  failReason: FailReason;
+  action: "ROLLBACK" | "EXPIRE" | "DEPENDENCY_DOWN";
+  triggeredBy: "AUTO" | "MANUAL";
+  reason: string;
+  snapshot: Decision["metricSnapshot"];
+  causedByEventId?: string;
+  /** Có mặt = traffic ĐÃ về `to`; vắng = traffic giữ nguyên, không DeploymentEvent */
+  reverted?: {
+    to: number;
+    target: FlagTarget;
+    metadata?: Prisma.InputJsonObject;
   };
-  await Promise.all(
-    Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker),
-  );
-  return results;
+}
+
+/** Kết cục mà sau đó session không còn chạy — nhãn `ff` của nó phải được gỡ */
+const TERMINAL_OUTCOMES: ReadonlySet<Outcome> = new Set<Outcome>([
+  "completed",
+  "rolled-back",
+  "expired",
+  "dependency-down",
+]);
+
+const KILL_SWITCH_LABEL: Record<KillSwitchOutcome["status"], string> = {
+  APPLIED: "applied",
+  STALE: "stale",
+  FAILED: "failed",
+};
+
+/**
+ * Semaphore đếm, MỘT cho cả tiến trình. Vòng quét và `wake()` (kênh
+ * `rollout_intent`) cùng xin khe ở đây — hai nhóm worker riêng thì cộng lại vượt
+ * `maxInFlight`, pool cạn, lần gia hạn lease chờ khe quá hạn và fence đóng oan.
+ */
+function createSemaphore(limit: number): {
+  acquire(): Promise<void>;
+  release(): void;
+} {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  return {
+    acquire() {
+      if (active < limit) {
+        active += 1;
+        return Promise.resolve();
+      }
+      return new Promise<void>((resolve) => {
+        waiting.push(resolve);
+      });
+    },
+    release() {
+      const next = waiting.shift();
+      // Khe chuyển thẳng cho người chờ — `active` không đổi
+      if (next === undefined) active -= 1;
+      else next();
+    },
+  };
 }
 
 export function createReconciler(deps: ReconcilerDeps): Reconciler {
@@ -142,7 +201,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     (deps.rollbackRetrySeconds ?? ROLLOUT_TIMING.rollbackRetrySeconds) * 1000;
   const maxInFlight = deps.maxInFlight ?? 1;
   const strategyFor = deps.strategyFor ?? defaultStrategyFor;
-  const { db, executor, workerId, providerFor } = deps;
+  const { db, executor, workerId, providerFor, killSwitch, onTerminal } = deps;
 
   /** Shutdown: cắt ngắn mọi `sleep` đang chờ để fence được kiểm ngay */
   const shutdownSignal = new AbortController();
@@ -150,6 +209,11 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     deps.sleep ??
     ((ms: number) =>
       new Promise<void>((resolve) => {
+        // Đã shutdown thì sự kiện `abort` sẽ không bắn lại — trả ngay
+        if (shutdownSignal.signal.aborted) {
+          resolve();
+          return;
+        }
         const timer = setTimeout(done, ms);
         function done(): void {
           clearTimeout(timer);
@@ -160,6 +224,12 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       }));
 
   const inFlightFences = new Set<Fence>();
+  const slots = createSemaphore(Math.max(1, maxInFlight));
+  /**
+   * Session đang có lượt chạy hoặc đang chờ khe, đăng ký TRƯỚC `claim`: vòng quét
+   * bỏ qua chúng, `wake` chỉ đặt cờ chạy lại, `stop()` chờ tất cả.
+   */
+  const scheduled = new Map<string, { rerun: boolean; done: Promise<void> }>();
   let timer: NodeJS.Timeout | undefined;
   let inFlight: Promise<void> | undefined;
   let stopped = false;
@@ -267,7 +337,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       `${session.id}:${opts.triggeredBy === "AUTO" ? "promote" : "manual-promote"}:${String(to)}`,
     );
     if (applied.status === "PRECONDITION_FAILED") return "precondition-failed";
-    if (applied.status === "FAILED") {
+    if (applied.status === "FAILED" || applied.status === "REJECTED") {
       return holdWith(
         session,
         fence,
@@ -299,8 +369,65 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       }
       return true;
     });
-    return ok ? "promoted" : "version-drift";
+    if (!ok) return "version-drift";
+    return complete ? "completed" : "promoted";
   };
+
+  /**
+   * Trạng thái cuối FAILED, dùng chung cho mọi đường đóng session thất bại:
+   * rollback/expire qua S2, kill-switch, DEPENDENCY_DOWN giữ traffic, và expire
+   * của session chưa bắt đầu. Một chỗ duy nhất quyết định event, DeploymentEvent
+   * và đánh dấu intent — các đường không được trôi khỏi nhau.
+   *
+   * Trả hàm ghi, chạy trong transaction của bên gọi: `commitFenced` cho đường qua
+   * S2, `record` của kill-switch cho đường ghi thẳng. `false` = version đã đổi.
+   */
+  const closeFailed =
+    (session: SessionRow, fence: Fence, close: FailedClose) =>
+    async (tx: DbClient): Promise<boolean> => {
+      const { reverted } = close;
+      const updated = await updateIfVersion(tx, session.id, fence.version, {
+        status: "FAILED",
+        failReason: close.failReason,
+        ...(reverted === undefined
+          ? {}
+          : { currentTrafficPercentage: reverted.to }),
+      });
+      if (!updated) return false;
+      await recordExecution(tx, {
+        sessionId: session.id,
+        action: close.action,
+        trafficPercentage: reverted?.to ?? session.currentTrafficPercentage,
+        triggeredBy: close.triggeredBy,
+        reason: close.reason,
+        metricSnapshot: close.snapshot,
+        ...(close.causedByEventId === undefined
+          ? {}
+          : { causedByEventId: close.causedByEventId }),
+      });
+      if (reverted !== undefined) {
+        await recordRollbackDeployment(tx, {
+          projectId: session.projectId,
+          environmentId: session.environmentId,
+          sessionId: session.id,
+          workloadName: session.workloadName,
+          triggeredBy: close.triggeredBy,
+          metadata: {
+            scope: session.rolloutScope,
+            flagKey: reverted.target.flagKey,
+            targetVariant: reverted.target.targetVariant.key,
+            from: session.currentTrafficPercentage,
+            to: reverted.to,
+            failReason: close.failReason,
+            ...reverted.metadata,
+          },
+        });
+      }
+      if (close.causedByEventId !== undefined) {
+        await markProcessedOrThrow(tx, close.causedByEventId);
+      }
+      return true;
+    };
 
   /**
    * Về BASELINE, không phải về 0 (§7.1): flag đã ổn định ở 30% thì rollback không
@@ -341,93 +468,135 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       { deadline, now, sleep, fence },
     );
     if (applied.status === "PRECONDITION_FAILED") return "precondition-failed";
-    if (applied.status === "FAILED") {
-      return dependencyDown(
+    if (applied.status === "REJECTED") {
+      // S2 sống và từ chối — không phải §7.6 "S2 không phản hồi": giữ nguyên, người vận hành xem lý do
+      return holdWith(
         session,
         fence,
-        applied.message,
-        opts.causedByEventId,
+        `Rollback bị Service 2 từ chối: ${applied.message}`,
+        opts.snapshot,
       );
     }
+    if (applied.status === "FAILED") {
+      return dependencyDown(session, fence, target, applied.message, opts);
+    }
 
-    const ok = await commitFenced(session, fence, async (tx) => {
-      const updated = await updateIfVersion(tx, session.id, fence.version, {
-        currentTrafficPercentage: baseline,
-        status: "FAILED",
-        failReason: opts.failReason,
-      });
-      if (!updated) return false;
-      await recordExecution(tx, {
-        sessionId: session.id,
-        action: opts.action,
-        trafficPercentage: baseline,
-        triggeredBy: opts.triggeredBy,
-        reason: opts.reason,
-        metricSnapshot: opts.snapshot,
-        ...(opts.causedByEventId === undefined
-          ? {}
-          : { causedByEventId: opts.causedByEventId }),
-      });
-      await recordRollbackDeployment(tx, {
-        projectId: session.projectId,
-        environmentId: session.environmentId,
-        sessionId: session.id,
-        workloadName: session.workloadName,
-        triggeredBy: opts.triggeredBy,
-        metadata: {
-          scope: session.rolloutScope,
-          flagKey: target.flagKey,
-          targetVariant: target.targetVariant.key,
-          from: session.currentTrafficPercentage,
-          to: baseline,
-          failReason: opts.failReason,
-        },
-      });
-      if (opts.causedByEventId !== undefined) {
-        await markProcessedOrThrow(tx, opts.causedByEventId);
-      }
-      return true;
-    });
+    const ok = await commitFenced(
+      session,
+      fence,
+      closeFailed(session, fence, {
+        ...opts,
+        reverted: { to: baseline, target },
+      }),
+    );
     return ok ? "rolled-back" : "version-drift";
   };
 
   /**
+   * [v4.3] Kill-switch (§7.6): ghi thẳng `serve` về baseline, với trạng thái cuối
+   * của session ghi TRONG cùng transaction — worker tỉnh muộn lùi cả hai.
+   * `undefined` = không dùng được (không cấu hình, thiếu baseline, rollout không
+   * có env-config) hoặc cũng hỏng: bên gọi đóng session mà traffic giữ nguyên.
+   */
+  const tryKillSwitch = async (
+    session: SessionRow,
+    fence: Fence,
+    target: FlagTarget,
+    close: Omit<FailedClose, "reverted">,
+    intended: FailReason,
+  ): Promise<Outcome | undefined> => {
+    const baseline = session.baselinePercentage;
+    if (
+      killSwitch === undefined ||
+      baseline === null ||
+      session.flagEnvConfigId === null
+    ) {
+      return undefined;
+    }
+    const outcome = await killSwitch.apply({
+      fence,
+      sessionId: session.id,
+      environmentId: session.environmentId,
+      flagEnvConfigId: session.flagEnvConfigId,
+      ruleId: target.ruleId,
+      flagKey: target.flagKey,
+      targetVariantId: target.targetVariant.id,
+      expectedVariantIds: target.currentWeights.map((w) => w.variantId),
+      percent: baseline,
+      record: closeFailed(session, fence, {
+        ...close,
+        reason: `kill-switch đã đưa traffic về ${String(baseline)}%: ${close.reason}`,
+        reverted: {
+          to: baseline,
+          target,
+          metadata: { intendedFailReason: intended, via: "kill-switch" },
+        },
+      }),
+    });
+    metrics.killSwitch.inc({ outcome: KILL_SWITCH_LABEL[outcome.status] });
+    if (outcome.status === "APPLIED") return "dependency-down";
+    if (outcome.status === "STALE") return "version-drift";
+    logger.error(
+      { sessionId: session.id, reason: outcome.message },
+      "Kill-switch cũng không ghi được — traffic giữ nguyên",
+    );
+    return undefined;
+  };
+
+  /**
    * §7.6: hết `rollbackRetrySeconds` mà S2 vẫn không nhận ⇒ FAILED/DEPENDENCY_DOWN,
-   * alert P1. Intent gây ra lần rollback này (nếu có) được đánh dấu đã xử lý:
-   * nó ĐÃ được thi hành, kết cục nằm ở event DEPENDENCY_DOWN trỏ về nó — không
-   * thì session FAILED không bao giờ được claim nữa và intent treo "đang chờ"
-   * mãi trên Portal.
+   * alert P1 (`udp_rollback_blocked_total` — tăng cả khi kill-switch cứu được, vì
+   * S2 chết vẫn là sự cố cần người). Kill-switch trước; không được thì đóng
+   * session, traffic giữ nguyên.
+   *
+   * `fail_reason` là DEPENDENCY_DOWN, còn lý do định rollback (`intended`) đi vào
+   * `metadata.intendedFailReason` của DeploymentEvent khi kill-switch áp được.
+   * Intent gây ra lần rollback này (nếu có) được đánh dấu đã xử lý: nó ĐÃ được thi
+   * hành, kết cục nằm ở event DEPENDENCY_DOWN trỏ về nó — không thì session FAILED
+   * không bao giờ được claim nữa và intent treo "đang chờ" mãi trên Portal.
    */
   const dependencyDown = async (
     session: SessionRow,
     fence: Fence,
+    target: FlagTarget,
     message: string,
-    causedByEventId?: string,
+    intended: {
+      failReason: FailReason;
+      triggeredBy: "AUTO" | "MANUAL";
+      snapshot: Decision["metricSnapshot"];
+      causedByEventId?: string;
+    },
   ): Promise<Outcome> => {
     metrics.rollbackBlocked.inc();
     logger.error(
       { sessionId: session.id, message },
       "udp_rollback_blocked_total: rollback không áp được, Service 2 không phản hồi",
     );
-    const ok = await commitFenced(session, fence, async (tx) => {
-      const updated = await updateIfVersion(tx, session.id, fence.version, {
-        status: "FAILED",
-        failReason: "DEPENDENCY_DOWN",
-      });
-      if (!updated) return false;
-      await recordExecution(tx, {
-        sessionId: session.id,
-        action: "DEPENDENCY_DOWN",
-        trafficPercentage: session.currentTrafficPercentage,
-        triggeredBy: "AUTO",
-        reason: message,
-        ...(causedByEventId === undefined ? {} : { causedByEventId }),
-      });
-      if (causedByEventId !== undefined) {
-        await markProcessedOrThrow(tx, causedByEventId);
-      }
-      return true;
-    });
+    const close: Omit<FailedClose, "reverted"> = {
+      failReason: "DEPENDENCY_DOWN",
+      action: "DEPENDENCY_DOWN",
+      triggeredBy: intended.triggeredBy,
+      reason: message,
+      snapshot: intended.snapshot,
+      ...(intended.causedByEventId === undefined
+        ? {}
+        : { causedByEventId: intended.causedByEventId }),
+    };
+
+    const saved = await tryKillSwitch(
+      session,
+      fence,
+      target,
+      close,
+      intended.failReason,
+    );
+    if (saved !== undefined) return saved;
+
+    const ok = await commitFenced(
+      session,
+      fence,
+      closeFailed(session, fence, close),
+    );
     return ok ? "dependency-down" : "version-drift";
   };
 
@@ -654,21 +823,17 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
   ): Promise<Outcome> => {
     const reason = `Vượt quá max_duration_seconds (${String(session.maxDurationSeconds)}s)`;
     if (session.status === "PENDING") {
-      const ok = await commitFenced(session, fence, async (tx) => {
-        const updated = await updateIfVersion(tx, session.id, fence.version, {
-          status: "FAILED",
+      const ok = await commitFenced(
+        session,
+        fence,
+        closeFailed(session, fence, {
           failReason: "EXPIRED",
-        });
-        if (!updated) return false;
-        await recordExecution(tx, {
-          sessionId: session.id,
           action: "EXPIRE",
-          trafficPercentage: session.currentTrafficPercentage,
           triggeredBy: "AUTO",
           reason: `${reason} mà chưa bắt đầu được`,
-        });
-        return true;
-      });
+          snapshot: null,
+        }),
+      );
       return ok ? "expired" : "version-drift";
     }
     const resolved = await resolve(session);
@@ -771,9 +936,12 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       },
     });
     inFlightFences.add(fence);
+    // `stop()` đóng fence của những gì ĐÃ trong tập; claim xong sau đó thì tự đóng
+    if (stopped) fence.abort(SHUTDOWN_REASON);
     metrics.sessionsInFlight.inc();
+    let outcome: Outcome | undefined;
     try {
-      const outcome = await run(session, fence);
+      outcome = await run(session, fence);
       done(outcome);
     } catch (err: unknown) {
       if (err instanceof FenceAbortedError) {
@@ -798,37 +966,86 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
         });
       }
     }
+    if (
+      outcome !== undefined &&
+      TERMINAL_OUTCOMES.has(outcome) &&
+      session.flagEnvConfigId !== null
+    ) {
+      try {
+        onTerminal?.(session.flagEnvConfigId);
+      } catch (err: unknown) {
+        logger.error({ err, sessionId: session.id }, "onTerminal ném");
+      }
+    }
+  };
+
+  /** Một lượt có khe; lặp khi `wake` đặt cờ chạy lại trong lúc đang chạy */
+  const enqueue = (sessionId: string): Promise<void> => {
+    const existing = scheduled.get(sessionId);
+    if (existing !== undefined) {
+      existing.rerun = true;
+      return existing.done;
+    }
+    const entry = { rerun: false, done: Promise.resolve() };
+    /**
+     * Đọc qua hàm, không đọc thẳng trong điều kiện vòng lặp: `wake()` đặt cờ này
+     * trong lúc lượt hiện tại đang `await`, điều mà phân tích luồng của TypeScript
+     * không thấy — đọc thẳng thì nó thu hẹp cờ về `false` và coi vòng lặp là thừa.
+     */
+    const wantsRerun = (): boolean => entry.rerun && !stopped;
+    entry.done = (async () => {
+      do {
+        await slots.acquire();
+        // Hạ cờ SAU khi có khe: `wake` tới lúc còn chờ khe đã được lượt sắp chạy phủ
+        entry.rerun = false;
+        try {
+          // Đã tắt trong lúc chờ khe: không claim thêm session nào
+          if (!stopped) await reconcileOne(sessionId);
+        } catch (err: unknown) {
+          // reconcileOne tự bắt lỗi của vòng; đây là lưới cho lỗi ngoài nó (claim ném)
+          logger.error({ err, sessionId }, "reconcileOne ném ra ngoài");
+          done("error");
+        } finally {
+          slots.release();
+        }
+      } while (wantsRerun());
+    })().finally(() => {
+      scheduled.delete(sessionId);
+    });
+    scheduled.set(sessionId, entry);
+    return entry.done;
   };
 
   const tick = async (): Promise<void> => {
     const end = metrics.loopDuration.startTimer();
     try {
       const candidates = await findReconcilable(db);
-      const results = await runLimited(candidates, maxInFlight, reconcileOne);
-      for (const r of results) {
-        // reconcileOne tự bắt lỗi; đây là lưới cho lỗi ngoài nó (claim ném)
-        if (r.status === "rejected") {
-          logger.error({ err: r.reason as unknown }, "reconcileOne rejected");
-          done("error");
-        }
-      }
+      // Session đang có lượt (thường do `wake`) thì để lượt đó lo — không xếp thêm
+      await Promise.all(
+        candidates.filter((id) => !scheduled.has(id)).map((id) => enqueue(id)),
+      );
     } finally {
       end();
     }
+  };
+
+  /** Vòng quét có theo dõi: tối đa một vòng một lúc, `stop()` chờ được */
+  const runTick = (): Promise<void> => {
+    inFlight ??= tick()
+      .catch((err: unknown) => {
+        logger.error({ err }, "Vòng quét của reconciler hỏng");
+      })
+      .finally(() => {
+        inFlight = undefined;
+      });
+    return inFlight;
   };
 
   const schedule = (): void => {
     if (stopped || timer !== undefined) return;
     timer = setTimeout(() => {
       timer = undefined;
-      inFlight = tick()
-        .catch((err: unknown) => {
-          logger.error({ err }, "Vòng quét của reconciler hỏng");
-        })
-        .finally(() => {
-          inFlight = undefined;
-          schedule();
-        });
+      void runTick().finally(schedule);
     }, loopIntervalMs);
     timer.unref();
   };
@@ -836,6 +1053,14 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
   return {
     tick,
     reconcileOne,
+    wake(sessionId) {
+      if (stopped) return;
+      void enqueue(sessionId);
+    },
+    nudge() {
+      if (stopped) return;
+      void runTick();
+    },
     start() {
       stopped = false;
       schedule();
@@ -847,6 +1072,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       for (const fence of inFlightFences) fence.abort(SHUTDOWN_REASON);
       shutdownSignal.abort();
       await inFlight;
+      await Promise.all([...scheduled.values()].map((entry) => entry.done));
     },
   };
 }

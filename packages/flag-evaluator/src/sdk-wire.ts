@@ -34,11 +34,21 @@ export const SDK_STREAM_EVENTS = {
 export type SdkStreamEventName =
   (typeof SDK_STREAM_EVENTS)[keyof typeof SDK_STREAM_EVENTS];
 
-/** Một flag đổi — phần tử duy nhất của `changes[]` hôm nay */
+/** Một flag đổi — thay entry cùng `key` */
 export interface SdkStreamFlagChange {
   configVersion: number;
   kind: "flag";
   flag: SnapshotEntry;
+}
+
+/**
+ * [v4.3] Tập flag đang gắn nhãn đổi (§6.6) — thay CẢ tập. Đã sắp theo phép so
+ * chuỗi thường (`<`), đúng thứ tự `configHashOf` dùng.
+ */
+export interface SdkStreamTrackedFlagsChange {
+  configVersion: number;
+  kind: "trackedFlags";
+  trackedFlags: string[];
 }
 
 /**
@@ -48,7 +58,7 @@ export interface SdkStreamFlagChange {
  * phần tử của chúng thêm vào union này mà không phá hình dạng đã phát hành. Provider
  * gặp `kind` lạ thì RESYNC (§6.8), không đoán.
  */
-export type SdkStreamChange = SdkStreamFlagChange;
+export type SdkStreamChange = SdkStreamFlagChange | SdkStreamTrackedFlagsChange;
 
 /** `data` của `event: flag_changed` (§6.3) */
 export interface SdkStreamDelta {

@@ -355,6 +355,57 @@ describe("đẩy thay đổi", () => {
     ]);
   });
 
+  it('tập tracked đổi ⇒ phần tử kind "trackedFlags" mang cả tập [v4.3]', async () => {
+    const r = rig();
+    const { res } = await r.open(5);
+    r.publish(
+      delta(r.state.current, entry(6, []), [
+        {
+          configVersion: 6,
+          changeType: "rollout.tracked",
+          payload: { trackedFlags: ["a", "b-c"] },
+        },
+      ]),
+    );
+    await flush();
+
+    expect(res.events()).toEqual([
+      {
+        event: "flag_changed",
+        id: 6,
+        data: {
+          fromVersion: 5,
+          toVersion: 6,
+          configHash: "h6",
+          changes: [
+            {
+              configVersion: 6,
+              kind: "trackedFlags",
+              trackedFlags: ["a", "b-c"],
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("dòng tracked sai hình dạng ⇒ snapshot, không bao giờ gửi delta thiếu", async () => {
+    const r = rig();
+    const { res } = await r.open(5);
+    r.publish(
+      delta(r.state.current, entry(6, []), [
+        {
+          configVersion: 6,
+          changeType: "rollout.untracked",
+          payload: { trackedFlags: ["b", "a"] },
+        },
+      ]),
+    );
+    await flush();
+
+    expect(res.events().map((e) => e.event)).toEqual(["snapshot"]);
+  });
+
   it("cùng version nhưng KHÁC hash ⇒ snapshot, không phải delta (I15c)", async () => {
     /**
      * SDK giữ `(5, h5)`; delta xuất phát từ `(5, h5-khac)` — cùng SỐ, khác NỘI

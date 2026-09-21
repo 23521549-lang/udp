@@ -30,6 +30,11 @@ import { ERROR_CATALOG, type ErrorCode } from "@udp/shared-types/problem";
  *
  * Gộp hai cái vào một mã sẽ làm mất đúng `retryable` và `suggestedAction` — hai
  * trường §9 sinh ra để Portal biết nên hiện nút gì.
+ *
+ * Hai mã KHÔNG có ở đây, có chủ đích: UDP03 (sai writer của `rollout_events`) và
+ * UDP04 [v4.3] (`serve.weights` chưa sắp theo `variantId`). Cả hai là lỗi của một
+ * SERVICE ghi sai, không phải của người dùng — không có nút nào để hiện, nên để
+ * chúng rơi về 500 và log mức error thay vì dịch thành mã người dùng sửa được.
  */
 export const UDP_SQLSTATE = {
   /** §6.7 — rule hoặc default trỏ tới variant không hợp lệ */

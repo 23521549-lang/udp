@@ -28,6 +28,12 @@ import {
  */
 export type { ConfigChangeType };
 
+/** Bước 3 và 4 của một environment: hash sau thay đổi, và delta cho dòng outbox */
+export interface OutboxState {
+  configHash: string;
+  delta: Prisma.InputJsonValue;
+}
+
 export interface OutboxWrite<T> {
   /** Mọi environment bị ảnh hưởng. Tạo flag mới chạm TẤT CẢ environment của project. */
   environmentIds: readonly string[];
@@ -60,14 +66,14 @@ export interface OutboxWrite<T> {
    *
    * `configHash` do bên gọi tính, không phải `@udp/db` tính: package này giữ KỶ
    * LUẬT TRANSACTION, còn "snapshot là gì" và "delta là gì" thuộc về service sở
-   * hữu nghiệp vụ đó. Đảo lại thì `@udp/db` phải phụ thuộc
-   * `@udp/flag-evaluator`, và Service 3 — writer thứ hai của đường này (§7.6) —
-   * kéo theo cả lõi đánh giá flag mà nó không dùng.
+   * hữu nghiệp vụ đó (`@udp/flag-snapshot`). Đảo lại thì `@udp/db` phải phụ
+   * thuộc `@udp/flag-evaluator` và vòng phụ thuộc khép lại: package snapshot đã
+   * đọc database qua `@udp/db`.
    */
   stateOf: (
     tx: Prisma.TransactionClient,
     environmentId: string,
-  ) => Promise<{ configHash: string; delta: Prisma.InputJsonValue }>;
+  ) => Promise<OutboxState>;
 }
 
 /**
@@ -164,19 +170,23 @@ export async function writeWithOutbox<T>(
         data: { configHash },
       });
 
-      await tx.configChangeLog.create({
-        data: {
-          environmentId,
-          configVersion,
-          changeType: write.changeType,
-          payload: delta,
-          // Spread có điều kiện: với `exactOptionalPropertyTypes`, gán
-          // `actorUserId: undefined` là lỗi biên dịch chứ không phải "bỏ trống".
-          ...(write.actorUserId === undefined
-            ? {}
-            : { actorUserId: write.actorUserId }),
-        },
-      });
+      /**
+       * INSERT thô, KHÔNG `RETURNING` — có chủ đích [v4.3]. `create` của Prisma
+       * là `INSERT ... RETURNING *`, tức cần SELECT trên bảng; `udp_s3` (kill-switch,
+       * §7.6) chỉ có INSERT, đúng §1.2 — đo 12/09/2026: 42501. Không nới quyền cho
+       * S3 đọc sổ outbox chỉ để Prisma đọc lại một hàng không ai dùng. `id` và
+       * `created_at` là mặc định phía database.
+       */
+      const inserted = await tx.$executeRaw`
+        INSERT INTO config_change_log
+               (environment_id, config_version, change_type, payload, actor_user_id)
+        VALUES (${environmentId}::uuid, ${configVersion}, ${write.changeType},
+                ${JSON.stringify(delta)}::jsonb, ${write.actorUserId ?? null}::uuid)`;
+      if (inserted !== 1) {
+        throw new Error(
+          `writeWithOutbox: ghi outbox trả ${String(inserted)} hàng, cần đúng 1`,
+        );
+      }
     }
 
     // ---- Tầng 3: đánh thức replica — TRONG transaction ---------------------

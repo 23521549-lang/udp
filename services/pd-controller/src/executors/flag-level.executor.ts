@@ -1,4 +1,5 @@
 import { ROLLOUT_EVENT, ROLLOUT_RETRY, TOTAL_BUCKETS } from "@udp/config";
+import { z } from "zod";
 import { errorMessage } from "../core/errors.js";
 import type { Weight } from "../rollout-session/target.js";
 import type { Fence } from "../reconciler/fence.js";
@@ -18,11 +19,19 @@ import type { Fence } from "../reconciler/fence.js";
  * Kết quả có kiểu riêng, không phải `AdapterResult` (§4.1 không có
  * `PRECONDITION_FAILED`, và "bên nhận từ chối fencing token" không phải một kết
  * cục của adapter cloud).
+ *
+ * Ba kết cục hỏng, phân theo "thử lại có ích không":
+ *   - `PRECONDITION_FAILED` (412) — token cũ; thử lại vô ích, vòng sau hội tụ.
+ *   - `REJECTED` (4xx khác) — S2 SỐNG và từ chối yêu cầu (rule đổi hình dạng,
+ *     body sai…). Thử lại vô ích, và kill-switch càng không được chạy: nó dành cho
+ *     S2 CHẾT (§7.6), không phải để đi vòng qua một lời từ chối có lý do.
+ *   - `FAILED` — mạng, hết giờ, 5xx: S2 có thể chỉ chập chờn, thử lại có ích.
  */
 
 export type ApplyOutcome =
   | { status: "SUCCESS" }
   | { status: "PRECONDITION_FAILED"; message: string }
+  | { status: "REJECTED"; message: string }
   | { status: "FAILED"; message: string };
 
 export interface RampTarget {
@@ -30,12 +39,26 @@ export interface RampTarget {
   weights: Weight[];
 }
 
+export type UntrackOutcome =
+  | { status: "SUCCESS"; changed: boolean }
+  | { status: "FAILED"; message: string };
+
+const untrackBodySchema = z.object({ changed: z.boolean() });
+
 export interface FlagLevelExecutor {
   applyTraffic(
     fence: Fence,
     target: RampTarget,
     reason: string,
   ): Promise<ApplyOutcome>;
+  /**
+   * [v4.3] `POST /internal/flag-envs/:id/untrack` (§6.6). Theo CONFIG, kể cả ngay
+   * sau khi session đóng: hàng session có thể đã bị xoá, config thì không cần.
+   * Không cần fence: S2 tự bỏ qua khi config còn rollout đang chạy, nên gọi thừa
+   * hay gọi muộn đều vô hại. Config không còn ⇒ S2 trả 200 `not-found`, nên mọi
+   * 404 ở đây là lỗi thật (sai địa chỉ, S2 bản cũ) và được báo là FAILED.
+   */
+  untrack(configId: string): Promise<UntrackOutcome>;
 }
 
 export interface FlagLevelExecutorOptions {
@@ -61,6 +84,11 @@ export function weightsFor(
   }
   if (percent < 0 || percent > 100) {
     throw new Error(`Phần trăm ngoài khoảng [0, 100]: ${String(percent)}`);
+  }
+  if (!current.some((w) => w.variantId === targetVariantId)) {
+    throw new Error(
+      `Variant mục tiêu ${targetVariantId} không có trong trọng số hiện tại của rule`,
+    );
   }
   const target = Math.round((percent * TOTAL_BUCKETS) / 100);
   return current.map((w) => ({
@@ -110,12 +138,36 @@ export function createFlagLevelExecutor(
         };
       }
       if (!res.ok) {
-        return {
-          status: "FAILED",
-          message: `HTTP ${String(res.status)}: ${await safeText(res)}`,
-        };
+        const message = `HTTP ${String(res.status)}: ${await safeText(res)}`;
+        return res.status < 500
+          ? { status: "REJECTED", message }
+          : { status: "FAILED", message };
       }
       return { status: "SUCCESS" };
+    },
+
+    async untrack(configId) {
+      try {
+        const res = await fetchImpl(
+          `${baseUrl}/internal/flag-envs/${encodeURIComponent(configId)}/untrack`,
+          {
+            method: "POST",
+            headers: { "x-internal-secret": options.secret },
+            signal: AbortSignal.timeout(timeoutMs),
+          },
+        );
+        if (!res.ok) {
+          return {
+            status: "FAILED",
+            message: `HTTP ${String(res.status)}: ${await safeText(res)}`,
+          };
+        }
+        const body = untrackBodySchema.parse(await res.json());
+        return { status: "SUCCESS", changed: body.changed };
+      } catch (err: unknown) {
+        // Mạng, hết giờ, hay body không đúng hợp đồng — lưới quét thử lại
+        return { status: "FAILED", message: errorMessage(err) };
+      }
     },
   };
 }
@@ -141,7 +193,7 @@ export interface RetryOptions {
 /**
  * Thử lại một side effect cho tới hạn (§7.6): rollback không được phụ thuộc vào
  * một lần gọi may rủi khi S2 chập chờn. Dừng sớm khi: thành công, bên nhận từ
- * chối token (thử lại không đổi được gì), hoặc mất lease (fence).
+ * chối (412 hay 4xx khác — thử lại không đổi được gì), hoặc mất lease (fence).
  */
 export async function applyWithRetry(
   apply: () => Promise<ApplyOutcome>,

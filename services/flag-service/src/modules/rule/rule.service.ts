@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@udp/db";
+import { stateFor } from "@udp/flag-snapshot";
 import { ConflictError, NotFoundError, OptimisticLockError } from "@udp/http";
 import { prisma } from "../../core/db.js";
 import { writeConfigChange } from "../../core/outbox.js";
-import { stateFor } from "../../evaluation/snapshot-builder.js";
 import * as repository from "./rule.repository.js";
 import type { ReplaceRulesInput, PublicRule } from "./rule.types.js";
 import {

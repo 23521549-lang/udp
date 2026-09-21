@@ -846,6 +846,13 @@ model FlagEnvConfig {
   /// Optimistic lock ở mức environment: sửa flag ở dev không chặn người sửa prod
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  /// [v4.3] §6.6 — flag này đang được gắn nhãn `ff` ở environment này (tập
+  /// `trackedFlags` của snapshot). Chỉ `track`/`untrack` của Service 2 ghi, bằng
+  /// SQL thô trong transaction ADR-05: Prisma `update` sẽ đẩy `updatedAt` và cho
+  /// người đang sửa rule một 409 giả. Index partial `flag_env_configs_tracked_idx`
+  /// nằm trong migration (Prisma không diễn đạt được `WHERE`).
+  isTracked Boolean @default(false) @map("is_tracked")
+
   flag           FeatureFlag         @relation(fields: [flagId], references: [id], onDelete: Cascade)
   environment    Environment         @relation(fields: [environmentId], references: [id], onDelete: Cascade)
   rules          FlagTargetingRule[]

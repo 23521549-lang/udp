@@ -22,7 +22,7 @@ import {
  * chạm vào, và database bị xoá khi xong dù kết quả ra sao.
  *
  * Khác `db:verify-chain` ở chỗ nó cần CHUỖI THẬT của ba role (`DATABASE_URL_S1`,
- * `_S2`, `_S2_DIRECT`, `_S3`): test của ba service nối bằng role của chính mình theo
+ * `_S2`, `_S2_DIRECT`, `_S3`, `_S3_DIRECT`): test của ba service nối bằng role của chính mình theo
  * §1.2 và chốt `current_user` lúc boot. Role là cấp cluster nên chuỗi role của
  * môi trường đang dùng nối thẳng vào database scratch được (đã đo qua cả hai
  * pooler); GRANT cấp database thì migration dựng lại bên trong nó.
@@ -44,6 +44,8 @@ loadDotenv({ path: resolve(ROOT, ".env") });
  * Thà liệt kê đúng tên biến thiếu ngay ở đây.
  */
 const notifyEnabled = process.env["CHANGEFEED_NOTIFY_ENABLED"] !== "false";
+const intentListenEnabled =
+  process.env["ROLLOUT_INTENT_LISTEN_ENABLED"] !== "false";
 const required = [
   "DATABASE_URL",
   "DATABASE_URL_DIRECT",
@@ -51,6 +53,7 @@ const required = [
   "DATABASE_URL_S2",
   "DATABASE_URL_S3",
   ...(notifyEnabled ? ["DATABASE_URL_S2_DIRECT"] : []),
+  ...(intentListenEnabled ? ["DATABASE_URL_S3_DIRECT"] : []),
 ];
 const missing = required.filter((name) => !process.env[name]);
 if (missing.length > 0) {
@@ -58,7 +61,8 @@ if (missing.length > 0) {
     `Thiếu biến môi trường: ${missing.join(", ")}.\n` +
       `Bộ test đầy đủ cần chuỗi thật của ba role (pnpm db:service-login, ` +
       `pnpm db:service-login udp_s2, pnpm db:service-login udp_s3); DATABASE_URL_S2_DIRECT chỉ cần khi ` +
-      `CHANGEFEED_NOTIFY_ENABLED không phải "false".`,
+      `CHANGEFEED_NOTIFY_ENABLED không phải "false", DATABASE_URL_S3_DIRECT chỉ cần khi ` +
+      `ROLLOUT_INTENT_LISTEN_ENABLED không phải "false".`,
   );
   process.exit(1);
 }

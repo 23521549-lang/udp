@@ -28,4 +28,5 @@ export {
   type SdkStreamDelta,
   type SdkStreamEventName,
   type SdkStreamFlagChange,
+  type SdkStreamTrackedFlagsChange,
 } from "./sdk-wire.js";

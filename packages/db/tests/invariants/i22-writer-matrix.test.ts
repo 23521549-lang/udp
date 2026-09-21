@@ -97,8 +97,17 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     config_change_log: APPEND_ONLY,
     environments: { SELECT: "*", UPDATE: ["config_hash", "config_version"] },
     // [v4.1] ĐỌC đúng năm cột: T12 (lease) + I23 (fencing) trong một truy vấn (§1.2)
+    // [v4.3] cột thứ sáu `flag_env_config_id`: track theo session, và untrack
+    // bỏ qua khi config còn session đang chạy
     rollout_sessions: {
-      SELECT: ["claimed_until", "id", "status", "targeting_rule_id", "version"],
+      SELECT: [
+        "claimed_until",
+        "flag_env_config_id",
+        "id",
+        "status",
+        "targeting_rule_id",
+        "version",
+      ],
     },
     projects: READ_ONLY,
     domain_catalog: READ_ONLY,
@@ -110,8 +119,11 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     // [v4.2] S3 đánh dấu intent đã xử lý — đúng MỘT cột, một lần (§2.2, migration
     // rollout_intent_processed); luật "một lần, chỉ hàng intent" nằm ở trigger
     rollout_events: { SELECT: "*", INSERT: "*", UPDATE: ["processed_at"] },
-    // Ngoại lệ kill-switch — ĐÚNG ba quyền, không hơn (§7.6, I30)
+    // Ngoại lệ kill-switch — ĐÚNG bốn quyền, không hơn (§7.6, I30). [v4.3] thứ tư
+    // là `flag_env_configs.updated_at`: kill-switch đẩy mốc optimistic lock như
+    // đường ramp của S2, để lần lưu rule bằng dữ liệu cũ nhận 409
     flag_targeting_rules: { SELECT: "*", UPDATE: ["serve"] },
+    flag_env_configs: { SELECT: "*", UPDATE: ["updated_at"] },
     environments: { SELECT: "*", UPDATE: ["config_hash", "config_version"] },
     config_change_log: { INSERT: "*" },
     projects: READ_ONLY,
@@ -119,7 +131,6 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     capability_bindings: READ_ONLY,
     feature_flags: READ_ONLY,
     flag_variants: READ_ONLY,
-    flag_env_configs: READ_ONLY,
     domain_catalog: READ_ONLY,
     // Rule dang rollout co the tham chieu segment (rule_type = SEGMENT); thieu
     // quyen nay thi reconciler chet bang 42501 giua vong lap.

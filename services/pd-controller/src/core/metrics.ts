@@ -47,6 +47,22 @@ export const metrics = {
     name: "udp_rollback_blocked_total",
     help: "Rollback không áp được vì Service 2 không phản hồi quá rollbackRetrySeconds (§7.6, I30)",
   }),
+  /**
+   * [v4.3] Kill-switch (§7.6, I30(a)): `applied` = traffic đã về baseline dù S2
+   * chết; `stale` = worker khác đã tiếp quản, transaction lùi; `failed` = không ghi
+   * được, traffic giữ nguyên — đi cùng `udp_rollback_blocked_total`.
+   */
+  killSwitch: new Counter({
+    name: "udp_pd_kill_switch_total",
+    help: "Kết cục của kill-switch khi Service 2 không phản hồi (§7.6)",
+    labelNames: ["outcome"] as const,
+  }),
+  /** [v4.3] Gỡ nhãn `ff` (§6.6): `changed` = đã gỡ, `skipped` = không có gì để gỡ, `failed` = S2 không nhận */
+  untrack: new Counter({
+    name: "udp_pd_untrack_total",
+    help: "Kết cục của lời gọi gỡ nhãn ff sang Service 2",
+    labelNames: ["outcome"] as const,
+  }),
   fencingViolations: new Counter({
     name: "udp_pd_fencing_violation_total",
     help: "updateIfVersion trả 0 hàng SAU khi side effect đã áp — cluster/S2 và DB lệch (§7.1)",

@@ -80,13 +80,24 @@ async function asRole(role: string, body: () => Promise<unknown>) {
   });
 }
 
-describe("I30(a) — ba quyền kill-switch dùng được", () => {
+describe("I30(a) — bốn quyền kill-switch dùng được", () => {
   it("S3 ghi được flag_targeting_rules.serve", async () => {
     const r = await asRole("udp_s3", () =>
       client.query(
         `UPDATE flag_targeting_rules
             SET serve = (SELECT serve FROM flag_targeting_rules WHERE id = $1)
           WHERE id = $1`,
+        [ruleId],
+      ),
+    );
+    expect(r.error).toBeUndefined();
+  });
+
+  it("S3 đẩy được flag_env_configs.updated_at [v4.3] — mốc optimistic lock như đường ramp của S2", async () => {
+    const r = await asRole("udp_s3", () =>
+      client.query(
+        `UPDATE flag_env_configs SET updated_at = now()
+          WHERE id = (SELECT flag_env_config_id FROM flag_targeting_rules WHERE id = $1)`,
         [ruleId],
       ),
     );
@@ -121,7 +132,7 @@ describe("I30(a) — ba quyền kill-switch dùng được", () => {
   });
 });
 
-describe("I30(b) — ngoài ba quyền đó, database từ chối", () => {
+describe("I30(b) — ngoài bốn quyền đó, database từ chối", () => {
   // 42501 = insufficient_privilege
   it("S3 KHÔNG sửa được cột khác của rule (priority)", async () => {
     const r = await asRole("udp_s3", () =>
@@ -138,6 +149,19 @@ describe("I30(b) — ngoài ba quyền đó, database từ chối", () => {
       client.query(`DELETE FROM flag_targeting_rules WHERE id = $1`, [ruleId]),
     );
     expect(r.error?.code).toBe("42501");
+  });
+
+  it("S3 KHÔNG bật/tắt được flag hay đổi tập tracked (flag_env_configs ngoài updated_at)", async () => {
+    for (const column of ["is_enabled", "is_tracked"]) {
+      const r = await asRole("udp_s3", () =>
+        client.query(
+          `UPDATE flag_env_configs SET ${column} = NOT ${column}
+            WHERE id = (SELECT flag_env_config_id FROM flag_targeting_rules WHERE id = $1)`,
+          [ruleId],
+        ),
+      );
+      expect(r.error?.code, column).toBe("42501");
+    }
   });
 
   it("S3 KHÔNG sửa được cột khác của environment (name)", async () => {

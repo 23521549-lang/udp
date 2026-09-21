@@ -39,6 +39,10 @@ describe("weightsFor — hai nhánh, tổng luôn TOTAL_BUCKETS", () => {
     ).toThrow(/hai variant/);
     expect(() => weightsFor(101, current, on)).toThrow(/ngoài khoảng/);
   });
+
+  it("variant mục tiêu không có trong rule ⇒ ném, không ra rule 100% cho variant kia", () => {
+    expect(() => weightsFor(10, current, "khac")).toThrow(/không có trong/);
+  });
 });
 
 describe("createFlagLevelExecutor — hợp đồng PATCH của Service 2", () => {
@@ -85,10 +89,15 @@ describe("createFlagLevelExecutor — hợp đồng PATCH của Service 2", () =
     expect(outcome).toEqual({ status: "SUCCESS" });
   });
 
-  it("412 ⇒ PRECONDITION_FAILED (I23), 5xx ⇒ FAILED, mạng ⇒ FAILED", async () => {
+  it("412 ⇒ PRECONDITION_FAILED (I23), 4xx khác ⇒ REJECTED, 5xx ⇒ FAILED, mạng ⇒ FAILED", async () => {
     expect((await call(412, "stale")).outcome.status).toBe(
       "PRECONDITION_FAILED",
     );
+    expect((await call(422, "bad")).outcome).toEqual({
+      status: "REJECTED",
+      message: "HTTP 422: bad",
+    });
+    expect((await call(404, "gone")).outcome.status).toBe("REJECTED");
     expect((await call(503, "down")).outcome.status).toBe("FAILED");
     const executor = createFlagLevelExecutor({
       baseUrl: "http://s2.test",
@@ -119,6 +128,59 @@ describe("createFlagLevelExecutor — hợp đồng PATCH của Service 2", () =
       executor.applyTraffic(closed, { ruleId: "r", weights: current }, "x"),
     ).rejects.toThrow(/Fence đã đóng/);
     expect(calls).toBe(0);
+  });
+});
+
+describe("createFlagLevelExecutor — untrack theo config", () => {
+  const untrackWith = (respond: () => Promise<Response>) => {
+    const urls: string[] = [];
+    const executor = createFlagLevelExecutor({
+      baseUrl: "http://s2.test",
+      secret: "s3cret",
+      fetch: (url) => {
+        urls.push(String(url));
+        return respond();
+      },
+    });
+    return { urls, untrack: () => executor.untrack("cfg-1") };
+  };
+
+  it("POST /internal/flag-envs/:id/untrack, đọc `changed` từ body", async () => {
+    const { urls, untrack } = untrackWith(() =>
+      Promise.resolve(Response.json({ changed: true, tracked: false })),
+    );
+    expect(await untrack()).toEqual({ status: "SUCCESS", changed: true });
+    expect(urls).toEqual(["http://s2.test/internal/flag-envs/cfg-1/untrack"]);
+    const notFound = untrackWith(() =>
+      Promise.resolve(
+        Response.json({ tracked: false, changed: false, skipped: "not-found" }),
+      ),
+    );
+    expect(await notFound.untrack()).toEqual({
+      status: "SUCCESS",
+      changed: false,
+    });
+  });
+
+  it("404 là lỗi thật (S2 trả 200 not-found khi config không còn) ⇒ FAILED; body sai hợp đồng ⇒ FAILED, không ném", async () => {
+    const missing = untrackWith(() =>
+      Promise.resolve(new Response("no route", { status: 404 })),
+    );
+    expect(await missing.untrack()).toEqual({
+      status: "FAILED",
+      message: "HTTP 404: no route",
+    });
+    const garbled = untrackWith(() =>
+      Promise.resolve(new Response("not json", { status: 200 })),
+    );
+    expect((await garbled.untrack()).status).toBe("FAILED");
+    const offline = untrackWith(() =>
+      Promise.reject(new Error("ECONNREFUSED")),
+    );
+    expect(await offline.untrack()).toEqual({
+      status: "FAILED",
+      message: "ECONNREFUSED",
+    });
   });
 });
 
@@ -177,6 +239,17 @@ describe("applyWithRetry — §7.6 retry với backoff tới hạn", () => {
       { deadline: 60_000, now: () => 0, sleep: h.sleep, fence: h.fence },
     );
     expect(stale.status).toBe("PRECONDITION_FAILED");
+    expect(calls).toBe(1);
+
+    calls = 0;
+    const rejected = await applyWithRetry(
+      () => {
+        calls += 1;
+        return Promise.resolve({ status: "REJECTED", message: "422" });
+      },
+      { deadline: 60_000, now: () => 0, sleep: h.sleep, fence: h.fence },
+    );
+    expect(rejected.status).toBe("REJECTED");
     expect(calls).toBe(1);
   });
 

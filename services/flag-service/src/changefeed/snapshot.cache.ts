@@ -1,7 +1,6 @@
 import type { PrismaClient, SdkKeyType } from "@udp/db";
 import type { Snapshot } from "@udp/flag-evaluator";
-import { snapshotFromRow } from "../evaluation/snapshot-builder.js";
-import { snapshotRowOf } from "../evaluation/snapshot-row.js";
+import { snapshotFromRow, snapshotRowOf } from "@udp/flag-snapshot";
 
 /**
  * Cache snapshot theo `(environmentId, keyType)` — biện pháp BẮT BUỘC của ADR-05.

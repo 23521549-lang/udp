@@ -3,13 +3,14 @@ import { env } from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import { configHashOf } from "@udp/flag-evaluator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
-import { snapshotFromRow } from "../src/evaluation/snapshot-builder.js";
 import {
+  snapshotFromRow,
+  snapshotOf,
+  snapshotRowOf,
   snapshotRowSchema,
+  trackedStateOf,
   type SnapshotRow,
-} from "../src/evaluation/snapshot-row.js";
-import { stableOwner } from "./helpers/fixture.js";
+} from "../src/index.js";
 
 /**
  * Đường nạp snapshot mới (một câu lệnh SQL) so với đường cũ (9 truy vấn Prisma).
@@ -32,7 +33,13 @@ const admin = createPrismaClient({
   max: 3,
   cacheKey: `__udp_prisma_snapshotrow_${randomUUID()}`,
 });
-const readEntry = prismaEntryLoader(admin);
+
+/** Nạp như bộ nạp cache của S2 làm: một câu lệnh, rồi dựng */
+async function readEntry(environmentId: string) {
+  const row = await snapshotRowOf(admin, environmentId);
+  if (row === undefined) throw new Error("environment không tồn tại");
+  return { environmentName: row.name, snapshot: snapshotFromRow(row) };
+}
 
 /** UUID cố định — hash phụ thuộc id của rule và segment, nên fixture phải tất định */
 const U = (n: number): string =>
@@ -54,7 +61,10 @@ const GOLDEN_EMPTY =
   "66eee209a9660bdae3f02531e8f3d315cd4afaa384387ad1bb730c67ea492bed";
 
 beforeAll(async () => {
-  const owner = await stableOwner(admin);
+  const owner = await admin.user.findFirstOrThrow({
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
   // Lượt trước có thể chết giữa chừng; id cố định nên phải dọn trước khi tạo
   await admin.project.deleteMany({ where: { id: PROJECT } });
 
@@ -225,7 +235,69 @@ describe("golden hash — đường mới ra đúng từng byte con số đườ
   });
 
   it("environment không tồn tại ⇒ ném, không trả snapshot rỗng", async () => {
-    await expect(readEntry(randomUUID())).rejects.toThrow(/không tồn tại/);
+    await expect(snapshotOf(admin, randomUUID())).rejects.toThrow(
+      /không tồn tại/,
+    );
+  });
+});
+
+describe("trackedFlags [v4.3] — tập tracked đọc trong cùng câu lệnh snapshot", () => {
+  /** Chạy trong transaction rồi lùi: fixture golden không bị đổi */
+  class Rollback extends Error {}
+
+  it("sắp theo COLLATE \"C\" — trùng phép so của JS ngay cả khi key có dấu '-', và delta là cả tập", async () => {
+    // en_US bỏ qua dấu '-' nên sắp "ab" trước "a-c"; JS và COLLATE "C" thì ngược lại
+    const keys = ["ab", "a-c"];
+    let seen:
+      { tracked: string[]; delta: unknown; hashOk: boolean } | undefined;
+
+    await admin
+      .$transaction(async (tx) => {
+        for (const key of keys) {
+          const flag = await tx.featureFlag.create({
+            data: {
+              projectId: PROJECT,
+              key,
+              flagType: "BOOLEAN",
+              lifecycleStatus: "ACTIVE",
+              variants: { create: [{ key: "on", value: true }] },
+            },
+            select: { id: true, variants: { select: { id: true } } },
+          });
+          const variantId = flag.variants[0]!.id;
+          await tx.featureFlag.update({
+            where: { id: flag.id },
+            data: { defaultVariantId: variantId },
+          });
+          const config = await tx.flagEnvConfig.create({
+            data: { flagId: flag.id, environmentId: ENV_DEV },
+            select: { id: true },
+          });
+          await tx.$executeRaw`UPDATE flag_env_configs SET is_tracked = true WHERE id = ${config.id}::uuid`;
+        }
+        const snapshot = await snapshotOf(tx, ENV_DEV);
+        const state = await trackedStateOf(tx, ENV_DEV);
+        seen = {
+          tracked: snapshot.trackedFlags,
+          delta: state.delta,
+          hashOk: state.configHash === configHashOf(snapshot),
+        };
+        throw new Rollback();
+      })
+      .catch((err: unknown) => {
+        if (!(err instanceof Rollback)) throw err;
+      });
+
+    const jsSorted = [...keys].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    expect(seen?.tracked).toEqual(jsSorted);
+    expect(seen?.tracked).toEqual(["a-c", "ab"]);
+    expect(seen?.delta).toEqual({ trackedFlags: ["a-c", "ab"] });
+    expect(seen?.hashOk).toBe(true);
+  });
+
+  it("không track gì thì tập rỗng — golden hash ở trên chính là ca này", async () => {
+    const snapshot = await snapshotOf(admin, ENV_DEV);
+    expect(snapshot.trackedFlags).toEqual([]);
   });
 });
 
@@ -235,6 +307,7 @@ const baseRow = (): SnapshotRow => ({
   configVersion: 7,
   configHash: "",
   segments: [],
+  trackedFlags: [],
   flags: [
     {
       key: "f",
@@ -266,6 +339,24 @@ describe("snapshotFromRow — hình dạng dây quyết định ở hàm thuần
       },
     ]);
     expect(snap.trackedFlags).toEqual([]);
+  });
+
+  it("trackedFlags của hàng đi thẳng lên dây, không sắp lại ở JS", () => {
+    const row = { ...baseRow(), trackedFlags: ["a-c", "ab"] };
+    expect(snapshotFromRow(row).trackedFlags).toEqual(["a-c", "ab"]);
+  });
+
+  it("hash phủ trackedFlags — ghim bằng số tính ngày 22/09/2026, thứ tự không đổi hash", () => {
+    // I15c: SDK tự tính lại hash, nên con số này là hợp đồng liên tiến trình
+    const hashOf = (trackedFlags: string[]): string =>
+      configHashOf(snapshotFromRow({ ...baseRow(), trackedFlags }));
+    expect(hashOf([])).toBe(
+      "df8b06c0faa7f5e60b5b1e282c16b82188abe3e9e6a606edd4dd3420600b74cc",
+    );
+    expect(hashOf(["a-c", "ab"])).toBe(
+      "6dfe07b0c4333a2b6c3106f20d372f2c7fba8aeaf8b43c263daae17305ff26ed",
+    );
+    expect(hashOf(["ab", "a-c"])).toBe(hashOf(["a-c", "ab"]));
   });
 
   it("default của environment thắng default của flag", () => {

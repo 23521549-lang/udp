@@ -133,6 +133,31 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)
 
+  packages/flag-snapshot:
+    dependencies:
+      '@udp/db':
+        specifier: workspace:*
+        version: link:../db
+      '@udp/flag-evaluator':
+        specifier: workspace:*
+        version: link:../flag-evaluator
+      '@udp/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      '@udp/config':
+        specifier: workspace:*
+        version: link:../config
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
+
   packages/http:
     dependencies:
       '@udp/config':
@@ -295,6 +320,9 @@ importers:
       '@udp/flag-evaluator':
         specifier: workspace:*
         version: link:../../packages/flag-evaluator
+      '@udp/flag-snapshot':
+        specifier: workspace:*
+        version: link:../../packages/flag-snapshot
       '@udp/http':
         specifier: workspace:*
         version: link:../../packages/http
@@ -344,6 +372,9 @@ importers:
       '@udp/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@udp/flag-snapshot':
+        specifier: workspace:*
+        version: link:../../packages/flag-snapshot
       '@udp/http':
         specifier: workspace:*
         version: link:../../packages/http
@@ -372,6 +403,9 @@ importers:
       '@types/supertest':
         specifier: ^6.0.2
         version: 6.0.3
+      '@udp/flag-evaluator':
+        specifier: workspace:*
+        version: link:../../packages/flag-evaluator
       pino-pretty:
         specifier: ^11.3.0
         version: 11.3.0

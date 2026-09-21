@@ -85,9 +85,12 @@ jobs:
       DATABASE_URL_S2: ${{ secrets.DATABASE_URL_S2 }}
       DATABASE_URL_S2_DIRECT: ${{ secrets.DATABASE_URL_S2_DIRECT }}
       DATABASE_URL_S3: ${{ secrets.DATABASE_URL_S3 }}
+      DATABASE_URL_S3_DIRECT: ${{ secrets.DATABASE_URL_S3_DIRECT }}
       # Tầng 3 của ADR-05 bật: `tier3.integration.test.ts` khẳng định cờ này và
       # đo đường NOTIFY thật trên database scratch.
       CHANGEFEED_NOTIFY_ENABLED: "true"
+      # Kênh rollout_intent của Service 3 bật: test intent-listener đo đường NOTIFY thật
+      ROLLOUT_INTENT_LISTEN_ENABLED: "true"
       # Tên tất định để bước dọn cuối job biết đúng database cần xoá khi lượt bị
       # huỷ giữa chừng. Phải khớp SCRATCH_NAME_PATTERN của scratch-database.ts.
       UDP_SCRATCH_DB_NAME: udp_scratch_ci_${{ github.run_id }}_${{ github.run_attempt }}

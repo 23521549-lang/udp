@@ -304,7 +304,7 @@ describe("đẩy thay đổi", () => {
     // Áp đúng như provider §6.8: thay entry theo `key`, không đọc lại gì
     let flags = held.flags;
     for (const item of change.changes) {
-      expect(item.kind).toBe("flag");
+      if (item.kind !== "flag") throw new Error(`phần tử lạ: ${item.kind}`);
       flags = [...flags.filter((f) => f.key !== item.flag.key), item.flag];
     }
     const applied: Snapshot = {

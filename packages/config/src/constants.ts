@@ -187,6 +187,15 @@ export const ROLLOUT_TIMING = {
   warmUpRequests: 100,
   /** Rollback FLAG_LEVEL phải PATCH sang Service 2; hết hạn này ⇒ DEPENDENCY_DOWN */
   rollbackRetrySeconds: 120,
+  /**
+   * [v4.3] Nhịp của lưới gỡ nhãn (§6.6): flag còn `is_tracked` mà không còn
+   * rollout nào chạy. Rollout kết thúc đã gọi untrack ngay; lưới này bắt những lần
+   * gọi đó hỏng (S2 chết — chính ca kill-switch) và session bị xoá trước khi gỡ.
+   * Chậm hơn vòng quét nhiều lần vì mỗi lượt là một lời gọi mạng mỗi flag.
+   */
+  untrackSweepMs: 30_000,
+  /** Số flag tối đa mỗi lượt quét — trần 3 flag/environment nên lượt thường rất nhỏ */
+  untrackSweepBatch: 50,
 } as const;
 
 /**
@@ -358,20 +367,22 @@ export const CHANGE_FEED = {
    * lô để một lượt không chạy vô hạn khi tồn đọng lớn.
    */
   prune: { intervalMs: 60 * 60_000, batchSize: 1_000, maxBatchesPerRun: 50 },
-  /**
-   * Kênh LISTEN của tầng 3. Mọi con số dưới đây là HẠN GIỜ, vì đã đo: một kết nối
-   * chết im (TCP còn sống, không byte nào về) làm `SELECT 1` treo vô hạn và
-   * `end()` treo — không có hạn thì tầng 3 điếc mãi mà vẫn trông khoẻ, và tắt máy
-   * mất trọn 10 giây rồi thoát cưỡng bức.
-   */
-  notify: {
-    reconnectInitialMs: 1_000,
-    reconnectMaxMs: 30_000,
-    healthCheckMs: 60_000,
-    healthCheckTimeoutMs: 5_000,
-    identityTimeoutMs: 5_000,
-    stopTimeoutMs: 1_000,
-  },
+} as const;
+
+/**
+ * Kênh LISTEN dùng chung (`createListenAccelerator` của `@udp/db`) — tầng 3 của
+ * Service 2 và `rollout_intent` của Service 3 [v4.3]. Mọi con số dưới đây là HẠN
+ * GIỜ, vì đã đo: một kết nối chết im (TCP còn sống, không byte nào về) làm
+ * `SELECT 1` treo vô hạn và `end()` treo — không có hạn thì kênh điếc mãi mà vẫn
+ * trông khoẻ, và tắt máy mất trọn 10 giây rồi thoát cưỡng bức.
+ */
+export const LISTEN_TIMING = {
+  reconnectInitialMs: 1_000,
+  reconnectMaxMs: 30_000,
+  healthCheckMs: 60_000,
+  healthCheckTimeoutMs: 5_000,
+  identityTimeoutMs: 5_000,
+  stopTimeoutMs: 1_000,
 } as const;
 
 // ============================================================

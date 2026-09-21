@@ -15,7 +15,9 @@ udp/
 │   ├── db/                    Prisma schema, migration, test bất biến tầng DB, script quản trị
 │   ├── design-lint/           Đối chiếu UDP_design.md với schema, route, package
 │   ├── flag-evaluator/        Consistent hashing và đánh giá flag (dùng chung S2 và SDK)
+│   ├── flag-snapshot/         Snapshot cấu hình flag + config_hash + delta outbox (S2 và kill-switch S3)
 │   ├── http/                  ProblemDetails, error handler, logger cho mọi service
+│   ├── metrics-provider/      MetricsProvider: Prometheus và bản giả cho test (S3 dùng để quyết định)
 │   └── shared-types/          ProblemDetails, ERROR_CATALOG, schema của serve
 ├── services/
 │   ├── core-backend/          Modular monolith — orchestrator, adapter layer, port 3001
@@ -103,11 +105,13 @@ trên một **project Supabase riêng cho CI**, đặt cùng vùng với runner 
    `DATABASE_URL_DIRECT` **kèm `?sslmode=require`**. Ghi hai dòng đó vào `.env.ci`
    (đã bị `.gitignore` chặn).
 2. `pnpm db:ci-bootstrap -- --env-file=.env.ci` — áp migration để tạo role `udp_s*`,
-   cấp LOGIN cho `udp_s1`, `udp_s2` và `udp_s3`, ghi bốn chuỗi role vào `.env.ci`.
-3. `gh secret set -f .env.ci` — nạp cả sáu chuỗi lên GitHub.
+   cấp LOGIN cho `udp_s1`, `udp_s2` và `udp_s3`, ghi năm chuỗi role vào `.env.ci`
+   (pooled của ba role, cộng chuỗi session của `udp_s2` và `udp_s3` cho kênh LISTEN).
+3. `gh secret set -f .env.ci` — nạp cả bảy chuỗi lên GitHub.
 
-Thêm một service mới (như `udp_s3` ở Plan #16) thì chạy lại bước 2 và 3 trước khi
-push, không thì CI thiếu secret và `test:scratch` dừng ngay ở bước kiểm biến.
+Thêm một chuỗi kết nối mới (như `DATABASE_URL_S3_DIRECT` ở Plan #17) thì chạy lại
+bước 2 và 3 trước khi push, không thì CI thiếu secret và `test:scratch` dừng ngay ở
+bước kiểm biến.
 
 Mỗi lượt CI dựng database `udp_scratch_ci_<run_id>_<run_attempt>` rồi xoá; job bị huỷ giữa
 chừng cũng được dọn bởi bước cuối. Lượt hằng đêm giữ project free của CI không bị tạm dừng.

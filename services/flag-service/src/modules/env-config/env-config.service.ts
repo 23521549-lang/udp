@@ -1,7 +1,7 @@
+import { stateFor } from "@udp/flag-snapshot";
 import { NotFoundError } from "@udp/http";
 import { prisma } from "../../core/db.js";
 import { writeConfigChange } from "../../core/outbox.js";
-import { stateFor } from "../../evaluation/snapshot-builder.js";
 import * as repository from "./env-config.repository.js";
 import type {
   PublicEnvConfig,

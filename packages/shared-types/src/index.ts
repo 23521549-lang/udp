@@ -78,3 +78,9 @@ export {
   formatConfigChangeNotice,
   parseConfigChangeNotice,
 } from "./change-feed.js";
+export {
+  formatRolloutIntentNotice,
+  parseRolloutIntentNotice,
+  ROLLOUT_INTENT_CHANNEL,
+} from "./rollout-intent.js";
+export type { RolloutIntentNotice } from "./rollout-intent.js";

@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { env, ROLLOUT_POOL_HEADROOM } from "@udp/config";
+import { createSessionConnector } from "@udp/db";
 import { logger } from "@udp/http";
 import { createApp } from "./app.js";
 import { assertServiceIdentity, prisma, SERVICE_ROLE } from "./core/db.js";
 import { createFlagLevelExecutor } from "./executors/flag-level.executor.js";
+import { createKillSwitch } from "./executors/kill-switch.js";
+import { createIntentListener } from "./intent/listener.js";
 import { createMetricsProviders } from "./metrics/provider.js";
 import { createReconciler } from "./reconciler/reconciler.js";
+import { createUntracker } from "./tracking/untracker.js";
 
 /**
  * Khẳng định danh tính kết nối TRƯỚC khi mở cổng — cùng chữ với hai service kia
@@ -43,17 +47,68 @@ const workerId = `${hostname()}:${String(process.pid)}:${randomUUID().slice(0, 8
 
 const providers = createMetricsProviders({ prometheusUrl: env.PROMETHEUS_URL });
 
+const executor = createFlagLevelExecutor({
+  baseUrl: env.FLAG_SERVICE_URL,
+  secret: env.INTERNAL_SERVICE_SECRET,
+});
+
+const untracker = createUntracker({ db: prisma, executor });
+
 const reconciler = createReconciler({
   db: prisma,
   workerId,
-  executor: createFlagLevelExecutor({
-    baseUrl: env.FLAG_SERVICE_URL,
-    secret: env.INTERNAL_SERVICE_SECRET,
-  }),
+  executor,
   providerFor: providers.forSession,
+  onTerminal: (configId) => {
+    untracker.afterTerminal(configId);
+  },
+  killSwitch: createKillSwitch({
+    db: prisma,
+    notify: env.CHANGEFEED_NOTIFY_ENABLED,
+  }),
   // Mỗi session đang chạy giữ một khe transaction; chừa khe cho gia hạn lease và /readyz
   maxInFlight: Math.max(1, env.DATABASE_POOL_MAX - ROLLOUT_POOL_HEADROOM),
 });
+
+/**
+ * Kênh `LISTEN rollout_intent` là kết nối THỨ HAI, mang chuỗi riêng
+ * (`DATABASE_URL_S3_DIRECT`), nên chốt danh tính ở trên KHÔNG phủ nó — chốt riêng,
+ * trước khi mở cổng, cùng hai kết cục như tầng 3 của S2: sai role ⇒ không khởi
+ * động; không nối được ⇒ chỉ cảnh báo, vì vòng quét vẫn xử lý intent.
+ */
+const listenUrl = env.ROLLOUT_INTENT_LISTEN_ENABLED
+  ? env.DATABASE_URL_S3_DIRECT
+  : undefined;
+
+const intentListener =
+  listenUrl === undefined
+    ? undefined
+    : createIntentListener({
+        connect: createSessionConnector(listenUrl),
+        onIntent: (sessionId) => {
+          reconciler.wake(sessionId);
+        },
+        onListening: () => {
+          reconciler.nudge();
+        },
+      });
+
+if (intentListener !== undefined) {
+  const identity = await intentListener.verifyIdentity();
+  if (identity.kind === "wrong-role") {
+    logger.fatal(
+      { actual: identity.actual, expected: SERVICE_ROLE },
+      "Không khởi động: danh tính kết nối database sai ở kênh LISTEN rollout_intent (DATABASE_URL_S3_DIRECT)",
+    );
+    process.exit(1);
+  }
+  if (identity.kind === "unreachable") {
+    logger.warn(
+      { err: identity.error },
+      "Chưa nối được kênh LISTEN rollout_intent — vẫn khởi động: vòng quét xử lý intent, kênh sẽ tự nối lại",
+    );
+  }
+}
 
 let shuttingDown = false;
 const app = createApp({ isShuttingDown: () => shuttingDown });
@@ -64,8 +119,10 @@ const server = app.listen(env.PD_CONTROLLER_PORT, () => {
   );
 });
 
-/** Vòng quét bắt đầu SAU `listen`, không trong `createApp()` — cùng lý do với S2 */
+/** Vòng quét và lưới gỡ nhãn bắt đầu SAU `listen`, không trong `createApp()` — cùng lý do với S2 */
 reconciler.start();
+untracker.start();
+intentListener?.start();
 
 const shutdown = (signal: string): void => {
   if (shuttingDown) return;
@@ -83,10 +140,16 @@ const shutdown = (signal: string): void => {
    * không phải chờ 60 giây lease hết hạn.
    */
   providers.stop();
+  const listenerStopped = intentListener?.stop() ?? Promise.resolve();
   const httpClosed = new Promise<void>((resolve) => {
     server.close(() => resolve());
   });
-  void Promise.all([reconciler.stop(), httpClosed])
+  void Promise.all([
+    listenerStopped,
+    reconciler.stop(),
+    untracker.stop(),
+    httpClosed,
+  ])
     .then(() => prisma.$disconnect())
     .catch((err: unknown) => {
       logger.error({ err }, "Lỗi khi đóng");

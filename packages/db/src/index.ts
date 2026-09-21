@@ -100,8 +100,17 @@ export { assertConnectedAs } from "./identity.js";
 export { observeQueries } from "./observe.js";
 export type { QueryListener, QueryObservation } from "./observe.js";
 export { writeWithOutbox } from "./outbox.js";
-export type { ConfigChangeType, OutboxWrite } from "./outbox.js";
+export type { ConfigChangeType, OutboxState, OutboxWrite } from "./outbox.js";
 export { createSessionConnector } from "./session.js";
+export { createListenAccelerator } from "./listen-accelerator.js";
+export { ACTIVE_ROLLOUT_STATUS_SQL } from "./rollout-status.js";
+export type {
+  IdentityVerdict,
+  ListenAccelerator,
+  ListenAcceleratorDeps,
+  ListenLogger,
+  ListenTiming,
+} from "./listen-accelerator.js";
 export type { SessionClient, SessionConnector } from "./session.js";
 export {
   dbAvailabilityError,

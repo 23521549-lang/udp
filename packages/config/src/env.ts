@@ -203,6 +203,18 @@ const envSchema = z
       .url()
       .startsWith("postgresql://")
       .optional(),
+    /**
+     * [v4.3] Kênh `LISTEN rollout_intent` của Service 3 (§7.6) — role `udp_s3`,
+     * SESSION MODE (cổng 5432), cùng lý do với `DATABASE_URL_S2_DIRECT`: LISTEN
+     * không đi qua pooler transaction mode, và kênh nghe không được chạy bằng
+     * owner. Bắt buộc khi `ROLLOUT_INTENT_LISTEN_ENABLED` bật. Sinh CÙNG LÚC với
+     * `DATABASE_URL_S3` bằng `pnpm db:service-login udp_s3`.
+     */
+    DATABASE_URL_S3_DIRECT: z
+      .string()
+      .url()
+      .startsWith("postgresql://")
+      .optional(),
 
     // ---------- Auth ----------
     JWT_ACCESS_SECRET: z
@@ -294,6 +306,14 @@ const envSchema = z
      * nền quay về chu kỳ poll 500ms.
      */
     CHANGEFEED_NOTIFY_ENABLED: bool.default("true"),
+    /**
+     * [v4.3] Service 3 nghe `NOTIFY rollout_intent` để xử lý intent ngay (§7.6).
+     * Cờ RIÊNG, không dùng chung `CHANGEFEED_NOTIFY_ENABLED`: cờ kia là công tắc
+     * đối chứng của phép đo E4 trên đường lan truyền cấu hình, còn kênh này chỉ đổi
+     * độ trễ xử lý intent (≤ 5 giây vòng quét ⇒ ~0,5 giây). Tắt thì intent vẫn
+     * được xử lý ở vòng quét kế — đúng, chỉ chậm hơn.
+     */
+    ROLLOUT_INTENT_LISTEN_ENABLED: bool.default("true"),
 
     // ---------- Job queue ----------
     /**
@@ -367,6 +387,20 @@ const envSchema = z
           "bắt buộc khi CHANGEFEED_NOTIFY_ENABLED=true — kênh LISTEN của tầng 3 cần chuỗi " +
           "SESSION MODE của role udp_s2 (`pnpm db:service-login udp_s2`), hoặc đặt " +
           "CHANGEFEED_NOTIFY_ENABLED=false khi chỉ có chuỗi qua pooler",
+      });
+    }
+
+    if (
+      env.ROLLOUT_INTENT_LISTEN_ENABLED &&
+      env.DATABASE_URL_S3_DIRECT === undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DATABASE_URL_S3_DIRECT"],
+        message:
+          "bắt buộc khi ROLLOUT_INTENT_LISTEN_ENABLED=true — kênh LISTEN rollout_intent cần " +
+          "chuỗi SESSION MODE của role udp_s3 (`pnpm db:service-login udp_s3`), hoặc đặt " +
+          "ROLLOUT_INTENT_LISTEN_ENABLED=false",
       });
     }
   });

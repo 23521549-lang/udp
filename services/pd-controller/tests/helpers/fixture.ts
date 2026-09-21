@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { env, TOTAL_BUCKETS } from "@udp/config";
 import { createPrismaClient, type Prisma, type PrismaClient } from "@udp/db";
-import { flagServeDbSchema } from "@udp/shared-types";
+import { canonicalizeServe, flagServeDbSchema } from "@udp/shared-types";
 import {
   decisionSchema,
   type Decision,
@@ -118,13 +118,14 @@ export async function newTarget(
             priority: 0,
             bucketSalt: randomUUID(),
             condition: {},
-            serve: {
+            // Sắp theo variantId như mọi writer thật — trigger UDP04 chặn bản sai thứ tự
+            serve: canonicalizeServe({
               kind: "distribution",
               weights: [
                 { variantId: on, weight: target },
                 { variantId: off, weight: TOTAL_BUCKETS - target },
               ],
-            },
+            }),
           },
         ],
       },

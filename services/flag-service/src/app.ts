@@ -10,6 +10,7 @@ import {
 import { prisma } from "./core/db.js";
 import { internalEnvConfigRouter } from "./internal/env-config.controller.js";
 import { internalFlagRouter } from "./internal/flag.controller.js";
+import { internalRolloutRouter } from "./internal/rollout.controller.js";
 import { internalRuleRouter } from "./internal/rule.controller.js";
 import { sdkRouter } from "./sdk/sdk.controller.js";
 
@@ -86,6 +87,7 @@ export function createApp(): Express {
     internalFlagRouter,
     internalEnvConfigRouter,
     internalRuleRouter,
+    internalRolloutRouter,
   );
 
   /** Bề mặt SDK (§9). Guard và rate limit nằm trong chính router đó */

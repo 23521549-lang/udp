@@ -9,7 +9,7 @@ import { logger } from "@udp/http";
 import type { ResolvedSdkKey } from "../auth/sdk-key.guard.js";
 import type { EnvironmentState } from "../changefeed/change-feed.interface.js";
 import type { ConfigChange } from "../changefeed/change-events.js";
-import { flagOf } from "../changefeed/outbox.poller.js";
+import { changeOf } from "../changefeed/outbox.poller.js";
 import type { ConfigEntry } from "../changefeed/snapshot.cache.js";
 import { sdkConfigBody } from "./config-body.js";
 import {
@@ -204,9 +204,9 @@ export function createSseHub({
   ): Buffer | undefined => {
     const changes: SdkStreamChange[] = [];
     for (const record of change.records) {
-      const flag = flagOf(record.payload);
-      if (flag === null) return undefined;
-      changes.push({ configVersion: record.configVersion, kind: "flag", flag });
+      const projected = changeOf(record);
+      if (typeof projected === "string") return undefined;
+      changes.push(projected);
     }
     const data: SdkStreamDelta = {
       fromVersion: change.previous.configVersion,
