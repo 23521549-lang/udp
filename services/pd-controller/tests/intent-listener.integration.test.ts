@@ -4,7 +4,7 @@ import { formatRolloutIntentNotice } from "@udp/shared-types";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FlagLevelExecutor } from "../src/executors/flag-level.executor.js";
 import { createIntentListener } from "../src/intent/listener.js";
-import { testController } from "./helpers/controller.js";
+import { seedLabel, testController } from "./helpers/controller.js";
 import {
   admin,
   dropProject,
@@ -107,7 +107,13 @@ describe("kênh rollout_intent", () => {
 describe("wake — một khe, không chạy trùng", () => {
   it("wake trong lúc session đang chạy ⇒ chạy lại ĐÚNG một lượt sau đó, không song song", async () => {
     const target = await newTarget(project, 0);
-    const id = await newSession(target, { stepPercent: 10 });
+    // Nhịp phân tích 0: mỗi lượt đều thật sự tới executor. Với nhịp thường, lượt
+    // chạy lại ngay sau một HOLD là `idle` [v4.4] — đúng, nhưng ca này đếm LƯỢT
+    // qua số lần gọi executor.
+    const id = await newSession(target, {
+      stepPercent: 10,
+      analysisIntervalSeconds: 0,
+    });
 
     let concurrent = 0;
     let peak = 0;
@@ -126,8 +132,10 @@ describe("wake — một khe, không chạy trùng", () => {
         return { status: "FAILED", message: "S2 giả chậm" };
       },
       untrack: () => Promise.resolve({ status: "SUCCESS", changed: false }),
+      track: () => Promise.resolve({ status: "SUCCESS", changed: false }),
     };
     const c = testController(DEAD, { executor: slow, maxInFlight: 2 });
+    seedLabel(c.provider, target.flagKey);
 
     try {
       c.reconciler.wake(id);

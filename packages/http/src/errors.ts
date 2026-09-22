@@ -1,4 +1,8 @@
-import type { ErrorCode } from "@udp/shared-types/problem";
+import {
+  ERROR_CATALOG,
+  type ErrorCode,
+  type FieldError,
+} from "@udp/shared-types/problem";
 
 /**
  * Cây lỗi của ứng dụng.
@@ -37,6 +41,9 @@ export type AppErrorKind =
   | "CONFLICT"
   | "PRECONDITION_FAILED"
   | "RATE_LIMITED"
+  | "UNAVAILABLE"
+  | "RELAYED"
+  | "CONFIRMATION_REQUIRED"
   | "INTERNAL";
 
 export abstract class AppError extends Error {
@@ -45,6 +52,14 @@ export abstract class AppError extends Error {
 
   /** true = lỗi dự kiến (người dùng gây ra). false = bug, cần cảnh báo. */
   readonly isOperational = true;
+
+  /**
+   * [v4.4] Id của tài nguyên liên quan tới lỗi mà Portal cần dẫn tới — rollout
+   * đang giữ chỗ (`ROLLOUT_IN_PROGRESS`), rollout vừa được yêu cầu huỷ khi bù trừ
+   * thất bại. Đi ra trường `resourceId` của Problem Details; `details` thì KHÔNG
+   * (nó chỉ vào log, qua `redact()`). Chỉ là id, không mang nội dung.
+   */
+  resourceId: string | undefined;
 
   /**
    * Chữ ký giữ nguyên hai tham số đầu để mọi lời gọi `new XError("...")` sẵn có
@@ -59,8 +74,15 @@ export abstract class AppError extends Error {
     readonly problemCode?: ErrorCode,
   ) {
     super(message);
+    this.resourceId = undefined;
     this.name = new.target.name;
     Error.captureStackTrace(this, new.target);
+  }
+
+  /** Gắn id tài nguyên liên quan — xem `resourceId` */
+  withResource(resourceId: string): this {
+    this.resourceId = resourceId;
+    return this;
   }
 }
 
@@ -145,4 +167,126 @@ export class OptimisticLockError extends ConflictError {
 export class PreconditionFailedError extends AppError {
   readonly statusCode = 412;
   readonly kind = "PRECONDITION_FAILED" as const;
+}
+
+/**
+ * 428 `CONFIRMATION_REQUIRED` [v4.5] — thao tác trên production cần người dùng
+ * xác nhận tường minh (gõ lại key của flag, §8.4). Portal nhận mã này thì mở hộp
+ * xác nhận rồi gửi lại; một boolean `confirm: true` thì gửi mù được, gõ lại key
+ * thì không.
+ */
+export class ConfirmationRequiredError extends AppError {
+  readonly statusCode = 428;
+  readonly kind = "CONFIRMATION_REQUIRED" as const;
+
+  constructor(message: string) {
+    super(message, undefined, "CONFIRMATION_REQUIRED");
+  }
+}
+
+/**
+ * 503 `PROVIDER_UNAVAILABLE` [v4.4] — một service hay nguồn mà request này phụ
+ * thuộc không phản hồi (Service 2, Prometheus). Retryable theo catalog: chính thử
+ * lại là cách chữa, khác 500.
+ *
+ * Mã mặc định là `PROVIDER_UNAVAILABLE` vì đó là nghĩa DUY NHẤT của 503 trong
+ * catalog; truyền mã khác chỉ khi catalog có mã 503 hẹp hơn (`CLUSTER_UNREACHABLE`).
+ */
+export class ServiceUnavailableError extends AppError {
+  readonly statusCode = 503;
+  readonly kind = "UNAVAILABLE" as const;
+
+  constructor(
+    message: string,
+    details?: unknown,
+    problemCode: ErrorCode = "PROVIDER_UNAVAILABLE",
+  ) {
+    super(message, details, problemCode);
+  }
+}
+
+/**
+ * [v4.5] Lỗi NGHIỆP VỤ của một service phía sau (Service 2), chuyển tới Portal
+ * nguyên vẹn qua Service 1: status, mã catalog, `detail`, `errors`, `current` (bản
+ * mới nhất của 409 OPTIMISTIC_LOCK — Portal hiện diff), `resourceId`. `instance` và
+ * `traceId` là của request Service 1 — người dùng báo lỗi bằng traceId của S1.
+ *
+ * Chỉ dựng từ `relayedProblemOf`, nơi quyết định status nào được chuyển tiếp: 404,
+ * 409, 422 là trả lời có nghĩa cho người dùng; 401 (sai bí mật nội bộ), 400 (hợp
+ * đồng hai service lệch nhau) thì KHÔNG — chuyển 401 tới Portal là đăng xuất người
+ * dùng vì một lỗi cấu hình của máy chủ.
+ */
+export class RelayedProblemError extends AppError {
+  readonly kind = "RELAYED" as const;
+
+  constructor(
+    readonly statusCode: number,
+    readonly problem: RelayedProblem,
+  ) {
+    super(problem.detail ?? problem.title, undefined, problem.code);
+    if (problem.resourceId !== undefined) this.withResource(problem.resourceId);
+  }
+}
+
+export interface RelayedProblem {
+  title: string;
+  detail?: string;
+  code?: ErrorCode;
+  errors?: FieldError[];
+  current?: unknown;
+  resourceId?: string;
+}
+
+const RELAYABLE_STATUSES: ReadonlySet<number> = new Set([404, 409, 422]);
+
+/**
+ * `typeSlug` của 404 "không có route" (`notFoundHandler`) — KHÁC slug của 404
+ * nghiệp vụ. Hai service lệch phiên bản (S1 gọi một route S2 chưa có) là lỗi hợp
+ * đồng, không phải "không tìm thấy flag": không chuyển tiếp, và không để lộ đường
+ * dẫn `/internal/...` ra Portal.
+ */
+export const ROUTE_NOT_FOUND_SLUG = "route-not-found";
+
+const isFieldError = (x: unknown): x is FieldError =>
+  typeof x === "object" &&
+  x !== null &&
+  typeof (x as Record<string, unknown>)["field"] === "string" &&
+  typeof (x as Record<string, unknown>)["message"] === "string";
+
+/**
+ * Body Problem Details của service phía sau ⇒ `RelayedProblemError`, hoặc
+ * `undefined` khi status không được chuyển tiếp (bên gọi coi là lỗi hợp đồng).
+ * Mã không có trong catalog bị bỏ (I36): Portal chỉ dịch được mã nó biết.
+ */
+export function relayedProblemOf(
+  status: number,
+  body: unknown,
+): RelayedProblemError | undefined {
+  if (!RELAYABLE_STATUSES.has(status)) return undefined;
+  const raw =
+    typeof body === "object" && body !== null
+      ? (body as Record<string, unknown>)
+      : {};
+  if (
+    typeof raw["type"] === "string" &&
+    raw["type"].endsWith(`/${ROUTE_NOT_FOUND_SLUG}`)
+  ) {
+    return undefined;
+  }
+  const code =
+    typeof raw["code"] === "string" && Object.hasOwn(ERROR_CATALOG, raw["code"])
+      ? (raw["code"] as ErrorCode)
+      : undefined;
+  return new RelayedProblemError(status, {
+    title: typeof raw["title"] === "string" ? raw["title"] : "Error",
+    ...(typeof raw["detail"] === "string" ? { detail: raw["detail"] } : {}),
+    ...(code === undefined ? {} : { code }),
+    ...(Array.isArray(raw["errors"])
+      ? { errors: raw["errors"].filter(isFieldError) }
+      : {}),
+    ...("current" in raw ? { current: raw["current"] } : {}),
+    ...(typeof raw["resourceId"] === "string"
+      ? { resourceId: raw["resourceId"] }
+      : {}),
+  });
 }

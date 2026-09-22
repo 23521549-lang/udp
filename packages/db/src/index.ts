@@ -117,6 +117,7 @@ export {
   dbConstraintError,
   httpStatusOf,
   UDP_SQLSTATE,
+  uniqueViolationIndexOf,
 } from "./errors.js";
 export type { DbAvailabilityError, DbConstraintError } from "./errors.js";
 export * from "./generated/prisma/client.js";

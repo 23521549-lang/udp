@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@udp/db";
 import { stateFor } from "@udp/flag-snapshot";
-import { ConflictError, NotFoundError, OptimisticLockError } from "@udp/http";
+import {
+  ConflictError,
+  NotFoundError,
+  OptimisticLockError,
+  type AuditContext,
+} from "@udp/http";
+import { recordAudit } from "../../core/audit.js";
 import { prisma } from "../../core/db.js";
 import { writeConfigChange } from "../../core/outbox.js";
 import * as repository from "./rule.repository.js";
 import type { ReplaceRulesInput, PublicRule } from "./rule.types.js";
+import { assertRegexesSafe } from "./regex-safety.js";
 import {
   assertSegmentsInProject,
   canonicalRules,
@@ -26,18 +33,22 @@ const NOT_FOUND = "Không tìm thấy cấu hình flag theo environment";
 export async function replaceRules(
   flagEnvConfigId: string,
   input: ReplaceRulesInput,
-  actorUserId: string | undefined,
+  audit: AuditContext,
 ): Promise<{ rules: PublicRule[]; updatedAt: Date }> {
   const target = await repository.envConfigTargetOf(prisma, flagEnvConfigId);
   if (target === null) throw new NotFoundError(NOT_FOUND);
 
   const incoming = canonicalRules(input.rules);
+  // Phân tích ReDoS TRƯỚC transaction: việc tốn CPU không giữ khoá environment
+  await assertRegexesSafe(incoming);
   let result: { rules: PublicRule[]; updatedAt: Date } | undefined;
 
   await writeConfigChange({
     environmentIds: [target.environmentId],
     changeType: "rule.replaced",
-    ...(actorUserId === undefined ? {} : { actorUserId }),
+    ...(audit.actorUserId === undefined
+      ? {}
+      : { actorUserId: audit.actorUserId }),
     mutate: async (tx) => {
       const fresh = await repository.envConfigTargetOf(tx, flagEnvConfigId);
       if (fresh === null) throw new NotFoundError(NOT_FOUND);
@@ -52,19 +63,20 @@ export async function replaceRules(
       ) {
         throw new OptimisticLockError(
           "Rule của environment này vừa được người khác sửa",
+          // `current` đi tới Portal (Service 1 chuyển nguyên 409): không mang salt
           {
             updatedAt: fresh.updatedAt,
-            rules: await repository.rulesOf(tx, flagEnvConfigId),
+            rules: (await repository.rulesOf(tx, flagEnvConfigId)).map(
+              ruleAuditView,
+            ),
           },
         );
       }
 
       await assertSegmentsInProject(tx, fresh.projectId, incoming);
 
-      const plan = planRules(
-        await repository.rulesOf(tx, flagEnvConfigId),
-        incoming,
-      );
+      const existing = await repository.rulesOf(tx, flagEnvConfigId);
+      const plan = planRules(existing, incoming);
       await assertNoRolloutConflict(tx, plan);
 
       await applyPlan(tx, flagEnvConfigId, plan);
@@ -84,10 +96,17 @@ export async function replaceRules(
         select: { updatedAt: true },
       });
 
-      result = {
-        rules: await repository.rulesOf(tx, flagEnvConfigId),
-        updatedAt: bumped.updatedAt,
-      };
+      const rules = await repository.rulesOf(tx, flagEnvConfigId);
+      await recordAudit(tx, fresh.projectId, {
+        ...audit,
+        action: "flag.rule.update",
+        targetType: "FlagEnvConfig",
+        targetId: flagEnvConfigId,
+        environmentId: target.environmentId,
+        before: { rules: existing.map(ruleAuditView) },
+        after: { rules: rules.map(ruleAuditView) },
+      });
+      result = { rules, updatedAt: bumped.updatedAt };
     },
     stateOf: stateFor(target.flagKey),
   });
@@ -172,4 +191,20 @@ async function applyPlan(
       })),
     });
   }
+}
+
+/**
+ * Rule ra NGOÀI Service 2 (audit, `current` của 409): đủ để đọc lại và sửa tiếp —
+ * id, thứ tự, loại, điều kiện, phục vụ gì. Không có `bucketSalt`: nó là bí mật
+ * phân nhóm (I1), không phải cấu hình người dùng.
+ */
+function ruleAuditView(rule: PublicRule): Record<string, unknown> {
+  return {
+    id: rule.id,
+    priority: rule.priority,
+    ruleType: rule.ruleType,
+    condition: rule.condition,
+    serve: rule.serve,
+    description: rule.description,
+  };
 }

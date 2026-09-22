@@ -2,7 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { env } from "@udp/config";
 import { metrics } from "../src/core/metrics.js";
 import { createFlagLevelExecutor } from "../src/executors/flag-level.executor.js";
-import { testController, type TestController } from "./helpers/controller.js";
+import {
+  seedLabel,
+  testController,
+  type TestController,
+} from "./helpers/controller.js";
 import {
   admin,
   dropProject,
@@ -14,10 +18,7 @@ import {
   onPercentOf,
   sessionState,
 } from "./helpers/fixture.js";
-import {
-  startFlagService,
-  type RunningFlagService,
-} from "./helpers/flag-service.js";
+import { startFlagService, type RunningService } from "@udp/test-support";
 
 /**
  * Vòng đời một rollout FLAG_LEVEL/CANARY qua Service 3 THẬT nối Service 2 THẬT
@@ -29,7 +30,7 @@ import {
  * đáng kiểm (GRANT, fencing, outbox).
  */
 
-let s2: RunningFlagService;
+let s2: RunningService;
 let project: Awaited<ReturnType<typeof newProject>>;
 
 const processed = async (outcome: string): Promise<number> => {
@@ -457,6 +458,7 @@ describe("I23 — Service 2 từ chối worker mang version cũ", () => {
         },
       }),
     });
+    seedLabel(stale.provider, target.flagKey);
     await stale.reconciler.reconcileOne(id);
     expect(await sessionState(id)).toMatchObject({
       status: "PENDING",

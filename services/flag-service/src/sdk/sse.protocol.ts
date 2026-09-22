@@ -1,5 +1,5 @@
 import { ValidationError } from "@udp/http";
-import { INT4_MAX } from "../core/int4.js";
+import { INT4_MAX } from "@udp/config";
 
 /**
  * Chữ trên dây của `GET /sdk/stream` (§6.3) — không trạng thái, không I/O.

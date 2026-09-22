@@ -47,7 +47,7 @@ export interface ErrorCodeSpec {
 }
 
 /**
- * Danh mục 21 mã lỗi (§9).
+ * Danh mục 22 mã lỗi (§9).
  *
  * CẢNH BÁO CHO NGƯỜI SỬA FILE NÀY — hai chữ `as const satisfies` là bắt buộc.
  *
@@ -191,7 +191,7 @@ export const ERROR_CATALOG = {
     retryable: true,
     fixableBy: "user",
     title: "A rollout is already in progress",
-    docSection: "§8.6",
+    docSection: "§8.5, §8.6",
   },
   /**
    * [v4] Mã thứ 21. Vi phạm ràng buộc UNIQUE bất kỳ — tên project trùng, key
@@ -218,6 +218,19 @@ export const ERROR_CATALOG = {
     fixableBy: "user",
     title: "Resource was modified by someone else",
     docSection: "§2.2",
+  },
+  /**
+   * [v4.5] Mã thứ 22. Thao tác trên production cần người dùng XÁC NHẬN tường
+   * minh — gõ lại key của flag (§8.4 "xác nhận hai bước"). Portal nhận mã này thì
+   * mở hộp xác nhận rồi gửi lại kèm `confirmFlagKey`. Tách khỏi 422 chung vì 422
+   * không mã không cho Portal biết nên hiện hộp nào.
+   */
+  CONFIRMATION_REQUIRED: {
+    httpStatus: 428,
+    retryable: false,
+    fixableBy: "user",
+    title: "Explicit confirmation required",
+    docSection: "§8.4",
   },
   /** Fencing đã chặn một worker tỉnh muộn — không phải lỗi người dùng (I23) */
   PRECONDITION_FAILED: {
@@ -254,13 +267,13 @@ export const ERROR_CATALOG = {
 } as const satisfies Record<string, ErrorCodeSpec>;
 
 /**
- * Union 21 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
+ * Union 22 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
  * `ProblemDetails.code` sẽ KHÔNG BIÊN DỊCH ĐƯỢC, không cần test nào.
  */
 export type ErrorCode = keyof typeof ERROR_CATALOG;
 
 /** Kiểm lúc nạp module — thà sập lúc khởi động còn hơn thiếu mã mà không ai biết */
-const EXPECTED_ERROR_CODES = 21;
+const EXPECTED_ERROR_CODES = 22;
 if (Object.keys(ERROR_CATALOG).length !== EXPECTED_ERROR_CODES) {
   throw new Error(
     `ERROR_CATALOG có ${Object.keys(ERROR_CATALOG).length} mã, §9 nói ${EXPECTED_ERROR_CODES}.`,
@@ -305,7 +318,7 @@ export interface ProblemDetails {
   /** URI của chính request gây lỗi */
   instance?: string | undefined;
   /**
-   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong 21 mã
+   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong 22 mã
    * phủ được — bắt buộc `code` sẽ làm những trường hợp đó không biểu diễn nổi.
    */
   code?: ErrorCode | undefined;
@@ -316,6 +329,12 @@ export interface ProblemDetails {
    * resource để Portal hiển thị diff (§8.4 "409 Conflict + bản mới nhất").
    */
   current?: unknown;
+  /**
+   * [v4.4] Id của tài nguyên ĐANG GIỮ chỗ gây xung đột — ví dụ rollout đang chạy
+   * trên cùng flag khi tạo rollout thứ hai (`ROLLOUT_IN_PROGRESS`, §8.5). Portal
+   * dẫn thẳng tới nó thay vì bắt người dùng đi tìm. Chỉ là id, không mang nội dung.
+   */
+  resourceId?: string | undefined;
   /** Luôn có, để đối chiếu với log. Đây là thứ người dùng đọc cho support */
   traceId: string;
 }

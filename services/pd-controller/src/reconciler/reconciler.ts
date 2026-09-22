@@ -30,11 +30,8 @@ import {
   updateIfVersion,
 } from "../rollout-session/session.repository.js";
 import { loadFlagTarget, type FlagTarget } from "../rollout-session/target.js";
-import type {
-  Decision,
-  IntentRow,
-  SessionRow,
-} from "../rollout-session/types.js";
+import type { Decision, TrackOutcome } from "@udp/shared-types";
+import type { IntentRow, SessionRow } from "../rollout-session/types.js";
 import type { FailReason } from "@udp/db";
 import {
   strategyFor as defaultStrategyFor,
@@ -73,6 +70,8 @@ export interface ReconcilerDeps {
   leaseSeconds?: number;
   renewIntervalMs?: number;
   rollbackRetrySeconds?: number;
+  /** [v4.4] Hạn chờ nhãn `ff` của probe pha 2 — xem `ROLLOUT_TIMING.labelWaitSeconds` */
+  labelWaitSeconds?: number;
   /** Số session xử lý đồng thời trong một vòng — theo pool, xem `ROLLOUT_POOL_HEADROOM` */
   maxInFlight?: number;
   /** §7.6 — ghi thẳng `serve` khi S2 chết; vắng thì DEPENDENCY_DOWN giữ traffic nguyên */
@@ -117,6 +116,8 @@ export type Outcome =
   | "paused"
   | "idle"
   | "started"
+  | "label-wait"
+  | "cancelled"
   | "expired"
   | "hold"
   | "dwell"
@@ -131,6 +132,20 @@ export type Outcome =
   | "error";
 
 export const SHUTDOWN_REASON = "shutdown";
+
+/** Kết cục của lần gọi lại `track` — chỉ để ghi vào lý do HOLD cho người dùng đọc */
+function describeTrack(outcome: TrackOutcome): string {
+  switch (outcome.status) {
+    case "SUCCESS":
+      return outcome.changed ? "đã gắn" : "đã có sẵn";
+    case "LIMIT":
+      return `environment đã đủ flag gắn nhãn — ${outcome.message}`;
+    case "REJECTED":
+      return `Service 2 từ chối (HTTP ${String(outcome.httpStatus)}): ${outcome.message}`;
+    case "UNAVAILABLE":
+      return `Service 2 không phản hồi — ${outcome.message}`;
+  }
+}
 
 /** Một lần đóng session FAILED — xem `closeFailed` */
 interface FailedClose {
@@ -151,6 +166,7 @@ interface FailedClose {
 /** Kết cục mà sau đó session không còn chạy — nhãn `ff` của nó phải được gỡ */
 const TERMINAL_OUTCOMES: ReadonlySet<Outcome> = new Set<Outcome>([
   "completed",
+  "cancelled",
   "rolled-back",
   "expired",
   "dependency-down",
@@ -200,6 +216,8 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
   const rollbackRetryMs =
     (deps.rollbackRetrySeconds ?? ROLLOUT_TIMING.rollbackRetrySeconds) * 1000;
   const maxInFlight = deps.maxInFlight ?? 1;
+  const labelWaitMs =
+    (deps.labelWaitSeconds ?? ROLLOUT_TIMING.labelWaitSeconds) * 1000;
   const strategyFor = deps.strategyFor ?? defaultStrategyFor;
   const { db, executor, workerId, providerFor, killSwitch, onTerminal } = deps;
 
@@ -671,6 +689,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     intent: IntentRow,
   ): Promise<Outcome> => {
     const plan = planIntent(session, intent);
+    if (plan.kind === "cancel") return cancel(session, fence, intent);
     if (
       plan.kind === "pause" ||
       plan.kind === "resume" ||
@@ -723,6 +742,8 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
         "Thiếu baseline_percentage — Service 1 phải ghi lúc tạo rollout",
       );
     }
+    const gate = await labelGate(session, fence, resolved.target);
+    if (gate !== undefined) return gate;
     const first = resolved.strategy.nextPercent(
       session.baselinePercentage,
       session.stepPercent,
@@ -736,6 +757,96 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       { triggeredBy: "AUTO", snapshot: null },
     );
     return outcome === "promoted" ? "started" : outcome;
+  };
+
+  /**
+   * [v4.4] Probe pha 2 (§7.4): bậc đầu chỉ áp khi đã thấy LƯU LƯỢNG mang nhãn
+   * `ff` của flag. Hook chỉ gắn nhãn cho flag đã track (§6.6), nên pha này không
+   * làm được ở Service 1 lúc tạo — S1 chỉ kiểm được workload (pha 1). Không thấy
+   * nhãn mà vẫn áp bậc là chạy mù: phân tích sau đó HOLD vì thiếu dữ liệu, nhưng
+   * traffic đã đổi.
+   *
+   * `undefined` = qua cổng. Chưa qua thì HOLD kèm lý do cụ thể; flag chưa track
+   * (S1 chết giữa INSERT và `track`, hoặc `track` hết giờ) thì gọi lại `track` —
+   * chỉ khi CHƯA track, vì mỗi lời gọi là một transaction giữ khoá environment
+   * bên S2. Quá `labelWaitSeconds` kể từ lúc tạo thì đóng FAILED/EXPIRED: một app
+   * thiếu hook không được giữ chỗ trong trần 3 flag suốt 24 giờ.
+   */
+  const labelGate = async (
+    session: SessionRow,
+    fence: Fence,
+    target: FlagTarget,
+  ): Promise<Outcome | undefined> => {
+    const probe = await providerFor(session).probe({
+      namespace: target.canary.namespace,
+      workloadName: target.canary.workloadName,
+      flagKey: target.flagKey,
+    });
+    if (probe.data?.hasSeries === true) return undefined;
+
+    // Không hỏi được thì KHÔNG kết luận gì về app: HOLD, không tính hạn chờ nhãn —
+    // Prometheus chết 15 phút không được đóng mọi rollout PENDING với lý do "kiểm
+    // hook". `max_duration` vẫn là lưới cuối.
+    if (probe.data?.reachable !== true || probe.data.queryFailed) {
+      await holdWith(
+        session,
+        fence,
+        probe.data?.reachable === true
+          ? "Nguồn metrics sống nhưng truy vấn probe hỏng — chưa áp bậc đầu"
+          : "Nguồn metrics không tới được — chưa áp bậc đầu",
+      );
+      return "label-wait";
+    }
+
+    const cause = !target.isEnabled
+      ? `flag "${target.flagKey}" đang TẮT ở environment này — hook không gắn nhãn cho flag tắt`
+      : `chưa thấy lưu lượng mang nhãn ff của "${target.flagKey}" — SDK đã nhận trackedFlags chưa, hook đã cài chưa (§6.6)?`;
+    const waited = now() - session.createdAt.getTime();
+    if (waited > labelWaitMs) {
+      const ok = await commitFenced(
+        session,
+        fence,
+        closeFailed(session, fence, {
+          failReason: "EXPIRED",
+          action: "EXPIRE",
+          triggeredBy: "AUTO",
+          reason: `Sau ${String(labelWaitMs / 1000)}s ${cause}`,
+          snapshot: null,
+        }),
+      );
+      return ok ? "expired" : "version-drift";
+    }
+
+    const retrack = target.isTracked
+      ? ""
+      : ` Flag chưa được gắn nhãn — đã gọi lại track: ${describeTrack(await executor.track(session.id))}.`;
+    await holdWith(
+      session,
+      fence,
+      `${cause.charAt(0).toUpperCase()}${cause.slice(1)} Chưa áp bậc đầu.${retrack}`,
+    );
+    return "label-wait";
+  };
+
+  /** ROLLBACK trên rollout chưa áp bậc nào (§7.6 dòng PENDING): đóng, không PATCH */
+  const cancel = async (
+    session: SessionRow,
+    fence: Fence,
+    intent: IntentRow,
+  ): Promise<Outcome> => {
+    const ok = await commitFenced(
+      session,
+      fence,
+      closeFailed(session, fence, {
+        failReason: "MANUAL",
+        action: "ROLLBACK",
+        triggeredBy: "MANUAL",
+        reason: "Người dùng huỷ rollout chưa bắt đầu — traffic chưa từng đổi",
+        snapshot: null,
+        causedByEventId: intent.id,
+      }),
+    );
+    return ok ? "cancelled" : "version-drift";
   };
 
   const analyse = async (
@@ -864,9 +975,10 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       return expire(session, fence);
     }
     if (session.status === "PAUSED") return "paused";
-    if (session.status === "PENDING") return start(session, fence);
 
-    // 3. Nhịp phân tích — ĐỘC LẬP với dwell
+    // 3. Nhịp phân tích — ĐỘC LẬP với dwell. PENDING cũng theo nhịp này [v4.4]:
+    //    mỗi lần `start()` HOLD là một lượt probe (và có thể một lời gọi track),
+    //    không được lặp mỗi 5 giây của vòng quét.
     const last = session.lastDecision?.at;
     if (
       last !== undefined &&
@@ -874,6 +986,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     ) {
       return "idle";
     }
+    if (session.status === "PENDING") return start(session, fence);
 
     // 4-5. Đo, quyết, và promote khi đã ở bậc đủ lâu
     return analyse(session, fence);

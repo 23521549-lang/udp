@@ -10,6 +10,7 @@ import { healthRouter } from "./modules/health/health.controller.js";
 import { metricsRouter } from "./modules/health/metrics.controller.js";
 import { authRouter } from "./modules/auth/auth.controller.js";
 import { projectRouter } from "./modules/project/project.controller.js";
+import { defaultAppDeps, setAppDeps, type AppDeps } from "./core/app-deps.js";
 
 const API_PREFIX = "/api/v1";
 
@@ -36,9 +37,13 @@ const CSRF_EXEMPT_PATHS = ["/auth/register", "/auth/login"] as const;
  *
  * Tách khỏi `listen()` để test tích hợp dựng được app trong bộ nhớ mà không
  * chiếm cổng — thiếu điều này thì các test chạy song song sẽ tranh cổng nhau.
+ *
+ * `deps` [v4.4] — phụ thuộc RA NGOÀI tiến trình (nguồn metrics, Service 2), xem
+ * `core/app-deps.ts`. Mặc định là bản thật từ cấu hình; test truyền bản giả.
  */
-export function createApp(): Express {
+export function createApp(deps: AppDeps = defaultAppDeps()): Express {
   const app = express();
+  setAppDeps(app.locals, deps);
 
   app.disable("x-powered-by");
 

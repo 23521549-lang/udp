@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { testController } from "./helpers/controller.js";
+import { seedLabel, testController } from "./helpers/controller.js";
 import {
   admin,
   dropProject,
@@ -10,10 +10,7 @@ import {
   onPercentOf,
   sessionState,
 } from "./helpers/fixture.js";
-import {
-  startFlagService,
-  type RunningFlagService,
-} from "./helpers/flag-service.js";
+import { startFlagService, type RunningService } from "@udp/test-support";
 
 /**
  * I6 — nhiều replica cùng quét một session: ĐÚNG MỘT bên áp bậc, các bên còn
@@ -25,7 +22,7 @@ import {
  * ở tiến trình.
  */
 
-let s2: RunningFlagService;
+let s2: RunningService;
 let project: Awaited<ReturnType<typeof newProject>>;
 
 beforeAll(async () => {
@@ -45,6 +42,10 @@ describe("I6 — ba replica, một session", () => {
     const id = await newSession(target, { stepPercent: 10 });
     const workers = ["r1", "r2", "r3"].map((w) =>
       testController(s2.baseUrl, { workerId: `${w}:${String(process.pid)}` }),
+    );
+    seedLabel(
+      workers.map((w) => w.provider),
+      target.flagKey,
     );
 
     await Promise.all(workers.map((w) => w.reconciler.reconcileOne(id)));
@@ -70,6 +71,12 @@ describe("I6 — ba replica, một session", () => {
     const workers = ["t1", "t2", "t3"].map((w) =>
       testController(s2.baseUrl, { workerId: `${w}:${String(process.pid)}` }),
     );
+    for (const t of targets) {
+      seedLabel(
+        workers.map((w) => w.provider),
+        t.flagKey,
+      );
+    }
     await Promise.all(workers.map((w) => w.reconciler.tick()));
 
     for (const [i, id] of ids.entries()) {

@@ -1,11 +1,17 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { env } from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { changeFeedWatcher } from "../src/changefeed/index.js";
-import { stableOwner } from "./helpers/fixture.js";
+import {
+  createActiveFlag,
+  internalCall,
+  newSdkKeyToken,
+  sdkKeyData,
+  stableOwner,
+} from "@udp/test-support";
 
 /**
  * `GET /sdk/config` qua HTTP thật.
@@ -22,6 +28,8 @@ import { stableOwner } from "./helpers/fixture.js";
  *     chứng chỉ là băng thông, không phải lỗi.
  */
 
+/** User có thật (FK của audit và outbox) — route ghi của S2 bắt buộc actor [v4.5] */
+let actorId = "";
 const app = createApp();
 
 const admin = createPrismaClient({
@@ -30,15 +38,12 @@ const admin = createPrismaClient({
   cacheKey: `__udp_prisma_sdktest_${randomUUID()}`,
 });
 
-const sha256 = (v: string): string =>
-  createHash("sha256").update(v).digest("hex");
-
-const SERVER_KEY = `udp_sk_test_${randomUUID()}`;
-const CLIENT_KEY = `udp_ck_test_${randomUUID()}`;
-const REVOKED_KEY = `udp_sk_test_${randomUUID()}`;
-const OTHER_KEY = `udp_sk_test_${randomUUID()}`;
+const SERVER_KEY = newSdkKeyToken("SERVER");
+const CLIENT_KEY = newSdkKeyToken("CLIENT");
+const REVOKED_KEY = newSdkKeyToken("SERVER");
+const OTHER_KEY = newSdkKeyToken("SERVER");
 /** Khoá của env `prod` trong CÙNG project với `SERVER_KEY` */
-const PROD_KEY = `udp_sk_test_${randomUUID()}`;
+const PROD_KEY = newSdkKeyToken("SERVER");
 
 let projectIds: string[] = [];
 let envIds: string[] = [];
@@ -95,6 +100,7 @@ const makeProject = async (
 
 beforeAll(async () => {
   const owner = await stableOwner(admin);
+  actorId = owner.id;
 
   const mine = await makeProject(owner.id, "own", true);
   const theirs = await makeProject(owner.id, "other");
@@ -105,48 +111,32 @@ beforeAll(async () => {
 
   await admin.sdkKey.createMany({
     data: [
+      { token: SERVER_KEY, environmentId: mine.envId, label: "sdktest server" },
       {
+        token: CLIENT_KEY,
         environmentId: mine.envId,
-        keyType: "SERVER",
-        keyHash: sha256(SERVER_KEY),
-        keySuffix: SERVER_KEY.slice(-6),
-        label: "sdktest server",
-        createdById: owner.id,
-      },
-      {
-        environmentId: mine.envId,
-        keyType: "CLIENT",
-        keyHash: sha256(CLIENT_KEY),
-        keySuffix: CLIENT_KEY.slice(-6),
+        keyType: "CLIENT" as const,
         label: "sdktest client",
-        createdById: owner.id,
       },
       {
+        token: REVOKED_KEY,
         environmentId: mine.envId,
-        keyType: "SERVER",
-        keyHash: sha256(REVOKED_KEY),
-        keySuffix: REVOKED_KEY.slice(-6),
         label: "sdktest revoked",
-        createdById: owner.id,
         revokedAt: new Date(),
       },
       {
+        token: OTHER_KEY,
         environmentId: theirs.envId,
-        keyType: "SERVER",
-        keyHash: sha256(OTHER_KEY),
-        keySuffix: OTHER_KEY.slice(-6),
         label: "sdktest other project",
-        createdById: owner.id,
       },
       {
+        token: PROD_KEY,
         environmentId: mine.prodEnvId,
-        keyType: "SERVER",
-        keyHash: sha256(PROD_KEY),
-        keySuffix: PROD_KEY.slice(-6),
         label: "sdktest prod cùng project",
-        createdById: owner.id,
       },
-    ],
+    ].map((k) =>
+      sdkKeyData({ keyType: "SERVER", createdById: owner.id, ...k }),
+    ),
   });
 
   /** Mỗi project một flag riêng — đó là thứ để đo I14 */
@@ -157,11 +147,11 @@ beforeAll(async () => {
     [mine.projectId, ownFlagKey],
     [theirs.projectId, otherFlagKey],
   ] as const) {
-    await request(app)
-      .post("/internal/flags")
-      .set("X-Internal-Secret", env.INTERNAL_SERVICE_SECRET)
-      .send({ projectId, key, flagType: "BOOLEAN" })
-      .expect(201);
+    await createActiveFlag(app, actorId, {
+      projectId,
+      key,
+      flagType: "BOOLEAN",
+    });
   }
 });
 
@@ -169,6 +159,9 @@ afterAll(async () => {
   if (envIds.length > 0) {
     await admin.configChangeLog.deleteMany({
       where: { environmentId: { in: envIds } },
+    });
+    await admin.auditLog.deleteMany({
+      where: { projectId: { in: projectIds } },
     });
     await admin.project.deleteMany({ where: { id: { in: projectIds } } });
   }
@@ -268,9 +261,10 @@ describe("I14 — environment suy ra TỪ KHOÁ", () => {
       where: { environmentId: mineDevEnv, flag: { key: ownFlagKey } },
       select: { id: true },
     });
-    await request(app)
-      .patch(`/internal/flag-envs/${envConfig.id}`)
-      .set("X-Internal-Secret", env.INTERNAL_SERVICE_SECRET)
+    await internalCall(
+      request(app).patch(`/internal/flag-envs/${envConfig.id}`),
+      actorId,
+    )
       .send({ isEnabled: true })
       .expect(200);
     // Cache của tiến trình theo kịp lần ghi — watcher không chạy nền trong test

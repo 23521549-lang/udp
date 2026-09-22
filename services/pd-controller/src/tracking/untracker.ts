@@ -32,7 +32,8 @@ export interface Untracker {
 
 export interface UntrackerDeps {
   db: DbClient;
-  executor: FlagLevelExecutor;
+  /** Chỉ phần gỡ nhãn — lưới quét không ramp, không gắn nhãn */
+  executor: Pick<FlagLevelExecutor, "untrack">;
   intervalMs?: number;
   batch?: number;
 }

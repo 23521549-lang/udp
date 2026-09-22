@@ -1,12 +1,13 @@
-import type { Prisma } from "@udp/db";
+import type { FlagLifecycleStatus, Prisma } from "@udp/db";
 import { BOOLEAN_VARIANTS } from "@udp/config";
 import type { CreateFlagInput, PublicFlag } from "./flag.types.js";
 
-const PUBLIC_FIELDS = {
+export const PUBLIC_FIELDS = {
   id: true,
   projectId: true,
   key: true,
   flagType: true,
+  description: true,
   lifecycleStatus: true,
   defaultVariantId: true,
   stickinessAttribute: true,
@@ -59,6 +60,9 @@ export async function createFlag(
       projectId: input.projectId,
       key: input.key,
       flagType: input.flagType,
+      ...(input.description === undefined
+        ? {}
+        : { description: input.description }),
       variants: {
         create: variants.map((v) => ({
           key: v.key,
@@ -102,3 +106,27 @@ export const findById = (
   id: string,
 ): Promise<PublicFlag | null> =>
   tx.featureFlag.findUnique({ where: { id }, select: PUBLIC_FIELDS });
+
+/**
+ * [v4.6] Flag cho Flag Evaluation Tester — CHỈ khi environment thuộc cùng project
+ * với flag. Hai câu đơn chứ không một câu lồng quan hệ: lọc qua `project` đọc bảng
+ * `projects`, thứ `udp_s2` không có quyền (§1.2).
+ */
+export async function testerTargetOf(
+  db: Prisma.TransactionClient,
+  flagId: string,
+  environmentId: string,
+): Promise<{ key: string; lifecycleStatus: FlagLifecycleStatus } | null> {
+  const flag = await db.featureFlag.findUnique({
+    where: { id: flagId },
+    select: { key: true, projectId: true, lifecycleStatus: true },
+  });
+  if (flag === null) return null;
+  const environment = await db.environment.findFirst({
+    where: { id: environmentId, projectId: flag.projectId },
+    select: { id: true },
+  });
+  return environment === null
+    ? null
+    : { key: flag.key, lifecycleStatus: flag.lifecycleStatus };
+}

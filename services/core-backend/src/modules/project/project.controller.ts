@@ -12,6 +12,8 @@ import { validateBody, validateQuery } from "@udp/http";
 import * as auditRepository from "../audit/audit.repository.js";
 import { auditQuerySchema, type AuditQuery } from "../audit/audit.types.js";
 import { memberRouter } from "../member/member.controller.js";
+import { flagRouter } from "../flag/flag.controller.js";
+import { rolloutRouter } from "../rollout/rollout.controller.js";
 import * as projectService from "./project.service.js";
 import {
   createProjectSchema,
@@ -149,3 +151,5 @@ projectRouter.get(
  * ký, và `use("/:id", ...)` sẽ nuốt mọi đường dẫn con nếu đứng trước.
  */
 projectRouter.use("/:id", memberRouter);
+projectRouter.use("/:id", rolloutRouter);
+projectRouter.use("/:id", flagRouter);

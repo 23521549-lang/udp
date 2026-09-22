@@ -1,11 +1,16 @@
 import { Router, type Request } from "express";
-import { asyncHandler, validateBody } from "@udp/http";
-import { actorOf, requireInternalCaller } from "../auth/internal-auth.guard.js";
-import { uuidParam } from "../core/uuid.js";
+import { asyncHandler, uuidParam, validateBody } from "@udp/http";
+import {
+  auditContextOf,
+  requireInternalCaller,
+} from "../auth/internal-auth.guard.js";
+import { evaluateForTester } from "../modules/flag/evaluate.service.js";
 import * as flagService from "../modules/flag/flag.service.js";
 import {
   createFlagSchema,
+  evaluateFlagSchema,
   updateFlagSchema,
+  type EvaluateFlagInput,
 } from "../modules/flag/flag.types.js";
 
 /**
@@ -18,7 +23,7 @@ import {
  */
 export const internalFlagRouter: Router = Router();
 
-/** Kiểm UUID trước khi chạm Prisma — lý do nằm ở `core/uuid.ts` */
+/** Kiểm UUID trước khi chạm Prisma — lý do nằm ở `uuid.ts` của `@udp/http` */
 const flagIdOf = (req: Request): string =>
   uuidParam(req, "id", "Mã flag không hợp lệ");
 
@@ -27,7 +32,7 @@ internalFlagRouter.post(
   requireInternalCaller,
   validateBody(createFlagSchema),
   asyncHandler(async (req, res) => {
-    const flag = await flagService.create(req.body, actorOf(req));
+    const flag = await flagService.create(req.body, auditContextOf(req));
     res.status(201).json({ flag });
   }),
 );
@@ -40,8 +45,24 @@ internalFlagRouter.patch(
     const flag = await flagService.update(
       flagIdOf(req),
       req.body,
-      actorOf(req),
+      auditContextOf(req),
     );
     res.json({ flag });
+  }),
+);
+
+/**
+ * [v4.6] Flag Evaluation Tester — chỉ đọc, nên không đòi người làm (không audit):
+ * đánh giá thử không đổi gì.
+ */
+internalFlagRouter.post(
+  "/flags/:id/evaluate",
+  requireInternalCaller,
+  validateBody(evaluateFlagSchema),
+  asyncHandler(async (req, res) => {
+    const body = req.body as EvaluateFlagInput;
+    res.json(
+      await evaluateForTester(flagIdOf(req), body.environmentId, body.context),
+    );
   }),
 );

@@ -61,6 +61,7 @@ export const redactPaths = [
   "*.sshKey",
   "*.webhookKey",
   "*.kubeconfigKey",
+  "*.bucketSalt",
 ];
 
 export const logger = pino({
@@ -94,6 +95,9 @@ export function isSensitive(key: string): boolean {
  */
 export function redact<T>(value: T): T {
   if (value === null || typeof value !== "object") return value;
+  // Date là object không có khoá riêng — đệ quy biến nó thành `{}`, và
+  // `current.updatedAt` của 409 OPTIMISTIC_LOCK tới Portal thành rỗng (QA Plan #19)
+  if (value instanceof Date) return value;
   if (Array.isArray(value)) return value.map(redact) as T;
 
   const result: Record<string, unknown> = {};

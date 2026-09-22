@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { env } from "@udp/config";
 import { describe, expect, it } from "vitest";
-import { freePort } from "./helpers/net.js";
+import { freePort } from "@udp/test-support";
 
 /**
  * Chốt danh tính của Service 3 phải TỪ CHỐI PHỤC VỤ khi role sai — cùng lý do

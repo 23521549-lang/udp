@@ -1,8 +1,18 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Request, RequestHandler } from "express";
-import { env } from "@udp/config";
-import { UnauthenticatedError, ValidationError } from "@udp/http";
-import { UUID_PATTERN } from "../core/uuid.js";
+import {
+  ACTOR_HEADER,
+  CLIENT_IP_HEADER,
+  CLIENT_UA_HEADER,
+  env,
+  INTERNAL_SECRET_HEADER,
+} from "@udp/config";
+import {
+  UnauthenticatedError,
+  UUID_PATTERN,
+  ValidationError,
+  type AuditContext,
+} from "@udp/http";
 
 /**
  * Xác thực lời gọi máy-tới-máy vào `/internal/*` (§9, §12 T12).
@@ -19,22 +29,6 @@ import { UUID_PATTERN } from "../core/uuid.js";
  * định để ngày thêm TokenReview không phải sửa một call-site nào.
  */
 
-const HEADER = "X-Internal-Secret";
-
-/**
- * Header mang danh tính người dùng đã được Service 1 xác thực.
- *
- * `ConfigChangeLog.actor_user_id` cần biết AI đổi cấu hình, nhưng S2 không có
- * quyền đọc bảng `users` (§1.2) và không thấy cookie phiên. S1 là bên đã xác
- * thực người dùng, nên nó truyền id xuống.
- *
- * Tin được header này chỉ vì lời gọi đã qua bí mật dùng chung ở trên — không có
- * bước đó thì bất kỳ ai cũng tự khai mình là bất kỳ ai. Thứ tự middleware vì thế
- * không phải chuyện phong cách. NULL là hợp lệ và có nghĩa: §2.2 ghi "NULL =
- * Service 3 khi rollout", vì lúc đó không có người dùng nào bấm gì cả.
- */
-const ACTOR_HEADER = "X-Udp-Actor-Id";
-
 /**
  * So sánh hằng thời gian.
  *
@@ -49,7 +43,7 @@ function secretMatches(provided: string): boolean {
 }
 
 export const requireInternalCaller: RequestHandler = (req, _res, next) => {
-  const provided = req.get(HEADER);
+  const provided = req.get(INTERNAL_SECRET_HEADER);
 
   if (
     provided === undefined ||
@@ -67,7 +61,19 @@ export const requireInternalCaller: RequestHandler = (req, _res, next) => {
   next();
 };
 
-/** Id người dùng do Service 1 truyền xuống, hoặc `undefined` nếu Service 3 gọi */
+/**
+ * Id người dùng do Service 1 truyền xuống (header `ACTOR_HEADER`), hoặc
+ * `undefined` nếu Service 3 gọi.
+ *
+ * `ConfigChangeLog.actor_user_id` cần biết AI đổi cấu hình, nhưng S2 không có
+ * quyền đọc bảng `users` (§1.2) và không thấy cookie phiên. S1 là bên đã xác
+ * thực người dùng, nên nó truyền id xuống.
+ *
+ * Tin được header này chỉ vì lời gọi đã qua bí mật dùng chung ở trên — không có
+ * bước đó thì bất kỳ ai cũng tự khai mình là bất kỳ ai. Thứ tự middleware vì thế
+ * không phải chuyện phong cách. NULL là hợp lệ và có nghĩa: §2.2 ghi "NULL =
+ * Service 3 khi rollout", vì lúc đó không có người dùng nào bấm gì cả.
+ */
 export function actorOf(req: Request): string | undefined {
   const raw = req.get(ACTOR_HEADER);
   if (raw === undefined || raw.length === 0) return undefined;
@@ -77,4 +83,27 @@ export function actorOf(req: Request): string | undefined {
   }
 
   return raw;
+}
+
+/**
+ * [v4.5] Ngữ cảnh audit của một lời gọi GHI cấu hình từ Service 1: ai (BẮT BUỘC)
+ * và từ đâu (IP, UA của người dùng mà S1 chuyển tiếp). Thiếu actor là lỗi hợp
+ * đồng giữa hai service — một hàng audit không có người làm thì vô dụng (§2.2),
+ * nên 400 thay vì ghi ẩn danh. IP sai dạng bị `auditEntry` bỏ, không làm hỏng
+ * thay đổi.
+ */
+export function auditContextOf(req: Request): AuditContext & {
+  actorUserId: string;
+} {
+  const actorUserId = actorOf(req);
+  if (actorUserId === undefined) {
+    throw new ValidationError(
+      `Thiếu ${ACTOR_HEADER} — lời gọi ghi cấu hình phải nói ai làm`,
+    );
+  }
+  return {
+    actorUserId,
+    ip: req.get(CLIENT_IP_HEADER),
+    userAgent: req.get(CLIENT_UA_HEADER),
+  };
 }

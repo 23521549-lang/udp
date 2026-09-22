@@ -392,18 +392,24 @@ async function seedCheckoutFlag(projectId: string): Promise<void> {
 }
 
 async function seedSegment(projectId: string): Promise<void> {
+  // [v4.6] Hình chốt của §2.2 — ghi ở CẢ hai nhánh để chạy lại seed sửa được
+  // hàng cũ (upsert với `update: {}` từng để nguyên hình mảng)
+  const conditions = {
+    all: [
+      { attribute: "plan", operator: "eq", value: "premium" },
+      { attribute: "country", operator: "in", value: ["VN"] },
+    ],
+    userIds: [],
+  };
   await prisma.segment.upsert({
     where: { id: ID.segmentBeta },
-    update: {},
+    update: { conditions },
     create: {
       id: ID.segmentBeta,
       projectId,
       name: "beta-testers",
       description: "Người dùng gói premium ở Việt Nam",
-      conditions: [
-        { attribute: "plan", operator: "eq", value: "premium" },
-        { attribute: "country", operator: "in", value: ["VN"] },
-      ],
+      conditions,
     },
   });
 }

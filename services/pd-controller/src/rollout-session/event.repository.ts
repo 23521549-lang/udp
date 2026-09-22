@@ -2,11 +2,8 @@ import { randomUUID } from "node:crypto";
 import { ROLLOUT_EVENT } from "@udp/config";
 import { Prisma, type RolloutAction } from "@udp/db";
 import type { DbClient } from "../core/db.js";
-import {
-  INTENT_ACTIONS,
-  type IntentRow,
-  type MetricSnapshot,
-} from "./types.js";
+import type { MetricSnapshot } from "@udp/shared-types";
+import { INTENT_ACTIONS, type IntentRow } from "./types.js";
 
 /**
  * `rollout_events` và `deployment_events` từ phía Service 3.

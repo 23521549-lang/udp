@@ -1,10 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { env } from "@udp/config";
+import {
+  ACTOR_HEADER,
+  CLIENT_IP_HEADER,
+  CLIENT_UA_HEADER,
+  env,
+} from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { stableOwner } from "./helpers/fixture.js";
+import { stableOwner } from "@udp/test-support";
 
 /**
  * `/internal/flags` qua HTTP thật.
@@ -84,6 +89,7 @@ afterAll(async () => {
     await admin.configChangeLog.deleteMany({
       where: { environmentId: { in: envIds } },
     });
+    await admin.auditLog.deleteMany({ where: { projectId: projectId } });
     await admin.project.delete({ where: { id: projectId } });
   }
   await admin.$disconnect();
@@ -93,6 +99,7 @@ const post = (body: object): request.Test =>
   request(app)
     .post("/internal/flags")
     .set("X-Internal-Secret", SECRET)
+    .set(ACTOR_HEADER, actorId)
     .send(body);
 
 const newFlag = (
@@ -175,7 +182,7 @@ describe("tạo flag", () => {
     const res = await request(app)
       .post("/internal/flags")
       .set("X-Internal-Secret", SECRET)
-      .set("X-Udp-Actor-Id", actorId)
+      .set(ACTOR_HEADER, actorId)
       .send(newFlag())
       .expect(201);
 
@@ -234,6 +241,7 @@ describe("sửa flag — optimistic lock", () => {
     const conflict = await request(app)
       .patch(`/internal/flags/${flagId}`)
       .set("X-Internal-Secret", SECRET)
+      .set(ACTOR_HEADER, actorId)
       .send({ lastKnownUpdatedAt: stale, description: "sửa muộn" })
       .expect(409);
     expect(conflict.body.code).toBe("OPTIMISTIC_LOCK");
@@ -248,6 +256,7 @@ describe("sửa flag — optimistic lock", () => {
     await request(app)
       .patch(`/internal/flags/${flagId}`)
       .set("X-Internal-Secret", SECRET)
+      .set(ACTOR_HEADER, actorId)
       .send({
         lastKnownUpdatedAt: fresh.updatedAt.toISOString(),
         description: "sửa đúng lúc",
@@ -259,6 +268,7 @@ describe("sửa flag — optimistic lock", () => {
     await request(app)
       .patch("/internal/flags/khong-phai-uuid")
       .set("X-Internal-Secret", SECRET)
+      .set(ACTOR_HEADER, actorId)
       .send({ lastKnownUpdatedAt: new Date().toISOString() })
       .expect(400);
   });
@@ -310,5 +320,206 @@ describe("giá trị variant phải khớp kiểu flag (§2.2)", () => {
       select: { configHash: true },
     });
     for (const row of rows) expect(row.configHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("[v4.5] audit ghi TRONG transaction của S2", () => {
+  const auditsOf = (targetId: string) =>
+    admin.auditLog.findMany({
+      where: { targetId },
+      select: {
+        action: true,
+        actorUserId: true,
+        ipAddress: true,
+        userAgent: true,
+        before: true,
+        after: true,
+      },
+    });
+
+  it("tạo flag ⇒ đúng MỘT hàng audit mang actor, IP và UA mà S1 chuyển tiếp; IP sai dạng bị bỏ, thay đổi vẫn commit", async () => {
+    const res = await post(newFlag())
+      .set(CLIENT_IP_HEADER, "203.0.113.7")
+      .set(CLIENT_UA_HEADER, "portal-test")
+      .expect(201);
+    const audits = await auditsOf(res.body.flag.id as string);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      action: "flag.create",
+      actorUserId: actorId,
+      ipAddress: "203.0.113.7",
+      userAgent: "portal-test",
+    });
+
+    const bad = await post(newFlag()).set(CLIENT_IP_HEADER, "cafe").expect(201);
+    const [row] = await auditsOf(bad.body.flag.id as string);
+    expect(row?.ipAddress).toBeNull();
+  });
+
+  it("thiếu actor ⇒ 400 và không có thay đổi nào", async () => {
+    const body = newFlag();
+    await request(app)
+      .post("/internal/flags")
+      .set("X-Internal-Secret", SECRET)
+      .send(body)
+      .expect(400);
+    expect(
+      await admin.featureFlag.count({
+        where: { projectId, key: body["key"] as string },
+      }),
+    ).toBe(0);
+  });
+
+  it("sửa bị lùi (409 OPTIMISTIC_LOCK) ⇒ KHÔNG có hàng audit; sửa được ⇒ before/after đúng trường đổi", async () => {
+    const created = await post(newFlag()).expect(201);
+    const id = created.body.flag.id as string;
+    const patch = (body: object) =>
+      request(app)
+        .patch(`/internal/flags/${id}`)
+        .set("X-Internal-Secret", SECRET)
+        .set(ACTOR_HEADER, actorId)
+        .send(body);
+
+    await patch({
+      lastKnownUpdatedAt: new Date(0).toISOString(),
+      description: "cũ",
+    }).expect(409);
+    expect(
+      (await auditsOf(id)).filter((a) => a.action === "flag.update"),
+    ).toHaveLength(0);
+
+    await patch({
+      lastKnownUpdatedAt: created.body.flag.updatedAt as string,
+      description: "mô tả mới",
+    }).expect(200);
+    const updates = (await auditsOf(id)).filter(
+      (a) => a.action === "flag.update",
+    );
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.before).toMatchObject({ description: null });
+    expect(updates[0]?.after).toMatchObject({ description: "mô tả mới" });
+  });
+
+  it("409 OPTIMISTIC_LOCK mang `current.updatedAt` là mốc ISO thật — redact không nuốt Date", async () => {
+    const created = await post(newFlag()).expect(201);
+    const res = await request(app)
+      .patch(`/internal/flags/${created.body.flag.id as string}`)
+      .set("X-Internal-Secret", SECRET)
+      .set(ACTOR_HEADER, actorId)
+      .send({ lastKnownUpdatedAt: new Date(0).toISOString(), description: "x" })
+      .expect(409);
+    expect(res.body.current.updatedAt).toBe(created.body.flag.updatedAt);
+  });
+});
+
+describe("[v4.5] flag đang rollout — không rời ACTIVE, không đổi stickiness", () => {
+  it("ARCHIVED hoặc đổi stickiness khi còn session sống ⇒ 409 ROLLOUT_IN_PROGRESS + resourceId; hết session ⇒ được", async () => {
+    const created = await post(newFlag()).expect(201);
+    const flagId = created.body.flag.id as string;
+    await admin.featureFlag.update({
+      where: { id: flagId },
+      data: { lifecycleStatus: "ACTIVE" },
+    });
+    const config = await admin.flagEnvConfig.findFirstOrThrow({
+      where: { flagId },
+      select: { id: true, environmentId: true },
+    });
+    const session = await admin.rolloutSession.create({
+      data: {
+        projectId,
+        environmentId: config.environmentId,
+        flagEnvConfigId: config.id,
+        workloadName: "checkout",
+        rolloutScope: "FLAG_LEVEL",
+        strategy: "CANARY",
+        controlMode: "UDP_DRIVEN",
+        status: "IN_PROGRESS",
+        thresholds: {},
+        stepPercent: 10,
+        createdById: actorId,
+      },
+      select: { id: true },
+    });
+    const stamp = async () =>
+      (
+        await admin.featureFlag.findUniqueOrThrow({
+          where: { id: flagId },
+          select: { updatedAt: true },
+        })
+      ).updatedAt.toISOString();
+    const patch = async (body: object) =>
+      request(app)
+        .patch(`/internal/flags/${flagId}`)
+        .set("X-Internal-Secret", SECRET)
+        .set(ACTOR_HEADER, actorId)
+        .send({ lastKnownUpdatedAt: await stamp(), ...body });
+
+    for (const body of [
+      { lifecycleStatus: "ARCHIVED" },
+      { stickinessAttribute: "userId" },
+    ]) {
+      const res = await patch(body);
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({
+        code: "ROLLOUT_IN_PROGRESS",
+        resourceId: session.id,
+      });
+    }
+    await patch({ description: "vẫn sửa mô tả được" }).then((r) =>
+      expect(r.status).toBe(200),
+    );
+
+    await admin.rolloutSession.update({
+      where: { id: session.id },
+      data: { status: "DONE" },
+    });
+    expect((await patch({ lifecycleStatus: "ARCHIVED" })).status).toBe(200);
+  });
+});
+
+describe("[v4.5] máy trạng thái vòng đời (§6.7) và PATCH rỗng", () => {
+  const patchOf = (id: string) => async (body: object) => {
+    const { updatedAt } = await admin.featureFlag.findUniqueOrThrow({
+      where: { id },
+      select: { updatedAt: true },
+    });
+    return request(app)
+      .patch(`/internal/flags/${id}`)
+      .set("X-Internal-Secret", SECRET)
+      .set(ACTOR_HEADER, actorId)
+      .send({ lastKnownUpdatedAt: updatedAt.toISOString(), ...body });
+  };
+
+  it("DRAFT → ARCHIVED (bỏ dở) và ARCHIVED ⇄ ACTIVE được; về DRAFT ⇒ 422, không đổi gì", async () => {
+    const created = await post(newFlag()).expect(201);
+    const id = created.body.flag.id as string;
+    const patch = patchOf(id);
+    expect((await patch({ lifecycleStatus: "ARCHIVED" })).status).toBe(200);
+    expect((await patch({ lifecycleStatus: "ACTIVE" })).status).toBe(200);
+    const back = await patch({ lifecycleStatus: "DRAFT" });
+    expect(back.status).toBe(422);
+    expect(back.body.detail).toMatch(/ACTIVE → DRAFT/);
+    const { lifecycleStatus } = await admin.featureFlag.findUniqueOrThrow({
+      where: { id },
+      select: { lifecycleStatus: true },
+    });
+    expect(lifecycleStatus).toBe("ACTIVE");
+  });
+
+  it("PATCH chỉ có lastKnownUpdatedAt ⇒ 400, không tốn version", async () => {
+    const created = await post(newFlag()).expect(201);
+    const versionsOf = async () =>
+      (
+        await admin.environment.findMany({
+          where: { projectId },
+          select: { configVersion: true },
+          orderBy: { rank: "asc" },
+        })
+      ).map((e) => e.configVersion);
+    const before = await versionsOf();
+    expect((await patchOf(created.body.flag.id as string)({})).status).toBe(
+      400,
+    );
+    expect(await versionsOf()).toEqual(before);
   });
 });

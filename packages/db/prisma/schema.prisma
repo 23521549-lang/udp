@@ -906,7 +906,9 @@ model Segment {
   projectId   String   @map("project_id") @db.Uuid
   name        String   @db.VarChar(100)
   description String?  @db.VarChar(255)
-  /// Mảng điều kiện thuộc tính, nối bằng AND
+  /// [v4.6] `{ all: AttributeCondition[], userIds: string[] }` — khớp ⇔ userIds
+  /// chứa targetingKey HOẶC (all không rỗng VÀ mọi điều kiện đúng). Hình được
+  /// CHECK `segments_conditions_shape` giữ (migration snapshot_format_v46).
   conditions  Json
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)

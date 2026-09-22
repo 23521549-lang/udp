@@ -90,3 +90,19 @@ export function testController(
 }
 
 export { prisma as s3 };
+
+/**
+ * [v4.4] Cho probe pha 2 thấy lưu lượng mang nhãn `ff` của flag — điều kiện để
+ * `start()` áp bậc đầu. Khoá nhánh riêng (`=probe`) không trùng variant nào của
+ * fixture, nên không đổi con số mà phân tích đọc của nhánh `on`/`off`.
+ */
+export function seedLabel(
+  providers: FakeMetricsProvider | readonly FakeMetricsProvider[],
+  flagKey: string,
+): void {
+  const list =
+    providers instanceof FakeMetricsProvider ? [providers] : providers;
+  for (const provider of list) {
+    provider.set(`${flagKey}=probe`, { requests: 1, errors: 0 });
+  }
+}

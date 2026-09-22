@@ -12,6 +12,7 @@ export { bucketOf, type BucketInput } from "./hash.js";
 export { pickVariant, type VariantPick } from "./distribution.js";
 export {
   canonicalJson,
+  compareCodeUnits,
   configHashOf,
   normalizeSnapshot,
   type Snapshot,
@@ -22,11 +23,35 @@ export {
   type SnapshotTombstone,
 } from "./snapshot.js";
 export {
+  etagOf,
   SDK_STREAM_EVENTS,
   type SdkConfigResponse,
   type SdkStreamChange,
   type SdkStreamDelta,
+  type SdkStreamFlagAbsentChange,
   type SdkStreamEventName,
   type SdkStreamFlagChange,
   type SdkStreamTrackedFlagsChange,
 } from "./sdk-wire.js";
+export {
+  EVALUATOR_SEMANTICS_VERSION,
+  evaluate,
+  evaluateAll,
+  type EvaluateOptions,
+} from "./evaluate.js";
+export { prepareSnapshot, type PreparedSnapshot } from "./prepare.js";
+export {
+  fromOfrep,
+  ofrepFlagNotFound,
+  ofrepVisible,
+  toOfrep,
+} from "./ofrep.js";
+export {
+  applyChange,
+  applyDelta,
+  hashVerdict,
+  parseSdkConfig,
+  parseSdkDelta,
+  type DeltaOutcome,
+  type HashVerdict,
+} from "./changefeed.js";

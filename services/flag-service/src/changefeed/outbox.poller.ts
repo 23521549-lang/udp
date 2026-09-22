@@ -1,8 +1,9 @@
 import type { Prisma } from "@udp/db";
-import type {
-  SdkStreamChange,
-  Snapshot,
-  SnapshotEntry,
+import {
+  applyChange,
+  type SdkStreamChange,
+  type Snapshot,
+  type SnapshotEntry,
 } from "@udp/flag-evaluator";
 import { verifyHash } from "./checksum.verifier.js";
 import type {
@@ -79,6 +80,18 @@ export function flagOf(payload: Prisma.JsonValue): SnapshotEntry | null {
 }
 
 /**
+ * [v4.6] `{ absentFlagKey }` — delta của một lần ghi lên flag VẮNG khỏi snapshot
+ * (DRAFT, §6.7). Không phải payload hỏng: không có nhánh này thì mọi lần ghi
+ * lên flag DRAFT bị đếm là lỗi của tầng 2 và đẩy breaker.
+ */
+export function absentFlagKeyOf(payload: Prisma.JsonValue): string | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload))
+    return null;
+  const key: unknown = (payload as { absentFlagKey?: unknown }).absentFlagKey;
+  return typeof key === "string" && key.length > 0 ? key : null;
+}
+
+/**
  * Rút tập tracked ra khỏi payload `rollout.tracked` / `rollout.untracked` (§6.6
  * [v4.3]) — kiểm nông như `flagOf`, cộng một điều kiện mà hash KHÔNG bắt được
  * thay: mảng đã sắp tăng dần nghiêm ngặt. `configHashOf` tự sắp lại trước khi
@@ -134,9 +147,11 @@ export function changeOf(
     case "rule.ramped":
     case "envconfig.toggled": {
       const flag = flagOf(record.payload);
-      return flag === null
+      if (flag !== null) return { configVersion, kind: "flag", flag };
+      const absent = absentFlagKeyOf(record.payload);
+      return absent === null
         ? "malformed-payload"
-        : { configVersion, kind: "flag", flag };
+        : { configVersion, kind: "flagAbsent", key: absent };
     }
     case "rollout.tracked":
     case "rollout.untracked": {
@@ -147,25 +162,6 @@ export function changeOf(
     }
     default:
       return "unknown-change-type";
-  }
-}
-
-/** Áp một phần tử lên snapshot — hàm thuần, idempotent theo từng loại */
-export function applyChange(
-  snapshot: Snapshot,
-  change: SdkStreamChange,
-): Snapshot {
-  switch (change.kind) {
-    case "flag":
-      return {
-        ...snapshot,
-        flags: [
-          ...snapshot.flags.filter((f) => f.key !== change.flag.key),
-          change.flag,
-        ],
-      };
-    case "trackedFlags":
-      return { ...snapshot, trackedFlags: [...change.trackedFlags] };
   }
 }
 

@@ -17,10 +17,7 @@ import {
   sessionState,
   type Target,
 } from "./helpers/fixture.js";
-import {
-  startFlagService,
-  type RunningFlagService,
-} from "./helpers/flag-service.js";
+import { startFlagService, type RunningService } from "@udp/test-support";
 
 /**
  * §6.6, §7.7 [v4.3] — rollout kết thúc thì nhãn `ff` được gỡ, qua Service 2 thật.
@@ -29,7 +26,7 @@ import {
  * những lần gọi hỏng (S2 chết — đúng ca kill-switch) hoặc session đã bị xoá.
  */
 
-let s2: RunningFlagService;
+let s2: RunningService;
 let project: Awaited<ReturnType<typeof newProject>>;
 const DEAD = "http://127.0.0.1:9";
 
@@ -195,7 +192,6 @@ describe("lưới quét theo config", () => {
       db: s3,
       batch: 1,
       executor: {
-        applyTraffic: real.applyTraffic,
         untrack: (configId) =>
           configId === stuck
             ? Promise.resolve({

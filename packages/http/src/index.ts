@@ -21,3 +21,5 @@ export * from "./problem.js";
 export * from "./error-handler.js";
 export * from "./validate.js";
 export * from "./request-logger.js";
+export * from "./uuid.js";
+export * from "./audit.js";

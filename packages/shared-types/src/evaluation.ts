@@ -252,9 +252,16 @@ export function canonicalizeServe(serve: FlagServe): FlagServe {
  * là tự tạo ra một lần ép kiểu ở ranh giới.
  */
 export type ResolutionReason =
-  /** Flag bật, không rule nào khớp, trả default variant của environment */
+  /**
+   * Giá trị tĩnh, không đánh giá động. Lõi của UDP KHÔNG phát reason này [v4.6]:
+   * nó chỉ xuất hiện trên dây OFREP, nơi enum đóng không có DEFAULT — `toOfrep`
+   * ánh xạ DEFAULT ⇒ STATIC (song ánh vì lõi không phát STATIC)
+   */
   | "STATIC"
-  /** Trả default variant của flag (environment chưa cấu hình riêng) */
+  /**
+   * Không rule nào khớp ⇒ variant mặc định. Default của environment và của flag
+   * đã gộp lúc dựng snapshot (§9), nên hai trường hợp là MỘT reason
+   */
   | "DEFAULT"
   /** Một rule khớp và phục vụ MỘT variant */
   | "TARGETING_MATCH"
@@ -273,8 +280,13 @@ export type ResolutionReason =
  * Bốn mã lỗi của tầng đánh giá. Cả bốn đều trả về code default của ứng dụng,
  * nhưng ý nghĩa vận hành hoàn toàn khác nhau (§6.1).
  */
-export type ResolutionErrorCode =
-  "FLAG_NOT_FOUND" | "TYPE_MISMATCH" | "PROVIDER_NOT_READY" | "GENERAL";
+export const RESOLUTION_ERROR_CODES = [
+  "FLAG_NOT_FOUND",
+  "TYPE_MISMATCH",
+  "PROVIDER_NOT_READY",
+  "GENERAL",
+] as const;
+export type ResolutionErrorCode = (typeof RESOLUTION_ERROR_CODES)[number];
 
 /** Thông tin phụ đi kèm mỗi lần đánh giá, dùng để chẩn đoán */
 export interface FlagMetadata {
@@ -296,12 +308,14 @@ export interface FlagMetadata {
 }
 
 /**
- * Kết quả một lần đánh giá flag, theo `ResolutionDetails` của OpenFeature.
+ * Kết quả một lần đánh giá flag PHÍA ỨNG DỤNG, theo `ResolutionDetails` của
+ * OpenFeature — lớp provider (§6.8) dựng nó từ `Evaluation` của lõi bằng cách điền
+ * `codeDefault` khi lõi không trả giá trị.
  *
- * Đây là hợp đồng mà bất biến **I26** kiểm: local evaluation trong SDK và remote
- * evaluation qua OFREP phải trả về giá trị GIỐNG HỆT nhau từng trường cho cùng một
- * context. Điều kiện để I26 đúng bằng cấu trúc là cả hai bên gọi chung một hàm
- * đánh giá, chứ không phải chỉ dùng chung kiểu này.
+ * [v4.6] Mặt phẳng mà **I26** so KHÔNG phải kiểu này mà là `Evaluation`: OFREP
+ * không có `codeDefault` hay kiểu mong đợi, nên chỉ `Evaluation` là chung cho cả
+ * đường local lẫn OFREP. Điều kiện để I26 đúng bằng cấu trúc là cả hai bên gọi
+ * chung một hàm đánh giá, chứ không phải chỉ dùng chung kiểu.
  *
  * `variant` là trường mà đóng góp **C1** phụ thuộc: không có nó thì không gắn được
  * nhãn `ff` vào metric HTTP, và auto-rollback ở tầng flag không có dữ liệu (§6.6).
@@ -313,6 +327,35 @@ export interface ResolutionDetails<T = unknown> {
   errorCode?: ResolutionErrorCode | undefined;
   errorMessage?: string | undefined;
   flagMetadata?: FlagMetadata | undefined;
+}
+
+/** [v4.6] Năm reason mà lõi `@udp/flag-evaluator` phát (§6.5) */
+export const EVALUATION_REASONS = [
+  "TARGETING_MATCH",
+  "SPLIT",
+  "DEFAULT",
+  "DISABLED",
+  "ERROR",
+] as const;
+export type EvaluationReason = (typeof EVALUATION_REASONS)[number];
+
+/**
+ * [v4.6] Kết quả của LÕI đánh giá (§6.5) — thuần, không `codeDefault`.
+ *
+ * `value` và `variant` có mặt ⇔ `reason` ∈ {TARGETING_MATCH, SPLIT, DEFAULT}.
+ * DISABLED và ERROR không mang giá trị: ứng dụng dùng default trong code của nó —
+ * lõi không biết con số đó, và OFREP gửi đúng ý đó bằng `codeDefaultFlag`.
+ */
+export interface Evaluation {
+  reason: EvaluationReason;
+  value?: unknown;
+  variant?: string;
+  errorCode?: ResolutionErrorCode;
+  errorMessage?: string;
+  /** Rule đã khớp — KHÔNG rời server tới trình duyệt (I11) */
+  ruleId?: string;
+  /** Flag đã ARCHIVED, còn bia mộ trong snapshot */
+  archived?: true;
 }
 
 /**

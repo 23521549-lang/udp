@@ -55,10 +55,17 @@ const ENV_EMPTY = U(3);
  * là tuyên bố "hash của mọi environment đang chạy đổi" — SDK sẽ rơi tầng và
  * ngắt mạch ở mọi nơi, nên chỉ được sửa cùng một quyết định có chủ đích như thế.
  */
+/*
+ * [v4.6] Đổi CÓ CHỦ ĐÍCH, một lần (migration `snapshot_format_v46` + script
+ * rehash): segment mang hình chốt `{ all, userIds }` thay cho mảng điều kiện.
+ * Segment gắn theo PROJECT nên CẢ HAI environment đổi hash; flag DRAFT thêm vào
+ * fixture không góp gì (DRAFT không vào snapshot). Mọi giá trị biên khác của
+ * fixture giữ nguyên — phần flag của hai snapshot vẫn là đầu ra của đường cũ.
+ */
 const GOLDEN_DEV =
-  "f44bcc2369dc660991a6920648cf615d02934a1b3ede0153962f69bc736a426c";
+  "9f43be6bf8226c8ca8ea270215559fbb5f44e54b7c5535f28240831a2c0e5f52";
 const GOLDEN_EMPTY =
-  "66eee209a9660bdae3f02531e8f3d315cd4afaa384387ad1bb730c67ea492bed";
+  "00c69e5e95172a5136fc94e63fad4ca69505c6d5f30db4b2018311a74f874e4a";
 
 beforeAll(async () => {
   const owner = await admin.user.findFirstOrThrow({
@@ -97,9 +104,13 @@ beforeAll(async () => {
           {
             id: U(4),
             name: "beta",
-            conditions: [{ attribute: "plan", operator: "eq", value: "beta" }],
+            // [v4.6] Hình chốt; userIds lưu KHÔNG theo thứ tự — builder sắp
+            conditions: {
+              all: [{ attribute: "plan", operator: "eq", value: "beta" }],
+              userIds: ["u-2", "U-3", "u-1"],
+            },
           },
-          { id: U(5), name: "khong", conditions: [] },
+          { id: U(5), name: "khong", conditions: { all: [], userIds: [] } },
         ],
       },
     },
@@ -203,6 +214,22 @@ beforeAll(async () => {
     where: { id: flagC.id },
     data: { defaultVariantId: U(41) },
   });
+
+  // [v4.6] DRAFT: KHÔNG có mặt trong snapshot (§6.7), nên không đổi golden hash
+  await admin.featureFlag.create({
+    data: {
+      id: U(50),
+      projectId: PROJECT,
+      key: "nhap",
+      flagType: "BOOLEAN",
+      lifecycleStatus: "DRAFT",
+      variants: { create: [{ id: U(51), key: "on", value: true }] },
+    },
+  });
+  await admin.featureFlag.update({
+    where: { id: U(50) },
+    data: { defaultVariantId: U(51) },
+  });
 });
 
 afterAll(async () => {
@@ -232,6 +259,15 @@ describe("golden hash — đường mới ra đúng từng byte con số đườ
     };
     expect(at(dev.snapshot.flags)).toBe(2);
     expect(at(empty.snapshot.flags)).toBe(0);
+  });
+
+  it("[v4.6] DRAFT không xuống SDK; chỉ Tester (`includeDrafts`) thấy nó", async () => {
+    const dev = await readEntry(ENV_DEV);
+    expect(dev.snapshot.flags.map((f) => f.key)).not.toContain("nhap");
+    const withDrafts = await snapshotOf(admin, ENV_DEV, {
+      includeDrafts: true,
+    });
+    expect(withDrafts.flags.map((f) => f.key)).toContain("nhap");
   });
 
   it("environment không tồn tại ⇒ ném, không trả snapshot rỗng", async () => {
@@ -437,10 +473,14 @@ describe("snapshotFromRow — hình dạng dây quyết định ở hàm thuần
     expect(() => snapshotFromRow(row)).toThrow(/variant mặc định/);
   });
 
-  it("NÉM khi conditions của segment không phải mảng", () => {
+  it("[v4.6] userIds của segment sắp theo phép so `<` của JS, không theo thứ tự đã lưu", () => {
     const row = baseRow();
-    row.segments = [{ id: U(5), conditions: { not: "array" } }];
-    expect(() => snapshotFromRow(row)).toThrow(/không phải mảng/);
+    row.segments = [
+      { id: U(5), conditions: { all: [], userIds: ["b", "a", "B"] } },
+    ];
+    expect(snapshotFromRow(row).segments).toEqual([
+      { id: U(5), all: [], userIds: ["B", "a", "b"] },
+    ]);
   });
 });
 
@@ -453,6 +493,13 @@ describe("snapshotRowSchema — hàng SQL phải nổ ở đây, không nổ tro
     ).toThrow();
     expect(() =>
       snapshotRowSchema.parse({ ...row, flags: [{ key: "f" }] }),
+    ).toThrow();
+    // [v4.6] Segment hình cũ (mảng) — CHECK của database đã chặn lúc ghi
+    expect(() =>
+      snapshotRowSchema.parse({
+        ...row,
+        segments: [{ id: U(5), conditions: [] }],
+      }),
     ).toThrow();
   });
 

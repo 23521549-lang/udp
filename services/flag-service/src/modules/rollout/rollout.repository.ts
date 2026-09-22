@@ -18,6 +18,8 @@ export interface TrackTarget {
   environmentId: string;
   flagKey: string;
   isTracked: boolean;
+  /** [v4.5] `track` chỉ gắn nhãn cho flag ACTIVE — xem `rollout.service.track` */
+  flagActive: boolean;
 }
 
 export interface SessionConfig {
@@ -46,7 +48,8 @@ export async function trackTargetOf(
     SELECT c.id::text             AS "configId",
            c.environment_id::text AS "environmentId",
            f.key                  AS "flagKey",
-           c.is_tracked           AS "isTracked"
+           c.is_tracked           AS "isTracked",
+           f.lifecycle_status = 'ACTIVE' AS "flagActive"
       FROM flag_env_configs c
       JOIN feature_flags f ON f.id = c.flag_id
      WHERE c.id = ${configId}::uuid`;
@@ -67,10 +70,11 @@ export async function trackedCountOf(
 }
 
 /**
- * Config còn session ĐANG CHẠY không. Hai session cùng flag khác workload chạy
- * song song được (index một-active khoá theo cả `workload_name`), và rollout
- * mới có thể bắt đầu trước khi lệnh untrack của rollout cũ tới — gỡ nhãn lúc đó
- * là tắt dữ liệu của một rollout đang sống.
+ * Config còn session ĐANG CHẠY không. Rollout mới cùng flag có thể bắt đầu
+ * trước khi lệnh untrack của rollout cũ tới — gỡ nhãn lúc đó là tắt dữ liệu của
+ * một rollout đang sống. ([v4.4] mỗi flag tối đa một rollout sống —
+ * `idx_one_active_rollout_per_flag` — nên "rollout khác" ở đây luôn là rollout
+ * KẾ TIẾP, không bao giờ là rollout song song.)
  */
 export async function hasActiveSession(
   db: Db,

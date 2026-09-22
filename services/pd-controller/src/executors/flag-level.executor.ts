@@ -1,5 +1,14 @@
-import { ROLLOUT_EVENT, ROLLOUT_RETRY, TOTAL_BUCKETS } from "@udp/config";
-import { z } from "zod";
+import {
+  INTERNAL_SECRET_HEADER,
+  ROLLOUT_EVENT,
+  ROLLOUT_RETRY,
+  TOTAL_BUCKETS,
+} from "@udp/config";
+import {
+  trackOutcomeOf,
+  trackResultSchema,
+  type TrackOutcome,
+} from "@udp/shared-types";
 import { errorMessage } from "../core/errors.js";
 import type { Weight } from "../rollout-session/target.js";
 import type { Fence } from "../reconciler/fence.js";
@@ -43,8 +52,6 @@ export type UntrackOutcome =
   | { status: "SUCCESS"; changed: boolean }
   | { status: "FAILED"; message: string };
 
-const untrackBodySchema = z.object({ changed: z.boolean() });
-
 export interface FlagLevelExecutor {
   applyTraffic(
     fence: Fence,
@@ -59,6 +66,13 @@ export interface FlagLevelExecutor {
    * 404 ở đây là lỗi thật (sai địa chỉ, S2 bản cũ) và được báo là FAILED.
    */
   untrack(configId: string): Promise<UntrackOutcome>;
+  /**
+   * [v4.4] `POST /internal/rollouts/:id/track` — probe pha 2 gọi lại khi flag của
+   * một session PENDING chưa được gắn nhãn (Service 1 chết giữa INSERT và `track`,
+   * hoặc `track` của nó hết giờ). S2 trả `already-tracked` khi đã có — gọi thừa
+   * vô hại.
+   */
+  track(sessionId: string): Promise<TrackOutcome>;
 }
 
 export interface FlagLevelExecutorOptions {
@@ -117,7 +131,7 @@ export function createFlagLevelExecutor(
             method: "PATCH",
             headers: {
               "content-type": "application/json",
-              "x-internal-secret": options.secret,
+              [INTERNAL_SECRET_HEADER]: options.secret,
               "if-match": fence.ifMatch(),
             },
             body: JSON.stringify({
@@ -152,7 +166,7 @@ export function createFlagLevelExecutor(
           `${baseUrl}/internal/flag-envs/${encodeURIComponent(configId)}/untrack`,
           {
             method: "POST",
-            headers: { "x-internal-secret": options.secret },
+            headers: { [INTERNAL_SECRET_HEADER]: options.secret },
             signal: AbortSignal.timeout(timeoutMs),
           },
         );
@@ -162,11 +176,30 @@ export function createFlagLevelExecutor(
             message: `HTTP ${String(res.status)}: ${await safeText(res)}`,
           };
         }
-        const body = untrackBodySchema.parse(await res.json());
+        const body = trackResultSchema.parse(await res.json());
         return { status: "SUCCESS", changed: body.changed };
       } catch (err: unknown) {
         // Mạng, hết giờ, hay body không đúng hợp đồng — lưới quét thử lại
         return { status: "FAILED", message: errorMessage(err) };
+      }
+    },
+
+    async track(sessionId) {
+      try {
+        const res = await fetchImpl(
+          `${baseUrl}/internal/rollouts/${encodeURIComponent(sessionId)}/track`,
+          {
+            method: "POST",
+            headers: { [INTERNAL_SECRET_HEADER]: options.secret },
+            signal: AbortSignal.timeout(timeoutMs),
+          },
+        );
+        return trackOutcomeOf(
+          res.status,
+          await res.json().catch(() => undefined),
+        );
+      } catch (err: unknown) {
+        return { status: "UNAVAILABLE", message: errorMessage(err) };
       }
     },
   };

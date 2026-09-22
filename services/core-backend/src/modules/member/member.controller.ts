@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import { ValidationError } from "@udp/http";
+import { uuidParam } from "@udp/http";
 import { asyncHandler } from "@udp/http";
 import { requireAuth } from "../../core/http/middlewares/auth.middleware.js";
 import {
@@ -25,16 +25,9 @@ import {
  */
 export const memberRouter: Router = Router({ mergeParams: true });
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** §9 khoá thành viên theo `:userId`, không phải theo id của hàng ProjectMember */
-function userIdParam(req: Request): string {
-  const raw = req.params["userId"];
-  if (raw === undefined || !UUID.test(raw)) {
-    throw new ValidationError("userId không hợp lệ");
-  }
-  return raw;
-}
+const userIdParam = (req: Request): string =>
+  uuidParam(req, "userId", "userId không hợp lệ");
 
 memberRouter.get(
   "/members",

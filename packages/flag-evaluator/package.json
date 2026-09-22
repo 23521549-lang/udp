@@ -11,15 +11,20 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e7": "tsx scripts/e7-distribution.ts",
+    "bench": "tsx scripts/bench-evaluate.ts"
   },
   "dependencies": {
     "@udp/config": "workspace:^",
     "@udp/shared-types": "workspace:^",
-    "murmurhash3js": "^3.0.1"
+    "murmurhash3js": "^3.0.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/murmurhash3js": "^3.0.7",
+    "fast-check": "^3.23.2",
+    "tsx": "^4.19.1",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   }

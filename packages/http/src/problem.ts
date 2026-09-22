@@ -53,6 +53,8 @@ export interface BuildProblemInput {
   typeSlug?: string;
   /** Chỉ với `OPTIMISTIC_LOCK`: bản mới nhất để hiển thị diff (§8.4) */
   current?: unknown;
+  /** Id của tài nguyên đang giữ chỗ gây xung đột [v4.4] */
+  resourceId?: string;
 }
 
 /**
@@ -73,6 +75,7 @@ export function buildProblem({
   suggestedAction,
   typeSlug = "about:blank",
   current,
+  resourceId,
 }: BuildProblemInput): ProblemDetails {
   const resolvedTitle = title ?? (code ? ERROR_CATALOG[code].title : "Error");
 
@@ -86,6 +89,7 @@ export function buildProblem({
     ...(errors === undefined ? {} : { errors }),
     ...(suggestedAction === undefined ? {} : { suggestedAction }),
     ...(current === undefined ? {} : { current }),
+    ...(resourceId === undefined ? {} : { resourceId }),
     traceId: traceIdOf(req),
   };
 }

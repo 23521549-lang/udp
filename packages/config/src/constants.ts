@@ -31,6 +31,14 @@ const PROJECT_ID_SUFFIX_LENGTH = 6;
 const DNS_1123_LABEL = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
 /**
+ * Tên DNS-1123 subdomain (tối đa 253, các nhãn nối bằng dấu chấm) — dạng tên của
+ * Deployment/Service Kubernetes, tức `workload_name` của rollout (cột
+ * `VARCHAR(253)`, §2.2) và nhãn `service_name` mà mọi truy vấn §7.4 lọc theo.
+ */
+export const DNS_1123_SUBDOMAIN =
+  /^(?=.{1,253}$)[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
+
+/**
  * Bỏ dấu tiếng Việt rồi rút về nhãn DNS-1123.
  *
  * `normalize("NFD")` tách nguyên âm khỏi dấu thanh để `\p{M}` xoá được phần
@@ -133,6 +141,33 @@ export const STALE_FLAG_THRESHOLDS = {
   deleteGuardDays: 7,
 } as const;
 
+/**
+ * [v4.6] Giới hạn của điều kiện targeting (§6.5) — MỘT bộ số cho schema GHI
+ * (S2 từ chối lúc lưu) và lõi ĐÁNH GIÁ (SDK, OFREP). Mỗi số chặn một kiểu tốn
+ * kém: danh sách `in` dài là bộ nhớ của Set dựng sẵn; pattern và chuỗi đem so
+ * regex dài là CPU của một endpoint công khai (OFREP) — JS không có timeout cho
+ * regex, nên trần độ dài chuỗi đầu vào là lớp chặn cuối cùng lúc đánh giá.
+ */
+export const CONDITION_LIMITS = {
+  attributeMaxLength: 100,
+  conditionsPerRule: 20,
+  inValuesMax: 1000,
+  stringValueMax: 256,
+  regexPatternMax: 200,
+  /** Chuỗi ngữ cảnh dài hơn ⇒ `regex` trả false, không chạy */
+  regexInputMax: 256,
+  /**
+   * Số pattern `regex` KHÁC NHAU tối đa trong một lần ghi. Mỗi pattern là tới
+   * `regexCheckTimeoutMs` phân tích ReDoS ở Service 2 (trong worker, không chặn
+   * event loop) — trần này giữ tổng thời gian dưới hạn chờ 30 s của Service 1.
+   */
+  regexPatternsPerWrite: 20,
+  /** Hạn phân tích ReDoS cho MỘT pattern; hết hạn ⇒ từ chối như `vulnerable` */
+  regexCheckTimeoutMs: 1_000,
+  userIdsMax: 10_000,
+  userIdMaxLength: 256,
+} as const;
+
 // ============================================================
 // Progressive delivery (Design v4 §7)
 // ============================================================
@@ -196,6 +231,27 @@ export const ROLLOUT_TIMING = {
   untrackSweepMs: 30_000,
   /** Số flag tối đa mỗi lượt quét — trần 3 flag/environment nên lượt thường rất nhỏ */
   untrackSweepBatch: 50,
+  /**
+   * [v4.4] Probe pha 2 (§7.4): session PENDING chờ nhãn `ff` của flag xuất hiện
+   * tối đa chừng này kể từ lúc tạo. Quá hạn ⇒ FAILED/EXPIRED kèm lý do "không thấy
+   * nhãn" — không thì một app thiếu hook giữ một chỗ trong trần 3 flag và chỗ của
+   * target suốt `maxDurationSeconds` (24 giờ) mà người dùng không biết vì sao.
+   */
+  labelWaitSeconds: 900,
+} as const;
+
+/**
+ * [v4.4] Tạo rollout ở Service 1 (§8.5). S1 đang giữ request của người dùng nên
+ * chờ `track` ngắn hơn executor của S3.
+ *
+ * `birthLeaseSeconds` — lease khai sinh S1 đặt lúc INSERT: S3 không claim được
+ * session trong cửa sổ `track`, nên bù trừ (xoá session khi `track` thất bại) chắc
+ * chắn không đụng thứ S3 đã chạm. PHẢI lớn hơn `trackTimeoutMs` cộng biên cho hai
+ * round trip database.
+ */
+export const ROLLOUT_CREATE = {
+  trackTimeoutMs: 5_000,
+  birthLeaseSeconds: 20,
 } as const;
 
 /**
@@ -272,13 +328,21 @@ export const METRICS_PROVIDER = {
   defaultScrapeLagSeconds: 15,
   queryTimeoutMs: 5_000,
   scrapeLagRefreshMs: 300_000,
+  /**
+   * [v4.4] Cửa sổ của `probe()`: series phải TĂNG trong khoảng này, không chỉ tồn
+   * tại. Counter trong process giữ series của rollout trước tới khi pod restart;
+   * "tồn tại" vì thế không chứng minh nhãn đang được sinh. 5 phút để app dev ít
+   * traffic vẫn qua.
+   */
+  probeWindowSeconds: 300,
 } as const;
 
 /**
  * Status mà một `RolloutSession` còn "sống" — vị từ DUY NHẤT, dùng ở mọi nơi.
  *
- * Đúng tập của truy vấn giành lease (§7.1) và của hai partial index trên
- * `rollout_sessions` (§2.2). Ba giá trị, không phải hai, vì mỗi giá trị đã từng là một
+ * Đúng tập của truy vấn giành lease (§7.1) và của các partial index trên
+ * `rollout_sessions` (§2.2): `idx_one_active_rollout_per_target`, và [v4.4]
+ * `idx_one_active_rollout_per_flag`. Ba giá trị, không phải hai, vì mỗi giá trị đã từng là một
  * lỗi thật:
  *
  *   - `PENDING`: bước ramp ĐẦU TIÊN gửi PATCH sang Service 2 lúc session còn
@@ -290,7 +354,7 @@ export const METRICS_PROVIDER = {
  *     đúng lỗi đó ở phía bên kia: rollback một rollout đang tạm dừng bị chặn.
  *
  * Một danh sách, không phải hai: lỗi v3 sinh ra đúng từ hai danh sách trôi khỏi
- * nhau. Ba chỗ SQL kia không import được hằng số TypeScript, nên chú thích này là
+ * nhau. Các chỗ SQL kia không import được hằng số TypeScript, nên chú thích này là
  * nơi trỏ tới chúng.
  */
 /**
@@ -418,6 +482,49 @@ export const COOKIE_NAMES = {
 
 export const CSRF_HEADER = "X-CSRF-Token";
 
+/**
+ * Header mang bí mật dùng chung của lời gọi `/internal/*` (§9 "mTLS hoặc shared
+ * secret"). Một tên cho bên nhận (S2) và mọi bên gọi (S1, S3) — gõ lệch một bên
+ * là 401 im lặng.
+ */
+export const INTERNAL_SECRET_HEADER = "X-Internal-Secret";
+
+/**
+ * [v4.5] Ngữ cảnh người dùng mà Service 1 chuyển tiếp cho lời gọi `/internal/*`
+ * ghi cấu hình: ai (id user đã xác thực ở S1) và từ đâu (IP, UA của CHÍNH người
+ * dùng, không phải của S1). Service 2 ghi chúng vào `audit_logs` trong transaction
+ * của nó. Chỉ tin sau khi lời gọi đã qua bí mật nội bộ — bên giữ bí mật giả được
+ * cả ba (§12).
+ */
+export const ACTOR_HEADER = "X-Udp-Actor-Id";
+export const CLIENT_IP_HEADER = "X-Udp-Client-Ip";
+export const CLIENT_UA_HEADER = "X-Udp-User-Agent";
+
+/**
+ * [v4.5] Hạn chờ lời gọi GHI cấu hình từ S1 sang S2: PHẢI dài hơn ngân sách
+ * transaction của `writeWithOutbox` (20 s + 5 s chờ khe) — ngắn hơn thì S1 trả
+ * 503 trong khi S2 vẫn commit, và người dùng thử lại gặp DUPLICATE.
+ */
+export const INTERNAL_CALL = {
+  configWriteTimeoutMs: 30_000,
+  /**
+   * [v4.6] Lời gọi CHỈ ĐỌC (Flag Evaluation Tester): không có transaction nào để
+   * chờ commit, nên hạn chờ ngắn — người dùng đang đứng trước Portal.
+   */
+  readTimeoutMs: 10_000,
+} as const;
+
+/**
+ * Khoảng của kiểu INTEGER (int4) trong PostgreSQL.
+ *
+ * Mọi con số đi từ dây xuống một cột int4 — `config_version`, `RolloutSession.version`,
+ * `priority` — phải bị chặn ở ranh giới HTTP: lọt xuống Postgres thì nó ném `22003`
+ * và thành 500 thay vì 400. Một chỗ khai cho mọi nơi kiểm [v4.5: dời từ Service 2
+ * khi schema rule thành hợp đồng dùng chung].
+ */
+export const INT4_MIN = -2_147_483_648;
+export const INT4_MAX = 2_147_483_647;
+
 /** Giới hạn tần suất cho endpoint nhạy cảm — chống dò mật khẩu */
 export const RATE_LIMIT = {
   auth: { windowMs: 15 * 60_000, max: 20 },
@@ -465,7 +572,42 @@ export const RATE_LIMIT = {
      * polling (§6.3). Đếm theo replica, nên trần thực tế nhân theo số replica (§16).
      */
     maxStreamsPerKey: 1000,
+    /**
+     * [v4.6] OFREP: trần theo IP ĐỨNG TRƯỚC trần (khoá, IP) và trước bước tra khoá.
+     * Trục (khoá, IP) băm nguyên header `Authorization`, nên mỗi token rác là một
+     * bucket mới — mà vẫn tốn một lần tra database. Trục IP chặn đúng ca đó:
+     * 1 200/phút gấp đôi trần của một khoá hợp lệ, đủ cho một NAT văn phòng.
+     */
+    ofrepPerIp: { windowMs: 60_000, max: 1200 },
   },
+} as const;
+
+/**
+ * [v4.6] OFREP — đánh giá từ xa cho CLIENT key (§6.2, ADR-03). Endpoint công
+ * khai (khoá CLIENT nằm trong trình duyệt), nên mọi trần là trần của CPU/bộ nhớ
+ * mà một người lạ tiêu được.
+ */
+export const OFREP = {
+  /** Parser RIÊNG của `/ofrep`, mount trước parser 1 MB toàn cục */
+  bodyLimit: "16kb",
+  /** Số thuộc tính cấp một của context */
+  maxContextKeys: 50,
+  /** Độ dài tối đa của một giá trị chuỗi trong context */
+  maxContextString: 1024,
+  /**
+   * Kết quả bulk đã đánh giá, theo (env, configVersion, ngữ nghĩa evaluator, hash
+   * context), mỗi replica. Có trần: khoá do người lạ quyết định, không trần là
+   * rò bộ nhớ theo số context khác nhau họ gửi.
+   */
+  resultCacheEntries: 10_000,
+  /**
+   * Trần BYTE của cùng cache đó — số mục thôi không đủ: một mục là kết quả của
+   * MỌI flag trong project, và project không có trần số flag (QA code Plan #20:
+   * 10 000 mục × 200 flag ≈ 250 MB).
+   */
+  resultCacheBytes: 32 * 1024 * 1024,
+  /** Preflight CORS được trình duyệt nhớ bao lâu */
+  corsMaxAgeSeconds: 600,
 } as const;
 
 // ============================================================
@@ -509,6 +651,41 @@ export const SSE = {
    * `server.close()` chờ theo tới lúc thoát cưỡng bức.
    */
   closeGraceMs: 1_000,
+} as const;
+
+/**
+ * [v4.7] `@udp/openfeature-provider` (§6.8) — giá trị mặc định của provider chạy
+ * trong ỨNG DỤNG CỦA KHÁCH. Chu kỳ polling và ngưỡng rơi về polling dùng chung
+ * `SSE` ở trên; đây là phần riêng của provider.
+ */
+export const PROVIDER = {
+  /**
+   * `initialize()` chờ snapshot đầu tới chừng này rồi NÉM (SDK phát ERROR, app vẫn
+   * chạy với default) — provider vẫn thử nền và phát READY khi có. Thiết kế cũ
+   * ghi "N lần thử" mà không cho N; một hạn thời gian mới đo được.
+   */
+  initTimeoutMs: 10_000,
+  /** Không xác nhận được cấu hình còn tươi quá chừng này ⇒ STALE (fail-static) */
+  staleAfterSeconds: 300,
+  /**
+   * Stream rỗi quá `heartbeatMs × hệ số` (không một byte nào, kể cả nhịp tim) ⇒
+   * coi là hỏng: kết nối nửa mở (mạng bị chặn giữa đường) không bao giờ tự báo lỗi.
+   */
+  heartbeatTimeoutFactor: 2.5,
+  /** Backoff nối lại stream: bắt đầu từ đây, nhân đôi, trần là chu kỳ polling */
+  reconnectBackoffMinMs: 1_000,
+  /**
+   * Hạn của MỘT lần `GET /sdk/config` (bootstrap, poll, thử lại khi 401) — nhỏ hơn
+   * `initTimeoutMs`: server nhận kết nối rồi im (event loop bị chặn, proxy nuốt byte)
+   * không được treo cả vòng đồng bộ tới `headersTimeout` 300 giây của undici, và
+   * bootstrap treo phải kịp nhường cho stream không con trỏ trước khi init hết hạn.
+   */
+  configRequestTimeoutMs: 5_000,
+  /**
+   * Trần độ dài MỘT dòng SSE (ký tự). Snapshot là một dòng `data:`; không trần thì
+   * một stream hỏng không bao giờ xuống dòng giữ bộ nhớ của ứng dụng khách vô hạn.
+   */
+  maxSseLineChars: 64 * 1024 * 1024,
 } as const;
 
 // ============================================================
@@ -600,6 +777,12 @@ export const REDACTED_KEY_PATTERNS = [
   /.+key$/i,
   /** Mọi thứ bắt đầu bằng "encrypted" là ciphertext: encryptedPayload, encryptedDek */
   /^encrypted/i,
+  /**
+   * [v4.5] `bucketSalt` của rule: không phải credential, nhưng biết nó là tính
+   * trước được người dùng nào rơi vào nhóm nào. Các view đã bỏ nó; đây là lớp
+   * phòng thủ thứ hai cho `before`/`after` của audit và `current` của 409.
+   */
+  /salt/i,
 ] as const;
 
 /**

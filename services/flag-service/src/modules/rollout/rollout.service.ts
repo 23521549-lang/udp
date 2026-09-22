@@ -1,11 +1,11 @@
 import { MAX_TRACKED_FLAGS_PER_ENV } from "@udp/config";
 import type { Prisma } from "@udp/db";
 import { trackedStateOf } from "@udp/flag-snapshot";
+import type { TrackResult } from "@udp/shared-types";
 import { ConflictError, NotFoundError } from "@udp/http";
 import { prisma } from "../../core/db.js";
 import { writeConfigChange } from "../../core/outbox.js";
 import * as repository from "./rollout.repository.js";
-import type { TrackResult } from "./rollout.types.js";
 
 /**
  * Gắn/gỡ nhãn `ff` cho flag của một rollout FLAG_LEVEL (§6.6, §9 [v4.3]).
@@ -114,8 +114,17 @@ export async function track(sessionId: string): Promise<TrackResult> {
     target,
     true,
     async (tx, fresh) => {
-      if (fresh.isTracked)
-        throw new NoChange(unchanged(fresh, "already-tracked"));
+      // [v4.5] Dưới khoá env: một lần archive (cũng khoá env) không chen giữa được.
+      // S1 kiểm lifecycle NGOÀI khoá lúc tạo rollout; chốt thật nằm ở đây. Hai chốt
+      // (flag ACTIVE, session còn chạy) đứng TRƯỚC lối tắt "đã gắn nhãn":
+      // `is_tracked` còn true sau khi rollout trước kết thúc (S3 chưa untrack) là
+      // trạng thái bình thường, và lối tắt đó từng trả SUCCESS cho rollout mới trên
+      // một flag vừa bị lưu trữ.
+      if (!fresh.flagActive) {
+        throw new ConflictError(
+          "Flag không còn ACTIVE — không gắn nhãn cho một flag đã lưu trữ hay chưa kích hoạt",
+        );
+      }
       const session = await repository.sessionConfigOf(tx, sessionId);
       if (session === null) throw new NotFoundError(NOT_FOUND);
       if (!session.active) {
@@ -123,6 +132,8 @@ export async function track(sessionId: string): Promise<TrackResult> {
           "Rollout đã kết thúc — không gắn nhãn cho một rollout không còn chạy",
         );
       }
+      if (fresh.isTracked)
+        throw new NoChange(unchanged(fresh, "already-tracked"));
       const count = await repository.trackedCountOf(tx, fresh.environmentId);
       if (count >= MAX_TRACKED_FLAGS_PER_ENV) {
         throw new ConflictError(

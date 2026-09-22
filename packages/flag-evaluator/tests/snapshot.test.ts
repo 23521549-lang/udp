@@ -134,8 +134,8 @@ describe("sắp xếp", () => {
     const normalized = normalizeSnapshot(
       snapshot({
         segments: [
-          { id: "s-z", conditions: [] },
-          { id: "s-a", conditions: [] },
+          { id: "s-z", all: [], userIds: ["u1"] },
+          { id: "s-a", all: [], userIds: ["u1"] },
         ],
         trackedFlags: ["zebra", "alpha"],
       }),
@@ -260,7 +260,7 @@ describe("hash phản ứng với mọi trường có nghĩa", () => {
      */
     expect(configHashOf(snapshot({ segments: [] }))).not.toBe(
       configHashOf(
-        snapshot({ segments: [{ id: "s-1", conditions: [{ k: "v" }] }] }),
+        snapshot({ segments: [{ id: "s-1", all: [{ k: "v" }], userIds: [] }] }),
       ),
     );
   });

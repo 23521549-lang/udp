@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/src/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "rehash": "tsx src/scripts/rehash-config.ts"
   },
   "dependencies": {
     "@udp/config": "workspace:*",
@@ -21,11 +22,14 @@
     "express": "^4.21.2",
     "express-rate-limit": "^7.4.1",
     "helmet": "^8.0.0",
+    "recheck": "^4.5.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/supertest": "^6.0.2",
+    "@udp/test-support": "workspace:*",
+    "fast-check": "^3.23.2",
     "pino-pretty": "^11.3.0",
     "supertest": "^7.0.0",
     "tsx": "^4.19.2",

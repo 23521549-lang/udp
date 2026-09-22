@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { env } from "@udp/config";
+import { ACTOR_HEADER, env } from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import { configHashOf, type Snapshot } from "@udp/flag-evaluator";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { stableOwner } from "./helpers/fixture.js";
+import { createActiveFlag, stableOwner } from "@udp/test-support";
 import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
 
 /**
@@ -16,6 +16,8 @@ import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
  * hình, và một variant của flag khác bị database chặn mà không để lại dấu vết.
  */
 
+/** User có thật (FK của audit và outbox) — route ghi của S2 bắt buộc actor [v4.5] */
+let actorId = "";
 const app = createApp();
 const SECRET = env.INTERNAL_SERVICE_SECRET;
 
@@ -37,14 +39,12 @@ let flagKey: string;
 let variantIdOf: Record<string, string>;
 let foreignVariantId: string;
 
-const createFlag = (key: string): request.Test =>
-  request(app)
-    .post("/internal/flags")
-    .set("X-Internal-Secret", SECRET)
-    .send({ projectId, key, flagType: "BOOLEAN" });
+const createFlag = (key: string): Promise<request.Response> =>
+  createActiveFlag(app, actorId, { projectId, key, flagType: "BOOLEAN" });
 
 beforeAll(async () => {
   const owner = await stableOwner(admin);
+  actorId = owner.id;
   const suffix = randomUUID().slice(0, 8);
 
   const project = await admin.project.create({
@@ -73,7 +73,7 @@ beforeAll(async () => {
   prodEnv = envIds[1]!;
 
   flagKey = `toggle-${suffix}`;
-  const created = await createFlag(flagKey).expect(201);
+  const created = await createFlag(flagKey);
   flagId = created.body.flag.id as string;
   variantIdOf = Object.fromEntries(
     (created.body.flag.variants as { id: string; key: string }[]).map((v) => [
@@ -83,7 +83,7 @@ beforeAll(async () => {
   );
 
   // Một flag KHÁC, chỉ để lấy một variant không thuộc `flagId`
-  const other = await createFlag(`other-${suffix}`).expect(201);
+  const other = await createFlag(`other-${suffix}`);
   foreignVariantId = (other.body.flag.variants as { id: string }[])[0]!.id;
 });
 
@@ -93,6 +93,7 @@ afterAll(async () => {
     await admin.configChangeLog.deleteMany({
       where: { environmentId: { in: envIds } },
     });
+    await admin.auditLog.deleteMany({ where: { projectId: projectId } });
     await admin.project.delete({ where: { id: projectId } });
   }
   await admin.$disconnect();
@@ -120,6 +121,7 @@ const patch = (id: string, body: object): request.Test =>
   request(app)
     .patch(`/internal/flag-envs/${id}`)
     .set("X-Internal-Secret", SECRET)
+    .set(ACTOR_HEADER, actorId)
     .send(body);
 
 const entryOf = (snapshot: Snapshot, key: string) => {

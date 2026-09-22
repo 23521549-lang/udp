@@ -1,5 +1,5 @@
 import { ValidationError } from "@udp/http";
-import { INT4_MAX } from "../../core/int4.js";
+import { INT4_MAX } from "@udp/config";
 
 /**
  * Fencing token của I23 — `If-Match: "<sessionId>:<version>"` (§7.3, §9).
@@ -40,7 +40,7 @@ const TOKEN =
  *
  * Theo HTTP, request không có `If-Match` là ghi vô điều kiện — đúng thứ fencing
  * sinh ra để cấm. 428 (Precondition Required) nói điều đó chính xác hơn nhưng
- * không có trong catalog 21 mã của §9; một request thiếu header bắt buộc là
+ * không có trong catalog mã lỗi của §9; một request thiếu header bắt buộc là
  * request sai hình dạng, và 400 nói đúng điều đó.
  */
 export function parseFencingToken(header: string | undefined): FencingToken {

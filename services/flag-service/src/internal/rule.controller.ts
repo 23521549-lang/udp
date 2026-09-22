@@ -1,7 +1,9 @@
 import { Router } from "express";
-import { asyncHandler, validateBody } from "@udp/http";
-import { actorOf, requireInternalCaller } from "../auth/internal-auth.guard.js";
-import { uuidParam } from "../core/uuid.js";
+import { asyncHandler, uuidParam, validateBody } from "@udp/http";
+import {
+  auditContextOf,
+  requireInternalCaller,
+} from "../auth/internal-auth.guard.js";
 import { parseFencingToken } from "../modules/rule/fencing.js";
 import * as rampService from "../modules/rule/ramp.service.js";
 import * as ruleService from "../modules/rule/rule.service.js";
@@ -28,7 +30,7 @@ internalRuleRouter.put(
     const result = await ruleService.replaceRules(
       uuidParam(req, "id", "Mã cấu hình flag theo environment không hợp lệ"),
       req.body,
-      actorOf(req),
+      auditContextOf(req),
     );
     res.json(result);
   }),
@@ -38,7 +40,7 @@ internalRuleRouter.put(
  * Bóc `If-Match` TRƯỚC khi chạm database, cùng lý do với kiểm UUID: token sai
  * dạng là request sai hình dạng (400), không phải một lần fencing thất bại (412).
  *
- * Không có `actorOf(req)`: lần ghi này không của người dùng nào (§2.2).
+ * Không có `auditContextOf(req)`: lần ghi này không của người dùng nào (§2.2).
  */
 internalRuleRouter.patch(
   "/rules/:ruleId",

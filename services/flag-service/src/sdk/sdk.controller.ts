@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { etagOf } from "@udp/flag-evaluator";
 import {
   asyncHandler,
   buildProblem,
@@ -9,7 +10,7 @@ import { sdkPerKeyLimiter, sdkStreamOpenLimiter } from "../auth/rate-limit.js";
 import { requireSdkKey, sdkKeyOf } from "../auth/sdk-key.guard.js";
 import { configCache } from "../changefeed/index.js";
 import { sdkConfigBody } from "./config-body.js";
-import { CONFIG_CACHE_HEADERS, etagOf } from "./config-version.js";
+import { CONFIG_CACHE_HEADERS } from "./config-version.js";
 import { sseHub } from "./index.js";
 import { parseCursor } from "./sse.protocol.js";
 

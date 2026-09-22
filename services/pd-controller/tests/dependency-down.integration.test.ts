@@ -9,7 +9,7 @@ import {
 } from "../src/executors/kill-switch.js";
 import { Fence } from "../src/reconciler/fence.js";
 import { updateIfVersion } from "../src/rollout-session/session.repository.js";
-import { s3, testController } from "./helpers/controller.js";
+import { s3, seedLabel, testController } from "./helpers/controller.js";
 import {
   admin,
   dropProject,
@@ -22,7 +22,7 @@ import {
   sessionState,
   type Target,
 } from "./helpers/fixture.js";
-import { startFlagService } from "./helpers/flag-service.js";
+import { startFlagService } from "@udp/test-support";
 
 /**
  * §7.6, I30 phần (a) — Service 2 không phản hồi khi cần rollback: thử lại tới
@@ -384,6 +384,7 @@ describe("I30(a) — kill-switch khi Service 2 chết", () => {
             message: "HTTP 422: rule sai",
           }),
         untrack: () => Promise.resolve({ status: "SUCCESS", changed: false }),
+        track: () => Promise.resolve({ status: "SUCCESS", changed: false }),
       },
       killSwitch: {
         apply: () => {
@@ -423,6 +424,7 @@ describe("I30(a) — kill-switch khi Service 2 chết", () => {
     const target = await newTarget(project, 0);
     const id = await newSession(target, { stepPercent: 10 });
     const c = testController(DEAD);
+    seedLabel(c.provider, target.flagKey);
     await c.reconciler.reconcileOne(id);
     const state = await sessionState(id);
     expect(state.status).toBe("PENDING");

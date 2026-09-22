@@ -129,47 +129,110 @@ describe("truy vấn tức thời", () => {
 });
 
 describe("probe", () => {
-  it("sẵn sàng + có series theo flagKey + scrape interval lớn nhất từ targets", async () => {
+  const targets = {
+    status: 200,
+    body: JSON.stringify({
+      status: "success",
+      data: {
+        activeTargets: [
+          { health: "up", scrapeInterval: "15s" },
+          { health: "up", scrapeInterval: "1m" },
+        ],
+      },
+    }),
+  };
+
+  it("pha 2: lưu lượng theo flagKey; scrape interval đo trên chính workload", async () => {
+    const queries: string[] = [];
     handler = (url) => {
       if (url.pathname === "/-/ready") return { status: 200, body: "ready" };
       if (url.pathname === "/api/v1/query") {
-        expect(url.searchParams.get("query")).toContain('ff=~"f=.*"');
-        return { status: 200, body: vector(["4"]) };
-      }
-      if (url.pathname === "/api/v1/targets") {
+        const query = url.searchParams.get("query") ?? "";
+        queries.push(query);
         return {
           status: 200,
-          body: JSON.stringify({
-            status: "success",
-            data: {
-              activeTargets: [
-                { health: "up", scrapeInterval: "15s" },
-                { health: "up", scrapeInterval: "1m" },
-              ],
-            },
-          }),
+          // 21 mẫu trong 300s = 20 khoảng ⇒ 15s
+          body: vector([query.includes("count_over_time") ? "21" : "4"]),
         };
       }
-      return undefined;
+      return url.pathname === "/api/v1/targets" ? targets : undefined;
     };
     const result = await provider().probe(target);
     expect(result.status).toBe("SUCCESS");
     expect(result.data).toEqual({
       reachable: true,
       hasSeries: true,
-      scrapeIntervalSec: 60,
+      queryFailed: false,
+      scrapeIntervalSec: 15,
+      scrapeIntervalSource: "workload",
     });
+    expect(queries[0]).toContain('ff=~"f=.*"');
+    expect(queries[0]).toContain("increase(");
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("workload chưa đủ mẫu ⇒ scrape interval lấy số lớn nhất của targets, ghi nguồn global", async () => {
+    handler = (url) => {
+      if (url.pathname === "/-/ready") return { status: 200, body: "ready" };
+      if (url.pathname === "/api/v1/query") {
+        const query = url.searchParams.get("query") ?? "";
+        return {
+          status: 200,
+          body: vector(query.includes("count_over_time") ? [] : ["1"]),
+        };
+      }
+      return url.pathname === "/api/v1/targets" ? targets : undefined;
+    };
+    const result = await provider().probe(target);
+    expect(result.data).toMatchObject({
+      scrapeIntervalSec: 60,
+      scrapeIntervalSource: "global",
+    });
+  });
+
+  it("series trẻ hơn cửa sổ (pod vừa deploy) ⇒ chặn trên bằng số global, không phóng đại", async () => {
+    handler = (url) => {
+      if (url.pathname === "/-/ready") return { status: 200, body: "ready" };
+      if (url.pathname === "/api/v1/query") {
+        const query = url.searchParams.get("query") ?? "";
+        // 2 mẫu ⇒ 300s nếu tin workload; targets nói lớn nhất là 15s
+        return {
+          status: 200,
+          body: vector([query.includes("count_over_time") ? "2" : "1"]),
+        };
+      }
+      return url.pathname === "/api/v1/targets"
+        ? {
+            status: 200,
+            body: JSON.stringify({
+              status: "success",
+              data: {
+                activeTargets: [{ health: "up", scrapeInterval: "15s" }],
+              },
+            }),
+          }
+        : undefined;
+    };
+    const result = await provider().probe(target);
+    expect(result.data).toMatchObject({
+      scrapeIntervalSec: 15,
+      scrapeIntervalSource: "global",
+    });
   });
 
   it("không tới được ⇒ FAILED, reachable=false", async () => {
     handler = () => undefined;
     const result = await provider().probe(target);
     expect(result.status).toBe("FAILED");
-    expect(result.data).toEqual({ reachable: false, hasSeries: false });
+    expect(result.data).toEqual({
+      reachable: false,
+      hasSeries: false,
+      queryFailed: false,
+      scrapeIntervalSource: "assumed",
+    });
   });
 
-  it("sẵn sàng nhưng không có series ⇒ hasSeries=false", async () => {
+  it("sẵn sàng nhưng không có lưu lượng ⇒ hasSeries=false, không phải lỗi", async () => {
     handler = (url) =>
       url.pathname === "/-/ready"
         ? { status: 200, body: "ready" }
@@ -177,8 +240,30 @@ describe("probe", () => {
           ? { status: 200, body: vector([]) }
           : undefined;
     const result = await provider().probe(target);
-    expect(result.data).toMatchObject({ reachable: true, hasSeries: false });
+    expect(result.status).toBe("SUCCESS");
+    expect(result.data).toMatchObject({
+      reachable: true,
+      hasSeries: false,
+      queryFailed: false,
+      scrapeIntervalSource: "assumed",
+    });
     expect(result.data?.scrapeIntervalSec).toBeUndefined();
+  });
+
+  it("sống nhưng truy vấn hỏng (5xx) ⇒ queryFailed — khác với không có series", async () => {
+    handler = (url) =>
+      url.pathname === "/-/ready"
+        ? { status: 200, body: "ready" }
+        : url.pathname === "/api/v1/query"
+          ? { status: 503, body: "overloaded" }
+          : undefined;
+    const result = await provider().probe(target);
+    expect(result.status).toBe("FAILED");
+    expect(result.data).toMatchObject({
+      reachable: true,
+      hasSeries: false,
+      queryFailed: true,
+    });
   });
 });
 

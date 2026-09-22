@@ -37,7 +37,9 @@ export type {
 export { ERROR_CATALOG } from "./problem.js";
 
 export type {
+  Evaluation,
   EvaluationContext,
+  EvaluationReason,
   FlagMetadata,
   FlagServe,
   FlagServeWire,
@@ -46,6 +48,8 @@ export type {
   ResolutionReason,
 } from "./evaluation.js";
 export {
+  EVALUATION_REASONS,
+  RESOLUTION_ERROR_CODES,
   canonicalizeServe,
   distributionWeightsDbSchema,
   flagServeDbSchema,
@@ -56,11 +60,28 @@ export {
 
 export type { AdapterOperationStatus, AdapterResult } from "./adapter.js";
 export {
+  canaryPairOf,
+  DECISIONS,
+  INTENT_ACTIONS,
+  decisionSchema,
   metricQueriesSchema,
+  metricSnapshotSchema,
   PROMETHEUS_METRIC_NAME,
   rolloutThresholdsSchema,
+  trackOutcomeOf,
+  trackResultSchema,
 } from "./rollout.js";
-export type { MetricQueries, RolloutThresholds } from "./rollout.js";
+export type {
+  CanaryPair,
+  Decision,
+  DecisionKind,
+  IntentAction,
+  MetricQueries,
+  MetricSnapshot,
+  RolloutThresholds,
+  TrackOutcome,
+  TrackResult,
+} from "./rollout.js";
 export type { ConfigChangeNotice, ConfigChangeType } from "./change-feed.js";
 
 export { FLAG_TYPES, FLAG_VALUE_SCHEMAS } from "./flag-value.js";
@@ -68,10 +89,39 @@ export { FLAG_TYPES, FLAG_VALUE_SCHEMAS } from "./flag-value.js";
 export type { RuleType } from "./condition.js";
 export {
   ATTRIBUTE_OPERATORS,
+  attributeConditionSchema,
+  compareSemver,
   conditionIssue,
   conditionSchemas,
+  parseSemver,
+  readAttributeConditionSchema,
+  readConditionSchemas,
+  readSegmentConditionsSchema,
+  regexSyntaxIssue,
+  segmentConditionsSchema,
   RULE_TYPES,
 } from "./condition.js";
+export type {
+  AttributeCondition,
+  AttributeOperator,
+  SegmentConditions,
+  Semver,
+} from "./condition.js";
+export {
+  evaluationContextSchema,
+  ofrepContextIssue,
+  ofrepRequestSchema,
+} from "./ofrep.js";
+export type {
+  OfrepBulkFailure,
+  OfrepBulkResponse,
+  OfrepEvaluationErrorCode,
+  OfrepFailure,
+  OfrepFlagNotFound,
+  OfrepMetadata,
+  OfrepReason,
+  OfrepSuccess,
+} from "./ofrep.js";
 export {
   CONFIG_CHANGE_CHANNEL,
   CONFIG_CHANGE_TYPES,
@@ -84,3 +134,23 @@ export {
   ROLLOUT_INTENT_CHANNEL,
 } from "./rollout-intent.js";
 export type { RolloutIntentNotice } from "./rollout-intent.js";
+export {
+  createFlagFields,
+  createFlagRefine,
+  flagKeySchema,
+  replaceRulesFields,
+  replaceRulesRefine,
+  ruleInputSchema,
+  updateEnvConfigFields,
+  updateEnvConfigRefine,
+  updateFlagFields,
+  updateFlagRefine,
+  testerResultSchema,
+} from "./flag-api.js";
+export type {
+  TesterResult,
+  CreateFlagFields,
+  ReplaceRulesFields,
+  UpdateEnvConfigFields,
+  UpdateFlagFields,
+} from "./flag-api.js";

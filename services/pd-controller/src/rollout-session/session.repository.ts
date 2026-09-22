@@ -6,7 +6,8 @@ import {
 } from "@udp/db";
 import { ZodError } from "zod";
 import type { DbClient } from "../core/db.js";
-import { sessionRowSchema, type Decision, type SessionRow } from "./types.js";
+import type { Decision } from "@udp/shared-types";
+import { sessionRowSchema, type SessionRow } from "./types.js";
 
 /**
  * Đường đọc/ghi `rollout_sessions` của Service 3 — toàn bộ bằng SQL thô.

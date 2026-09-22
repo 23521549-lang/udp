@@ -1,4 +1,8 @@
-import { ROLLOUT_RETRY, TOTAL_BUCKETS } from "@udp/config";
+import {
+  INTERNAL_SECRET_HEADER,
+  ROLLOUT_RETRY,
+  TOTAL_BUCKETS,
+} from "@udp/config";
 import { describe, expect, it } from "vitest";
 import {
   applyWithRetry,
@@ -81,7 +85,7 @@ describe("createFlagLevelExecutor — hợp đồng PATCH của Service 2", () =
     expect(req?.init.method).toBe("PATCH");
     const headers = req?.init.headers as Record<string, string>;
     expect(headers["if-match"]).toBe(`"${SESSION}:7"`);
-    expect(headers["x-internal-secret"]).toBe("s3cret");
+    expect(headers[INTERNAL_SECRET_HEADER]).toBe("s3cret");
     expect(JSON.parse(String(req?.init.body))).toEqual({
       weights: current,
       reason: "why",
@@ -147,7 +151,14 @@ describe("createFlagLevelExecutor — untrack theo config", () => {
 
   it("POST /internal/flag-envs/:id/untrack, đọc `changed` từ body", async () => {
     const { urls, untrack } = untrackWith(() =>
-      Promise.resolve(Response.json({ changed: true, tracked: false })),
+      Promise.resolve(
+        Response.json({
+          flagKey: "f",
+          environmentId: "e",
+          changed: true,
+          tracked: false,
+        }),
+      ),
     );
     expect(await untrack()).toEqual({ status: "SUCCESS", changed: true });
     expect(urls).toEqual(["http://s2.test/internal/flag-envs/cfg-1/untrack"]);
@@ -181,6 +192,48 @@ describe("createFlagLevelExecutor — untrack theo config", () => {
       status: "FAILED",
       message: "ECONNREFUSED",
     });
+  });
+});
+
+describe("createFlagLevelExecutor — track (probe pha 2) [v4.4]", () => {
+  const trackWith = (status: number, body: string) => {
+    const urls: string[] = [];
+    const executor = createFlagLevelExecutor({
+      baseUrl: "http://s2.test",
+      secret: "s",
+      fetch: (url) => {
+        urls.push(String(url));
+        return Promise.resolve(new Response(body, { status }));
+      },
+    });
+    return { urls, track: () => executor.track(SESSION) };
+  };
+
+  it("200 ⇒ SUCCESS theo body; 409 TRACKED_FLAG_LIMIT ⇒ LIMIT, 409 khác ⇒ REJECTED; 503/body sai ⇒ UNAVAILABLE", async () => {
+    const ok = trackWith(
+      200,
+      JSON.stringify({
+        flagKey: "f",
+        environmentId: "e",
+        tracked: true,
+        changed: true,
+      }),
+    );
+    expect(await ok.track()).toEqual({ status: "SUCCESS", changed: true });
+    expect(ok.urls).toEqual([
+      `http://s2.test/internal/rollouts/${SESSION}/track`,
+    ]);
+    expect(
+      await trackWith(
+        409,
+        JSON.stringify({ code: "TRACKED_FLAG_LIMIT", detail: "đủ 3 flag" }),
+      ).track(),
+    ).toEqual({ status: "LIMIT", message: "đủ 3 flag" });
+    expect((await trackWith(409, "ended").track()).status).toBe("REJECTED");
+    expect((await trackWith(503, "down").track()).status).toBe("UNAVAILABLE");
+    expect((await trackWith(200, "not json").track()).status).toBe(
+      "UNAVAILABLE",
+    );
   });
 });
 

@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { env, TOTAL_BUCKETS } from "@udp/config";
 import { createPrismaClient, type Prisma, type PrismaClient } from "@udp/db";
-import { canonicalizeServe, flagServeDbSchema } from "@udp/shared-types";
 import {
+  canonicalizeServe,
   decisionSchema,
+  flagServeDbSchema,
   type Decision,
-} from "../../src/rollout-session/types.js";
+} from "@udp/shared-types";
+import { newFlagTarget } from "@udp/test-support";
 
 /**
  * Fixture cho test của Service 3, dựng bằng quyền OWNER (`DATABASE_URL_DIRECT`).
@@ -81,69 +83,14 @@ export async function newTarget(
   project: { projectId: string; environmentId: string; ownerId: string },
   onPercent: number,
 ): Promise<Target> {
-  const key = `pd-${randomUUID().slice(0, 8)}`;
-  const flag = await admin.featureFlag.create({
-    data: {
-      projectId: project.projectId,
-      key,
-      flagType: "BOOLEAN",
-      lifecycleStatus: "ACTIVE",
-      variants: {
-        create: [
-          { key: "on", value: true },
-          { key: "off", value: false },
-        ],
-      },
-    },
-    select: { id: true, variants: { select: { id: true, key: true } } },
+  const flag = await newFlagTarget(admin, project, onPercent, {
+    keyPrefix: "pd",
   });
-  const on = flag.variants.find((v) => v.key === "on")?.id;
-  const off = flag.variants.find((v) => v.key === "off")?.id;
-  if (on === undefined || off === undefined)
-    throw new Error("fixture thiếu variant");
-  await admin.featureFlag.update({
-    where: { id: flag.id },
-    data: { defaultVariantId: off },
-  });
-  const target = Math.round((onPercent * TOTAL_BUCKETS) / 100);
-  const config = await admin.flagEnvConfig.create({
-    data: {
-      flagId: flag.id,
-      environmentId: project.environmentId,
-      isEnabled: true,
-      rules: {
-        create: [
-          {
-            ruleType: "ALL",
-            priority: 0,
-            bucketSalt: randomUUID(),
-            condition: {},
-            // Sắp theo variantId như mọi writer thật — trigger UDP04 chặn bản sai thứ tự
-            serve: canonicalizeServe({
-              kind: "distribution",
-              weights: [
-                { variantId: on, weight: target },
-                { variantId: off, weight: TOTAL_BUCKETS - target },
-              ],
-            }),
-          },
-        ],
-      },
-    },
-    select: { id: true, rules: { select: { id: true } } },
-  });
-  const ruleId = config.rules[0]?.id;
-  if (ruleId === undefined) throw new Error("fixture thiếu rule");
   return {
     projectId: project.projectId,
     environmentId: project.environmentId,
-    flagId: flag.id,
-    flagKey: key,
-    envConfigId: config.id,
-    ruleId,
-    on,
-    off,
     ownerId: project.ownerId,
+    ...flag,
   };
 }
 
@@ -162,6 +109,18 @@ export interface SessionOptions {
   metricQueries?: Prisma.InputJsonObject;
   lastStepAt?: Date | null;
   createdAt?: Date;
+}
+
+/**
+ * Session đã chạy (IN_PROGRESS, hoặc PAUSED sau khi chạy) luôn có `last_step_at`
+ * trên đường thật — chỉ `stepUp` đưa session ra khỏi PENDING, và nó đặt cột này.
+ * Fixture để NULL là tạo một trạng thái không tồn tại, mà [v4.4] đọc NULL là
+ * "chưa từng áp bậc" (`planIntent`). Một giờ trước: qua mọi dwell và cổng cửa sổ.
+ */
+function defaultLastStepAt(status: SessionOptions["status"]): Date | null {
+  return status === undefined || status === "PENDING"
+    ? null
+    : new Date(Date.now() - 3_600_000);
 }
 
 /** RolloutSession FLAG_LEVEL/CANARY như Service 1 sẽ tạo (Luồng 5), baseline do S1 ghi */
@@ -195,7 +154,10 @@ export async function newSession(
       metricWindowSeconds: options.metricWindowSeconds ?? 60,
       warmUpRequests: options.warmUpRequests ?? 100,
       maxDurationSeconds: options.maxDurationSeconds ?? 86_400,
-      lastStepAt: options.lastStepAt ?? null,
+      lastStepAt:
+        options.lastStepAt === undefined
+          ? defaultLastStepAt(options.status)
+          : options.lastStepAt,
       createdById: target.ownerId,
       ...(options.createdAt === undefined
         ? {}

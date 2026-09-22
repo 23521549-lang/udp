@@ -5,6 +5,7 @@ import type {
   MetricTarget,
   MetricsProvider,
   ProbeOutcome,
+  ScrapeIntervalSource,
 } from "./provider.js";
 import { queryTemplates, type QueryTemplates } from "./query-templates.js";
 
@@ -127,21 +128,71 @@ export class PrometheusMetricsProvider implements MetricsProvider {
       return {
         status: "FAILED",
         message: "Prometheus không tới được hoặc chưa sẵn sàng",
-        data: { reachable: false, hasSeries: false },
+        data: {
+          reachable: false,
+          hasSeries: false,
+          queryFailed: false,
+          scrapeIntervalSource: "assumed",
+        },
         durationMs: Date.now() - started,
       };
     }
-    const series = await this.instant(this.templates.probeSeries(t), 0);
-    const scrapeIntervalSec = await this.scrapeInterval();
+    const window = METRICS_PROVIDER.probeWindowSeconds;
+    // Song song: probe nằm trên đường request của S1 và trong lease của S3
+    const [series, scrape] = await Promise.all([
+      this.query(this.templates.probeSeries(t, window)),
+      this.scrapeIntervalOf(t, window),
+    ]);
+    const queryFailed = series.kind === "failed";
     return {
-      status: "SUCCESS",
+      status: queryFailed ? "FAILED" : "SUCCESS",
+      ...(queryFailed
+        ? { message: "Prometheus sống nhưng truy vấn probe hỏng" }
+        : {}),
       data: {
         reachable: true,
-        hasSeries: series.hasData && series.value > 0,
-        ...(scrapeIntervalSec === undefined ? {} : { scrapeIntervalSec }),
+        hasSeries:
+          series.kind === "ok" &&
+          series.value !== undefined &&
+          series.value > 0,
+        queryFailed,
+        ...(scrape.seconds === undefined
+          ? {}
+          : { scrapeIntervalSec: scrape.seconds }),
+        scrapeIntervalSource: scrape.source,
       },
       durationMs: Date.now() - started,
     };
+  }
+
+  /**
+   * Scrape interval của CHÍNH workload: `n` mẫu trong cửa sổ cho `n − 1` khoảng,
+   * nên interval ≤ `cửa sổ / (n − 1)` — không đánh giá THẤP (validator "cửa sổ ≥
+   * 4 × scrape" dựa vào đó). Series trẻ hơn cửa sổ (pod vừa deploy: 2 mẫu ⇒ 300s)
+   * thì con số đó phóng đại, nên chặn trên bằng số lớn nhất của `/api/v1/targets`
+   * — cận trên của MỌI target. Không đo được gì thì `assumed`.
+   */
+  private async scrapeIntervalOf(
+    t: MetricTarget,
+    windowSec: number,
+  ): Promise<{ seconds?: number; source: ScrapeIntervalSource }> {
+    const [samples, global] = await Promise.all([
+      this.query(this.templates.scrapeSamples(t, windowSec)),
+      this.scrapeInterval(),
+    ]);
+    if (
+      samples.kind === "ok" &&
+      samples.value !== undefined &&
+      samples.value >= 2
+    ) {
+      const measured = windowSec / (samples.value - 1);
+      return global !== undefined && global < measured
+        ? { seconds: global, source: "global" }
+        : { seconds: measured, source: "workload" };
+    }
+    return global === undefined
+      ? { source: "assumed" }
+      : { seconds: global, source: "global" };
   }
 
   /**
@@ -152,31 +203,37 @@ export class PrometheusMetricsProvider implements MetricsProvider {
     query: string,
     windowSeconds: number,
   ): Promise<MetricSample> {
-    const none: MetricSample = {
-      value: 0,
-      query,
-      windowSeconds,
-      hasData: false,
-    };
+    const result = await this.query(query);
+    return result.kind === "ok" && result.value !== undefined
+      ? { value: result.value, query, windowSeconds, hasData: true }
+      : { value: 0, query, windowSeconds, hasData: false };
+  }
+
+  /**
+   * Hỏi Prometheus và PHÂN BIỆT hai thứ mà `instant` gộp làm một: `failed` —
+   * không hỏi được (HTTP lỗi, hết giờ, trả sai hình); `ok` không `value` — hỏi
+   * được, kết quả rỗng hoặc NaN/Inf. `probe()` cần sự phân biệt đó (§7.4).
+   */
+  private async query(
+    query: string,
+  ): Promise<{ kind: "ok"; value?: number } | { kind: "failed" }> {
     const body = await this.get(
       `/api/v1/query?query=${encodeURIComponent(query)}`,
     );
-    if (body === undefined) return none;
-
+    if (body === undefined) return { kind: "failed" };
     let parsed: InstantVector;
     try {
       parsed = JSON.parse(body) as InstantVector;
     } catch {
-      return none;
+      return { kind: "failed" };
     }
     if (parsed.status !== "success" || parsed.data?.resultType !== "vector") {
-      return none;
+      return { kind: "failed" };
     }
     const first = parsed.data.result?.[0]?.value?.[1];
-    if (first === undefined) return none;
+    if (first === undefined) return { kind: "ok" };
     const value = Number(first);
-    if (!Number.isFinite(value)) return none;
-    return { value, query, windowSeconds, hasData: true };
+    return Number.isFinite(value) ? { kind: "ok", value } : { kind: "ok" };
   }
 
   /** Scrape interval LỚN NHẤT trong các target đang sống — validator ép cửa sổ theo số này */

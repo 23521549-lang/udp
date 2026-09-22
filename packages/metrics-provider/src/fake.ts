@@ -42,7 +42,10 @@ export class FakeMetricsProvider implements MetricsProvider {
   readonly scrapeLagSeconds: number;
   readonly calls: FakeCall[] = [];
   private readonly branches = new Map<string, FakeBranch>();
+  /** `<namespace>/<workload>` → số request trong cửa sổ probe (pha 1) */
+  private readonly workloads = new Map<string, number>();
   private reachable = true;
+  private queryFailing = false;
 
   constructor(options: { scrapeLagSeconds?: number } = {}) {
     this.scrapeLagSeconds =
@@ -64,6 +67,18 @@ export class FakeMetricsProvider implements MetricsProvider {
 
   setReachable(reachable: boolean): this {
     this.reachable = reachable;
+    return this;
+  }
+
+  /** Probe pha 1 [v4.4]: workload có lưu lượng trong cửa sổ probe */
+  setWorkload(namespace: string, workloadName: string, requests = 1): this {
+    this.workloads.set(`${namespace}/${workloadName}`, requests);
+    return this;
+  }
+
+  /** Nguồn sống nhưng truy vấn hỏng — `probe()` báo `queryFailed` */
+  setQueryFailing(failing: boolean): this {
+    this.queryFailing = failing;
     return this;
   }
 
@@ -113,18 +128,30 @@ export class FakeMetricsProvider implements MetricsProvider {
     });
   }
 
+  /**
+   * Cùng hai pha với Prometheus thật [v4.4]: có `flagKey` thì theo nhánh của
+   * flag, không thì theo workload; và phải có LƯU LƯỢNG (`requests > 0`), không
+   * chỉ có khoá.
+   */
   probe(t: MetricTarget): Promise<AdapterResult<ProbeOutcome>> {
-    const prefix =
-      t.flagKey === undefined ? (t.version ?? "*") : `${t.flagKey}=`;
-    const hasSeries = [...this.branches.keys()].some((k) =>
-      k.startsWith(prefix),
-    );
+    const failed = !this.reachable || this.queryFailing;
+    const hasSeries =
+      !failed &&
+      (t.flagKey !== undefined
+        ? [...this.branches].some(
+            ([k, b]) => k.startsWith(`${t.flagKey ?? ""}=`) && b.requests > 0,
+          )
+        : t.version !== undefined
+          ? (this.branches.get(t.version)?.requests ?? 0) > 0
+          : (this.workloads.get(`${t.namespace}/${t.workloadName}`) ?? 0) > 0);
     return Promise.resolve({
-      status: this.reachable ? "SUCCESS" : "FAILED",
+      status: failed ? "FAILED" : "SUCCESS",
       data: {
         reachable: this.reachable,
         hasSeries,
+        queryFailed: this.reachable && this.queryFailing,
         scrapeIntervalSec: METRICS_PROVIDER.defaultScrapeLagSeconds,
+        scrapeIntervalSource: "workload",
       },
     });
   }

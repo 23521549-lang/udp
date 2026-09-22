@@ -34,11 +34,30 @@ export interface MetricSample {
   hasData: boolean;
 }
 
+/**
+ * Scrape interval đo từ đâu: từ chính series của workload (tốt nhất), từ
+ * `/api/v1/targets` (lớn nhất trên MỌI target — thường bi quan: một exporter 60s
+ * kéo cả cụm lên 60s), hay không đo được (bên gọi rơi về mặc định).
+ */
+export type ScrapeIntervalSource = "workload" | "global" | "assumed";
+
 export interface ProbeOutcome {
   reachable: boolean;
+  /**
+   * [v4.4] Có LƯU LƯỢNG cho target trong `METRICS_PROVIDER.probeWindowSeconds`
+   * gần nhất — series phải tăng, không chỉ tồn tại: counter giữ series của lần
+   * trước tới khi process khởi động lại.
+   */
   hasSeries: boolean;
+  /**
+   * [v4.4] Nguồn sống nhưng truy vấn hỏng (5xx, hết giờ, trả sai hình). Khác hẳn
+   * "không có series": cái sau là việc của người dùng (cài middleware), cái này
+   * là việc của người vận hành — Service 1 trả 503, không trả 422.
+   */
+  queryFailed: boolean;
   /** Để validator ép `metric_window ≥ 4 × scrape` (§7.4) */
   scrapeIntervalSec?: number;
+  scrapeIntervalSource: ScrapeIntervalSource;
 }
 
 export interface MetricsProvider {
@@ -65,8 +84,13 @@ export interface MetricsProvider {
     windowSec: number,
   ): Promise<MetricSample>;
   /**
-   * Nguồn có sống và có dữ liệu cho target không. Với FLAG_LEVEL kiểm theo
-   * `flagKey` (không theo variant — variant mới chưa có traffic).
+   * Nguồn có sống và target có lưu lượng không — hai pha [v4.4] (§7.4):
+   *   - không `flagKey`: theo WORKLOAD — Service 1 lúc tạo rollout (middleware đã
+   *     xuất metric cho đúng `service_name`/`namespace` chưa);
+   *   - có `flagKey`: theo nhãn `ff` của flag (không theo variant — variant mới
+   *     chưa có traffic) — Service 3 trước bậc đầu, SAU khi flag đã được track.
+   *     Hook chỉ gắn nhãn cho flag đã track (§6.6), nên pha này chạy trước
+   *     `track` thì không bao giờ thấy gì.
    */
   probe(t: MetricTarget): Promise<AdapterResult<ProbeOutcome>>;
 }

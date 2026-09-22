@@ -1,4 +1,5 @@
-import { flagServeDbSchema } from "@udp/shared-types";
+import { TOTAL_BUCKETS } from "@udp/config";
+import { canaryPairOf, flagServeDbSchema } from "@udp/shared-types";
 import type { MetricTarget } from "@udp/metrics-provider";
 import type { DbClient } from "../core/db.js";
 import type { SessionRow } from "./types.js";
@@ -31,6 +32,10 @@ export interface FlagTarget {
   currentWeights: Weight[];
   /** Phần trăm hiện tại của variant mục tiêu theo trọng số THẬT của rule — so với DB để thấy rule bị sửa ngoài luồng */
   currentPercent: number;
+  /** [v4.4] Flag đang gắn nhãn `ff` ở environment này — probe pha 2 chỉ gọi lại `track` khi chưa */
+  isTracked: boolean;
+  /** [v4.4] Flag tắt thì hook không gắn nhãn (§6.6) — probe pha 2 nói đúng nguyên nhân */
+  isEnabled: boolean;
   canary: MetricTarget;
   baseline: MetricTarget;
 }
@@ -46,6 +51,8 @@ interface TargetRow {
   flagKey: string;
   namespace: string;
   serve: unknown;
+  isTracked: boolean;
+  isEnabled: boolean;
 }
 
 interface VariantRow {
@@ -73,7 +80,8 @@ export async function loadFlagTarget(
   }
 
   const rows = await db.$queryRaw<TargetRow[]>`
-    SELECT f.key AS "flagKey", e.k8s_namespace AS "namespace", r.serve AS "serve"
+    SELECT f.key AS "flagKey", e.k8s_namespace AS "namespace", r.serve AS "serve",
+           c.is_tracked AS "isTracked", c.is_enabled AS "isEnabled"
       FROM flag_targeting_rules r
       JOIN flag_env_configs c ON c.id = r.flag_env_config_id
       JOIN feature_flags f ON f.id = c.flag_id
@@ -92,26 +100,11 @@ export async function loadFlagTarget(
       `rule.serve không hợp lệ: ${parsed.error.message.slice(0, 200)}`,
     );
   }
-  const serve = parsed.data;
-  if (serve.kind !== "distribution") {
-    return hold(
-      "rule phục vụ thẳng một variant — chỉ ramp được rule phân phối",
-    );
-  }
-  if (serve.weights.length !== 2) {
-    return hold(
-      `rule có ${String(serve.weights.length)} variant — canary FLAG_LEVEL chỉ hỗ trợ hai nhánh (§16)`,
-    );
-  }
-  const targetWeight = serve.weights.find(
-    (w) => w.variantId === session.targetVariantId,
-  );
-  const otherWeight = serve.weights.find(
-    (w) => w.variantId !== session.targetVariantId,
-  );
-  if (targetWeight === undefined || otherWeight === undefined) {
-    return hold("target_variant_id không nằm trong phân phối của rule");
-  }
+  // Cùng định nghĩa "rule ramp được" với validator tạo rollout của Service 1
+  const pair = canaryPairOf(parsed.data, session.targetVariantId);
+  if (pair.kind === "invalid") return hold(pair.reason);
+  const targetWeight = pair.target;
+  const otherWeight = pair.other;
 
   const variants = await db.$queryRaw<VariantRow[]>`
     SELECT id::text AS "id", key AS "key"
@@ -129,11 +122,12 @@ export async function loadFlagTarget(
     flagKey: row.flagKey,
     ruleId: session.targetingRuleId,
     targetVariant: target,
-    currentWeights: serve.weights.map((w) => ({
-      variantId: w.variantId,
-      weight: w.weight,
-    })),
-    currentPercent: targetWeight.weight / 1000,
+    currentWeights: pair.weights,
+    // Số THẬT, không làm tròn như `canaryPairOf.targetPercent`: cái đó là giá trị
+    // LƯU vào NUMERIC(5,2); cái này để phát hiện rule bị sửa ngoài rollout (`warnDrift`)
+    currentPercent: (targetWeight.weight * 100) / TOTAL_BUCKETS,
+    isTracked: row.isTracked,
+    isEnabled: row.isEnabled,
     canary: { ...base, flagKey: row.flagKey, variantKey: target.key },
     baseline: { ...base, flagKey: row.flagKey, variantKey: baseline.key },
   };

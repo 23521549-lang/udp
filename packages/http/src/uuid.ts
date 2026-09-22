@@ -1,13 +1,12 @@
 import type { Request } from "express";
-import { ValidationError } from "@udp/http";
+import { ValidationError } from "./errors.js";
 
 /**
- * UUID ở dạng chuỗi — MỘT định nghĩa cho cả service.
+ * UUID ở dạng chuỗi — MỘT định nghĩa cho mọi service [v4.4: dời từ Service 2 lên
+ * đây khi Service 1 đã có bốn bản chép của cùng regex].
  *
- * Trước đây nó được chép ở `internal/flag.controller.ts` và
- * `auth/internal-auth.guard.ts`, và ba controller của đường ghi rule sẽ cần thêm
- * bản nữa. Bốn bản regex là bốn chỗ có thể trôi khỏi nhau — một bản nới lỏng ra
- * là đủ để một id sai định dạng lọt xuống Postgres ở đúng endpoint đó.
+ * Nhiều bản regex là nhiều chỗ có thể trôi khỏi nhau — một bản nới lỏng ra là
+ * đủ để một id sai định dạng lọt xuống Postgres ở đúng endpoint đó.
  */
 export const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

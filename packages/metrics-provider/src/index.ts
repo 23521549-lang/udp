@@ -10,6 +10,7 @@ export type {
   MetricTarget,
   MetricsProvider,
   ProbeOutcome,
+  ScrapeIntervalSource,
 } from "./provider.js";
 export {
   DEFAULT_METRIC_BASE,

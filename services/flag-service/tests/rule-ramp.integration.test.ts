@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { ACTIVE_ROLLOUT_STATUSES, env } from "@udp/config";
+import { ACTIVE_ROLLOUT_STATUSES, ACTOR_HEADER, env } from "@udp/config";
 import { createPrismaClient, RolloutStatus } from "@udp/db";
 import { configHashOf, pickVariant, type Snapshot } from "@udp/flag-evaluator";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
-import { stableOwner } from "./helpers/fixture.js";
+import { createActiveFlag, stableOwner } from "@udp/test-support";
 
 /**
  * `PATCH /internal/rules/:ruleId` qua HTTP thật (Plan #12, Mục 3 và 5).
@@ -18,6 +18,8 @@ import { stableOwner } from "./helpers/fixture.js";
  * rollout đang PAUSED.
  */
 
+/** User có thật (FK của audit và outbox) — route ghi của S2 bắt buộc actor [v4.5] */
+let actorId = "";
 const app = createApp();
 const SECRET = env.INTERNAL_SERVICE_SECRET;
 
@@ -57,6 +59,7 @@ const stamp = async (id: string): Promise<string> =>
 
 beforeAll(async () => {
   const ownerId = (await stableOwner(admin)).id;
+  actorId = ownerId;
   const suffix = randomUUID().slice(0, 8);
 
   const project = await admin.project.create({
@@ -84,11 +87,11 @@ beforeAll(async () => {
   prodEnv = envIds[1]!;
 
   flagKey = `ramp-${suffix}`;
-  const flag = await request(app)
-    .post("/internal/flags")
-    .set("X-Internal-Secret", SECRET)
-    .send({ projectId, key: flagKey, flagType: "BOOLEAN" })
-    .expect(201);
+  const flag = await createActiveFlag(app, actorId, {
+    projectId,
+    key: flagKey,
+    flagType: "BOOLEAN",
+  });
   const variants = flag.body.flag.variants as { id: string; key: string }[];
   on = variants.find((v) => v.key === "on")!.id;
   off = variants.find((v) => v.key === "off")!.id;
@@ -107,6 +110,7 @@ beforeAll(async () => {
   const saved = await request(app)
     .put(`/internal/flag-envs/${devConfig}/rules`)
     .set("X-Internal-Secret", SECRET)
+    .set(ACTOR_HEADER, actorId)
     .send({
       lastKnownUpdatedAt: await stamp(devConfig),
       rules: [
@@ -168,6 +172,7 @@ afterAll(async () => {
       where: { environmentId: { in: envIds } },
     });
     // RolloutSession đi theo project — khoá ngoại CASCADE
+    await admin.auditLog.deleteMany({ where: { projectId: projectId } });
     await admin.project.deleteMany({ where: { id: projectId } });
   }
   await admin.$disconnect();
@@ -183,6 +188,7 @@ const patchRule = (
   const req = request(app)
     .patch(`/internal/rules/${id}`)
     .set("X-Internal-Secret", SECRET)
+    .set(ACTOR_HEADER, actorId)
     .send(body);
   return ifMatch === undefined ? req : req.set("If-Match", ifMatch);
 };
@@ -560,6 +566,7 @@ describe("dấu vết của một lần ramp", () => {
     const res = await request(app)
       .put(`/internal/flag-envs/${devConfig}/rules`)
       .set("X-Internal-Secret", SECRET)
+      .set(ACTOR_HEADER, actorId)
       .send({ lastKnownUpdatedAt: stale, rules: [] })
       .expect(409);
     expect(res.body.code).toBe("OPTIMISTIC_LOCK");

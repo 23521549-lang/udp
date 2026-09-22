@@ -57,7 +57,7 @@ jobs:
   test:
     name: full test suite on a scratch database
     runs-on: ubuntu-latest
-    # Toàn bộ 7 package, trên một database dùng-một-lần dựng từ chuỗi migration
+    # MỌI package có script `test` (`pnpm -r`), trên một database dùng-một-lần dựng từ chuỗi migration
     # (nên "migration chain replay" là bước đầu của lượt này). Database nằm trên
     # một project Supabase RIÊNG cho CI, đặt cùng vùng với runner: xem
     # `packages/db/scripts/ci-bootstrap.ts` để biết vì sao và cách dựng nó.

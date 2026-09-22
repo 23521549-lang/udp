@@ -1,6 +1,7 @@
 import type { OutboxState, Prisma } from "@udp/db";
 import {
   canonicalJson,
+  compareCodeUnits,
   configHashOf,
   type Snapshot,
   type SnapshotEntry,
@@ -11,6 +12,7 @@ import { flagServeDbSchema, type FlagServeWire } from "@udp/shared-types";
 import {
   snapshotRowOf,
   type FlagRow,
+  type SnapshotOptions,
   type SnapshotReader,
   type SnapshotRow,
 } from "./snapshot-row.js";
@@ -88,15 +90,18 @@ function serveOf(
   };
 }
 
-// `conditions?`: zod khai `unknown` thành khoá tuỳ chọn; thiếu thì nhánh dưới ném đúng thông điệp
-function segmentOf(row: { id: string; conditions?: unknown }): SnapshotSegment {
-  if (!Array.isArray(row.conditions)) {
-    throw new Error(
-      `Segment ${row.id}: \`conditions\` không phải mảng. §2.2 khai đây là "mảng ` +
-        `điều kiện nối bằng AND", nên một hình dạng khác là dữ liệu đã hỏng`,
-    );
-  }
-  return { id: row.id, conditions: row.conditions };
+/**
+ * [v4.6] Hình chốt của §2.2/§6.5/§9. `userIds` sắp theo phép so `<` của JS —
+ * cùng phép so `canonicalJson` và bên đọc dùng — ở ĐÂY chứ không ở SQL: collation
+ * của database khác phép so đó (bẫy đã gặp với `trackedFlags`), và hash phải tất
+ * định bất kể thứ tự đã lưu.
+ */
+function segmentOf(row: SnapshotRow["segments"][number]): SnapshotSegment {
+  return {
+    id: row.id,
+    all: row.conditions.all,
+    userIds: [...row.conditions.userIds].sort(compareCodeUnits),
+  };
 }
 
 function entryOf(flag: FlagRow): SnapshotEntry {
@@ -201,8 +206,9 @@ export function snapshotFromRow(row: SnapshotRow): Snapshot {
 export async function snapshotOf(
   tx: SnapshotReader,
   environmentId: string,
+  options: SnapshotOptions = {},
 ): Promise<Snapshot> {
-  const row = await snapshotRowOf(tx, environmentId);
+  const row = await snapshotRowOf(tx, environmentId, options);
   if (row === undefined) {
     throw new Error(
       `Environment ${environmentId} không tồn tại — không dựng được snapshot`,
@@ -243,11 +249,17 @@ function deltaOf(
 ): Prisma.InputJsonValue {
   const flag = snapshot.flags.find((f) => f.key === flagKey);
 
+  /**
+   * [v4.6] Flag VẮNG khỏi snapshot — flag DRAFT (§6.7: SDK chưa nhận). Mọi lần
+   * ghi lên nó (tạo, sửa rule, bật env) vẫn tăng version và ghi outbox, nên delta
+   * phải nói điều đúng: "flag này không có". Áp = xoá entry cùng key nếu có —
+   * idempotent như thay entry, và đúng cả khi một ngày có đường đưa flag rời
+   * snapshot.
+   */
   if (flag === undefined) {
-    throw new Error(
-      `Không tìm thấy flag "${flagKey}" trong snapshot vừa dựng — mutate và ` +
-        `delta đang nói về hai thứ khác nhau`,
-    );
+    return JSON.parse(
+      canonicalJson({ ...extra, absentFlagKey: flagKey }),
+    ) as Prisma.InputJsonValue;
   }
 
   return JSON.parse(canonicalJson({ ...extra, flag })) as Prisma.InputJsonValue;

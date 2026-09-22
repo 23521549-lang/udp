@@ -22,6 +22,12 @@ export function ffLabel(flagKey: string, variantKey: string): string {
   return `${flagKey}=${variantKey}`;
 }
 
+/** Target nhắm ĐÚNG một nhánh flag (FLAG_LEVEL) — cần cả key lẫn variant */
+const isBranchTarget = (
+  t: MetricTarget,
+): t is MetricTarget & { flagKey: string; variantKey: string } =>
+  t.flagKey !== undefined && t.variantKey !== undefined;
+
 /**
  * Bộ matcher cho một target. SERVICE_LEVEL thêm `service_version`; FLAG_LEVEL
  * thêm `ff` — cùng một version, khác nhánh flag (C1).
@@ -37,7 +43,7 @@ export function matchersOf(
   if (target.version !== undefined) {
     parts.push(`service_version=${quoteLabelValue(target.version)}`);
   }
-  if (target.flagKey !== undefined && target.variantKey !== undefined) {
+  if (isBranchTarget(target)) {
     parts.push(
       `ff=${quoteLabelValue(ffLabel(target.flagKey, target.variantKey))}`,
     );
@@ -47,13 +53,40 @@ export function matchersOf(
 
 const ERROR_STATUS = 'http_response_status_code=~"5.."';
 
+/**
+ * [v4.7] Matcher của các truy vấn PHÂN TÍCH (đếm request, lỗi, p99). Không nhắm
+ * một nhánh flag ⇒ chỉ series TỔNG `ff=""`: middleware ghi mỗi request vào series
+ * tổng CỘNG một series cho mỗi tracked flag (§6.6), nên không lọc là đếm 1 + T
+ * lần và tỉ lệ lỗi/p99 lệch theo phân bố các nhánh. `ff=""` cũng khớp series
+ * KHÔNG có nhãn `ff` (app không cài middleware) ⇒ tương thích ngược.
+ *
+ * Không đặt trong `matchersOf`: `probeSeries` thêm `ff=~"^<key>=.*"` lên cùng bộ
+ * matcher, và `ff=""` cạnh nó làm truy vấn luôn rỗng — cổng probe pha 2 không bao
+ * giờ mở.
+ */
+function analysisMatchers(
+  t: MetricTarget,
+  extra: readonly string[] = [],
+): string {
+  return matchersOf(t, isBranchTarget(t) ? extra : [...extra, 'ff=""']);
+}
+
 export interface QueryTemplates {
   requestCount(t: MetricTarget, windowSec: number): string;
   errorCount(t: MetricTarget, windowSec: number): string;
   errorRate(t: MetricTarget, windowSec: number): string;
   latencyP99(t: MetricTarget, windowSec: number): string;
-  /** Có series nào cho target không — FLAG_LEVEL theo `flagKey`, không theo variant */
-  probeSeries(t: MetricTarget): string;
+  /**
+   * [v4.4] Số series CÓ LƯU LƯỢNG trong cửa sổ — `increase(...) > 0`, không phải
+   * "tồn tại". Có `flagKey` thì theo nhãn `ff` của flag, không theo variant.
+   */
+  probeSeries(t: MetricTarget, windowSec: number): string;
+  /**
+   * [v4.4] Số mẫu nhiều nhất của một series của workload trong cửa sổ — scrape
+   * interval của CHÍNH workload là `cửa sổ / số mẫu`, không phải số lớn nhất của
+   * mọi target trong Prometheus.
+   */
+  scrapeSamples(t: MetricTarget, windowSec: number): string;
 }
 
 export function queryTemplates(
@@ -68,15 +101,15 @@ export function queryTemplates(
   const bucket = `${metricBase}_bucket`;
   return {
     requestCount: (t, w) =>
-      `sum(increase(${count}${matchersOf(t)}${windowOf(w)}))`,
+      `sum(increase(${count}${analysisMatchers(t)}${windowOf(w)}))`,
     errorCount: (t, w) =>
-      `sum(increase(${count}${matchersOf(t, [ERROR_STATUS])}${windowOf(w)}))`,
+      `sum(increase(${count}${analysisMatchers(t, [ERROR_STATUS])}${windowOf(w)}))`,
     errorRate: (t, w) =>
-      `sum(rate(${count}${matchersOf(t, [ERROR_STATUS])}${windowOf(w)})) / ` +
-      `sum(rate(${count}${matchersOf(t)}${windowOf(w)}))`,
+      `sum(rate(${count}${analysisMatchers(t, [ERROR_STATUS])}${windowOf(w)})) / ` +
+      `sum(rate(${count}${analysisMatchers(t)}${windowOf(w)}))`,
     latencyP99: (t, w) =>
-      `histogram_quantile(0.99, sum by (le) (rate(${bucket}${matchersOf(t)}${windowOf(w)})))`,
-    probeSeries: (t) => {
+      `histogram_quantile(0.99, sum by (le) (rate(${bucket}${analysisMatchers(t)}${windowOf(w)})))`,
+    probeSeries: (t, w) => {
       const base = {
         namespace: t.namespace,
         workloadName: t.workloadName,
@@ -86,7 +119,9 @@ export function queryTemplates(
         t.flagKey === undefined
           ? []
           : [`ff=~${quoteRegexPrefix(`${t.flagKey}=`)}`];
-      return `count(${count}${matchersOf(base, extra)})`;
+      return `count(increase(${count}${matchersOf(base, extra)}${windowOf(w)}) > 0)`;
     },
+    scrapeSamples: (t, w) =>
+      `max(count_over_time(${count}${matchersOf({ namespace: t.namespace, workloadName: t.workloadName })}${windowOf(w)}))`,
   };
 }

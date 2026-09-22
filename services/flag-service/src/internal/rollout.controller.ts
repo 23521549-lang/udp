@@ -1,7 +1,6 @@
 import { Router } from "express";
-import { asyncHandler } from "@udp/http";
+import { asyncHandler, uuidParam } from "@udp/http";
 import { requireInternalCaller } from "../auth/internal-auth.guard.js";
-import { uuidParam } from "../core/uuid.js";
 import * as rolloutService from "../modules/rollout/rollout.service.js";
 
 /**

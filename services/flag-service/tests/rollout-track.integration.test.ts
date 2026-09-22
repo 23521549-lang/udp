@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { env, MAX_TRACKED_FLAGS_PER_ENV } from "@udp/config";
+import { ACTOR_HEADER, env, MAX_TRACKED_FLAGS_PER_ENV } from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import { configHashOf } from "@udp/flag-evaluator";
 import { snapshotOf } from "@udp/flag-snapshot";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { stableOwner } from "./helpers/fixture.js";
+import { stableOwner } from "@udp/test-support";
 
 /**
  * `POST /internal/rollouts/:sessionId/track|untrack` và
@@ -21,6 +21,8 @@ import { stableOwner } from "./helpers/fixture.js";
  *     muộn của rollout cũ không được tắt dữ liệu của rollout mới.
  */
 
+/** User có thật (FK của audit và outbox) — route ghi của S2 bắt buộc actor [v4.5] */
+let actorId = "";
 const app = createApp();
 const SECRET = env.INTERNAL_SERVICE_SECRET;
 
@@ -43,7 +45,10 @@ interface Target {
 const targets: Target[] = [];
 
 const post = (path: string): request.Test =>
-  request(app).post(`/internal${path}`).set("X-Internal-Secret", SECRET);
+  request(app)
+    .post(`/internal${path}`)
+    .set("X-Internal-Secret", SECRET)
+    .set(ACTOR_HEADER, actorId);
 
 const versionOf = async (): Promise<number> =>
   (
@@ -96,6 +101,7 @@ const finish = (sessionId: string) =>
 
 beforeAll(async () => {
   ownerId = (await stableOwner(admin)).id;
+  actorId = ownerId;
   const project = await admin.project.create({
     data: {
       ownerId,
@@ -120,6 +126,11 @@ beforeAll(async () => {
     const created = await post("/flags")
       .send({ projectId, key: flagKey, flagType: "BOOLEAN" })
       .expect(201);
+    // Chỉ flag ACTIVE được gắn nhãn [v4.5]; flag mới tạo ở DRAFT
+    await admin.featureFlag.update({
+      where: { id: created.body.flag.id as string },
+      data: { lifecycleStatus: "ACTIVE" },
+    });
     const { id: configId } = await admin.flagEnvConfig.findFirstOrThrow({
       where: { flagId: created.body.flag.id as string, environmentId: envId },
       select: { id: true },
@@ -131,6 +142,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (projectId !== undefined) {
     await admin.configChangeLog.deleteMany({ where: { environmentId: envId } });
+    await admin.auditLog.deleteMany({ where: { projectId: projectId } });
     await admin.project.deleteMany({ where: { id: projectId } });
   }
   await admin.$disconnect();
@@ -305,6 +317,58 @@ describe("biên của endpoint", () => {
     await finish(t.sessionId);
     await post(`/rollouts/${t.sessionId}/track`).expect(409);
     expect(await trackedOf(t.configId)).toBe(false);
+  });
+
+  it("flag không còn ACTIVE ⇒ 409, không gắn nhãn — chốt nằm DƯỚI khoá env [v4.5]", async () => {
+    const t = targets[MAX_TRACKED_FLAGS_PER_ENV]!;
+    const { flagId } = await admin.flagEnvConfig.findUniqueOrThrow({
+      where: { id: t.configId },
+      select: { flagId: true },
+    });
+    await admin.rolloutSession.update({
+      where: { id: t.sessionId },
+      data: { status: "PENDING" },
+    });
+    await admin.featureFlag.update({
+      where: { id: flagId },
+      data: { lifecycleStatus: "ARCHIVED" },
+    });
+    try {
+      const res = await post(`/rollouts/${t.sessionId}/track`).expect(409);
+      expect(res.body.detail).toMatch(/không còn ACTIVE/);
+      expect(await trackedOf(t.configId)).toBe(false);
+    } finally {
+      await admin.featureFlag.update({
+        where: { id: flagId },
+        data: { lifecycleStatus: "ACTIVE" },
+      });
+    }
+  });
+
+  it("nhãn CÒN từ rollout trước (S3 chưa untrack) + flag vừa lưu trữ ⇒ vẫn 409 — lối tắt 'đã gắn nhãn' không vượt được chốt ACTIVE [v4.5]", async () => {
+    // targets[2] được gắn nhãn ở ca trần cardinality và chưa ai gỡ
+    const t = targets[2]!;
+    const { flagId } = await admin.flagEnvConfig.findUniqueOrThrow({
+      where: { id: t.configId },
+      select: { flagId: true },
+    });
+    expect(await trackedOf(t.configId)).toBe(true);
+    await finish(t.sessionId);
+    const next = await newSession(t.configId);
+    await admin.featureFlag.update({
+      where: { id: flagId },
+      data: { lifecycleStatus: "ARCHIVED" },
+    });
+    try {
+      const res = await post(`/rollouts/${next}/track`).expect(409);
+      expect(res.body.detail).toMatch(/không còn ACTIVE/);
+    } finally {
+      await admin.rolloutSession.delete({ where: { id: next } });
+      await admin.featureFlag.update({
+        where: { id: flagId },
+        data: { lifecycleStatus: "ACTIVE" },
+      });
+    }
   });
 
   it("session không tồn tại ⇒ 404; id sai dạng ⇒ 400; thiếu secret ⇒ 401", async () => {

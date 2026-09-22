@@ -5,6 +5,7 @@ import {
   ForbiddenError,
   NotFoundError,
   UnauthenticatedError,
+  UUID_PATTERN,
   ValidationError,
 } from "@udp/http";
 
@@ -36,8 +37,6 @@ const RANK: Record<ProjectRole, number> = {
   OWNER: 3,
 };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Tên tham số route mang id của project.
  *
@@ -60,7 +59,7 @@ function projectIdOf(req: {
 }): string {
   const raw = req.params[PROJECT_ID_PARAM];
 
-  if (raw === undefined || !UUID.test(raw)) {
+  if (raw === undefined || !UUID_PATTERN.test(raw)) {
     throw new ValidationError("Mã project không hợp lệ");
   }
 
@@ -119,7 +118,7 @@ export const requireMinProjectRole =
         return;
       }
 
-      if (RANK[membership.projectRole] < RANK[minimum]) {
+      if (!hasMinProjectRole(membership.projectRole, minimum)) {
         next(new ForbiddenError("Không đủ quyền trong project này"));
         return;
       }
@@ -136,3 +135,15 @@ export const requireMinProjectRole =
  * `string` chứ không phải `string | undefined`, nên không chỗ nào phải viết `!`.
  */
 export const projectIdParam = projectIdOf;
+
+/**
+ * [v4.5] Vai trò `role` có đủ `minimum` không — CÙNG bảng thứ bậc với
+ * `requireMinProjectRole`, cho những chỗ chỉ biết mức cần SAU khi đọc tài nguyên
+ * (env production cần MAINTAINER, §2.2). Không bảng thứ bậc thứ hai.
+ */
+export function hasMinProjectRole(
+  role: ProjectRole | undefined,
+  minimum: ProjectRole,
+): boolean {
+  return role !== undefined && RANK[role] >= RANK[minimum];
+}

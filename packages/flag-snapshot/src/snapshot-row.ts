@@ -74,7 +74,19 @@ export const snapshotRowSchema = z.object({
   name: z.string(),
   configVersion: z.number().int(),
   configHash: z.string(),
-  segments: z.array(z.object({ id: uuid, conditions: z.unknown() })),
+  /**
+   * [v4.6] Hình `conditions` được CHECK `segments_conditions_shape` giữ ở tầng
+   * database, nên parse chặt ở đây không bao giờ là nơi lỗi lộ ra đầu tiên.
+   */
+  segments: z.array(
+    z.object({
+      id: uuid,
+      conditions: z.object({
+        all: z.array(z.unknown()),
+        userIds: z.array(z.string()),
+      }),
+    }),
+  ),
   flags: z.array(flagRowSchema),
   /** [v4.3] Key các flag đang track ở environment này, đã sắp `COLLATE "C"` */
   trackedFlags: z.array(z.string()),
@@ -83,7 +95,10 @@ export const snapshotRowSchema = z.object({
 export type SnapshotRow = z.infer<typeof snapshotRowSchema>;
 export type FlagRow = z.infer<typeof flagRowSchema>;
 
-const snapshotSql = (environmentId: string): Prisma.Sql => Prisma.sql`
+const snapshotSql = (
+  environmentId: string,
+  includeDrafts: boolean,
+): Prisma.Sql => Prisma.sql`
   /* udp:snapshot */
   SELECT
     e.name,
@@ -128,6 +143,7 @@ const snapshotSql = (environmentId: string): Prisma.Sql => Prisma.sql`
         ) ORDER BY f.key)
         FROM feature_flags f
        WHERE f.project_id = e.project_id
+         AND (${includeDrafts} OR f.lifecycle_status <> 'DRAFT')
     ), '[]'::json) AS flags,
     COALESCE((
       SELECT json_agg(tf.key ORDER BY tf.key COLLATE "C")
@@ -153,11 +169,23 @@ export type SnapshotReader = Pick<Prisma.TransactionClient, "$queryRaw">;
  * `TransactionClient` là tập con cấu trúc của `PrismaClient`.
  */
 
+export interface SnapshotOptions {
+  /**
+   * [v4.6] Có cả flag DRAFT — CHỈ cho Flag Evaluation Tester ở server. DRAFT
+   * không bao giờ xuống SDK (§6.7), và không bao giờ vào `config_hash`: mọi đường
+   * ghi và `/sdk/config` dùng mặc định `false`.
+   */
+  includeDrafts?: boolean;
+}
+
 export async function snapshotRowOf(
   db: SnapshotReader,
   environmentId: string,
+  options: SnapshotOptions = {},
 ): Promise<SnapshotRow | undefined> {
-  const rows = await db.$queryRaw<unknown[]>(snapshotSql(environmentId));
+  const rows = await db.$queryRaw<unknown[]>(
+    snapshotSql(environmentId, options.includeDrafts ?? false),
+  );
   const first = rows[0];
   if (first === undefined) return undefined;
   return snapshotRowSchema.parse(first);

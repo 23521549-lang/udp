@@ -8,7 +8,12 @@ import type {
 import { ZodError } from "zod";
 import { isProduction } from "@udp/config";
 import { dbAvailabilityError, dbConstraintError, httpStatusOf } from "@udp/db";
-import { AppError, OptimisticLockError } from "./errors.js";
+import {
+  AppError,
+  OptimisticLockError,
+  RelayedProblemError,
+  ROUTE_NOT_FOUND_SLUG,
+} from "./errors.js";
 import { logger, redact } from "./logger.js";
 import { buildProblem, sendProblem } from "./problem.js";
 
@@ -48,7 +53,7 @@ export const notFoundHandler: RequestHandler = (req, res) => {
       status: 404,
       title: "Route not found",
       detail: `Không có route ${req.method} ${req.path}`,
-      typeSlug: "not-found",
+      typeSlug: ROUTE_NOT_FOUND_SLUG,
     }),
   );
 };
@@ -105,9 +110,36 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
 
+  // Lỗi nghiệp vụ của service phía sau: dựng lại đúng những gì nó nói, với
+  // `instance`/`traceId` của request này
+  if (err instanceof RelayedProblemError) {
+    logger.warn(
+      { status: err.statusCode, code: err.problemCode },
+      "Relayed business error",
+    );
+    const p = err.problem;
+    sendProblem(
+      res,
+      buildProblem({
+        req,
+        status: err.statusCode,
+        ...(p.code === undefined
+          ? { title: p.title, typeSlug: `http-${String(err.statusCode)}` }
+          : { code: p.code }),
+        ...(p.detail === undefined ? {} : { detail: p.detail }),
+        ...(p.errors === undefined ? {} : { errors: p.errors }),
+        ...(p.current === undefined ? {} : { current: p.current }),
+        ...(err.resourceId === undefined ? {} : { resourceId: err.resourceId }),
+      }),
+    );
+    return;
+  }
+
   /**
    * Lỗi nghiệp vụ — dự kiến, do người dùng gây ra. Log mức `warn`.
    * Không phân tầng thì log đầy 401 do gõ nhầm mật khẩu và bug thật lẫn vào giữa.
+   * Riêng `UNAVAILABLE` (phụ thuộc chết) log `error`, cùng lý do với nhánh cạn
+   * pool bên dưới: lỗi hạ tầng mà người vận hành phải thấy.
    */
   if (err instanceof AppError) {
     // `details` đi qua redact() ở ĐÂY, không trông vào lời hứa của người ném.
@@ -117,7 +149,8 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     // Chạy nó ở điểm hội tụ: mọi AppError đều qua đây, nên không lối nào lách.
     // pino `redact.paths` KHÔNG thay được: nó là wildcard một cấp, còn
     // `details` lồng sâu tuỳ ý.
-    logger.warn(
+    const level = err.kind === "UNAVAILABLE" ? "error" : "warn";
+    logger[level](
       {
         err,
         kind: err.kind,
@@ -147,6 +180,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
         ...(err instanceof OptimisticLockError
           ? { current: redact(err.current) }
           : {}),
+        ...(err.resourceId === undefined ? {} : { resourceId: err.resourceId }),
       }),
     );
     return;

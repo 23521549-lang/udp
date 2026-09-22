@@ -20,6 +20,8 @@ interface Pkg {
   name: string;
   dir: string;
   deps: string[];
+  /** Chỉ `dependencies` — thứ đi vào runtime */
+  runtimeDeps: string[];
 }
 
 function readWorkspacePackages(): Pkg[] {
@@ -53,6 +55,9 @@ function readWorkspacePackages(): Pkg[] {
           ...json.dependencies,
           ...json.devDependencies,
         }).filter((d) => d.startsWith("@udp/")),
+        runtimeDeps: Object.keys(json.dependencies ?? {}).filter((d) =>
+          d.startsWith("@udp/"),
+        ),
       });
     }
   }
@@ -128,6 +133,78 @@ describe("ranh giới package", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("[v4.6] @udp/flag-evaluator chạy được trong ứng dụng của khách: chỉ shared-types và @udp/config/constants", () => {
+    // Lõi đánh giá (§6.5) nằm trong SDK/provider của khách (I26). Kéo `@udp/db`,
+    // `@udp/http` hay entry chính của `@udp/config` (validate `.env` của UDP lúc
+    // nạp) vào đó là bắt ứng dụng khách mang hạ tầng của UDP theo.
+    const fe = byName.get("@udp/flag-evaluator") as Pkg;
+    const offenders: string[] = [];
+    for (const file of sourceFiles(fe.dir)) {
+      for (const m of readFileSync(file, "utf8").matchAll(
+        /from\s+"(@udp\/[^"]*)"/g,
+      )) {
+        const spec = m[1] as string;
+        if (spec !== "@udp/shared-types" && spec !== "@udp/config/constants")
+          offenders.push(`${file.replace(ROOT, "")}: ${spec}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("[v4.7] @udp/openfeature-provider chạy trong ứng dụng của khách: src/ chỉ lõi đánh giá, shared-types và @udp/config/constants", () => {
+    // Test của provider được dựng Service 2 và dùng database (devDependencies) —
+    // nên chỉ quét `src/`. `@openfeature/*` và `prom-client` là PEER: ứng dụng
+    // cung cấp, không có trong dependencies.
+    const pv = byName.get("@udp/openfeature-provider") as Pkg;
+    const allowed = new Set([
+      "@udp/flag-evaluator",
+      "@udp/shared-types",
+      "@udp/config/constants",
+    ]);
+    const offenders: string[] = [];
+    for (const file of sourceFiles(join(pv.dir, "src"))) {
+      for (const m of readFileSync(file, "utf8").matchAll(
+        /from\s+"(@udp\/[^"]*)"/g,
+      )) {
+        if (!allowed.has(m[1] as string))
+          offenders.push(`${file.replace(ROOT, "")}: ${String(m[1])}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+
+    // Runtime CHỈ ba package nội bộ — không thư viện bên thứ ba nào đi theo vào app
+    // khách; SDK OpenFeature và prom-client là PEER: bản riêng của provider đăng ký
+    // histogram vào registry KHÁC `/metrics` của app, series biến mất im lặng
+    const json = JSON.parse(
+      readFileSync(join(pv.dir, "package.json"), "utf8"),
+    ) as {
+      dependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    expect(Object.keys(json.dependencies ?? {}).sort()).toEqual([
+      "@udp/config",
+      "@udp/flag-evaluator",
+      "@udp/shared-types",
+    ]);
+    for (const peer of [
+      "@openfeature/server-sdk",
+      "@openfeature/core",
+      "prom-client",
+    ]) {
+      expect(json.peerDependencies ?? {}).toHaveProperty([peer]);
+    }
+
+    // Entry chính (provider, hook) không kéo prom-client: chỉ middleware ở subpath `/metrics`
+    const promImports = sourceFiles(join(pv.dir, "src"))
+      .filter((f) => !f.endsWith("metrics.ts"))
+      .filter((f) =>
+        /(?:from\s+|import\s*\(?\s*)"prom-client"/.test(
+          readFileSync(f, "utf8"),
+        ),
+      );
+    expect(promImports).toEqual([]);
+  });
+
   it("mỗi package khai đúng những @udp/* mà nó thật sự import", () => {
     const problems: string[] = [];
     for (const p of packages) {
@@ -142,6 +219,25 @@ describe("ranh giới package", () => {
       for (const dep of imported) {
         if (!p.deps.includes(dep))
           problems.push(`${p.name} import ${dep} nhưng không khai`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("[v4.4] @udp/test-support chỉ là devDependency và không ai import nó ở src/", () => {
+    // Package này dựng TIẾN TRÌNH service thật và ghi thẳng database bằng owner —
+    // lọt vào runtime là một service tự chạy service khác. Chú thích đầu package
+    // nói điều đó; test này làm nó thành luật.
+    const problems: string[] = [];
+    for (const p of packages) {
+      if (p.runtimeDeps.includes("@udp/test-support")) {
+        problems.push(`${p.name} khai @udp/test-support trong dependencies`);
+      }
+      if (p.name === "@udp/test-support") continue;
+      for (const file of sourceFiles(join(p.dir, "src"))) {
+        if (/from\s+"@udp\/test-support/.test(readFileSync(file, "utf8"))) {
+          problems.push(`${file.replace(ROOT, "")} import @udp/test-support`);
+        }
       }
     }
     expect(problems).toEqual([]);

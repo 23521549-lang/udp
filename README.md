@@ -17,8 +17,10 @@ udp/
 │   ├── flag-evaluator/        Consistent hashing và đánh giá flag (dùng chung S2 và SDK)
 │   ├── flag-snapshot/         Snapshot cấu hình flag + config_hash + delta outbox (S2 và kill-switch S3)
 │   ├── http/                  ProblemDetails, error handler, logger cho mọi service
-│   ├── metrics-provider/      MetricsProvider: Prometheus và bản giả cho test (S3 dùng để quyết định)
-│   └── shared-types/          ProblemDetails, ERROR_CATALOG, schema của serve
+│   ├── metrics-provider/      MetricsProvider: Prometheus và bản giả cho test (S1 probe pha 1, S3 quyết định)
+│   ├── openfeature-provider/  Provider OpenFeature (SERVER key) chạy trong ứng dụng khách + hook nhãn ff + middleware /metrics
+│   ├── shared-types/          ProblemDetails, ERROR_CATALOG, schema của serve và của rollout
+│   └── test-support/          Chỉ cho test: dựng service thật bằng tiến trình con, fixture flag/SDK key, bộ sinh I26
 ├── services/
 │   ├── core-backend/          Modular monolith — orchestrator, adapter layer, port 3001
 │   ├── flag-service/          Feature Flag Service (OpenFeature), port 3002

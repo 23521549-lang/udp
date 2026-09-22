@@ -54,9 +54,24 @@ describe("bốn truy vấn của §7.4", () => {
 
   it("errorRate là tỉ số hai rate() cùng cửa sổ", () => {
     expect(q.errorRate(service, 30)).toBe(
-      'sum(rate(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", service_version="1.4.0", http_response_status_code=~"5.."}[30s])) / ' +
-        'sum(rate(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", service_version="1.4.0"}[30s]))',
+      'sum(rate(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", service_version="1.4.0", http_response_status_code=~"5..", ff=""}[30s])) / ' +
+        'sum(rate(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", service_version="1.4.0", ff=""}[30s]))',
     );
+  });
+
+  it('[v4.7] truy vấn phân tích KHÔNG nhắm nhánh flag chỉ đọc series tổng ff="" — không đếm lặp 1 + T lần', () => {
+    for (const query of [
+      q.requestCount(service, 30),
+      q.errorCount(service, 30),
+      q.latencyP99(service, 30),
+    ]) {
+      expect(query).toContain('ff=""');
+    }
+    // Nhắm một nhánh ⇒ đúng một matcher ff, không có ff=""
+    expect(q.requestCount(flag, 30)).not.toContain('ff=""');
+    // Probe pha 2 và đếm mẫu KHÔNG được mang ff="" — cạnh ff=~ nó làm truy vấn luôn rỗng
+    expect(q.probeSeries(flag, 300)).not.toContain('ff=""');
+    expect(q.scrapeSamples(flag, 300)).not.toContain('ff=""');
   });
 
   it("latencyP99 là histogram_quantile trên _bucket theo le", () => {
@@ -65,11 +80,24 @@ describe("bốn truy vấn của §7.4", () => {
     );
   });
 
-  it("probe FLAG_LEVEL kiểm theo flagKey, không theo variant (§5.4)", () => {
-    expect(q.probeSeries(flag)).toBe(
-      'count(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", ff=~"checkout_v2=.*"})',
+  it("probe pha 2 kiểm LƯU LƯỢNG theo flagKey, không theo variant; pha 1 theo workload (§7.4 [v4.4])", () => {
+    expect(q.probeSeries(flag, 300)).toBe(
+      'count(increase(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", ff=~"checkout_v2=.*"}[300s]) > 0)',
     );
-    expect(q.probeSeries(service)).not.toContain("ff=");
+    expect(
+      q.probeSeries(
+        { namespace: service.namespace, workloadName: service.workloadName },
+        300,
+      ),
+    ).toBe(
+      'count(increase(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev"}[300s]) > 0)',
+    );
+  });
+
+  it("scrape interval đo trên series của CHÍNH workload, không theo ff/version", () => {
+    expect(q.scrapeSamples(flag, 300)).toBe(
+      'max(count_over_time(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev"}[300s]))',
+    );
   });
 
   it("tên metric ghi đè được cho app dùng tên riêng", () => {

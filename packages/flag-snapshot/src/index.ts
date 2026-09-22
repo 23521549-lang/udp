@@ -22,5 +22,6 @@ export {
   snapshotRowOf,
   snapshotRowSchema,
   type FlagRow,
+  type SnapshotOptions,
   type SnapshotRow,
 } from "./snapshot-row.js";

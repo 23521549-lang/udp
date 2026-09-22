@@ -83,6 +83,37 @@ interface PrismaDriverError extends PgLikeError {
   meta?: { driverAdapterError?: PgLikeError };
 }
 
+/** Phần `cause` mà adapter-pg 7.10 gắn cho 23505 (đọc runtime `dist/index.mjs`) */
+interface UniqueViolationCause {
+  kind?: unknown;
+  constraint?: { index?: unknown; fields?: unknown };
+}
+
+function uniqueCauseOf(err: unknown): UniqueViolationCause | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const e = err as {
+    code?: unknown;
+    meta?: { driverAdapterError?: { cause?: UniqueViolationCause } };
+  };
+  if (e.code !== "P2002") return undefined;
+  return e.meta?.driverAdapterError?.cause;
+}
+
+/**
+ * [v4.4] Tên unique index bị vi phạm, hoặc `undefined` nếu lỗi không phải P2002.
+ *
+ * Prisma 7 + adapter-pg KHÔNG đặt `meta.target` như Prisma 5: với 23505 có tên
+ * constraint (mọi unique index đều có), tên nằm ở
+ * `meta.driverAdapterError.cause.constraint.index`. Bên gọi cần tên khi hai
+ * index khác nhau mang hai ý nghĩa nghiệp vụ — ví dụ `idx_one_active_rollout_*`
+ * là "đang có rollout", không phải "trùng bản ghi" (§8.5). Hình dạng lỗi driver
+ * chỉ được biết ở file này (xem đầu file).
+ */
+export function uniqueViolationIndexOf(err: unknown): string | undefined {
+  const index = uniqueCauseOf(err)?.constraint?.index;
+  return typeof index === "string" ? index : undefined;
+}
+
 /**
  * Bóc SQLSTATE và thông báo gốc ra khỏi lỗi.
  *
@@ -211,7 +242,7 @@ export function dbAvailabilityError(
 /**
  * Nhận diện lỗi ràng buộc do chính Prisma báo, trước khi xét SQLSTATE.
  *
- * `detail` chỉ nêu TÊN TRƯỜNG bị trùng, lấy từ `meta.target`. Tên trường vốn là
+ * `detail` chỉ nêu TÊN TRƯỜNG bị trùng khi driver cho biết. Tên trường vốn là
  * một phần hợp đồng API nên không phải thông tin nội bộ — khác hẳn message thô
  * của Prisma, thứ mang cả tên bảng và câu SQL.
  */
@@ -223,7 +254,11 @@ function prismaConstraintError(err: unknown): DbConstraintError | undefined {
   const code = PRISMA_CODE_TO_CODE[e.code];
   if (code === undefined) return undefined;
 
-  const target = e.meta?.target;
+  // Prisma 7 + adapter-pg: tên cột chỉ có khi Postgres không nêu tên constraint
+  // (`cause.constraint.fields`); `meta.target` là hình dạng của Prisma ≤ 6, giữ
+  // để engine khác không bị mất tên trường. Có tên index mà không có cột thì
+  // KHÔNG trả tên index ra ngoài — nó mang tên bảng nội bộ.
+  const target = uniqueCauseOf(err)?.constraint?.fields ?? e.meta?.target;
   const fields = Array.isArray(target)
     ? target.filter((t): t is string => typeof t === "string")
     : typeof target === "string"

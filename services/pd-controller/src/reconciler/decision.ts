@@ -1,7 +1,7 @@
 import { ROLLOUT_ANALYSIS } from "@udp/config";
 import type { MetricSample } from "@udp/metrics-provider";
 import type { RolloutThresholds } from "@udp/shared-types";
-import type { Decision, MetricSnapshot } from "../rollout-session/types.js";
+import type { Decision, MetricSnapshot } from "@udp/shared-types";
 
 /**
  * Phân tích metrics và ra quyết định (§7.1 `decide`, §7.4, §7.5) — hàm THUẦN.

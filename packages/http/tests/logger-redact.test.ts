@@ -76,6 +76,16 @@ describe("redact — che đúng thứ cần che", () => {
     });
   });
 
+  it("giữ nguyên Date — audit before/after mang mốc thời gian thật, không thành {}", () => {
+    const at = new Date("2026-09-22T00:00:00.000Z");
+    const out = redact({ updatedAt: at, nested: { at } }) as {
+      updatedAt: unknown;
+      nested: { at: unknown };
+    };
+    expect(out.updatedAt).toBe(at);
+    expect(out.nested.at).toBe(at);
+  });
+
   it("không che tên trường chỉ vì nó nói VỀ khoá", () => {
     const out = redact({ key: "on", keyHash: "sha256...", keyType: "SERVER" });
     expect(out).toEqual({ key: "on", keyHash: "sha256...", keyType: "SERVER" });

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { CHANGE_FEED, env } from "@udp/config";
@@ -26,7 +26,12 @@ import {
 import { createVersionWatcher } from "../src/changefeed/version.watcher.js";
 import { prisma, SERVICE_ROLE } from "../src/core/db.js";
 import { sseHub } from "../src/sdk/index.js";
-import { stableOwner } from "./helpers/fixture.js";
+import {
+  internalCall,
+  newSdkKeyToken,
+  sdkKeyData,
+  stableOwner,
+} from "@udp/test-support";
 import { openSse, type SseReader } from "./helpers/sse-reader.js";
 
 /**
@@ -41,8 +46,9 @@ import { openSse, type SseReader } from "./helpers/sse-reader.js";
  * (transaction dài không chặn đường lan truyền).
  */
 
+/** User có thật (FK của audit và outbox) — route ghi của S2 bắt buộc actor [v4.5] */
+let actorId = "";
 const app = createApp();
-const SECRET = env.INTERNAL_SERVICE_SECRET;
 
 const admin = createPrismaClient({
   connectionString: env.DATABASE_URL_DIRECT,
@@ -50,7 +56,7 @@ const admin = createPrismaClient({
   cacheKey: `__udp_prisma_tier3test_${randomUUID()}`,
 });
 
-const KEY = `udp_sk_test_${randomUUID()}`;
+const KEY = newSdkKeyToken("SERVER");
 
 let server: Server | undefined;
 let base = "";
@@ -71,6 +77,7 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${String((listening.address() as AddressInfo).port)}`;
 
   const owner = await stableOwner(admin);
+  actorId = owner.id;
   const suffix = randomUUID().slice(0, 8);
   const project = await admin.project.create({
     data: {
@@ -93,14 +100,13 @@ beforeAll(async () => {
   envId = dev;
 
   await admin.sdkKey.create({
-    data: {
+    data: sdkKeyData({
+      token: KEY,
       environmentId: dev,
       keyType: "SERVER",
-      keyHash: createHash("sha256").update(KEY).digest("hex"),
-      keySuffix: KEY.slice(-6),
-      label: "tier3test",
       createdById: owner.id,
-    },
+      label: "tier3test",
+    }),
   });
   await write();
 });
@@ -122,6 +128,7 @@ afterAll(async () => {
     await admin.configChangeLog.deleteMany({
       where: { environmentId: envId },
     });
+    await admin.auditLog.deleteMany({ where: { projectId: projectId } });
     await admin.project.delete({ where: { id: projectId } });
   }
   await admin.$disconnect();
@@ -129,9 +136,7 @@ afterAll(async () => {
 
 /** Mốc ngay SAU commit — `/internal` chỉ trả lời khi transaction đã commit */
 async function write(): Promise<number> {
-  await request(app)
-    .post("/internal/flags")
-    .set("X-Internal-Secret", SECRET)
+  await internalCall(request(app).post("/internal/flags"), actorId)
     .send({
       projectId,
       key: `t3-${randomUUID().slice(0, 8)}`,

@@ -22,10 +22,34 @@ import type { Fence } from "./fence.js";
 
 export type IntentPlan =
   | { kind: "pause" }
-  | { kind: "resume" }
+  /** Về `PENDING` khi rollout chưa từng áp bậc nào — xem `planIntent` */
+  | { kind: "resume"; to: "IN_PROGRESS" | "PENDING" }
   | { kind: "promote-full" }
   | { kind: "rollback" }
+  /** [v4.4] ROLLBACK trên rollout chưa áp bậc nào: đóng, không đụng traffic */
+  | { kind: "cancel" }
   | { kind: "ignore"; reason: string };
+
+/**
+ * Rollout chưa từng đổi traffic: PENDING, hoặc PAUSED mà `last_step_at` NULL
+ * (PAUSED-từ-PENDING — bậc đầu của `start()` là lần đầu `last_step_at` được đặt).
+ * IN_PROGRESS luôn đã áp ít nhất một bậc: chỉ `stepUp` đưa session vào đó.
+ *
+ * [v4.4] Ba intent đổi nghĩa ở trạng thái này (§7.6 dòng PENDING). Service 1 đã
+ * chỉ nhận ROLLBACK khi PENDING; đây là lớp thứ hai, cho hàng ghi trước khi S1 có
+ * luật đó và cho PAUSED-từ-PENDING:
+ *   - RESUME về PENDING, không về IN_PROGRESS: IN_PROGRESS đi thẳng vào phân tích,
+ *     vượt cổng probe pha 2 và ramp từ `current_traffic_percentage` thay vì đi qua
+ *     `start()` — đúng thứ "không bao giờ chạy mù" cấm.
+ *   - PROMOTE bị bỏ qua: đẩy 100% một rollout chưa từng thấy nhãn `ff` là chạy mù
+ *     bằng tay; người dùng huỷ rồi tạo lại khi app đã sẵn sàng.
+ *   - ROLLBACK là HUỶ: không có bậc nào để lùi, và PATCH về baseline khi traffic
+ *     vốn đang ở baseline chỉ tạo một DeploymentEvent(ROLLBACK) giả làm lệch
+ *     change-failure-rate của DORA (§8.5 E10).
+ */
+const neverStepped = (session: SessionRow): boolean =>
+  session.status === "PENDING" ||
+  (session.status === "PAUSED" && session.lastStepAt === null);
 
 export function planIntent(session: SessionRow, intent: IntentRow): IntentPlan {
   switch (intent.action) {
@@ -35,15 +59,24 @@ export function planIntent(session: SessionRow, intent: IntentRow): IntentPlan {
         : { kind: "pause" };
     case "RESUME":
       return session.status === "PAUSED"
-        ? { kind: "resume" }
+        ? {
+            kind: "resume",
+            to: neverStepped(session) ? "PENDING" : "IN_PROGRESS",
+          }
         : {
             kind: "ignore",
             reason: `session đang ${session.status}, không có gì để resume`,
           };
     case "PROMOTE":
-      return { kind: "promote-full" };
+      return neverStepped(session)
+        ? {
+            kind: "ignore",
+            reason:
+              "rollout chưa bắt đầu (chưa thấy nhãn ff) — không promote mù; huỷ rồi tạo lại",
+          }
+        : { kind: "promote-full" };
     case "ROLLBACK":
-      return { kind: "rollback" };
+      return neverStepped(session) ? { kind: "cancel" } : { kind: "rollback" };
   }
 }
 
@@ -62,7 +95,7 @@ export async function applyStatusIntent(
   return db.$transaction(async (tx) => {
     if (plan.kind !== "ignore") {
       const ok = await updateIfVersion(tx, session.id, fence.version, {
-        status: plan.kind === "pause" ? "PAUSED" : "IN_PROGRESS",
+        status: plan.kind === "pause" ? "PAUSED" : plan.to,
       });
       if (!ok) return false;
       await recordExecution(tx, {
