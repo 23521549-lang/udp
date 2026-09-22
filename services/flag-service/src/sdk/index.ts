@@ -5,6 +5,7 @@ import {
   configCache,
   configChanges,
 } from "../changefeed/index.js";
+import { metrics } from "../core/metrics.js";
 import { createSseHub } from "./sse.manager.js";
 
 /**
@@ -23,6 +24,9 @@ export const sseHub = createSseHub({
     changeFeedWatcher.wake();
   },
   activeKeysAmong,
+  recordWrite: (kind, bytes) => {
+    metrics.sseBytes.inc({ event: kind }, bytes);
+  },
 });
 
 configChanges.subscribe((change) => {

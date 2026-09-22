@@ -8,8 +8,9 @@ import {
 
 /**
  * Số NỀN cho **E3** (§14) — độ trễ của lõi `evaluate` trong tiến trình, theo lưới
- * 1/10/100 flag × 1/10/50 rule/flag. E3 đầy đủ (k6 trên SDK, đối chứng OFREP) cần
- * provider (#21); con số này là trần dưới của nó: không SDK nào nhanh hơn lõi.
+ * 1/10/100 flag × 1/10/50 rule/flag. E3 đầy đủ (qua provider và SDK OpenFeature
+ * thật, đối chứng OFREP) là `pnpm --filter @udp/experiments e3` [v4.8]; con số này
+ * là trần dưới của nó: không SDK nào nhanh hơn lõi.
  *
  *     pnpm --filter @udp/flag-evaluator bench
  *
@@ -43,8 +44,12 @@ function ruleOf(i: number, last: boolean): SnapshotRule {
   };
 }
 
+/**
+ * Nearest-rank — CÙNG định nghĩa với `@udp/experiments` (`src/stats.ts`), để số
+ * của lõi và số qua SDK so được; chép tại chỗ vì lõi không phụ thuộc experiments
+ */
 const percentile = (sorted: number[], p: number): number =>
-  sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] ?? 0;
+  sorted[Math.max(1, Math.ceil(p * sorted.length)) - 1] ?? 0;
 
 for (const flagCount of [1, 10, 100]) {
   for (const ruleCount of [1, 10, 50]) {

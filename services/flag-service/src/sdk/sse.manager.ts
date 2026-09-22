@@ -89,7 +89,14 @@ export interface SseHubDeps {
   activeKeysAmong: (keyIds: readonly string[]) => Promise<Set<string>>;
   limits?: SseLimits;
   random?: () => number;
+  /**
+   * [v4.8] Sau MỖI khối thật sự được ghi: loại khối và số byte — `/metrics` của
+   * S2 (băng thông của E4). Không truyền thì hub không đo gì.
+   */
+  recordWrite?: (kind: SseChunkKind, bytes: number) => void;
 }
+
+export type SseChunkKind = "snapshot" | "flag_changed" | "heartbeat" | "retry";
 
 export type OpenResult =
   | { kind: "accepted" }
@@ -159,6 +166,7 @@ export function createSseHub({
   activeKeysAmong,
   limits = DEFAULT_LIMITS,
   random = Math.random,
+  recordWrite,
 }: SseHubDeps): SseHub {
   const streams = new Set<Stream>();
   const bySlot = new Map<string, Set<Stream>>();
@@ -260,7 +268,12 @@ export function createSseHub({
    * lại bị huỷ, mãi mãi. Trần của tiến trình chỉ cắt stream ĐANG kẹt: stream đọc
    * kịp không phải trả giá cho stream không đọc.
    */
-  const writeTo = (s: Stream, chunk: Buffer, budget: Budget): boolean => {
+  const writeTo = (
+    s: Stream,
+    chunk: Buffer,
+    budget: Budget,
+    kind: SseChunkKind,
+  ): boolean => {
     if (s.closed || s.res.writableEnded || s.res.destroyed) return false;
     const backlog = s.res.writableLength;
     if (backlog > limits.maxBacklogBytesPerStream) {
@@ -276,11 +289,12 @@ export function createSseHub({
     }
     s.res.write(chunk);
     budget.total += s.res.writableLength - backlog;
+    recordWrite?.(kind, chunk.length);
     return true;
   };
 
   const pushSnapshot = (s: Stream, entry: ConfigEntry, budget: Budget) => {
-    if (!writeTo(s, snapshotChunk(entry), budget)) return;
+    if (!writeTo(s, snapshotChunk(entry), budget, "snapshot")) return;
     s.position = synced(entry);
     // Lấy từ cache ⇒ đã phản ánh mọi sự kiện nhận được tới giờ
     s.seq = received;
@@ -337,13 +351,15 @@ export function createSseHub({
         ) {
           if (delta === undefined) delta = deltaChunk(change) ?? null;
           if (delta !== null) {
-            if (writeTo(s, delta, budget)) s.position = synced(next);
+            if (writeTo(s, delta, budget, "flag_changed"))
+              s.position = synced(next);
             continue;
           }
         }
       }
 
-      if (writeTo(s, snapshotChunk(next), budget)) s.position = synced(next);
+      if (writeTo(s, snapshotChunk(next), budget, "snapshot"))
+        s.position = synced(next);
     }
   };
 
@@ -492,7 +508,7 @@ export function createSseHub({
       heartbeatTimer = undefined;
       if (closing) return;
       const budget = { total: backlogTotal() };
-      for (const s of streams) writeTo(s, HEARTBEAT_CHUNK, budget);
+      for (const s of streams) writeTo(s, HEARTBEAT_CHUNK, budget, "heartbeat");
       if (streams.size > 0) scheduleHeartbeat();
     }, limits.heartbeatMs);
     heartbeatTimer.unref();
@@ -591,10 +607,10 @@ export function createSseHub({
       register(s);
 
       const budget = { total: backlogTotal() };
-      writeTo(s, Buffer.from(retryField(retryMs())), budget);
+      writeTo(s, Buffer.from(retryField(retryMs())), budget, "retry");
 
       if (cursor === undefined || cursor < current.configVersion) {
-        writeTo(s, snapshotChunk(current), budget);
+        writeTo(s, snapshotChunk(current), budget, "snapshot");
         return ACCEPTED;
       }
       // Bằng: chỉ header — tin con trỏ như tin ETag của `/sdk/config`
@@ -628,7 +644,7 @@ export function createSseHub({
       const budget = { total: backlogTotal() };
       for (const s of [...streams]) {
         // `retry:` ngẫu nhiên: N tiến trình mất kết nối cùng lúc không nối lại cùng lúc
-        writeTo(s, Buffer.from(retryField(retryMs())), budget);
+        writeTo(s, Buffer.from(retryField(retryMs())), budget, "retry");
         closeStream(s, "end");
       }
       /**

@@ -6,15 +6,16 @@ import { OpenFeature, ProviderEvents } from "@openfeature/server-sdk";
 import fc from "fast-check";
 import { afterEach, describe, expect, it } from "vitest";
 import { requestStore, UDPFeatureFlagProvider } from "../src/index.js";
-import type { SyncOptions } from "../src/sync.js";
 import {
   configBody,
   deltaBody,
-  FakeTransport,
+  InMemoryTransport,
   flag,
   ScriptedStream,
-  waitFor,
-} from "./helpers/fake-transport.js";
+  createProviderForTesting,
+  type SyncOptions,
+} from "../src/testing.js";
+import { waitFor } from "./helpers/wait.js";
 
 /**
  * Provider qua SDK OpenFeature THẬT (§6.8) với transport giả: vòng đời init, sự
@@ -27,11 +28,11 @@ afterEach(async () => {
 });
 
 function providerWith(
-  transport: FakeTransport,
+  transport: InMemoryTransport,
   sync: Partial<SyncOptions> = {},
   initTimeoutMs = 2_000,
 ): UDPFeatureFlagProvider {
-  return new UDPFeatureFlagProvider(
+  return createProviderForTesting(
     { host: "http://unused", sdkKey: "k", initTimeoutMs },
     {
       transport,
@@ -57,7 +58,7 @@ const ruleOn = {
 
 describe("vòng đời", () => {
   it("init chờ snapshot đầu; đánh giá tại chỗ với variant, reason, ruleId", async () => {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     t.configs.push({
       kind: "ok",
       body: configBody(1, [
@@ -88,7 +89,7 @@ describe("vòng đời", () => {
   });
 
   it("init quá hạn ⇒ setProviderAndWait NÉM; dữ liệu về sau ⇒ provider phát READY, đánh giá đúng", async () => {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     const stream = new ScriptedStream();
     t.streams.push(stream);
     const provider = providerWith(t, {}, 100);
@@ -107,7 +108,7 @@ describe("vòng đời", () => {
   });
 
   it("401 lúc init ⇒ ném NGAY, không chờ hết hạn", async () => {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     t.configs.push({ kind: "unauthorized" });
     const started = Date.now();
     await expect(
@@ -117,7 +118,7 @@ describe("vòng đời", () => {
   });
 
   it("CONFIGURATION_CHANGED mang flagsChanged theo nội dung thật sự đổi", async () => {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     t.configs.push({
       kind: "ok",
       body: configBody(1, [flag("a"), flag("b")]),
@@ -189,7 +190,7 @@ describe("cấu hình", () => {
 
 describe("ánh xạ kết quả", () => {
   async function client(flags: Parameters<typeof configBody>[1]) {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     t.configs.push({ kind: "ok", body: configBody(1, flags), etag: '"1"' });
     t.streams.push(new ScriptedStream());
     await OpenFeature.setProviderAndWait(providerWith(t));
@@ -244,7 +245,7 @@ describe("ánh xạ kết quả", () => {
 
 describe("hook tự gắn — nhãn ff theo request (§6.6)", () => {
   it("chỉ tracked flag có variant được ghi vào store của request", async () => {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     t.configs.push({
       kind: "ok",
       body: configBody(
@@ -271,7 +272,7 @@ describe("I33 — không bao giờ ném, với dữ liệu dây và context bấ
   it("fuzz: snapshot rác từ transport, context rác ⇒ luôn trả đúng kiểu, không ngoại lệ", async () => {
     await fc.assert(
       fc.asyncProperty(fc.anything(), fc.anything(), async (body, context) => {
-        const t = new FakeTransport();
+        const t = new InMemoryTransport();
         t.configs.push({ kind: "ok", body, etag: '"1"' });
         const s = new ScriptedStream();
         t.streams.push(s);
@@ -298,6 +299,28 @@ describe("I33 — không bao giờ ném, với dữ liệu dây và context bấ
   });
 });
 
+describe("chỗ tiêm test (Plan #22, Y8)", () => {
+  it("constructor ném giữa chừng ⇒ khe vẫn được xoá: provider dựng SAU không nhặt transport giả", async () => {
+    const t = new InMemoryTransport();
+    expect(() =>
+      createProviderForTesting(
+        { host: "http://unused", sdkKey: "k", pollingIntervalMs: 0 },
+        { transport: t },
+      ),
+    ).toThrow(RangeError);
+    const plain = new UDPFeatureFlagProvider({
+      host: "http://127.0.0.1:9",
+      sdkKey: "k",
+      initTimeoutMs: 100,
+      fetch: () => Promise.reject(new TypeError("fetch failed")),
+    });
+    await expect(plain.initialize()).rejects.toThrow();
+    await plain.onClose();
+    expect(t.configCalls).toEqual([]);
+    expect(t.streamCalls).toEqual([]);
+  });
+});
+
 describe("hồi quy QA code Plan #21", () => {
   it("Service 2 không tới được: tiến trình SỐNG tới lúc init hết hạn (timer init không unref)", async () => {
     const here = dirname(fileURLToPath(import.meta.url));
@@ -310,7 +333,7 @@ describe("hồi quy QA code Plan #21", () => {
   }, 40_000);
 
   it("401 lúc init rồi khoá được nhận lại ⇒ đúng MỘT READY của provider", async () => {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     t.configs.push(
       { kind: "unauthorized" },
       { kind: "ok", body: configBody(1, [flag("f")]), etag: '"1"' },
@@ -330,7 +353,7 @@ describe("hồi quy QA code Plan #21", () => {
   });
 
   it("đóng giữa lúc init ⇒ init kết thúc NGAY, không chờ hết hạn", async () => {
-    const provider = providerWith(new FakeTransport(), {}, 10_000);
+    const provider = providerWith(new InMemoryTransport(), {}, 10_000);
     const started = Date.now();
     const init = provider.initialize();
     await provider.onClose();
@@ -339,7 +362,7 @@ describe("hồi quy QA code Plan #21", () => {
   });
 
   it("context theo ngữ nghĩa JSON như OFREP: NaN ⇒ null (thuộc tính vắng), Date lồng ⇒ chuỗi", async () => {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     t.configs.push({
       kind: "ok",
       body: configBody(1, [
@@ -409,7 +432,7 @@ describe("I33 — fuzz trên cấu hình THẬT (không chỉ nhánh chưa READY
   ] as Parameters<typeof configBody>[1];
 
   it("context bất kỳ trên snapshot thật ⇒ đúng kiểu, không ném, và phép so KHÔNG rỗng", async () => {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     t.configs.push({ kind: "ok", body: configBody(1, typed), etag: '"1"' });
     t.streams.push(new ScriptedStream());
     await OpenFeature.setProviderAndWait(providerWith(t));
@@ -438,7 +461,7 @@ describe("I33 — fuzz trên cấu hình THẬT (không chỉ nhánh chưa READY
   });
 
   it("event rác SAU khi READY (tên lạ, JSON hỏng, delta sai hình) ⇒ vẫn phục vụ đúng kiểu", async () => {
-    const t = new FakeTransport();
+    const t = new InMemoryTransport();
     t.configs.push({ kind: "ok", body: configBody(1, typed), etag: '"1"' });
     t.defaultConfig = { kind: "not-modified" };
     const streams = Array.from({ length: 200 }, () => new ScriptedStream());

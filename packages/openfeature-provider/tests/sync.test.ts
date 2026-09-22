@@ -4,11 +4,11 @@ import { Synchronizer, type SyncListener } from "../src/sync.js";
 import {
   configBody,
   deltaBody,
-  FakeTransport,
+  InMemoryTransport,
   flag,
   ScriptedStream,
-  waitFor,
-} from "./helpers/fake-transport.js";
+} from "../src/testing.js";
+import { waitFor } from "./helpers/wait.js";
 
 /**
  * Vòng đồng bộ (§6.3, §6.8) với transport giả — tất định, không mạng: I15a (nội
@@ -17,7 +17,7 @@ import {
  */
 
 interface Harness {
-  transport: FakeTransport;
+  transport: InMemoryTransport;
   store: ConfigStore;
   sync: Synchronizer;
   log: string[];
@@ -31,7 +31,7 @@ afterEach(() => {
 function harness(
   overrides: Partial<ConstructorParameters<typeof Synchronizer>[2]> = {},
 ): Harness {
-  const transport = new FakeTransport();
+  const transport = new InMemoryTransport();
   const store = new ConfigStore();
   const log: string[] = [];
   const listener: SyncListener = {

@@ -13,3 +13,10 @@ packages/db/prisma/migrations/
 #  2. Bang trong do duoc @udp/design-lint doc bang may de doi chieu voi schema.
 #     Reflow bang la doi dau vao cua mot bo kiem dang chay.
 docs/UDP_design.md
+
+# Ket qua do (JSON do harness ghi) la DU LIEU, khong phai ma: prettier gop mang so
+# len mot dong, lam lech file so voi luc harness ghi ra
+docs/measurements/raw/
+
+# Ban mau Portal da duyet (Plan #25 code theo): giu nguyen tung byte nhu luc duyet
+docs/design/portal-prototype.html

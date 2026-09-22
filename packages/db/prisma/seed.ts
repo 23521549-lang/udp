@@ -18,6 +18,11 @@ import {
 } from "@udp/shared-types/evaluation";
 import { createPgAdapter } from "../src/adapter.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
+import {
+  SEED_CHECKOUT_FLAG_KEY,
+  SEED_IDS,
+  SEED_PROJECT_NAME,
+} from "../src/seed-constants.js";
 
 /**
  * Dữ liệu mẫu cho môi trường dev.
@@ -46,23 +51,9 @@ const prisma = new PrismaClient({
   adapter: createPgAdapter({ connectionString, max: 2 }),
 });
 
-// UUID cố định để seed idempotent — KHÔNG dùng ngoài môi trường dev.
-const ID = {
-  userOwner: "00000000-0000-4000-8000-000000000001",
-  userAdmin: "00000000-0000-4000-8000-000000000002",
-  project: "00000000-0000-4000-8000-000000000010",
-  flagDarkMode: "00000000-0000-4000-8000-000000000020",
-  flagCheckout: "00000000-0000-4000-8000-000000000021",
-  segmentBeta: "00000000-0000-4000-8000-000000000030",
-  // Variant cũng phải cố định. Để database tự sinh thì `serve` JSONB của rule
-  // chứa UUID khác nhau trên mỗi máy, và không ai diff được hai database nữa —
-  // đúng thứ nguyên tắc 1 ở đầu file muốn tránh.
-  variantDarkOn: "00000000-0000-4000-8000-000000000040",
-  variantDarkOff: "00000000-0000-4000-8000-000000000041",
-  variantCheckoutLegacy: "00000000-0000-4000-8000-000000000042",
-  variantCheckoutOptimized: "00000000-0000-4000-8000-000000000043",
-  variantCheckoutExperimental: "00000000-0000-4000-8000-000000000044",
-} as const;
+// UUID và tên cố định để seed idempotent — ở `seed-constants.ts` (thuần) để cấu
+// hình ngoài database (Prometheus, sample-app) đọc CÙNG giá trị mà không chạy seed
+const ID = SEED_IDS;
 
 /** Mật khẩu dev — chỉ dùng ở máy cá nhân */
 const DEV_PASSWORD = "udp12345678";
@@ -144,7 +135,7 @@ async function seedUsersAndProject() {
     create: {
       id: ID.project,
       ownerId: owner.id,
-      name: "demo-service",
+      name: SEED_PROJECT_NAME,
       creationMode: "CREATE_NEW",
       languageRuntime: "nodejs",
       status: "ACTIVE",
@@ -348,6 +339,89 @@ async function seedDarkModeFlag(projectId: string) {
   return darkMode;
 }
 
+/**
+ * [v4.8] Flag `checkout-v2` — flag canary của sample-app (§13.4, E5): BOOLEAN
+ * on/off, ACTIVE, bật ở dev, với MỘT rule phân phối `ALL` ở dev mang trọng số
+ * on 0% / off 100% (id cố định `SEED_IDS.ruleCheckoutV2`). Rollout FLAG_LEVEL
+ * không tự dựng rule — S1 đòi `targetingRuleId` của một rule phân phối hai variant
+ * CÓ SẴN và ramp đúng rule đó; baseline 0% là điều kiện để mốc T3 của E5 (nhóm dò
+ * rời `on`) tồn tại. Tên lấy từ `seed-constants.ts`, nơi sample-app, cấu hình
+ * Prometheus và harness E5 cùng đọc.
+ */
+async function seedCheckoutV2Flag(projectId: string): Promise<void> {
+  const flag = await prisma.featureFlag.upsert({
+    where: { id: ID.flagCheckoutV2 },
+    update: {},
+    create: {
+      id: ID.flagCheckoutV2,
+      projectId,
+      key: SEED_CHECKOUT_FLAG_KEY,
+      description: "Luồng thanh toán mới — flag canary của sample-app",
+      flagType: "BOOLEAN",
+      lifecycleStatus: "ACTIVE",
+      stickinessAttribute: DEFAULT_STICKINESS_ATTRIBUTE,
+      variants: {
+        create: [
+          { id: ID.variantCheckoutV2On, key: BOOLEAN_VARIANTS.ON, value: true },
+          {
+            id: ID.variantCheckoutV2Off,
+            key: BOOLEAN_VARIANTS.OFF,
+            value: false,
+          },
+        ],
+      },
+    },
+  });
+  await prisma.featureFlag.update({
+    where: { id: flag.id },
+    data: { defaultVariantId: ID.variantCheckoutV2Off },
+  });
+  for (const spec of DEFAULT_ENVIRONMENTS) {
+    const environment = await prisma.environment.findUniqueOrThrow({
+      where: { projectId_name: { projectId, name: spec.name } },
+    });
+    const cfg = await prisma.flagEnvConfig.upsert({
+      where: {
+        flagId_environmentId: {
+          flagId: flag.id,
+          environmentId: environment.id,
+        },
+      },
+      update: { defaultVariantId: ID.variantCheckoutV2Off },
+      create: {
+        flagId: flag.id,
+        environmentId: environment.id,
+        isEnabled: spec.name === "dev",
+        defaultVariantId: ID.variantCheckoutV2Off,
+      },
+    });
+    if (spec.name !== "dev") continue;
+    // `update: {}`: chạy lại seed không xoá trọng số một rollout đã ramp — rollout
+    // kết thúc bằng rollback cũng trả rule về baseline 0%
+    await prisma.flagTargetingRule.upsert({
+      where: { id: ID.ruleCheckoutV2 },
+      update: {},
+      create: {
+        id: ID.ruleCheckoutV2,
+        flagEnvConfigId: cfg.id,
+        ruleType: "ALL",
+        condition: {},
+        serve: checkedServe({
+          kind: "distribution",
+          weights: [
+            { variantId: ID.variantCheckoutV2On, weight: 0 },
+            { variantId: ID.variantCheckoutV2Off, weight: TOTAL_BUCKETS },
+          ],
+        }),
+        bucketSalt: "seed-rule-checkout-v2",
+        description:
+          "Canary của sample-app — rollout FLAG_LEVEL của E5 ramp rule này",
+        priority: 0,
+      },
+    });
+  }
+}
+
 /** Flag nhiều variant, còn DRAFT — SDK chưa nhận flag ở trạng thái này (§6.7) */
 async function seedCheckoutFlag(projectId: string): Promise<void> {
   const checkout = await prisma.featureFlag.upsert({
@@ -449,6 +523,7 @@ async function main(): Promise<void> {
   await seedSdkKey(devEnv.id, owner.id);
   await seedDarkModeFlag(project.id);
   await seedCheckoutFlag(project.id);
+  await seedCheckoutV2Flag(project.id);
   await seedSegment(project.id);
 
   console.log(`
@@ -468,6 +543,7 @@ Seed hoàn tất.
                                     rule 1: USER_BASED  → serve variant "on"
                                     rule 2: ALL         → serve distribution 20/80
                 checkout-algorithm  DRAFT, 3 variant
+                ${SEED_CHECKOUT_FLAG_KEY}         ACTIVE, bật ở dev, rule ALL on 0% / off 100% (canary của sample-app)
 `);
 }
 

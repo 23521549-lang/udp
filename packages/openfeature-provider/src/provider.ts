@@ -13,10 +13,11 @@ import {
 import { PROVIDER, SSE } from "@udp/config/constants";
 import { evaluate, type EvaluateOptions } from "@udp/flag-evaluator";
 import type { Evaluation } from "@udp/shared-types";
+import { takeInternals } from "./internals.js";
 import { UDPRequestLabelHook } from "./labels.js";
 import { ConfigStore } from "./store.js";
-import { Synchronizer, type SyncOptions } from "./sync.js";
-import { HttpTransport, type Transport } from "./transport.js";
+import { Synchronizer } from "./sync.js";
+import { HttpTransport } from "./transport.js";
 
 /**
  * `UDPFeatureFlagProvider` — provider OpenFeature cho SERVER key (§6.8) [v4.7]:
@@ -47,18 +48,6 @@ export interface UDPProviderOptions {
   fetch?: typeof fetch;
   /** Chẩn đoán (RESYNC, DEGRADED, khoá bị từ chối) ở mức `warn`; mặc định im lặng */
   logger?: Pick<Logger, "warn">;
-}
-
-/**
- * Tham số NỘI BỘ — test tất định; không phải API công khai (entry của package
- * không xuất nó).
- * @internal
- */
-export interface ProviderInternals {
-  transport?: Transport;
-  sync?: Partial<SyncOptions>;
-  /** Cache do test giữ để so với `/sdk/config` (I15c) */
-  store?: ConfigStore;
 }
 
 const FLAG_TYPE = {
@@ -176,7 +165,9 @@ export class UDPFeatureFlagProvider implements Provider {
   private pendingInit:
     { resolve: () => void; reject: (err: Error) => void } | undefined;
 
-  constructor(options: UDPProviderOptions, internals: ProviderInternals = {}) {
+  constructor(options: UDPProviderOptions) {
+    // Đọc-và-xoá khe tiêm TRƯỚC mọi thứ có thể ném (xem `internals.ts`)
+    const internals = takeInternals();
     const o = validated(options);
     this.store = internals.store ?? new ConfigStore();
     this.initTimeoutMs = o.initTimeoutMs;

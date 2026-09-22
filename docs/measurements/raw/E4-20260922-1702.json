@@ -1,0 +1,391 @@
+{
+  "experiment": "E4",
+  "at": "2026-09-22T10:02:15.603Z",
+  "environment": {
+    "commit": "f39055aa33401f720de07575e5967c592d9bd427",
+    "sourceDirty": true,
+    "sourceDiffSha256": "4b1e94a262ffd19d3a66e56cb03d05e7ad069335abfb20e48bae307d8a7bcd99",
+    "node": "v22.20.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "memoryGiB": 7.7,
+    "freeMemoryGiB": 0.5,
+    "geometry": "dev-box (Windows, cùng máy) → Supabase ap-southeast-1"
+  },
+  "data": {
+    "method": {
+      "start": "gửi PATCH /internal/flag-envs/:id (S2)",
+      "end": "provider phát CONFIGURATION_CHANGED chứa f0",
+      "runsPerCell": 100,
+      "eventTimeoutMs": 15000,
+      "jitter": "U(0, 1 s) giữa hai lần",
+      "idleBaselineSeconds": 120,
+      "queries": "delta udp_flag_db_queries_total trong [t0, t2+300ms] trừ tốc độ nền × độ dài cửa sổ (sự kiện Prisma: COMMIT có, BEGIN không; kênh LISTEN không đếm)",
+      "serverBytes": "delta udp_flag_sse_bytes_total{event=snapshot|flag_changed}",
+      "sdkBytes": "byte body provider nhận qua fetch (SSE + /sdk/config)"
+    },
+    "cells": [
+      {
+        "flags": 1,
+        "mode": "snapshot",
+        "notify": true,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 896,
+          "p90": 949.2,
+          "p99": 1264.8,
+          "max": 1459.1
+        },
+        "afterCommitMs": {
+          "p50": 164.9,
+          "p90": 180.3,
+          "p99": 474.3,
+          "max": 550.9
+        },
+        "idleQueriesPerSecond": 1.733,
+        "queriesPerChange": {
+          "median": 14.6,
+          "iqr": 1
+        },
+        "serverBytesPerChange": {
+          "median": 348
+        },
+        "sdkBytesPerChange": {
+          "median": 349
+        }
+      },
+      {
+        "flags": 1,
+        "mode": "snapshot",
+        "notify": false,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 1101.5,
+          "p90": 1466.6,
+          "p99": 1632.9,
+          "max": 1639.6
+        },
+        "afterCommitMs": {
+          "p50": 422.6,
+          "p90": 717.8,
+          "p99": 785.6,
+          "max": 794.5
+        },
+        "idleQueriesPerSecond": 1.658,
+        "queriesPerChange": {
+          "median": 12.9,
+          "iqr": 0.7
+        },
+        "serverBytesPerChange": {
+          "median": 350
+        },
+        "sdkBytesPerChange": {
+          "median": 351
+        }
+      },
+      {
+        "flags": 1,
+        "mode": "delta",
+        "notify": true,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 895.1,
+          "p90": 966.6,
+          "p99": 1351,
+          "max": 1391.7
+        },
+        "afterCommitMs": {
+          "p50": 163.1,
+          "p90": 181.6,
+          "p99": 537.4,
+          "max": 635.7
+        },
+        "idleQueriesPerSecond": 1.674,
+        "queriesPerChange": {
+          "median": 14.2,
+          "iqr": 1
+        },
+        "serverBytesPerChange": {
+          "median": 361
+        },
+        "sdkBytesPerChange": {
+          "median": 362
+        }
+      },
+      {
+        "flags": 1,
+        "mode": "delta",
+        "notify": false,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 1123,
+          "p90": 1451.5,
+          "p99": 1549.8,
+          "max": 1559.5
+        },
+        "afterCommitMs": {
+          "p50": 444.5,
+          "p90": 715.2,
+          "p99": 798.6,
+          "max": 826.6
+        },
+        "idleQueriesPerSecond": 1.672,
+        "queriesPerChange": {
+          "median": 12.9,
+          "iqr": 0.5
+        },
+        "serverBytesPerChange": {
+          "median": 361
+        },
+        "sdkBytesPerChange": {
+          "median": 361
+        }
+      },
+      {
+        "flags": 10,
+        "mode": "snapshot",
+        "notify": true,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 1098.8,
+          "p90": 1147.2,
+          "p99": 1442.9,
+          "max": 1479.5
+        },
+        "afterCommitMs": {
+          "p50": 208,
+          "p90": 225.5,
+          "p99": 487.2,
+          "max": 603.8
+        },
+        "idleQueriesPerSecond": 1.674,
+        "queriesPerChange": {
+          "median": 14.6,
+          "iqr": 1
+        },
+        "serverBytesPerChange": {
+          "median": 1753
+        },
+        "sdkBytesPerChange": {
+          "median": 1753
+        }
+      },
+      {
+        "flags": 10,
+        "mode": "snapshot",
+        "notify": false,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 1181.3,
+          "p90": 1500.9,
+          "p99": 1705.7,
+          "max": 1777.9
+        },
+        "afterCommitMs": {
+          "p50": 466.5,
+          "p90": 728.5,
+          "p99": 865,
+          "max": 874.2
+        },
+        "idleQueriesPerSecond": 1.691,
+        "queriesPerChange": {
+          "median": 12.8,
+          "iqr": 0.7
+        },
+        "serverBytesPerChange": {
+          "median": 1754
+        },
+        "sdkBytesPerChange": {
+          "median": 1755
+        }
+      },
+      {
+        "flags": 10,
+        "mode": "delta",
+        "notify": true,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 908.1,
+          "p90": 975.3,
+          "p99": 1169.7,
+          "max": 1253
+        },
+        "afterCommitMs": {
+          "p50": 167.8,
+          "p90": 190.5,
+          "p99": 378.2,
+          "max": 451
+        },
+        "idleQueriesPerSecond": 1.699,
+        "queriesPerChange": {
+          "median": 14,
+          "iqr": 1
+        },
+        "serverBytesPerChange": {
+          "median": 361
+        },
+        "sdkBytesPerChange": {
+          "median": 362
+        }
+      },
+      {
+        "flags": 10,
+        "mode": "delta",
+        "notify": false,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 1101.9,
+          "p90": 1455.5,
+          "p99": 1567.9,
+          "max": 1890.3
+        },
+        "afterCommitMs": {
+          "p50": 407.8,
+          "p90": 744.6,
+          "p99": 877.2,
+          "max": 878.9
+        },
+        "idleQueriesPerSecond": 1.673,
+        "queriesPerChange": {
+          "median": 12.9,
+          "iqr": 0.7
+        },
+        "serverBytesPerChange": {
+          "median": 361
+        },
+        "sdkBytesPerChange": {
+          "median": 362
+        }
+      },
+      {
+        "flags": 100,
+        "mode": "snapshot",
+        "notify": true,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 1184.3,
+          "p90": 1291.1,
+          "p99": 1719.8,
+          "max": 1800.1
+        },
+        "afterCommitMs": {
+          "p50": 226,
+          "p90": 321,
+          "p99": 468.3,
+          "max": 811.4
+        },
+        "idleQueriesPerSecond": 1.707,
+        "queriesPerChange": {
+          "median": 14.5,
+          "iqr": 0.4
+        },
+        "serverBytesPerChange": {
+          "median": 15884
+        },
+        "sdkBytesPerChange": {
+          "median": 15885
+        }
+      },
+      {
+        "flags": 100,
+        "mode": "snapshot",
+        "notify": false,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 1463.1,
+          "p90": 1732.8,
+          "p99": 1955.3,
+          "max": 2030.2
+        },
+        "afterCommitMs": {
+          "p50": 541.6,
+          "p90": 859.2,
+          "p99": 973.9,
+          "max": 1088.3
+        },
+        "idleQueriesPerSecond": 1.674,
+        "queriesPerChange": {
+          "median": 12.8,
+          "iqr": 0.7
+        },
+        "serverBytesPerChange": {
+          "median": 15884
+        },
+        "sdkBytesPerChange": {
+          "median": 15885
+        }
+      },
+      {
+        "flags": 100,
+        "mode": "delta",
+        "notify": true,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 1019.5,
+          "p90": 1159.4,
+          "p99": 1453.6,
+          "max": 1568
+        },
+        "afterCommitMs": {
+          "p50": 168.1,
+          "p90": 200.8,
+          "p99": 255.8,
+          "max": 262
+        },
+        "idleQueriesPerSecond": 1.673,
+        "queriesPerChange": {
+          "median": 14.6,
+          "iqr": 1
+        },
+        "serverBytesPerChange": {
+          "median": 361
+        },
+        "sdkBytesPerChange": {
+          "median": 362
+        }
+      },
+      {
+        "flags": 100,
+        "mode": "delta",
+        "notify": false,
+        "runs": 100,
+        "timeouts": 0,
+        "latencyMs": {
+          "p50": 1249.7,
+          "p90": 1567.4,
+          "p99": 1813.7,
+          "max": 1818.3
+        },
+        "afterCommitMs": {
+          "p50": 441.4,
+          "p90": 741.5,
+          "p99": 856.4,
+          "max": 874.9
+        },
+        "idleQueriesPerSecond": 1.706,
+        "queriesPerChange": {
+          "median": 12.8,
+          "iqr": 0.8
+        },
+        "serverBytesPerChange": {
+          "median": 361
+        },
+        "sdkBytesPerChange": {
+          "median": 362
+        }
+      }
+    ]
+  }
+}

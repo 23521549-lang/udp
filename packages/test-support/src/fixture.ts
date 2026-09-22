@@ -118,3 +118,67 @@ export async function issueSdkKey(
   await admin.sdkKey.create({ data: sdkKeyData({ ...options, token }) });
   return token;
 }
+
+export interface ScratchProject {
+  projectId: string;
+  environmentId: string;
+  ownerId: string;
+  /** Xoá project cùng outbox và audit của nó — gọi trong `finally` */
+  dispose(): Promise<void>;
+}
+
+/**
+ * Xoá một project dùng một lần cùng dấu vết của nó [v4.8]: `config_change_log`
+ * (outbox — không CASCADE theo project) và `audit_logs`, rồi project (CASCADE
+ * environment, flag, SDK key).
+ */
+export async function disposeProject(
+  admin: PrismaClient,
+  projectId: string,
+): Promise<void> {
+  const environments = await admin.environment.findMany({
+    where: { projectId },
+    select: { id: true },
+  });
+  await admin.configChangeLog.deleteMany({
+    where: { environmentId: { in: environments.map((e) => e.id) } },
+  });
+  await admin.auditLog.deleteMany({ where: { projectId } });
+  await admin.project.deleteMany({ where: { id: projectId } });
+}
+
+/**
+ * Project dùng một lần với MỘT environment `dev` — cho test tích hợp và phép đo
+ * (`@udp/experiments`). Tên mang tiền tố để dữ liệu sót lại (tiến trình bị giết giữa
+ * chừng) nhận ra và dọn được bằng tiền tố.
+ */
+export async function createScratchProject(
+  admin: PrismaClient,
+  prefix: string,
+): Promise<ScratchProject> {
+  const owner = await stableOwner(admin);
+  const suffix = randomUUID().slice(0, 8);
+  const project = await admin.project.create({
+    data: {
+      ownerId: owner.id,
+      name: `${prefix}-${suffix}`,
+      creationMode: "CREATE_NEW",
+      languageRuntime: "nodejs",
+      resourceQuota: {},
+      environments: {
+        create: [
+          { name: "dev", rank: 0, k8sNamespace: `udp-${prefix}-${suffix}` },
+        ],
+      },
+    },
+    select: { id: true, environments: { select: { id: true } } },
+  });
+  const environmentId = project.environments[0]?.id;
+  if (environmentId === undefined) throw new Error("project thiếu environment");
+  return {
+    projectId: project.id,
+    environmentId,
+    ownerId: owner.id,
+    dispose: () => disposeProject(admin, project.id),
+  };
+}

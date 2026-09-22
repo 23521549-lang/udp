@@ -4,18 +4,32 @@ import {
   type Snapshot,
   type SnapshotFlag,
 } from "@udp/flag-evaluator";
-import type { SseItem } from "../../src/sse.js";
-import type {
-  ConfigResult,
-  StreamOpen,
-  Transport,
-} from "../../src/transport.js";
+import { withInternals, type ProviderInternals } from "./internals.js";
+import { UDPFeatureFlagProvider, type UDPProviderOptions } from "./provider.js";
+import type { SseItem } from "./sse.js";
+import type { ConfigResult, StreamOpen, Transport } from "./transport.js";
 
 /**
- * Transport giả điều khiển được — test đơn vị tất định cho vòng đồng bộ: mỗi lời
- * gọi `/sdk/config` lấy phản hồi kế tiếp trong hàng đợi, mỗi lần mở stream lấy
- * một `ScriptedStream` mà test đẩy sự kiện vào.
+ * Chỗ dựa cho TEST và PHÉP ĐO (§6.8, §14) [v4.8] — subpath `./testing` chỉ có
+ * trong monorepo, KHÔNG nằm trong gói phát hành (`publishConfig.exports`).
+ *
+ * `InMemoryTransport` điều khiển được: mỗi lời gọi `/sdk/config` lấy phản hồi kế
+ * tiếp trong hàng đợi, mỗi lần mở stream lấy một `ScriptedStream` mà người gọi đẩy
+ * sự kiện vào — test tất định cho vòng đồng bộ, và E3/E14 nạp snapshot tổng hợp
+ * vào provider THẬT mà không cần mạng.
  */
+
+/** Dựng provider với tham số nội bộ (transport, cache, tuỳ chọn đồng bộ) */
+export function createProviderForTesting(
+  options: UDPProviderOptions,
+  internals: ProviderInternals,
+): UDPFeatureFlagProvider {
+  return withInternals(internals, () => new UDPFeatureFlagProvider(options));
+}
+
+export { ConfigStore } from "./store.js";
+export type { ProviderInternals } from "./internals.js";
+export type { SyncOptions } from "./sync.js";
 
 export class ScriptedStream {
   private readonly queue: (SseItem | "end" | "fail")[] = [];
@@ -61,7 +75,7 @@ export class ScriptedStream {
   }
 }
 
-export class FakeTransport implements Transport {
+export class InMemoryTransport implements Transport {
   readonly configCalls: (string | undefined)[] = [];
   readonly streamCalls: (number | undefined)[] = [];
   /** `"hang"`: server nhận kết nối rồi im — chỉ tín hiệu huỷ/quá hạn kết thúc nó */
@@ -146,15 +160,4 @@ export function deltaBody(
   configHash: string = configHashOf(after),
 ) {
   return { fromVersion, toVersion, configHash, changes };
-}
-
-export async function waitFor(
-  condition: () => boolean,
-  timeoutMs = 3_000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error("hết giờ chờ điều kiện");
-    await new Promise((r) => setTimeout(r, 5));
-  }
 }

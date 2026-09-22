@@ -24,6 +24,8 @@ export {
 } from "./flag-target.js";
 export {
   createActiveFlag,
+  createScratchProject,
+  disposeProject,
   internalCall,
   issueSdkKey,
   newSdkKeyToken,
@@ -31,6 +33,7 @@ export {
   sha256,
   stableOwner,
   type HttpTarget,
+  type ScratchProject,
   type SdkKeySpec,
   type SdkKeyType,
 } from "./fixture.js";

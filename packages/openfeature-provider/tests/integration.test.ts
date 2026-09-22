@@ -28,14 +28,14 @@ import fc from "fast-check";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { UDPFeatureFlagProvider } from "../src/index.js";
-import { ConfigStore } from "../src/store.js";
+import { ConfigStore, createProviderForTesting } from "../src/testing.js";
 import {
   HttpTransport,
   type ConfigResult,
   type StreamOpen,
   type Transport,
 } from "../src/transport.js";
-import { waitFor } from "./helpers/fake-transport.js";
+import { waitFor } from "./helpers/wait.js";
 
 /**
  * Provider với Service 2 THẬT (tiến trình con, `CHANGEFEED_MODE=delta`) [v4.7]:
@@ -125,7 +125,7 @@ beforeAll(async () => {
 
   s2 = await startFlagService({ env: { CHANGEFEED_MODE: "delta" } });
   transport = new RecordingTransport(new HttpTransport(s2.baseUrl, serverKey));
-  provider = new UDPFeatureFlagProvider(
+  provider = createProviderForTesting(
     // 1 giây: đang 401 thì provider thử `/sdk/config` mỗi chu kỳ, và limiter của nó
     // (100/phút/khoá) đếm cả lần bị từ chối — nhanh hơn là tự chuốc 429
     { host: s2.baseUrl, sdkKey: serverKey, pollingIntervalMs: 1_000 },
@@ -460,7 +460,7 @@ describe("fail-static", () => {
   }, 60_000);
 
   it("I34: Service 2 chết ⇒ STALE, vẫn phục vụ; sống lại ⇒ READY và HỘI TỤ về cấu hình mới", async () => {
-    const shortLived = new UDPFeatureFlagProvider(
+    const shortLived = createProviderForTesting(
       { host: s2.baseUrl, sdkKey: serverKey, pollingIntervalMs: 1_000 },
       // Dưới sàn của option công khai (nhịp tim 50 giây) — chỉ test mới hạ
       { sync: { backoffMinMs: 100, staleAfterMs: 1_000, staleCheckMs: 100 } },

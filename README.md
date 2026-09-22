@@ -14,6 +14,7 @@ udp/
 │   ├── config/                Hằng số và biến môi trường — nguồn sự thật duy nhất
 │   ├── db/                    Prisma schema, migration, test bất biến tầng DB, script quản trị
 │   ├── design-lint/           Đối chiếu UDP_design.md với schema, route, package
+│   ├── experiments/           Harness phép đo §14 (E3, E4, E5, E14) và I34 — kết quả ở docs/measurements
 │   ├── flag-evaluator/        Consistent hashing và đánh giá flag (dùng chung S2 và SDK)
 │   ├── flag-snapshot/         Snapshot cấu hình flag + config_hash + delta outbox (S2 và kill-switch S3)
 │   ├── http/                  ProblemDetails, error handler, logger cho mọi service
@@ -26,7 +27,12 @@ udp/
 │   ├── flag-service/          Feature Flag Service (OpenFeature), port 3002
 │   └── pd-controller/         Progressive Delivery Controller, port 3003
 ├── apps/
-│   └── portal/                React SPA — /app (developer) và /admin (chủ nền tảng)
+│   ├── portal/                React SPA — /app (developer) và /admin (chủ nền tảng)
+│   └── sample-app/            Ứng dụng khách mẫu: provider + nhãn ff + /metrics + chaos (E5), port 3010
+├── docs/
+│   ├── UDP_design.md          Tài liệu thiết kế
+│   ├── design/                Design system Portal đã duyệt + bản mẫu bấm được (chuẩn cho Plan #25)
+│   └── measurements/          Kết quả đo, đăng ký trước E5, sổ nợ kiểm chứng
 └── docker/                    Cấu hình hạ tầng dev
 ```
 

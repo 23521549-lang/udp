@@ -1,0 +1,598 @@
+{
+  "experiment": "E3",
+  "at": "2026-09-22T12:06:09.135Z",
+  "environment": {
+    "commit": "f39055aa33401f720de07575e5967c592d9bd427",
+    "sourceDirty": true,
+    "sourceDiffSha256": "642ac18f75e1a246613c8d43defb3fffaeb8bafb7f3a2e78f7ab0cd145f4d26f",
+    "node": "v22.20.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "memoryGiB": 7.7,
+    "freeMemoryGiB": 1,
+    "geometry": "in-process (không mạng); remote: dev-box (Windows, cùng máy) → Supabase ap-southeast-1"
+  },
+  "data": {
+    "method": {
+      "iterationsPerCellPerRound": 20000,
+      "warmUp": 2000,
+      "rounds": 3,
+      "aggregation": "percentile trên mẫu gộp của mọi vòng; thứ tự ô xáo mỗi vòng; GC ép giữa các ô",
+      "percentile": "nearest-rank",
+      "worstCase": "rule cuối mới khớp",
+      "sdk": "OpenFeature server-sdk getBooleanDetails qua UDPFeatureFlagProvider (hook ff tự gắn, ≤ 3 flag tracked, trong requestStore)"
+    },
+    "local": [
+      {
+        "flags": 1,
+        "rulesPerFlag": 1,
+        "tracked": 1,
+        "coreUs": {
+          "p50": 0.9,
+          "p90": 1.1,
+          "p99": 2.2,
+          "max": 1600.6
+        },
+        "sdkUs": {
+          "p50": 9.3,
+          "p90": 10.3,
+          "p99": 15.6,
+          "max": 2459.7
+        },
+        "sdkThroughputPerSecond": 91716,
+        "perRound": [
+          {
+            "coreUs": {
+              "p50": 0.9,
+              "p90": 1.4,
+              "p99": 2.5,
+              "max": 962.7
+            },
+            "sdkUs": {
+              "p50": 9.4,
+              "p90": 10,
+              "p99": 14.5,
+              "max": 1477.8
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 0.9,
+              "p90": 1,
+              "p99": 1.5,
+              "max": 1600.6
+            },
+            "sdkUs": {
+              "p50": 9.2,
+              "p90": 10.3,
+              "p99": 17.6,
+              "max": 2459.7
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 0.9,
+              "p90": 1,
+              "p99": 1.3,
+              "max": 987.8
+            },
+            "sdkUs": {
+              "p50": 9.4,
+              "p90": 10.6,
+              "p99": 14.4,
+              "max": 1742.3
+            }
+          }
+        ]
+      },
+      {
+        "flags": 1,
+        "rulesPerFlag": 10,
+        "tracked": 1,
+        "coreUs": {
+          "p50": 1.2,
+          "p90": 1.6,
+          "p99": 4.5,
+          "max": 1350.7
+        },
+        "sdkUs": {
+          "p50": 9.5,
+          "p90": 10.5,
+          "p99": 15.4,
+          "max": 1829.6
+        },
+        "sdkThroughputPerSecond": 88817,
+        "perRound": [
+          {
+            "coreUs": {
+              "p50": 1.2,
+              "p90": 1.4,
+              "p99": 2.1,
+              "max": 1108.7
+            },
+            "sdkUs": {
+              "p50": 9.6,
+              "p90": 10.5,
+              "p99": 15.7,
+              "max": 1809.5
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 1.2,
+              "p90": 1.4,
+              "p99": 2.4,
+              "max": 1273.4
+            },
+            "sdkUs": {
+              "p50": 9.5,
+              "p90": 10.2,
+              "p99": 15.4,
+              "max": 1639.5
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 1.2,
+              "p90": 2.1,
+              "p99": 4.9,
+              "max": 1350.7
+            },
+            "sdkUs": {
+              "p50": 9.5,
+              "p90": 10.7,
+              "p99": 14.9,
+              "max": 1829.6
+            }
+          }
+        ]
+      },
+      {
+        "flags": 1,
+        "rulesPerFlag": 50,
+        "tracked": 1,
+        "coreUs": {
+          "p50": 2.5,
+          "p90": 2.7,
+          "p99": 3.7,
+          "max": 1055.5
+        },
+        "sdkUs": {
+          "p50": 11,
+          "p90": 12.5,
+          "p99": 18.7,
+          "max": 2022.4
+        },
+        "sdkThroughputPerSecond": 77356,
+        "perRound": [
+          {
+            "coreUs": {
+              "p50": 2.5,
+              "p90": 2.7,
+              "p99": 4.2,
+              "max": 746.3
+            },
+            "sdkUs": {
+              "p50": 11.6,
+              "p90": 12.9,
+              "p99": 20.1,
+              "max": 1649.2
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 2.4,
+              "p90": 2.6,
+              "p99": 3.3,
+              "max": 1037
+            },
+            "sdkUs": {
+              "p50": 10.5,
+              "p90": 11.8,
+              "p99": 17.9,
+              "max": 1536.8
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 2.5,
+              "p90": 2.7,
+              "p99": 3.5,
+              "max": 1055.5
+            },
+            "sdkUs": {
+              "p50": 11.1,
+              "p90": 12.3,
+              "p99": 18.3,
+              "max": 2022.4
+            }
+          }
+        ]
+      },
+      {
+        "flags": 10,
+        "rulesPerFlag": 1,
+        "tracked": 3,
+        "coreUs": {
+          "p50": 1,
+          "p90": 1.2,
+          "p99": 2,
+          "max": 1123.5
+        },
+        "sdkUs": {
+          "p50": 9.2,
+          "p90": 10.1,
+          "p99": 14.8,
+          "max": 1694.8
+        },
+        "sdkThroughputPerSecond": 92716,
+        "perRound": [
+          {
+            "coreUs": {
+              "p50": 1,
+              "p90": 1.1,
+              "p99": 1.7,
+              "max": 1123.5
+            },
+            "sdkUs": {
+              "p50": 9.2,
+              "p90": 10.1,
+              "p99": 14.2,
+              "max": 1622.4
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 0.9,
+              "p90": 1.2,
+              "p99": 2.2,
+              "max": 1108.1
+            },
+            "sdkUs": {
+              "p50": 9,
+              "p90": 9.9,
+              "p99": 13.7,
+              "max": 1547.2
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 0.9,
+              "p90": 1.1,
+              "p99": 1.7,
+              "max": 1107.6
+            },
+            "sdkUs": {
+              "p50": 9.4,
+              "p90": 10.5,
+              "p99": 16.6,
+              "max": 1694.8
+            }
+          }
+        ]
+      },
+      {
+        "flags": 10,
+        "rulesPerFlag": 10,
+        "tracked": 3,
+        "coreUs": {
+          "p50": 1.3,
+          "p90": 1.4,
+          "p99": 2.2,
+          "max": 1562.1
+        },
+        "sdkUs": {
+          "p50": 9.9,
+          "p90": 11.4,
+          "p99": 15.9,
+          "max": 1564.3
+        },
+        "sdkThroughputPerSecond": 86481,
+        "perRound": [
+          {
+            "coreUs": {
+              "p50": 1.3,
+              "p90": 1.5,
+              "p99": 2.1,
+              "max": 1235.7
+            },
+            "sdkUs": {
+              "p50": 10.3,
+              "p90": 11.6,
+              "p99": 16.7,
+              "max": 1564.3
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 1.3,
+              "p90": 1.4,
+              "p99": 2.6,
+              "max": 1406.2
+            },
+            "sdkUs": {
+              "p50": 9.4,
+              "p90": 10.3,
+              "p99": 15.6,
+              "max": 1529.8
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 1.3,
+              "p90": 1.4,
+              "p99": 2,
+              "max": 1562.1
+            },
+            "sdkUs": {
+              "p50": 10.2,
+              "p90": 11.6,
+              "p99": 15.5,
+              "max": 1536.4
+            }
+          }
+        ]
+      },
+      {
+        "flags": 10,
+        "rulesPerFlag": 50,
+        "tracked": 3,
+        "coreUs": {
+          "p50": 2.6,
+          "p90": 2.9,
+          "p99": 4.6,
+          "max": 1680.5
+        },
+        "sdkUs": {
+          "p50": 11.7,
+          "p90": 13.4,
+          "p99": 19.6,
+          "max": 2677.3
+        },
+        "sdkThroughputPerSecond": 73528,
+        "perRound": [
+          {
+            "coreUs": {
+              "p50": 2.5,
+              "p90": 2.7,
+              "p99": 4.2,
+              "max": 1349.6
+            },
+            "sdkUs": {
+              "p50": 11.8,
+              "p90": 13,
+              "p99": 18.8,
+              "max": 1688.8
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 2.8,
+              "p90": 3,
+              "p99": 5,
+              "max": 1680.5
+            },
+            "sdkUs": {
+              "p50": 11.4,
+              "p90": 13.5,
+              "p99": 19.2,
+              "max": 2677.3
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 2.6,
+              "p90": 2.9,
+              "p99": 4.2,
+              "max": 1539.5
+            },
+            "sdkUs": {
+              "p50": 11.8,
+              "p90": 13.8,
+              "p99": 21.4,
+              "max": 2165.9
+            }
+          }
+        ]
+      },
+      {
+        "flags": 100,
+        "rulesPerFlag": 1,
+        "tracked": 3,
+        "coreUs": {
+          "p50": 1,
+          "p90": 1.1,
+          "p99": 2.6,
+          "max": 1456.3
+        },
+        "sdkUs": {
+          "p50": 9.5,
+          "p90": 10.6,
+          "p99": 15.3,
+          "max": 3206.8
+        },
+        "sdkThroughputPerSecond": 90271,
+        "perRound": [
+          {
+            "coreUs": {
+              "p50": 1,
+              "p90": 1.1,
+              "p99": 2.6,
+              "max": 1334
+            },
+            "sdkUs": {
+              "p50": 9.3,
+              "p90": 10.3,
+              "p99": 17,
+              "max": 1591.9
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 1,
+              "p90": 1.5,
+              "p99": 5.1,
+              "max": 1349.1
+            },
+            "sdkUs": {
+              "p50": 9.4,
+              "p90": 10.2,
+              "p99": 14.2,
+              "max": 1599.6
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 1,
+              "p90": 1.1,
+              "p99": 1.7,
+              "max": 1456.3
+            },
+            "sdkUs": {
+              "p50": 9.9,
+              "p90": 11.1,
+              "p99": 14.6,
+              "max": 3206.8
+            }
+          }
+        ]
+      },
+      {
+        "flags": 100,
+        "rulesPerFlag": 10,
+        "tracked": 3,
+        "coreUs": {
+          "p50": 1.9,
+          "p90": 2.4,
+          "p99": 4.1,
+          "max": 4004.9
+        },
+        "sdkUs": {
+          "p50": 10.6,
+          "p90": 12.6,
+          "p99": 17.9,
+          "max": 2429.9
+        },
+        "sdkThroughputPerSecond": 80462,
+        "perRound": [
+          {
+            "coreUs": {
+              "p50": 2.1,
+              "p90": 2.5,
+              "p99": 4.5,
+              "max": 1836.6
+            },
+            "sdkUs": {
+              "p50": 11.1,
+              "p90": 13.8,
+              "p99": 20.4,
+              "max": 2429.9
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 1.8,
+              "p90": 2,
+              "p99": 3.1,
+              "max": 2951.6
+            },
+            "sdkUs": {
+              "p50": 10.1,
+              "p90": 10.9,
+              "p99": 16.3,
+              "max": 1514.9
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 1.8,
+              "p90": 2.6,
+              "p99": 4.2,
+              "max": 4004.9
+            },
+            "sdkUs": {
+              "p50": 10.8,
+              "p90": 11.9,
+              "p99": 16.9,
+              "max": 2107.9
+            }
+          }
+        ]
+      },
+      {
+        "flags": 100,
+        "rulesPerFlag": 50,
+        "tracked": 3,
+        "coreUs": {
+          "p50": 3.9,
+          "p90": 4.9,
+          "p99": 7.1,
+          "max": 990
+        },
+        "sdkUs": {
+          "p50": 12.3,
+          "p90": 15.6,
+          "p99": 24.9,
+          "max": 1634.7
+        },
+        "sdkThroughputPerSecond": 67824,
+        "perRound": [
+          {
+            "coreUs": {
+              "p50": 3,
+              "p90": 4.7,
+              "p99": 6.2,
+              "max": 676.2
+            },
+            "sdkUs": {
+              "p50": 13.7,
+              "p90": 17.2,
+              "p99": 28,
+              "max": 1460.4
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 3.9,
+              "p90": 4.5,
+              "p99": 6.1,
+              "max": 736.3
+            },
+            "sdkUs": {
+              "p50": 11.6,
+              "p90": 13.6,
+              "p99": 23.6,
+              "max": 1420.7
+            }
+          },
+          {
+            "coreUs": {
+              "p50": 4.2,
+              "p90": 5.9,
+              "p99": 7.9,
+              "max": 990
+            },
+            "sdkUs": {
+              "p50": 12,
+              "p90": 14.2,
+              "p99": 19.5,
+              "max": 1634.7
+            }
+          }
+        ]
+      }
+    ],
+    "remote": {
+      "samples": 400,
+      "rateRps": 8,
+      "latencyMs": {
+        "p50": 57.65,
+        "p90": 64.14,
+        "p99": 108.08,
+        "max": 157.4
+      },
+      "note": "gồm tra SDK key trong database mỗi request (không cache khoá — §6.2) — RTT máy dev → Singapore"
+    }
+  }
+}

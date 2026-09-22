@@ -10,6 +10,7 @@ import { sdkPerKeyLimiter, sdkStreamOpenLimiter } from "../auth/rate-limit.js";
 import { requireSdkKey, sdkKeyOf } from "../auth/sdk-key.guard.js";
 import { configCache } from "../changefeed/index.js";
 import { sdkConfigBody } from "./config-body.js";
+import { metrics } from "../core/metrics.js";
 import { CONFIG_CACHE_HEADERS } from "./config-version.js";
 import { sseHub } from "./index.js";
 import { parseCursor } from "./sse.protocol.js";
@@ -65,6 +66,14 @@ sdkRouter.get(
      * trong cache rồi. Thứ 304 tiết kiệm là băng thông — đúng điều §6.3 nhắm tới
      * khi nói "chi phí gần bằng 0".
      */
+    // Byte của body 200 cho `/metrics` (E4); 304 không có body
+    res.once("finish", () => {
+      if (res.statusCode === 200) {
+        metrics.sdkConfigBytes.inc(
+          Number(res.getHeader("Content-Length") ?? 0),
+        );
+      }
+    });
     res.json(sdkConfigBody(entry));
   }),
 );

@@ -8,6 +8,7 @@ import {
   requestLogger,
 } from "@udp/http";
 import { prisma } from "./core/db.js";
+import { metricsRegistry } from "./core/metrics.js";
 import { internalEnvConfigRouter } from "./internal/env-config.controller.js";
 import { internalFlagRouter } from "./internal/flag.controller.js";
 import { internalRolloutRouter } from "./internal/rollout.controller.js";
@@ -88,6 +89,18 @@ export function createApp(): Express {
       } catch {
         res.status(503).json({ status: "not_ready", database: "down" });
       }
+    }),
+  );
+
+  /**
+   * [v4.8] Số đo vận hành (§9) — cùng khuôn `/metrics` của S1/S3: registry mặc
+   * định, tiền tố `udp_flag_`. Ingress công khai không route tới đây.
+   */
+  app.get(
+    "/metrics",
+    asyncHandler(async (_req, res) => {
+      res.set("Content-Type", metricsRegistry.contentType);
+      res.end(await metricsRegistry.metrics());
     }),
   );
 

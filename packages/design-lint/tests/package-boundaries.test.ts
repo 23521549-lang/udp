@@ -172,20 +172,23 @@ describe("ranh giới package", () => {
     }
     expect(offenders).toEqual([]);
 
-    // Runtime CHỈ ba package nội bộ — không thư viện bên thứ ba nào đi theo vào app
-    // khách; SDK OpenFeature và prom-client là PEER: bản riêng của provider đăng ký
+    // [v4.8] Khách chỉ cài TARBALL: `@udp/*` và thư viện của chúng được GÓP VÀO
+    // bundle (`scripts/build.ts`), nên `dependencies` RỖNG — ba package nội bộ
+    // nằm ở devDependencies (build và test trong monorepo cần chúng). SDK
+    // OpenFeature và prom-client là PEER: bản riêng của provider đăng ký
     // histogram vào registry KHÁC `/metrics` của app, series biến mất im lặng
     const json = JSON.parse(
       readFileSync(join(pv.dir, "package.json"), "utf8"),
     ) as {
       dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
       peerDependencies?: Record<string, string>;
     };
-    expect(Object.keys(json.dependencies ?? {}).sort()).toEqual([
-      "@udp/config",
-      "@udp/flag-evaluator",
-      "@udp/shared-types",
-    ]);
+    expect(json.dependencies ?? {}).toEqual({});
+    for (const internal of allowed) {
+      const name = internal.split("/").slice(0, 2).join("/");
+      expect(json.devDependencies ?? {}).toHaveProperty([name]);
+    }
     for (const peer of [
       "@openfeature/server-sdk",
       "@openfeature/core",
@@ -203,6 +206,27 @@ describe("ranh giới package", () => {
         ),
       );
     expect(promImports).toEqual([]);
+  });
+
+  it("[v4.8] sample-app là ỨNG DỤNG KHÁCH: src/ chỉ dùng entry công khai của provider", () => {
+    // Nó là hiện thực tham chiếu của Golden Path (§11): chạm vào `@udp/config`
+    // (validate `.env` của UDP), lõi đánh giá hay subpath `./testing` là chứng minh
+    // một thứ khách KHÔNG làm được
+    const app = byName.get("@udp/sample-app") as Pkg;
+    const allowed = new Set([
+      "@udp/openfeature-provider",
+      "@udp/openfeature-provider/metrics",
+    ]);
+    const offenders: string[] = [];
+    for (const file of sourceFiles(join(app.dir, "src"))) {
+      for (const m of readFileSync(file, "utf8").matchAll(
+        /from\s+"(@udp\/[^"]*)"/g,
+      )) {
+        if (!allowed.has(m[1] as string))
+          offenders.push(`${file.replace(ROOT, "")}: ${String(m[1])}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   it("mỗi package khai đúng những @udp/* mà nó thật sự import", () => {

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ConfigStore } from "../src/store.js";
 import { Synchronizer } from "../src/sync.js";
 import { HttpTransport, retryAfterMs } from "../src/transport.js";
-import { waitFor } from "./helpers/fake-transport.js";
+import { waitFor } from "./helpers/wait.js";
 
 /**
  * `HttpTransport` trên mạng THẬT (server `http` cục bộ) — thứ transport giả không
