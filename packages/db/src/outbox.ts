@@ -82,7 +82,8 @@ export interface OutboxWrite<T> {
  * Mặc định của Prisma là `timeout: 5000ms`. Đã đo RTT tới database ở Singapore
  * là ~50ms, tức 5 giây chỉ đủ 100 lượt đi về — và một lần tạo flag chạm N
  * environment tốn khoảng `4N + 3` lượt (câu `NOTIFY` của tầng 3 là MỘT lượt cho cả
- * lần ghi; `stateOf` là MỘT câu lệnh cho mỗi environment từ [v4.2]).
+ * lần ghi; `stateOf` là MỘT câu lệnh cho mỗi environment từ [v4.2]; [v4.10] bước
+ * 4 gộp thành MỘT câu khi payload giống nhau ở mọi environment, bớt `N − 1` lượt).
  * Khai tường minh, rộng hơn, và nói rõ con số thay vì để mặc định âm thầm cắt
  * giữa chừng bằng `P2028` sau khi đã giữ khoá suốt thời gian đó.
  *
@@ -90,6 +91,76 @@ export interface OutboxWrite<T> {
  * là 5). Nó khác `timeout`, và nhầm hai cái là chẩn nhầm nguyên nhân.
  */
 const TRANSACTION_BUDGET = { timeout: 20_000, maxWait: 5_000 } as const;
+
+/** Một dòng của bước 4: version cấp ở bước 1, payload dựng ở bước 3 */
+interface OutboxRow {
+  environmentId: string;
+  configVersion: number;
+  /** Đã tuần tự hoá — bước 4 so payload giữa các environment bằng chuỗi */
+  payload: string;
+}
+
+function assertInserted(inserted: number, expected: number): void {
+  if (inserted !== expected) {
+    throw new Error(
+      `writeWithOutbox: ghi outbox trả ${String(inserted)} hàng, cần đúng ${String(expected)}`,
+    );
+  }
+}
+
+/**
+ * Bước 4 cho mọi environment của lần ghi.
+ *
+ * INSERT thô, KHÔNG `RETURNING` — có chủ đích [v4.3]. `create` của Prisma là
+ * `INSERT ... RETURNING *`, tức cần SELECT trên bảng; `udp_s3` (kill-switch,
+ * §7.6) chỉ có INSERT, đúng §1.2 — đo 12/09/2026: 42501. Không nới quyền cho S3
+ * đọc sổ outbox chỉ để Prisma đọc lại một hàng không ai dùng. `id` và
+ * `created_at` là mặc định phía database.
+ *
+ * [v4.10] `payload` GIỐNG NHAU ở mọi environment là ca thường của một lần ghi
+ * fan-out: delta của `segment.updated` là chính segment, thứ thuộc PROJECT chứ
+ * không thuộc environment. Mỗi câu INSERT là một lần đẩy cả payload lên dây —
+ * 4 MiB ở trần `SEGMENT.maxProjectBytes`, đo 336ms mỗi dòng (mục
+ * `segment-cap-perf` của sổ đo) — nên 10 environment trả giá đó mười lần cho
+ * cùng một chuỗi. Một câu `INSERT ... SELECT` trên `unnest(env_ids, versions)`
+ * gửi payload đúng một lần và để Postgres nhân nó ra, vẫn đúng một dòng cho mỗi
+ * `(environment_id, config_version)` như vòng lặp cũ.
+ *
+ * Payload KHÁC nhau thì vẫn một câu cho mỗi environment: gộp kiểu đó phải gửi N
+ * payload trong một câu, tức trả đúng cái giá vừa tránh được.
+ */
+async function insertOutbox<T>(
+  tx: Prisma.TransactionClient,
+  write: OutboxWrite<T>,
+  rows: readonly OutboxRow[],
+): Promise<void> {
+  const [first] = rows;
+  if (
+    first !== undefined &&
+    rows.length > 1 &&
+    rows.every((row) => row.payload === first.payload)
+  ) {
+    const inserted = await tx.$executeRaw`
+      INSERT INTO config_change_log
+             (environment_id, config_version, change_type, payload, actor_user_id)
+      SELECT target.id::uuid, target.version, ${write.changeType},
+             ${first.payload}::jsonb, ${write.actorUserId ?? null}::uuid
+        FROM unnest(${rows.map((row) => row.environmentId)}::uuid[],
+                    ${rows.map((row) => row.configVersion)}::int[])
+             AS target(id, version)`;
+    assertInserted(inserted, rows.length);
+    return;
+  }
+
+  for (const { environmentId, configVersion, payload } of rows) {
+    const inserted = await tx.$executeRaw`
+      INSERT INTO config_change_log
+             (environment_id, config_version, change_type, payload, actor_user_id)
+      VALUES (${environmentId}::uuid, ${configVersion}, ${write.changeType},
+              ${payload}::jsonb, ${write.actorUserId ?? null}::uuid)`;
+    assertInserted(inserted, 1);
+  }
+}
 
 /**
  * Ghi một thay đổi cấu hình theo đúng thứ tự bốn bước của ADR-05 (§8.4):
@@ -139,8 +210,10 @@ export async function writeWithOutbox<T>(
   /**
    * Khoá theo THỨ TỰ TẤT ĐỊNH.
    *
-   * Một lần sửa segment chạm mọi environment có rule dùng nó (§3.2), nên hai
-   * lần sửa đồng thời sẽ khoá cùng một tập hàng. Khoá theo thứ tự khác nhau là
+   * [v4.9] Một lần sửa segment chạm MỌI environment của project — snapshot của
+   * mỗi environment chứa mọi segment của project, không lọc theo tham chiếu
+   * (`snapshot-row.ts`) — nên hai lần sửa đồng thời khoá cùng một tập hàng, và
+   * tập đó là toàn bộ environment của project. Khoá theo thứ tự khác nhau là
    * deadlock thật (`40P01`), và Postgres chỉ phát hiện sau `deadlock_timeout`
    * rồi huỷ một bên. Sắp id trước khi khoá làm hình dạng đó không tồn tại.
    */
@@ -161,7 +234,8 @@ export async function writeWithOutbox<T>(
     // ---- Bước 2: thay đổi thật ---------------------------------------------
     const result = await write.mutate(tx);
 
-    // ---- Bước 3 và 4 --------------------------------------------------------
+    // ---- Bước 3: hash sau thay đổi, của TỪNG environment -------------------
+    const rows: OutboxRow[] = [];
     for (const { environmentId, configVersion } of stamped) {
       const { configHash, delta } = await write.stateOf(tx, environmentId);
 
@@ -171,23 +245,26 @@ export async function writeWithOutbox<T>(
       });
 
       /**
-       * INSERT thô, KHÔNG `RETURNING` — có chủ đích [v4.3]. `create` của Prisma
-       * là `INSERT ... RETURNING *`, tức cần SELECT trên bảng; `udp_s3` (kill-switch,
-       * §7.6) chỉ có INSERT, đúng §1.2 — đo 12/09/2026: 42501. Không nới quyền cho
-       * S3 đọc sổ outbox chỉ để Prisma đọc lại một hàng không ai dùng. `id` và
-       * `created_at` là mặc định phía database.
+       * Payload trùng nội dung giữ CÙNG MỘT chuỗi thay vì một bản sao.
+       *
+       * Bước 4 chỉ cần biết chúng có trùng nhau hay không, nên bản sao thứ hai
+       * thành rác ngay tại đây và phép so ở bước 4 là so con trỏ. Nếu không:
+       * mười environment ở trần `SEGMENT.maxProjectBytes` là 40 MiB chuỗi sống
+       * cùng lúc trong lúc đang giữ khoá cả project, thay cho 4 MiB như vòng lặp
+       * cũ — gộp bước 4 kiểu đó là đổi một hồi quy (lượt đi về) lấy một hồi quy
+       * khác (bộ nhớ).
        */
-      const inserted = await tx.$executeRaw`
-        INSERT INTO config_change_log
-               (environment_id, config_version, change_type, payload, actor_user_id)
-        VALUES (${environmentId}::uuid, ${configVersion}, ${write.changeType},
-                ${JSON.stringify(delta)}::jsonb, ${write.actorUserId ?? null}::uuid)`;
-      if (inserted !== 1) {
-        throw new Error(
-          `writeWithOutbox: ghi outbox trả ${String(inserted)} hàng, cần đúng 1`,
-        );
-      }
+      const payload = JSON.stringify(delta);
+      const shared = rows[0]?.payload;
+      rows.push({
+        environmentId,
+        configVersion,
+        payload: payload === shared ? shared : payload,
+      });
     }
+
+    // ---- Bước 4: dòng outbox — ghi CUỐI CÙNG -------------------------------
+    await insertOutbox(tx, write, rows);
 
     // ---- Tầng 3: đánh thức replica — TRONG transaction ---------------------
     // PostgreSQL chỉ giao notification lúc COMMIT, nên một lần ghi rollback không

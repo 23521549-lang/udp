@@ -115,7 +115,7 @@ export function uniqueViolationIndexOf(err: unknown): string | undefined {
 }
 
 /**
- * Bóc SQLSTATE và thông báo gốc ra khỏi lỗi.
+ * Mọi tầng có thể mang SQLSTATE, theo thứ tự: cụ thể trước, phẳng sau.
  *
  * BA hình dạng, tuỳ đường lỗi đi ra — đã đo trên Prisma 7.10, không phải suy đoán:
  *
@@ -129,23 +129,40 @@ export function uniqueViolationIndexOf(err: unknown): string | undefined {
  * INITIALLY DEFERRED` chỉ chạy lúc commit, nên **toàn bộ chiều xoá của §6.7 đi
  * qua đúng đường này**. Thiếu nhánh đó thì `VARIANT_IN_USE` không bao giờ tới
  * được tầng HTTP và người dùng nhận 500 cho một lỗi họ sửa được.
+ *
+ * Cấp ngoài cùng xét SAU CÙNG: nó mang mã của Prisma (`P2039`), không mang
+ * SQLSTATE.
  */
-function rawErrorOf(
-  err: unknown,
-): { state: string; message: string } | undefined {
-  if (typeof err !== "object" || err === null) return undefined;
+function pgCandidatesOf(err: unknown): PgLikeError[] {
+  if (typeof err !== "object" || err === null) return [];
   const e = err as PrismaDriverError;
-
-  // Thứ tự: cụ thể trước, phẳng sau. Cấp ngoài cùng của một PrismaClientKnown-
-  // RequestError mang `P2039` chứ không mang SQLSTATE, nên nó phải xét sau cùng.
-  const candidates: PgLikeError[] = [
+  return [
     e.meta?.driverAdapterError,
     e.meta?.driverAdapterError?.cause,
     e.cause,
     e,
   ].filter((c): c is PgLikeError => c != null);
+}
 
-  for (const candidate of candidates) {
+/**
+ * Lỗi này có mang ĐÚNG SQLSTATE đó không.
+ *
+ * So với `dbConstraintError`: hàm kia chỉ biết những SQLSTATE của UDP có mã
+ * nghiệp vụ tương ứng. Có những SQLSTATE mà người gọi xử lý bằng cách RIÊNG chứ
+ * không dịch thành mã lỗi cho người dùng — ví dụ `23503` khi flush telemetry đua
+ * với một environment vừa bị xoá: cách chữa là chạy lại lô, không phải trả lỗi.
+ * Kiểm bằng mã máy đọc, và chỉ file này biết hình dạng lỗi của driver (xem đầu
+ * file).
+ */
+export function hasSqlState(err: unknown, state: string): boolean {
+  return pgCandidatesOf(err).some((candidate) => candidate.code === state);
+}
+
+/** Bóc SQLSTATE của UDP và thông báo gốc ra khỏi lỗi */
+function rawErrorOf(
+  err: unknown,
+): { state: string; message: string } | undefined {
+  for (const candidate of pgCandidatesOf(err)) {
     const state = candidate.code;
     if (typeof state === "string" && state in SQLSTATE_TO_CODE) {
       const message = candidate.message ?? candidate.cause?.message;

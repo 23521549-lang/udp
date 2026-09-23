@@ -95,20 +95,36 @@ export const snapshotRowSchema = z.object({
 export type SnapshotRow = z.infer<typeof snapshotRowSchema>;
 export type FlagRow = z.infer<typeof flagRowSchema>;
 
+/**
+ * [v4.10] Phần `segments` của câu lệnh — hoặc `'[]'` khi bên gọi đã có sẵn danh
+ * sách đó (`SnapshotOptions.segments`).
+ *
+ * Bỏ hẳn subquery chứ không đọc rồi ném đi: đó là toàn bộ điểm của việc dùng
+ * lại. Ở trần `SEGMENT.maxProjectBytes`, riêng phần segment là ~899ms mỗi
+ * environment, và ~853ms trong đó là đẩy 4 MiB qua dây (đo 23/09/2026, mục
+ * `segment-cap-perf` của `docs/measurements/kiem-chung-con-no.md`) — một lần ghi
+ * chạm 10 environment trả giá đó mười lần cho cùng một danh sách.
+ */
+const segmentsSql = (shared: boolean): Prisma.Sql =>
+  shared
+    ? Prisma.sql`'[]'::json`
+    : Prisma.sql`COALESCE((
+      SELECT json_agg(json_build_object('id', s.id, 'conditions', s.conditions) ORDER BY s.id)
+        FROM segments s
+       WHERE s.project_id = e.project_id
+    ), '[]'::json)`;
+
 const snapshotSql = (
   environmentId: string,
   includeDrafts: boolean,
+  sharedSegments: boolean,
 ): Prisma.Sql => Prisma.sql`
   /* udp:snapshot */
   SELECT
     e.name,
     e.config_version AS "configVersion",
     e.config_hash    AS "configHash",
-    COALESCE((
-      SELECT json_agg(json_build_object('id', s.id, 'conditions', s.conditions) ORDER BY s.id)
-        FROM segments s
-       WHERE s.project_id = e.project_id
-    ), '[]'::json) AS segments,
+    ${segmentsSql(sharedSegments)} AS segments,
     COALESCE((
       SELECT json_agg(json_build_object(
           'key',                 f.key,
@@ -176,6 +192,22 @@ export interface SnapshotOptions {
    * ghi và `/sdk/config` dùng mặc định `false`.
    */
   includeDrafts?: boolean;
+  /**
+   * [v4.10] Danh sách `segments` của project ĐÃ ĐỌC, dùng lại thay vì đọc lại.
+   *
+   * Câu lệnh lọc `WHERE s.project_id = e.project_id`, nên với mọi environment
+   * của CÙNG một project nó trả đúng một kết quả — cùng nội dung, cùng thứ tự
+   * `ORDER BY s.id`. Truyền lại kết quả đó cho ra hàng y nguyên từng bit, tức
+   * `config_hash` không đổi (I15c).
+   *
+   * Tiền đề của bên gọi, và là lý do trường này KHÔNG dành cho đường đọc thường:
+   * danh sách phải đọc từ một environment của cùng project, trong cùng
+   * transaction. `@udp/flag-snapshot` dùng nó ở đúng một chỗ — các hàm dựng
+   * `stateOf` của một lần ghi fan-out, nơi bước 1 của ADR-05 đã khoá mọi
+   * environment của project nên không lần ghi segment nào chen vào được giữa hai
+   * environment.
+   */
+  segments?: SnapshotRow["segments"];
 }
 
 export async function snapshotRowOf(
@@ -183,10 +215,16 @@ export async function snapshotRowOf(
   environmentId: string,
   options: SnapshotOptions = {},
 ): Promise<SnapshotRow | undefined> {
+  const shared = options.segments;
   const rows = await db.$queryRaw<unknown[]>(
-    snapshotSql(environmentId, options.includeDrafts ?? false),
+    snapshotSql(
+      environmentId,
+      options.includeDrafts ?? false,
+      shared !== undefined,
+    ),
   );
   const first = rows[0];
   if (first === undefined) return undefined;
-  return snapshotRowSchema.parse(first);
+  const row = snapshotRowSchema.parse(first);
+  return shared === undefined ? row : { ...row, segments: shared };
 }

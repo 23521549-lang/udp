@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { ACTOR_HEADER, env, INTERNAL_SECRET_HEADER } from "@udp/config";
-import type { PrismaClient } from "@udp/db";
+import { issueSdkKeyToken, sdkKeyMaterialOf, type PrismaClient } from "@udp/db";
 import request from "supertest";
 
 /**
@@ -78,9 +78,9 @@ export const sha256 = (value: string): string =>
 
 export type SdkKeyType = "SERVER" | "CLIENT";
 
-/** Token thô đúng hình của S1 (`udp_sk_…` / `udp_ck_…`), duy nhất mỗi lần gọi */
+/** Token thô sinh bằng CHÍNH hàm phát hành của S1 (`udp_sk_test_…` / `udp_ck_test_…`) */
 export const newSdkKeyToken = (keyType: SdkKeyType): string =>
-  `udp_${keyType === "SERVER" ? "sk" : "ck"}_test_${randomUUID()}`;
+  issueSdkKeyToken(keyType, "test");
 
 export interface SdkKeySpec {
   token: string;
@@ -93,16 +93,15 @@ export interface SdkKeySpec {
 }
 
 /**
- * Hàng `sdk_keys` cho một token thô — database chỉ giữ `sha256` và 6 ký tự cuối,
- * như S1 sẽ làm (CRUD SDK key ở S1 là #23). Dùng với `createMany` khi test cần
- * nhiều khoá cố định (khác env, khác loại, đã thu hồi).
+ * Hàng `sdk_keys` cho một token thô — database chỉ giữ hash và đuôi, tính bằng
+ * CÙNG `sdkKeyMaterialOf` mà S1 phát hành và guard của S2 tra. Dùng với
+ * `createMany` khi test cần nhiều khoá cố định (khác env, khác loại, đã thu hồi).
  */
 export function sdkKeyData(spec: SdkKeySpec) {
   return {
     environmentId: spec.environmentId,
     keyType: spec.keyType,
-    keyHash: sha256(spec.token),
-    keySuffix: spec.token.slice(-6),
+    ...sdkKeyMaterialOf(spec.token),
     label: spec.label ?? "test",
     createdById: spec.createdById,
     ...(spec.revokedAt === undefined ? {} : { revokedAt: spec.revokedAt }),
@@ -117,6 +116,251 @@ export async function issueSdkKey(
   const token = newSdkKeyToken(options.keyType);
   await admin.sdkKey.create({ data: sdkKeyData({ ...options, token }) });
   return token;
+}
+
+/** [v4.9] Một hàng `flag_evaluation_stats` dựng sẵn cho test */
+export interface EvalStatSeed {
+  flagId: string;
+  environmentId: string;
+  variantKey: string;
+  evalCount: number;
+  /** Phải là mốc ĐẦU GIỜ UTC (`hourFloor`) — khoá bucket của bảng */
+  bucketHour: Date;
+}
+
+/**
+ * [v4.9] Chèn thẳng số đếm đánh giá bằng owner, không đi qua bộ gộp.
+ *
+ * Test của chốt archive 7 ngày, của Cleanup Center và của stats theo flag cần
+ * lịch sử 7/14/30 ngày. Dựng nó bằng đường thật thì phải giả cả đồng hồ của
+ * Service 2 cho mỗi giờ trong cửa sổ; dựng thẳng ở đây cho cùng dữ liệu mà tất
+ * định. Bảng KHÔNG có default cho `id` ở database, nhưng `createMany` của Prisma
+ * áp `@default(uuid())` của schema nên không cần truyền.
+ */
+export async function seedEvalStats(
+  admin: PrismaClient,
+  rows: readonly EvalStatSeed[],
+): Promise<void> {
+  if (rows.length === 0) return;
+  await admin.flagEvaluationStat.createMany({
+    data: rows.map((row) => ({
+      flagId: row.flagId,
+      environmentId: row.environmentId,
+      variantKey: row.variantKey,
+      evalCount: BigInt(row.evalCount),
+      bucketHour: row.bucketHour,
+    })),
+  });
+}
+
+/**
+ * [v4.9] Lùi mốc thời gian của một flag bằng owner — cho ca STALE_DRAFT (flag
+ * DRAFT quá 30 ngày) và ca "đã ACTIVE từ lâu".
+ *
+ * `activated_at` do trigger đặt, nên đây là cách DUY NHẤT để test có một flag đã
+ * kích hoạt từ nhiều ngày trước. Ghi được vì trigger chỉ đặt mốc khi hàng CHUYỂN
+ * sang ACTIVE (`OLD.lifecycle_status IS DISTINCT FROM 'ACTIVE'`): một flag đang
+ * ACTIVE được sửa mốc thì trigger không chạm tới, và CHECK vẫn thoả vì mốc khác
+ * null. Owner UPDATE được `feature_flags` (đã kiểm: R7-8).
+ */
+export async function backdateFlag(
+  admin: PrismaClient,
+  flagId: string,
+  when: { createdAt?: Date; activatedAt?: Date },
+): Promise<void> {
+  await admin.featureFlag.update({
+    where: { id: flagId },
+    data: {
+      ...(when.createdAt === undefined ? {} : { createdAt: when.createdAt }),
+      ...(when.activatedAt === undefined
+        ? {}
+        : { activatedAt: when.activatedAt }),
+    },
+  });
+}
+
+/**
+ * [v4.9] Rào chắn khoá hàng `environments` — công cụ làm test ĐUA tất định.
+ *
+ * Mọi lần ghi cấu hình bắt đầu bằng bước 1 của ADR-05 (`UPDATE environments …`),
+ * nên hàng `environments` là điểm tuần tự hoá duy nhất của cả hệ. Giữ `FOR UPDATE`
+ * trên chính những hàng đó rồi bắn hai request vào biến "hai thứ này có tuần tự
+ * hoá không" từ chuyện may rủi lịch OS thành chuyện xác định: cả hai đứng ở hàng
+ * đợi khoá của Postgres theo thứ tự đến, và `release()` cho chúng chạy.
+ *
+ * `pid` là backend đang giữ khoá — `waitForBlocked` đếm ai bị CHÍNH nó chặn, chứ
+ * không đếm mọi backend đang chờ: `pnpm -r test` chạy nhiều gói song song trên
+ * cùng một database, và một con số toàn cục sẽ nhận nhầm người chờ của file khác.
+ */
+export interface EnvRowGate {
+  pid: number;
+  /** Nhả khoá và chờ transaction giữ khoá kết thúc — gọi trong `finally` */
+  release(): Promise<void>;
+}
+
+/** Hạn của transaction giữ khoá: dài hơn mọi lần chờ mà test hợp lệ cần */
+const GATE_TIMEOUT_MS = 30_000;
+
+export async function lockEnvRows(
+  admin: PrismaClient,
+  environmentIds: readonly string[],
+): Promise<EnvRowGate> {
+  const ids = [...environmentIds].sort();
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  let acquire!: (pid: number) => void;
+  let fail!: (err: unknown) => void;
+  const acquired = new Promise<number>((resolve, reject) => {
+    acquire = resolve;
+    fail = reject;
+  });
+
+  const held = admin.$transaction(
+    async (tx) => {
+      /**
+       * `ORDER BY id … FOR UPDATE` theo đúng thứ tự mà `writeWithOutbox` khoá,
+       * nên rào chắn không bao giờ là bên gây deadlock.
+       */
+      const rows = await tx.$queryRaw<{ pid: number }[]>`
+        SELECT pg_backend_pid()::int AS pid
+          FROM environments
+         WHERE id = ANY(${ids}::text[]::uuid[])
+         ORDER BY id
+           FOR UPDATE`;
+      const pid = rows[0]?.pid;
+      if (rows.length !== ids.length || pid === undefined) {
+        throw new Error(
+          `lockEnvRows: khoá được ${String(rows.length)}/${String(ids.length)} hàng environments`,
+        );
+      }
+      acquire(pid);
+      await gate;
+    },
+    { maxWait: 10_000, timeout: GATE_TIMEOUT_MS },
+  );
+  const settled = held.catch((err: unknown) => {
+    fail(err);
+  });
+
+  return {
+    pid: await acquired,
+    release: async () => {
+      open();
+      await settled;
+    },
+  };
+}
+
+/**
+ * [v4.9] Chờ tới khi có ít nhất `expected` backend xếp hàng sau rào chắn.
+ *
+ * `pg_blocking_pids` chứ không `pg_locks` thô: một bên chờ khoá HÀNG xếp hàng
+ * qua hai loại khoá (`tuple` rồi `transactionid`), nên đếm "lock chưa được cấp
+ * trên bảng environments" trả 0 và test hết hạn chờ dù mọi thứ đúng.
+ *
+ * Và phải đếm cả CHUỖI chờ, không chỉ người bị rào chắn chặn TRỰC TIẾP: người
+ * thứ hai vào hàng đợi bị chặn bởi người thứ NHẤT (kẻ đang giữ tuple lock trong
+ * lúc chính nó chờ rào chắn), nên `pg_blocking_pids` của nó trả pid người thứ
+ * nhất chứ không trả pid rào chắn. Đếm trực tiếp thì con số đứng mãi ở 1 — đã đo.
+ *
+ * Gốc là `gate.pid`, không phải "mọi backend đang chờ": `pnpm -r test` chạy nhiều
+ * gói song song trên cùng một database, và một con số toàn cục sẽ nhận nhầm
+ * người chờ của file khác.
+ *
+ * Không `sleep` một khoảng cố định: 50 ms đủ trên máy rảnh và không đủ khi máy
+ * đang tải, mà một con số như vậy làm test xanh/đỏ theo tốc độ máy.
+ */
+export async function waitForBlocked(
+  admin: PrismaClient,
+  gate: EnvRowGate,
+  expected: number,
+  timeoutMs = 10_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rows = await admin.$queryRaw<{ n: number }[]>`
+      WITH RECURSIVE waiters(pid) AS (
+        SELECT a.pid
+          FROM pg_stat_activity a
+         WHERE ${gate.pid}::int = ANY(pg_blocking_pids(a.pid))
+        UNION
+        SELECT a.pid
+          FROM pg_stat_activity a, waiters w
+         WHERE w.pid = ANY(pg_blocking_pids(a.pid))
+      )
+      SELECT count(*)::int AS n FROM waiters`;
+    if ((rows[0]?.n ?? 0) >= expected) return;
+    if (Date.now() > deadline) {
+      throw new Error(
+        `waitForBlocked: sau ${String(timeoutMs)} ms vẫn chưa có ${String(expected)} backend xếp hàng sau rào chắn`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+/** Một bảng có ít nhất một hàng khớp mẫu — danh sách rỗng là điều phải thấy */
+export interface SecretHit {
+  table: string;
+  rows: number;
+}
+
+/**
+ * [v4.9] Quét TOÀN BỘ database tìm một chuỗi — INV-23.3.
+ *
+ * Bất biến nói "plaintext SDK key không nằm trong database", và cách duy nhất
+ * kiểm đúng câu đó là quét mọi bảng, không phải bốn bảng đã nghĩ ra trước. R04 kể
+ * bốn chỗ nghi nhất (`audit_logs`, `idempotency_keys`, `config_change_log`,
+ * `sdk_keys`), nhưng chỗ gây rò rỉ thật bao giờ cũng là chỗ chưa ai nghĩ tới —
+ * một cột `last_error`, một payload job, một bảng thêm sau này. Danh sách bảng
+ * vì thế đọc từ `information_schema` lúc chạy.
+ *
+ * `row_to_json(t.*)::text` chứ không liệt kê cột kiểu text: nó phủ luôn `jsonb`
+ * lồng sâu, `varchar`, `char`, mảng, và cả cột thêm vào ngày mai mà không ai sửa
+ * hàm này. Cái giá là một lần tuần tự hoá mỗi hàng — chấp nhận được trên database
+ * test, và đây là phép kiểm an ninh, không phải đường nóng.
+ *
+ * `pattern` là biểu thức chính quy POSIX (toán tử `~`), không phải `LIKE`: nhờ
+ * vậy cùng một hàm kiểm được cả một token CỤ THỂ (token chỉ gồm `[a-z0-9_]`, nên
+ * nó là regex của chính nó) và MẪU chung của mọi token
+ * (`SDK_KEY_PLAINTEXT_PATTERN`) — thứ bắt được cả khoá do một test khác làm rò.
+ *
+ * Chỉ `BASE TABLE` của schema `public`: view và materialized view đọc lại chính
+ * các bảng này, nên quét chúng là đếm hai lần cùng một hàng.
+ */
+export async function scanForSecret(
+  admin: PrismaClient,
+  pattern: string,
+): Promise<SecretHit[]> {
+  const tables = await admin.$queryRaw<{ name: string }[]>`
+    SELECT table_name AS name
+      FROM information_schema.tables
+     WHERE table_schema = 'public'
+       AND table_type = 'BASE TABLE'
+     ORDER BY table_name`;
+
+  const hits: SecretHit[] = [];
+  for (const { name } of tables) {
+    /**
+     * Tên bảng vào câu lệnh qua `quote_ident` của một truy vấn tham số hoá được
+     * thì tốt hơn, nhưng Postgres không cho tham số hoá tên bảng. Nguồn của
+     * `name` là `information_schema` của chính database này, và mẫu `^[a-z0-9_]+$`
+     * là chốt để một tên bảng lạ không bao giờ thành SQL — không phải vì ai đó
+     * tấn công test, mà để lỗi nổ rõ ràng nếu schema có tên cần trích dẫn.
+     */
+    if (!/^[a-z0-9_]+$/.test(name)) {
+      throw new Error(`scanForSecret: tên bảng không quét được: ${name}`);
+    }
+    const rows = await admin.$queryRawUnsafe<{ n: number }[]>(
+      `SELECT count(*)::int AS n FROM "${name}" t WHERE row_to_json(t.*)::text ~ $1`,
+      pattern,
+    );
+    const n = rows[0]?.n ?? 0;
+    if (n > 0) hits.push({ table: name, rows: n });
+  }
+  return hits;
 }
 
 export interface ScratchProject {

@@ -47,6 +47,10 @@ export interface PublicFlag {
   lifecycleStatus: FlagLifecycleStatus;
   defaultVariantId: string | null;
   stickinessAttribute: string;
+  /** [v4.9] Miễn cảnh báo UNUSED/SETTLED của Cleanup Center (§6.7) */
+  permanent: boolean;
+  /** Lần chuyển sang ACTIVE gần nhất — trigger DB đặt; DRAFT chưa kích hoạt thì null */
+  activatedAt: Date | null;
   updatedAt: Date;
   variants: { id: string; key: string; value: unknown }[];
 }

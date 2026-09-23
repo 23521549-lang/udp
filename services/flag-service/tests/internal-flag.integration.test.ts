@@ -9,7 +9,7 @@ import { createPrismaClient } from "@udp/db";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { stableOwner } from "@udp/test-support";
+import { createActiveFlag, stableOwner } from "@udp/test-support";
 
 /**
  * `/internal/flags` qua HTTP thật.
@@ -477,6 +477,37 @@ describe("[v4.5] flag đang rollout — không rời ACTIVE, không đổi stick
   });
 });
 
+/**
+ * [v4.9] `change_type` của dòng outbox MỚI NHẤT ở environment đầu tiên.
+ *
+ * Tra theo `(environmentId, configVersion)` — cặp `@@unique` — chứ không theo
+ * `createdAt desc`: mốc đó do client Prisma sinh, nên "mới nhất" theo nó là theo
+ * đồng hồ của tiến trình đã ghi.
+ */
+const latestChangeTypeOf = async (): Promise<string> => {
+  const environmentId = envIds[0]!;
+  const { configVersion } = await admin.environment.findUniqueOrThrow({
+    where: { id: environmentId },
+    select: { configVersion: true },
+  });
+  const log = await admin.configChangeLog.findUniqueOrThrow({
+    where: {
+      environmentId_configVersion: { environmentId, configVersion },
+    },
+    select: { changeType: true },
+  });
+  return log.changeType;
+};
+
+/** Mốc kích hoạt trong database — trigger `trg_flag_activated_at` đặt, không phải S2 */
+const activatedAtOf = async (id: string): Promise<string | null> =>
+  (
+    await admin.featureFlag.findUniqueOrThrow({
+      where: { id },
+      select: { activatedAt: true },
+    })
+  ).activatedAt?.toISOString() ?? null;
+
 describe("[v4.5] máy trạng thái vòng đời (§6.7) và PATCH rỗng", () => {
   const patchOf = (id: string) => async (body: object) => {
     const { updatedAt } = await admin.featureFlag.findUniqueOrThrow({
@@ -494,8 +525,18 @@ describe("[v4.5] máy trạng thái vòng đời (§6.7) và PATCH rỗng", () =
     const created = await post(newFlag()).expect(201);
     const id = created.body.flag.id as string;
     const patch = patchOf(id);
-    expect((await patch({ lifecycleStatus: "ARCHIVED" })).status).toBe(200);
-    expect((await patch({ lifecycleStatus: "ACTIVE" })).status).toBe(200);
+    const archived = await patch({ lifecycleStatus: "ARCHIVED" });
+    expect(archived.status).toBe(200);
+    // [v4.9] Chưa từng ACTIVE thì chưa có mốc kích hoạt
+    expect(archived.body.flag.activatedAt).toBeNull();
+    // [v4.9] Đích ARCHIVED ⇒ change_type riêng (§3.4); mọi đổi khác giữ flag.updated
+    expect(await latestChangeTypeOf()).toBe("flag.archived");
+    const restored = await patch({ lifecycleStatus: "ACTIVE" });
+    expect(restored.status).toBe(200);
+    expect(await latestChangeTypeOf()).toBe("flag.updated");
+    // ARCHIVED → ACTIVE: trigger đặt mốc, response đọc lại hàng sau trigger
+    expect(restored.body.flag.activatedAt).toBe(await activatedAtOf(id));
+    expect(restored.body.flag.activatedAt).not.toBeNull();
     const back = await patch({ lifecycleStatus: "DRAFT" });
     expect(back.status).toBe(422);
     expect(back.body.detail).toMatch(/ACTIVE → DRAFT/);
@@ -504,6 +545,40 @@ describe("[v4.5] máy trạng thái vòng đời (§6.7) và PATCH rỗng", () =
       select: { lifecycleStatus: true },
     });
     expect(lifecycleStatus).toBe("ACTIVE");
+  });
+
+  it("[v4.9] activatedAt: DRAFT → ACTIVE có mốc; ARCHIVED giữ mốc; ARCHIVED → ACTIVE mốc MỚI", async () => {
+    const created = await post(newFlag()).expect(201);
+    expect(created.body.flag.activatedAt).toBeNull();
+    const id = created.body.flag.id as string;
+    const patch = patchOf(id);
+
+    const activated = await patch({ lifecycleStatus: "ACTIVE" });
+    expect(activated.status).toBe(200);
+    const first = activated.body.flag.activatedAt as string;
+    expect(first).toBe(await activatedAtOf(id));
+
+    const edited = await patch({ description: "sửa mô tả không đổi mốc" });
+    expect(edited.body.flag.activatedAt).toBe(first);
+    const archived = await patch({ lifecycleStatus: "ARCHIVED" });
+    expect(archived.body.flag.activatedAt).toBe(first);
+
+    const restored = await patch({ lifecycleStatus: "ACTIVE" });
+    expect(restored.status).toBe(200);
+    const second = restored.body.flag.activatedAt as string;
+    expect(second).toBe(await activatedAtOf(id));
+    expect(new Date(second).getTime()).toBeGreaterThan(
+      new Date(first).getTime(),
+    );
+  });
+
+  it("[v4.9] createActiveFlag trả `flag.activatedAt` khác null (B-01)", async () => {
+    const res = await createActiveFlag(app, actorId, newFlag());
+    expect(res.body.flag.lifecycleStatus).toBe("ACTIVE");
+    expect(res.body.flag.activatedAt).not.toBeNull();
+    expect(res.body.flag.activatedAt).toBe(
+      await activatedAtOf(res.body.flag.id as string),
+    );
   });
 
   it("PATCH chỉ có lastKnownUpdatedAt ⇒ 400, không tốn version", async () => {

@@ -18,6 +18,7 @@ import { AppError, asyncHandler, logger } from "@udp/http";
 import {
   ofrepContextIssue,
   ofrepRequestSchema,
+  statsVariantOf,
   type OfrepBulkFailure,
   type OfrepBulkResponse,
   type OfrepEvaluationErrorCode,
@@ -27,6 +28,7 @@ import { ofrepPerIpLimiter, ofrepPerKeyIpLimiter } from "../auth/rate-limit.js";
 import { requireSdkKey, sdkKeyOf } from "../auth/sdk-key.guard.js";
 import { configCache } from "../changefeed/index.js";
 import { preparedOf } from "../evaluation/prepared-cache.js";
+import { statsAggregator } from "../modules/stats/index.js";
 import { ofrepCors } from "./cors.js";
 import { createResultCache } from "./result-cache.js";
 
@@ -140,6 +142,18 @@ ofrepRouter.post(
       return;
     }
 
+    /**
+     * [v4.9] Nhánh bulk KHÔNG đếm stats, và đó là quyết định, không phải bỏ sót.
+     *
+     * Kết quả bulk được cache theo `(environment, configVersion, context)`, nên
+     * số đếm ở đây không phải "số lần đánh giá" mà là "số lần cache miss" — một
+     * con số phụ thuộc kích thước cache, và nó sẽ trộn vào cùng cột với số đếm
+     * thật của provider, làm lệch phân bố variant mà chốt SETTLED dựa vào. Web
+     * provider chuẩn còn lấy MỌI flag mỗi lần, nên đếm bulk là tuyên bố mọi flag
+     * đều "đang được dùng". Chốt UNUSED của flag chỉ dùng trên web đi bằng lượt
+     * đánh giá ĐƠN ở dưới, và bằng `clientTrafficUnobserved` của `/flags/stale`
+     * (V9) cho phần bulk không đo được.
+     */
     let body = bulkResults.get(cacheKey);
     if (body === undefined) {
       const response: OfrepBulkResponse = {
@@ -164,6 +178,26 @@ ofrepRouter.post(
     const { environmentId } = sdkKeyOf(req);
     const entry = await configCache.get(environmentId, "CLIENT");
     const evaluation = evaluate(preparedOf(entry), key, context);
+
+    /**
+     * [v4.9] Lượt của khoá CLIENT do CHÍNH Service 2 đếm (§6.8, D7): khoá CLIENT
+     * nằm trong trình duyệt nên nó không được gửi `/sdk/stats` (R17), và không
+     * đếm ở đây thì flag chỉ dùng trên web trông như không ai gọi — bị xếp UNUSED
+     * rồi archive lọt chốt 7 ngày, và website vỡ.
+     *
+     * `statsVariantOf` là CÙNG hàm provider dùng, nên cùng một kết quả mang cùng
+     * một nhãn dù đánh giá tại chỗ hay đánh giá ở đây (INV-23.9). Nó trả
+     * `undefined` cho `FLAG_NOT_FOUND` — key lạ do trang web tự gõ không được làm
+     * phình bộ gộp.
+     *
+     * Nhánh bulk KHÔNG đếm ở đây: xem chú thích tại chỗ. Flag Evaluation Tester
+     * (`POST /internal/flags/:id/evaluate`) cũng không — nó không phải lưu lượng
+     * thật (R32).
+     */
+    const label = statsVariantOf(evaluation);
+    if (label !== undefined) {
+      statsAggregator.record(environmentId, key, label, 1);
+    }
 
     res.set(NO_STORE);
     if (evaluation.reason === "ERROR") {

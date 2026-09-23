@@ -208,13 +208,61 @@ export async function snapshotOf(
   environmentId: string,
   options: SnapshotOptions = {},
 ): Promise<Snapshot> {
+  return snapshotFromRow(await rowOrThrow(tx, environmentId, options));
+}
+
+/**
+ * Environment VẮNG là dữ liệu hỏng, không phải "snapshot rỗng" — mọi đường dựng
+ * snapshot ném ở đây, bằng đúng một thông điệp.
+ */
+async function rowOrThrow(
+  tx: SnapshotReader,
+  environmentId: string,
+  options: SnapshotOptions,
+): Promise<SnapshotRow> {
   const row = await snapshotRowOf(tx, environmentId, options);
   if (row === undefined) {
     throw new Error(
       `Environment ${environmentId} không tồn tại — không dựng được snapshot`,
     );
   }
-  return snapshotFromRow(row);
+  return row;
+}
+
+/**
+ * [v4.10] Bộ đọc snapshot của MỘT lần ghi: danh sách `segments` của project đọc
+ * đúng một lần, dùng lại cho mọi environment sau đó.
+ *
+ * Vì sao dùng lại được, và vì sao hash không đổi: câu lệnh lọc segment theo
+ * `s.project_id = e.project_id` (`snapshot-row.ts`), giống nhau ở mọi
+ * environment của một project, nên hàng đọc lần thứ hai chỉ có thể khác hàng
+ * lần đầu nếu một lần ghi segment chen vào giữa — mà bước 1 của ADR-05 đã khoá
+ * MỌI environment của project trước khi `stateOf` được gọi lần nào, và một lần
+ * ghi segment khoá đúng tập hàng đó. Nên "đọc lại" ở đây là trả 4 MiB qua dây
+ * thêm một lần cho cùng một câu trả lời: 961ms mỗi environment ở trần, ×9 cho
+ * project 10 environment (mục `segment-cap-perf` của sổ đo).
+ *
+ * Hợp đồng: MỘT bộ đọc cho MỘT lần ghi. Ba hàm dựng `stateOf` bên dưới đều là
+ * nhà máy được gọi ngay tại chỗ truyền vào `writeWithOutbox`, nên bộ nhớ đệm
+ * sống đúng bằng transaction đó. `trackedStateOf` không phải nhà máy và chỉ
+ * chạm MỘT environment (`track`/`untrack` theo environment, §6.6), nên nó đọc
+ * thẳng và không có gì để dùng lại.
+ */
+function fanOutSnapshotReader(): (
+  tx: SnapshotReader,
+  environmentId: string,
+) => Promise<Snapshot> {
+  let segments: SnapshotRow["segments"] | undefined;
+  return async (tx, environmentId) => {
+    // Lần đầu KHÔNG truyền `segments` — hàng ra phải y nguyên đường đọc thường
+    const row = await rowOrThrow(
+      tx,
+      environmentId,
+      segments === undefined ? {} : { segments },
+    );
+    segments ??= row.segments;
+    return snapshotFromRow(row);
+  };
 }
 
 /**
@@ -274,15 +322,104 @@ function deltaOf(
  *
  * `extra` đi thẳng vào payload outbox, cạnh entry — xem `deltaOf`.
  */
-export const stateFor =
-  (flagKey: string, extra: Readonly<Record<string, string>> = {}) =>
-  async (tx: SnapshotReader, environmentId: string): Promise<OutboxState> => {
-    const snapshot = await snapshotOf(tx, environmentId);
+export const stateFor = (
+  flagKey: string,
+  extra: Readonly<Record<string, string>> = {},
+): ((tx: SnapshotReader, environmentId: string) => Promise<OutboxState>) => {
+  const snapshotFor = fanOutSnapshotReader();
+  return async (tx, environmentId) => {
+    const snapshot = await snapshotFor(tx, environmentId);
     return {
       configHash: configHashOf(snapshot),
       delta: deltaOf(snapshot, flagKey, extra),
     };
   };
+};
+
+/**
+ * [v4.9] Bước 3 và 4 cho `segment.updated` (§3.5, L6).
+ *
+ * Delta là TOÀN BỘ segment sau thay đổi, không phải "userIds thêm/bớt" — cùng lý
+ * lẽ với entry flag ở `deltaOf`: áp = thay entry cùng `id`, idempotent và không
+ * phụ thuộc thứ tự dòng. Segment VẮNG khỏi snapshot (đã xoá) ra
+ * `{ absentSegmentId }`, đúng khuôn `absentFlagKey` của flag DRAFT.
+ *
+ * Một lần ghi segment chạm MỌI environment của project, nên hàm này chạy một
+ * lần cho mỗi environment và mỗi lần đọc snapshot của chính environment đó: hash
+ * phải là hash của snapshot environment ấy (R02), không phải một con số dùng chung.
+ */
+export const segmentStateFor = (
+  segmentId: string,
+): ((tx: SnapshotReader, environmentId: string) => Promise<OutboxState>) => {
+  const snapshotFor = fanOutSnapshotReader();
+  return async (tx, environmentId) => {
+    const snapshot = await snapshotFor(tx, environmentId);
+    const segment = snapshot.segments.find((s) => s.id === segmentId);
+    return {
+      configHash: configHashOf(snapshot),
+      delta: JSON.parse(
+        canonicalJson(
+          segment === undefined ? { absentSegmentId: segmentId } : { segment },
+        ),
+      ) as Prisma.InputJsonValue,
+    };
+  };
+};
+
+/**
+ * [v4.9] Bước 3 và 4 cho một lần ghi KHÔNG đổi nội dung cấu hình — hôm nay là
+ * `sdkkey.revoked` (L1).
+ *
+ * Hash vẫn được TÍNH LẠI chứ không chép lại từ `environments`: bước 3 của ADR-05
+ * khai `config_hash` là checksum của trạng thái SAU thay đổi, và đường duy nhất
+ * bảo đảm điều đó là đọc trạng thái ấy. Con số ra sẽ trùng con số cũ, và chính sự
+ * trùng ấy là tín hiệu hub SSE dùng để gửi `flag_changed` rỗng thay cho snapshot.
+ *
+ * `delta` do bên gọi đưa (`{ sdkKeyId }`), vì nội dung cấu hình không đổi nên
+ * không có gì rút ra từ snapshot được.
+ */
+export const unchangedStateOf = (
+  delta: Prisma.InputJsonValue,
+): ((tx: SnapshotReader, environmentId: string) => Promise<OutboxState>) => {
+  const snapshotFor = fanOutSnapshotReader();
+  return async (tx, environmentId) => {
+    const snapshot = await snapshotFor(tx, environmentId);
+    return { configHash: configHashOf(snapshot), delta };
+  };
+};
+
+/**
+ * [v4.9] Số byte canonical JSON UTF-8 của `conditions` MỘT segment — phép kiểm
+ * SỚM của trần `SEGMENT.maxProjectBytes` (V21), chạy ngoài transaction.
+ *
+ * [v4.10] Thước đo của trần là `octet_length(conditions::text)` trên jsonb, đúng
+ * một thước cho cả ba con số mà `payloadBytesOf` cộng trong SQL dưới khoá
+ * (F6/F7) và cho quota Service 1 báo. Trước đó hằng số được mô tả bằng canonical
+ * JSON trong khi cưỡng chế bằng jsonb, nên một segment có canonical ĐÚNG bằng
+ * trần vẫn bị từ chối — hai thước cho hai câu trả lời về cùng một segment.
+ *
+ * Con số ở đây là chặn DƯỚI của thước đó, vì jsonb::text chỉ có thể dài hơn:
+ * Postgres in thêm một khoảng trắng sau mỗi `,` và `:` (đã đo: đúng bằng tổng số
+ * hai dấu ấy), và in lại số bằng `numeric` nên không bao giờ dùng ký hiệu khoa
+ * học (`1e-320` thành 324 byte). Nhờ vậy phép kiểm ở đây chỉ từ chối segment mà
+ * KHÔNG trạng thái nào của project lưu được, không bao giờ từ chối oan; con số
+ * quyết định vẫn do SQL cưỡng chế dưới khoá.
+ *
+ * Vì sao không đo đúng thước ngay ở JS: phải dựng lại cách Postgres in jsonb —
+ * một định dạng thứ ba, không phải hợp đồng của ai — hoặc hỏi database một lượt
+ * đi về trước khi có gì để khoá.
+ *
+ * Gọi SAU khi đã khử trùng `userIds` (V13): trần tính trên thứ sẽ được lưu.
+ */
+export function segmentPayloadBytesOf(conditions: {
+  readonly all: readonly unknown[];
+  readonly userIds: readonly string[];
+}): number {
+  return Buffer.byteLength(
+    canonicalJson({ all: conditions.all, userIds: conditions.userIds }),
+    "utf8",
+  );
+}
 
 /**
  * Bước 3 và 4 cho `rollout.tracked` / `rollout.untracked` (§6.6 [v4.3]).

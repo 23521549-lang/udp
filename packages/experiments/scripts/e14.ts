@@ -169,7 +169,8 @@ async function realistic(t: number, v: number) {
   await OpenFeature.setProviderAndWait(
     domain,
     createProviderForTesting(
-      { host: "http://unused", sdkKey: "k" },
+      // Ghim TẮT: E14 đo số series và thời gian dựng `/metrics`, không đo telemetry
+      { host: "http://unused", sdkKey: "k", reportStats: false },
       { transport },
     ),
   );

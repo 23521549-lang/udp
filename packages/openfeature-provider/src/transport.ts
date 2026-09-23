@@ -1,3 +1,4 @@
+import type { SdkStatsReport } from "@udp/shared-types";
 import { createSseParser, type SseItem } from "./sse.js";
 
 /**
@@ -22,6 +23,23 @@ export type StreamOpen =
   | { kind: "bad-cursor" }
   | { kind: "unavailable"; retryAfterMs: number | undefined };
 
+/**
+ * Kết cục của MỘT lần `POST /sdk/stats`, phân loại theo V7. Ranh giới quan trọng
+ * nhất là giữa `retry` và `ambiguous`: chỉ `retry` mới được gộp lô lại, vì chỉ ở
+ * đó mới CHẮC CHẮN server chưa xử lý báo cáo.
+ */
+export type StatsPostResult =
+  /** 2xx */
+  | { kind: "accepted" }
+  /** 429/503 hoặc kết nối hỏng trước khi gửi được gì ⇒ gộp lô lại */
+  | { kind: "retry"; retryAfterMs: number | undefined }
+  /** 400/413: báo cáo sai hợp đồng — gửi lại cũng thế; một chẩn đoán mỗi phiên */
+  | { kind: "rejected" }
+  /** 401/403 (khoá bị từ chối) và 404/405 (Service 2 chưa có route) */
+  | { kind: "stop" }
+  /** Quá hạn, bị huỷ, hoặc mã lạ: KHÔNG biết server đã xử lý hay chưa ⇒ bỏ lô */
+  | { kind: "ambiguous" };
+
 export interface Transport {
   getConfig(
     ifNoneMatch: string | undefined,
@@ -32,6 +50,10 @@ export interface Transport {
     since: number | undefined,
     signal: AbortSignal,
   ): Promise<StreamOpen>;
+  postStats(
+    report: SdkStatsReport,
+    signal: AbortSignal,
+  ): Promise<StatsPostResult>;
 }
 
 /** `Retry-After`: số giây HOẶC HTTP-date (RFC 9110 §10.2.3) */
@@ -135,6 +157,41 @@ export class HttpTransport implements Transport {
       return { kind: "unavailable", retryAfterMs: retry };
     }
     return { kind: "open", items: itemsOf(res.body) };
+  }
+
+  async postStats(
+    report: SdkStatsReport,
+    signal: AbortSignal,
+  ): Promise<StatsPostResult> {
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.base}/sdk/stats`, {
+        method: "POST",
+        headers: this.headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify(report),
+        signal,
+      });
+    } catch {
+      /**
+       * `signal` đã bắn ⇒ quá hạn hoặc provider đang đóng: request có thể đã tới
+       * server rồi, gửi lại là đếm đôi (V7). Còn lại là kết nối hỏng NGAY (DNS,
+       * ECONNREFUSED, TLS): chưa một byte nào ra khỏi máy khách ⇒ gộp lô lại.
+       */
+      return signal.aborted
+        ? { kind: "ambiguous" }
+        : { kind: "retry", retryAfterMs: undefined };
+    }
+    const { status } = res;
+    const retry = retryAfterMs(res.headers.get("Retry-After"), Date.now());
+    await discard(res);
+    if (res.ok) return { kind: "accepted" };
+    if (status === 429 || status === 503)
+      return { kind: "retry", retryAfterMs: retry };
+    if (status === 400 || status === 413) return { kind: "rejected" };
+    if (status === 401 || status === 403 || status === 404 || status === 405)
+      return { kind: "stop" };
+    // 500/502/504…: proxy có thể đã chuyển request đi rồi mới hỏng ⇒ bỏ lô
+    return { kind: "ambiguous" };
   }
 }
 

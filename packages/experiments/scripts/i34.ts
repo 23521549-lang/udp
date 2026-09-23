@@ -191,6 +191,9 @@ try {
       host: `http://127.0.0.1:${String(proxyPort)}`,
       sdkKey: serverKey,
       staleAfterSeconds: STALE_AFTER_SECONDS,
+      // Ghim TẮT: I34 đo fail-static qua một proxy hố-đen; một `POST /sdk/stats`
+      // treo trong đó chỉ thêm nhiễu vào mốc thời gian đang đo
+      reportStats: false,
     }),
   );
   const client = OpenFeature.getClient("i34");

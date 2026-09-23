@@ -14,16 +14,22 @@ import {
 import { auditContextOf } from "../audit/audit.service.js";
 import * as flagService from "./flag.service.js";
 import {
+  bulkArchiveBodySchema,
   createFlagBodySchema,
   evaluateBodySchema,
+  flagStatsQuerySchema,
   listFlagsQuerySchema,
   replaceRulesBodySchema,
+  staleFlagsQueryBodySchema,
   updateEnvBodySchema,
   updateFlagBodySchema,
+  type BulkArchiveBody,
   type CreateFlagBody,
   type EvaluateBody,
+  type FlagStatsQueryBody,
   type ListFlagsQuery,
   type ReplaceRulesBody,
+  type StaleFlagsQueryBody,
   type UpdateEnvBody,
   type UpdateFlagBody,
 } from "./flag.types.js";
@@ -68,8 +74,51 @@ flagRouter.get(
   asyncHandler(async (req, res) => {
     res.json({
       flags: await flagService.list(
+        appDepsOf(req),
         projectIdParam(req),
         req.query as unknown as ListFlagsQuery,
+      ),
+    });
+  }),
+);
+
+/**
+ * [v4.9] HAI route TĨNH dưới `/flags` phải đứng TRƯỚC `/flags/:flagId` (§3.1,
+ * R29).
+ *
+ * Express khớp theo thứ tự đăng ký, nên đặt sau thì `:flagId` nuốt cả hai và
+ * `uuidParam` trả 400 "Mã flag không hợp lệ" cho một đường dẫn hoàn toàn đúng.
+ * `tests/flag-routes.test.ts` canh thứ tự này bằng một khẳng định tĩnh — chú
+ * thích một mình không chặn được lần thêm route kế tiếp.
+ */
+flagRouter.get(
+  "/flags/stale",
+  requireAuth,
+  requireMinProjectRole("VIEWER"),
+  validateQuery(staleFlagsQueryBodySchema),
+  asyncHandler(async (req, res) => {
+    res.json(
+      await flagService.staleFlags(
+        appDepsOf(req),
+        projectIdParam(req),
+        req.query as unknown as StaleFlagsQueryBody,
+      ),
+    );
+  }),
+);
+
+flagRouter.post(
+  "/flags/bulk-archive",
+  requireAuth,
+  requireMinProjectRole("MAINTAINER"),
+  validateBody(bulkArchiveBodySchema),
+  asyncHandler(async (req, res) => {
+    res.json({
+      results: await flagService.bulkArchive(
+        appDepsOf(req),
+        projectIdParam(req),
+        req.body as BulkArchiveBody,
+        auditContextOf(req),
       ),
     });
   }),
@@ -83,6 +132,23 @@ flagRouter.get(
     res.json({
       flag: await flagService.get(projectIdParam(req), flagIdOf(req)),
     });
+  }),
+);
+
+flagRouter.get(
+  "/flags/:flagId/stats",
+  requireAuth,
+  requireMinProjectRole("VIEWER"),
+  validateQuery(flagStatsQuerySchema),
+  asyncHandler(async (req, res) => {
+    res.json(
+      await flagService.flagStats(
+        appDepsOf(req),
+        projectIdParam(req),
+        flagIdOf(req),
+        req.query as unknown as FlagStatsQueryBody,
+      ),
+    );
   }),
 );
 

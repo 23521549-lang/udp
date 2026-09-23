@@ -1,15 +1,18 @@
+import { CHANGE_FEED } from "@udp/config";
 import type { Prisma } from "@udp/db";
 import {
   applyChange,
   type SdkStreamChange,
   type Snapshot,
   type SnapshotEntry,
+  type SnapshotSegment,
 } from "@udp/flag-evaluator";
 import { verifyHash } from "./checksum.verifier.js";
-import type {
-  ChangeFeed,
-  ChangeRecord,
-  EnvironmentState,
+import {
+  TOO_LARGE,
+  type ChangeFeed,
+  type ChangeRecord,
+  type EnvironmentState,
 } from "./change-feed.interface.js";
 import type { ConfigEntry } from "./snapshot.cache.js";
 
@@ -45,7 +48,13 @@ export type FallbackReason =
   /** Áp hết những gì đọc được mà con trỏ vẫn chưa tới version thật */
   | "incomplete"
   /** Áp xong nhưng nội dung KHÔNG khớp checksum — đây là bug */
-  | "hash-mismatch";
+  | "hash-mismatch"
+  /**
+   * [v4.9] Lô delta vượt `CHANGE_FEED.maxDeltaBytes` (V22). KHÔNG phải lỗi:
+   * snapshot có trần (V21) nên ở đây nó đúng là đường rẻ hơn, và watcher không
+   * đếm lý do này vào breaker.
+   */
+  | typeof TOO_LARGE;
 
 export type PollOutcome =
   | {
@@ -116,9 +125,47 @@ export function trackedFlagsOf(payload: Prisma.JsonValue): string[] | null {
 }
 
 /**
+ * [v4.9] Rút segment ra khỏi payload `segment.updated` (§3.5) — kiểm nông như
+ * `flagOf`, cộng phép kiểm `userIds` toàn chuỗi vì `applyChange` đưa mảng đó lên
+ * dây nguyên vẹn và provider so từng phần tử.
+ */
+export function segmentOf(payload: Prisma.JsonValue): SnapshotSegment | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload))
+    return null;
+
+  const segment: unknown = (payload as { segment?: unknown }).segment;
+  if (segment === null || typeof segment !== "object" || Array.isArray(segment))
+    return null;
+
+  const { id, all, userIds } = segment as Record<string, unknown>;
+  if (typeof id !== "string" || id.length === 0) return null;
+  if (!Array.isArray(all) || !Array.isArray(userIds)) return null;
+  if (!userIds.every((u) => typeof u === "string")) return null;
+
+  return { id, all, userIds };
+}
+
+/**
+ * [v4.9] `{ absentSegmentId }` — segment đã bị xoá (§3.5). Cùng vai
+ * `absentFlagKeyOf`: không phải payload hỏng, mà là điều đúng về một id không
+ * còn trong snapshot.
+ */
+export function absentSegmentIdOf(payload: Prisma.JsonValue): string | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload))
+    return null;
+  const id: unknown = (payload as { absentSegmentId?: unknown })
+    .absentSegmentId;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
+/**
  * Chiếu MỘT dòng outbox thành một phần tử `changes[]` của stream (§6.3) — nơi
  * DUY NHẤT hiểu `change_type`. Poller áp đúng phần tử này lên cache, hub SSE gửi
  * đúng phần tử này xuống SDK: hai bên không thể hiểu cùng một dòng theo hai cách.
+ *
+ * `null` nghĩa là dòng KHÔNG sinh phần tử nào trên dây, mà vẫn hợp lệ:
+ * `config_version` tiến, nội dung cấu hình y nguyên. Khác hẳn
+ * `"unknown-change-type"` — cái đó là "ta không biết dòng này đổi gì".
  *
  * `change_type` chưa biết trả `"unknown-change-type"` — KHÔNG ném, và đây không
  * phải chuyện phong cách. Từ vựng §2.2 lớn dần (v4.1 thêm `rule.ramped`, v4.3
@@ -131,7 +178,7 @@ export function trackedFlagsOf(payload: Prisma.JsonValue): string[] | null {
  */
 export function changeOf(
   record: ChangeRecord,
-): SdkStreamChange | FallbackReason {
+): SdkStreamChange | null | FallbackReason {
   const configVersion = record.configVersion;
   switch (record.changeType) {
     case "flag.created":
@@ -160,6 +207,31 @@ export function changeOf(
         ? "malformed-payload"
         : { configVersion, kind: "trackedFlags", trackedFlags };
     }
+    /**
+     * [v4.9] Một lần ghi segment fan-out tới MỌI environment của project (L6),
+     * nên mỗi environment nhận đúng một dòng này. Hai hình dạng payload: segment
+     * còn trong snapshot (tạo/sửa) và segment đã xoá.
+     */
+    case "segment.updated": {
+      const segment = segmentOf(record.payload);
+      if (segment !== null) return { configVersion, kind: "segment", segment };
+      const absent = absentSegmentIdOf(record.payload);
+      return absent === null
+        ? "malformed-payload"
+        : { configVersion, kind: "segmentAbsent", id: absent };
+    }
+    /**
+     * [v4.9] Thu hồi SDK key (L1) — dòng này KHÔNG đổi nội dung cấu hình.
+     *
+     * Nó tồn tại vì outbox là tín hiệu liên-replica duy nhất luôn bật: replica
+     * không giữ stream của khoá đó cũng phải biết version đã tiến, còn replica
+     * giữ stream thì đóng ngay. Chiếu thành `null` chứ không thành
+     * `"unknown-change-type"`: rơi tầng ở đây nghĩa là MỖI lần thu hồi bắn một
+     * snapshot đầy đủ cho mọi stream của environment, và ba lần thu hồi liên tiếp
+     * mở breaker tầng 2 trong 5 phút (R14 (b)).
+     */
+    case "sdkkey.revoked":
+      return null;
     default:
       return "unknown-change-type";
   }
@@ -184,11 +256,14 @@ export async function pollDeltas(
     return { kind: "fallback", reason: "too-far-behind" };
   }
 
-  const records = await feed.deltasSince(
+  const batch = await feed.deltasSince(
     cached.environmentId,
     cached.configVersion,
     MAX_DELTA_BATCH,
+    CHANGE_FEED.maxDeltaBytes,
   );
+  if (batch === TOO_LARGE) return { kind: "fallback", reason: TOO_LARGE };
+  const records = batch;
 
   let cursor = cached.configVersion;
   let snapshot: Snapshot = cached.snapshot;
@@ -213,7 +288,13 @@ export async function pollDeltas(
       return { kind: "fallback", reason: change };
     }
 
-    snapshot = applyChange(snapshot, change);
+    /**
+     * [v4.9] Dòng không sinh phần tử nào (`sdkkey.revoked`, L1): con trỏ tiến,
+     * snapshot y nguyên. Dòng vẫn vào `appliedRecords` để hub SSE thấy đúng lô mà
+     * poller đã thấy — nó chiếu lại bằng CHÍNH `changeOf` nên cũng bỏ qua dòng
+     * này, và `changes[]` rỗng là điều đúng để gửi (L1).
+     */
+    if (change !== null) snapshot = applyChange(snapshot, change);
     cursor = record.configVersion;
     appliedRecords.push(record);
   }

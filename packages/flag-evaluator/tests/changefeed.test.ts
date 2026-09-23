@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   applyChange,
@@ -7,8 +8,10 @@ import {
   normalizeSnapshot,
   parseSdkConfig,
   parseSdkDelta,
+  type SdkStreamChange,
   type Snapshot,
   type SnapshotFlag,
+  type SnapshotSegment,
 } from "../src/index.js";
 
 /**
@@ -24,6 +27,12 @@ const flag = (key: string, isEnabled = true): SnapshotFlag => ({
   variants: { on: true, off: false },
   defaultVariantKey: "off",
   rules: [],
+});
+
+const segment = (id: string, userIds: string[] = []): SnapshotSegment => ({
+  id,
+  all: [],
+  userIds,
 });
 
 const base: Snapshot = { flags: [flag("a")], segments: [], trackedFlags: [] };
@@ -51,6 +60,36 @@ describe("applyChange", () => {
         trackedFlags: ["a"],
       }).trackedFlags,
     ).toEqual(["a"]);
+  });
+
+  it("[v4.9] segment thay entry cùng id; segmentAbsent xoá nếu có (idempotent)", () => {
+    const withS = applyChange(base, {
+      configVersion: 2,
+      kind: "segment",
+      segment: segment("s1", ["u1"]),
+    });
+    expect(withS.segments).toEqual([segment("s1", ["u1"])]);
+
+    const edited = applyChange(withS, {
+      configVersion: 3,
+      kind: "segment",
+      segment: segment("s1", ["u1", "u2"]),
+    });
+    expect(edited.segments).toEqual([segment("s1", ["u1", "u2"])]);
+
+    const gone = applyChange(edited, {
+      configVersion: 4,
+      kind: "segmentAbsent",
+      id: "s1",
+    });
+    expect(gone.segments).toEqual([]);
+    expect(
+      applyChange(gone, { configVersion: 5, kind: "segmentAbsent", id: "s1" }),
+    ).toEqual(gone);
+
+    // Không phần tử nào của segment được chạm tới flag hay trackedFlags
+    expect(gone.flags).toEqual(base.flags);
+    expect(base.segments, "snapshot đầu vào bị sửa tại chỗ").toEqual([]);
   });
 });
 
@@ -154,8 +193,171 @@ describe("parseSdkConfig / parseSdkDelta — dữ liệu dây sai hình ⇒ unde
     expect(
       parseSdkDelta({
         ...ok,
-        changes: [{ configVersion: 2, kind: "segment", id: "s" }],
+        changes: [{ configVersion: 2, kind: "flag.renamed", key: "a" }],
       }),
     ).toBeUndefined();
+  });
+
+  it("[v4.9] segment và segmentAbsent qua; segment thiếu trường vẫn sai hình", () => {
+    const ok = {
+      fromVersion: 1,
+      toVersion: 3,
+      configHash: "",
+      changes: [
+        { configVersion: 2, kind: "segment", segment: segment("s", ["u"]) },
+        { configVersion: 3, kind: "segmentAbsent", id: "s2" },
+      ],
+    };
+    expect(parseSdkDelta(ok)).toEqual(ok);
+
+    for (const bad of [
+      // `id` không phải chuỗi rỗng, `all`/`userIds` phải là mảng, userIds toàn chuỗi
+      { configVersion: 2, kind: "segment", segment: { id: "s" } },
+      {
+        configVersion: 2,
+        kind: "segment",
+        segment: { ...segment("s"), userIds: [1] },
+      },
+      { configVersion: 2, kind: "segmentAbsent", id: "" },
+    ]) {
+      expect(parseSdkDelta({ ...ok, changes: [bad] })).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * I15c — "áp N delta cho ra đúng snapshot tại cùng version", [v4.9] có cả segment.
+ *
+ * Hai điều được canh, và cái thứ hai mới là phần khó: (1) chia cùng một dãy thay
+ * đổi thành nhiều event cho ra CÙNG hash với gộp làm một event; (2) kết quả khớp
+ * một oracle dựng ĐỘC LẬP với `applyChange` (ghi-sau-thắng bằng `Map`). Không có
+ * oracle độc lập thì phép so chỉ khẳng định `applyChange` bằng chính nó, và một
+ * lỗi thứ tự — ví dụ `segment` chèn đầu mảng ở nơi này, cuối mảng ở nơi kia —
+ * vẫn xanh trong khi S2 và provider ra hai hash khác nhau.
+ */
+describe("I15c property — áp theo lô bằng áp một lần, và khớp oracle độc lập", () => {
+  const expectedOf = (
+    from: Snapshot,
+    ops: readonly SdkStreamChange[],
+  ): Snapshot => {
+    const flags = new Map(from.flags.map((f) => [f.key, f] as const));
+    const segments = new Map(from.segments.map((s) => [s.id, s] as const));
+    let trackedFlags = [...from.trackedFlags];
+    for (const op of ops) {
+      if (op.kind === "flag") flags.set(op.flag.key, op.flag);
+      else if (op.kind === "flagAbsent") flags.delete(op.key);
+      else if (op.kind === "segment") segments.set(op.segment.id, op.segment);
+      else if (op.kind === "segmentAbsent") segments.delete(op.id);
+      else trackedFlags = [...op.trackedFlags];
+    }
+    return {
+      flags: [...flags.values()],
+      segments: [...segments.values()],
+      trackedFlags,
+    };
+  };
+
+  const segmentArb = fc.record({
+    id: fc.constantFrom("s1", "s2", "s3"),
+    all: fc.constant([] as unknown[]),
+    userIds: fc.array(fc.constantFrom("u1", "u2", "u3"), { maxLength: 3 }),
+  });
+
+  const opArb: fc.Arbitrary<SdkStreamChange> = fc.oneof(
+    fc
+      .record({ key: fc.constantFrom("a", "b", "c"), on: fc.boolean() })
+      .map(({ key, on }) => ({
+        configVersion: 0,
+        kind: "flag" as const,
+        flag: flag(key, on),
+      })),
+    fc.constantFrom("a", "b", "c").map((key) => ({
+      configVersion: 0,
+      kind: "flagAbsent" as const,
+      key,
+    })),
+    segmentArb.map((s) => ({
+      configVersion: 0,
+      kind: "segment" as const,
+      segment: s,
+    })),
+    fc.constantFrom("s1", "s2", "s3").map((id) => ({
+      configVersion: 0,
+      kind: "segmentAbsent" as const,
+      id,
+    })),
+    fc
+      .uniqueArray(fc.constantFrom("a", "b", "c"), { maxLength: 3 })
+      .map((keys) => ({
+        configVersion: 0,
+        kind: "trackedFlags" as const,
+        trackedFlags: [...keys].sort(),
+      })),
+  );
+
+  it("mọi dãy thay đổi, mọi cách chia lô", () => {
+    fc.assert(
+      fc.property(
+        fc.array(segmentArb, { maxLength: 3 }),
+        fc.array(opArb, { minLength: 1, maxLength: 12 }),
+        fc.array(fc.integer({ min: 1, max: 4 }), {
+          minLength: 1,
+          maxLength: 6,
+        }),
+        (startSegments, ops, sizes) => {
+          const start: Snapshot = {
+            flags: [flag("a"), flag("b", false)],
+            segments: [
+              ...new Map(startSegments.map((s) => [s.id, s])).values(),
+            ],
+            trackedFlags: ["a"],
+          };
+          const target = expectedOf(start, ops);
+          const targetHash = configHashOf(target);
+
+          // Gộp làm MỘT event
+          const once = applyDelta(
+            { snapshot: start, configVersion: 10 },
+            {
+              fromVersion: 10,
+              toVersion: 10 + ops.length,
+              configHash: targetHash,
+              changes: ops,
+            },
+          );
+          expect(once.kind).toBe("applied");
+
+          // Cùng dãy đó, chia thành nhiều event theo `sizes`
+          let cache = { snapshot: start, configVersion: 10 };
+          let at = 0;
+          let round = 0;
+          while (at < ops.length) {
+            const size = sizes[round % sizes.length] ?? 1;
+            const chunk = ops.slice(at, at + size);
+            at += chunk.length;
+            round += 1;
+            const out = applyDelta(cache, {
+              fromVersion: cache.configVersion,
+              toVersion: cache.configVersion + chunk.length,
+              configHash: configHashOf(expectedOf(cache.snapshot, chunk)),
+              changes: chunk,
+            });
+            expect(out.kind).toBe("applied");
+            if (out.kind !== "applied") return;
+            cache = {
+              snapshot: out.snapshot,
+              configVersion: out.configVersion,
+            };
+          }
+
+          expect(cache.configVersion).toBe(10 + ops.length);
+          expect(configHashOf(cache.snapshot)).toBe(targetHash);
+          expect(normalizeSnapshot(cache.snapshot)).toEqual(
+            normalizeSnapshot(target),
+          );
+        },
+      ),
+      { numRuns: 200 },
+    );
   });
 });

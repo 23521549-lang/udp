@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import {
   BOOLEAN_VARIANTS,
@@ -18,6 +17,7 @@ import {
 } from "@udp/shared-types/evaluation";
 import { createPgAdapter } from "../src/adapter.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
+import { sdkKeyMaterialOf } from "../src/sdk-key.js";
 import {
   SEED_CHECKOUT_FLAG_KEY,
   SEED_IDS,
@@ -63,9 +63,6 @@ const DEV_PASSWORD = "udp12345678";
  * Database chỉ lưu HASH — đúng như §2.2, plaintext không nằm trong DB.
  */
 const DEV_SERVER_KEY = `${SDK_KEY.serverPrefix}dev_0000000000000000000000000000`;
-
-const sha256 = (value: string): string =>
-  createHash("sha256").update(value).digest("hex");
 
 // ============================================================
 // Danh mục domain
@@ -492,17 +489,18 @@ async function seedSdkKey(
   environmentId: string,
   createdById: string,
 ): Promise<void> {
+  const { keyHash, keySuffix } = sdkKeyMaterialOf(DEV_SERVER_KEY);
   await prisma.sdkKey.upsert({
-    where: { keyHash: sha256(DEV_SERVER_KEY) },
+    where: { keyHash },
     // keySuffix nằm ở CẢ update lẫn create. Hàng đã tồn tại từ trước lần đổi cột
     // sẽ giữ giá trị cũ (tám ký tự ĐẦU) nếu chỉ đặt ở nhánh create, và seed mất
     // tính idempotent đúng ở chỗ nguyên tắc 1 của file này tuyên bố nó có.
-    update: { keySuffix: DEV_SERVER_KEY.slice(-SDK_KEY.displaySuffixLength) },
+    update: { keySuffix },
     create: {
       environmentId,
       keyType: "SERVER",
-      keyHash: sha256(DEV_SERVER_KEY),
-      keySuffix: DEV_SERVER_KEY.slice(-SDK_KEY.displaySuffixLength),
+      keyHash,
+      keySuffix,
       label: "seed — dev server key",
       createdById,
     },

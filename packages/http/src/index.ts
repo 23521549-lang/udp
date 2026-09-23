@@ -23,3 +23,4 @@ export * from "./validate.js";
 export * from "./request-logger.js";
 export * from "./uuid.js";
 export * from "./audit.js";
+export * from "./json-body.js";

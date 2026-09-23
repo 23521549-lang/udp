@@ -62,6 +62,8 @@ export const redactPaths = [
   "*.webhookKey",
   "*.kubeconfigKey",
   "*.bucketSalt",
+  // [v4.9] Plaintext SDK key trong response tạo khoá — nằm CẠNH `key`, không trong nó
+  "*.secretKey",
 ];
 
 export const logger = pino({

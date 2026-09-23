@@ -104,6 +104,18 @@ export type { ConfigChangeType, OutboxState, OutboxWrite } from "./outbox.js";
 export { createSessionConnector } from "./session.js";
 export { createListenAccelerator } from "./listen-accelerator.js";
 export { ACTIVE_ROLLOUT_STATUS_SQL } from "./rollout-status.js";
+export { loadTimezoneNames } from "./timezones.js";
+export type { TimezoneSource } from "./timezones.js";
+export {
+  envSlugOf,
+  issueSdkKeyToken,
+  maskedKeyOf,
+  SDK_KEY_HASH_PATTERN,
+  SDK_KEY_PLAINTEXT_PATTERN,
+  SDK_KEY_SUFFIX_PATTERN,
+  sdkKeyMaterialOf,
+} from "./sdk-key.js";
+export type { SdkKeyMaterial } from "./sdk-key.js";
 export type {
   IdentityVerdict,
   ListenAccelerator,
@@ -115,6 +127,7 @@ export type { SessionClient, SessionConnector } from "./session.js";
 export {
   dbAvailabilityError,
   dbConstraintError,
+  hasSqlState,
   httpStatusOf,
   UDP_SQLSTATE,
   uniqueViolationIndexOf,

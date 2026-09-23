@@ -145,6 +145,16 @@ interface Stream {
 interface Budget {
   /** Tổng backlog của mọi stream, cập nhật dần trong một lượt ghi */
   total: number;
+  /**
+   * [v4.9] Backlog của một stream LÚC lượt này chạm tới nó lần đầu (V22).
+   *
+   * Trong một lượt `drain`, mọi lần `deliver` chạy đồng bộ: không có I/O nào xen
+   * giữa, nên backlog tăng sau khối đầu tiên là của CHÍNH lượt đó, không phải dấu
+   * hiệu client chậm. Xét trần theo mốc này thì ba delta 2 MB liên tiếp trong một
+   * lượt không cắt một stream đang đọc kịp — trong khi nhịp tim và các lượt sau
+   * vẫn dùng backlog thật, nên client không đọc vẫn bị cắt như cũ.
+   */
+  baseline: WeakMap<Stream, number>;
 }
 
 const ACCEPTED: OpenResult = { kind: "accepted" };
@@ -206,6 +216,15 @@ export function createSseHub({
     return chunk;
   };
 
+  const flagChangedChunk = (data: SdkStreamDelta): Buffer =>
+    Buffer.from(
+      formatEvent({
+        id: data.toVersion,
+        name: SDK_STREAM_EVENTS.flagChanged,
+        data,
+      }),
+    );
+
   /** `undefined` khi một dòng không chiếu được — khi đó gửi snapshot, không bao giờ gửi delta thiếu */
   const deltaChunk = (
     change: Extract<ConfigChange, { kind: "delta" }>,
@@ -214,27 +233,27 @@ export function createSseHub({
     for (const record of change.records) {
       const projected = changeOf(record);
       if (typeof projected === "string") return undefined;
-      changes.push(projected);
+      /**
+       * [v4.9] `null` = dòng không sinh phần tử nào trên dây (`sdkkey.revoked`,
+       * L1): version tiến, nội dung không đổi. Bỏ nó khỏi `changes[]` chứ không
+       * rơi snapshot — `changes` rỗng là điều ĐÚNG để gửi, và provider cũ áp được
+       * (R7-9).
+       */
+      if (projected !== null) changes.push(projected);
     }
-    const data: SdkStreamDelta = {
+    return flagChangedChunk({
       fromVersion: change.previous.configVersion,
       toVersion: change.next.configVersion,
       configHash: change.next.configHash,
       changes,
-    };
-    return Buffer.from(
-      formatEvent({
-        id: data.toVersion,
-        name: SDK_STREAM_EVENTS.flagChanged,
-        data,
-      }),
-    );
+    });
   };
 
-  const backlogTotal = (): number => {
+  /** Ngân sách của MỘT lượt ghi — `baseline` rỗng, nên lượt này tự đo lại mốc */
+  const newBudget = (): Budget => {
     let total = 0;
     for (const s of streams) total += s.res.writableLength;
-    return total;
+    return { total, baseline: new WeakMap() };
   };
 
   /** Chỗ DUY NHẤT đóng stream — đóng hai lần, hay ghi sau khi đóng, là không thể */
@@ -267,6 +286,14 @@ export function createSseHub({
    * phải đi được tới client đọc kịp — cộng vào là huỷ ngay lúc mở, SDK nối lại,
    * lại bị huỷ, mãi mãi. Trần của tiến trình chỉ cắt stream ĐANG kẹt: stream đọc
    * kịp không phải trả giá cho stream không đọc.
+   *
+   * [v4.9] "Đang có" nghĩa là MỐC ĐẦU LƯỢT (`budget.baseline`), không phải
+   * `writableLength` tức thời — V22, và là cùng lý lẽ nới rộng thêm một bước. Một
+   * lượt `drain` giao cả lô đồng bộ, nên sau khối đầu tiên `writableLength` đã
+   * mang chính những byte lượt này vừa ghi; đọc nó là tự kết luận client chậm vì
+   * chính mình vừa ghi nhanh. Trần tiến trình cũng vì thế không tính một Buffer
+   * dùng chung nhiều lần (C-04): stream còn rỗng lúc lượt bắt đầu có mốc 0 nên
+   * không bị trần tiến trình xét, dù N stream cùng nhận đúng khối đó.
    */
   const writeTo = (
     s: Stream,
@@ -276,12 +303,17 @@ export function createSseHub({
   ): boolean => {
     if (s.closed || s.res.writableEnded || s.res.destroyed) return false;
     const backlog = s.res.writableLength;
-    if (backlog > limits.maxBacklogBytesPerStream) {
+    let baseline = budget.baseline.get(s);
+    if (baseline === undefined) {
+      baseline = backlog;
+      budget.baseline.set(s, baseline);
+    }
+    if (baseline > limits.maxBacklogBytesPerStream) {
       shed(s, "stream", budget);
       return false;
     }
     if (
-      backlog > 0 &&
+      baseline > 0 &&
       budget.total + chunk.length > limits.maxBacklogBytesTotal
     ) {
       shed(s, "process", budget);
@@ -300,10 +332,16 @@ export function createSseHub({
     s.seq = received;
   };
 
-  /** Luật §6.3: mỗi stream nhận đúng MỘT thứ cho một sự kiện, hoặc không gì cả */
+  /**
+   * Luật §6.3: mỗi stream nhận đúng MỘT thứ cho một sự kiện, hoặc không gì cả.
+   *
+   * `queried` là tập khoá đã được ĐƯA VÀO lần hỏi `activeKeysAmong` của lượt này,
+   * và nó không trùng `active` — xem chốt đóng ngay ở dòng đầu vòng lặp.
+   */
   const deliver = (
     change: ConfigChange,
     seq: number,
+    queried: ReadonlySet<string>,
     active: ReadonlySet<string>,
     budget: Budget,
   ): void => {
@@ -317,11 +355,31 @@ export function createSseHub({
     let delta: Buffer | null | undefined;
 
     for (const s of targets) {
+      /**
+       * [v4.9] Khoá ĐÃ HỎI mà không active ⇒ đóng NGAY, không chờ vòng kiểm (L1).
+       *
+       * Khoá nằm trong `queried` mà vắng khỏi `active` thì tại thời điểm hỏi nó đã
+       * bị thu hồi hoặc đã bị xoá, và `revoked_at` không bao giờ bị xoá đi — kết
+       * luận ấy đúng vĩnh viễn, nên đúng với MỌI stream của khoá đó, kể cả stream
+       * mở sau lần hỏi. Chốt này đặt TRƯỚC phép kiểm `seq <= s.seq` (C-11): một
+       * stream mở muộn có `seq = received` nên sự kiện này "cũ" với nó, mà nó vẫn
+       * phải đóng.
+       *
+       * Khoá CHƯA HỎI — stream mở sau lần hỏi — vắng khỏi `active` mà vẫn có thể
+       * hợp lệ. Đó đúng là lý do của chú thích cũ ở đây, và nó được giữ nguyên
+       * bên dưới: không đẩy, không đóng, để vòng kiểm định kỳ lo, nơi tập khoá
+       * được hỏi đầy đủ.
+       */
+      if (!s.closed && queried.has(s.keyId) && !active.has(s.keyId)) {
+        closeStream(s, "destroy");
+        continue;
+      }
       if (s.closed || seq <= s.seq) continue;
       /**
-       * Khoá không còn hiệu lực ⇒ không đẩy gì (§12 T7). KHÔNG đóng ở đây: stream
-       * mở SAU lượt kiểm này không có trong `active` mà vẫn hợp lệ. Đóng là việc
-       * của vòng kiểm định kỳ, nơi tập khoá được hỏi đầy đủ.
+       * Khoá CHƯA được hỏi và không có trong `active` ⇒ không đẩy gì (§12 T7).
+       * KHÔNG đóng ở đây: stream mở SAU lượt kiểm này không có trong `active` mà
+       * vẫn hợp lệ. Đóng là việc của vòng kiểm định kỳ, nơi tập khoá được hỏi
+       * đầy đủ.
        */
       if (!active.has(s.keyId)) continue;
       s.seq = seq;
@@ -355,6 +413,36 @@ export function createSseHub({
               s.position = synced(next);
             continue;
           }
+        }
+
+        /**
+         * [v4.9] Version tiến mà HASH không đổi ⇒ `flag_changed` RỖNG (L1).
+         *
+         * Hash là checksum nội dung, nên hash trùng nghĩa là SDK đang giữ đúng
+         * nội dung đích; gửi snapshot chỉ để đẩy con trỏ là tốn tới 4 MiB (V21)
+         * cho một thứ SDK đã có. Đường này sinh ra cho `sdkkey.revoked`, và nó
+         * phủ cả chế độ `snapshot` (không có `records` để chiếu) lẫn ca stream
+         * tụt sau `previous` ở chế độ `delta`.
+         *
+         * `fromVersion` = version của CHÍNH stream (F11), không phải
+         * `previous.configVersion`: `applyDelta` của SDK so đúng `fromVersion`
+         * với con trỏ nó đang giữ, và ở chế độ snapshot không có gì bảo đảm hai
+         * con số đó bằng nhau. Khối này vì thế dựng riêng cho mỗi vị trí — nó
+         * chỉ nặng chừng trăm byte, khác hẳn snapshot và delta dùng chung.
+         *
+         * Hash RỖNG bị loại: chuỗi rỗng nghĩa là "chưa có mốc" (§9), không phải
+         * một checksum, nên hai chuỗi rỗng không chứng minh hai nội dung bằng nhau.
+         */
+        if (at.hash !== "" && at.hash === next.configHash) {
+          const empty = flagChangedChunk({
+            fromVersion: at.version,
+            toVersion: next.configVersion,
+            configHash: next.configHash,
+            changes: [],
+          });
+          if (writeTo(s, empty, budget, "flag_changed"))
+            s.position = synced(next);
+          continue;
         }
       }
 
@@ -391,9 +479,9 @@ export function createSseHub({
           continue;
         }
 
-        const budget = { total: backlogTotal() };
+        const budget = newBudget();
         for (const { seq, change } of batch)
-          deliver(change, seq, active, budget);
+          deliver(change, seq, keyIds, active, budget);
       }
     } finally {
       draining = false;
@@ -420,7 +508,7 @@ export function createSseHub({
     }
 
     let nudge = false;
-    const budget = { total: backlogTotal() };
+    const budget = newBudget();
     for (const s of targets) {
       // Một sự kiện có thể đã giải quyết stream này trong lúc chờ database
       if (s.closed || s.position.kind === "synced") continue;
@@ -471,7 +559,7 @@ export function createSseHub({
       return;
     }
 
-    const budget = { total: backlogTotal() };
+    const budget = newBudget();
     const waiting: Stream[] = [];
     for (const s of open) {
       if (s.closed) continue;
@@ -507,7 +595,7 @@ export function createSseHub({
     heartbeatTimer = setTimeout(() => {
       heartbeatTimer = undefined;
       if (closing) return;
-      const budget = { total: backlogTotal() };
+      const budget = newBudget();
       for (const s of streams) writeTo(s, HEARTBEAT_CHUNK, budget, "heartbeat");
       if (streams.size > 0) scheduleHeartbeat();
     }, limits.heartbeatMs);
@@ -606,7 +694,7 @@ export function createSseHub({
       lease.stream = s;
       register(s);
 
-      const budget = { total: backlogTotal() };
+      const budget = newBudget();
       writeTo(s, Buffer.from(retryField(retryMs())), budget, "retry");
 
       if (cursor === undefined || cursor < current.configVersion) {
@@ -641,7 +729,7 @@ export function createSseHub({
       clearTimeout(checkTimer);
       checkTimer = undefined;
 
-      const budget = { total: backlogTotal() };
+      const budget = newBudget();
       for (const s of [...streams]) {
         // `retry:` ngẫu nhiên: N tiến trình mất kết nối cùng lúc không nối lại cùng lúc
         writeTo(s, Buffer.from(retryField(retryMs())), budget, "retry");

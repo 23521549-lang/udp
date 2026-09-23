@@ -11,9 +11,11 @@ import {
 import { validateBody, validateQuery } from "@udp/http";
 import * as auditRepository from "../audit/audit.repository.js";
 import { auditQuerySchema, type AuditQuery } from "../audit/audit.types.js";
+import { environmentRouter } from "../environment/environment.controller.js";
 import { memberRouter } from "../member/member.controller.js";
 import { flagRouter } from "../flag/flag.controller.js";
 import { rolloutRouter } from "../rollout/rollout.controller.js";
+import { segmentRouter } from "../segment/segment.routes.js";
 import * as projectService from "./project.service.js";
 import {
   createProjectSchema,
@@ -152,4 +154,6 @@ projectRouter.get(
  */
 projectRouter.use("/:id", memberRouter);
 projectRouter.use("/:id", rolloutRouter);
+projectRouter.use("/:id", segmentRouter);
+projectRouter.use("/:id", environmentRouter);
 projectRouter.use("/:id", flagRouter);

@@ -805,6 +805,11 @@ model FeatureFlag {
   /// Kill-switch dài hạn — miễn cảnh báo stale flag (§6.7)
   permanent Boolean @default(false)
 
+  /// [v4.9] Mốc lần chuyển sang ACTIVE gần nhất — do trigger `trg_flag_activated_at`
+  /// đặt, code không ghi (mọi writer đều có mốc). CHECK
+  /// `feature_flags_active_has_activated_at`: ACTIVE thì khác NULL (§2.2, §6.7).
+  activatedAt DateTime? @map("activated_at") @db.Timestamptz(3)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 

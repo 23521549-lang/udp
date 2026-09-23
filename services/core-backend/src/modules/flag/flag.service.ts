@@ -1,26 +1,37 @@
-import type { ProjectRole } from "@udp/db";
+import { loadTimezoneNames, type ProjectRole } from "@udp/db";
 import {
   ConfirmationRequiredError,
   ForbiddenError,
+  logger,
   NotFoundError,
+  RelayedProblemError,
+  ServiceUnavailableError,
+  ValidationError,
   type AuditContext,
 } from "@udp/http";
 import type { AppDeps } from "../../core/app-deps.js";
+import { prisma } from "../../core/db.js";
 import { hasMinProjectRole } from "../../core/http/middlewares/project-role.middleware.js";
 import * as repository from "./flag.repository.js";
 import type { TesterResult } from "@udp/shared-types";
 import type {
+  BulkArchiveBody,
+  BulkArchiveOutcome,
   CreateFlagBody,
   EvaluateBody,
   FlagDetail,
   FlagEnvState,
+  FlagStatsQueryBody,
+  FlagStatsView,
   FlagSummary,
   ListFlagsQuery,
   ReplaceRulesBody,
   RulesView,
+  StaleFlagsQueryBody,
   UpdateEnvBody,
   UpdateFlagBody,
 } from "./flag.types.js";
+import type { StaleFlagsResponse } from "@udp/shared-types";
 
 /**
  * Luồng 4 ở Service 1 (§8.4) [v4.5]: S1 xác thực, kiểm SỞ HỮU (S2 không biết
@@ -213,16 +224,235 @@ export async function evaluateFlag(
 }
 
 export async function list(
+  deps: AppDeps,
   projectId: string,
   query: ListFlagsQuery,
 ): Promise<FlagSummary[]> {
+  const envId = query.envId;
   if (
-    query.envId !== undefined &&
-    !(await repository.environmentBelongsTo(projectId, query.envId))
+    envId !== undefined &&
+    !(await repository.environmentBelongsTo(projectId, envId))
   ) {
     throw new NotFoundError("Không tìm thấy environment trong project này");
   }
-  return repository.list(projectId, query);
+  const flags = await repository.list(projectId, query);
+  if (query.include !== "stats" || envId === undefined || flags.length === 0) {
+    return flags;
+  }
+
+  /**
+   * [v4.9] Sparkline của cả trang trong MỘT lời gọi S2 (V19): S1 không đọc bảng
+   * stats dù có quyền SELECT — một module duy nhất biết SQL của nó, kể cả SQL của
+   * hàng đã rollup theo ngày.
+   */
+  await assertKnownTimezone(query.tz);
+  const summary = await deps.flagService.flagStatsSummary({
+    environmentId: envId,
+    flagIds: flags.map((flag) => flag.id),
+    tz: query.tz,
+  });
+  const statsOf = new Map(
+    summary.items.map((item) => [
+      item.flagId,
+      { evalCount7d: item.evalCount7d, daily14: item.daily14 },
+    ]),
+  );
+  return flags.map((flag) => {
+    const stats = statsOf.get(flag.id);
+    return stats === undefined ? flag : { ...flag, stats };
+  });
+}
+
+/**
+ * [v4.9] Stats của MỘT flag (§3.1).
+ *
+ * `tz` kiểm ĐẦY ĐỦ ở đây — hình dạng bằng `tzSchema` (schema của route) và tên
+ * bằng `pg_timezone_names` — vì 400 từ S2 tới S1 là lệch hợp đồng, tức 500 cho
+ * người dùng. Kiểm hai lần (S2 kiểm lại) là có chủ đích: S1 để trả 400 đúng, S2
+ * để không tin tham số nó nhận (V17).
+ */
+export async function flagStats(
+  deps: AppDeps,
+  projectId: string,
+  flagId: string,
+  query: FlagStatsQueryBody,
+): Promise<FlagStatsView> {
+  const flag = await repository.flagOf(projectId, flagId);
+  if (flag === undefined) throw new NotFoundError(FLAG_NOT_FOUND);
+  const envId = query.envId;
+  if (
+    envId !== undefined &&
+    !(await repository.environmentBelongsTo(projectId, envId))
+  ) {
+    throw new NotFoundError("Không tìm thấy environment trong project này");
+  }
+  await assertKnownTimezone(query.tz);
+
+  const stats = await deps.flagService.flagStats(flagId, {
+    days: query.days,
+    granularity: query.granularity,
+    tz: query.tz,
+    ...(envId === undefined ? {} : { environmentId: envId }),
+  });
+  const names = new Map(
+    (await repository.environmentsOf(projectId)).map((env) => [env.id, env]),
+  );
+  return {
+    ...stats,
+    byEnv: stats.byEnv.map(({ environmentId, ...rest }) => {
+      const environment = names.get(environmentId);
+      if (environment === undefined) {
+        logger.error(
+          { flagId, environmentId },
+          "Service 2 trả stats của environment không thuộc project — hai service lệch hợp đồng",
+        );
+        throw new Error("Stats của Service 2 mang environment lạ");
+      }
+      return { ...rest, environment };
+    }),
+  };
+}
+
+/** [v4.9] Cleanup Center (§3.1) — S1 chỉ kiểm quyền rồi chuyển tiếp */
+export const staleFlags = (
+  deps: AppDeps,
+  projectId: string,
+  query: StaleFlagsQueryBody,
+): Promise<StaleFlagsResponse> =>
+  deps.flagService.staleFlags({ ...query, projectId });
+
+/**
+ * [v4.9] Archive hàng loạt (V16) — thứ tự kiểm là phần quan trọng nhất của hàm
+ * này: 400 (schema, id trùng — ở route) → 428 `confirmProjectName` → 404 nếu có
+ * flag ngoài project → rồi mới GHI, tuần tự, mỗi flag một transaction ở S2.
+ *
+ * Vì sao không một transaction cho cả lô: 20 flag × fan-out mọi environment là 20
+ * lần khoá MỌI environment của project; gộp lại thì khoá bị giữ suốt ~44 giây và
+ * kill-switch của người vận hành phải chờ (R31, R15c). Giá phải trả là lô không
+ * nguyên tử, nên phản hồi nói rõ từng flag, và hai ca DỪNG bên dưới nói rõ đã áp
+ * dụng được mấy flag.
+ *
+ * Vì sao gõ lại TÊN PROJECT chứ không một `confirm: true` hay một `confirmCount`:
+ * cả hai gửi mù được, còn tên project buộc người bấm đọc xem mình đang tác động
+ * vào project nào — cùng lý lẽ `confirmFlagKey` của §8.4 (design:4772).
+ */
+export async function bulkArchive(
+  deps: AppDeps,
+  projectId: string,
+  body: BulkArchiveBody,
+  ctx: AuditContext,
+): Promise<BulkArchiveOutcome[]> {
+  const projectName = await repository.projectNameOf(projectId);
+  if (projectName === undefined) {
+    throw new NotFoundError("Không tìm thấy project");
+  }
+  const confirm = body.confirmProjectName;
+  if (confirm === undefined || !sameName(confirm, projectName)) {
+    throw new ConfirmationRequiredError(
+      `Lưu trữ ${String(body.flags.length)} flag tác động mọi environment, kể cả production — gõ lại tên project "${projectName}" để xác nhận`,
+    );
+  }
+
+  /**
+   * Sở hữu kiểm cho CẢ lô TRƯỚC lần ghi đầu tiên: 404 giữa lô sẽ để lại một số
+   * flag đã lưu trữ cho một request mà người dùng đọc là "thất bại".
+   */
+  const owned = await repository.flagIdsInProject(
+    projectId,
+    body.flags.map((flag) => flag.flagId),
+  );
+  if (owned.size !== body.flags.length) {
+    throw new NotFoundError(FLAG_NOT_FOUND);
+  }
+
+  const results: BulkArchiveOutcome[] = [];
+  for (const target of body.flags) {
+    try {
+      await deps.flagService.updateFlag(
+        target.flagId,
+        {
+          lastKnownUpdatedAt: target.lastKnownUpdatedAt,
+          lifecycleStatus: "ARCHIVED",
+        },
+        ctx,
+      );
+      results.push({
+        flagId: target.flagId,
+        ok: true,
+        flag: await detailOf(projectId, target.flagId),
+      });
+    } catch (err: unknown) {
+      /**
+       * 404/409/422 là câu trả lời có nghĩa cho MỘT flag (flag vừa bị xoá, mốc
+       * cũ, còn lượt đánh giá, còn rollout): ghi lại rồi đi tiếp.
+       */
+      if (err instanceof RelayedProblemError) {
+        results.push({
+          flagId: target.flagId,
+          ok: false,
+          problem: {
+            status: err.statusCode,
+            title: err.problem.title,
+            ...(err.problem.detail === undefined
+              ? {}
+              : { detail: err.problem.detail }),
+            ...(err.problem.code === undefined
+              ? {}
+              : { code: err.problem.code }),
+            ...(err.resourceId === undefined
+              ? {}
+              : { resourceId: err.resourceId }),
+          },
+        });
+        continue;
+      }
+      throw stopBatch(err, results.length, body.flags.length);
+    }
+  }
+  return results;
+}
+
+/**
+ * Lô dừng giữa đường: 5xx/mạng ⇒ 503 (thử lại có ích), còn lại ⇒ 500 (hai service
+ * lệch hợp đồng hay cấu hình). Cả hai mang số flag ĐÃ áp dụng: người dùng vừa gửi
+ * một thao tác không hoàn tác được và cần biết nó đã đi được bao xa.
+ */
+function stopBatch(err: unknown, applied: number, total: number): Error {
+  const how = `${String(applied)}/${String(total)} flag đã được lưu trữ trước khi lô dừng — tải lại danh sách`;
+  if (err instanceof ServiceUnavailableError) {
+    return new ServiceUnavailableError(
+      `Service 2 không phục vụ được giữa lô: ${how}`,
+    );
+  }
+  logger.error(
+    { err, applied, total },
+    "Service 2 từ chối một lời gọi của lô archive — hai service lệch hợp đồng hoặc cấu hình",
+  );
+  return new Error(`Lô archive dừng vì lỗi hợp đồng với Service 2: ${how}`);
+}
+
+/**
+ * So xác nhận sau `trim()` và `normalize("NFC")` ở CẢ HAI phía (F9, X-1).
+ *
+ * Người dùng dán tên project từ chỗ khác thường mang theo khoảng trắng ở hai đầu;
+ * và "Việt" gõ trên macOS (NFD: V-i-ê-t rời dấu) với "Việt" lưu trong database
+ * (NFC) là hai chuỗi UTF-8 KHÁC nhau mà mắt người đọc là một. Chuẩn hoá cả hai về
+ * NFC là cách duy nhất để phép so nói đúng thứ người dùng thấy.
+ */
+const sameName = (a: string, b: string): boolean =>
+  a.trim().normalize("NFC") === b.trim().normalize("NFC");
+
+/**
+ * `tz` phải là tên Postgres BIẾT (V17): tzdata của ICU trong Node và của Postgres
+ * có thể khác phiên bản, nên hình dạng đúng chưa đủ. Tập đọc MỘT lần mỗi tiến
+ * trình; lần đọc lỗi không được nhớ, nên một sự cố database không khoá chức năng
+ * tới lúc khởi động lại.
+ */
+async function assertKnownTimezone(tz: string): Promise<void> {
+  const names = await loadTimezoneNames(prisma);
+  if (!names.has(tz)) {
+    throw new ValidationError(`Không có múi giờ "${tz}"`);
+  }
 }
 
 export const get = detailOf;

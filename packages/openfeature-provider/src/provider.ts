@@ -15,9 +15,10 @@ import { evaluate, type EvaluateOptions } from "@udp/flag-evaluator";
 import type { Evaluation } from "@udp/shared-types";
 import { takeInternals } from "./internals.js";
 import { UDPRequestLabelHook } from "./labels.js";
+import { StatsReporter } from "./stats.js";
 import { ConfigStore } from "./store.js";
 import { Synchronizer } from "./sync.js";
-import { HttpTransport } from "./transport.js";
+import { HttpTransport, type Transport } from "./transport.js";
 
 /**
  * `UDPFeatureFlagProvider` — provider OpenFeature cho SERVER key (§6.8) [v4.7]:
@@ -44,6 +45,14 @@ export interface UDPProviderOptions {
   sseFailuresBeforeFallback?: number;
   /** `initialize()` chờ snapshot đầu tới chừng này rồi NÉM. Mặc định 10 000 */
   initTimeoutMs?: number;
+  /**
+   * Gửi số lượt đánh giá (flag, variant) về Service 2 mỗi ~60 giây, và một lần
+   * cuối lúc `close()` (§6.8). Mặc định `true`: không có số này thì Cleanup Center
+   * không phân biệt được flag không ai gọi với flag chỉ chưa gọi hôm nay, và chốt
+   * archive 7 ngày mất căn cứ. Đặt `false` để tắt hoàn toàn — không đếm, không
+   * timer, không request.
+   */
+  reportStats?: boolean;
   /** Thay `fetch` (proxy, agent tuỳ biến) */
   fetch?: typeof fetch;
   /** Chẩn đoán (RESYNC, DEGRADED, khoá bị từ chối) ở mức `warn`; mặc định im lặng */
@@ -157,6 +166,8 @@ export class UDPFeatureFlagProvider implements Provider {
 
   private readonly store: ConfigStore;
   private readonly sync: Synchronizer;
+  /** `undefined` khi `reportStats: false` — không đếm, không timer, không request */
+  private readonly stats: StatsReporter | undefined;
   private readonly initTimeoutMs: number;
   private initialized = false;
   private closed = false;
@@ -173,9 +184,17 @@ export class UDPFeatureFlagProvider implements Provider {
     this.initTimeoutMs = o.initTimeoutMs;
     this.hooks = [new UDPRequestLabelHook(() => this.store.trackedFlags)];
     const logger = options.logger;
-    this.sync = new Synchronizer(
+    const diagnostic = (message: string): void =>
+      logger?.warn(`[udp] ${message}`);
+    const transport: Transport =
       internals.transport ??
-        new HttpTransport(options.host, options.sdkKey, options.fetch),
+      new HttpTransport(options.host, options.sdkKey, options.fetch);
+    this.stats =
+      options.reportStats === false
+        ? undefined
+        : new StatsReporter(transport, diagnostic, internals.stats);
+    this.sync = new Synchronizer(
+      transport,
       this.store,
       {
         pollingIntervalMs: o.pollingIntervalMs,
@@ -191,6 +210,7 @@ export class UDPFeatureFlagProvider implements Provider {
       },
       {
         onFirstData: () => {
+          this.stats?.resume();
           if (!this.settleInit(undefined)) this.announce("READY");
         },
         onChanged: (flagsChanged) => {
@@ -200,17 +220,22 @@ export class UDPFeatureFlagProvider implements Provider {
           });
         },
         onStale: () => this.announce("STALE"),
-        onFresh: () => this.announce("READY"),
+        onFresh: () => {
+          this.stats?.resume();
+          this.announce("READY");
+        },
         onUnauthorized: () => {
           const message = "SDK key bị từ chối (401) — khoá sai hoặc đã thu hồi";
-          logger?.warn(`[udp] ${message}`);
+          diagnostic(message);
           if (!this.settleInit(new Error(message)))
             this.announce("ERROR", `${message}; phục vụ cấu hình cuối`);
         },
         onAuthorized: () => {
+          // Khoá được nhận lại ⇒ telemetry đã ngừng vì 401/403 chạy tiếp (V7)
+          this.stats?.resume();
           if (this.store.hasData) this.announce("READY");
         },
-        onDiagnostic: (message) => logger?.warn(`[udp] ${message}`),
+        onDiagnostic: diagnostic,
       },
     );
   }
@@ -237,6 +262,9 @@ export class UDPFeatureFlagProvider implements Provider {
 
   private async runInit(): Promise<void> {
     this.sync.start();
+    // Đồng hồ báo cáo khởi động cùng vòng đồng bộ, KHÔNG ở constructor: dựng một
+    // provider rồi bỏ đi (test, phép đo) không được để lại timer nào
+    this.stats?.start();
     if (this.store.hasData) {
       this.initialized = true;
       this.announced = "READY";
@@ -281,12 +309,17 @@ export class UDPFeatureFlagProvider implements Provider {
     return true;
   }
 
-  onClose(): Promise<void> {
+  /**
+   * Không bao giờ ném và không bao giờ vượt `SDK_STATS.report.shutdownFlushTimeoutMs`
+   * (R19 (a)): `OpenFeature.close()` của ứng dụng khách không được treo vì Service 2
+   * không tới được. Bộ đếm rỗng ⇒ không phát sinh request nào (V7).
+   */
+  async onClose(): Promise<void> {
     this.closed = true;
     this.sync.close();
     // Đóng giữa lúc init: không bắt `setProviderAndWait`/`close()` chờ hết hạn
     this.settleInit(new Error("provider đã đóng trước khi có cấu hình"));
-    return Promise.resolve();
+    await this.stats?.close();
   }
 
   private announce(status: Announced, message?: string): void {
@@ -322,44 +355,21 @@ export class UDPFeatureFlagProvider implements Provider {
         jsonContext(context),
         options,
       );
-      const flagMetadata: FlagMetadata = {};
-      if (evaluation.ruleId !== undefined)
-        flagMetadata["ruleId"] = evaluation.ruleId;
-      if (evaluation.archived === true) flagMetadata["archived"] = true;
-      if (this.sync.isStale) flagMetadata["stale"] = true;
-
-      if (evaluation.reason === "ERROR") {
-        return {
-          value: defaultValue,
-          reason: "ERROR",
-          errorCode: ERROR_CODE[evaluation.errorCode ?? "GENERAL"],
-          ...(evaluation.errorMessage === undefined
-            ? {}
-            : { errorMessage: evaluation.errorMessage }),
-          flagMetadata,
-        };
+      const details = this.detailsOf(kind, defaultValue, evaluation);
+      /**
+       * Đếm SAU khi `ResolutionDetails` đã dựng xong, trong `try/catch` RIÊNG
+       * (I26, R19 (d)): một lỗi của telemetry nằm trong `try` chung sẽ biến một
+       * lượt đánh giá đúng thành `ERROR GENERAL`. Nhãn lấy từ `evaluation` chứ
+       * không từ `details`, vì đó đúng là thứ OFREP đếm ở Service 2 (INV-23.9).
+       */
+      if (this.stats !== undefined) {
+        try {
+          this.stats.record(flagKey, evaluation);
+        } catch {
+          // Telemetry không bao giờ được ảnh hưởng tới kết quả đánh giá
+        }
       }
-      if (evaluation.value === undefined) {
-        // DISABLED: default trong code của ứng dụng (§6.5)
-        return { value: defaultValue, reason: evaluation.reason, flagMetadata };
-      }
-      if (!valueMatches(kind, evaluation.value)) {
-        return {
-          value: defaultValue,
-          reason: "ERROR",
-          errorCode: ErrorCode.TYPE_MISMATCH,
-          errorMessage: "giá trị variant không đúng kiểu flag",
-          flagMetadata,
-        };
-      }
-      return {
-        value: evaluation.value as T,
-        reason: evaluation.reason,
-        ...(evaluation.variant === undefined
-          ? {}
-          : { variant: evaluation.variant }),
-        flagMetadata,
-      };
+      return details;
     } catch {
       return {
         value: defaultValue,
@@ -367,6 +377,52 @@ export class UDPFeatureFlagProvider implements Provider {
         errorCode: ErrorCode.GENERAL,
       };
     }
+  }
+
+  /** Kết quả của lõi ⇒ hợp đồng của OpenFeature; thuần, không chạm trạng thái */
+  private detailsOf<T>(
+    kind: ValueKind,
+    defaultValue: T,
+    evaluation: Evaluation,
+  ): ResolutionDetails<T> {
+    const flagMetadata: FlagMetadata = {};
+    if (evaluation.ruleId !== undefined)
+      flagMetadata["ruleId"] = evaluation.ruleId;
+    if (evaluation.archived === true) flagMetadata["archived"] = true;
+    if (this.sync.isStale) flagMetadata["stale"] = true;
+
+    if (evaluation.reason === "ERROR") {
+      return {
+        value: defaultValue,
+        reason: "ERROR",
+        errorCode: ERROR_CODE[evaluation.errorCode ?? "GENERAL"],
+        ...(evaluation.errorMessage === undefined
+          ? {}
+          : { errorMessage: evaluation.errorMessage }),
+        flagMetadata,
+      };
+    }
+    if (evaluation.value === undefined) {
+      // DISABLED: default trong code của ứng dụng (§6.5)
+      return { value: defaultValue, reason: evaluation.reason, flagMetadata };
+    }
+    if (!valueMatches(kind, evaluation.value)) {
+      return {
+        value: defaultValue,
+        reason: "ERROR",
+        errorCode: ErrorCode.TYPE_MISMATCH,
+        errorMessage: "giá trị variant không đúng kiểu flag",
+        flagMetadata,
+      };
+    }
+    return {
+      value: evaluation.value as T,
+      reason: evaluation.reason,
+      ...(evaluation.variant === undefined
+        ? {}
+        : { variant: evaluation.variant }),
+      flagMetadata,
+    };
   }
 
   resolveBooleanEvaluation(

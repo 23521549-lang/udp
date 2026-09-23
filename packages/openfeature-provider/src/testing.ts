@@ -4,10 +4,16 @@ import {
   type Snapshot,
   type SnapshotFlag,
 } from "@udp/flag-evaluator";
+import type { SdkStatsReport } from "@udp/shared-types";
 import { withInternals, type ProviderInternals } from "./internals.js";
 import { UDPFeatureFlagProvider, type UDPProviderOptions } from "./provider.js";
 import type { SseItem } from "./sse.js";
-import type { ConfigResult, StreamOpen, Transport } from "./transport.js";
+import type {
+  ConfigResult,
+  StatsPostResult,
+  StreamOpen,
+  Transport,
+} from "./transport.js";
 
 /**
  * Chỗ dựa cho TEST và PHÉP ĐO (§6.8, §14) [v4.8] — subpath `./testing` chỉ có
@@ -29,6 +35,7 @@ export function createProviderForTesting(
 
 export { ConfigStore } from "./store.js";
 export type { ProviderInternals } from "./internals.js";
+export type { StatsOptions } from "./stats.js";
 export type { SyncOptions } from "./sync.js";
 
 export class ScriptedStream {
@@ -78,15 +85,20 @@ export class ScriptedStream {
 export class InMemoryTransport implements Transport {
   readonly configCalls: (string | undefined)[] = [];
   readonly streamCalls: (number | undefined)[] = [];
+  /** Mọi báo cáo `/sdk/stats` đã nhận, theo thứ tự */
+  readonly statsReports: SdkStatsReport[] = [];
   /** `"hang"`: server nhận kết nối rồi im — chỉ tín hiệu huỷ/quá hạn kết thúc nó */
   readonly configs: (ConfigResult | "hang")[] = [];
   readonly streams: (ScriptedStream | Exclude<StreamOpen, { kind: "open" }>)[] =
     [];
+  readonly stats: (StatsPostResult | "hang" | "throw")[] = [];
   /** Phản hồi khi hàng đợi `/sdk/config` rỗng */
   defaultConfig: ConfigResult = {
     kind: "unavailable",
     retryAfterMs: undefined,
   };
+  /** Phản hồi khi hàng đợi `/sdk/stats` rỗng */
+  defaultStats: StatsPostResult = { kind: "accepted" };
 
   getConfig(
     ifNoneMatch: string | undefined,
@@ -117,6 +129,22 @@ export class InMemoryTransport implements Transport {
       return Promise.resolve({ kind: "open", items: next.items(signal) });
     }
     return Promise.resolve(next);
+  }
+
+  postStats(
+    report: SdkStatsReport,
+    signal: AbortSignal,
+  ): Promise<StatsPostResult> {
+    this.statsReports.push(report);
+    const next = this.stats.shift() ?? this.defaultStats;
+    // `"throw"`: transport của ứng dụng khách ném — provider phải nuốt (I33)
+    if (next === "throw") return Promise.reject(new Error("postStats hỏng"));
+    if (next !== "hang") return Promise.resolve(next);
+    return new Promise((resolve) => {
+      signal.addEventListener("abort", () => resolve({ kind: "ambiguous" }), {
+        once: true,
+      });
+    });
   }
 }
 

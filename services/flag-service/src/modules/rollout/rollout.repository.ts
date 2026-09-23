@@ -90,6 +90,33 @@ export async function hasActiveSession(
   return rows[0]?.active ?? false;
 }
 
+/**
+ * [v4.9] Flag nào trong danh sách còn rollout SỐNG, và rollout nào đang giữ —
+ * MỘT câu cho cả trang Cleanup Center.
+ *
+ * `archive.blockedBy = LIVE_ROLLOUT` cần đúng thông tin này cho tới 100 flag mỗi
+ * lần; một câu cho mỗi flag là 100 round trip trên pool 5 khe. Đi từ
+ * `flag_env_configs` (S2 đọc đầy đủ) sang `rollout_sessions` qua
+ * `flag_env_config_id` — cột `project_id` của bảng session KHÔNG nằm trong các
+ * cột `udp_s2` được cấp, nên phạm vi project phải đến từ danh sách flag.
+ */
+export async function liveRolloutsOf(
+  db: Db,
+  flagIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (flagIds.length === 0) return new Map();
+  const rows = await db.$queryRaw<{ flagId: string; rolloutId: string }[]>`
+    SELECT DISTINCT ON (c.flag_id)
+           c.flag_id::text AS "flagId",
+           s.id::text      AS "rolloutId"
+      FROM flag_env_configs c
+      JOIN rollout_sessions s ON s.flag_env_config_id = c.id
+     WHERE c.flag_id = ANY(${[...flagIds]}::text[]::uuid[])
+       AND s.status IN (${ACTIVE_ROLLOUT_STATUS_SQL})
+     ORDER BY c.flag_id, s.id`;
+  return new Map(rows.map((row) => [row.flagId, row.rolloutId]));
+}
+
 export async function setTracked(
   db: Db,
   configId: string,

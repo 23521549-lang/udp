@@ -4,6 +4,7 @@ import { createPrismaClient } from "@udp/db";
 import { configHashOf } from "@udp/flag-evaluator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  segmentStateFor,
   snapshotFromRow,
   snapshotOf,
   snapshotRowOf,
@@ -48,6 +49,8 @@ const U = (n: number): string =>
 const PROJECT = U(1);
 const ENV_DEV = U(2);
 const ENV_EMPTY = U(3);
+/** [v4.10] Environment thứ ba: fan-out phải dùng LẠI danh sách segment hai lần */
+const ENV_THIRD = U(6);
 
 /**
  * Do `prismaEntryLoader` CŨ (commit 596b4a7, 9 truy vấn Prisma) tính bằng
@@ -96,6 +99,12 @@ beforeAll(async () => {
             name: "empty",
             rank: 1,
             k8sNamespace: "udp-golden-e8-empty",
+          },
+          {
+            id: ENV_THIRD,
+            name: "third",
+            rank: 2,
+            k8sNamespace: "udp-golden-e8-third",
           },
         ],
       },
@@ -274,6 +283,62 @@ describe("golden hash — đường mới ra đúng từng byte con số đườ
     await expect(snapshotOf(admin, randomUUID())).rejects.toThrow(
       /không tồn tại/,
     );
+  });
+});
+
+/**
+ * [v4.10] Một lần ghi fan-out đọc `segments` của project ĐÚNG MỘT LẦN rồi dùng
+ * lại. Cả hai khẳng định ở đây nói về cùng một điều: hash không được đổi.
+ *
+ * Câu đọc lọc `WHERE s.project_id = e.project_id`, nên ba environment của
+ * fixture này phải cho cùng một danh sách; golden hash ở trên là chốt tuyệt đối
+ * (con số do đường CŨ tính), còn ở đây là chốt tương đối giữa hai đường đọc.
+ */
+describe("[v4.10] segments dùng chung cho cả lần ghi — hash y nguyên từng bit", () => {
+  const ENVS = [ENV_DEV, ENV_EMPTY, ENV_THIRD];
+
+  const rowOf = async (
+    environmentId: string,
+    options?: { segments: SnapshotRow["segments"] },
+  ): Promise<SnapshotRow> => {
+    const row = await snapshotRowOf(admin, environmentId, options);
+    if (row === undefined) throw new Error("environment không tồn tại");
+    return row;
+  };
+
+  it("hàng đọc bằng danh sách dùng chung trùng hàng đọc đầy đủ", async () => {
+    const full = [];
+    for (const id of ENVS) full.push(await rowOf(id));
+    const shared = full[0]?.segments ?? [];
+    // Fixture có segment thật — nếu không, phép so dưới đây xanh giả
+    expect(shared).toHaveLength(2);
+    expect(full.map((row) => row.segments)).toEqual([shared, shared, shared]);
+
+    const reused = [];
+    for (const id of ENVS) reused.push(await rowOf(id, { segments: shared }));
+
+    expect(reused).toEqual(full);
+    const hashes = (rows: readonly SnapshotRow[]): string[] =>
+      rows.map((row) => configHashOf(snapshotFromRow(row)));
+    expect(hashes(reused)).toEqual(hashes(full));
+    expect(hashes(full).slice(0, 2)).toEqual([GOLDEN_DEV, GOLDEN_EMPTY]);
+  });
+
+  it("stateOf của lần ghi segment cho đúng hash mà đường đọc thường tính", async () => {
+    const expected = [];
+    for (const id of ENVS)
+      expected.push(configHashOf(await snapshotOf(admin, id)));
+
+    // MỘT `stateOf` cho cả lần ghi, như `writeWithOutbox` gọi nó
+    const stateOf = segmentStateFor(U(4));
+    const states = [];
+    for (const id of ENVS) states.push(await stateOf(admin, id));
+
+    expect(states.map((s) => s.configHash)).toEqual(expected);
+    // Delta của segment là thứ của PROJECT: giống nhau ở mọi environment, nên
+    // bước 4 của ADR-05 gộp được thành một câu (`@udp/db` outbox.ts)
+    expect(new Set(states.map((s) => JSON.stringify(s.delta))).size).toBe(1);
+    expect(states[0]?.delta).toMatchObject({ segment: { id: U(4) } });
   });
 });
 

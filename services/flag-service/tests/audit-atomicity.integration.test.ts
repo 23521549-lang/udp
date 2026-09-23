@@ -90,4 +90,48 @@ describe("I40 — audit lùi cùng thay đổi", () => {
     expect(await admin.auditLog.count({ where: { targetId } })).toBe(0);
     expect(await versionOf()).toBe(before);
   });
+
+  /**
+   * [v4.9] Cùng khuôn, nhưng cho `flag.archive` và `change_type = 'flag.archived'`
+   * — ba action mới của V11 đi qua ĐÚNG đường ghi này, nên chốt I40 phải nói về
+   * chúng, không chỉ về `flag.update`.
+   */
+  it("flag.archive lùi cùng thay đổi khi bước sau hỏng", async () => {
+    const targetId = randomUUID();
+    const versionOf = async () =>
+      (
+        await admin.environment.findUniqueOrThrow({
+          where: { id: envId },
+          select: { configVersion: true },
+        })
+      ).configVersion;
+    const before = await versionOf();
+
+    await expect(
+      writeConfigChange({
+        environmentIds: [envId],
+        changeType: "flag.archived",
+        actorUserId: actorId,
+        mutate: async (tx) => {
+          await recordAudit(tx, projectId as string, {
+            actorUserId: actorId,
+            action: "flag.archive",
+            targetType: "FeatureFlag",
+            targetId,
+          });
+        },
+        stateOf: () => {
+          throw new Error("hỏng SAU hàng audit archive");
+        },
+      }),
+    ).rejects.toThrow("hỏng SAU hàng audit archive");
+
+    expect(await admin.auditLog.count({ where: { targetId } })).toBe(0);
+    expect(
+      await admin.configChangeLog.count({
+        where: { environmentId: envId, changeType: "flag.archived" },
+      }),
+    ).toBe(0);
+    expect(await versionOf()).toBe(before);
+  });
 });

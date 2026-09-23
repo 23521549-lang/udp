@@ -154,3 +154,40 @@ export type {
   UpdateEnvConfigFields,
   UpdateFlagFields,
 } from "./flag-api.js";
+export {
+  sdkStatsReportSchema,
+  STATS_VARIANT,
+  statsVariantOf,
+} from "./sdk-stats.js";
+export type { SdkStatsReport } from "./sdk-stats.js";
+export {
+  archiveStatusSchema,
+  daysBefore,
+  flagStatsQueryFields,
+  flagStatsQueryRefine,
+  flagStatsResponseSchema,
+  flagStatsSummarySchema,
+  hourFloor,
+  hoursAfter,
+  hoursBefore,
+  STALE_CATEGORIES,
+  staleFlagsQuerySchema,
+  staleFlagsResponseSchema,
+  STATS_GRANULARITIES,
+  tzSchema,
+} from "./flag-stats.js";
+export type {
+  ArchiveStatus,
+  FlagStatsQuery,
+  FlagStatsResponse,
+  FlagStatsSummary,
+  StaleCategory,
+  StaleFlagsQuery,
+  StaleFlagsResponse,
+  StatsGranularity,
+} from "./flag-stats.js";
+export { createSegmentFields, updateSegmentFields } from "./segment-api.js";
+export type {
+  CreateSegmentFields,
+  UpdateSegmentFields,
+} from "./segment-api.js";

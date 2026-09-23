@@ -1,4 +1,4 @@
-import { env } from "@udp/config";
+import { env, SDK_STATS } from "@udp/config";
 import { logger } from "@udp/http";
 import { assertServiceIdentity, prisma, SERVICE_ROLE } from "./core/db.js";
 import {
@@ -7,7 +7,8 @@ import {
   pruneJob,
 } from "./changefeed/index.js";
 import { createApp } from "./app.js";
-import { sseHub } from "./sdk/index.js";
+import { statsFlusher, statsRollupJob } from "./modules/stats/index.js";
+import { sseHub, statsIngest } from "./sdk/index.js";
 
 /**
  * Khẳng định danh tính kết nối TRƯỚC khi mở cổng.
@@ -84,6 +85,15 @@ changeFeedWatcher.start();
 pruneJob.start();
 
 /**
+ * [v4.9] Telemetry: đẩy số đếm đang gộp xuống database, và gộp hàng giờ quá hạn
+ * thành hàng ngày. Cùng lý do với hai job trên, và với một lý do riêng đắt hơn:
+ * một flusher khởi động trong `createApp()` sẽ bắn truy vấn trong mọi file test
+ * dựng app, trên đúng pool 5 khe mà test đang dùng (R13 (c)).
+ */
+statsFlusher.start();
+statsRollupJob.start();
+
+/**
  * Tầng 3 nghe sau `listen`, cùng lý do với vòng poll: nó chỉ đánh thức vòng poll,
  * mà vòng poll chỉ phục vụ environment đang có SDK đọc.
  */
@@ -109,11 +119,17 @@ const shutdown = (signal: string) => {
    *   2. Tầng 3 → watcher → dọn outbox: thứ đánh thức dừng trước thứ bị đánh thức.
    *      (Đảo lại vẫn an toàn — `wake()` sau `stop()` là no-op — nhưng sự an toàn
    *      không nên phụ thuộc vào một chi tiết cài đặt.)
-   *   3. Đóng pool CUỐI CÙNG, khi cổng HTTP và kênh LISTEN đã đóng hẳn. Ngược lại
+   *   3. [v4.9] Đẩy nốt số đếm telemetry TRƯỚC khi đóng pool, sau khi đã ngừng
+   *      nhận báo cáo mới (`statsIngest.close()` ⇒ `/sdk/stats` trả 503). Tổng
+   *      ngân sách `SDK_STATS.ingest.shutdownFlushTimeoutMs` (5 giây) nhỏ hơn hạn
+   *      thoát cưỡng bức 10 giây ở trên, nên lần flush cuối không bao giờ là thứ
+   *      làm tiến trình bị cắt ngang.
+   *   4. Đóng pool CUỐI CÙNG, khi cổng HTTP và kênh LISTEN đã đóng hẳn. Ngược lại
    *      thì một vòng đang bay chạm pool vừa đóng và ném — một lỗi nổi lên đúng
    *      trên đường lẽ ra phải im lặng nhất.
    */
   sseHub.closeAll();
+  statsIngest.close();
   const httpClosed = new Promise<void>((resolve) => {
     server.close(() => {
       resolve();
@@ -122,9 +138,47 @@ const shutdown = (signal: string) => {
   const listenerStopped = notifyAccelerator?.stop() ?? Promise.resolve();
   changeFeedWatcher.stop();
   pruneJob.stop();
+  statsFlusher.stop();
+  statsRollupJob.stop();
 
-  void Promise.all([httpClosed, listenerStopped])
-    .then(() => prisma.$disconnect())
+  /** `true` nếu `promise` xong trong `ms`; không huỷ gì, chỉ thôi chờ */
+  const within = (promise: Promise<unknown>, ms: number): Promise<boolean> =>
+    new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        resolve(false);
+      }, ms);
+      timer.unref();
+      void promise.then(() => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+
+  /**
+   * HAI lần flush, và lần thứ hai là lần đáng giá nhất.
+   *
+   * `server.close()` chỉ ngừng nhận KẾT NỐI mới; một kết nối keep-alive đang mở
+   * vẫn gửi thêm request, và OFREP vẫn đếm cho tới lúc nó đóng. Nên: chờ cổng
+   * đóng nhiều nhất `shutdownHttpWaitMs` rồi flush lần một (không chờ vô điều
+   * kiện — stream SSE có thể giữ `close()` lâu hơn cả ngân sách), rồi nếu cổng
+   * đóng xong trong phần hạn còn lại thì flush lần hai để lấy những gì tới sau
+   * lần một (C-10, G20).
+   */
+  const flushDeadline = Date.now() + SDK_STATS.ingest.shutdownFlushTimeoutMs;
+  const remainingMs = (): number => Math.max(0, flushDeadline - Date.now());
+
+  void (async () => {
+    const closedEarly = await within(
+      httpClosed,
+      SDK_STATS.ingest.shutdownHttpWaitMs,
+    );
+    await statsFlusher.flushNow({ timeoutMs: remainingMs() });
+    if (!closedEarly && (await within(httpClosed, remainingMs()))) {
+      await statsFlusher.flushNow({ timeoutMs: remainingMs() });
+    }
+    await Promise.all([httpClosed, listenerStopped]);
+    await prisma.$disconnect();
+  })()
     .catch((err: unknown) => {
       logger.error({ err }, "Lỗi khi đóng kết nối database");
     })

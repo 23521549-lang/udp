@@ -161,6 +161,9 @@ async function cell(
         host: s2.baseUrl,
         sdkKey: fixture.serverKey,
         fetch: countingFetch(received),
+        // Ghim TẮT: E4 đếm truy vấn và byte của MỖI lần lan truyền, nên một lượt
+        // `POST /sdk/stats` nền (R22 (a)) sẽ trộn vào chính con số đang đo
+        reportStats: false,
       }),
     );
     const client = OpenFeature.getClient(domain);

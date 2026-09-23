@@ -79,6 +79,23 @@ export const sdkStreamOpenLimiter: RequestHandler = rateLimit({
   keyGenerator: keyPrint,
 });
 
+/**
+ * [v4.9] Hạn mức `POST /sdk/stats` của SERVER key — bucket RIÊNG, 1 000/phút/khoá.
+ *
+ * Chung bucket với `/sdk/config` (100/phút) là đếm THIẾU có hệ thống: một dịch vụ
+ * 200 pod dùng chung một khoá, mỗi pod báo một lần mỗi phút, đã vượt trần — và
+ * polling fallback của `/sdk/config` còn ăn chung bucket đó. Phần bị 429 là số
+ * đếm bị mất, mà mất số đếm làm flag bị xếp UNUSED rồi archive lọt chốt 7 ngày
+ * (R18). 1 000 khớp `streamOpensPerKey`: cùng một giả định về số tiến trình dùng
+ * chung một khoá trên mỗi replica.
+ */
+export const sdkStatsLimiter: RequestHandler = rateLimit({
+  ...shared,
+  windowMs: RATE_LIMIT.sdk.statsPerKey.windowMs,
+  limit: RATE_LIMIT.sdk.statsPerKey.max,
+  keyGenerator: keyPrint,
+});
+
 const clientIp = (req: Request): string => ipKey(req.ip ?? "");
 
 /**

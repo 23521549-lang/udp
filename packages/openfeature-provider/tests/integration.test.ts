@@ -12,7 +12,12 @@ import {
   fromOfrep,
   normalizeSnapshot,
 } from "@udp/flag-evaluator";
-import type { Evaluation, OfrepFailure, OfrepSuccess } from "@udp/shared-types";
+import type {
+  Evaluation,
+  OfrepFailure,
+  OfrepSuccess,
+  SdkStatsReport,
+} from "@udp/shared-types";
 import {
   createActiveFlag,
   I26_EXAMPLES,
@@ -32,6 +37,7 @@ import { ConfigStore, createProviderForTesting } from "../src/testing.js";
 import {
   HttpTransport,
   type ConfigResult,
+  type StatsPostResult,
   type StreamOpen,
   type Transport,
 } from "../src/transport.js";
@@ -63,9 +69,10 @@ let clientKey: string;
 /** env-config của flag `i15-a` — I34 ghi lên nó để kiểm hội tụ */
 let i15ConfigId = "";
 
-/** Transport thật, ghi lại con trỏ của mỗi lần mở stream */
+/** Transport thật, ghi lại con trỏ của mỗi lần mở stream và mỗi báo cáo stats */
 class RecordingTransport implements Transport {
   readonly streamCalls: (number | undefined)[] = [];
+  readonly statsReports: SdkStatsReport[] = [];
   constructor(private readonly inner: Transport) {}
   getConfig(
     ifNoneMatch: string | undefined,
@@ -79,6 +86,13 @@ class RecordingTransport implements Transport {
   ): Promise<StreamOpen> {
     this.streamCalls.push(since);
     return this.inner.openStream(since, signal);
+  }
+  postStats(
+    report: SdkStatsReport,
+    signal: AbortSignal,
+  ): Promise<StatsPostResult> {
+    this.statsReports.push(report);
+    return this.inner.postStats(report, signal);
   }
 }
 
@@ -123,7 +137,14 @@ beforeAll(async () => {
     createdById: actorId,
   });
 
-  s2 = await startFlagService({ env: { CHANGEFEED_MODE: "delta" } });
+  s2 = await startFlagService({
+    env: {
+      CHANGEFEED_MODE: "delta",
+      // Flusher của Service 2 ở mức sàn: ca `reportStats` chờ hàng xuất hiện
+      // trong database, không chờ 15 giây mặc định
+      SDK_STATS_FLUSH_INTERVAL_MS: "250",
+    },
+  });
   transport = new RecordingTransport(new HttpTransport(s2.baseUrl, serverKey));
   provider = createProviderForTesting(
     // 1 giây: đang 401 thì provider thử `/sdk/config` mỗi chu kỳ, và limiter của nó
@@ -408,6 +429,61 @@ describe("I26 — provider (local) và OFREP cho cùng kết quả", () => {
       expect(seen).toContain(reason);
     }
   }, 180_000);
+});
+
+// ------------------------------------------------------------- reportStats
+
+describe("reportStats — provider thật ⇒ hàng flag_evaluation_stats", () => {
+  it("lượt đánh giá tại chỗ tới được database, và nhãn trùng nhãn của OFREP (INV-23.9)", async () => {
+    const active = await createActiveFlag(s2.baseUrl, actorId, {
+      projectId,
+      key: "stats-a",
+      flagType: "BOOLEAN",
+    });
+    const flagId = active.body.flag.id as string;
+    await providerCaughtUp();
+
+    /**
+     * Provider RIÊNG cho ca này: chu kỳ 60 giây của bản dùng chung không kịp
+     * trong một test, và một bộ đếm riêng giữ con số chỉ của `stats-a`.
+     */
+    const reporting = createProviderForTesting(
+      { host: s2.baseUrl, sdkKey: serverKey },
+      { transport: new HttpTransport(s2.baseUrl, serverKey) },
+    );
+    await reporting.initialize();
+    const context = { targetingKey: "u-stats" };
+    const details = await reporting.resolveBooleanEvaluation(
+      "stats-a",
+      false,
+      context,
+    );
+    for (let i = 1; i < 7; i += 1) {
+      await reporting.resolveBooleanEvaluation("stats-a", false, context);
+    }
+    // Lần gửi cuối của `onClose()` — không phải chờ hết chu kỳ
+    await reporting.onClose();
+
+    const variantKey = details.variant as string;
+    const evalCount = async (): Promise<number> => {
+      const rows = await admin.flagEvaluationStat.findMany({
+        where: { flagId, environmentId: envId, variantKey },
+        select: { evalCount: true },
+      });
+      return rows.reduce((sum, row) => sum + Number(row.evalCount), 0);
+    };
+    await waitFor(async () => (await evalCount()) === 7, 15_000);
+
+    // Cùng flag, cùng context qua OFREP: cùng variant, và lượt của nó cộng vào
+    // ĐÚNG hàng đó — một kết quả thì một nhãn, dù đánh giá ở đâu
+    const single = await request(s2.baseUrl)
+      .post("/ofrep/v1/evaluate/flags/stats-a")
+      .set("Authorization", `Bearer ${clientKey}`)
+      .send({ context })
+      .expect(200);
+    expect(single.body.variant).toBe(variantKey);
+    await waitFor(async () => (await evalCount()) === 8, 15_000);
+  }, 60_000);
 });
 
 // ------------------------------------------------------------- mất quyền, mất server

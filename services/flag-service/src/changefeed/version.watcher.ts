@@ -210,7 +210,18 @@ export function createVersionWatcher({
         return;
       }
 
-      breaker.recordFallback(entry.environmentId);
+      /**
+       * [v4.9] `too-large` KHÔNG được đếm vào breaker (V22).
+       *
+       * Breaker đo "tầng 2 đang hỏng", còn lô delta vượt ngân sách byte là tầng 2
+       * đang làm đúng việc của nó: snapshot có trần 4 MiB (V21) nên ở đó snapshot
+       * thật sự rẻ hơn. Đếm nó vào thì hai mươi lần sửa segment lớn liên tiếp mở
+       * mạch 5 phút và tắt tầng delta cho MỌI thay đổi khác của environment — đúng
+       * hồi quy D2 mà `changefeed_fallback_total` sinh ra để cảnh báo.
+       */
+      if (outcome.reason !== "too-large") {
+        breaker.recordFallback(entry.environmentId);
+      }
       await fallbackToSnapshot(entry, outcome.reason);
       return;
     }

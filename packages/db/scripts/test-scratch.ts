@@ -8,6 +8,7 @@ import {
   scratchEnv,
   scratchNameFromEnv,
   step,
+  testEnv,
   withScratchDatabase,
 } from "./helpers/scratch-database.js";
 
@@ -103,7 +104,7 @@ try {
       "pnpm",
       ["-r", "--no-bail", "--if-present", "test"],
       ROOT,
-      childEnv,
+      testEnv(childEnv),
     );
   });
 } catch (err: unknown) {

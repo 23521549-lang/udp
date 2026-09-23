@@ -27,6 +27,7 @@ import { createVersionWatcher } from "../src/changefeed/version.watcher.js";
 import { prisma, SERVICE_ROLE } from "../src/core/db.js";
 import { sseHub } from "../src/sdk/index.js";
 import {
+  createActiveFlag,
   internalCall,
   newSdkKeyToken,
   sdkKeyData,
@@ -64,6 +65,10 @@ let projectId: string | undefined;
 let envId = "";
 let accelerator: NotifyAccelerator | undefined;
 const readers: SseReader[] = [];
+/** Flag ACTIVE trong fixture, và mốc optimistic lock mới nhất của nó */
+let flagId = "";
+let flagStamp = "";
+let writes = 0;
 
 beforeAll(async () => {
   expect(
@@ -108,6 +113,15 @@ beforeAll(async () => {
       label: "tier3test",
     }),
   });
+
+  // Flag ACTIVE có mặt trong snapshot ⇒ mỗi lần sửa nó đổi cả `config_hash`
+  const flag = await createActiveFlag(app, actorId, {
+    projectId,
+    key: `t3-${randomUUID().slice(0, 8)}`,
+    flagType: "BOOLEAN",
+  });
+  flagId = flag.body.flag.id as string;
+  flagStamp = flag.body.flag.updatedAt as string;
   await write();
 });
 
@@ -134,15 +148,33 @@ afterAll(async () => {
   await admin.$disconnect();
 });
 
-/** Mốc ngay SAU commit — `/internal` chỉ trả lời khi transaction đã commit */
+/**
+ * Mốc ngay SAU commit — `/internal` chỉ trả lời khi transaction đã commit.
+ *
+ * [v4.9] Một lần ghi ở đây phải ĐỔI NỘI DUNG snapshot, không chỉ đổi
+ * `config_version`. Bản trước tạo một flag DRAFT mỗi lần: version tiến mà
+ * snapshot y nguyên (DRAFT không bao giờ xuống SDK, §6.7), nên `config_hash`
+ * không đổi — và từ [v4.9] hub trả lời đúng điều đó bằng `flag_changed` rỗng
+ * thay cho một snapshot đầy đủ (L1). Ba ca dưới đây đo ĐƯỜNG LAN TRUYỀN nên
+ * chúng cần một thay đổi thật.
+ *
+ * Giá trị mới phải KHÁC MỌI giá trị trước, không chỉ khác giá trị liền trước:
+ * ca I18 ghi hai lần rồi mới đọc một event, nên một phép bật/tắt hai trạng thái
+ * sẽ tự triệt tiêu và hash lại về đúng chỗ cũ. `stickinessAttribute` nằm trong
+ * snapshot (§9) và nhận chuỗi tự do, nên đếm tăng dần là đủ.
+ */
 async function write(): Promise<number> {
-  await internalCall(request(app).post("/internal/flags"), actorId)
+  writes += 1;
+  const res = await internalCall(
+    request(app).patch(`/internal/flags/${flagId}`),
+    actorId,
+  )
     .send({
-      projectId,
-      key: `t3-${randomUUID().slice(0, 8)}`,
-      flagType: "BOOLEAN",
+      lastKnownUpdatedAt: flagStamp,
+      stickinessAttribute: `sticky${String(writes)}`,
     })
-    .expect(201);
+    .expect(200);
+  flagStamp = res.body.flag.updatedAt as string;
   return Date.now();
 }
 

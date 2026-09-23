@@ -1,3 +1,4 @@
+import type { StatsOptions } from "./stats.js";
 import type { ConfigStore } from "./store.js";
 import type { SyncOptions } from "./sync.js";
 import type { Transport } from "./transport.js";
@@ -13,6 +14,8 @@ import type { Transport } from "./transport.js";
 export interface ProviderInternals {
   transport?: Transport;
   sync?: Partial<SyncOptions>;
+  /** Chu kỳ báo cáo và các trần của `reportStats` (§6.8) */
+  stats?: Partial<StatsOptions>;
   /** Cache do test giữ để so với `/sdk/config` (I15c) */
   store?: ConfigStore;
 }

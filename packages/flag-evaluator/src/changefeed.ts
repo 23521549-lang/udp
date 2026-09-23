@@ -34,6 +34,24 @@ export function applyChange(
       };
     case "trackedFlags":
       return { ...snapshot, trackedFlags: [...change.trackedFlags] };
+    /**
+     * [v4.9] Segment: cùng khuôn `flag`/`flagAbsent`, khoá là `id`. Thứ tự mảng
+     * không mang ngữ nghĩa — `normalizeSnapshot` sắp lại theo `id` trước khi băm,
+     * và `prepareSnapshot` tra segment bằng `Map`.
+     */
+    case "segment":
+      return {
+        ...snapshot,
+        segments: [
+          ...snapshot.segments.filter((s) => s.id !== change.segment.id),
+          change.segment,
+        ],
+      };
+    case "segmentAbsent":
+      return {
+        ...snapshot,
+        segments: snapshot.segments.filter((s) => s.id !== change.id),
+      };
   }
 }
 
@@ -141,6 +159,16 @@ const changeSchema: z.ZodType<SdkStreamChange> = z.discriminatedUnion("kind", [
     configVersion: z.number().int(),
     kind: z.literal("trackedFlags"),
     trackedFlags: z.array(z.string()),
+  }),
+  z.object({
+    configVersion: z.number().int(),
+    kind: z.literal("segment"),
+    segment: segmentSchema,
+  }),
+  z.object({
+    configVersion: z.number().int(),
+    kind: z.literal("segmentAbsent"),
+    id: z.string().min(1),
   }),
 ]);
 

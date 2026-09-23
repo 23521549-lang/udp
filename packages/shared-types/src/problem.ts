@@ -47,7 +47,7 @@ export interface ErrorCodeSpec {
 }
 
 /**
- * Danh mục 22 mã lỗi (§9).
+ * Danh mục 24 mã lỗi (§9).
  *
  * CẢNH BÁO CHO NGƯỜI SỬA FILE NÀY — hai chữ `as const satisfies` là bắt buộc.
  *
@@ -56,7 +56,7 @@ export interface ErrorCodeSpec {
  * trong khi mọi thứ vẫn biên dịch xanh** — một mã bịa ra sẽ lọt qua. Đã kiểm chứng
  * bằng `tsc` trên TypeScript 5.9.
  *
- *   `as const`  giữ literal để `keyof` ra union 21 khoá
+ *   `as const`  giữ literal để `keyof` ra union 24 khoá
  *   `satisfies` kiểm hình dạng mà KHÔNG làm mất literal
  */
 export const ERROR_CATALOG = {
@@ -160,6 +160,32 @@ export const ERROR_CATALOG = {
     fixableBy: "user",
     title: "Too many flags tracked in this environment",
     docSection: "§6.6",
+  },
+  /**
+   * [v4.9] Mã thứ 23. ACTIVE → ARCHIVED khi flag còn lượt đánh giá trong
+   * `STALE_FLAG_THRESHOLDS.archiveGuardDays` ngày — code vẫn gọi nó. KHÔNG
+   * retryable: điều kiện chỉ hết sau nhiều ngày không còn lượt nào, nút "Thử lại"
+   * là sai. Problem chỉ mang `title`/`detail`; số liệu có cấu trúc Portal lấy từ
+   * `archive` của `GET /flags/:flagId/stats`.
+   */
+  FLAG_RECENTLY_EVALUATED: {
+    httpStatus: 409,
+    retryable: false,
+    fixableBy: "user",
+    title: "Flag was evaluated recently",
+    docSection: "§6.7",
+  },
+  /**
+   * [v4.9] Mã thứ 24. Xoá segment còn rule SEGMENT trỏ tới — cùng khuôn
+   * `VARIANT_IN_USE`: request đúng, trạng thái xung đột, gỡ rule rồi thử lại là
+   * được. `resourceId` = flag đang giữ nó.
+   */
+  SEGMENT_IN_USE: {
+    httpStatus: 409,
+    retryable: true,
+    fixableBy: "user",
+    title: "Segment is still referenced by a rule",
+    docSection: "§2.2, §6.5",
   },
 
   // ---- Cloud adapter và quota (§4) ----
@@ -267,13 +293,13 @@ export const ERROR_CATALOG = {
 } as const satisfies Record<string, ErrorCodeSpec>;
 
 /**
- * Union 22 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
+ * Union 24 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
  * `ProblemDetails.code` sẽ KHÔNG BIÊN DỊCH ĐƯỢC, không cần test nào.
  */
 export type ErrorCode = keyof typeof ERROR_CATALOG;
 
 /** Kiểm lúc nạp module — thà sập lúc khởi động còn hơn thiếu mã mà không ai biết */
-const EXPECTED_ERROR_CODES = 22;
+const EXPECTED_ERROR_CODES = 24;
 if (Object.keys(ERROR_CATALOG).length !== EXPECTED_ERROR_CODES) {
   throw new Error(
     `ERROR_CATALOG có ${Object.keys(ERROR_CATALOG).length} mã, §9 nói ${EXPECTED_ERROR_CODES}.`,
@@ -318,7 +344,7 @@ export interface ProblemDetails {
   /** URI của chính request gây lỗi */
   instance?: string | undefined;
   /**
-   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong 22 mã
+   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong 24 mã
    * phủ được — bắt buộc `code` sẽ làm những trường hợp đó không biểu diễn nổi.
    */
   code?: ErrorCode | undefined;

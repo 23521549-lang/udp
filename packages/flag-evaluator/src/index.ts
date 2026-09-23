@@ -31,6 +31,8 @@ export {
   type SdkStreamFlagAbsentChange,
   type SdkStreamEventName,
   type SdkStreamFlagChange,
+  type SdkStreamSegmentAbsentChange,
+  type SdkStreamSegmentChange,
   type SdkStreamTrackedFlagsChange,
 } from "./sdk-wire.js";
 export {

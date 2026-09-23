@@ -8,7 +8,10 @@
     ".": "./src/index.ts",
     "./problem": "./src/problem.ts",
     "./evaluation": "./src/evaluation.ts",
-    "./change-feed": "./src/change-feed.ts"
+    "./change-feed": "./src/change-feed.ts",
+    "./sdk-stats": "./src/sdk-stats.ts",
+    "./flag-stats": "./src/flag-stats.ts",
+    "./segment-api": "./src/segment-api.ts"
   },
   "scripts": {
     "test": "vitest run",

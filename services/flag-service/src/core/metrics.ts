@@ -1,6 +1,12 @@
 import { observeQueries } from "@udp/db";
-import { collectDefaultMetrics, Counter, register } from "prom-client";
+import {
+  collectDefaultMetrics,
+  Counter,
+  Histogram,
+  register,
+} from "prom-client";
 import { onIncrement } from "../changefeed/metrics.js";
+import type { StatsDropReason } from "../modules/stats/stats.aggregator.js";
 import type { SseChunkKind } from "../sdk/sse.manager.js";
 import { prisma } from "./db.js";
 
@@ -34,6 +40,14 @@ const SSE_CHUNK_KINDS = [
   "retry",
 ] as const satisfies readonly SseChunkKind[];
 
+/** [v4.9] Mọi lý do bỏ số đếm — kiểu khai ở bộ gộp, đây chỉ liệt kê */
+const STATS_DROP_REASONS = [
+  "env-cap",
+  "total-cap",
+  "flush-failed",
+  "saturated",
+] as const satisfies readonly StatsDropReason[];
+
 export const metrics = {
   dbQueries: new Counter({
     name: "udp_flag_db_queries_total",
@@ -48,6 +62,30 @@ export const metrics = {
     name: "udp_flag_sdk_config_bytes_total",
     help: "Byte body của /sdk/config trả 200",
   }),
+  /**
+   * [v4.9] Telemetry đánh giá flag (§6.8). Bốn con số trả lời bốn câu khác nhau,
+   * và câu thứ hai là câu quan trọng nhất: đếm THIẾU làm flag bị xếp UNUSED rồi
+   * archive lọt chốt 7 ngày, nên mọi lượt đếm bị bỏ phải nhìn thấy được, kèm lý
+   * do (trần bộ nhớ theo env, trần tiến trình, ghi database hỏng, bão hoà).
+   */
+  statsReports: new Counter({
+    name: "udp_flag_stats_reports_total",
+    help: "Số báo cáo POST /sdk/stats đã nhận (202)",
+  }),
+  statsDropped: new Counter({
+    name: "udp_flag_stats_dropped_total",
+    help: "Số lượt đánh giá bị bỏ không ghi được, theo lý do",
+    labelNames: ["reason"] as const,
+  }),
+  statsRowsFlushed: new Counter({
+    name: "udp_flag_stats_rows_flushed_total",
+    help: "Số hàng đã gộp và UPSERT vào flag_evaluation_stats",
+  }),
+  statsFlushSeconds: new Histogram({
+    name: "udp_flag_stats_flush_seconds",
+    help: "Thời gian một lượt đẩy số đếm xuống database",
+    buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+  }),
   hashMismatch: new Counter({
     name: "changefeed_hash_mismatch_total",
     help: "Số lần config_hash lệch sau khi áp delta (ADR-05 §1.4) — là bug",
@@ -61,6 +99,8 @@ export const metrics = {
 // Nhãn khởi tạo sẵn: series có mặt từ lần scrape đầu, delta của E4 không phải
 // đoán "vắng = 0"
 for (const kind of SSE_CHUNK_KINDS) metrics.sseBytes.inc({ event: kind }, 0);
+for (const reason of STATS_DROP_REASONS)
+  metrics.statsDropped.inc({ reason }, 0);
 
 onIncrement((name) => {
   if (name === "changefeed_hash_mismatch_total") metrics.hashMismatch.inc();

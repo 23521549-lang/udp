@@ -102,6 +102,94 @@ describe("HttpTransport trên mạng thật", () => {
   });
 });
 
+describe("postStats trên mạng thật", () => {
+  /** Server ghi lại request rồi trả mã theo kịch bản */
+  async function statsServer(status: () => number | "hang") {
+    const seen: {
+      method: string | undefined;
+      url: string;
+      auth: string | undefined;
+      contentType: string | undefined;
+      body: string;
+    }[] = [];
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk: Buffer) => {
+        body += chunk.toString("utf8");
+      });
+      req.on("end", () => {
+        seen.push({
+          method: req.method,
+          url: req.url ?? "",
+          auth: req.headers.authorization,
+          contentType: req.headers["content-type"],
+          body,
+        });
+        const next = status();
+        if (next === "hang") return; // không bao giờ trả lời
+        res.writeHead(next, next === 429 ? { "Retry-After": "3" } : {}).end();
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address() as AddressInfo;
+    return {
+      transport: new HttpTransport(
+        `http://127.0.0.1:${String(port)}`,
+        "udp_sk_test",
+      ),
+      seen,
+    };
+  }
+
+  const report = { counts: [{ flagKey: "f", variant: "on", count: 3 }] };
+
+  it("POST /sdk/stats, Bearer, JSON đúng hợp đồng §9; 202 ⇒ accepted", async () => {
+    const { transport, seen } = await statsServer(() => 202);
+    const out = await transport.postStats(report, AbortSignal.timeout(5_000));
+    expect(out).toEqual({ kind: "accepted" });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.method).toBe("POST");
+    expect(seen[0]?.url).toBe("/sdk/stats");
+    expect(seen[0]?.auth).toBe("Bearer udp_sk_test");
+    expect(seen[0]?.contentType).toBe("application/json");
+    expect(JSON.parse(seen[0]?.body ?? "")).toEqual(report);
+  });
+
+  it("ánh xạ mã: 429 mang Retry-After, 503, 400, 401, 404, 500", async () => {
+    let status = 429;
+    const { transport } = await statsServer(() => status);
+    const post = (): Promise<unknown> =>
+      transport.postStats(report, AbortSignal.timeout(5_000));
+    expect(await post()).toEqual({ kind: "retry", retryAfterMs: 3_000 });
+    status = 503;
+    expect(await post()).toEqual({ kind: "retry", retryAfterMs: undefined });
+    status = 400;
+    expect(await post()).toEqual({ kind: "rejected" });
+    status = 401;
+    expect(await post()).toEqual({ kind: "stop" });
+    status = 404;
+    expect(await post()).toEqual({ kind: "stop" });
+    // 500/502/504: server có thể đã xử lý rồi mới hỏng ⇒ mơ hồ, bỏ lô
+    status = 500;
+    expect(await post()).toEqual({ kind: "ambiguous" });
+  });
+
+  it("server im ⇒ quá hạn là MƠ HỒ (không gửi lại, không đếm đôi)", async () => {
+    const { transport } = await statsServer(() => "hang");
+    expect(await transport.postStats(report, AbortSignal.timeout(150))).toEqual(
+      { kind: "ambiguous" },
+    );
+  });
+
+  it("không kết nối được ⇒ retry (chưa một byte nào ra khỏi máy khách)", async () => {
+    const transport = new HttpTransport("http://127.0.0.1:9", "udp_sk_test");
+    expect(
+      await transport.postStats(report, AbortSignal.timeout(2_000)),
+    ).toEqual({ kind: "retry", retryAfterMs: undefined });
+  });
+});
+
 describe("retryAfterMs", () => {
   it("số giây, HTTP-date, rác", () => {
     const now = Date.parse("2026-09-22T00:00:00Z");

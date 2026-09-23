@@ -104,6 +104,21 @@ export class ConfigStore {
       this.resync = true;
       return out;
     }
+    /**
+     * [v4.9] `changes` rỗng ⇒ nội dung y nguyên: chỉ tiến con trỏ và ETag (C-17).
+     *
+     * `applyDelta` đã so `configHash` với nội dung đang giữ trước khi trả
+     * `applied`, nên snapshot ra là CHÍNH object cũ — không có gì để cài lại.
+     * Bỏ qua `install` là bỏ `prepareSnapshot`, thứ tốn O(số flag × số rule) cho
+     * một thay đổi không đổi gì (hub gửi event này khi thu hồi SDK key, L1). Đây
+     * là tối ưu CPU thuần: `changedKeys` của hai snapshot bằng nhau vốn đã rỗng,
+     * nên không sự kiện `CONFIGURATION_CHANGED` nào biến mất.
+     */
+    if (out.snapshot === this.current) {
+      this.version = out.configVersion;
+      this.lastEtag = etagOf(out.configVersion);
+      return { kind: "applied", changed: [] };
+    }
     const changed = changedKeys(this.current, out.snapshot);
     this.install(out.snapshot, out.configVersion);
     // Đúng giá trị ETag của `/sdk/config` tại version này — poll sau đó nhận 304

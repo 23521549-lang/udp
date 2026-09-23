@@ -36,7 +36,7 @@ import {
 /**
  * **E3** (§14) [v4.8] — độ trễ đánh giá flag.
  *
- *   pnpm --filter @udp/experiments e3 [--skip-remote --rounds 5 --note "..."]
+ *   pnpm --filter @udp/experiments e3 [--skip-remote --rounds 5 --report-stats=on --note "..."]
  *
  * Nhánh LOCAL (in-process, không mạng): provider THẬT dựng từ snapshot tổng hợp
  * qua `InMemoryTransport`, gọi qua SDK OpenFeature THẬT (`getBooleanDetails`, hook
@@ -63,6 +63,12 @@ const { values } = parseArgs({
     iterations: { type: "string", default: "20000" },
     "remote-samples": { type: "string", default: "400" },
     rounds: { type: "string", default: "3" },
+    /**
+     * `reportStats` của provider (§6.8). MẶC ĐỊNH `off` để mọi số E3 so được với
+     * bản đo của Plan 22 (lúc đó provider chưa đếm gì); `on` là nhánh của ngưỡng
+     * hồi quy R21 — p99 với stats bật ≤ p99 khi tắt + 10 %.
+     */
+    "report-stats": { type: "string", default: "off" },
     note: { type: "string" },
   },
 });
@@ -71,6 +77,10 @@ const WARM_UP = Math.ceil(ITERATIONS / 10);
 const REMOTE_SAMPLES = Number(values["remote-samples"]);
 const ROUNDS = Number(values.rounds);
 const MAX_TRACKED = 3;
+if (values["report-stats"] !== "on" && values["report-stats"] !== "off") {
+  throw new Error("--report-stats chỉ nhận `on` hoặc `off`");
+}
+const REPORT_STATS = values["report-stats"] === "on";
 
 function rule(i: number, last: boolean): SnapshotRule {
   return {
@@ -171,7 +181,7 @@ async function localCell(
   await OpenFeature.setProviderAndWait(
     domain,
     createProviderForTesting(
-      { host: "http://unused", sdkKey: "k" },
+      { host: "http://unused", sdkKey: "k", reportStats: REPORT_STATS },
       { transport },
     ),
   );
@@ -324,6 +334,7 @@ const file = writeResult(
       percentile: "nearest-rank",
       worstCase: "rule cuối mới khớp",
       sdk: "OpenFeature server-sdk getBooleanDetails qua UDPFeatureFlagProvider (hook ff tự gắn, ≤ 3 flag tracked, trong requestStore)",
+      reportStats: REPORT_STATS,
     },
     local,
     remote,

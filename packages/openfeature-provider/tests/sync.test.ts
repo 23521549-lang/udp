@@ -119,6 +119,48 @@ describe("bootstrap và delta", () => {
     await waitFor(() => h.log.includes("first"));
     expect(h.store.configVersion).toBe(4);
   });
+
+  it("[v4.9] changes RỖNG, hash y nguyên ⇒ chỉ tiến version và ETag (R7-9, C-17)", async () => {
+    /**
+     * Hình dạng của một lần thu hồi SDK key ở đầu server (L1): version tiến, nội
+     * dung không đổi. Hai điều phải đúng cùng lúc — provider KHÔNG resync (R7-9:
+     * bản cũ đã làm đúng, bản này không được làm kém hơn), và nó không dựng lại
+     * bản prepared cho một thay đổi không đổi gì (C-17).
+     */
+    const h = harness();
+    h.transport.configs.push({
+      kind: "ok",
+      body: configBody(1, [flag("a")]),
+      etag: '"1"',
+    });
+    const stream = new ScriptedStream();
+    h.transport.streams.push(stream, new ScriptedStream());
+    h.sync.start();
+    await waitFor(() => h.log.includes("first"));
+
+    const prepared = h.store.prepared;
+    const snapshot = h.store.snapshot;
+    h.log.length = 0;
+
+    stream.event(
+      "flag_changed",
+      deltaBody(
+        1,
+        2,
+        { flags: [flag("a")], segments: [], trackedFlags: [] },
+        [],
+      ),
+    );
+    await waitFor(() => h.store.configVersion === 2);
+
+    expect(h.store.etag).toBe('"2"');
+    expect(h.store.needsResync).toBe(false);
+    expect(h.log, "đã phát sự kiện cho một thay đổi rỗng").toEqual([]);
+    expect(h.store.snapshot).toBe(snapshot);
+    expect(h.store.prepared, "đã dựng lại bản prepared").toBe(prepared);
+    // Không mở stream thứ hai ⇒ không RESYNC
+    expect(h.transport.streamCalls).toEqual([1]);
+  });
 });
 
 describe("RESYNC — cache có thể sai thì mở lại KHÔNG con trỏ", () => {

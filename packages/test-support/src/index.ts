@@ -23,19 +23,27 @@ export {
   type FlagTargetOptions,
 } from "./flag-target.js";
 export {
+  backdateFlag,
   createActiveFlag,
   createScratchProject,
   disposeProject,
   internalCall,
   issueSdkKey,
+  lockEnvRows,
   newSdkKeyToken,
+  scanForSecret,
   sdkKeyData,
+  seedEvalStats,
   sha256,
   stableOwner,
+  waitForBlocked,
+  type EnvRowGate,
+  type EvalStatSeed,
   type HttpTarget,
   type ScratchProject,
   type SdkKeySpec,
   type SdkKeyType,
+  type SecretHit,
 } from "./fixture.js";
 export {
   I26_EXAMPLES,

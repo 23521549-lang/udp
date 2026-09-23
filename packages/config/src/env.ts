@@ -2,6 +2,7 @@ import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { SDK_STATS } from "./constants.js";
 
 /**
  * Cấu hình môi trường — nguồn sự thật DUY NHẤT cho mọi biến môi trường.
@@ -314,6 +315,19 @@ const envSchema = z
      * được xử lý ở vòng quét kế — đúng, chỉ chậm hơn.
      */
     ROLLOUT_INTENT_LISTEN_ENABLED: bool.default("true"),
+
+    // ---------- Telemetry đánh giá flag (§2.2 FlagEvaluationStat) ----------
+    /**
+     * [v4.9] Chu kỳ Service 2 đẩy số đếm `/sdk/stats` đang gộp trong bộ nhớ xuống
+     * `flag_evaluation_stats`. Là biến môi trường chứ không chỉ hằng số vì test
+     * tích hợp (provider chạy với Service 2 là tiến trình con) cần chu kỳ ngắn để
+     * không chờ 15 giây; mặc định và sàn lấy từ `SDK_STATS.ingest`.
+     */
+    SDK_STATS_FLUSH_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(SDK_STATS.ingest.minFlushIntervalMs)
+      .default(SDK_STATS.ingest.flushIntervalMs),
 
     // ---------- Job queue ----------
     /**

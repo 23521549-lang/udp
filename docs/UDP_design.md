@@ -89,7 +89,7 @@ graph TD
     S1 -->|"MetricsProvider.probe()\ncung package @udp/metrics-provider"| PROM
     S3 -->|"[v4.4] POST /internal/rollouts/:id/track (probe pha 2)"| S2
     S3 -->|"PATCH /internal/rules/:id + If-Match version\ndieu khien phan tram cua flag-level rollout"| S2
-    APP -->|"SERVER key: GET /sdk/config + SSE delta\nCLIENT key: POST /ofrep/v1/evaluate/flags (OFREP)"| S2
+    APP -->|"SERVER key: GET /sdk/config + SSE delta + POST /sdk/stats\nCLIENT key: POST /ofrep/v1/evaluate/flags (OFREP)"| S2
 ```
 
 | Service                               | Pattern           | Stack                          | Vai trò                                                  |
@@ -652,6 +652,7 @@ erDiagram
         timestamp created_at
         timestamp updated_at "optimistic lock"
         boolean permanent
+        timestamptz activated_at "[v4.9] nullable; lan chuyen sang ACTIVE gan nhat, trigger dat"
     }
 
     FlagVariant {
@@ -885,9 +886,9 @@ ON ProjectMember (project_id) WHERE project_role = 'OWNER';
 
 | Hành động | OWNER | MAINTAINER | DEVELOPER | VIEWER |
 | --------- | :---: | :--------: | :-------: | :----: |
-| Xem project, flag, rollout, metrics | ✓ | ✓ | ✓ | ✓ |
-| Tạo flag, sửa mô tả; bật/tắt, đổi variant mặc định, sửa rule ở env **non-production** | ✓ | ✓ | ✓ | — |
-| Bật/tắt, đổi variant mặc định, sửa rule ở env **production**; **[v4.5]** đổi vòng đời hay stickiness của flag (tác động mọi env); khởi tạo rollout | ✓ | ✓ | — | — |
+| Xem project, flag, rollout, metrics; **[v4.9]** xem danh sách SDK key (không bao giờ thấy plaintext hay hash), xem segment | ✓ | ✓ | ✓ | ✓ |
+| Tạo flag, sửa mô tả; bật/tắt, đổi variant mặc định, sửa rule ở env **non-production**; **[v4.9]** tạo segment, xoá segment không còn rule dùng, đặt `permanent` | ✓ | ✓ | ✓ | — |
+| Bật/tắt, đổi variant mặc định, sửa rule ở env **production**; **[v4.5]** đổi vòng đời hay stickiness của flag (tác động mọi env); khởi tạo rollout; **[v4.9]** sửa segment (tác động MỌI environment, kể cả production), archive hàng loạt | ✓ | ✓ | — | — |
 | Bấm Manual Override (PAUSE/PROMOTE/ROLLBACK) | ✓ | ✓ | — | — |
 | Sửa Domain Config, provision, teardown | ✓ | ✓ | — | — |
 | Nhập/đổi Cloud Credential, tạo/thu hồi SDK key | ✓ | — | — | — |
@@ -971,16 +972,14 @@ CREATE UNIQUE INDEX idx_idempotency_scope
 | environment_id | UUID         | FK → Environment ON DELETE CASCADE, NOT NULL | Key luôn gắn với đúng 1 environment                                  |
 | key_type       | ENUM         | NOT NULL                                     | `'SERVER'` (local eval, nhận full rule) hoặc `'CLIENT'` (remote eval qua OFREP, **không nhận rule**) |
 | key_hash       | CHAR(64)     | NOT NULL, UNIQUE                             | SHA-256 của key. **Plaintext chỉ hiện 1 lần lúc tạo, không lưu DB**  |
-| key_suffix     | VARCHAR(16)  | NOT NULL                                     | **[v4]** Sáu ký tự **CUỐI**, hiển thị `udp_sk_live_…a1b2c3`. Không phải ký tự đầu: khoá có dạng `udp_sk_{env}_{random}` nên tám ký tự đầu là `udp_sk_l` cho MỌI khoá server ở live — lưu chúng thì cột này không phân biệt được khoá nào với khoá nào, tức là hỏng đúng mục đích nó sinh ra. Stripe và GitHub cũng hiển thị đuôi |
+| key_suffix     | VARCHAR(16)  | NOT NULL                                     | **[v4]** Sáu ký tự **CUỐI**, hiển thị `udp_sk_prod_…a1b2c3`. **[v4.9]** Token đầy đủ là `udp_sk_{envSlug}_{64 hex}` (SERVER) hoặc `udp_ck_{envSlug}_{64 hex}` (CLIENT), `envSlug` = tên environment chuẩn hoá còn `[a-z0-9]` rồi cắt ở 20 ký tự (`SDK_KEY.envSlugMaxLength`); **Service 1 sinh token và hash**, Service 2 chỉ nhận `key_hash`. Token KHÔNG bao giờ được parse — `envSlug` chỉ là nhãn cho người đọc, nên đổi tên environment không làm khoá đã phát hành sai. Không phải ký tự đầu: khoá có dạng `udp_sk_{env}_{random}` nên tám ký tự đầu là `udp_sk_l` cho MỌI khoá server ở live — lưu chúng thì cột này không phân biệt được khoá nào với khoá nào, tức là hỏng đúng mục đích nó sinh ra. Stripe và GitHub cũng hiển thị đuôi |
 | label          | VARCHAR(100) | NULLABLE                                     | Người dùng đặt tên: "backend prod", "mobile app"                     |
 | last_used_at   | TIMESTAMPTZ  | NULLABLE                                     | Cập nhật throttled (tối đa 1 lần/phút) để phát hiện key không dùng   |
-| revoked_at     | TIMESTAMPTZ  | NULLABLE                                     | Khác NULL ⇒ request mới bị từ chối ngay lập tức; stream SSE đang mở không nhận thêm dữ liệu nào và bị đóng trong ≤ 5 giây (§6.3) |
+| revoked_at     | TIMESTAMPTZ  | NULLABLE                                     | Khác NULL ⇒ request mới bị từ chối ngay lập tức; stream SSE đang mở không nhận thêm dữ liệu nào và **[v4.9]** bị đóng NGAY khi replica thấy `sdkkey.revoked` trong outbox (≤ 1 vòng poll); vòng kiểm 5 giây chỉ còn là lưới dự phòng (§6.3) |
 | created_by     | UUID         | FK → User, NOT NULL                          |                                                                      |
 | created_at     | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                      |                                                                      |
 
-```sql
-CREATE INDEX idx_sdkkey_lookup ON SdkKey (key_hash) WHERE revoked_at IS NULL;
-```
+> **[v4.9] Không có index riêng cho việc tra cứu khoá.** UNIQUE trên `key_hash` đã là một index, và guard PHẢI thấy cả khoá ĐÃ thu hồi để trả về cùng một 401 (§6.2) — một index partial `WHERE revoked_at IS NULL` không phục vụ được chính câu truy vấn của guard, nên nó chỉ là một bản sao tốn chỗ ghi.
 
 **Khác biệt giữa hai loại key (ADR-03, v4):**
 
@@ -988,8 +987,8 @@ CREATE INDEX idx_sdkkey_lookup ON SdkKey (key_hash) WHERE revoked_at IS NULL;
 | - | -------- | -------- |
 | Dùng ở | Backend của developer (Node/Python server) | Trình duyệt, mobile — nơi key **có thể bị đọc** |
 | Chế độ | **Local evaluation**: nhận toàn bộ rule, đánh giá tại chỗ | **Remote evaluation (OFREP)**: gửi context, nhận kết quả đã đánh giá; **không rule nào rời server** |
-| Endpoint | `GET /sdk/config`, `GET /sdk/stream` (delta) | `POST /ofrep/v1/evaluate/flags`, `POST /ofrep/v1/evaluate/flags/{key}`, `GET /sdk/stream?mode=notify` (chỉ báo đổi) |
-| Rate limit | 100 req/phút/key (config); **[v4.1]** mở stream 1 000 lần/phút/key và tối đa 1 000 stream SSE đồng thời/key/replica — limiter riêng; không giới hạn eval vì eval là in-process | 600 req/phút/**(key, IP)**; **[v4.6]** đứng SAU trần 1 200 req/phút/IP (chặn token rác — trục (key, IP) băm nguyên header nên mỗi token rác là một bucket mới mà vẫn tốn một lần tra khoá); kết quả bulk cache LRU theo `(env, configVersion, ngữ nghĩa evaluator, hash(context))`, trần số mục VÀ trần byte; tối đa 5 stream SSE đồng thời/IP |
+| Endpoint | `GET /sdk/config`, `GET /sdk/stream` (delta), **[v4.9]** `POST /sdk/stats` | `POST /ofrep/v1/evaluate/flags`, `POST /ofrep/v1/evaluate/flags/{key}`, `GET /sdk/stream?mode=notify` (chỉ báo đổi); **[v4.9]** KHÔNG có `/sdk/stats` — OFREP một-flag đếm phía server |
+| Rate limit | 100 req/phút/key (config); **[v4.1]** mở stream 1 000 lần/phút/key và tối đa 1 000 stream SSE đồng thời/key/replica — limiter riêng; không giới hạn eval vì eval là in-process; **[v4.9]** báo cáo stats 1 000/phút/khoá ở **bucket riêng** (`RATE_LIMIT.sdk.statsPerKey`) | 600 req/phút/**(key, IP)**; **[v4.6]** đứng SAU trần 1 200 req/phút/IP (chặn token rác — trục (key, IP) băm nguyên header nên mỗi token rác là một bucket mới mà vẫn tốn một lần tra khoá); kết quả bulk cache LRU theo `(env, configVersion, ngữ nghĩa evaluator, hash(context))`, trần số mục VÀ trần byte; tối đa 5 stream SSE đồng thời/IP |
 | PII | Có thể nhận danh sách userId (backend tin cậy) | Không bao giờ nhận rule; chỉ nhận `value / variant / reason` |
 | Kết quả | Một evaluator chung (§6.5) — kết quả **giống hệt** nhau cho cùng context | |
 
@@ -1209,6 +1208,7 @@ Bảng này chỉ giữ phần **không đổi giữa các environment**: key, k
 | lifecycle_status     | ENUM         | NOT NULL, DEFAULT 'DRAFT'                | `'DRAFT'`, `'ACTIVE'`, `'ARCHIVED'` — vòng đời của **định nghĩa** flag        |
 | stickiness_attribute | VARCHAR(100) | NOT NULL, DEFAULT 'targetingKey'         | **[vá B8; v4 đổi mặc định]** Thuộc tính dùng để hash. Mặc định `targetingKey` theo chuẩn OpenFeature; có thể đổi sang `accountId`, `sessionId` |
 | permanent            | BOOLEAN      | NOT NULL, DEFAULT false                  | **[NEW]** Flag vận hành dài hạn (kill-switch) — miễn cảnh báo stale           |
+| activated_at         | TIMESTAMPTZ  | NULLABLE (NOT NULL khi ACTIVE: CHECK + trigger trg_flag_activated_at) | **[v4.9]** Mốc lần chuyển sang ACTIVE gần nhất (INSERT thẳng ACTIVE, hoặc DRAFT/ARCHIVED → ACTIVE); ACTIVE → ACTIVE giữ mốc. Do **trigger DB** `trg_flag_activated_at` (BEFORE INSERT OR UPDATE, hàm `udp_set_flag_activated_at()` SECURITY INVOKER) đặt cho MỌI writer, code không ghi. CHECK `feature_flags_active_has_activated_at`: flag ACTIVE luôn có mốc. Flag ACTIVE có trước v4.9 được backfill theo audit kích hoạt gần nhất, không có thì `updated_at` (chỉ có thể muộn hơn thật). Tuổi của UNUSED/SETTLED đo từ mốc này (§6.7) |
 | created_at           | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                  |                                                                               |
 | updated_at           | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                  | Optimistic lock cho thao tác sửa **định nghĩa**                               |
 
@@ -1354,11 +1354,11 @@ const FLAG_TYPE_VALIDATORS = {
 CREATE UNIQUE INDEX idx_segment_name ON Segment (project_id, name);
 ```
 
-> Quy tắc: segment **không** tham chiếu segment khác (không đệ quy — v3 nói "độ sâu 3" nhưng không có bảng để biểu diễn); xóa segment bị chặn khi còn rule tham chiếu; sửa segment ghi một dòng `ConfigChangeLog(change_type = 'segment.updated')` cho **mọi environment** của project có rule dùng nó.
+> Quy tắc: segment **không** tham chiếu segment khác (không đệ quy — v3 nói "độ sâu 3" nhưng không có bảng để biểu diễn); xóa segment bị chặn khi còn rule tham chiếu; **[v4.9]** mỗi lần TẠO, SỬA và XOÁ segment ghi một dòng `ConfigChangeLog(change_type = 'segment.updated')` cho **MỌI environment** của project — không chỉ env có rule dùng segment đó — vì snapshot và `config_hash` của mọi env đều chứa mọi segment; payload là `{ segment }` hoặc `{ absentSegmentId }`. Sửa `conditions` khi có rule dùng segment đó đang rollout ⇒ 409 `ROLLOUT_IN_PROGRESS`; xoá khi còn rule dùng ⇒ 409 `SEGMENT_IN_USE`; tối đa 100 segment và 4 MiB tổng `conditions` (đo bằng `octet_length(conditions::text)`) mỗi project ⇒ 422 `QUOTA_EXCEEDED`; body ghi tối đa 16 MiB.
 
 #### `FlagEvaluationStat` — [NEW: vá B15 — phát hiện stale flag]
 
-SDK gửi báo cáo tổng hợp (không gửi từng lần đánh giá) mỗi 60 giây. **Service 2 gộp trong bộ nhớ theo replica và flush theo lô 15 giây** bằng một `INSERT ... ON CONFLICT DO UPDATE SET eval_count = eval_count + EXCLUDED.eval_count` nhiều hàng — v3 UPSERT trực tiếp mỗi báo cáo: 500 instance × 200 flag × 2 variant ≈ 3 300 UPDATE/giây dồn vào **cùng vài hàng** của giờ hiện tại (hot-row contention). Đánh giá trả `DISABLED`/`ERROR` (không có variant) được đếm với `variant_key = '__disabled__'` / `'__error__'` để `UNUSED` và `SETTLED` tính đúng.
+SDK gửi báo cáo tổng hợp (không gửi từng lần đánh giá) mỗi 60 giây. **Service 2 gộp trong bộ nhớ theo replica và flush theo lô 15 giây** bằng một `INSERT ... ON CONFLICT DO UPDATE SET eval_count = eval_count + EXCLUDED.eval_count` nhiều hàng — v3 UPSERT trực tiếp mỗi báo cáo: 500 instance × 200 flag × 2 variant ≈ 3 300 UPDATE/giây dồn vào **cùng vài hàng** của giờ hiện tại (hot-row contention). Đánh giá trả `DISABLED`/`ERROR` (không có variant) được đếm với `variant_key = '__disabled__'` / `'__error__'` để `UNUSED` và `SETTLED` tính đúng. **[v4.9]** Bucket là giờ Service 2 **NHẬN** báo cáo, theo UTC — không tin đồng hồ máy khách; lúc flush, các mục của cùng lô được JOIN sang flag/environment rồi `GROUP BY` để một câu UPSERT không chạm cùng một hàng hai lần; bộ đếm trong bộ nhớ có trần (`SDK_STATS.ingest.maxPendingEntries`), vượt thì báo cáo mới bị bỏ chứ không làm phình tiến trình. Rollup 6 giờ một lần gộp hàng GIỜ cũ hơn 92 ngày thành hàng NGÀY. Phía provider là **at-most-once**: timeout hay phản hồi mơ hồ ⇒ BỎ lô đó, không thử lại (đếm thiếu chỉ làm chốt archive dễ dãi hơn; đếm trùng làm một flag đã chết trông như còn sống, và đó là kết luận sai chứ không phải kết luận thận trọng); phía Service 2, lô flush lỗi database được `restore` về bộ đếm để thử lại ở lượt sau. `__error__` chỉ đếm cho flag CÓ trong snapshot (cấu hình hỏng, sai kiểu); `FLAG_NOT_FOUND` và `PROVIDER_NOT_READY` KHÔNG đếm, còn mục trỏ tới flag vắng hoặc DRAFT vào `ignored` của phản hồi 202. OFREP một-flag đếm phía server; OFREP **bulk không đếm** (§16).
 
 | Cột            | Kiểu         | Constraint                                   | Ghi chú                                                    |
 | -------------- | ------------ | -------------------------------------------- | ---------------------------------------------------------- |
@@ -1367,14 +1367,14 @@ SDK gửi báo cáo tổng hợp (không gửi từng lần đánh giá) mỗi 6
 | environment_id | UUID         | FK → Environment ON DELETE CASCADE, NOT NULL |                                                            |
 | variant_key    | VARCHAR(100) | NOT NULL                                     | Biết nhánh nào đang thực sự được phục vụ                   |
 | eval_count     | BIGINT       | NOT NULL, DEFAULT 0                          | Cộng dồn                                                   |
-| bucket_hour    | TIMESTAMPTZ  | NOT NULL                                     | Cắt theo giờ — giữ 90 ngày rồi rollup xuống ngày           |
+| bucket_hour    | TIMESTAMPTZ  | NOT NULL                                     | Cắt theo giờ — **[v4.9]** giữ 92 ngày (`SDK_STATS.retention.hourlyDays` = `query.maxDays` + 2, để cửa sổ 90 ngày theo múi giờ dương vẫn còn đủ hàng giờ ở đầu cửa sổ) rồi rollup xuống ngày |
 
 ```sql
 CREATE UNIQUE INDEX idx_evalstat_bucket
 ON FlagEvaluationStat (flag_id, environment_id, variant_key, bucket_hour);
 ```
 
-> **Ứng dụng:** (1) Portal cảnh báo *stale flag* — flag `ACTIVE` nhưng 30 ngày không có lượt đánh giá nào, hoặc 100% lượt đánh giá rơi vào cùng một variant trong 14 ngày ⇒ đề xuất cleanup, đúng bước cuối trong vòng đời flag mà đề cương đã nêu. (2) Chặn xóa nhầm flag còn đang được code gọi. (3) Là cơ sở cho biểu đồ phân bố variant trong Rollout Dashboard.
+> **Ứng dụng:** (1) Portal cảnh báo *stale flag* — flag `ACTIVE` nhưng 30 ngày không có lượt đánh giá nào, hoặc 100% lượt đánh giá rơi vào cùng một variant trong 14 ngày ⇒ đề xuất cleanup, đúng bước cuối trong vòng đời flag mà đề cương đã nêu. (2) **[v4.9]** Chặn **archive** nhầm flag còn được code gọi (409 `FLAG_RECENTLY_EVALUATED`, §6.7). (3) Là cơ sở cho biểu đồ phân bố variant trong Rollout Dashboard.
 
 #### `ConfigChangeLog` — [ADR-05: outbox lan truyền cấu hình flag; v4: con trỏ là `config_version`]
 
@@ -1386,7 +1386,7 @@ Append-only. Mỗi thay đổi cấu hình flag ghi **một dòng ở đây tron
 | environment_id | UUID         | FK → Environment ON DELETE CASCADE, NOT NULL |                                                                     |
 | config_version | INTEGER      | NOT NULL                                     | **Con trỏ đọc.** Giá trị `Environment.config_version` **sau** thay đổi này. Liên tục theo environment vì được cấp dưới row-lock giữ tới commit |
 | change_type    | VARCHAR(50)  | NOT NULL                                     | `flag.created`, `flag.updated`, `flag.archived`, `rule.replaced`, `rule.ramped`, `envconfig.toggled`, `rollout.tracked`, `rollout.untracked`, `variant.updated`, `segment.updated`, `sdkkey.revoked`. **[v4.1]** `rule.ramped` do Service 3 ghi khi ramp trọng số (C1), tách khỏi `rule.replaced` của người sửa rule — để sổ kiểm toán trả lời được thay đổi nào do rollout gây ra. Tập này có chốt: danh sách chạy được `CONFIG_CHANGE_TYPES` trong `@udp/shared-types` phải trùng đúng nó (design-lint) |
-| payload        | JSONB        | NOT NULL                                     | Delta đầy đủ — replica cập nhật cache mà không phải đọc lại toàn bộ. **[v4.1]** Hình dạng `{ flag: <entry hình dạng dây §9> }`; áp delta = thay entry cùng `key`. `rule.ramped` mang thêm `rolloutSessionId` để truy ngược rollout nào đã ramp mà không phải join sang bảng của S3. **[v4.3]** `rollout.tracked`/`rollout.untracked` mang `{ trackedFlags: string[] }` — TOÀN BỘ tập tracked của environment sau thay đổi, đã sắp; áp delta = thay tập. Thứ tự triển khai như mọi `change_type` mới: replica (bên đọc) trước, writer sau (§16) **[v4.6]** Ghi lên một flag VẮNG khỏi snapshot (DRAFT, §6.7) ⇒ `{ absentFlagKey }` — áp = xoá entry cùng key nếu có; poller và stream chiếu thành `kind: "flagAbsent"`, KHÔNG đếm là payload hỏng. |
+| payload        | JSONB        | NOT NULL                                     | Delta đầy đủ — replica cập nhật cache mà không phải đọc lại toàn bộ. **[v4.1]** Hình dạng `{ flag: <entry hình dạng dây §9> }`; áp delta = thay entry cùng `key`. `rule.ramped` mang thêm `rolloutSessionId` để truy ngược rollout nào đã ramp mà không phải join sang bảng của S3. **[v4.3]** `rollout.tracked`/`rollout.untracked` mang `{ trackedFlags: string[] }` — TOÀN BỘ tập tracked của environment sau thay đổi, đã sắp; áp delta = thay tập. Thứ tự triển khai như mọi `change_type` mới: replica (bên đọc) trước, writer sau (§16) **[v4.6]** Ghi lên một flag VẮNG khỏi snapshot (DRAFT, §6.7) ⇒ `{ absentFlagKey }` — áp = xoá entry cùng key nếu có; poller và stream chiếu thành `kind: "flagAbsent"`, KHÔNG đếm là payload hỏng. **[v4.9]** `segment.updated` ⇒ `{ segment: {id, all, userIds} }` hoặc `{ absentSegmentId }` khi segment đã bị xoá (poller và stream chiếu thành kind `segment` / `segmentAbsent`; áp = thay hoặc xoá segment cùng id); `sdkkey.revoked` ⇒ `{ sdkKeyId }` — KHÔNG sinh phần tử nào (`changes: []`), và `configHash` của event là hash snapshot tính lại (nội dung không đổi, chỉ version tiến). |
 | actor_user_id  | UUID         | FK → User, NULLABLE                          | **[NEW v4]** Ai đổi (NULL = Service 3 khi rollout) — trả lời "vì sao user thấy X" theo cả chiều thời gian |
 | created_at     | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                      | Để dọn                                                              |
 
@@ -1550,7 +1550,7 @@ CREATE INDEX idx_provres_project_status ON ProvisionedResource (project_id, stat
 | project_id    | UUID         | FK → Project, KHÔNG CASCADE, NULLABLE | NULL cho hành động ở mức hệ thống                                    |
 | actor_user_id | UUID         | FK → User, NULLABLE                   | NULL khi `actor_type` là SYSTEM                                      |
 | actor_type    | ENUM         | NOT NULL                              | `'USER'`, `'SYSTEM'`, `'SDK'`                                        |
-| action        | VARCHAR(100) | NOT NULL                              | `flag.create`, `flag.update`, `flag.env.update`, `flag.rule.update` [v4.5], `domain.switch`, `credential.update`, `sdkkey.revoke`, `rollout.rollback`, `member.add` |
+| action        | VARCHAR(100) | NOT NULL                              | `flag.create`, `flag.update`, `flag.env.update`, `flag.rule.update` [v4.5], `domain.switch`, `credential.update`, `sdkkey.revoke`, **[v4.9]** `flag.activate`, `flag.archive`, `flag.restore`, `segment.create`, `segment.update`, `segment.delete`, `sdkkey.create`, `rollout.rollback`, `member.add` |
 | target_type   | VARCHAR(50)  | NOT NULL                              | `'FeatureFlag'`, `'FlagEnvConfig'`, `'DomainConfig'`, `'CloudCredential'`…              |
 | target_id     | VARCHAR(100) | NOT NULL                              |                                                                      |
 | environment_id| UUID         | FK → Environment, NULLABLE            | Biết thay đổi xảy ra ở env nào                                       |
@@ -1568,7 +1568,7 @@ CREATE INDEX idx_audit_target ON AuditLog (target_type, target_id, occurred_at D
 
 > **Nhiều writer (v4):** `AuditLog` là append-only nên Service 1, 2, 3 đều INSERT trực tiếp trong transaction của chính mình (Postgres role của cả ba có `INSERT`, không có `UPDATE`/`DELETE`). v3 bắt S2 ghi qua API S1 — dual-write, xem §1.2.
 
-> **[v4.5] Audit của Luồng 4 do Service 2 ghi**, trong bước thay đổi của `writeConfigChange` — cùng transaction với thay đổi và outbox (**I40**): `flag.create`, `flag.update` (before/after gồm key, description, lifecycleStatus, stickinessAttribute, defaultVariant), `flag.env.update`, `flag.rule.update` (rule không kèm `bucket_salt`). Người làm, IP và UA của NGƯỜI DÙNG do Service 1 chuyển qua header (§9). S2 ghi `actor_user_id`/`environment_id` dạng cột vô hướng: `connect` của Prisma đọc hàng cha trước, mà `udp_s2` không có quyền đọc `users` (42501 làm lùi cả thao tác flag).
+> **[v4.5] Audit của Luồng 4 do Service 2 ghi**, trong bước thay đổi của `writeConfigChange` — cùng transaction với thay đổi và outbox (**I40**): `flag.create`, `flag.update` (before/after gồm key, description, lifecycleStatus, stickinessAttribute, defaultVariant), `flag.env.update`, `flag.rule.update` (rule không kèm `bucket_salt`). Người làm, IP và UA của NGƯỜI DÙNG do Service 1 chuyển qua header (§9). S2 ghi `actor_user_id`/`environment_id` dạng cột vô hướng: `connect` của Prisma đọc hàng cha trước, mà `udp_s2` không có quyền đọc `users` (42501 làm lùi cả thao tác flag). **[v4.9]** Cùng đường đó, Service 2 ghi thêm `segment.create`, `segment.update`, `segment.delete`, `sdkkey.create`, `sdkkey.revoke` và `flag.activate`/`flag.archive`/`flag.restore`; `before`/`after` của `flag.*` gồm cả `permanent` và `activatedAt`. View của segment trong audit KHÔNG mang danh sách `userIds` đầy đủ (chỉ `userIdCount` và `userIdsSha256` — audit là nơi đọc nhiều nhất, và I11 nói userId thô không được rời đường ghi), view của khoá không mang `key_hash`.
 
 > **Vì sao bắt buộc:** UDP giữ credential cloud của người khác và có quyền thay đổi hạ tầng production của họ. Không có audit log thì khi xảy ra sự cố (rollback ngoài ý muốn, credential bị đổi, flag prod bị bật) sẽ **không thể trả lời ai đã làm gì** — và cũng không tự bảo vệ được chính nhóm phát triển. `DeploymentEvent` chỉ ghi vòng đời deploy, không phủ thay đổi cấu hình.
 
@@ -1686,7 +1686,7 @@ src/
 │   │   │   ├── idempotency.middleware.ts    ← [v4] header Idempotency-Key cho POST tạo tài nguyên (§9)
 │   │   │   ├── problem-details.ts           ← [v4] lỗi chuẩn RFC 9457 application/problem+json
 │   │   │   └── request-logger.ts        ← sanitize credential fields khỏi log
-│   │   └── routes/                      ← route tĩnh (/flags/stale, /domains/catalog) đăng ký TRƯỚC route động
+│   │   └── routes/                      ← route tĩnh (/flags/stale, [v4.9] /flags/bulk-archive, /domains/catalog) đăng ký TRƯỚC route động
 │   ├── jobs/                   ← pg-boss ≥ 12 workers (provision, domain apply, teardown)
 │   │   ├── boss.ts                      ← khởi tạo pg-boss (schema pgboss, DATABASE_URL_DIRECT, heartbeat)
 │   │   ├── provision.job.ts             ← state machine, resume-able, lease + fencing (ADR-02)
@@ -1728,8 +1728,12 @@ src/
 │   │
 │   ├── environment/
 │   │   ├── environment.service.ts      ← tạo dev/staging/prod mặc định; gọi S2 backfill khi tạo env mới
-│   │   ├── sdk-key.service.ts          ← phát hành, hiển thị 1 lần, thu hồi
+│   │   ├── environment.controller.ts   ← [v4.9] route của environment VÀ của SDK key (§9)
+│   │   ├── sdk-key.service.ts          ← [v4.9] sinh token + hash Ở ĐÂY, hiển thị plaintext ĐÚNG MỘT LẦN, thu hồi qua S2
 │   │   └── environment.repository.ts
+│   │
+│   ├── segment/                        ← [v4.9] CRUD segment: kiểm sở hữu project, quyền theo §2.2,
+│   │                                      segment.routes.ts là đường ghi DUY NHẤT sang /internal/segments của S2
 │   │
 │   ├── member/
 │   │   ├── member.controller.ts        ← mời, đổi role, chuyển OWNER
@@ -1862,10 +1866,13 @@ src/
 │   ├── flag/                   ← CRUD FeatureFlag + FlagVariant (chặn xóa variant còn tham chiếu); [v4.5] rời ACTIVE/đổi stickiness khi còn rollout ⇒ 409
 │   ├── env-config/             ← FlagEnvConfig: bật/tắt và default variant theo env; backfill khi có env mới
 │   ├── rollout/                ← [v4.3] gắn/gỡ nhãn `ff` (is_tracked) qua writeConfigChange: track theo session (S1), untrack theo env-config (S3); trần 3 flag dưới khoá environment
-│   └── rule/
-│       ├── rule.validator.ts   ← variantId thuộc flag? tổng weight = 100 000? condition đúng schema?
-│       ├── regex-safety.ts     ← [v4.6] phân tích ReDoS thật (recheck) cho pattern `regex` — CHỈ đường ghi, 422
-│       └── segment.service.ts  ← bảng Segment; sửa segment ⇒ outbox cho mọi env có rule dùng nó
+│   ├── rule/
+│   │   ├── rule.validator.ts   ← variantId thuộc flag? tổng weight = 100 000? condition đúng schema?
+│   │   └── regex-safety.ts     ← [v4.6] phân tích ReDoS thật (recheck) cho pattern `regex` — [v4.9] đường ghi rule VÀ segment, 422
+│   ├── segment/                ← [v4.9] bảng Segment: CRUD dưới khoá environment; mỗi lần ghi ⇒ outbox cho MỌI environment của project
+│   ├── sdk-key/                ← [v4.9] nhận hash từ S1 (không bao giờ thấy plaintext), trần khoá sống mỗi env, thu hồi ⇒ outbox `sdkkey.revoked`
+│   └── stats/                  ← [v4.9] telemetry `/sdk/stats`: stats.aggregator (gộp in-memory), stats.flusher (UPSERT lô 15s),
+│                                  stats.ingest, stats.repository, stats.rollup.job, stale.classifier, archive-guard
 ├── evaluation/
 │   ├── (evaluator)             ← [v4.6] lõi ở package @udp/flag-evaluator — MỘT hàm cho SDK, OFREP và Tester (I26)
 │   ├── prepared-cache.ts       ← [v4.6] snapshot đã dựng cho đánh giá, nhớ theo đối tượng ConfigEntry (WeakMap)
@@ -1897,12 +1904,12 @@ src/
 │   ├── checksum.verifier.ts         ← so config_hash mỗi 60s, quyết định rơi tầng
 │   ├── circuit-breaker.ts           ← 3 lần fallback liên tiếp ⇒ tắt tầng 2 trong 5 phút
 │   ├── notify.accelerator.ts        ← TẦNG 3: LISTEN bằng role udp_s2 qua kết nối session riêng — chỉ đánh thức watcher; [v4.3] vỏ mỏng trên `createListenAccelerator` của @udp/db (S3 dùng chung cho kênh rollout_intent)
-│   ├── prune.job.ts                 ← dọn dòng cũ hơn 7 ngày qua hàm udp_prune_config_change_log
+│   ├── prune.job.ts                 ← dọn dòng cũ hơn 7 ngày qua hàm udp_prune_config_change_log; [v4.9] dựng trên core/batch-job.ts
 │   └── rehash.ts                    ← [v4.6] đặt lại mốc config_hash sau migration đổi định dạng snapshot; lệnh: `src/scripts/rehash-config.ts` (`pnpm --filter @udp/flag-service rehash`)
-├── telemetry/
-│   └── eval-stat.aggregator.ts ← gộp in-memory, flush lô 15s bằng một INSERT ... ON CONFLICT nhiều hàng
-├── internal/                   ← Internal endpoints cho Core Backend và Service 3 gọi (If-Match version cho PATCH rules)
+├── internal/                   ← Internal endpoints cho Core Backend và Service 3 gọi (If-Match version cho PATCH rules);
+│                                  [v4.9] thêm segment.controller.ts, sdk-key.controller.ts, stats.controller.ts
 ├── core/audit.ts               ← [v4.5] recordAudit(tx, …) — hàng audit trong transaction của thay đổi (I40)
+├── core/batch-job.ts           ← [v4.9] lõi job định kỳ theo lô dùng chung (dọn outbox, rollup stats)
 └── cache/                      ← In-memory cache theo (projectId, environmentId)
 ```
 
@@ -3215,7 +3222,7 @@ type ResolutionReason =
 | Yêu cầu spec | UDP provider làm gì |
 | ------------ | ------------------- |
 | `initialize(context)` (Req 2.4) | Tải snapshot đầu tiên; `OpenFeature.setProviderAndWait()` chờ tới khi có snapshot. Trước đó mọi eval trả `PROVIDER_NOT_READY` **[v4.7]** Chờ tối đa `initTimeoutMs` (10 giây) rồi NÉM — SDK phát ERROR, app vẫn chạy với default; provider tiếp tục thử nền và tự phát READY khi có. 401 lúc init ném ngay, không chờ hết hạn |
-| `shutdown()` (Req 2.5) | Đóng SSE, huỷ mọi request đang chờ, không phát event nào sau đó. **[v4.7]** Flush `POST /sdk/stats` đến cùng `reportStats` ở #23 |
+| `shutdown()` (Req 2.5) | Đóng SSE, huỷ mọi request đang chờ, không phát event nào sau đó. **[v4.9]** `onClose()` gửi nốt báo cáo cuối khi còn số đếm, trong hạn `SDK_STATS.report.shutdownFlushTimeoutMs` (2 giây) và KHÔNG bao giờ ném |
 | Event `PROVIDER_READY` / `PROVIDER_ERROR` / `PROVIDER_CONFIGURATION_CHANGED` (Req 5.1.1) | **[v4.7]** READY/ERROR của init do SDK tự phát theo kết quả `initialize()`; provider chỉ phát SAU init: CONFIGURATION_CHANGED khi NỘI DUNG cache đổi (`flagsChanged` = key có entry thật sự đổi; `flagAbsent` của flag vốn vắng hay chỉ đổi `trackedFlags` thì không phát), ERROR khi khoá bị từ chối (401 — vẫn phục vụ cache cuối, thử lại `/sdk/config` mỗi chu kỳ polling), READY khi được lại. 3 lần SSE hỏng KHÔNG phải ERROR: DEGRADED là trạng thái nội bộ, polling vẫn cho dữ liệu đúng. Không bao giờ FATAL — FATAL làm SDK trả default, phá fail-static. Trạng thái chỉ phát khi THẬT SỰ đổi (không bao giờ READY hai lần liền); đang ERROR vì khoá bị từ chối thì không phát STALE chồng lên. Khoá bị từ chối = 401 hoặc 403 |
 | Event `PROVIDER_STALE` | Phát khi mất SSE **và** polling fallback cũng thất bại quá `staleAfterSeconds` (mặc định 300). Eval vẫn trả cache cuối cùng nhưng `flagMetadata.stale = true` (fail-static). **[v4.7]** Đo từ lần XÁC NHẬN tươi cuối (mọi byte của stream kể cả nhịp tim, hoặc 200/304 của poll); READY khi tươi lại. `staleAfterSeconds` phải lớn hơn cả thời hạn nhịp tim (2,5 × 20 giây) lẫn `pollingIntervalMs` — nhỏ hơn thì kết nối khoẻ vẫn nhảy STALE/READY giữa hai lần xác nhận, nên provider ném `RangeError` ngay lúc dựng |
 | Kiểu `object` | `JSON` của UDP ánh xạ sang `resolveObjectValue`; `NUMBER` phục vụ cả `resolveNumberValue` (int và float) |
@@ -3232,20 +3239,20 @@ sequenceDiagram
     participant EVAL as evaluator (chung)
 
     Note over APP,EVAL: SERVER key — local evaluation
-    APP->>GUARD: GET /sdk/config<br/>Authorization: Bearer udp_sk_live_a1b2...
+    APP->>GUARD: GET /sdk/config<br/>Authorization: Bearer udp_sk_prod_a1b2...
     GUARD->>GUARD: sha256(key) → key_hash
     GUARD->>DB: SELECT SdkKey WHERE key_hash = ? AND revoked_at IS NULL
     alt Key không tồn tại hoặc đã thu hồi
         GUARD-->>APP: 401 Unauthorized
     else Key hợp lệ, key_type = SERVER
         DB-->>GUARD: { environment_id, project_id, key_type: SERVER }
-        Note over GUARD: Rate limit theo key<br/>Cập nhật last_used_at (throttled 1 lần/phút)
+        Note over GUARD: Rate limit theo key<br/>[v4.9] Cập nhật last_used_at bắn-và-quên, throttle bằng WHERE nên đúng cả giữa các replica (SDK_KEY.lastUsedThrottleMs)
         GUARD-->>APP: 200 snapshot đầy đủ (flags, rules, segments) + ETag: configVersion
         Note over APP: Cache in-process, evaluate tại chỗ < 1ms<br/>GET /sdk/stream nhận delta
     end
 
     Note over WEB,EVAL: CLIENT key — remote evaluation (OFREP)
-    WEB->>GUARD: POST /ofrep/v1/evaluate/flags<br/>Authorization: Bearer udp_ck_live_...<br/>{ context: { targetingKey, plan, country } }
+    WEB->>GUARD: POST /ofrep/v1/evaluate/flags<br/>Authorization: Bearer udp_ck_prod_...<br/>{ context: { targetingKey, plan, country } }
     GUARD->>DB: SELECT SdkKey ... key_type = CLIENT
     Note over GUARD: [v4.6] Rate limit theo IP rồi theo (key, IP)<br/>Cache kết quả theo (env, configVersion, hash(context))
     GUARD->>EVAL: evaluateAll(environment, context)
@@ -3266,7 +3273,7 @@ sequenceDiagram
 | Đầu ra | `Evaluation` của lõi, provider điền `codeDefault` | `Evaluation` **giống hệt** cho cùng context, trên dây OFREP (DEFAULT ⇒ `STATIC`, DISABLED không `value`) — cùng code, cùng hash, cùng salt [v4.6] |
 | Độ trễ | < 1ms — **[v4.6] đo được: lõi p50 1–2,6 µs, p99 ≤ 6 µs (số nền E3)** | 1 RTT — có thể bulk-evaluate mọi flag một lần lúc tải trang; độ trễ OFREP đo ở E3 (#22) |
 | Khi mất kết nối | Fail-static: dùng cache cuối | OFREP provider giữ kết quả cuối; `PROVIDER_STALE` |
-| Thu hồi key | Request kế tiếp 401; stream SSE đang mở không nhận thêm dữ liệu (khoá được kiểm trước mỗi lần đẩy) và bị đóng trong ≤ 5 giây [v4.1] | Request kế tiếp 401 |
+| Thu hồi key | Request kế tiếp 401; stream SSE đang mở không nhận thêm dữ liệu (khoá được kiểm trước mỗi lần đẩy) và **[v4.9]** bị đóng NGAY khi replica thấy `sdkkey.revoked` (≤ 1 vòng poll); lưới kiểm 5 giây vẫn còn, cho trường hợp database không đọc được [v4.1] | Request kế tiếp 401 |
 
 > **Đánh đổi được ghi nhận:** CLIENT key có thêm một RTT lúc khởi động và phụ thuộc Service 2 sống để đánh giá lại khi context đổi. Đây là đánh đổi mà mọi hệ feature flag đều chọn cho trình duyệt, vì cái giá ngược lại là rò dữ liệu cá nhân của người dùng cuối.
 
@@ -3367,12 +3374,13 @@ Tầng 3 — ĐÁNH THỨC NOTIFY gọi vòng poll dậy sớm  → độ trễ 
 | Con trỏ = version | Chỉ gửi header, ngay lập tức — SDK biết đã nối mà không phải chờ nhịp tim |
 | Con trỏ > version của replica | Replica này đang tụt (SDK lấy cấu hình ở replica khác). Đối chiếu version THẬT trong database: ≥ con trỏ ⇒ đánh thức watcher, KHÔNG gửi gì cho tới khi cache đuổi kịp; < con trỏ ⇒ environment bị restore ⇒ `snapshot`. Không bao giờ kéo SDK lùi về cấu hình cũ chỉ vì nối nhầm replica |
 | `event: snapshot` | `id` = `configVersion`; `data` đúng bằng body của `GET /sdk/config` |
-| `event: flag_changed` | `id` = `toVersion`; `data: { fromVersion, toVersion, configHash, changes: [{ configVersion, kind: "flag", flag }] }`. Chỉ gửi khi stream đang ở đúng `(version, hash)` của `fromVersion`, ngược lại gửi `snapshot`. `configHash` là hash TẠI `toVersion` — áp xong phải khớp (I15c). `kind` là `flag`, hoặc **[v4.3]** `trackedFlags` (`{ kind: "trackedFlags", trackedFlags }` — thay CẢ tập, đã sắp `COLLATE "C"`, từ outbox `rollout.tracked`/`rollout.untracked`); **[v4.6]** `flagAbsent` (`{ kind: "flagAbsent", key }` — ghi lên flag DRAFT, áp = xoá entry cùng key nếu có; KHÔNG phải kind lạ, không RESYNC); `segment` còn dành chỗ; `changes` được phép rỗng. Không mang trường kiểm toán nào (như `rolloutSessionId`) |
-| `CHANGEFEED_MODE=snapshot` | Mọi thay đổi xuống dạng `snapshot` — đúng thứ E4 muốn đo băng thông |
+| `event: flag_changed` | `id` = `toVersion`; `data: { fromVersion, toVersion, configHash, changes: [{ configVersion, kind: "flag", flag }] }`. Chỉ gửi khi stream đang ở đúng `(version, hash)` của `fromVersion`, ngược lại gửi `snapshot`. `configHash` là hash TẠI `toVersion` — áp xong phải khớp (I15c). `kind` là `flag`, hoặc **[v4.3]** `trackedFlags` (`{ kind: "trackedFlags", trackedFlags }` — thay CẢ tập, đã sắp `COLLATE "C"`, từ outbox `rollout.tracked`/`rollout.untracked`); **[v4.6]** `flagAbsent` (`{ kind: "flagAbsent", key }` — ghi lên flag DRAFT, áp = xoá entry cùng key nếu có; KHÔNG phải kind lạ, không RESYNC); **[v4.9]** `segment` (`{ kind: "segment", segment }` — thay segment cùng `id`) và `segmentAbsent` (`{ kind: "segmentAbsent", id }`), cả hai sinh từ outbox `segment.updated`; `sdkkey.revoked` KHÔNG sinh phần tử nào. `changes` được phép rỗng. Không mang trường kiểm toán nào (như `rolloutSessionId`) |
+| `CHANGEFEED_MODE=snapshot` | **[v4.9]** Mọi thay đổi NỘI DUNG xuống dạng `snapshot` — đúng thứ E4 muốn đo băng thông. Một ngoại lệ: version tiến mà `configHash` KHÔNG đổi (thu hồi khoá) vẫn xuống `flag_changed` RỖNG, vì không có nội dung nào để gửi |
 | `retry:` | Gửi ở đầu stream và trước khi đóng lúc tắt máy, giá trị ngẫu nhiên 1–10 giây — N tiến trình mất kết nối cùng lúc không nối lại cùng một mili-giây |
-| Thu hồi khoá | Khoá được kiểm trước MỖI lần đẩy — không dữ liệu mới nào tới khoá đã thu hồi; stream rỗi bị đóng trong ≤ 5 giây |
+| Thu hồi khoá | Khoá được kiểm trước MỖI lần đẩy — không dữ liệu mới nào tới khoá đã thu hồi. **[v4.9]** Mỗi lượt giao hỏi database MỘT lần cho tập khoá đang mở: khoá CÓ trong lần hỏi đó mà không còn active ⇒ đóng stream NGAY, trước khi xét vị trí con trỏ. Stream mở SAU lần hỏi (khoá của nó chưa được hỏi) chờ vòng kiểm 5 giây. Khi database không đọc được, vòng kiểm GIỮ stream (fail-open) tới khi database về — một sự cố database không được biến thành một lần ngắt hàng loạt SDK đang chạy đúng |
 | Hạn mức | Limiter riêng cho việc mở stream (1 000 lần/phút/khoá) và tối đa 1 000 stream đồng thời/khoá/replica; vượt ⇒ 429 kèm `Retry-After`. Replica đang tắt ⇒ 503 kèm `Retry-After` |
-| Client chậm | Backlog của một stream vượt 1 MiB ⇒ huỷ stream; client nối lại bằng `Last-Event-ID` và nhận `snapshot` mới. Tổng backlog mọi stream có trần 64 MiB mỗi tiến trình |
+| Client chậm | Backlog của một stream vượt 1 MiB ⇒ huỷ stream; client nối lại bằng `Last-Event-ID` và nhận `snapshot` mới. Tổng backlog mọi stream có trần 64 MiB mỗi tiến trình. **[v4.9]** Mức backlog được xét theo mức nó có LÚC LƯỢT GIAO BẮT ĐẦU — phần chính lượt đó vừa ghi vào không tính là chậm, nếu không thì một snapshot lớn tự biến mọi stream thành chậm |
+| **[v4.9]** Lô delta quá lớn | Tổng `payload` của các dòng đọc sau con trỏ vượt `CHANGE_FEED.maxDeltaBytes` (8 MiB) ⇒ gửi `snapshot` với lý do `too-large`. KHÔNG đếm vào circuit breaker: đây là quyết định về KÍCH THƯỚC, không phải một lần tầng 2 hỏng — một lần sửa segment ở trần fan-out sang mọi environment là chuyện bình thường, và ngắt mạch vì nó sẽ tắt tầng 2 suốt 5 phút cho một hệ đang chạy đúng |
 
 **Phía provider [v4.7]** (hiện thực ở §6.8): bootstrap = `GET /sdk/config` rồi mở stream với `since` = version ĐÃ ÁP. Bootstrap hỏng (429, 503, mạng, hoặc quá hạn `PROVIDER.configRequestTimeoutMs` = 5 giây — mỗi lần `GET /sdk/config` có hạn riêng, server nhận kết nối rồi im không treo được vòng đồng bộ) ⇒ mở ngay stream KHÔNG con trỏ — event `snapshot` đầu tiên là bootstrap; limiter mở stream (1 000/phút/khoá) rộng hơn `/sdk/config` (100/phút/khoá), nên N tiến trình khởi động cùng lúc không bị 429 dây chuyền. RESYNC = stream mới không con trỏ. Polling của DEGRADED là REVALIDATE (`If-None-Match`, 304 khi không đổi) — khác RESYNC: khi cache đang cần RESYNC thì poll KHÔNG gửi `If-None-Match`, và một lần poll không bao giờ kéo lùi version mà stream đã áp (trừ khi cache đang cần RESYNC — lúc đó body của server là sự thật). Stream rỗi quá 2,5 × nhịp tim (không một byte nào) ⇒ coi là kết nối nửa mở: huỷ và đếm một lần hỏng. Bộ đếm hỏng chỉ về 0 khi stream đã GỬI một byte — proxy trả header rồi giữ mọi byte vẫn dẫn tới polling. Stream kết thúc sạch (server tắt êm) ⇒ nối lại SAU `retry:` mà server vừa gửi, không tính hỏng (không thế thì rolling restart của Service 2 thành bão nối lại cùng một mili-giây — đo trên bản đầu: 14 733 lần mở trong 300 ms); kết thúc mà chưa gửi byte nào ⇒ tính là hỏng. Jitter của backoff không bao giờ kéo lần thử sớm hơn `Retry-After` hay `retry:`. `Retry-After` đọc được cả số giây lẫn HTTP-date.
 
@@ -3571,7 +3579,7 @@ function matches(rule: FlagTargetingRule, ctx: EvaluationContext, cache: FlagCac
 | `semverGt`, `semverLt` | SemVer 2.0 | chuỗi SemVer 2.0 (không tiền tố `v`) | thứ tự §11 của semver.org; build metadata không tham gia; số giữ dạng chuỗi (không làm tròn) |
 | `regex` | pattern ≤ 200 ký tự, **đã ở dạng NFC**, cờ `u`, không backreference/lookaround, qua phân tích ReDoS ở S2 | chuỗi ≤ 256 ký tự (dài hơn ⇒ false) | Biên dịch NGUYÊN VĂN — chuẩn hoá hộ đổi ngữ nghĩa (`(e\u0301|é)*` an toàn thành `(é|é)*` hàm mũ). JS không có timeout cho regex — trần độ dài là lớp chặn cuối |
 
-Giới hạn (`CONDITION_LIMITS`, một bộ số cho GHI và ĐÁNH GIÁ): tên thuộc tính ≤ 100 ký tự (không `__proto__`), ≤ 20 điều kiện mỗi rule/segment, `in`/`nin` ≤ 1 000 giá trị, chuỗi ≤ 256, pattern ≤ 200, chuỗi đem so regex ≤ 256, `userIds` ≤ 10 000 (mỗi id ≤ 256). Phân tích ReDoS (`recheck`, trong worker — không chặn event loop của S2) tối đa **20 pattern khác nhau mỗi lần ghi**, 1 giây mỗi pattern; `unknown` bị từ chối như `vulnerable`. **CRUD segment (#23) PHẢI gọi cùng phép phân tích** — hôm nay chỉ đường ghi rule gọi. Hình `Segment.conditions` giữ bằng CHECK `segments_conditions_shape`: đúng hai khoá `all`/`userIds`, `userIds` toàn chuỗi, `all` toàn object.
+Giới hạn (`CONDITION_LIMITS`, một bộ số cho GHI và ĐÁNH GIÁ): tên thuộc tính ≤ 100 ký tự (không `__proto__`), ≤ 20 điều kiện mỗi rule/segment, `in`/`nin` ≤ 1 000 giá trị, chuỗi ≤ 256, pattern ≤ 200, chuỗi đem so regex ≤ 256, `userIds` ≤ 10 000 (mỗi id ≤ 256). Phân tích ReDoS (`recheck`, trong worker — không chặn event loop của S2) tối đa **20 pattern khác nhau mỗi lần ghi**, 1 giây mỗi pattern; `unknown` bị từ chối như `vulnerable`. **[v4.9] Đường ghi rule VÀ CRUD segment cùng gọi phép phân tích này**, và gọi TRƯỚC khi mở transaction — tới 20 giây phân tích không được giữ khoá environment. Hình `Segment.conditions` giữ bằng CHECK `segments_conditions_shape`: đúng hai khoá `all`/`userIds`, `userIds` toàn chuỗi, `all` toàn object.
 
 ### 6.6 Telemetry — gắn nhãn variant vào metric HTTP, nền tảng của đóng góp C1 [vá B6; v4 viết lại]
 
@@ -3722,19 +3730,19 @@ stateDiagram-v2
     end note
 ```
 
-> **[v4.5] Sơ đồ được cưỡng chế, và vòng đời không đổi khi đang rollout.** S2 chỉ cho đúng các mũi tên ở trên; không có đường quay về DRAFT (flag đã từng ACTIVE thì code của khách đã đọc nó với đúng `flag_type` đó) ⇒ 422. Đổi vòng đời (bất kỳ chiều nào) hoặc `stickiness_attribute` khi flag còn session sống ở bất kỳ env nào ⇒ 409 `ROLLOUT_IN_PROGRESS` kèm `resourceId` của rollout (S2 kiểm dưới khoá environment). Chiều ngược lại: `track` (§8.5) chỉ nhận flag ACTIVE — kiểm TRƯỚC lối tắt "đã gắn nhãn", vì nhãn của rollout trước còn lại là trạng thái bình thường — và S1 từ chối tạo rollout cho flag không ACTIVE (422) trước khi probe. Các kiểm tra đó đóng hai phía của race "archive ↔ tạo rollout". **[v4.6]** DRAFT không vào snapshot — SDK trả `FLAG_NOT_FOUND`, OFREP 404; mọi lần ghi lên flag DRAFT vẫn tăng version và ghi outbox với delta `{ absentFlagKey }` (§9 `flagAbsent`). Thử rule khi còn DRAFT: Flag Evaluation Tester đọc snapshot KÈM DRAFT, chỉ ở server. Đổi vòng đời hay stickiness cần MAINTAINER và luôn cần xác nhận hai bước (§8.4) — cả hai tác động MỌI environment (ARCHIVED là tombstone ở cả production; đổi stickiness băm lại mọi người dùng). Chặn archive khi còn lượt đánh giá 7 ngày chưa hiện thực (§16).
+> **[v4.5] Sơ đồ được cưỡng chế, và vòng đời không đổi khi đang rollout.** S2 chỉ cho đúng các mũi tên ở trên; không có đường quay về DRAFT (flag đã từng ACTIVE thì code của khách đã đọc nó với đúng `flag_type` đó) ⇒ 422. Đổi vòng đời (bất kỳ chiều nào) hoặc `stickiness_attribute` khi flag còn session sống ở bất kỳ env nào ⇒ 409 `ROLLOUT_IN_PROGRESS` kèm `resourceId` của rollout (S2 kiểm dưới khoá environment). Chiều ngược lại: `track` (§8.5) chỉ nhận flag ACTIVE — kiểm TRƯỚC lối tắt "đã gắn nhãn", vì nhãn của rollout trước còn lại là trạng thái bình thường — và S1 từ chối tạo rollout cho flag không ACTIVE (422) trước khi probe. Các kiểm tra đó đóng hai phía của race "archive ↔ tạo rollout". **[v4.6]** DRAFT không vào snapshot — SDK trả `FLAG_NOT_FOUND`, OFREP 404; mọi lần ghi lên flag DRAFT vẫn tăng version và ghi outbox với delta `{ absentFlagKey }` (§9 `flagAbsent`). Thử rule khi còn DRAFT: Flag Evaluation Tester đọc snapshot KÈM DRAFT, chỉ ở server. Đổi vòng đời hay stickiness cần MAINTAINER và luôn cần xác nhận hai bước (§8.4) — cả hai tác động MỌI environment (ARCHIVED là tombstone ở cả production; đổi stickiness băm lại mọi người dùng). **[v4.9]** ACTIVE → ARCHIVED bị chặn khi flag còn lượt đánh giá — MỌI variant, kể cả `__disabled__` và `__error__` — trong 7 ngày gần nhất (`STALE_FLAG_THRESHOLDS.archiveGuardDays`) ⇒ 409 `FLAG_RECENTLY_EVALUATED`. Phép kiểm chạy SAU optimistic lock, sau kiểm mũi tên của sơ đồ và sau kiểm rollout sống: một flag vừa bị người khác sửa phải nhận 409 `OPTIMISTIC_LOCK`, không phải một lý do khác. Archive ghi audit `flag.archived`; archive HÀNG LOẠT (`POST …/flags/bulk-archive`, tối đa 20 flag mỗi lô) xác nhận bằng gõ lại TÊN PROJECT, không phải số lượng (§8.4).
 
 **Phát hiện và dọn flag chết [vá B15]** — dựa trên `FlagEvaluationStat`:
 
 | Cảnh báo | Điều kiện | Đề xuất trên Portal |
 | -------- | --------- | ------------------- |
-| `UNUSED` | `ACTIVE`, không `permanent`, 0 lượt đánh giá trong 30 ngày | "Code có thể đã bỏ flag này. Archive?" |
-| `SETTLED` | 100% lượt đánh giá rơi vào cùng 1 variant suốt 14 ngày, ở mọi env | "Flag đã ổn định ở nhánh `on`. Xóa nhánh điều kiện trong code rồi archive." |
-| `STALE_DRAFT` | `DRAFT` quá 30 ngày, chưa từng ACTIVE | "Flag bỏ dở?" |
+| `UNUSED` | **[v4.9]** `ACTIVE`, không `permanent`, `asOf − max(activated_at, telemetryStartedAt) ≥ 30 ngày`, và 0 lượt đánh giá trong cửa sổ đó. Mốc `telemetryStartedAt` (hàng stats đầu tiên của environment) là thứ giữ cho một environment vừa bật telemetry không tố mọi flag của nó là đã chết | "Code có thể đã bỏ flag này. Archive?" |
+| `SETTLED` | **[v4.9]** `ACTIVE`, không `permanent`, MỘT variant duy nhất (không phải `__error__`) nhận 100% lượt suốt 14 ngày ở mọi env, với ít nhất `STALE_FLAG_THRESHOLDS.settledMinEvals` = 100 lượt trong cửa sổ, và mốc `max(activated_at, telemetryStartedAt)` đã cách đây ≥ 14 ngày — vài lượt lẻ cùng rơi vào một variant chưa nói được flag đã ổn định | "Flag đã ổn định ở nhánh `on`. Xóa nhánh điều kiện trong code rồi archive." |
+| `STALE_DRAFT` | `DRAFT` quá 30 ngày, chưa từng ACTIVE (`activated_at` còn NULL) | "Flag bỏ dở?" |
 | `ORPHAN_RULE` | Rule hoặc default trỏ tới variant không tồn tại, hoặc trỏ sang variant của flag KHÁC | Lỗi cấu hình ở nội dung request — 422, không retryable. Sửa `serve` hoặc `default_variant_id` |
 | `VARIANT_IN_USE` | Xoá variant còn được rule/default tham chiếu | Request đúng, trạng thái xung đột — 409, **retryable**: gỡ rule đang trỏ tới nó rồi thử lại. Chiều thứ hai của §6.7, v3 chỉ có chiều thứ nhất |
 
-> Đây chính là bước **cleanup** trong vòng đời feature flag mà đề cương đã liệt kê nhưng thiết kế v2 chưa hiện thực. Nợ kỹ thuật do flag chết là vấn đề được ghi nhận rộng rãi trong thực tiễn; cơ chế trên biến nó thành thứ đo được và hành động được.
+> Đây chính là bước **cleanup** trong vòng đời feature flag mà đề cương đã liệt kê nhưng thiết kế v2 chưa hiện thực. Nợ kỹ thuật do flag chết là vấn đề được ghi nhận rộng rãi trong thực tiễn; cơ chế trên biến nó thành thứ đo được và hành động được. **[v4.9]** Cột `permanent` miễn cho flag khỏi CẢ `UNUSED` lẫn `SETTLED` — một kill-switch vận hành dài hạn đúng là không bao giờ nên bị archive — và đặt được qua `POST /flags` hoặc `PATCH /flags/:flagId` ở mức DEVELOPER. Nó KHÔNG miễn chốt `FLAG_RECENTLY_EVALUATED`: hai thứ trả lời hai câu hỏi khác nhau (`permanent` = có nên đề xuất dọn hay không; chốt archive = code có còn gọi nó hay không).
 
 ### 6.8 `@udp/openfeature-provider` — package chạy trong ứng dụng của khách [NEW v4]
 
@@ -3821,7 +3829,8 @@ interface UDPProviderOptions {
    *  Mọi tuỳ chọn số được kiểm lúc dựng: không dương/NaN ⇒ RangeError (backoff 0 là vòng NÓNG) */
   logger?: Pick<Logger, "warn">;
 
-  // [v4.7] `reportStats` đến cùng `POST /sdk/stats` ở #23 — không phát hành option vô tác dụng
+  /** [v4.9] Báo cáo số lượt đánh giá về `POST /sdk/stats` mỗi 60 s ± 10%. Mặc định true */
+  reportStats?: boolean;
 }
 ```
 
@@ -3832,9 +3841,10 @@ interface UDPProviderOptions {
 - **Phụ thuộc runtime** (trong monorepo; gói phát hành GÓP chúng vào bundle — [v4.8]) chỉ `@udp/flag-evaluator`, `@udp/shared-types` và `@udp/config/constants` (design-lint cưỡng chế). `@openfeature/server-sdk` (và `@openfeature/core`) cùng `prom-client` là **peerDependencies**: một bản prom-client riêng của provider sẽ đăng ký histogram vào registry KHÁC với `/metrics` của ứng dụng — series biến mất im lặng. prom-client là peer TUỲ CHỌN: entry chính (provider, hook) không import nó; middleware ở subpath `/metrics`.
 - **Bên trong:** parser SSE tự viết theo WHATWG (CR/LF/CRLF cắt giữa chunk, BOM, `retry:`; tuyến tính theo độ dài dòng — snapshot là MỘT dòng — và có trần `PROVIDER.maxSseLineChars`) — thư viện `eventsource` đòi Node ≥ 22.12 và che mất việc tự quản nối lại; `Transport` tách mạng khỏi vòng đồng bộ; `ConfigStore` thuần giữ snapshot, bản đã dựng (một lần mỗi version), con trỏ, `trackedFlags`; `Synchronizer` là vòng đồng bộ §6.3. Timer chờ init KHÔNG `unref` (mọi timer của vòng đồng bộ thì có): khi Service 2 không tới được, nó là thứ duy nhất giữ event loop trong lúc `await setProviderAndWait` — QA bắt được bản đầu làm Node thoát giữa lúc khởi động (ESM mã 13). `requestStore` là MỘT store toàn tiến trình (`Symbol.for`), để hai bản module (bundle tách entry, cài lồng) không làm mất nhãn `ff` im lặng. Entry chính chỉ xuất `UDPFeatureFlagProvider`, `UDPRequestLabelHook`, `requestStore` và kiểu của chúng.
 - **Đánh giá:** `resolve*Evaluation` = `evaluate(prepared, key, context, { expectedType })` của lõi; context theo ngữ nghĩa JSON như OFREP nhận qua dây (I26): `Date` ở mọi độ sâu ⇒ chuỗi ISO, `NaN`/`Infinity` ⇒ `null`, khoá mang `undefined` bị bỏ; DISABLED ⇒ default trong code; `flagMetadata` chỉ có `ruleId`, `archived`, `stale` khi đúng; trước khi có dữ liệu ⇒ `PROVIDER_NOT_READY`.
+- **[v4.9] Telemetry (`reportStats`, mặc định bật):** bộ đếm HAI TẦNG `Map<flagKey, Map<variant, number>>` — không nối chuỗi khoá nên đường nóng không cấp phát gì mỗi lượt đánh giá (ngưỡng hồi quy R21 nằm ở sổ nợ `E3-stats`); trần `SDK_STATS.report.maxPendingEntries` = 10 000 cặp (flag, variant), đầy thì NGỪNG đếm chứ không đẩy bộ nhớ của ứng dụng khách; mỗi 60 giây ± 10% gửi tối đa 2 000 mục một lô, và KHÔNG gửi request nào khi bộ đếm rỗng. Phân loại phản hồi (V7): 400 và 413 ⇒ lô sai dạng, bỏ và ghi warn; 401 và 403 ⇒ khoá bị từ chối, bỏ lô và ngừng báo cáo tới khi khoá được nhận lại; 404 và 405 ⇒ Service 2 chưa có endpoint (bản cũ), ngừng hẳn trong phiên; 429 ⇒ bỏ lô, không xếp hàng (kỳ sau đã có số mới); 5xx, quá hạn hay lỗi mạng ⇒ cũng BỎ lô. Đó là **at-most-once**: không số đếm nào được gửi hai lần, vì đếm trùng biến một flag đã chết thành một flag trông như còn sống — một kết luận SAI, trong khi đếm thiếu chỉ làm chốt archive dễ dãi hơn.
 - **Kiểm:** đơn vị với transport giả (I15a, I18, polling, STALE, 401, watchdog, I33 fuzz trên cấu hình THẬT và event rác sau READY qua SDK thật), transport trên mạng thật cục bộ (hố đen giữ header, `/sdk/config` treo), tiến trình con kiểm init không làm Node thoát và tích hợp với Service 2 thật ở tiến trình con (`CHANGEFEED_MODE=delta`: I15c, I26 qua provider, thu hồi khoá, I34).
 - **[v4.8] Đóng gói:** constructor công khai MỘT tham số; chỗ tiêm test ở `src/internals.ts` (đọc-và-xoá khe ở lệnh ĐẦU của constructor — constructor ném vẫn không để khe cho provider sau), subpath `./testing` CHỈ trong monorepo (`createProviderForTesting`, `InMemoryTransport`, `ScriptedStream`, `ConfigStore`, dựng dữ liệu). `pnpm pack` đọc `publishConfig`: chỉ `.` và `./metrics` → `dist/*.js` + `dist/types/*.d.ts`; esbuild 0.28.2 ghim, ESM `node20`, `splitting` (một chunk chung ⇒ một `requestStore`), `@udp/*` + zod + murmurhash3js GÓP VÀO bundle, peer và `node:*` để ngoài, `dist/THIRD_PARTY_NOTICES`; `.d.ts` chỉ những file đi tới được từ hai entry (không import `@udp/*`). `dependencies` RỖNG, `@udp/*` ở devDependencies (design-lint cưỡng chế). Test tiêu thụ: tarball → ứng dụng khách trong thư mục tạm (peer liên kết junction, không mạng) — tarball sạch, cả hai entry chạy thật và dùng chung store, kiểu typecheck với `skipLibCheck: false`, probe init trên bundle.
-- **Chưa làm (lộ trình):** phát hành npm (gói còn `private`), `reportStats` (#23), bản Python (sau #26).
+- **Chưa làm (lộ trình):** phát hành npm (gói còn `private`), bản Python (sau #26).
 
 #### `trackedFlags` lan truyền thế nào
 
@@ -4744,7 +4754,8 @@ sequenceDiagram
     Note over APP,FS: Telemetry ngược chiều
 
     APP->>FS: POST /sdk/stats (mỗi 60s, tổng hợp)
-    FS->>DB: UPSERT FlagEvaluationStat
+    FS-->>APP: [v4.9] 202 { accepted, ignored }
+    FS->>DB: [v4.9] gộp theo replica, UPSERT FlagEvaluationStat theo lô 15s
     Note over FS: Nền tảng cho cảnh báo stale flag (§6.7)
 ```
 
@@ -4766,11 +4777,11 @@ sequenceDiagram
 | Audit do S2 ghi trong transaction của thay đổi, S1 chỉ chuyển người làm/IP/UA qua header | S1 ghi SAU khi S2 commit thì S1 hỏng giữa chừng là mất dấu; ghi TRƯỚC thì S2 lùi mà audit vẫn còn — dual-write mà §1.2 cấm (**I40**) |
 | S1 kiểm sở hữu (project, flag, env) trước khi gọi S2 | S2 không biết env-config thuộc project nào; thiếu bước này, người của project A sửa được flag của project B bằng id đoán được |
 | Quyền theo env kiểm ở service, không phải middleware | Mức cần (DEVELOPER hay MAINTAINER) chỉ biết sau khi đọc `Environment.is_production`. Đổi `lifecycle_status`/`stickiness_attribute` = MAINTAINER vì tác động mọi env |
-| Chỉ 404/409/422 của S2 tới Portal nguyên vẹn (mã, `current`, `resourceId`) | Đó là trả lời có nghĩa cho người dùng. 400/401/403 từ S2 là hai service lệch hợp đồng hoặc cấu hình ⇒ log error, 500 — chuyển 401 tới Portal là đăng xuất người dùng vì lỗi của máy chủ. 404 "không có route" mang slug riêng (`route-not-found`) nên cũng bị coi là lệch hợp đồng, không phải "không tìm thấy flag". 5xx/mạng ⇒ 503 `PROVIDER_UNAVAILABLE` |
+| Chỉ 404/409/422 của S2 tới Portal nguyên vẹn (mã, `current`, `resourceId`) | Đó là trả lời có nghĩa cho người dùng. 400/401/403 từ S2 là hai service lệch hợp đồng hoặc cấu hình ⇒ log error, 500 — chuyển 401 tới Portal là đăng xuất người dùng vì lỗi của máy chủ. 404 "không có route" mang slug riêng (`route-not-found`) nên cũng bị coi là lệch hợp đồng, không phải "không tìm thấy flag". 5xx/mạng ⇒ 503 `PROVIDER_UNAVAILABLE`. **[v4.9]** Bulk archive áp luật này cho TỪNG flag: 404/409/422 của flag đó đi vào `results`; 400/401/403 ⇒ dừng lô ngay và trả 500; 5xx hay lỗi mạng ⇒ dừng lô và trả 503 kèm số flag đã áp dụng được |
 | Ghi xong, S1 trả view của CHÍNH nó (`{flag}`, `{env}`, `{rules, updatedAt}`) chứ không trả body của S2 | POST/PATCH cùng hình với GET; hình nội bộ của S2 (`bucketSalt`) không có đường lên Portal. 2xx mà body không đọc được ⇒ 503 nói rõ "thay đổi có thể đã được áp dụng" |
 | Hạn chờ lời gọi ghi 30 s (`INTERNAL_CALL.configWriteTimeoutMs`) | Lớn hơn ngân sách transaction của S2 (20 s + 5 s chờ kết nối): S1 không được báo 503 cho một thay đổi S2 đã commit |
-| Xác nhận bằng gõ lại key (`confirmFlagKey`), không phải `confirm: true` | Một boolean gửi mù được; gõ lại key thì người dùng phải đọc tên flag. Thiếu/sai ⇒ 428 `CONFIRMATION_REQUIRED` để Portal biết mở hộp xác nhận |
-| Khi nào hỏi xác nhận: theo REQUEST, không theo trạng thái | Production: mọi thay đổi env trừ TẮT; mọi lần đổi vòng đời/stickiness. Luật "flag đang tắt thì bật mới hỏi" dựa vào trạng thái S1 đọc NGOÀI khoá của S2 — một form cũ bật lại được flag vừa bị kill-switch mà không ai hỏi. Sửa rule ở production không hỏi: PUT đã mang optimistic lock và Portal hiện diff trước khi lưu (§16) |
+| Xác nhận bằng gõ lại key (`confirmFlagKey`), không phải `confirm: true` | Một boolean gửi mù được; gõ lại key thì người dùng phải đọc tên flag. **[v4.9]** Archive hàng loạt xác nhận bằng gõ lại TÊN PROJECT (`confirmProjectName`), không phải số lượng: một con số thì client tự tính được, tức gửi mù được đúng như loại mà hàng này bác bỏ; tên project buộc người dùng đọc mình đang tác động vào đâu. Thiếu/sai ⇒ 428 `CONFIRMATION_REQUIRED` để Portal biết mở hộp xác nhận |
+| Khi nào hỏi xác nhận: theo REQUEST, không theo trạng thái | Production: mọi thay đổi env trừ TẮT; mọi lần đổi vòng đời/stickiness, **[v4.9]** kể cả archive hàng loạt. Luật "flag đang tắt thì bật mới hỏi" dựa vào trạng thái S1 đọc NGOÀI khoá của S2 — một form cũ bật lại được flag vừa bị kill-switch mà không ai hỏi. Sửa rule ở production không hỏi: PUT đã mang optimistic lock và Portal hiện diff trước khi lưu (§16) |
 
 ### 8.5 Luồng 5 — Progressive Rollout
 
@@ -4981,9 +4992,16 @@ DELETE /api/v1/projects/:id/environments/:envId    chặn nếu còn flag đang 
 
 SDK Key                                                       [NEW]
 ────────────────────────────────────────────────────────────────
-GET    /api/v1/projects/:id/environments/:envId/keys      chỉ prefix + last_used_at
-POST   /api/v1/projects/:id/environments/:envId/keys      trả plaintext ĐÚNG MỘT LẦN
-DELETE /api/v1/projects/:id/environments/:envId/keys/:keyId   thu hồi (revoked_at)
+GET    /api/v1/projects/:id/environments/:envId/keys      [v4.9] VIEWER; keySuffix, maskedKey
+                                                    (udp_sk_… / udp_ck_… + 6 ký tự cuối), lastUsedAt,
+                                                    status — KHÔNG bao giờ trả key_hash
+POST   /api/v1/projects/:id/environments/:envId/keys      trả plaintext ĐÚNG MỘT LẦN. [v4.9] OWNER;
+                                                    Cache-Control: no-store; KHÔNG nhận Idempotency-Key;
+                                                    422 QUOTA_EXCEEDED khi env đã đủ 20 khoá còn sống
+DELETE /api/v1/projects/:id/environments/:envId/keys/:keyId   thu hồi (revoked_at). [v4.9] OWNER;
+                                                    200 { key }, idempotent (lần hai giữ mốc CŨ);
+                                                    ghi outbox sdkkey.revoked
+                                                    Rotate = tạo mới + thu hồi cũ — KHÔNG có route riêng
 
 Members                                                       [NEW]
 ────────────────────────────────────────────────────────────────
@@ -5025,13 +5043,21 @@ PUT    /api/v1/projects/:id/capability-preferences     giải AMBIGUOUS_PROVIDER
 Feature Flag (proxy sang Service 2)
 ────────────────────────────────────────────────────────────────
 POST   /api/v1/projects/:id/flags                          {key, flagType, variants[], defaultVariantKey,
-                                                    description?} [v4.5]
+                                                    description?, [v4.9] permanent?} [v4.5];
+                                                    permanent = DEVELOPER
 GET    /api/v1/projects/:id/flags?envId=&limit=&offset=&search=&status=
+                                                    [v4.9] &include=stats&tz= — include=stats thêm
+                                                    daily14 (sparkline 14 ngày) và staleReasons
 GET    /api/v1/projects/:id/flags/:flagId
 PATCH  /api/v1/projects/:id/flags/:flagId                  sửa định nghĩa, lifecycle_status. [v4.5] description =
                                                     DEVELOPER; lifecycle_status/stickiness = MAINTAINER,
-                                                    + confirmFlagKey (428). Response {flag} như GET
-DELETE /api/v1/projects/:id/flags/:flagId                  chặn nếu còn lượt đánh giá 7 ngày
+                                                    + confirmFlagKey (428). [v4.9] permanent =
+                                                    DEVELOPER; 409 FLAG_RECENTLY_EVALUATED khi
+                                                    archive flag còn lượt đánh giá 7 ngày.
+                                                    Response {flag} như GET
+(không có DELETE)                                          [v4.9] flag không bao giờ bị xoá khỏi database
+                                                    (§6.7): ARCHIVED là bia mộ, và lịch sử cùng audit phải
+                                                    còn chỗ để trỏ tới
 GET    /api/v1/projects/:id/flags/:flagId/variants         [NEW]
 PUT    /api/v1/projects/:id/flags/:flagId/variants         [NEW] bulk replace
 GET    /api/v1/projects/:id/flags/:flagId/envs             [NEW] trạng thái ở mọi env
@@ -5044,16 +5070,26 @@ PUT    /api/v1/projects/:id/flags/:flagId/envs/:envId/rules [NEW] bulk + optimis
 POST   /api/v1/projects/:id/flags/:flagId/evaluate         [NEW] thử đánh giá với context giả. [v4.6] VIEWER;
                                                     {envId, context} ⇒ {evaluation, rule?, configVersion,
                                                     draft} — rule khớp lấy từ CÙNG snapshot đã đánh giá
-GET    /api/v1/projects/:id/flags/:flagId/stats            [NEW] eval count theo variant
-GET    /api/v1/projects/:id/flags/stale                    [NEW] danh sách flag cần cleanup
+GET    /api/v1/projects/:id/flags/:flagId/stats            [NEW] eval count theo variant. [v4.9] VIEWER;
+                                                    query envId, days ≤ 90, granularity hour (chỉ khi cửa
+                                                    sổ ≤ 7 ngày) | day, tz (tên IANA hợp lệ)
+GET    /api/v1/projects/:id/flags/stale                    [NEW] danh sách flag cần cleanup. [v4.9] VIEWER;
+                                                    đăng ký TRƯỚC /:flagId
+POST   /api/v1/projects/:id/flags/bulk-archive             [v4.9] MAINTAINER; ≤ 20 flag mỗi lô,
+                                                    confirmProjectName (428 CONFIRMATION_REQUIRED); trả
+                                                    { results: [{ flagId, ok, problem? }] }
 POST   /api/v1/projects/:id/flags/:flagId/promote          [NEW] sao chép cấu hình dev → staging
 
 Segments                                                      [NEW]
 ────────────────────────────────────────────────────────────────
-GET    /api/v1/projects/:id/segments
-POST   /api/v1/projects/:id/segments
-PUT    /api/v1/projects/:id/segments/:segmentId
-DELETE /api/v1/projects/:id/segments/:segmentId
+GET    /api/v1/projects/:id/segments                       [v4.9] VIEWER
+GET    /api/v1/projects/:id/segments/:segmentId            [v4.9] VIEWER; kèm rule đang dùng nó
+POST   /api/v1/projects/:id/segments                       [v4.9] DEVELOPER; 422 QUOTA_EXCEEDED khi vượt
+                                                    100 segment hoặc 4 MiB tổng conditions mỗi project
+PUT    /api/v1/projects/:id/segments/:segmentId            [v4.9] MAINTAINER (tác động MỌI env); 409
+                                                    ROLLOUT_IN_PROGRESS khi rule dùng nó đang rollout
+DELETE /api/v1/projects/:id/segments/:segmentId            [v4.9] DEVELOPER; 409 SEGMENT_IN_USE khi còn
+                                                    rule dùng; project không có environment nào ⇒ 404
 
 Progressive Delivery
 ────────────────────────────────────────────────────────────────
@@ -5146,6 +5182,10 @@ GET    /sdk/stream?since=<version>     [UPDATED] SSE; Last-Event-ID; heartbeat 2
                                        hạn mức mở stream hoặc trần stream/khoá; 503 +
                                        Retry-After khi replica đang tắt
 POST   /sdk/stats                      [NEW] SDK báo cáo eval count tổng hợp mỗi 60s
+                                       [v4.9] CHỈ SERVER key (CLIENT key ⇒ 401); body
+                                       { counts: [{ flagKey, variant, count }] } ≤ 2 000 mục,
+                                       trường lạ bị BỎ QUA (tương thích tiến, Lead #7);
+                                       202 { accepted, ignored }; limiter riêng 1 000/phút/khoá
 
 Internal — chỉ Core Backend và PD Controller gọi (mTLS hoặc shared secret)
 ────────────────────────────────────────────────────────────────
@@ -5186,8 +5226,24 @@ POST   /internal/flag-envs/:id/untrack             [v4.3] Gỡ nhãn khi rollout
                                                    tăng version
 POST   /internal/flags/:id/evaluate                [NEW] đánh giá thử với context giả. [v4.6] snapshot đọc
                                                    thẳng database, KÈM flag DRAFT, không qua cache /sdk
-GET    /internal/flags/:id/stats                   [NEW]
-GET    /internal/stale-flags?projectId=            [NEW]
+GET    /internal/flags/:id/stats                   [NEW] [v4.9] query envId, days, granularity, tz ⇒
+                                                   { series: [{ at, total, byVariant }], totals,
+                                                   archive: { lastEvaluatedAt, archivableAfter, byEnv } }
+GET    /internal/stale-flags?projectId=            [NEW] [v4.9] query limit ⇒ { flags: [{ flagId, key,
+                                                   reasons[], lastEvaluatedAt }], warnings:
+                                                   [clientTrafficUnobserved, telemetryGaps] }
+GET    /internal/flag-stats/summary                [v4.9] sparkline daily14 + staleReasons cho tối đa
+                                                   100 flag của ĐÚNG MỘT trang danh sách (V19)
+POST   /internal/segments                          [v4.9] S1 gửi conditions đã kiểm; parser RIÊNG
+                                                   (SEGMENT.internalBodyLimitBytes), mount trước parser 1 MB
+PUT    /internal/segments/:id                      [v4.9] fan-out outbox sang MỌI environment của project
+DELETE /internal/segments/:id                      [v4.9] 409 SEGMENT_IN_USE khi còn rule dùng
+POST   /internal/sdk-keys                          [v4.9] nhận key_hash + key_suffix từ S1, KHÔNG bao
+                                                   giờ nhận plaintext; trần 20 khoá sống mỗi environment
+DELETE /internal/sdk-keys/:id                      [v4.9] thu hồi, ghi outbox sdkkey.revoked
+                                                   [v4.9] Sáu route GHI mới ở trên BẮT BUỘC
+                                                   X-Udp-Actor-Id (thiếu ⇒ 400), cùng luật với bốn
+                                                   route ghi flag
 ```
 
 > **`/internal/*` không được phơi ra Internet.** Trong cluster: NetworkPolicy chỉ cho phép Service 1 và Service 3 gọi; ngoài ra vẫn yêu cầu shared secret ở header để phòng trường hợp NetworkPolicy bị cấu hình sai. **[v4.8]** Service 2 có thêm `GET /metrics` (cùng cổng, như S1/S3): bộ đếm §1.4 và bộ đếm E4 — ingress công khai KHÔNG route `/metrics`.
@@ -5287,13 +5343,15 @@ interface ErrorCodeSpec {
 | `ORPHAN_RULE` | 422 | — | `user` | Rule hoặc default trỏ tới variant không tồn tại hoặc thuộc flag khác. **[v4]** Trước đây §6.7 dùng mã này để chặn lưu nhưng nó không có trong danh mục, trái I36 | §6.7 |
 | `VARIANT_IN_USE` | 409 | ✓ | `user` | Xoá variant còn được rule tham chiếu. **[v4]** Tách khỏi `ORPHAN_RULE`: khác `retryable`, nên khác `suggestedAction` mà Portal hiển thị. Trigger ném SQLSTATE `UDP02` | §6.7 |
 | `INSUFFICIENT_PERMISSIONS` | 422 | — | `user` | Preflight thấy thiếu quyền IAM — kèm policy mẫu | §4.2 |
-| `QUOTA_EXCEEDED` | 422 | — | `user` | Vượt `resource_quota` của project | §4.4 |
+| `QUOTA_EXCEEDED` | 422 | — | `user` | Vượt `resource_quota` của project, **[v4.9]** hoặc một trần CỐ ĐỊNH: 20 SDK key còn sống mỗi environment, 100 segment mỗi project, 4 MiB tổng `conditions` segment mỗi project | §4.4 |
 | `METRICS_NOT_AVAILABLE` | 422 | ✓ | `user` | `probe()` không thấy series — app chưa gắn nhãn `ff`. **[v4.4]** Ở S1 là probe pha 1: WORKLOAD chưa có lưu lượng (chưa cài middleware, sai `service_name`/namespace); nhãn `ff` được kiểm ở S3 (pha 2, HOLD chứ không phải mã lỗi) | §6.6, §8.5 |
 | `TRACKED_FLAG_LIMIT` | 409 | — | `user` | Environment đã đủ 3 flag đang track | §6.6 |
-| `ROLLOUT_IN_PROGRESS` | 409 | ✓ | `user` | Đang có rollout, không cho nâng cấp domain. **[v4.4]** Và: flag/target đã có rollout sống khi tạo rollout thứ hai — kèm `resourceId` của rollout đang giữ chỗ. **[v4.5]** Và: đổi vòng đời hay stickiness của flag còn rollout sống | §8.5, §8.6, §6.7 |
+| `FLAG_RECENTLY_EVALUATED` | 409 | — | `user` | **[v4.9]** Archive flag còn lượt đánh giá trong 7 ngày; chi tiết lấy từ GET stats `archive` (Problem không mang `current`) | §6.7 |
+| `SEGMENT_IN_USE` | 409 | ✓ | `user` | **[v4.9]** Xoá segment còn rule dùng; `resourceId` = flag | §2.2, §6.5 |
+| `ROLLOUT_IN_PROGRESS` | 409 | ✓ | `user` | Đang có rollout, không cho nâng cấp domain. **[v4.4]** Và: flag/target đã có rollout sống khi tạo rollout thứ hai — kèm `resourceId` của rollout đang giữ chỗ. **[v4.5]** Và: đổi vòng đời hay stickiness của flag còn rollout sống. **[v4.9]** Và: sửa `conditions` của segment mà một rule đang rollout dùng tới | §8.5, §8.6, §6.7 |
 | `DUPLICATE_RESOURCE` | 409 | — | `user` | Vi phạm ràng buộc UNIQUE bất kỳ — tên project trùng, key flag trùng, email đã đăng ký. **[v4]** Không gộp vào `CONFLICT` (mã đó dành cho capability độc quyền §5.3, và mang 422) cũng không gộp vào `OPTIMISTIC_LOCK` (cái đó retryable vì refetch rồi gửi lại là xong; ở đây gửi lại y nguyên vẫn trùng) | §2.2 |
 | `OPTIMISTIC_LOCK` | 409 | ✓ | `user` | Người khác vừa sửa — hiện diff | §2.2 |
-| `CONFIRMATION_REQUIRED` | 428 | — | `user` | **[v4.5]** Bật hay đổi variant mặc định ở production, hoặc đổi vòng đời/stickiness của flag, cần xác nhận hai bước: gõ lại key của flag (`confirmFlagKey`). Không retryable — gửi lại y nguyên vẫn 428; Portal mở hộp xác nhận | §8.4 |
+| `CONFIRMATION_REQUIRED` | 428 | — | `user` | **[v4.5]** Bật hay đổi variant mặc định ở production, hoặc đổi vòng đời/stickiness của flag, cần xác nhận hai bước: gõ lại key của flag (`confirmFlagKey`), **[v4.9]** hoặc gõ lại tên project (`confirmProjectName`) với archive hàng loạt. Không retryable — gửi lại y nguyên vẫn 428; Portal mở hộp xác nhận | §8.4 |
 | `PRECONDITION_FAILED` | 412 | — | `nobody` | `If-Match` mang version cũ — fencing đã chặn | §7.1, I23 |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | — | `nobody` | Cùng key khác body — lỗi lập trình của client | §9 |
 | `PROVIDER_UNAVAILABLE` | 503 | ✓ | `admin` | Service phụ thuộc không phản hồi | §7.6 |
@@ -5315,6 +5373,8 @@ interface ErrorCodeSpec {
 | `POST /projects/:id/rollouts` | Hai session cùng nhắm một target |
 | `POST /projects/:id/domains/:type/upgrade` | Hai lần `helm upgrade` chồng nhau |
 | `POST /projects/:id/members` | Gửi hai lời mời |
+
+> **[v4.9] `POST …/environments/:envId/keys` cố ý KHÔNG nhận `Idempotency-Key`.** Response của nó mang plaintext SDK key, và cơ chế idempotency lưu NGUYÊN response vào `idempotency_keys` trong 24 giờ — tức là ghi thẳng vào database đúng thứ đã hứa không bao giờ nằm trong database (§2.2 `SdkKey.key_hash`). Bấm hai lần tạo hai khoá, và đó là đánh đổi được chọn: một khoá thừa thì thu hồi được, còn plaintext đã lưu thì không thu lại được.
 
 Ngữ nghĩa: key được lưu cùng `(project_id, user_id, endpoint, hash(body))` trong **24 giờ** — `user_id` nằm trong khoá vì `Idempotency-Key` do client tự sinh, nên hai thành viên cùng project vô tình trùng UUID sẽ khiến người thứ hai nhận response của người thứ nhất và tưởng thao tác của mình đã chạy. Gọi lại với **cùng key và cùng body** trả về **đúng response cũ** kèm `Idempotency-Replayed: true`, chứ không phải 409 — người dùng bấm hai lần do mạng chậm không đáng bị báo lỗi. Cùng key nhưng **khác body** trả `422`, vì đó là lỗi lập trình của client. Unique partial index ở tầng database (§2) là lớp chặn thứ hai, phòng khi key hết hạn hoặc client quên gửi.
 
@@ -5509,12 +5569,16 @@ interface SdkStreamDeltaEvent {
   fromVersion: number;   // stream PHẢI đang ở đây, nếu không server gửi snapshot
   toVersion: number;     // = id của event
   configHash: string;    // hash TẠI toVersion — áp xong phải khớp (I15c)
-  changes: (             // được phép rỗng; kind lạ ⇒ RESYNC; dành chỗ cho "segment"
+  changes: (             // [v4.9] rỗng khi sdkkey.revoked; kind lạ ⇒ RESYNC
     | { configVersion: number; kind: "flag"; flag: SdkConfigResponse["flags"][number] }
     /** [v4.6] flag VẮNG khỏi snapshot (DRAFT) — áp = xoá entry cùng key nếu có */
     | { configVersion: number; kind: "flagAbsent"; key: string }
     /** [v4.3] thay CẢ tập, đã sắp — từ outbox rollout.tracked / rollout.untracked */
     | { configVersion: number; kind: "trackedFlags"; trackedFlags: string[] }
+    /** [v4.9] segment tạo hoặc sửa — áp = thay segment cùng id (outbox segment.updated) */
+    | { configVersion: number; kind: "segment"; segment: SdkConfigResponse["segments"][number] }
+    /** [v4.9] segment đã bị xoá — áp = bỏ segment cùng id */
+    | { configVersion: number; kind: "segmentAbsent"; id: string }
   )[];
 }
 
@@ -6306,7 +6370,7 @@ Inline error:         form validation — always near the field, never toast
 | **Environment Switcher** (thanh trên, luôn hiện) | B2 | Một dropdown `dev / staging / prod` duy nhất, đặt cạnh tên project. **Mọi** màn hình flag, rollout, deployment đều lọc theo lựa chọn này. Environment production hiển thị nền cảnh báo màu khác — người dùng phải luôn biết mình đang đứng ở đâu |
 | **Flag Environment Matrix** | B2 | Bảng flag × environment, mỗi ô là công tắc bật/tắt kèm variant đang mặc định. Nhìn một lần thấy ngay "flag này bật ở dev, tắt ở prod" |
 | **Nút Promote config dev → staging** | B2 | Sao chép rule giữa hai environment, hiển thị diff trước khi áp dụng |
-| **SDK Keys** (trong Settings của environment) | B1 | Danh sách key: prefix, loại (SERVER/CLIENT), lần dùng cuối, nút thu hồi. Key mới hiện plaintext **đúng một lần** trong modal có nút copy, kèm cảnh báo không thể xem lại. Key chưa dùng bao giờ sau 7 ngày được đánh dấu |
+| **SDK Keys** (trong Settings của environment) | B1 | Danh sách key: **[v4.9]** `maskedKey` (loại + 6 ký tự cuối), loại (SERVER/CLIENT), lần dùng cuối, nút thu hồi. Key mới hiện plaintext **đúng một lần** trong modal có nút copy, kèm cảnh báo không thể xem lại. Key chưa dùng bao giờ sau 7 ngày được đánh dấu |
 | **Members** | B12 | Mời theo email, đổi role, chuyển quyền OWNER (có xác nhận hai bước). Ma trận quyền hiển thị ngay trong UI để người dùng hiểu mỗi role làm được gì |
 | **Audit Log** | B12 | Bảng lọc theo hành động / người / khoảng thời gian; mỗi dòng mở ra diff `before` → `after` đã redact |
 | **Domain Config — validate trực tiếp** | B11 | Gọi `POST /domains/validate` sau mỗi thay đổi (debounce 400ms). Lỗi hiện ngay tại chỗ kèm **nút hành động**: "Flagger cần Service Mesh → **Bật Istio**". Panel bên phải vẽ thứ tự deploy theo bậc |
@@ -6315,7 +6379,7 @@ Inline error:         form validation — always near the field, never toast
 | **Preflight Permissions** | B13 | Sau khi nhập credential: danh sách quyền còn thiếu kèm policy JSON mẫu có nút copy — không để người dùng đoán từ thông báo lỗi của SDK cloud |
 | **Rollout Dashboard — "vì sao đang đứng yên"** | B10 | Hiển thị `lastDecision.reason` nổi bật: *"Đang chờ đủ dữ liệu: 34/100 request"* hoặc *"errorRate 0.08 > 0.05, lần 2/2 → sắp rollback"*. Người dùng không bao giờ phải đoán tại sao thanh tiến trình không nhúc nhích |
 | **Rollout — trạng thái intent** | B3 | Sau khi bấm PAUSE/ROLLBACK, nút chuyển sang *"Đang thực hiện…"* cho tới khi nhận được event thực thi, phản ánh đúng ngữ nghĩa `202 Accepted` |
-| **Flag Cleanup Center** | B15 | Danh sách flag `UNUSED` / `SETTLED` / `STALE_DRAFT` kèm biểu đồ phân bố variant và nút Archive hàng loạt |
+| **Flag Cleanup Center** | B15 | Danh sách flag `UNUSED` / `SETTLED` / `STALE_DRAFT` kèm biểu đồ phân bố variant và nút Archive hàng loạt — **[v4.9]** nút đó gọi `POST …/flags/bulk-archive`, tối đa 20 flag mỗi lô, xác nhận bằng gõ lại TÊN PROJECT |
 | **Flag Evaluation Tester** | B7 | Nhập context giả (targetingKey, thuộc tính) → hiện `value`, `variant`, `reason`, và **rule nào đã khớp**. **[v4.6]** Thử được cả flag DRAFT (đánh dấu: SDK chưa thấy nó). Công cụ debug quan trọng nhất của bất kỳ hệ feature flag nào |
 
 **Ảnh hưởng tới routing:** thêm tham số `envId` vào search params của các route flag/rollout/deployment (TanStack Router giữ type-safe), với giá trị mặc định là environment không phải production có `rank` nhỏ nhất — để một cú refresh trang không vô tình đưa người dùng vào ngữ cảnh production.
@@ -6353,10 +6417,13 @@ Inline error:         form validation — always near the field, never toast
 | Domain Config | `GET /projects/:id/domains` | `["domains", projectId]` | `PUT /domains` thành công, job `DOMAIN_APPLY` xong, `PUT /capability-preferences` |
 | Domain Catalog | `GET /domains/catalog` | `["catalog"]` | **Không bao giờ** trong một phiên — `staleTime: Infinity`, vì catalog chỉ đổi khi service khởi động lại |
 | Domain Detail (day-2) | `GET /projects/:id/domains/:type/drift` | `["drift", projectId, type]` | Chạy `POST /drift`, hoặc `upgrade` xong |
-| **Flag List** | `GET /projects/:id/flags?envId=` | `["flags", projectId, **envId**]` | Tạo hoặc archive flag, SSE `flag_changed` |
+| **Flag List** | `GET /projects/:id/flags?envId=` | `["flags", projectId, **envId**, [v4.9] include]` | Tạo hoặc archive flag, SSE `flag_changed` |
 | **Flag Detail** | `GET /projects/:id/flags/:flagId` + [v4.5] `GET …/envs/:envId/rules` | `["flag", projectId, flagId, **envId**]` | Lưu rule, bật/tắt theo env, SSE `flag_changed` |
 | **Flag Env Matrix** | `GET /projects/:id/flags/:flagId/envs` | `["flagEnvs", projectId, flagId]` | Bật/tắt ở **bất kỳ** env nào — đây là màn hình duy nhất **cố ý** không scope theo env |
 | Flag Cleanup Center | `GET /projects/:id/flags/stale` | `["staleFlags", projectId]` | Archive hàng loạt |
+| **[v4.9] Flag Stats** | `GET …/flags/:flagId/stats` | `["flagStats", projectId, flagId, envId, days, granularity, tz]` | Đổi cửa sổ, granularity hay tz |
+| **[v4.9] Segments** | `GET /projects/:id/segments` | `["segments", projectId]` | Tạo, sửa, xoá segment — **project-scope**, khai vào danh sách miễn trừ của I38 cạnh Flag Env Matrix |
+| **[v4.9] Segment Detail** | `GET …/segments/:segmentId` | `["segment", projectId, segmentId]` | Sửa segment — **project-scope**, cùng danh sách miễn trừ |
 | **Rollout List** | `GET /projects/:id/rollouts?envId=` | `["rollouts", projectId, **envId**]` | Tạo rollout, rollout kết thúc |
 | **Rollout Detail** | `GET /projects/:id/rollouts/:rid` | `["rollout", projectId, rid]` | Ghi intent; **polling theo status**: 5s khi `IN_PROGRESS`, dừng hẳn khi `DONE`/`FAILED` |
 | **Deployments** | `GET /projects/:id/deployments?envId=` | `["deployments", projectId, **envId**]` | Webhook mới về (qua polling) |
@@ -6371,7 +6438,7 @@ Inline error:         form validation — always near the field, never toast
 | Quy tắc | Cưỡng chế |
 | ------- | --------- |
 | Mọi hook đọc dữ liệu **thuộc phạm vi environment** phải có `envId` trong query key | **Bất biến I38**: test duyệt toàn bộ hook trong `api/`, đối chiếu với danh sách hook env-scoped khai tường minh; thêm hook mới mà quên `envId` là **fail build** |
-| Ngoại lệ phải **khai tường minh**, không phải bỏ sót âm thầm | `Flag Env Matrix` cố ý không scope theo env vì nó hiển thị *mọi* env cùng lúc. Khai vào danh sách miễn trừ, giống cách I10 miễn trừ route |
+| Ngoại lệ phải **khai tường minh**, không phải bỏ sót âm thầm | `Flag Env Matrix` cố ý không scope theo env vì nó hiển thị *mọi* env cùng lúc. Khai vào danh sách miễn trừ, giống cách I10 miễn trừ route. **[v4.9]** Cùng danh sách: `["segments", projectId]` và `["segment", projectId, segmentId]` — segment thuộc PROJECT, một bản dùng ở mọi environment (§2.2), nên `envId` trong khoá sẽ là một lời nói dối về phạm vi dữ liệu |
 | Polling phải **tự dừng** | `refetchInterval` là hàm của `status`, trả `false` khi `DONE` hoặc `FAILED`. Không có điều này thì một tab mở quên sẽ poll mãi mãi |
 | SSE và React Query không được đá nhau | SSE **chỉ gọi `invalidateQueries`**, không tự ghi vào cache. Ghi thẳng vào cache tạo ra hai nguồn sự thật ở phía client — đúng thứ ADR-05 tránh ở phía server |
 
@@ -6627,7 +6694,7 @@ UDP giữ credential cloud của người khác và có quyền thay đổi hạ
 | T4 | **Leo thang quyền ngang** | User A đọc/sửa project của User B bằng cách đổi `projectId` trên URL | `requireProjectRole` kiểm tra `ProjectMember` ở **mọi** endpoint có `:projectId`; test tích hợp quét toàn bộ route để bảo đảm không route nào thiếu (§13) |
 | T5 | **Leo thang quyền dọc** | DEVELOPER bật flag ở production | Ma trận quyền §2.2. **[v4.5]** Module `flag` của S1 kiểm `Environment.is_production` sau khi xác định (project, flag, env) — mức quyền chỉ biết sau khi đọc env nên không làm ở middleware; bật ở production còn cần xác nhận hai bước (428 `CONFIRMATION_REQUIRED`) |
 | T6 | **Giả mạo webhook** | Gửi POST giả để kích hoạt deploy image độc hại | Verify chữ ký theo từng nhà cung cấp, so sánh hằng thời gian; secret mã hóa, xoay vòng được; ghi nhận lần verify thất bại để phát hiện dò quét |
-| T7 | **Lạm dụng SDK endpoint** | Dùng key hợp lệ để bào tài nguyên | Rate limit theo key (mở stream có limiter và trần riêng); `last_used_at` phát hiện bất thường; thu hồi key: request mới bị từ chối ngay, stream đang mở không nhận thêm dữ liệu và đóng trong ≤ 5 giây |
+| T7 | **Lạm dụng SDK endpoint** | Dùng key hợp lệ để bào tài nguyên | Rate limit theo key (mở stream có limiter và trần riêng); `last_used_at` phát hiện bất thường; **[v4.9]** thu hồi key: request mới bị từ chối ngay, stream đang mở không nhận thêm dữ liệu và đóng NGAY khi replica thấy `sdkkey.revoked`; vòng kiểm 5 giây chỉ còn là lưới dự phòng |
 | T8 | **Tài nguyên mồ côi tiêu tiền** | Job chết giữa chừng | Sổ `ProvisionedResource` ghi **trước** lời gọi cloud + compensation theo thứ tự ngược + tag `udp.project` + `orphan-scan.job` + `GET /admin/orphan-resources` (§4.4, §8.1). Tài nguyên xóa không được đánh `ORPHAN_SUSPECTED` chứ không nuốt lỗi |
 | T9 | **CSRF trên Portal** | Trang độc dụ trình duyệt gọi API bằng cookie sẵn có | Cookie `httpOnly` + `SameSite=Lax` + header `X-CSRF-Token` (double-submit) — giữ nguyên từ v2 |
 | T10 | **Escape giữa các tenant trên cluster** | Workload của project A đọc secret của project B | Mỗi (project, environment) một namespace riêng + NetworkPolicy mặc định deny + ResourceQuota. **Giới hạn được ghi nhận:** đây là cô lập ở mức namespace, không phải mức kernel — xem §16 |
@@ -6826,12 +6893,12 @@ export function runCloudAdapterContract(adapter: CloudAdapter, env: LocalStackOr
 | I9 | **Compensation dọn đúng thứ tự ngược** | Ép fail ở bước cuối, khẳng định thứ tự lời gọi teardown |
 | I10 | **Mọi route có `:projectId` đều qua `requireProjectRole`** | Test quét bảng route, so với danh sách route được miễn trừ tường minh — bảo vệ khỏi việc quên middleware khi thêm route mới |
 | I11 | **`CLIENT` key không bao giờ nhận userId thô** | Snapshot test payload, khẳng định không chứa chuỗi userId của fixture. **[v4.6]** Áp cho mọi response OFREP: không userId của rule, không `ruleId`, `condition`, `bucketSalt`, không id environment |
-| I12 | **`redact()` che mọi khóa nhạy cảm** | Property-based test trên object lồng nhau sinh ngẫu nhiên |
+| I12 | **`redact()` che mọi khóa nhạy cảm**, **[v4.9]** kể cả `secretKey` | Property-based test trên object lồng nhau sinh ngẫu nhiên. **[v4.9]** Thêm một phép quét TOÀN BỘ database, log của CẢ HAI service và `idempotency_keys` theo mẫu chung của token (`udp_sk_`/`udp_ck_` + envSlug + 64 hex, suy từ chính hàm sinh token): plaintext SDK key không nằm ở chỗ nào trong số đó |
 | I13 | **Khai báo capability không có chu trình** | Test khởi động: chạy `topoSort` trên toàn bộ registry |
-| I14 | **`environment` không rò rỉ** — SDK key của `dev` không đọc được cấu hình `prod` | Test tích hợp trực tiếp **[v4.6]** Cả OFREP: cùng context, khoá dev nhận kết quả theo cấu hình dev, không chịu rule hay bật/tắt của prod (flag thuộc project nên có mặt ở mọi env — "không thấy" không phải phép thử đúng) |
+| I14 | **`environment` không rò rỉ** — SDK key của `dev` không đọc được cấu hình `prod` | Test tích hợp trực tiếp **[v4.6]** Cả OFREP: cùng context, khoá dev nhận kết quả theo cấu hình dev, không chịu rule hay bật/tắt của prod (flag thuộc project nên có mặt ở mọi env — "không thấy" không phải phép thử đúng) **[v4.9]** Cả `/sdk/stats`: báo cáo gửi bằng khoá của `dev` chỉ cộng vào hàng stats của `dev`, và một `flagKey` chỉ tồn tại ở project khác đi vào `ignored` chứ không tạo hàng nào |
 | I15a | **Hệ thống tự hội tụ dù tầng delta sai** (đối chiếu bằng `config_hash`; `config_version` chỉ là số đếm chứ không phải checksum — §1.4, ADR-05) | Chủ động xóa một dòng khỏi `ConfigChangeLog`, hoặc bơm một delta hỏng; khẳng định replica phát hiện **hash lệch** — không chỉ version, vì delta sai nội dung nhưng đúng số vẫn qua được nếu chỉ so version — rồi vứt cache và **hội tụ về đúng cấu hình**. Không cần dàn dựng chạy đua — đây là test dễ viết nhất trong nhóm |
 | I15b | **Thứ tự `config_version` trùng thứ tự commit, không có hổng vĩnh viễn** | Mở transaction T1 (khóa hàng `Environment`, nhận version n) nhưng chưa commit; mở T2 cùng environment và khẳng định nó **bị chặn** ở bước khóa hàng cho tới khi T1 commit; sau đó T2 nhận đúng n+1. Chạy vòng poll giữa hai mốc và khẳng định replica không bao giờ thấy n+1 trước n. Đây là toàn bộ lý do v4 bỏ `xid8`: bảo đảm đến từ row-lock giữ tới commit chứ không từ kiểu dữ liệu con trỏ |
-| I15c | **Áp N delta cho ra đúng snapshot tại cùng version** | Property-based: sinh chuỗi thao tác ngẫu nhiên trên flag, so trạng thái sau khi áp delta với snapshot đọc trực tiếp — phải bằng nhau từng bit. **[v4.3]** `track`/`untrack` đi cùng đường, kiểm bằng ví dụ chứ không bằng sinh ngẫu nhiên: payload outbox bằng `trackedFlags` của snapshot đọc trực tiếp; poller và SSE áp delta `trackedFlags` ra đúng hash; hash có tập tracked được ghim bằng số (thứ tự không đổi hash); sắp `COLLATE "C"` trùng phép so của JS kể cả với key có `-`. Kill-switch của S3 tính hash và delta bằng CÙNG `@udp/flag-snapshot` với S2, và test S3 khẳng định S2 khởi động lại phục vụ đúng trọng số kill-switch đã ghi **[v4.6]** Chuỗi thao tác gồm ghi lên flag DRAFT (`flagAbsent`) và DRAFT → ACTIVE (entry xuất hiện) **[v4.7]** Phía provider: tích hợp với Service 2 thật (`CHANGEFEED_MODE=delta`) — chuỗi ghi qua route thật (DRAFT, kích hoạt, rule, env, `track`) ⇒ cache của provider bằng `/sdk/config` cùng version cả nội dung lẫn hash, trên CÙNG một stream (không mở lại, không RESYNC) |
+| I15c | **Áp N delta cho ra đúng snapshot tại cùng version** | Property-based: sinh chuỗi thao tác ngẫu nhiên trên flag, so trạng thái sau khi áp delta với snapshot đọc trực tiếp — phải bằng nhau từng bit. **[v4.3]** `track`/`untrack` đi cùng đường, kiểm bằng ví dụ chứ không bằng sinh ngẫu nhiên: payload outbox bằng `trackedFlags` của snapshot đọc trực tiếp; poller và SSE áp delta `trackedFlags` ra đúng hash; hash có tập tracked được ghim bằng số (thứ tự không đổi hash); sắp `COLLATE "C"` trùng phép so của JS kể cả với key có `-`. Kill-switch của S3 tính hash và delta bằng CÙNG `@udp/flag-snapshot` với S2, và test S3 khẳng định S2 khởi động lại phục vụ đúng trọng số kill-switch đã ghi **[v4.6]** Chuỗi thao tác gồm ghi lên flag DRAFT (`flagAbsent`) và DRAFT → ACTIVE (entry xuất hiện) **[v4.7]** Phía provider: tích hợp với Service 2 thật (`CHANGEFEED_MODE=delta`) — chuỗi ghi qua route thật (DRAFT, kích hoạt, rule, env, `track`) ⇒ cache của provider bằng `/sdk/config` cùng version cả nội dung lẫn hash, trên CÙNG một stream (không mở lại, không RESYNC) **[v4.9]** Chuỗi thao tác gồm cả tạo/sửa/xoá segment (`segment` / `segmentAbsent`) và `sdkkey.revoked` (`changes: []` — version tiến, hash không đổi) |
 | I16 | **Lease hết hạn đúng lúc và session được nhận lại** | Kill worker đang giữ lease; khẳng định sau `leaseSeconds` có worker khác `claim` thành công, và không worker nào claim được trước thời điểm đó |
 | I17 | **Fencing chặn được worker tỉnh muộn** | Mô phỏng: worker A claim, tạm dừng; worker B claim sau khi lease hết; A tỉnh dậy và ghi ⇒ khẳng định lời ghi của A **bị từ chối** vì `version` đã đổi. **[v4.3]** Kill-switch không đi qua S2 nên không có `If-Match`: chốt nằm ở database — `updateIfVersion` chạy TRONG transaction kill-switch, 0 hàng ⇒ lùi cả `serve` lẫn `config_version` (test `dependency-down`: "worker tỉnh muộn") |
 | I18 | **Con trỏ hết hiệu lực thì fallback về snapshot** | Xóa toàn bộ `ConfigChangeLog` cũ hơn con trỏ của replica; khẳng định replica phát hiện và tự lấy snapshot đầy đủ thay vì im lặng bỏ qua |
@@ -6854,9 +6921,9 @@ export function runCloudAdapterContract(adapter: CloudAdapter, env: LocalStackOr
 | **I35** | **Oracle của E8 không thể nhìn thấy validator** [v4] | dependency-cruiser (hoặc tương đương) chạy trong CI, khẳng định không file nào dưới `tests/oracle/` import bất cứ thứ gì dưới `modules/domain-adapter/capability/`. Vi phạm là **fail build**. Kèm hai kiểm tra bổ trợ: (a) `git log` xác nhận commit của oracle **đứng trước** commit của validator; (b) trên không gian test, oracle sinh ra **đủ cả 7 mã lỗi** của §5.3 — mã nào không bao giờ xuất hiện thì hoặc oracle sai, hoặc mã đó là code chết |
 | **I36** | **Không mã lỗi nào tồn tại ngoài catalog** [v4] | `ProblemDetails.code` khai kiểu là `keyof typeof ERROR_CATALOG`, nên một mã gõ sai hoặc bịa ra **không biên dịch được**. Đây là cưỡng chế bằng type system chứ không phải bằng test, nên không có đường lách. Kèm một test quét mọi lời gọi `throw` trong backend để bắt trường hợp mã được dựng động từ chuỗi |
 | **I37** | **Mọi mã lỗi đều có thông điệp tiếng Việt** [v4] | Test duyệt toàn bộ `ERROR_CATALOG`, khẳng định mỗi mã có một khóa i18n tương ứng ở frontend và khóa đó không rỗng. Thêm mã mới mà quên dịch là **fail build**, thay vì hiện chuỗi mã trần cho người dùng cuối. Kiểm thêm chiều ngược: khóa i18n thừa (mã đã bị xóa) cũng fail, để catalog không phình theo thời gian |
-| **I38** | **Query key của dữ liệu theo environment luôn chứa `envId`** [v4] | Test duyệt mọi hook trong `api/`, đối chiếu với danh sách hook env-scoped khai **tường minh**; hook nào trong danh sách mà query key thiếu `envId` là fail. Bug mà bất biến này chặn: cấu hình flag của `dev` bị cache lẫn sang `prod` — §10.12 gọi đúng tên nó là "loại lỗi rất khó phát hiện bằng mắt". Ngoại lệ (Flag Env Matrix) phải khai vào danh sách miễn trừ, giống cách I10 miễn trừ route |
+| **I38** | **Query key của dữ liệu theo environment luôn chứa `envId`** [v4] | Test duyệt mọi hook trong `api/`, đối chiếu với danh sách hook env-scoped khai **tường minh**; hook nào trong danh sách mà query key thiếu `envId` là fail. Bug mà bất biến này chặn: cấu hình flag của `dev` bị cache lẫn sang `prod` — §10.12 gọi đúng tên nó là "loại lỗi rất khó phát hiện bằng mắt". Ngoại lệ (Flag Env Matrix, **[v4.9]** `segments` và `segment` — segment thuộc project chứ không thuộc environment) phải khai vào danh sách miễn trừ, giống cách I10 miễn trừ route |
 | **I39** | **ORPHAN_RULE được cưỡng chế ở tầng database, cả hai chiều** [v4 — §6.7] | SQL chạy thẳng, không qua ORM — vì đường ghi của Service 3 (§1.2) không đi qua Zod nên trigger là hàng rào duy nhất. (a) Lưu rule có `serve` trỏ variant của flag khác — bị chặn. (b) Xóa variant còn được `serve` tham chiếu — bị chặn lúc COMMIT. (c) Đặt `default_variant_id` của flag A bằng variant của flag B — bị chặn; FK chỉ cưỡng chế *tồn tại*, không cưỡng chế *quyền sở hữu*. (d) `serve` sai hình dạng — `kind` lạ, JSON null, thiếu `weights`, `variantId` rỗng hoặc không phải uuid — **đều phải bị chặn**: trả mảng rỗng cho hình dạng không hiểu là im lặng cho qua. (e) Xóa cả FeatureFlag vẫn phải CHẠY TRÓT — constraint trigger hoãn tới COMMIT chính là để không chặn nhầm ca này. Chiều lưu ra `UDP01` → 422 `ORPHAN_RULE`; chiều xoá ra `UDP02` → 409 `VARIANT_IN_USE`. **Hai mã phải KHÁC nhau** — dùng chung một mã là mất `retryable`, và test phải khẳng định đúng mã chứ không chỉ khẳng định "có lỗi". **[v4.3]** (f) `serve.weights` phải tăng dần nghiêm ngặt theo `variantId` (`UDP04`, lỗi của writer ⇒ 500, không vào `ERROR_CATALOG` — cùng tiền lệ `UDP03`); serve vừa trỏ variant lạ vừa sai thứ tự báo `UDP01`; hàng cũ chưa sắp vẫn sửa được cột khác |
-| **I40** | **Audit ghi cùng transaction với thay đổi nó mô tả** [v4.5 — §8.4] | (a) Một bước SAU hàng audit hỏng (tính `config_hash`) ⇒ hàng audit biến mất cùng thay đổi, `config_version` đứng yên — phép thử duy nhất phân biệt "cùng transaction" với "ghi riêng", vì mọi lỗi nghiệp vụ (409, 422) ném TRƯỚC hàng audit. Qua HTTP, dưới role `udp_s2` thật: (b) mỗi lời gọi ghi flag để lại đúng MỘT hàng mang người làm, IP, UA của người dùng — kể cả khi Portal tự gửi header nội bộ, S1 bỏ qua chúng; (c) thay đổi bị từ chối (409, 428, 403) không để lại hàng nào; (d) IP sai dạng — kể cả IPv6 kèm zone mà `INET` không nhận — bị bỏ chứ không làm lùi thay đổi; (e) thiếu người làm ⇒ 400, không ghi ẩn danh; (f) `before`/`after` của `flag.rule.update` không có `bucket_salt`. Bug mà bất biến chặn: dual-write — S1 ghi audit sau khi S2 commit thì mất dấu khi S1 hỏng giữa chừng, ghi trước thì audit kể về một thay đổi không xảy ra |
+| **I40** | **Audit ghi cùng transaction với thay đổi nó mô tả** [v4.5 — §8.4] | (a) Một bước SAU hàng audit hỏng (tính `config_hash`) ⇒ hàng audit biến mất cùng thay đổi, `config_version` đứng yên — phép thử duy nhất phân biệt "cùng transaction" với "ghi riêng", vì mọi lỗi nghiệp vụ (409, 422) ném TRƯỚC hàng audit. Qua HTTP, dưới role `udp_s2` thật: (b) mỗi lời gọi ghi flag để lại đúng MỘT hàng mang người làm, IP, UA của người dùng — kể cả khi Portal tự gửi header nội bộ, S1 bỏ qua chúng; (c) thay đổi bị từ chối (409, 428, 403) không để lại hàng nào; (d) IP sai dạng — kể cả IPv6 kèm zone mà `INET` không nhận — bị bỏ chứ không làm lùi thay đổi; (e) thiếu người làm ⇒ 400, không ghi ẩn danh; (f) `before`/`after` của `flag.rule.update` không có `bucket_salt`. Bug mà bất biến chặn: dual-write — S1 ghi audit sau khi S2 commit thì mất dấu khi S1 hỏng giữa chừng, ghi trước thì audit kể về một thay đổi không xảy ra. **[v4.9]** Cùng phép thử áp cho `segment.create`/`update`/`delete`, `sdkkey.create`/`sdkkey.revoke` và `flag.activate`/`flag.archive`/`flag.restore` |
 
 ### 13.4 Kiểm thử bơm lỗi (fault injection)
 
@@ -7098,12 +7165,11 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | **[v4.6] OFREP lộ tập key flag và là oracle thành viên** | Khoá CLIENT công khai theo thiết kế: bulk trả mọi flag không-DRAFT của project (kể cả flag chỉ dùng ở backend, và bia mộ); gửi `targetingKey` tuỳ ý rồi đọc kết quả là dò được danh sách USER_BASED/segment. Giảm nhẹ bằng hai lớp rate limit, không `ruleId` | Cờ "chỉ server" theo flag; tách khoá CLIENT theo nhóm flag |
 | **[v4.6] Đổi định dạng snapshot buộc dừng cả Service 2 lẫn Service 3** | Hai writer cùng tính `config_hash` bằng `@udp/flag-snapshot`; một bản cũ còn sống ghi hash định dạng cũ và replica mới đo ra lệch. Ngoại lệ có chủ đích của "replica trước, writer sau"; quy trình: dừng hai service → migrate → `rehash` → khởi động | Phiên bản định dạng trong hash để hai bản sống song song |
 | **[v4.6] Phân tích ReDoS có thể từ chối pattern an toàn** | `recheck` trả `unknown` khi hết 1 giây phân tích — bị từ chối như `vulnerable`. Pattern đó phải viết lại | Trần phân tích theo cấu hình |
-| **[v4.5] Luồng 4 ở Service 1 chưa đủ route §9** | Có: tạo, liệt kê, xem, sửa flag, bật/tắt theo env, đọc và thay rule. Chưa: PUT variants, DELETE, stats, stale, promote ([v4.6] evaluate đã có); archive chưa kiểm lượt đánh giá 7 ngày (§6.7) | Đợt kế tiếp của Luồng 4 |
+| **[v4.5→v4.9] Luồng 4 ở Service 1 chưa đủ route §9** | Có: tạo, liệt kê, xem, sửa flag, bật/tắt theo env, đọc và thay rule, evaluate, stats, stale, bulk-archive. **[v4.9]** Chưa: PUT variants, promote. `DELETE …/flags/:flagId` đã BỎ khỏi §9 — flag không bao giờ bị xoá (§6.7) | Đợt kế tiếp của Luồng 4 |
 | **Chỉ Node.js và Python có middleware + store** | Java/Go/.NET cần port `AsyncLocalStorage`/`contextvars` sang cơ chế tương ứng. Đây là phần duy nhất của C1 phụ thuộc ngôn ngữ | SDK và middleware cho Java, Go, .NET (§17) |
 | **[v4.7] Provider Python chưa có** | #21 làm bản Node; câu "Golden Path phủ Node.js và Python" chỉ đúng khi bản Python xong | Plan riêng sau #26, cùng máy trạng thái (§6.8), dùng lại vector test hash/delta dạng JSON |
 | **[v4.7] Không có `anonymousFallback: "sticky-session"`** | Provider phía server không có nguồn session ổn định cho khách vô danh; tự sinh id trong tiến trình là sticky giả (mỗi replica một id). Khách vô danh bị bỏ qua ở rule distribution (§6.4) | Ứng dụng tự đặt `targetingKey` = id phiên của nó |
 | **[v4.7→v4.8] Provider chưa phát hành npm** | [v4.8] Tarball đóng gói và kiểm tiêu thụ ngoài monorepo đã có (§6.8); gói còn `private` | Phát hành npm khi có kênh phát hành |
-| **[v4.7] Provider chưa gửi `POST /sdk/stats`** | Endpoint và `reportStats` thuộc #23 (vòng đời + telemetry); không phát hành một option vô tác dụng | #23 |
 | **[v4.7] Nhãn `namespace` và `service_name` phụ thuộc cấu hình scrape** | Middleware không phát `namespace` (Prometheus gắn khi scrape) và lấy `service_name` từ `OTEL_SERVICE_NAME`; job scrape thiếu `namespace` hoặc tên lệch `workloadName` thì truy vấn của Service 3 rỗng. [v4.8] Job `sample-app` gắn `namespace` của env dev seed; test `prometheus-config.test.ts` giữ cấu hình khớp seed | Cluster thật: `namespace` lấy từ `__meta_kubernetes_namespace` qua relabel |
 | **[v4.8] E3, E4 là số dev-geometry** | Máy đo dùng chung (RAM trống ~1 GiB) và database ở Singapore: E3 micro-benchmark nhiễu, E4 bị RTT database lấn át | Sổ nợ `docs/measurements/kiem-chung-con-no.md`: E3-quiet (máy yên), E4-ci (cùng vùng database) |
 | **[v4.8] E5, E6, E14-Prometheus chưa chạy thật** | Cần Prometheus + ba service + hai sample-app + tải; hai nhánh service-level của E5 còn chặn bởi CODE (executor SERVICE_LEVEL chưa có) | Harness, đăng ký trước và runbook đã có — chạy khi có hạ tầng (sau #24 adapter) |
@@ -7120,7 +7186,17 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | `ConfigChangeLog` giữ 7 ngày | Đủ cho mọi kịch bản replica offline hợp lý | Tăng thời gian giữ, hoặc chuyển sang lưu trữ lạnh |
 | **[v4.1]** Một SERVER key ở chế độ polling phục vụ tối đa khoảng 50 tiến trình mỗi replica | Hạn mức `/sdk/config` là 100 lần/phút/khoá (§2.2) còn polling fallback gọi mỗi 30 giây; có từ khi dựng `/sdk/config`. Stream SSE không bị giới hạn này vì có limiter riêng | Tách khoá theo nhóm dịch vụ, hoặc nâng hạn mức theo số tiến trình khai báo |
 | **[v4.1]** Trần stream và limiter tính theo TỪNG replica | Bộ đếm nằm trong bộ nhớ tiến trình; trần thực tế nhân theo số replica | Kho đếm dùng chung (Redis) khi cần trần toàn cục |
-| **[v4.1]** Stream của khoá vừa thu hồi còn mở tối đa 5 giây | Khoá được kiểm trước mỗi lần đẩy nên không dữ liệu mới nào tới nó; chỉ kết nối rỗi còn sống thêm tối đa một chu kỳ kiểm | Đóng tức thì khi có writer của `sdkkey.revoked` (Service 2, gọi từ API SDK key của Service 1) |
+| **[v4.1→v4.9]** Stream của khoá thu hồi đóng ngay qua outbox, nhưng fail-open khi database không đọc được | **[v4.9]** Đường thường là dòng `sdkkey.revoked` trong outbox: replica thấy là đóng stream ngay (≤ 1 vòng poll). Khi database không đọc được thì cả poller lẫn vòng kiểm 5 giây đều không phán được, và vòng kiểm GIỮ stream (fail-open) tới khi database về — chọn giữ chứ không đóng, vì một sự cố của database không nên biến thành một lần ngắt hàng loạt SDK đang chạy đúng | Kho trạng thái khoá dùng chung (Redis) để phán được cả khi database mất |
+| **[v4.9] Stats là CẬN DƯỚI — mù tới khoảng 75 giây** | 60 giây chu kỳ báo cáo của provider cộng 15 giây chu kỳ flush của Service 2. Một ứng dụng vừa gọi flag xong vẫn có thể archive được trong cửa sổ đó; và ứng dụng đặt `reportStats: false` thì vô hình hoàn toàn với chốt archive | Báo cáo đẩy ngay khi số đếm vượt ngưỡng; hoặc chốt archive hỏi thêm một vòng |
+| **[v4.9] OFREP bulk không đếm** | Một lời gọi bulk trả MỌI flag không-DRAFT của project; đếm nó là đếm mọi flag mỗi lần tải trang, và khi đó không flag nào bao giờ `UNUSED`. Hệ quả: flag chỉ dùng qua khách web trông như không ai gọi — Portal cảnh báo `clientTrafficUnobserved` cho environment có CLIENT key được dùng trong 30 ngày | Đếm theo flag mà lời gọi bulk THẬT SỰ đọc, nếu OFREP có cách khai điều đó |
+| **[v4.9] Khoá SERVER bị lộ làm bẩn stats của environment đó** | Số đếm đi cùng đường xác thực với `/sdk/config`, nên ai giữ khoá đều báo cáo được. Ảnh hưởng dừng ở mức cảnh báo stale (không có đường nào từ stats sang cấu hình) và không rời khỏi environment đó | Ký báo cáo theo tiến trình; hoặc chỉ nhận `flagKey` có trong snapshot của khoá (đã làm) cùng trần theo khoá |
+| **[v4.9] Rotate khoá không có ân hạn** | Thu hồi có hiệu lực ngay, và rotate = tạo khoá mới rồi thu hồi khoá cũ; khoảng giữa hai bước do người vận hành tự giữ | Cột `expires_at` cho khoá, và thu hồi hẹn giờ |
+| **[v4.9] Tổ hợp `in` cực trị nhận 413, và segment ở trần `userIds` vượt trần TỔNG** | Body ghi segment có trần 16 MiB: mọi body hợp lệ theo schema ở trần `userIds` đều lọt, nhưng tổ hợp `in` lớn hơn thế nhận 413 chứ không phải 422 — một mã về KÍCH THƯỚC, không về nội dung. Và một segment 10 000 `userId` toàn ký tự BMP 3 byte (khoảng 7,7 MB khi jsonb in ra) vượt trần tổng 4 MiB mỗi project ⇒ 422 `QUOTA_EXCEEDED` ngay cả khi project đang trống | Trần theo độ phức tạp thay vì theo byte; hoặc nén danh sách `userId` |
+| **[v4.9] Crash của Service 2 mất tối đa 15 giây số đếm** | Bộ đếm nằm trong bộ nhớ replica giữa hai lần flush. Số đếm là dữ liệu THỐNG KÊ cho một cảnh báo tính theo 30 ngày, nên mất 15 giây không đổi kết luận nào | Ghi trước vào bảng đệm rồi gộp — đổi lấy đúng hot-row contention mà việc gộp sinh ra để tránh |
+| **[v4.9] Mốc `activated_at` backfill có thể muộn hơn sự thật** | Flag ACTIVE có trước v4.9 lấy mốc từ audit kích hoạt gần nhất, không có thì `updated_at`. Sai lệch chỉ theo MỘT chiều: mốc muộn hơn thật ⇒ `UNUSED` đến TRỄ, không bao giờ đến sớm — không có cảnh báo dương tính giả | Không cần: tự hết sau 30 ngày kể từ khi migration chạy |
+| **[v4.9] Khoá CLIENT công khai gọi OFREP một-flag đều đặn giữ được flag ở trạng thái vừa được đánh giá** | Khoá CLIENT vốn công khai theo thiết kế (ADR-03) và OFREP một-flag ĐƯỢC đếm, nên bất kỳ ai cũng chặn được archive một flag và giữ nó khỏi `UNUSED` vô hạn. Không rò dữ liệu, chỉ làm nhiễu cảnh báo cleanup | Đếm tách theo loại khoá, và cho chốt archive chỉ xét lượt của khoá SERVER |
+| **[v4.9] Mỗi lần sửa segment ghi payload đầy đủ vào outbox của MỌI environment** | Snapshot của mọi environment đều chứa mọi segment, nên delta phải tới mọi environment. Chi phí: tới 4 MiB nhân số environment cho MỘT lần sửa, giữ 7 ngày (§2.2) — và đó chính là lý do `CHANGE_FEED.maxDeltaBytes` có ngưỡng rơi về snapshot | Payload tham chiếu (chỉ id) rồi replica đọc lại — đổi lấy một truy vấn mỗi lần áp delta |
+| **[v4.9] Múi giờ lệch nửa giờ chỉ chính xác ở mức bucket giờ UTC** | Bucket là giờ UTC, nên với `Asia/Kolkata` (+05:30) hay `Australia/Adelaide` (+09:30), một ngày ĐỊA PHƯƠNG gom 24 bucket lệch nửa giờ so với nửa đêm địa phương thật. Sai số tối đa là một nửa bucket ở mỗi đầu cửa sổ | Bucket nửa giờ, đổi lấy gấp đôi số hàng |
 | `DELETE /projects/:id` xoá mềm nhưng **chưa** enqueue teardown | §9 mô tả endpoint này là "soft-delete + enqueue teardown", nhưng hạ tầng `jobs/` (pg-boss, §3.1) chưa tồn tại nên chưa có hàng đợi để đẩy việc vào. Ghi nhận thay vì im lặng bỏ qua: tài nguyên cloud của một project đã xoá mềm hiện **không** tự được dọn | Dựng `jobs/boss.ts` và `teardown.job.ts`, enqueue ngay trong lệnh xoá mềm (cùng transaction, đúng ADR-02), rồi gỡ mục này |
 | `POST /projects/:id/members` đòi người được mời **đã có tài khoản** | §9 gọi đây là "mời theo email", nhưng cùng lý do với mục đăng ký ở đầu §16: chưa có hạ tầng mail. Một lời mời treo mà không đường nào gửi đi thì tệ hơn một lỗi 404 rõ ràng, và không bảng nào lưu nó | Khi có mail: thêm bảng lời mời, gửi thư kèm token, và cho phép mời địa chỉ chưa đăng ký |
 
@@ -7163,6 +7239,8 @@ _UDP Technical Design Document v4.0_
 
 **[v4.8] Bệ đo và gói phát hành (22/09/2026):** `apps/sample-app` (ứng dụng khách mẫu: provider, nhãn `ff`, `/metrics`, chaos §13.4 với nhóm dò đo T3, tải vòng mở thay k6); provider đóng gói thành tarball cài được ngoài monorepo (esbuild, `.d.ts` sạch, chỗ tiêm test tách khỏi constructor công khai); Service 2 có `/metrics` với bộ đếm ADR-05 và bộ đếm E4 có định nghĩa; `@udp/experiments` + `docs/measurements` (kết quả kèm hash nguồn, đăng ký trước E5, sổ nợ kiểm chứng); seed thêm `checkout-v2` và rule phân phối baseline 0%; job Prometheus `sample-app` gắn `namespace`. Sửa phương pháp của chính thiết kế: E3 bỏ k6 cho đánh giá trong tiến trình; E4 đổi điểm đầu và thêm trục kích thước env; E14 công thức chính xác `(B + 3)`; E5 blast radius tỉ lệ `MTTD + MTTR` (không phải `MTTR × RPS`) và ngữ nghĩa chuỗi S3 ≠ Flagger. Đo thật: E3, E4 (dev-geometry), E14 phía app, I34 5 phút (hố đen + Service 2 chết). QA ba agent trên plan (2 BLOCKER ở đăng ký trước E5: T3 sai, thiếu tham số quyết định) và trên code (H3 sai về toán; hội tụ I34 đo quá dễ vì proxy đóng kết nối nửa mở; đối chứng âm không đo được) — đã sửa trước khi đo lại. Lộ trình: #23 vòng đời + telemetry + CRUD segment/SDK key, #24 adapter, #25 portal, #26 CI; E5 chạy thật khi có hạ tầng; provider Python sau #26.
 
+**[v4.9] Vòng đời flag, telemetry `/sdk/stats`, CRUD segment và quản lý SDK key (23/09/2026):** cột `activated_at` do trigger `trg_flag_activated_at` đặt cho MỌI writer (không code nào ghi nó), nên tuổi của `UNUSED`/`SETTLED` đo từ lần kích hoạt gần nhất chứ không từ `created_at`; telemetry đi hết một vòng — provider đếm hai tầng không cấp phát, `POST /sdk/stats` at-most-once, Service 2 gộp theo replica rồi UPSERT theo lô 15 giây, rollup 6 giờ gộp hàng giờ cũ hơn 92 ngày thành hàng ngày; `GET …/flags/:flagId/stats` và `GET …/flags/stale` trả series theo ngày ĐỊA PHƯƠNG (`generate_series` trên `(bucket_hour AT TIME ZONE tz)::date`); archive có chốt `FLAG_RECENTLY_EVALUATED` (7 ngày) và archive hàng loạt xác nhận bằng gõ lại TÊN PROJECT; CRUD segment fan-out outbox sang MỌI environment với `segment`/`segmentAbsent`, trần 100 segment và 4 MiB `conditions` mỗi project đo bằng `octet_length(conditions::text)` dưới khoá environment, và gọi cùng phép phân tích ReDoS với đường ghi rule; SDK key sinh token và hash ở Service 1 (`udp_sk_`/`udp_ck_` + envSlug + 64 hex, plaintext hiện đúng một lần, KHÔNG nhận `Idempotency-Key`), Service 2 chỉ nhận hash, thu hồi ghi `sdkkey.revoked` và stream đóng NGAY qua outbox thay vì chờ vòng kiểm 5 giây; `core/batch-job.ts` thành lõi dùng chung cho dọn outbox và rollup stats. Sửa ba chỗ của chính bản thiết kế: `idx_sdkkey_lookup` partial không phục vụ được câu truy vấn của guard (guard phải thấy CẢ khoá đã thu hồi để trả về cùng một 401) nên bị bỏ; `telemetry/eval-stat.aggregator.ts` ở §3.2 chưa bao giờ tồn tại — chỗ đó thật ra là `modules/stats/`; và §2.2 nói segment chỉ fan-out tới environment có rule dùng nó, trong khi snapshot của MỌI environment đều chứa mọi segment. QA ba agent trên plan thêm: §7 của SPEC phải TỰ ĐỦ (không lấy bảng §10 của System Design làm nền, vì nó trái các quyết định về envSlug 20 ký tự, at-most-once, mốc `activated_at` và quyền PUT segment); hình payload outbox mới phải vào §2.2; mẫu quét bí mật bỏ sót tiền tố `udp_ck_` của khoá CLIENT; ma trận quyền §2.2 thiếu segment và `permanent`; và §16 phải GIỮ tính chất fail-open của vòng kiểm 5 giây thay vì xoá hẳn dòng cũ. Danh mục lỗi lên 24 mã (`FLAG_RECENTLY_EVALUATED`, `SEGMENT_IN_USE`). Lộ trình: #24 adapter, #25 portal, #26 CI; `E3-stats`, `stale-perf`, `segment-cap-perf` và E4 sau segment delta nằm ở sổ nợ `docs/measurements/kiem-chung-con-no.md`.
+
 **Nguyên tắc bao trùm của v4:** không tuyên bố "đầu tiên" hay "chưa nền tảng nào". Mỗi đóng góp được phát biểu dưới dạng *khoảng trống cụ thể còn lại sau khi trừ đi công trình liên quan*, kèm phép đo chứng minh. Mọi yêu sách mạnh phải có **cơ chế cưỡng chế** đi kèm, không phải chỉ một phép đo.
 
 **Bảy thay đổi kiến trúc:**
@@ -7199,7 +7277,7 @@ _UDP Technical Design Document v4.0_
 | -- | ----- |
 | Lập luận *"sổ của chúng tôi khác state file"* | Một mệnh đề **bác bỏ được** (xóa sạch sổ, hệ thống vẫn hội tụ), một hàm chạy được `rebuildLedgerFromCloud()`, và một ô **K10** trong bảng kết quả E15 |
 | Cụm từ *"oracle độc lập"* của E8 | **Năm quy tắc**, trong đó ranh giới import được cưỡng chế bằng build (**I35**) và thứ tự commit kiểm được bằng `git log` |
-| Mã lỗi rải rác ở §5.3, §9, §12 | **Danh mục 22 mã** ([v4.5] thêm `CONFIRMATION_REQUIRED`) trong `@udp/shared-types` sinh ra type, khóa i18n và tài liệu; trường `fixableBy` điều khiển hành vi UI (**I36**, **I37**) |
+| Mã lỗi rải rác ở §5.3, §9, §12 | **Danh mục 24 mã** ([v4.5] thêm `CONFIRMATION_REQUIRED`; [v4.9] thêm `FLAG_RECENTLY_EVALUATED`, `SEGMENT_IN_USE`) trong `@udp/shared-types` sinh ra type, khóa i18n và tài liệu; trường `fixableBy` điều khiển hành vi UI (**I36**, **I37**) |
 | Một dòng cảnh báo về cache lẫn giữa environment | **Bảng 18 màn hình** có query key và quy tắc invalidate, kiểm bằng test (**I38**) |
 
 Cùng đợt này bổ sung **§6.8** (`@udp/openfeature-provider` — package mang C1 vào ứng dụng của khách, trước đó chỉ tồn tại dưới dạng `import` trong code mẫu), **§4.6** (`ClusterAccess` — đường duy nhất chạm cluster tenant, trước đó chỉ có một dòng phác trong cây thư mục §3.1), và **bộ contract test thứ hai dành riêng cho Cloud Adapter** (bộ cũ hoàn toàn mang hình dạng Domain Adapter, trong khi C3 tuyên bố chính hợp đồng của Cloud Adapter). Tổng cuối: **42 bất biến** (thêm I39 — ORPHAN_RULE cưỡng chế ở tầng database; [v4.5] I40 — audit cùng transaction với thay đổi), 16 phép đo, 8 ADR.

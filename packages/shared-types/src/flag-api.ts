@@ -42,13 +42,18 @@ export const flagKeySchema = z
     "Key chỉ gồm chữ thường, số và dấu gạch ngang",
   );
 
-/** `__proto__` bị từ chối: variant tra theo key trong một bảng object (§9) */
+/**
+ * Tiền tố `__` bị từ chối [v4.9]: đó là không gian tên của nhãn stats
+ * `__disabled__`/`__error__` (`sdk-stats.ts`) — một variant tên `__disabled__` sẽ
+ * bị gộp với lượt DISABLED trong mọi thống kê. Cùng chốt đó chặn luôn `__proto__`:
+ * variant tra theo key trong một bảng object (§9).
+ */
 const variantKey = z
   .string()
   .trim()
   .min(1)
   .max(100)
-  .refine((k) => k !== "__proto__", "key variant không hợp lệ");
+  .refine((k) => !k.startsWith("__"), "key variant không được bắt đầu bằng __");
 
 // ------------------------------------------------------------- tạo flag
 
@@ -67,6 +72,12 @@ export const createFlagFields = z.object({
     .optional(),
   /** Key của variant làm mặc định; thiếu thì lấy variant đầu tiên */
   defaultVariantKey: variantKey.optional(),
+  /**
+   * [v4.9] Flag sống lâu có chủ ý (kill-switch, cấu hình vận hành): miễn cảnh báo
+   * UNUSED và SETTLED của Cleanup Center (§6.7). Chỉ ảnh hưởng cảnh báo, không
+   * ảnh hưởng đánh giá, nên không cần xác nhận.
+   */
+  permanent: z.boolean().optional(),
 });
 
 export const createFlagRefine: Refine<z.infer<typeof createFlagFields>> = (
@@ -130,6 +141,8 @@ export const updateFlagFields = z.object({
   description: z.string().trim().max(1000).nullable().optional(),
   lifecycleStatus: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
   stickinessAttribute: z.string().trim().min(1).max(100).optional(),
+  /** [v4.9] Xem `createFlagFields.permanent` */
+  permanent: z.boolean().optional(),
 });
 
 /**
@@ -144,12 +157,13 @@ export const updateFlagRefine: Refine<z.infer<typeof updateFlagFields>> = (
   if (
     data.description === undefined &&
     data.lifecycleStatus === undefined &&
-    data.stickinessAttribute === undefined
+    data.stickinessAttribute === undefined &&
+    data.permanent === undefined
   ) {
     ctx.addIssue({
       code: "custom",
       message:
-        "Phải có ít nhất một trong description, lifecycleStatus, stickinessAttribute",
+        "Phải có ít nhất một trong description, lifecycleStatus, stickinessAttribute, permanent",
     });
   }
 };

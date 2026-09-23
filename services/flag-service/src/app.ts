@@ -13,8 +13,11 @@ import { internalEnvConfigRouter } from "./internal/env-config.controller.js";
 import { internalFlagRouter } from "./internal/flag.controller.js";
 import { internalRolloutRouter } from "./internal/rollout.controller.js";
 import { internalRuleRouter } from "./internal/rule.controller.js";
+import { internalSdkKeyRouter } from "./internal/sdk-key.controller.js";
+import { internalSegmentRouter } from "./internal/segment.controller.js";
+import { internalStatsRouter } from "./internal/stats.controller.js";
 import { ofrepRouter } from "./ofrep/ofrep.controller.js";
-import { sdkRouter } from "./sdk/sdk.controller.js";
+import { sdkRouter, sdkStatsRouter } from "./sdk/sdk.controller.js";
 
 /**
  * Ứng dụng của Service 2.
@@ -55,6 +58,23 @@ export function createApp(): Express {
    * vô nghĩa — body đã bị đọc xong trước khi tới đó.
    */
   app.use("/ofrep", ofrepRouter);
+  /**
+   * [v4.9] `POST /sdk/stats` mount TRƯỚC parser toàn cục, cùng lý do và cùng
+   * khuôn với OFREP: router của nó có parser 2 MiB RIÊNG, và parser đó chỉ chạy
+   * SAU rate limit và guard khoá SERVER. Mount sau dòng dưới thì một báo cáo hợp
+   * lệ ở trần nhận 413 từ parser 1 MB, còn body của người lạ vẫn bị đọc trước khi
+   * ai kiểm khoá (V15, INV-23.8).
+   */
+  app.use("/sdk", sdkStatsRouter);
+  /**
+   * [v4.9] `/internal/segments` mount TRƯỚC parser toàn cục, cùng lý do và cùng
+   * khuôn: `conditions` của một segment ở trần schema lớn hơn 1 MB rất nhiều
+   * (§2.1), nên router này có parser RIÊNG `SEGMENT.internalBodyLimitBytes` và
+   * parser đó chỉ chạy SAU `requireInternalCaller`. Mount sau dòng dưới thì một
+   * body hợp lệ sát trần nhận 413 từ parser 1 MB — và Service 1 không relay 413,
+   * nên người dùng thấy 500 (V14, V15, INV-23.8).
+   */
+  app.use("/internal", internalSegmentRouter);
   app.use(express.json({ limit: "1mb" }));
 
   /**
@@ -104,12 +124,19 @@ export function createApp(): Express {
     }),
   );
 
+  /**
+   * [v4.9] `/internal/sdk-keys` mount SAU parser toàn cục, khác
+   * `/internal/segments` ở trên: thân của nó là năm trường ngắn (dưới 300 byte),
+   * nên trần 1 MB là dư và một parser riêng chỉ là một chỗ nữa để lệch (V15).
+   */
   app.use(
     "/internal",
     internalFlagRouter,
     internalEnvConfigRouter,
     internalRuleRouter,
     internalRolloutRouter,
+    internalStatsRouter,
+    internalSdkKeyRouter,
   );
 
   /** Bề mặt SDK (§9). Guard và rate limit nằm trong chính router đó */

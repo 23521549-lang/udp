@@ -11,6 +11,10 @@ export const PUBLIC_FIELDS = {
   lifecycleStatus: true,
   defaultVariantId: true,
   stickinessAttribute: true,
+  /** [v4.9] Kill-switch dài hạn — miễn cảnh báo UNUSED/SETTLED (§6.7) */
+  permanent: true,
+  // Chỉ ĐỌC: trigger `trg_flag_activated_at` đặt mốc, `update()` không ghi (§2.2)
+  activatedAt: true,
   updatedAt: true,
   variants: { select: { id: true, key: true, value: true } },
 } as const;
@@ -63,6 +67,7 @@ export async function createFlag(
       ...(input.description === undefined
         ? {}
         : { description: input.description }),
+      ...(input.permanent === undefined ? {} : { permanent: input.permanent }),
       variants: {
         create: variants.map((v) => ({
           key: v.key,
@@ -106,6 +111,58 @@ export const findById = (
   id: string,
 ): Promise<PublicFlag | null> =>
   tx.featureFlag.findUnique({ where: { id }, select: PUBLIC_FIELDS });
+
+/**
+ * [v4.9] Environment có thuộc project này không — phòng thủ nhiều lớp cho tham số
+ * `environmentId` của stats (R05): Service 1 đã kiểm sở hữu, S2 kiểm lại vì route
+ * nội bộ không được tin mọi id nó nhận.
+ */
+export async function environmentInProject(
+  db: Prisma.TransactionClient,
+  projectId: string,
+  environmentId: string,
+): Promise<boolean> {
+  const row = await db.environment.findFirst({
+    where: { id: environmentId, projectId },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/** Trường của một dòng Cleanup Center — hình `items[].flag` của §3.1 */
+export const STALE_CANDIDATE_FIELDS = {
+  id: true,
+  key: true,
+  description: true,
+  lifecycleStatus: true,
+  flagType: true,
+  permanent: true,
+  createdAt: true,
+  activatedAt: true,
+  updatedAt: true,
+} as const;
+
+export type StaleCandidate = Prisma.FeatureFlagGetPayload<{
+  select: typeof STALE_CANDIDATE_FIELDS;
+}>;
+
+/**
+ * [v4.9] Ứng viên của Cleanup Center: mọi flag DRAFT và ACTIVE của project.
+ *
+ * ARCHIVED bị loại ngay trong câu chứ không lọc ở JS — nó không bao giờ vào danh
+ * sách (§6.7: lưu trữ là trạng thái đích), và với project đã dọn dẹp nhiều thì đó
+ * là phần lớn số hàng. Không phân trang ở đây: `counts` của phản hồi là số của
+ * TOÀN BỘ project, nên phân trang phải xảy ra SAU khi xếp nhãn.
+ */
+export const staleCandidatesOf = (
+  db: Prisma.TransactionClient,
+  projectId: string,
+): Promise<StaleCandidate[]> =>
+  db.featureFlag.findMany({
+    where: { projectId, lifecycleStatus: { in: ["DRAFT", "ACTIVE"] } },
+    select: STALE_CANDIDATE_FIELDS,
+    orderBy: { key: "asc" },
+  });
 
 /**
  * [v4.6] Flag cho Flag Evaluation Tester — CHỈ khi environment thuộc cùng project

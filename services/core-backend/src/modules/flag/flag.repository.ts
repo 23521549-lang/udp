@@ -65,6 +65,7 @@ export async function list(
       flagType: true,
       description: true,
       lifecycleStatus: true,
+      activatedAt: true,
       updatedAt: true,
       // Trạng thái ở MỘT env chỉ khi được hỏi; không hỏi thì không đọc hàng nào
       envConfigs: {
@@ -82,6 +83,7 @@ export async function list(
       flagType: row.flagType,
       description: row.description,
       lifecycleStatus: row.lifecycleStatus,
+      activatedAt: row.activatedAt?.toISOString() ?? null,
       updatedAt: row.updatedAt.toISOString(),
       ...(query.envId === undefined || env === undefined
         ? {}
@@ -112,6 +114,7 @@ export async function detail(
       stickinessAttribute: true,
       defaultVariantId: true,
       permanent: true,
+      activatedAt: true,
       createdAt: true,
       updatedAt: true,
       variants: {
@@ -134,6 +137,7 @@ export async function detail(
     stickinessAttribute: row.stickinessAttribute,
     defaultVariantId: row.defaultVariantId,
     permanent: row.permanent,
+    activatedAt: row.activatedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     variants: row.variants,
@@ -170,6 +174,54 @@ export async function environmentBelongsTo(
   });
   return row !== null;
 }
+
+/** Environment của project — để gắn TÊN vào `byEnv` của stats (§3.1) */
+export const environmentsOf = (
+  projectId: string,
+): Promise<{ id: string; name: string; isProduction: boolean }[]> =>
+  prisma.environment.findMany({
+    where: { projectId },
+    select: { id: true, name: true, isProduction: true },
+    orderBy: { rank: "asc" },
+  });
+
+/**
+ * [v4.9] Id của những flag trong `flagIds` THẬT SỰ thuộc project — MỘT câu cho cả
+ * lô archive.
+ *
+ * `WHERE id IN (…) AND project_id = $p` là đúng khuôn chống R05: id con luôn được
+ * kiểm cùng project trong CÙNG câu. Bên gọi so số lượng để trả 404 cho CẢ request
+ * trước khi ghi flag nào (V16) — archive một nửa lô rồi mới phát hiện id lạ là
+ * thứ không hoàn tác được.
+ */
+export const flagIdsInProject = async (
+  projectId: string,
+  flagIds: readonly string[],
+): Promise<Set<string>> =>
+  new Set(
+    (
+      await prisma.featureFlag.findMany({
+        where: { projectId, id: { in: [...flagIds] } },
+        select: { id: true },
+      })
+    ).map((row) => row.id),
+  );
+
+/**
+ * Tên project — chỉ dùng để so `confirmProjectName` của lô archive (V16).
+ *
+ * Đọc ở đây chứ không gọi sang `modules/project`: một chuỗi để so xác nhận không
+ * đáng một phụ thuộc module-tới-module, và câu này không bao giờ rời file này.
+ */
+export const projectNameOf = async (
+  projectId: string,
+): Promise<string | undefined> =>
+  (
+    await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { name: true },
+    })
+  )?.name;
 
 /** Trạng thái của MỘT env-config — response của PATCH env, cùng hình với `envs[]` của GET */
 export async function envStateOf(

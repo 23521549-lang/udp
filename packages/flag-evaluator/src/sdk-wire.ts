@@ -63,6 +63,31 @@ export interface SdkStreamFlagAbsentChange {
 }
 
 /**
+ * [v4.9] Một segment của project đổi (§3.5) — thay entry cùng `id`.
+ *
+ * Segment gắn theo PROJECT, nhưng phần tử này vẫn đi trên stream của MỘT
+ * environment: mỗi lần ghi segment fan-out tới MỌI environment của project (L6),
+ * nên mỗi environment nhận đúng một dòng outbox và đúng một phần tử ở đây.
+ * Không có phần tử này thì mỗi lần sửa segment rơi về snapshot — mà snapshot
+ * mang cả phần segment ở trần 4 MiB (V21) cho một thay đổi delta mô tả trọn.
+ */
+export interface SdkStreamSegmentChange {
+  configVersion: number;
+  kind: "segment";
+  segment: SnapshotSegment;
+}
+
+/**
+ * [v4.9] Segment KHÔNG còn trong snapshot — đã bị xoá (§3.5). Áp = xoá entry
+ * cùng `id` nếu có (idempotent), đúng khuôn `flagAbsent`.
+ */
+export interface SdkStreamSegmentAbsentChange {
+  configVersion: number;
+  kind: "segmentAbsent";
+  id: string;
+}
+
+/**
  * Một phần tử của `changes[]` — union có `kind` ngay từ ngày đầu.
  *
  * Hash phủ cả `segments` lẫn `trackedFlags`, nên ngày hai thứ đó đổi qua stream,
@@ -70,7 +95,11 @@ export interface SdkStreamFlagAbsentChange {
  * gặp `kind` lạ thì RESYNC (§6.8), không đoán.
  */
 export type SdkStreamChange =
-  SdkStreamFlagChange | SdkStreamFlagAbsentChange | SdkStreamTrackedFlagsChange;
+  | SdkStreamFlagChange
+  | SdkStreamFlagAbsentChange
+  | SdkStreamTrackedFlagsChange
+  | SdkStreamSegmentChange
+  | SdkStreamSegmentAbsentChange;
 
 /** `data` của `event: flag_changed` (§6.3) */
 export interface SdkStreamDelta {

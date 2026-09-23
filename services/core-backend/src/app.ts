@@ -3,16 +3,21 @@ import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { CSRF_HEADER, env } from "@udp/config";
-import { errorHandler, notFoundHandler, requestLogger } from "@udp/http";
+import {
+  errorHandler,
+  jsonBodyExcept,
+  notFoundHandler,
+  requestLogger,
+} from "@udp/http";
 import { createCsrfProtection } from "./core/http/middlewares/csrf.middleware.js";
 import { generalRateLimiter } from "./core/http/middlewares/rate-limit.middleware.js";
 import { healthRouter } from "./modules/health/health.controller.js";
 import { metricsRouter } from "./modules/health/metrics.controller.js";
 import { authRouter } from "./modules/auth/auth.controller.js";
 import { projectRouter } from "./modules/project/project.controller.js";
+import { isSegmentWriteRequest } from "./modules/segment/segment.routes.js";
 import { defaultAppDeps, setAppDeps, type AppDeps } from "./core/app-deps.js";
-
-const API_PREFIX = "/api/v1";
+import { API_PREFIX } from "./core/http/api-prefix.js";
 
 /**
  * Endpoint khởi tạo phiên — miễn kiểm tra CSRF.
@@ -66,7 +71,16 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
       allowedHeaders: ["Content-Type", CSRF_HEADER],
     }),
   );
-  app.use(express.json({ limit: "1mb" }));
+  /**
+   * [v4.9] Parser toàn cục qua `jsonBodyExcept`: đường ghi segment có parser
+   * RIÊNG (trần 16 MiB, parse SAU `requireAuth` + `requireMinProjectRole`) nên
+   * phải được chừa ra ở đây. Parser toàn cục chạy trước thì nó chặn 413 ở 1 MB và
+   * parser riêng không bao giờ tới lượt (V14, V15, INV-23.8).
+   *
+   * Vị từ và router đọc CÙNG chuỗi đường dẫn, khai một lần ở
+   * `modules/segment/segment.routes.ts`.
+   */
+  app.use(jsonBodyExcept(isSegmentWriteRequest, "1mb"));
   app.use(cookieParser());
   app.use(requestLogger);
 

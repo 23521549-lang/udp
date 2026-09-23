@@ -33,6 +33,20 @@ export interface RunningService {
   start(): Promise<void>;
   /** [v4.7] `stop()` rồi `start()` — một lần mất kết nối ngắn nhất có thể */
   restart(): Promise<void>;
+  /**
+   * [v4.9] Toàn bộ stdout + stderr tiến trình con đã in, tính từ lần `launch` đầu.
+   *
+   * Có để INV-23.3 quét được log của Service 2, không chỉ của Service 1: bất biến
+   * nói plaintext SDK key không nằm trong log của CẢ HAI service, và log của
+   * Service 2 sống trong một tiến trình khác. Không có đường đọc này thì nửa sau
+   * của phép kiểm xanh vì nó không nhìn, chứ không phải vì không có gì để thấy —
+   * và một test như vậy tệ hơn không có test.
+   *
+   * Output vẫn được thu như trước (`launch` cần nó để báo lỗi khi service không
+   * lên); đây chỉ là đường đọc. Mức log mặc định là `warn`, nên test muốn thấy cả
+   * dòng request phải truyền `env: { LOG_LEVEL: "info" }`.
+   */
+  output(): string;
 }
 
 export interface ServiceSpec {
@@ -66,11 +80,19 @@ const BOOT_DEADLINE_MS = 40_000;
 const exited = (child: ChildProcess): boolean =>
   child.exitCode !== null || child.signalCode !== null;
 
-/** Một tiến trình con đã lên (`/healthz` 200), hoặc ném kèm output của nó */
+/**
+ * Một tiến trình con đã lên (`/healthz` 200), hoặc ném kèm output của nó.
+ *
+ * `sink` giữ output của MỌI lần thử và mọi lần `restart()`, cho `output()` của
+ * service; biến `output` cục bộ chỉ là phần của LẦN THỬ này — thứ phép kiểm
+ * `EADDRINUSE` và thông báo lỗi cần, và trộn hai phạm vi đó lại sẽ làm lần thử
+ * thứ hai thấy `EADDRINUSE` của lần thứ nhất rồi chờ vô ích tới hết hạn.
+ */
 async function launch(
   spec: ServiceSpec,
   port: number,
   env: Readonly<Record<string, string>>,
+  sink: string[],
 ): Promise<ChildProcess> {
   const deadline = Date.now() + BOOT_DEADLINE_MS;
   const baseUrl = `http://127.0.0.1:${String(port)}`;
@@ -90,12 +112,13 @@ async function launch(
       },
     );
     let output = "";
-    child.stdout?.on("data", (chunk: Buffer) => {
-      output += chunk.toString();
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      output += chunk.toString();
-    });
+    const record = (chunk: Buffer): void => {
+      const text = chunk.toString();
+      output += text;
+      sink.push(text);
+    };
+    child.stdout?.on("data", record);
+    child.stderr?.on("data", record);
 
     for (;;) {
       if (exited(child)) break;
@@ -146,18 +169,21 @@ export async function startService(
 ): Promise<RunningService> {
   const port = options.port ?? (await freePort());
   const env = options.env ?? {};
-  let child = await launch(spec, port, env);
+  const sink: string[] = [];
+  let child = await launch(spec, port, env, sink);
   const service: RunningService = {
     baseUrl: `http://127.0.0.1:${String(port)}`,
     stop: () => stopChild(child),
     async start() {
       if (!exited(child)) return;
-      child = await launch(spec, port, env);
+      child = await launch(spec, port, env, sink);
     },
     async restart() {
       await service.stop();
       await service.start();
     },
+    /** Nối lúc ĐỌC, không nối lúc ghi: một service nói nhiều không thành O(n²) chuỗi */
+    output: () => sink.join(""),
   };
   return service;
 }

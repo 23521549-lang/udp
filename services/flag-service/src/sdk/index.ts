@@ -6,6 +6,8 @@ import {
   configChanges,
 } from "../changefeed/index.js";
 import { metrics } from "../core/metrics.js";
+import { statsAggregator } from "../modules/stats/index.js";
+import { createStatsIngest } from "../modules/stats/stats.ingest.js";
 import { createSseHub } from "./sse.manager.js";
 
 /**
@@ -31,4 +33,15 @@ export const sseHub = createSseHub({
 
 configChanges.subscribe((change) => {
   sseHub.onChange(change);
+});
+
+/**
+ * [v4.9] Cửa vào của telemetry — ráp Ở ĐÂY chứ không ở `modules/stats/index.ts`,
+ * vì nó là chỗ duy nhất cần biết cả bộ gộp lẫn cache snapshot. Nhờ vậy
+ * `modules/stats` không phụ thuộc `changefeed/` (V18) và cửa vào vẫn đi cùng bề
+ * mặt SDK — nơi duy nhất gọi nó.
+ */
+export const statsIngest = createStatsIngest({
+  cache: configCache,
+  aggregator: statsAggregator,
 });

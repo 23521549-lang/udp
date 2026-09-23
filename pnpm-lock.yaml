@@ -272,6 +272,9 @@ importers:
       '@udp/shared-types':
         specifier: workspace:^
         version: link:../shared-types
+      express:
+        specifier: ^4.21.2
+        version: 4.22.2
       pino:
         specifier: ^9.5.0
         version: 9.14.0
@@ -285,9 +288,6 @@ importers:
       '@types/express':
         specifier: ^4.17.21
         version: 4.17.25
-      express:
-        specifier: ^4.21.2
-        version: 4.22.2
       pino-pretty:
         specifier: ^11.3.0
         version: 11.3.0

@@ -137,8 +137,32 @@ export const STALE_FLAG_THRESHOLDS = {
   settledDays: 14,
   /** DRAFT quá N ngày mà chưa từng ACTIVE */
   staleDraftDays: 30,
-  /** Chặn xóa flag còn được đánh giá trong N ngày gần nhất */
-  deleteGuardDays: 7,
+  /**
+   * [v4.9] Chặn ARCHIVE flag còn được đánh giá trong N ngày gần nhất (409
+   * `FLAG_RECENTLY_EVALUATED`). Không còn "chặn xoá": flag không bao giờ bị xoá.
+   */
+  archiveGuardDays: 7,
+  /**
+   * [v4.9] SETTLED cần ít nhất chừng này lượt trong cửa sổ `settledDays`: vài lượt
+   * lẻ cùng rơi vào một variant chưa nói được flag đã "ổn định".
+   */
+  settledMinEvals: 100,
+  /**
+   * [v4.9] Số flag tối đa của một lần archive hàng loạt. Mỗi flag là một lời gọi
+   * S2 tuần tự (fan-out mọi env): 20 × ~2,2 s ≈ 44 s, dưới hạn 60 s của proxy
+   * thường gặp.
+   */
+  bulkArchiveMax: 20,
+  /**
+   * [v4.9] Env có CLIENT key được dùng trong N ngày ⇒ `clientTrafficUnobserved`:
+   * OFREP bulk không đếm, nên flag chỉ đọc qua bulk trông như không ai gọi.
+   */
+  clientTrafficDays: 30,
+  /**
+   * [v4.9] Env có SERVER key được dùng trong N ngày mà không có hàng stats nào ⇒
+   * `telemetryGaps` (app đặt `reportStats: false` hoặc provider cũ).
+   */
+  telemetryGapDays: 7,
 } as const;
 
 /**
@@ -166,6 +190,54 @@ export const CONDITION_LIMITS = {
   regexCheckTimeoutMs: 1_000,
   userIdsMax: 10_000,
   userIdMaxLength: 256,
+} as const;
+
+/**
+ * [v4.9] Segment (§2.2, §6.5). Snapshot và `config_hash` của MỌI environment chứa
+ * mọi segment của project, nên mỗi trần ở đây là trần của bộ nhớ và băng thông
+ * trên mọi replica, không chỉ của một bảng.
+ */
+export const SEGMENT = {
+  /** Trần số segment mỗi project (422 `QUOTA_EXCEEDED`) */
+  maxPerProject: 100,
+  /** Chi tiết segment liệt kê tối đa chừng này flag đang dùng nó */
+  referencesInView: 50,
+  /**
+   * Trần body ghi segment ở Service 1. Mọi body hợp lệ theo schema ở trần userIds
+   * đều lọt:
+   *   - userIds: 10 000 × (256 × 6 + 3) = 15 390 000 B (6 B là một đơn vị UTF-16
+   *     escape `\uXXXX`, trường hợp xấu nhất);
+   *   - `all` ngang rule path: 1 048 576 B;
+   *   - vỏ (tên, mô tả, mốc): 16 384 B;
+   *   - tổng 16 454 960 B, làm tròn lên 16 MiB.
+   */
+  writeBodyLimitBytes: 16 * 1024 * 1024,
+  /**
+   * Parser của `/internal/segments` ở Service 2: S1 serialize lại body và thêm
+   * `projectId`, nên cần một khoảng dư — không thì body sát trần qua S1 nhận 413
+   * từ S2, mã S1 không relay, và người dùng thấy 500.
+   */
+  internalBodyLimitBytes: 16 * 1024 * 1024 + 64 * 1024,
+  /**
+   * Trần TỔNG `conditions` của mọi segment trong một project, kiểm dưới khoá env
+   * lúc tạo và sửa.
+   *
+   * [v4.10] Thước đo là `octet_length(conditions::text)` của jsonb — thứ SQL
+   * cộng được ngay tại chỗ dữ liệu nằm, dưới khoá, không kéo 4 MiB về JS (F6/F7).
+   * Trước đó chú thích này nói "canonical JSON" trong khi cưỡng chế bằng jsonb,
+   * mà jsonb::text dài hơn canonical ÍT NHẤT bằng số dấu `,` và `:` (Postgres in
+   * thêm một khoảng trắng sau mỗi dấu), nên một segment có canonical ĐÚNG bằng
+   * trần vẫn bị từ chối. Một trần thì phải có một thước; `segmentPayloadBytesOf`
+   * ở JS là chặn dưới của thước này, dùng để từ chối sớm.
+   *
+   * 4 MiB = 1,61 × segment ASCII lớn nhất theo trần từng segment (canonical
+   * 10 000 × (256 + 2) + 9 999 + 23 = 2 590 022 B, đo bằng thước trên là
+   * + 10 000 dấu `,` + 2 dấu `:` = 2 600 024 B), nên một segment như vậy luôn
+   * lưu được khi project còn trống. Bộ nhớ S2 cho một env ở trần ≈ 26 MiB mỗi
+   * replica (hai slot SERVER/CLIENT, mỗi slot giữ snapshot, bản prepared, chunk
+   * SSE và body `/sdk/config`); 8 MiB là gấp đôi.
+   */
+  maxProjectBytes: 4 * 1024 * 1024,
 } as const;
 
 // ============================================================
@@ -431,6 +503,14 @@ export const CHANGE_FEED = {
    * lô để một lượt không chạy vô hạn khi tồn đọng lớn.
    */
   prune: { intervalMs: 60 * 60_000, batchSize: 1_000, maxBatchesPerRun: 50 },
+  /**
+   * [v4.9] Ngân sách byte của MỘT lô delta ở tầng 2 (tổng `payload` các dòng đọc
+   * sau con trỏ). Vượt ⇒ rơi về snapshot với lý do `too-large`, không đếm vào
+   * breaker. Bằng 2 × `SEGMENT.maxProjectBytes`: một lần sửa segment ở trần luôn
+   * đi bằng delta (text jsonb dài hơn canonical khoảng 1 B mỗi phần tử), còn lô
+   * lớn hơn thế thì snapshot (≤ 4 MiB segment + flag) rẻ hơn.
+   */
+  maxDeltaBytes: 8 * 1024 * 1024,
 } as const;
 
 /**
@@ -579,6 +659,12 @@ export const RATE_LIMIT = {
      * 1 200/phút gấp đôi trần của một khoá hợp lệ, đủ cho một NAT văn phòng.
      */
     ofrepPerIp: { windowMs: 60_000, max: 1200 },
+    /**
+     * [v4.9] SERVER key: số lần `POST /sdk/stats` mỗi phút mỗi khoá — bucket RIÊNG,
+     * không chung `perKey` của `/sdk/config`. Mỗi tiến trình báo một lần mỗi 60 s,
+     * nên 1 000/phút là 1 000 tiến trình dùng chung một khoá.
+     */
+    statsPerKey: { windowMs: 60_000, max: 1_000 },
   },
 } as const;
 
@@ -707,6 +793,120 @@ export const SDK_KEY = {
   displaySuffixLength: 6,
   /** Throttle cập nhật last_used_at để không ghi DB mỗi request */
   lastUsedThrottleMs: 60_000,
+  /**
+   * [v4.9] Trần số khoá mà một tiến trình nhớ "vừa chạm" để throttle
+   * `last_used_at`. Map này đứng trước điều kiện `WHERE` của câu UPDATE (thứ
+   * throttle đúng cả giữa các replica); nó chỉ chặn N request đồng thời của CÙNG
+   * một khoá cùng bắn trước khi hàng đầu commit, nên đầy thì dọn được, không cần
+   * chính xác.
+   */
+  lastUsedTrackedKeys: 10_000,
+  /**
+   * [v4.9] Phần tên env trong token (`udp_sk_{envSlug}_…`) cắt ở chừng này ký tự:
+   * đủ cho `production` và các tên có hậu tố. Token không bao giờ được parse, nên
+   * đây chỉ là nhãn cho người đọc.
+   */
+  envSlugMaxLength: 20,
+  /**
+   * [v4.9] Trần khoá CHƯA thu hồi mỗi environment (422 `QUOTA_EXCEEDED`): một
+   * OWNER bấm lặp không tạo khoá vô hạn. Muốn nới thì chỉ đổi số này.
+   */
+  maxActivePerEnvironment: 20,
+  /**
+   * [v4.9] Nhãn người dùng đặt cho khoá — ĐÚNG bề rộng cột `sdk_keys.label`
+   * (`VarChar(100)`, §2.2). Cắt ở zod của CẢ HAI biên chứ không để Postgres ném
+   * `22001`: lỗi đó nổ giữa transaction tạo khoá, sau khi đã khoá environment và
+   * đã đếm quota — tức trả 500 cho một thứ lẽ ra là 400 ở ngoài cùng.
+   */
+  labelMaxLength: 100,
+  /** [v4.9] Danh sách khoá chỉ trả chừng này khoá đã thu hồi mới nhất */
+  revokedListLimit: 50,
+  /**
+   * [v4.9] Transaction tạo khoá ở S2 (khoá env, tra hash, đếm quota, INSERT, audit)
+   * — ghi tường minh thay vì dựa vào mặc định của Prisma, để hạn chờ khe khớp
+   * `DB_POOL.acquireTimeoutMs` và S1 biết khi nào thử lại.
+   */
+  createTransaction: { maxWait: 5_000, timeout: 10_000 },
+} as const;
+
+// ============================================================
+// Telemetry đánh giá flag (Design v4 §2.2 FlagEvaluationStat, §6.7, §6.8)
+// ============================================================
+
+/**
+ * [v4.9] Số đếm lượt đánh giá: provider gom rồi báo `POST /sdk/stats`, Service 2
+ * gộp trong bộ nhớ rồi UPSERT theo lô, rollup hàng giờ cũ thành hàng ngày.
+ */
+export const SDK_STATS = {
+  /** Phía provider (chạy trong ứng dụng của khách) */
+  report: {
+    intervalMs: 60_000,
+    /** ±10% để N tiến trình khởi động cùng lúc không báo cùng một giây */
+    jitterRatio: 0.1,
+    requestTimeoutMs: 5_000,
+    /** `onClose()` gửi nốt báo cáo cuối trong hạn này, không ném */
+    shutdownFlushTimeoutMs: 2_000,
+    maxEntriesPerReport: 2_000,
+    maxCountPerEntry: 1_000_000_000,
+    /** Trần số cặp (flag, variant) đang giữ trong tiến trình khách */
+    maxPendingEntries: 10_000,
+    /**
+     * Parser riêng của `/sdk/stats`: 2 000 × (255 + 100 × 6 + 50) — mọi báo cáo
+     * hợp lệ ở trần, kể cả khi mọi ký tự bị escape `\uXXXX`, đều lọt.
+     */
+    maxBodyBytes: 2 * 1024 * 1024,
+    /** `sdk.name`/`sdk.version` chỉ để ghi log — có trần để không phình log */
+    sdkLabelMaxLength: 100,
+  },
+  /** Phía Service 2 */
+  ingest: {
+    /** Mặc định của `SDK_STATS_FLUSH_INTERVAL_MS` */
+    flushIntervalMs: 15_000,
+    /**
+     * Sàn của `SDK_STATS_FLUSH_INTERVAL_MS`: đủ nhỏ cho test tích hợp chờ flush,
+     * đủ lớn để một cấu hình gõ nhầm không biến flusher thành vòng lặp bận.
+     */
+    minFlushIntervalMs: 250,
+    flushBatchRows: 1_000,
+    shutdownFlushTimeoutMs: 5_000,
+    /**
+     * [v4.9] Lúc tắt, chờ cổng HTTP đóng nhiều nhất chừng này rồi flush lần đầu.
+     * Stream SSE và kết nối keep-alive có thể giữ `server.close()` lâu hơn cả hạn
+     * flush, nên không được chờ nó vô điều kiện; ngược lại, chờ một chút thì lần
+     * flush đầu đã gom được cả những báo cáo tới sau tín hiệu dừng.
+     */
+    shutdownHttpWaitMs: 3_000,
+    maxPendingEntries: 50_000,
+    maxPendingEntriesPerEnvironment: 10_000,
+  },
+  retention: {
+    /**
+     * Hàng giờ cũ hơn chừng này ngày UTC được gộp thành hàng ngày. 92 = `maxDays`
+     * + 2: cửa sổ 90 ngày theo tz dương tới +14 h bắt đầu sớm hơn mốc 90 ngày UTC
+     * tới 14 giờ — giữ đúng 90 thì phần đầu cửa sổ đã bị gộp và đếm thiếu.
+     */
+    hourlyDays: 92,
+    rollupIntervalMs: 6 * 3_600_000,
+    /** Mỗi bước gộp MỘT ngày; một lượt tối đa chừng này bước */
+    rollupMaxDaysPerRun: 7,
+  },
+  query: {
+    maxDays: 90,
+    defaultDays: 7,
+    /** `granularity=hour` chỉ khi cửa sổ ≤ chừng này ngày */
+    maxHourlyDays: 7,
+    /** Độ dài sparkline `daily14` của danh sách flag */
+    sparklineDays: 14,
+    /**
+     * [v4.9] Trần số flag của MỘT lời gọi `GET /internal/flag-stats/summary`:
+     * bằng trần `limit` của danh sách flag ở Service 1, vì đúng một trang danh
+     * sách sinh ra đúng một lời gọi này (V19).
+     */
+    summaryMaxFlags: 100,
+    /** Tên IANA dài nhất chừng 30 ký tự; trần này chặn chuỗi rác trước khi tra tập */
+    tzMaxLength: 64,
+    staleList: { defaultLimit: 50, maxLimit: 100 },
+  },
 } as const;
 
 // ============================================================

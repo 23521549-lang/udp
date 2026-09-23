@@ -1,8 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { ACTOR_HEADER, CLIENT_IP_HEADER, env } from "@udp/config";
+import {
+  ACTOR_HEADER,
+  CLIENT_IP_HEADER,
+  env,
+  STALE_FLAG_THRESHOLDS,
+} from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
-import { startFlagService, type RunningService } from "@udp/test-support";
+import { hourFloor } from "@udp/shared-types";
+import {
+  seedEvalStats,
+  startFlagService,
+  type RunningService,
+} from "@udp/test-support";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
@@ -38,6 +48,9 @@ let app: ReturnType<typeof createApp>;
 let world: TestWorld;
 let owner: Actor;
 let developer: Actor;
+/** [v4.9] Cleanup Center đọc bằng VIEWER, archive hàng loạt ghi bằng MAINTAINER */
+let viewer: Actor;
+let maintainer: Actor;
 let projectId: string;
 let envs: Record<string, ProjectEnv>;
 /** Project mà `developer` KHÔNG thuộc về */
@@ -53,27 +66,36 @@ const envIn = (bag: Record<string, ProjectEnv>, name: string): ProjectEnv => {
 };
 const envOf = (name: string) => envIn(envs, name);
 
+/** App phụ dùng S2 THẬT nhưng `fetch` giả — cho hai ca lô archive dừng giữa đường */
+let appWith: (fetchImpl: typeof fetch) => ReturnType<typeof createApp>;
+
 beforeAll(async () => {
   const started = await startFlagService();
   s2 = started;
-  app = createApp({
-    metricsFor: () => new FakeMetricsProvider(),
-    flagService: createFlagServiceClient({
-      baseUrl: started.baseUrl,
-      secret: env.INTERNAL_SERVICE_SECRET,
-      fetch: (input, init) => {
-        s2Calls += 1;
-        return fetch(input, init);
-      },
-    }),
+  appWith = (fetchImpl) =>
+    createApp({
+      metricsFor: () => new FakeMetricsProvider(),
+      flagService: createFlagServiceClient({
+        baseUrl: started.baseUrl,
+        secret: env.INTERNAL_SERVICE_SECRET,
+        fetch: fetchImpl,
+      }),
+    });
+  app = appWith((input, init) => {
+    s2Calls += 1;
+    return fetch(input, init);
   });
   world = testWorld(app, admin);
   owner = await world.newActor("flag-owner");
   developer = await world.newActor("flag-dev");
+  viewer = await world.newActor("flag-viewer");
+  maintainer = await world.newActor("flag-maint");
   ({ projectId, envs } = await world.newProject(owner));
   other = await world.newProject(owner);
   await world.addMember(owner, projectId, developer, "DEVELOPER");
-}, 90_000);
+  await world.addMember(owner, projectId, viewer, "VIEWER");
+  await world.addMember(owner, projectId, maintainer, "MAINTAINER");
+}, 120_000);
 
 afterAll(async () => {
   await s2?.stop();
@@ -515,6 +537,454 @@ describe("[v4.6] Flag Evaluation Tester (§10.12)", () => {
     );
     await evaluate(wide).expect(400);
     expect(s2Calls).toBe(before);
+  });
+});
+
+// ------------------------------------------------- [v4.9] vòng đời và telemetry
+
+const DAY = 86_400_000;
+
+const stampOf = async (flagId: string): Promise<string> =>
+  (
+    await admin.featureFlag.findUniqueOrThrow({
+      where: { id: flagId },
+      select: { updatedAt: true },
+    })
+  ).updatedAt.toISOString();
+
+const patchFlag = async (
+  actor: Actor,
+  flagId: string,
+  body: object,
+): Promise<request.Response> =>
+  as(
+    actor,
+    request(app)
+      .patch(`${flagsUrl()}/${flagId}`)
+      .send({ lastKnownUpdatedAt: await stampOf(flagId), ...body }),
+  );
+
+/** Flag ACTIVE của project chính — qua đường thật, có xác nhận hai bước */
+async function activeFlag(): Promise<CreatedFlag> {
+  const flag = await newFlag();
+  const res = await patchFlag(owner, flag.id, {
+    lifecycleStatus: "ACTIVE",
+    confirmFlagKey: flag.key,
+  });
+  expect(res.status).toBe(200);
+  return flag;
+}
+
+/** Một lượt đánh giá trong cửa sổ chốt archive, ở environment `dev` */
+const seedRecent = (flagId: string, count = 3): Promise<void> =>
+  seedEvalStats(admin, [
+    {
+      flagId,
+      environmentId: envOf("dev").id,
+      variantKey: "on",
+      evalCount: count,
+      bucketHour: hourFloor(new Date(Date.now() - DAY)),
+    },
+  ]);
+
+const lifecycleOf = async (flagId: string): Promise<string> =>
+  (
+    await admin.featureFlag.findUniqueOrThrow({
+      where: { id: flagId },
+      select: { lifecycleStatus: true },
+    })
+  ).lifecycleStatus;
+
+describe("[v4.9] Cleanup Center và stats qua Service 1", () => {
+  it("GET /flags/stale đăng ký TRƯỚC /flags/:flagId: VIEWER ⇒ 200, không phải 400 uuid (AC-1.9)", async () => {
+    const res = await as(
+      viewer,
+      request(app).get(`${flagsUrl()}/stale`),
+    ).expect(200);
+    expect(res.body).toMatchObject({
+      counts: { UNUSED: expect.any(Number) as number },
+      total: expect.any(Number) as number,
+      telemetry: { observedDays: expect.any(Number) as number },
+    });
+    expect(Array.isArray(res.body.items)).toBe(true);
+    // Tham số sai vẫn là 400 của chính route stale, không phải của route động
+    await as(
+      viewer,
+      request(app).get(`${flagsUrl()}/stale`).query({ category: "KHONG-CO" }),
+    ).expect(400);
+  });
+
+  it("GET /flags/:flagId/stats: VIEWER ⇒ 200, mỗi environment mang TÊN", async () => {
+    const flag = await activeFlag();
+    await seedRecent(flag.id, 7);
+    const res = await as(
+      viewer,
+      request(app)
+        .get(`${flagsUrl()}/${flag.id}/stats`)
+        .query({ days: 7, envId: envOf("dev").id }),
+    ).expect(200);
+
+    expect(res.body.totals.evalCount).toBe(7);
+    expect(res.body.byEnv).toHaveLength(1);
+    expect(res.body.byEnv[0].environment).toEqual({
+      id: envOf("dev").id,
+      name: "dev",
+      isProduction: false,
+    });
+    expect(res.body.byEnv[0].environmentId).toBeUndefined();
+    expect(res.body.archive).toMatchObject({
+      allowed: false,
+      blockedBy: "RECENT_EVALUATIONS",
+      evalCount7d: 7,
+    });
+  });
+
+  it("tz sai ⇒ 400 ở S1, KHÔNG gọi S2; flag/env của project khác ⇒ 404", async () => {
+    const flag = await activeFlag();
+    const theirs = await newFlag(owner, other.projectId);
+    const before = s2Calls;
+
+    await as(
+      viewer,
+      request(app)
+        .get(`${flagsUrl()}/${flag.id}/stats`)
+        .query({ tz: "Mars/Base" }),
+    ).expect(400);
+    await as(
+      viewer,
+      request(app).get(`${flagsUrl()}/stale`).query({ limit: 0 }),
+    ).expect(400);
+    await as(
+      viewer,
+      request(app).get(`${flagsUrl()}/${theirs.id}/stats`),
+    ).expect(404);
+    await as(
+      viewer,
+      request(app)
+        .get(`${flagsUrl()}/${flag.id}/stats`)
+        .query({ envId: envIn(other.envs, "dev").id }),
+    ).expect(404);
+    expect(s2Calls).toBe(before);
+  });
+
+  it("include=stats: thiếu envId ⇒ 400; có envId ⇒ mỗi hàng kèm evalCount7d và daily14", async () => {
+    const flag = await activeFlag();
+    await seedRecent(flag.id, 5);
+    await as(
+      viewer,
+      request(app).get(flagsUrl()).query({ include: "stats" }),
+    ).expect(400);
+
+    const res = await as(
+      viewer,
+      request(app)
+        .get(flagsUrl())
+        .query({ include: "stats", envId: envOf("dev").id, search: flag.key }),
+    ).expect(200);
+    expect(res.body.flags).toHaveLength(1);
+    expect(res.body.flags[0].stats).toEqual({
+      evalCount7d: 5,
+      daily14: expect.any(Array) as number[],
+    });
+    expect(res.body.flags[0].stats.daily14).toHaveLength(14);
+
+    // Không hỏi stats thì không có trường đó, và không có lời gọi tổng hợp nào
+    const plain = await as(
+      viewer,
+      request(app)
+        .get(flagsUrl())
+        .query({ envId: envOf("dev").id }),
+    ).expect(200);
+    expect(plain.body.flags[0].stats).toBeUndefined();
+  });
+
+  it("archive một flag: DEVELOPER ⇒ 403; thiếu xác nhận ⇒ 428; còn lượt ⇒ 409 nguyên mã, KHÔNG có `current` (AC-1.1)", async () => {
+    const flag = await activeFlag();
+    await seedRecent(flag.id);
+
+    expect(
+      (await patchFlag(developer, flag.id, { lifecycleStatus: "ARCHIVED" }))
+        .status,
+    ).toBe(403);
+    const unconfirmed = await patchFlag(maintainer, flag.id, {
+      lifecycleStatus: "ARCHIVED",
+    });
+    expect(unconfirmed.status).toBe(428);
+    expect(unconfirmed.body.code).toBe("CONFIRMATION_REQUIRED");
+
+    const blocked = await patchFlag(maintainer, flag.id, {
+      lifecycleStatus: "ARCHIVED",
+      confirmFlagKey: flag.key,
+    });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe("FLAG_RECENTLY_EVALUATED");
+    expect(blocked.body.detail).toMatch(/lượt đánh giá/);
+    // V10: `current` là trường độc quyền của OPTIMISTIC_LOCK
+    expect(blocked.body.current).toBeUndefined();
+    expect(await lifecycleOf(flag.id)).toBe("ACTIVE");
+
+    // Không còn lượt nào trong cửa sổ ⇒ archive được
+    const free = await activeFlag();
+    expect(
+      (
+        await patchFlag(maintainer, free.id, {
+          lifecycleStatus: "ARCHIVED",
+          confirmFlagKey: free.key,
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it("permanent: DEVELOPER sửa được, không cần xác nhận, và flag rời danh sách stale (AC-1.11)", async () => {
+    const flag = await activeFlag();
+    await admin.featureFlag.update({
+      where: { id: flag.id },
+      data: { activatedAt: new Date(Date.now() - 60 * DAY) },
+    });
+    // Project phải có telemetry để xét UNUSED
+    await seedEvalStats(admin, [
+      {
+        flagId: flag.id,
+        environmentId: envOf("dev").id,
+        variantKey: "on",
+        evalCount: 1,
+        bucketHour: hourFloor(new Date(Date.now() - 50 * DAY)),
+      },
+    ]);
+    const staleKeys = async (): Promise<string[]> =>
+      (
+        (await as(viewer, request(app).get(`${flagsUrl()}/stale`)).expect(200))
+          .body.items as { flag: { id: string } }[]
+      ).map((item) => item.flag.id);
+    expect(await staleKeys()).toContain(flag.id);
+
+    const res = await patchFlag(developer, flag.id, { permanent: true });
+    expect(res.status).toBe(200);
+    expect(res.body.flag.permanent).toBe(true);
+    expect(await staleKeys()).not.toContain(flag.id);
+  });
+});
+
+describe("[v4.9] POST /flags/bulk-archive (V16)", () => {
+  const bulkUrl = () => `${flagsUrl()}/bulk-archive`;
+  const projectNameOf = async (): Promise<string> =>
+    (
+      await admin.project.findUniqueOrThrow({
+        where: { id: projectId },
+        select: { name: true },
+      })
+    ).name;
+
+  const target = async (flagId: string) => ({
+    flagId,
+    lastKnownUpdatedAt: await stampOf(flagId),
+  });
+
+  it("400 trước 428: quá 20 flag, id trùng, hay sai kiểu ⇒ 400 và S2 không bị gọi", async () => {
+    const before = s2Calls;
+    const many = Array.from(
+      { length: STALE_FLAG_THRESHOLDS.bulkArchiveMax + 1 },
+      () => ({
+        flagId: randomUUID(),
+        lastKnownUpdatedAt: new Date().toISOString(),
+      }),
+    );
+    await as(
+      maintainer,
+      request(app)
+        .post(bulkUrl())
+        .send({ flags: many, confirmProjectName: await projectNameOf() }),
+    ).expect(400);
+
+    const dup = {
+      flagId: randomUUID(),
+      lastKnownUpdatedAt: new Date().toISOString(),
+    };
+    await as(
+      maintainer,
+      request(app)
+        .post(bulkUrl())
+        .send({ flags: [dup, dup], confirmProjectName: await projectNameOf() }),
+    ).expect(400);
+
+    await as(
+      maintainer,
+      request(app)
+        .post(bulkUrl())
+        .send({ flags: [dup], confirmProjectName: 42 }),
+    ).expect(400);
+    expect(s2Calls).toBe(before);
+  });
+
+  it("thiếu hay sai confirmProjectName ⇒ 428 và 0 lời gọi S2 (AC-1.12, F9/F10)", async () => {
+    const flag = await activeFlag();
+    const before = s2Calls;
+    const name = await projectNameOf();
+
+    const missing = await as(
+      maintainer,
+      request(app)
+        .post(bulkUrl())
+        .send({ flags: [await target(flag.id)] }),
+    ).expect(428);
+    expect(missing.body.code).toBe("CONFIRMATION_REQUIRED");
+    expect(missing.body.detail).toContain(name);
+
+    // Sai đúng MỘT ký tự
+    await as(
+      maintainer,
+      request(app)
+        .post(bulkUrl())
+        .send({
+          flags: [await target(flag.id)],
+          confirmProjectName: `${name}x`,
+        }),
+    ).expect(428);
+    expect(s2Calls).toBe(before);
+    expect(await lifecycleOf(flag.id)).toBe("ACTIVE");
+  });
+
+  it("confirmProjectName so sau trim + NFC: khoảng trắng hai đầu và NFD vẫn khớp (F9, X-1)", async () => {
+    const flag = await activeFlag();
+    const name = await projectNameOf();
+    const res = await as(
+      maintainer,
+      request(app)
+        .post(bulkUrl())
+        .send({
+          flags: [await target(flag.id)],
+          confirmProjectName: `  ${name.normalize("NFD")}  `,
+        }),
+    ).expect(200);
+    expect(res.body.results[0].ok).toBe(true);
+    expect(await lifecycleOf(flag.id)).toBe("ARCHIVED");
+  });
+
+  it("quyền: DEVELOPER ⇒ 403; VIEWER ⇒ 403", async () => {
+    const flag = await activeFlag();
+    const body = {
+      flags: [await target(flag.id)],
+      confirmProjectName: await projectNameOf(),
+    };
+    await as(developer, request(app).post(bulkUrl()).send(body)).expect(403);
+    await as(viewer, request(app).post(bulkUrl()).send(body)).expect(403);
+  });
+
+  it("một flag ngoài project ⇒ 404 CẢ request, TRƯỚC mọi lần ghi", async () => {
+    const mine = await activeFlag();
+    const theirs = await newFlag(owner, other.projectId);
+    await as(
+      maintainer,
+      request(app)
+        .post(bulkUrl())
+        .send({
+          flags: [await target(mine.id), await target(theirs.id)],
+          confirmProjectName: await projectNameOf(),
+        }),
+    ).expect(404);
+    expect(await lifecycleOf(mine.id)).toBe("ACTIVE");
+    expect(await lifecycleOf(theirs.id)).toBe("DRAFT");
+  });
+
+  it("lô 3 flag, flag giữa còn lượt ⇒ 200 với 2 ok và 1 problem nguyên vẹn (AC-1.12, R31)", async () => {
+    const first = await activeFlag();
+    const blocked = await activeFlag();
+    const last = await activeFlag();
+    await seedRecent(blocked.id, 12);
+
+    const res = await as(
+      maintainer,
+      request(app)
+        .post(bulkUrl())
+        .send({
+          flags: [
+            await target(first.id),
+            await target(blocked.id),
+            await target(last.id),
+          ],
+          confirmProjectName: await projectNameOf(),
+        }),
+    ).expect(200);
+
+    const results = res.body.results as {
+      flagId: string;
+      ok: boolean;
+      problem?: { status: number; code: string; detail?: string };
+      flag?: { lifecycleStatus: string };
+    }[];
+    expect(results.map((row) => row.flagId)).toEqual([
+      first.id,
+      blocked.id,
+      last.id,
+    ]);
+    expect(results[0]?.flag?.lifecycleStatus).toBe("ARCHIVED");
+    expect(results[2]?.flag?.lifecycleStatus).toBe("ARCHIVED");
+    expect(results[1]?.ok).toBe(false);
+    expect(results[1]?.problem).toMatchObject({
+      status: 409,
+      code: "FLAG_RECENTLY_EVALUATED",
+    });
+    expect(results[1]?.problem?.detail).toMatch(/lượt đánh giá/);
+    // Lỗi của một flag KHÔNG dừng các flag sau
+    expect(await lifecycleOf(blocked.id)).toBe("ACTIVE");
+    expect(await lifecycleOf(last.id)).toBe("ARCHIVED");
+
+    // Mỗi flag thành công có đúng một hàng audit flag.archive
+    for (const flag of [first, last]) {
+      expect(await auditsOf(flag.id, "flag.archive")).toHaveLength(1);
+    }
+  });
+
+  it("S2 trả 503 ở flag thứ 3 ⇒ 503 nêu số đã áp dụng, 2 flag đầu đã archive", async () => {
+    const flags = [await activeFlag(), await activeFlag(), await activeFlag()];
+    let patches = 0;
+    const flaky = appWith((input, init) => {
+      if (
+        init?.method === "PATCH" &&
+        String(input).includes("/internal/flags/")
+      ) {
+        patches += 1;
+        if (patches === 3) {
+          return Promise.resolve(Response.json({}, { status: 503 }));
+        }
+      }
+      return fetch(input, init);
+    });
+
+    const body = {
+      flags: await Promise.all(flags.map((flag) => target(flag.id))),
+      confirmProjectName: await projectNameOf(),
+    };
+    const res = await as(
+      maintainer,
+      request(flaky).post(bulkUrl()).send(body),
+    ).expect(503);
+    expect(res.body.code).toBe("PROVIDER_UNAVAILABLE");
+    expect(res.body.detail).toContain("2/3");
+
+    expect(await lifecycleOf(flags[0]!.id)).toBe("ARCHIVED");
+    expect(await lifecycleOf(flags[1]!.id)).toBe("ARCHIVED");
+    expect(await lifecycleOf(flags[2]!.id)).toBe("ACTIVE");
+  });
+
+  it("S2 trả 403 ⇒ 500 (lỗi hợp đồng, không phải lỗi của người dùng)", async () => {
+    const flag = await activeFlag();
+    const forbidden = appWith((input, init) =>
+      init?.method === "PATCH" && String(input).includes("/internal/flags/")
+        ? Promise.resolve(Response.json({}, { status: 403 }))
+        : fetch(input, init),
+    );
+    const res = await as(
+      maintainer,
+      request(forbidden)
+        .post(bulkUrl())
+        .send({
+          flags: [await target(flag.id)],
+          confirmProjectName: await projectNameOf(),
+        }),
+    );
+    expect(res.status).toBe(500);
+    expect(await lifecycleOf(flag.id)).toBe("ACTIVE");
   });
 });
 
