@@ -2126,6 +2126,18 @@ interface CloudAdapter {
    * nên mọi cột đều suy ra được — trừ `job_id` (job nào đã tạo), là dữ liệu lịch sử
    * không ảnh hưởng tính đúng đắn.
    *
+   * [v4.10] **Tag một mình KHÔNG đủ, và đó là hệ quả trực tiếp của quy tắc 2 ở §4.5.**
+   *
+   * Một `kind` mà API không cho gắn tag lúc tạo (quy tắc 2 cho phép, và bắt adapter khai
+   * `lookupBy: "deterministic-name"`) sẽ KHÔNG xuất hiện trong `listTaggedResources()` —
+   * nó không mang tag nào. Nên câu "dựng lại toàn bộ sổ chỉ từ tag" đúng với phần lớn
+   * tài nguyên nhưng bỏ sót đúng những `kind` đó, và bỏ sót một cách IM LẶNG: hàm vẫn trả
+   * `SUCCESS` với một sổ thiếu.
+   *
+   * Vì vậy `rebuildLedgerFromCloud` dùng HAI đường, cùng cấu trúc với `lookup`: quét tag
+   * cho `kind` gắn được tag, và dò theo TÊN TẤT ĐỊNH cho `kind` còn lại. Hai đường độc
+   * lập nên hỏng một vẫn còn một, y như câu trả lời cho điểm crash K8.
+   *
    * Dùng ở ba chỗ: khôi phục sau sự cố database, tiếp quản project mà ai đó đã tạo tay,
    * và điểm crash K10 của §4.5 — ô đối chứng trực tiếp với state file ở E15.
    *

@@ -47,6 +47,20 @@ export interface CloudControl {
   listAll(): Promise<CreatedResource[]>;
   /** Nhật ký lời gọi có thứ tự */
   calls(): Promise<CloudCallRecord[]>;
+  /**
+   * Bơm bốn loại nhiễu bắt buộc (O-2).
+   *
+   * Nó ở đây chứ không ở một tiện ích riêng vì nó CŨNG là tác động ngoài luồng: tài nguyên
+   * của project khác, tài nguyên khách tự tạo, và tài nguyên ở region khác đều tồn tại
+   * trong một tài khoản cloud thật mà không ai bơm chúng.
+   */
+  seedNoise(projectId: string, owner: string): Promise<void>;
+  /** Tạo một tài nguyên do "Kubernetes" sinh, giữ tham chiếu VPC (S-10) */
+  seedK8sManaged(args: {
+    kind: "k8s-loadbalancer" | "k8s-eni" | "k8s-volume";
+    clusterName: string;
+    attachedTo: string;
+  }): Promise<CreatedResource>;
 }
 
 /**
@@ -94,3 +108,11 @@ export {
   FIXTURE_STEPS,
   K10_VARIANTS,
 } from "./fixture.js";
+
+export {
+  createSimAdapter,
+  idempotencyKeyOf,
+  parseIdempotencyKey,
+  simTags,
+} from "./sim-adapter.js";
+export type { SimAdapterOptions } from "./sim-adapter.js";

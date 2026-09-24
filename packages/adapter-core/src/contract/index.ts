@@ -23,7 +23,16 @@ export interface CloudContractEnv {
   readonly driver: "in-process" | "child-process";
   readonly ledger: () => Ledger;
   readonly control: CloudControl;
+  /** Hằng số kỳ vọng VIẾT TAY — không suy từ `steps.length` của chính adapter */
   readonly fixture: CloudFixture;
+  /**
+   * Dựng cùng adapter nhưng với một credential mang nhãn khác.
+   *
+   * Phép kiểm `c8` cần một credential **thiếu quyền có chủ đích**, và cách duy nhất để nó
+   * không phải một mock là môi trường tự cấp được một adapter như thế. Trên LocalStack đây
+   * là một IAM role đã bị gỡ quyền; ở đây là một nhãn.
+   */
+  readonly adapterWithCredentialLabel?: (label: string) => CloudAdapter;
 }
 
 /**

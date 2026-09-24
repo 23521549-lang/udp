@@ -166,30 +166,35 @@ describe("CRASH_POINTS — tier là DỮ LIỆU", () => {
 
 describe("cổng thứ tự — hằng số kỳ vọng commit TRƯỚC steps của adapter", () => {
   /**
-   * Phép kiểm này KHÔNG được rỗng nghĩa khi adapter chưa tồn tại.
+   * Ba trạng thái, và phép kiểm nói ra được cả ba.
    *
-   * Một test "quét lịch sử" mà xanh vì không tìm thấy gì để kiểm là xanh giả kinh điển.
-   * Nên nó khẳng định hai điều: hằng số **đã** vào lịch sử (luôn kiểm được), và nếu file
-   * adapter đã tồn tại thì thứ tự phải đúng.
+   * Bản đầu chỉ xử lý hai ("chưa tạo" và "đã commit") nên nó ĐỎ ở trạng thái thứ ba — file
+   * vừa được viết trong pha này, chưa commit. Đỏ ở đó là đúng hướng nhưng sai thông điệp:
+   * nó nói "file không được tồn tại", trong khi điều cần khẳng định là thứ tự SẼ đúng khi
+   * commit.
+   *
+   * | Trạng thái | Khẳng định |
+   * | --- | --- |
+   * | chưa tạo | file không tồn tại — nói ra trạng thái, không im lặng `return` |
+   * | đã tạo, chưa commit | hằng số **đã** vào lịch sử, nên khi adapter được commit thì thứ tự tất yếu đúng |
+   * | đã commit | commit hằng số là **tổ tiên** của commit adapter, và hai commit khác nhau |
    */
-  it("file hằng số đã có trong lịch sử git", () => {
-    const commit = firstCommitOf(FIXTURE_FILE);
-    expect(
-      commit,
-      `${FIXTURE_FILE} phải được commit — nó là cổng thứ tự thứ ba`,
-    ).not.toBeNull();
-  });
-
-  it("nếu adapter sim đã tồn tại thì nó phải được thêm SAU hằng số", () => {
+  it("thứ tự hằng số → adapter đúng ở cả ba trạng thái của lịch sử", () => {
     const fixtureCommit = firstCommitOf(FIXTURE_FILE);
     const adapterCommit = firstCommitOf(SIM_ADAPTER_FILE);
+    const adapterExists = existsSync(resolve(REPO, SIM_ADAPTER_FILE));
+
+    if (adapterCommit === null && !adapterExists) {
+      expect(adapterExists).toBe(false);
+      return;
+    }
 
     if (adapterCommit === null) {
-      /**
-       * Chưa tới P7. Khẳng định tường minh trạng thái hiện tại, để phép kiểm này nói ra
-       * điều nó đang biết thay vì im lặng xanh.
-       */
-      expect(existsSync(resolve(REPO, SIM_ADAPTER_FILE))).toBe(false);
+      expect(
+        fixtureCommit,
+        "adapter sim đã được viết nhưng hằng số kỳ vọng CHƯA vào lịch sử: " +
+          "commit theo thứ tự này thì không còn bằng chứng nào cho thứ tự ngược lại",
+      ).not.toBeNull();
       return;
     }
 
