@@ -31,15 +31,36 @@ const ALL: readonly (ResourceStatus | "ABSENT")[] = [
 ];
 
 describe("LEDGER_TRANSITIONS", () => {
-  it("đúng chín cạnh, không trùng", () => {
-    expect(LEDGER_TRANSITIONS).toHaveLength(9);
+  it("đúng mười một cạnh, không trùng", () => {
+    expect(LEDGER_TRANSITIONS).toHaveLength(11);
     const keys = LEDGER_TRANSITIONS.map(([a, b]) => `${a}->${b}`);
-    expect(new Set(keys).size).toBe(9);
+    expect(new Set(keys).size).toBe(11);
   });
 
   it("có hai cạnh compensation của v4.10", () => {
     expect(isLedgerTransitionAllowed("CREATING", "DELETING")).toBe(true);
     expect(isLedgerTransitionAllowed("CREATED", "DELETING")).toBe(true);
+  });
+
+  /**
+   * Hai cạnh tạo lại của v4.10 (hàng K7).
+   *
+   * Chúng là hệ quả bắt buộc của "khi resume tạo ⇒ tạo lại": tài nguyên mới có id
+   * mới, nên hàng phải về `CREATING` để nhận id đó. Không có chúng, sổ giữ mãi id
+   * của thứ đã chết và teardown rò tài nguyên thật.
+   */
+  it("có hai cạnh tạo lại của v4.10", () => {
+    expect(isLedgerTransitionAllowed("READY", "CREATING")).toBe(true);
+    expect(isLedgerTransitionAllowed("CREATED", "CREATING")).toBe(true);
+  });
+
+  /** Nhưng KHÔNG từ trạng thái cuối — nếu đi được thì I31 mất đáy */
+  it("không cạnh tạo lại nào từ trạng thái cuối", () => {
+    expect(isLedgerTransitionAllowed("DELETED", "CREATING")).toBe(false);
+    expect(isLedgerTransitionAllowed("ORPHAN_SUSPECTED", "CREATING")).toBe(
+      false,
+    );
+    expect(isLedgerTransitionAllowed("DELETING", "CREATING")).toBe(false);
   });
 
   it("giữ đủ bảy cạnh của v4.9", () => {
@@ -96,8 +117,8 @@ describe("LEDGER_TRANSITIONS", () => {
         rejected += 1;
       }
     }
-    // 7 trang thai nguon × 6 dich (bo ABSENT) = 42 cap, tru 9 canh hop le
-    expect(rejected).toBe(42 - 9);
+    // 7 trang thai nguon × 6 dich (bo ABSENT) = 42 cap, tru 11 canh hop le
+    expect(rejected).toBe(42 - 11);
   });
 });
 

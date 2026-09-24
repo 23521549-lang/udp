@@ -43,6 +43,8 @@ export class InMemoryLedger implements Ledger {
   readonly #rows = new Map<string, ProvisionedResourceRow>();
   /** Lý do của `ORPHAN_SUSPECTED`, để test khẳng định nó không bị nuốt */
   readonly #orphanReasons = new Map<string, string>();
+  /** Lý do của lần tạo lại, để test khẳng định chứng minh "không còn" được ghi */
+  readonly #recreateReasons = new Map<string, string>();
 
   /**
    * `ABSENT → CREATING`, và **idempotent khi hàng đã ở `CREATING`**.
@@ -84,6 +86,15 @@ export class InMemoryLedger implements Ledger {
     return Promise.resolve();
   }
 
+  /** `READY | CREATED → CREATING` và xoá `provider_id` (hàng K7 — xem cổng `Ledger`) */
+  markRecreating(idempotencyKey: string, reason: string): Promise<void> {
+    const row = this.#require(idempotencyKey);
+    this.#transition(row, "CREATING");
+    row.providerId = null;
+    this.#recreateReasons.set(idempotencyKey, reason);
+    return Promise.resolve();
+  }
+
   markReady(idempotencyKey: string): Promise<void> {
     this.#transition(this.#require(idempotencyKey), "READY");
     return Promise.resolve();
@@ -122,6 +133,11 @@ export class InMemoryLedger implements Ledger {
   /** Chỉ dùng trong test: lý do của một hàng `ORPHAN_SUSPECTED` */
   orphanReasonOf(idempotencyKey: string): string | undefined {
     return this.#orphanReasons.get(idempotencyKey);
+  }
+
+  /** Chỉ dùng trong test: lý do của lần tạo lại gần nhất */
+  recreateReasonOf(idempotencyKey: string): string | undefined {
+    return this.#recreateReasons.get(idempotencyKey);
   }
 
   #require(idempotencyKey: string): ProvisionedResourceRow {

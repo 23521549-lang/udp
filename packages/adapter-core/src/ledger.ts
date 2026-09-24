@@ -80,11 +80,16 @@ export const PROVISIONED_RESOURCE_ROW_OMITTED: readonly string[] = [
 ];
 
 /**
- * Chín cạnh hợp lệ của máy trạng thái §4.5.
+ * Mười một cạnh hợp lệ của máy trạng thái §4.5.
  *
- * Hai cạnh cuối là bổ sung của v4.10: bản v4.9 có đúng 7 cạnh và **không có**
- * `CREATING → DELETING` lẫn `CREATED → DELETING`, nên compensation một hàng chưa
- * `READY` là bất hợp pháp — mà đó là ca thường xuyên nhất sau một lần crash.
+ * Bốn cạnh là bổ sung của v4.10; bản v4.9 có đúng 7 cạnh:
+ *
+ *  - `CREATING → DELETING` và `CREATED → DELETING`: không có chúng thì compensation một
+ *    hàng chưa `READY` là bất hợp pháp — mà đó là ca thường xuyên nhất sau một lần crash.
+ *  - `READY → CREATING` và `CREATED → CREATING`: hàng K7 của bảng khôi phục nói "khi resume
+ *    tạo ⇒ tạo lại", nhưng v4.9 không có cạnh nào cho việc đó. Không có nó, sổ giữ mãi
+ *    `provider_id` của thứ khách đã xoá, và teardown sau đó xoá một id không tồn tại trong
+ *    khi tài nguyên THẬT rò — đúng loại lỗi chỉ lộ ra khi hoá đơn về.
  *
  * `ORPHAN_SUSPECTED` cố tình KHÔNG có cạnh ra: nó là trạng thái cần người xem, và
  * `GET /admin/orphan-resources` hiển thị nó kèm chi phí đang chạy theo USD/giờ. Vì
@@ -98,6 +103,8 @@ export const LEDGER_TRANSITIONS: readonly (readonly [
   ["CREATING", "CREATED"],
   ["CREATED", "READY"],
   ["READY", "DELETING"],
+  ["READY", "CREATING"],
+  ["CREATED", "CREATING"],
   ["CREATING", "DELETING"],
   ["CREATED", "DELETING"],
   ["DELETING", "DELETED"],

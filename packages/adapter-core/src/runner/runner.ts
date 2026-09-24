@@ -35,6 +35,7 @@ import type { Fence, Ledger, RunnerObserver } from "./index.js";
  * | RUN12 | `prior` chỉ chứa step ĐỨNG TRƯỚC, khoá theo `name` | hợp đồng §4.2 |
  * | RUN13 | `rethrowIfFatal` là câu lệnh đầu của mọi `catch` | mọi ô |
  * | RUN14 | Runner KHÔNG giữ state ở phạm vi module | mọi ô |
+ * | RUN15 | Tạo lại thứ khách đã xoá ⇒ sổ nhận `provider_id` MỚI | K7 |
  *
  * RUN14 là bất biến quan trọng nhất và cũng vô hình nhất: nếu runner giữ bất cứ thứ gì ở
  * module scope — một cache lookup, một map `prior`, một danh sách id đã tạo — thì resume
@@ -244,6 +245,37 @@ export class CloudAdapterRunner {
         provider: plan.provider,
         region: plan.region,
       });
+    } else if (found === null) {
+      /**
+       * RUN15: tạo lại thứ khách đã xoá ngoài luồng (hàng K7).
+       *
+       * Đến đây nghĩa là: sổ có một hàng đã qua `CREATING`, mà CẢ HAI đường tra đều
+       * nói không có — theo tag `absent`, và theo `provider_id` cũ cũng `absent`. ADR-08
+       * nói nguồn sự thật là cloud, nên kể cả hàng `READY` thì sự thật vẫn là "không còn".
+       *
+       * Phải đẩy hàng VỀ `CREATING` trước khi `create()`, vì `markCreated` phía dưới chỉ
+       * ghi `provider_id` cho hàng đang `CREATING`. Bỏ bước này thì tài nguyên mới có id
+       * mới trong khi sổ giữ id cũ đã chết: teardown xoá một id không tồn tại, báo thành
+       * công, và tài nguyên THẬT rò — đúng loại lỗi chỉ lộ ra khi hoá đơn về.
+       *
+       * Các trạng thái còn lại (`DELETING`, `DELETED`, `ORPHAN_SUSPECTED`) không tối ở
+       * đây: một project đã teardown thì bản thân project biến mất, nên không có lượt
+       * provision nào dùng lại cùng `projectId`. Nếu vẫn tối thì đó là một giả định
+       * đã vỡ, và vỡ ồn ào ở đây tốt hơn rò im lậng ở teardown.
+       */
+      if (existingRow.status !== "CREATED" && existingRow.status !== "READY") {
+        throw new StepFailedError(
+          step.name,
+          new Error(
+            `hàng ${step.idempotencyKey} ở ${existingRow.status} mà cloud không còn gì: ` +
+              `không có đường tạo lại hợp lệ từ trạng thái này`,
+          ),
+        );
+      }
+      await this.#ledger.markRecreating(
+        step.idempotencyKey,
+        `tra theo tag và theo provider_id ${String(existingRow.providerId)} đều absent`,
+      );
     }
     await this.#observer.onPhase("after-intend", step.name);
 

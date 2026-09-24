@@ -44,6 +44,9 @@ import { KINDS_WITHOUT_CREATE_TAGS, SimCloud } from "./sim-cloud.js";
  *     đích: một hiện thực chỉ đọc trang đầu vẫn "thành công" nhưng dựng lại một sổ thiếu.
  */
 
+/** Trần số lần poll của `waitReady`; hữu hạn có chủ đích, xem chú thích tại chỗ dùng */
+const SIM_WAIT_READY_MAX_POLLS = 20;
+
 export interface SimAdapterOptions {
   cloud: SimCloud;
   /** Đường tra cứu mà adapter này KHAI. Bộ hợp đồng kiểm đúng đường đó hoạt động */
@@ -155,9 +158,25 @@ export function createSimAdapter(options: SimAdapterOptions): CloudAdapter {
         );
       },
 
+      /**
+       * `waitReady` là "poll CÓ TIMEOUT" (§4.2) — việc lặp thuộc về STEP, không thuộc runner.
+       *
+       * Bản đầu ném ngay khi `pollReady` trả `false` lần đầu, và cloud mô phỏng cần hai lần
+       * poll (S-11), nên MỌI step thất bại ở `waitReady` và lượt provision không bao giờ đi
+       * qua step thứ hai. Lưới tầng 1 bắt được ngay: 12 trong 13 ô của K1 đỏ với thông điệp
+       * "pha ... KHÔNG xảy ra, nên ô này chưa kiểm gì" — tức chính cái guard chống ô rỗng
+       * nghĩa đã chỉ ra một lỗi thật thay vì để lưới xanh với một ô không chạy.
+       *
+       * Trần số lần poll là hữu hạn: một `waitReady` lặp vô hạn biến một tài nguyên không
+       * bao giờ READY thành một job treo, thứ mà `STALE_CREATING_MINUTES` tồn tại để thấy.
+       */
       waitReady: (_cred, r): Promise<void> => {
-        if (!cloud.pollReady(r.id)) throw new Error(`${r.id} chưa READY`);
-        return Promise.resolve();
+        for (let attempt = 0; attempt < SIM_WAIT_READY_MAX_POLLS; attempt += 1) {
+          if (cloud.pollReady(r.id)) return Promise.resolve();
+        }
+        throw new Error(
+          `${r.id} chưa READY sau ${String(SIM_WAIT_READY_MAX_POLLS)} lần poll`,
+        );
       },
 
       delete: (_cred, r): Promise<void> => {

@@ -28,9 +28,9 @@ runLedgerContract(
  * số phép" là một test đỏ chứ không phải một dòng biến mất trong diff.
  */
 describe("meta — bộ hợp đồng Ledger", () => {
-  it("có đúng 16 phép, tên không trùng", () => {
-    expect(LEDGER_CONTRACT_CHECKS).toHaveLength(16);
-    expect(new Set(LEDGER_CONTRACT_CHECKS.map((c) => c.name)).size).toBe(16);
+  it("có đúng 18 phép, tên không trùng", () => {
+    expect(LEDGER_CONTRACT_CHECKS).toHaveLength(18);
+    expect(new Set(LEDGER_CONTRACT_CHECKS.map((c) => c.name)).size).toBe(18);
   });
 
   it("mọi phép đều có thân hàm thật, không phép nào rỗng", () => {
@@ -55,6 +55,7 @@ describe("meta — bộ hợp đồng Ledger", () => {
       markDeleting: () => Promise.resolve(),
       markDeleted: () => Promise.resolve(),
       markOrphanSuspected: () => Promise.resolve(),
+      markRecreating: () => Promise.resolve(),
       byKey: () => Promise.resolve(null),
       rowsOf: () => Promise.resolve([]),
     };
@@ -68,12 +69,12 @@ describe("meta — bộ hợp đồng Ledger", () => {
       }
     }
     /**
-     * Con số CHÍNH XÁC, không phải một ngưỡng lỏng: 14 trong 16. Hai phép còn xanh có lý
+     * Con số CHÍNH XÁC, không phải một ngưỡng lỏng: 16 trong 18. Hai phép còn xanh có lý
      * do đúng và đã soát — "byKey trả null cho khoá không có" (sổ luôn-đồng-ý trả null,
      * đó là hành vi ĐÚNG) và "lý do của ORPHAN_SUSPECTED không bị nuốt" (chỉ khẳng định
      * khi hiện thực có `orphanReasonOf`, một năng lực tuỳ chọn). Chốt số chính xác nghĩa
      * là làm yếu bất kỳ phép nào cũng là một test đỏ.
      */
-    expect(failed).toBe(14);
+    expect(failed).toBe(16);
   });
 });

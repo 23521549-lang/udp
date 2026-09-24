@@ -2423,11 +2423,23 @@ stateDiagram-v2
     CREATING --> CREATED : API trả về, ghi provider_id
     CREATED --> READY : waitReady() xong
     READY --> DELETING : teardown hoặc compensation
+    READY --> CREATING : khách xoá ngoài luồng, phải tạo lại [v4.10]
+    CREATED --> CREATING : đã tạo nhưng tra lại không còn [v4.10]
     CREATING --> DELETING : compensation hàng chưa xong [v4.10]
     CREATED --> DELETING : compensation hàng chưa waitReady [v4.10]
     DELETING --> DELETED : delete() trả về, hoặc NOT_FOUND
     DELETING --> ORPHAN_SUSPECTED : delete() thất bại quá số lần thử
     CREATING --> ORPHAN_SUSPECTED : lookup() thấy tài nguyên nhưng không khớp sổ
+
+    note right of READY
+        [v4.10] Hai cạnh về `CREATING` là hệ quả
+        bắt buộc của hàng K7: bảng khôi phục nói
+        "khi resume tạo ⇒ tạo lại", nhưng bản v4.9
+        không có cạnh nào cho việc đó. Không có nó,
+        sổ giữ mãi `provider_id` của thứ khách đã
+        xoá, và teardown sau đó xoá một id không
+        tồn tại trong khi tài nguyên THẬT rò.
+    end note
 
     note right of CREATED
         [v4.10] CHỈ `READY` là xong. Trả sớm

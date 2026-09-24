@@ -119,6 +119,84 @@ export const LEDGER_CONTRACT_CHECKS: readonly LedgerCheck[] = [
     },
   },
   {
+    /**
+     * Hàng K7: khách xoá tài nguyên, lượt sau tạo lại với id MỚI.
+     *
+     * Phép này khẳng định đủ ba điều, vì thiếu một điều là vô hại trên giấy mà
+     * chính là lỗ rò: đi được từ `READY`, đi được từ `CREATED`, và `provider_id` cũ
+     * bị XOÁ. Giữ lại id cũ thì đường tra dự phòng RUN7 của lượt sau đi tìm một
+     * id đã chết, và teardown thì xoá nhầm ô trống.
+     */
+    name: "markRecreating đi được từ READY và từ CREATED, và XOÁ providerId (hàng K7)",
+    async run(makeLedger) {
+      const ledger = await newLedger(makeLedger);
+
+      const a = intentOf("a");
+      await ledger.intend(a);
+      await ledger.markCreated(a.idempotencyKey, "vpc-1");
+      await ledger.markReady(a.idempotencyKey);
+      await ledger.markRecreating(a.idempotencyKey, "khách xoá ngoài luồng");
+      const afterReady = await ledger.byKey(a.idempotencyKey);
+      assert(
+        afterReady?.status === "CREATING",
+        `từ READY phải về CREATING, thấy ${String(afterReady?.status)}`,
+      );
+      assert(
+        afterReady?.providerId === null,
+        `provider_id cũ phải bị xoá, thấy ${String(afterReady?.providerId)}`,
+      );
+
+      const b = intentOf("b");
+      await ledger.intend(b);
+      await ledger.markCreated(b.idempotencyKey, "subnet-1");
+      await ledger.markRecreating(b.idempotencyKey, "khách xoá ngoài luồng");
+      const afterCreated = await ledger.byKey(b.idempotencyKey);
+      assert(
+        afterCreated?.status === "CREATING",
+        `từ CREATED phải về CREATING, thấy ${String(afterCreated?.status)}`,
+      );
+
+      /** Và lượt tạo lại ghi được id MỚI — điểm đến thực của cả đường này */
+      await ledger.markCreated(a.idempotencyKey, "vpc-2");
+      const recreated = await ledger.byKey(a.idempotencyKey);
+      assert(
+        recreated?.providerId === "vpc-2",
+        `phải mang id mới, thấy ${String(recreated?.providerId)}`,
+      );
+    },
+  },
+  {
+    /**
+     * `markRecreating` là một cửa hẹp, không phải một lối tắt về `CREATING`.
+     *
+     * Nếu nó đi được từ `DELETED` hay `ORPHAN_SUSPECTED` thì hai trạng thái đó không
+     * còn là cuối nữa, và bảo đảm "mọi hàng hội tụ" của I31 mất đáy.
+     */
+    name: "markRecreating KHÔNG đi được từ DELETED hay ORPHAN_SUSPECTED",
+    async run(makeLedger) {
+      const ledger = await newLedger(makeLedger);
+
+      const a = intentOf("a");
+      await ledger.intend(a);
+      await ledger.markCreated(a.idempotencyKey, "vpc-1");
+      await ledger.markReady(a.idempotencyKey);
+      await ledger.markDeleting(a.idempotencyKey);
+      await ledger.markDeleted(a.idempotencyKey);
+      await expectThrows(
+        () => ledger.markRecreating(a.idempotencyKey, "không được"),
+        "markRecreating từ DELETED phải ném",
+      );
+
+      const b = intentOf("b");
+      await ledger.intend(b);
+      await ledger.markOrphanSuspected(b.idempotencyKey, "mất dấu");
+      await expectThrows(
+        () => ledger.markRecreating(b.idempotencyKey, "không được"),
+        "markRecreating từ ORPHAN_SUSPECTED phải ném",
+      );
+    },
+  },
+  {
     name: "markCreated gắn providerId vào hàng ĐÃ CÓ, không tạo hàng mới (cách K3 được đóng)",
     async run(makeLedger) {
       const ledger = await newLedger(makeLedger);

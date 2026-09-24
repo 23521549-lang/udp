@@ -133,66 +133,87 @@ export const CLOUD_FIXTURE: CloudFixture = {
 export const CRASH_POINTS: readonly {
   id: string;
   tier: "both" | "child-only";
-  /** Pha của runner mà ô này giết */
+  /**
+   * Hai HÌNH DẠNG khác nhau, và gộp chúng lại là bỏ qua một nửa bảng §4.5.
+   *
+   * - `kill`: tiến trình chết ở giữa. Lượt sau phải tiếp tục được từ sổ và tag.
+   * - `perturb`: KHÁCH sửa tài nguyên ngoài luồng (xoá tài nguyên, xoá tag). Không có tiến
+   *   trình nào chết; điều cần khẳng định là hệ thống **hội tụ** về trạng thái mong muốn.
+   *
+   * K7 và K8 là `perturb`: bảng §4.5 xếp chúng cùng chỗ với các điểm kill, nhưng cơ chế
+   * hoàn toàn khác — và một driver chỉ biết giết tiến trình sẽ không chạy được hai ô đó.
+   */
+  mode: "kill" | "perturb";
+  /** Pha của runner mà ô này tác động */
   phase: string;
   why: string;
 }[] = [
   {
     id: "K1",
+    mode: "kill",
     tier: "both",
     phase: "before-intend",
     why: "crash trước khi ghi sổ: không có hàng, lookup rồi create bình thường",
   },
   {
     id: "K2",
+    mode: "kill",
     tier: "both",
     phase: "after-intend",
     why: "đã ghi sổ, chưa gọi API: lookup theo tag không thấy thì create",
   },
   {
     id: "K3",
+    mode: "kill",
     tier: "child-only",
     phase: "after-create-commit",
     why: "API đã trả về nhưng chưa ghi provider_id — ô Terraform thua",
   },
   {
     id: "K4",
+    mode: "kill",
     tier: "both",
     phase: "before-wait-ready",
     why: "giữa create và waitReady: lookup xác nhận còn, gọi lại waitReady",
   },
   {
     id: "K5",
+    mode: "kill",
     tier: "both",
     phase: "after-wait-ready",
     why: "giữa các step: tiếp từ step kế tiếp, không làm lại việc đã xong",
   },
   {
     id: "K6",
+    mode: "kill",
     tier: "child-only",
     phase: "before-delete",
     why: "giữa compensation: thứ tự ngược dựng lại từ steps, không từ sổ",
   },
   {
     id: "K7",
+    mode: "perturb",
     tier: "both",
     phase: "after-lookup",
     why: "khách xoá tài nguyên ngoài luồng: hội tụ về trạng thái mong muốn",
   },
   {
     id: "K8",
+    mode: "perturb",
     tier: "both",
     phase: "before-lookup",
     why: "khách xoá tag udp.key: đường dự phòng theo provider_id",
   },
   {
     id: "K9",
+    mode: "kill",
     tier: "child-only",
     phase: "after-create-respond",
     why: "mất lease: worker cũ bị fencing chặn ở lần ghi kế tiếp",
   },
   {
     id: "K10",
+    mode: "kill",
     tier: "child-only",
     phase: "after-mark-created",
     why: "mất sạch sổ: rebuildLedgerFromCloud phải hội tụ được",

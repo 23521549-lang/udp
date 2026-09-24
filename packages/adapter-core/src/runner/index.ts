@@ -39,6 +39,21 @@ export interface Ledger {
   intend(intent: LedgerIntent): Promise<void>;
   /** `CREATING → CREATED`, gắn `provider_id` vào hàng ĐÃ CÓ (đây là cách K3 được đóng) */
   markCreated(idempotencyKey: string, providerId: string): Promise<void>;
+  /**
+   * `READY | CREATED → CREATING`, và **xoá `provider_id`** — cửa riêng cho hàng K7.
+   *
+   * Khách xoá tài nguyên ngoài luồng: §4.5 nói "khi resume tạo ⇒ tạo lại", nên lượt
+   * sau tạo một tài nguyên MỚI với id mới. Không có cửa này, hàng vẫn `READY` nên
+   * `markCreated` bị bỏ qua và sổ giữ mãi id của thứ đã chết: teardown sau đó xoá một
+   * id không tồn tại trong khi tài nguyên THẬT rò — đúng loại lỗi chỉ lộ ra khi
+   * hoá đơn về.
+   *
+   * Nó KHÔNG phải một `intend` nới lỏng. `intend` vẫn ném trên hàng `READY`, vì "đang
+   * tạo lại thứ đã tồn tại" là lỗi thạt cần thấy. Ở đây runner đã CHỨNG MINH thứ
+   * đó không còn (tra theo tag `absent` **và** tra theo `provider_id` cũ cũng
+   * `absent`), và `reason` ghi lại chứng minh đó.
+   */
+  markRecreating(idempotencyKey: string, reason: string): Promise<void>;
   markReady(idempotencyKey: string): Promise<void>;
   markDeleting(idempotencyKey: string): Promise<void>;
   markDeleted(idempotencyKey: string): Promise<void>;
