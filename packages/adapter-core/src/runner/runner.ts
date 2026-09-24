@@ -1,6 +1,7 @@
 import { LOOKUP_INDETERMINATE } from "@udp/config/constants";
 import type { CreatedResource, ResourceQuota, ResourceStep } from "../cloud.js";
 import type { CloudProvider, ResolvedCredential } from "../credential.js";
+import { quotaViolations } from "../guardrails.js";
 import type { ProvisionStep } from "../ledger.js";
 import {
   LookupIndeterminateError,
@@ -366,17 +367,22 @@ export function quotaRejection(plan: {
   plannedNodes?: number;
   plannedLoadBalancers?: number;
 }): string | null {
-  const { quota } = plan;
-  if (plan.plannedNodes !== undefined && plan.plannedNodes > quota.maxNodes) {
-    return `kế hoạch cần ${String(plan.plannedNodes)} node, trần của project là ${String(quota.maxNodes)}`;
-  }
-  if (
-    plan.plannedLoadBalancers !== undefined &&
-    plan.plannedLoadBalancers > quota.maxLoadBalancers
-  ) {
-    return `kế hoạch cần ${String(plan.plannedLoadBalancers)} load balancer, trần là ${String(quota.maxLoadBalancers)}`;
-  }
-  return null;
+  const violations = quotaViolations(
+    {
+      ...(plan.plannedNodes === undefined ? {} : { nodes: plan.plannedNodes }),
+      ...(plan.plannedLoadBalancers === undefined
+        ? {}
+        : { loadBalancers: plan.plannedLoadBalancers }),
+    },
+    plan.quota,
+  );
+  if (violations.length === 0) return null;
+  return violations
+    .map(
+      (v) =>
+        `${v.dimension}: kế hoạch cần ${String(v.planned)}, trần của project là ${String(v.limit)}`,
+    )
+    .join("; ");
 }
 
 function describe(err: unknown): string {

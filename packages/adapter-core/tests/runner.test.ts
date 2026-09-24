@@ -349,7 +349,14 @@ describe("RUN10 — quota kiểm TRƯỚC mọi lời gọi cloud", () => {
 
   it("quotaRejection là hàm THUẦN, dùng lại được ở estimateCost", () => {
     expect(quotaRejection({ quota: QUOTA, plannedNodes: 3 })).toBeNull();
-    expect(quotaRejection({ quota: QUOTA, plannedNodes: 4 })).toContain("node");
+    /**
+     * Khẳng định theo TÊN CHIỀU, không theo một từ trong câu: `quotaRejection` nay uỷ
+     * quyền cho `quotaViolations`, và thông điệp mang tên chiều (`maxNodes`) để người đọc
+     * biết chiều nào bị vượt thay vì phải suy từ văn.
+     */
+    expect(quotaRejection({ quota: QUOTA, plannedNodes: 4 })).toContain(
+      "maxNodes",
+    );
     expect(quotaRejection({ quota: QUOTA })).toBeNull();
   });
 });

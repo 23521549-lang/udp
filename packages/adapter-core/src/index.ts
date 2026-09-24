@@ -89,3 +89,23 @@ export {
   PROVISIONED_RESOURCE_ROW_FIELDS,
   PROVISIONED_RESOURCE_ROW_OMITTED,
 } from "./ledger.js";
+
+export type {
+  CostEstimateProblem,
+  ExpiryDecision,
+  OrphanReport,
+  PlannedUsage,
+  ProjectExpiry,
+  QuotaViolation,
+} from "./guardrails.js";
+export {
+  classifyOrphans,
+  EXPIRY_WARN_HOURS,
+  expiryDecision,
+  MANDATORY_COST_ITEMS,
+  ORPHAN_HOURLY_USD,
+  ORPHAN_PRICING_AS_OF,
+  PRICING_MAX_AGE_DAYS,
+  quotaViolations,
+  validateCostEstimate,
+} from "./guardrails.js";
