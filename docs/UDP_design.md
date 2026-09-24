@@ -1037,8 +1037,8 @@ CREATE UNIQUE INDEX idx_project_name_per_owner
 | encrypted_dek     | TEXT      | NOT NULL                                 | **[NEW]** DEK riêng của project, đã bọc bởi KEK — envelope encryption |
 | kek_version       | INTEGER   | NOT NULL, DEFAULT 1                      | **[NEW]** Phiên bản KEK dùng để bọc DEK — cho phép rotation không downtime |
 | auth_kind         | ENUM        | NOT NULL                               | **[NEW v4]** `AWS_ROLE`, `AWS_KEY`, `GCP_WIF`, `GCP_KEY`, `AZURE_FEDERATED`, `AZURE_SECRET` — để Portal cảnh báo khi dùng khóa tĩnh. **Enum chứ không phải bảng danh mục:** tập này bị chặn trên bởi `CloudProvider` vốn đã là enum, nên thêm một nhà cung cấp đã cần migration — một bảng riêng không tránh được migration nào mà chỉ thêm một join. Chỉ số "0 file" của C2 (I28) nói về Domain Adapter, không nói về Cloud Adapter |
-| nonce             | CHAR(24)  | NOT NULL                                 | IV 96-bit (base64) của AES-GCM, sinh ngẫu nhiên mỗi lần ghi |
-| auth_tag          | CHAR(24)  | NOT NULL                                 | GCM authentication tag — phát hiện ciphertext bị sửa đổi |
+| nonce             | CHAR(24)  | NOT NULL                                 | IV 96-bit của AES-GCM, sinh ngẫu nhiên mỗi lần ghi. **[v4.10] Lưu HEX**, không phải base64: 12 byte hex là đúng 24 ký tự, còn base64 chỉ 16 nên `CHAR(24)` đệm 8 dấu cách và nonce đọc lại sai — GCM vỡ lúc giải mã, im lặng |
+| auth_tag          | CHAR(24)  | NOT NULL                                 | GCM authentication tag — phát hiện ciphertext bị sửa đổi. **[v4.10] Lưu BASE64**: 16 byte base64 là đúng 24 ký tự, còn hex là 32 nên tràn cột. Hai cột cạnh nhau buộc HAI kiểu mã hoá khác nhau, và `authTagLength` chốt 16 byte lúc giải mã |
 | dek_version       | INTEGER   | NOT NULL, DEFAULT 1                      | **[NEW v4]** Cho phép xoay DEK (re-encrypt payload) độc lập với xoay KEK |
 | fingerprint       | CHAR(64)  | NOT NULL                                 | **[NEW]** SHA-256 của `accessKeyId`/`clientId`/`client_email` — so sánh credential mà không giải mã |
 | last_validated_at | TIMESTAMPTZ | NULLABLE                                 | **[NEW]** Lần cuối `validateCredential()` thành công |
@@ -2006,10 +2006,12 @@ interface ProvisionClusterParams {
   nodeSize: "small" | "medium" | "large";
   nodeCount: number;
   quota: ResourceQuota; // adapter PHẢI reject nếu vượt trần
+  /** [v4.10] Vùng đích. Trước đây thiếu, nên không phép kiểm nào chốt được `CreatedResource.region` */
+  region: string;
   /** Idempotency: cùng key ⇒ adapter trả về tài nguyên đã tạo, không tạo mới */
   idempotencyKey: string;
   /** Tag/label gắn vào mọi tài nguyên để truy vết và dọn dẹp */
-  tags: Record<string, string>; // { "udp.project": id, "udp.owner": email, "udp.ttl": iso, "udp.key": idempotencyKey }
+  tags: Record<string, string>; // [v4.10] BỐN khoá bắt buộc: udp.project, udp.key, udp.owner, udp.managed="true"; cộng udp.ttl CHỈ khi project có expires_at (§4.5)
   /** [v4 — ADR-06] Địa chỉ egress của UDP để giới hạn API endpoint public */
   controlPlaneCidrs: string[];
 }
@@ -2032,6 +2034,18 @@ interface ProvisionNetworkParams {
   projectId: string;
   networkName: string;
   cidrBlock: string;
+  /**
+   * [v4.10] Năm trường dưới đây trước v4.10 KHÔNG có, nên sáu `kind` của bước NETWORK
+   * (vpc, subnet, internet-gateway, nat-gateway, elastic-ip, route-table) — chính những
+   * kind mà lưới khôi phục K1..K10 chạy trên — không có đường nhận tag, không có trần
+   * quota, và không có `idempotencyKey`. Tức quy tắc 1 của §4.5 không hiện thực được ở
+   * đúng bước đầu tiên của mọi lần provision.
+   */
+  region: string;
+  quota: ResourceQuota;
+  idempotencyKey: string;
+  tags: Record<string, string>;
+  controlPlaneCidrs: string[];
 }
 
 interface NetworkInfo {
@@ -2114,6 +2128,12 @@ interface CloudAdapter {
    *
    * Dùng ở ba chỗ: khôi phục sau sự cố database, tiếp quản project mà ai đó đã tạo tay,
    * và điểm crash K10 của §4.5 — ô đối chứng trực tiếp với state file ở E15.
+   *
+   * [v4.10] **Quét tag THẤT BẠI không phải là "cloud rỗng".** Lỗi mạng, hết quyền, hay
+   * phân trang dở phải trả `status: "FAILED"`, và runner **không** reconcile. Coi một lần
+   * quét lỗi là "không có gì trên cloud" sẽ tạo lại TOÀN BỘ hạ tầng của khách — một lỗi
+   * tiêu tiền thật trong tài khoản người khác, và nó không lộ ra ở bất kỳ test nào chỉ
+   * kiểm đường thành công.
    */
   rebuildLedgerFromCloud(
     credential: ResolvedCredential,
@@ -2132,6 +2152,22 @@ interface CloudAdapter {
   ): Promise<AdapterResult<{ deleted: string[]; failed: string[] }>>;
 }
 
+/**
+ * [v4.10] Kết quả tra cứu — BA trạng thái, không phải `CreatedResource | null`.
+ *
+ * `null` không phân biệt được "thật sự không có" với "không tra được". Với tagging API
+ * nhất quán cuối (`tag:GetResources` của AWS), một tag vừa gắn có thể chưa thấy trong
+ * vài giây; runner đọc `null` sẽ `create()` lần hai và **tạo trùng** — đúng chế độ hỏng
+ * mà điểm crash K3 sinh ra để chặn. §4.5 quy tắc 3 đã phát biểu sự phân biệt này bằng
+ * văn xuôi cho `lookupById`, nhưng kiểu dữ liệu không biểu diễn được nó.
+ *
+ * Runner **bị cấm** gọi `create()` khi kết quả là `indeterminate`.
+ */
+type LookupOutcome =
+  | { kind: "found"; resource: CreatedResource }
+  | { kind: "absent" }
+  | { kind: "indeterminate"; reason: string };
+
 /** [v4 — ADR-07] Một bước tạo tài nguyên; runner chung điều phối và ghi sổ */
 interface ResourceStep {
   kind: CreatedResourceKind;
@@ -2141,15 +2177,22 @@ interface ResourceStep {
    * Đường tra cứu CHÍNH: theo tag `udp.key`. Chạy TRƯỚC mọi `create()` (ADR-08 quy tắc 2).
    * Với API không cho gắn tag lúc tạo, adapter tra theo tên tất định — khai ở `lookupBy`.
    */
-  lookup(cred: ResolvedCredential): Promise<CreatedResource | null>;
+  lookup(cred: ResolvedCredential): Promise<LookupOutcome>;
   /**
    * [v4 — §4.5 quy tắc 3] Đường tra cứu DỰ PHÒNG khi khách đã xóa tag nhưng sổ còn id.
    * Hai đường độc lập nên hỏng một vẫn còn một; đây là câu trả lời cho điểm crash K8.
-   * Trả `null` nghĩa là tài nguyên **thật sự không còn**, không phải "không tra được".
+   * `absent` nghĩa là tài nguyên **thật sự không còn**, không phải "không tra được" —
+   * [v4.10] sự phân biệt đó nay nằm trong KIỂU (`LookupOutcome`) chứ không chỉ trong câu này.
    */
-  lookupById(cred: ResolvedCredential, providerId: string): Promise<CreatedResource | null>;
+  lookupById(cred: ResolvedCredential, providerId: string): Promise<LookupOutcome>;
   /** Adapter khai mình dùng đường nào; contract test kiểm đúng đường đó hoạt động */
   readonly lookupBy: "tag" | "deterministic-name";
+  /**
+   * [v4.10] Khoá của `prior` là `ResourceStep.name` của một step ĐỨNG TRƯỚC trong cùng
+   * danh sách — đây là cách `clusterSteps(params, network)` nối hai bước, nên nó là hợp
+   * đồng, không phải chi tiết cài đặt. Bộ test hợp đồng khẳng định mọi khoá `prior` mà
+   * adapter đọc đều là `name` của một step trước nó.
+   */
   create(cred: ResolvedCredential, prior: Record<string, CreatedResource>): Promise<CreatedResource>;
   waitReady(cred: ResolvedCredential, r: CreatedResource): Promise<void>;   // poll có timeout
   delete(cred: ResolvedCredential, r: CreatedResource): Promise<void>;      // NOT_FOUND = ok
@@ -2172,6 +2215,37 @@ interface CostEstimate {
   pricingAsOf: string;          // [v4] ngày của bảng giá tĩnh
 }
 
+/**
+ * [v4.10] Một hàng của sổ `ProvisionedResource` ở dạng DTO thuần.
+ *
+ * Trước v4.10 kiểu này được DÙNG ở `rebuildLedgerFromCloud` mà chưa từng được định nghĩa
+ * ở đâu trong tài liệu — tức kiểu trả về của hàm mang mệnh đề trung tâm của C3 là một cái
+ * tên trống.
+ *
+ * Khớp từng cột của bảng (§2.2) với hai ngoại lệ, cả hai có lý lẽ:
+ *  - KHÔNG có `jobId`: ADR-08 nói mọi cột suy ra được từ tag **trừ** `job_id`. Cột đó là
+ *    NOT NULL với khoá ngoại Restrict, nên K10 (mất sạch sổ) phải tách hai biến thể —
+ *    K10a nối lại job cũ, K10b tạo một job tổng hợp có đánh dấu tường minh, để lịch sử
+ *    mất MỘT CÁCH NHÌN THẤY ĐƯỢC thay vì bị bịa.
+ *  - KHÔNG có `managedByK8s`: trong sổ tính chất đó là `step = 'K8S_MANAGED'`.
+ */
+interface ProvisionedResourceRow {
+  projectId: string;
+  step: "NETWORK" | "CLUSTER" | "DOMAINS" | "K8S_MANAGED";
+  kind: CreatedResourceKind;
+  idempotencyKey: string;
+  providerId: string | null;
+  provider: CloudProvider;
+  region: string;
+  status:
+    | "CREATING"
+    | "CREATED"
+    | "READY"
+    | "DELETING"
+    | "DELETED"
+    | "ORPHAN_SUSPECTED";
+}
+
 /** [v4] Danh sách kind ĐỦ — v3 chỉ có 6 loại và thiếu đúng những thứ hay rò tiền nhất */
 type CreatedResourceKind =
   // network
@@ -2190,6 +2264,27 @@ interface CreatedResource {
   provider: CloudProvider;
   region: string;
   createdAt: string;
+  /**
+   * [v4.10] Tag ĐỌC LẠI TỪ CLOUD — không phải tag ta định gắn.
+   *
+   * Trước v4.10 trường này không có, trong khi `listTaggedResources()` trả
+   * `CreatedResource[]` và là ĐẦU VÀO DUY NHẤT của `rebuildLedgerFromCloud`, mà hàm đó
+   * phải đọc `udp.key` của từng tài nguyên để dựng lại hàng sổ (ADR-08). Không có tag
+   * thì mệnh đề trung tâm của C3 không hiện thực được, và cũng không lọc được tài nguyên
+   * của project khác hay tài nguyên khách tự tạo trong cùng tài khoản.
+   *
+   * BẮT BUỘC, không optional: một `CreatedResource` không mang tag là một tài nguyên mà
+   * `lookup()` không tra lại được, tức đúng chế độ hỏng K3.
+   */
+  tags: Readonly<Record<string, string>>;
+  /**
+   * Tài nguyên do Kubernetes sinh (ELB/ENI/EBS), phát hiện qua tag `kubernetes.io/cluster/*`.
+   *
+   * [v4.10] Đây là kết quả PHÁT HIỆN từ cloud. Trong SỔ, tính chất này được biểu diễn
+   * bằng `step = 'K8S_MANAGED'` (§2.2) chứ không bằng một cột boolean — bảng
+   * `provisioned_resources` không có cột nào như vậy, và §4.5 bước 1 nói "ghi vào sổ với
+   * managedByK8s = true" là một câu không hiện thực được nếu không thêm migration.
+   */
   managedByK8s?: boolean;
 }
 ```
@@ -2217,7 +2312,7 @@ flowchart LR
     subgraph WRITE["Ghi credential"]
         A1["Developer chọn họ credential trên Portal:\nFEDERATED (khuyến nghị) hoặc STATIC"]
         A2["Sinh DEK ngẫu nhiên 256-bit\ncho riêng project này"]
-        A3["AES-256-GCM encrypt payload bằng DEK\nAAD = credentialId | projectId | kek_version\n→ ciphertext + nonce + authTag"]
+        A3["AES-256-GCM encrypt payload bằng DEK\nAAD = credentialId | projectId | dek_version\n→ ciphertext + nonce + authTag"]
         A4["Bọc DEK bằng KEK\nKMS hoặc env var\n→ encrypted_dek + kek_version"]
         A5["Lưu DB\nKhông chỗ nào có plaintext"]
         A1 --> A2 --> A3 --> A4 --> A5
@@ -2235,13 +2330,33 @@ flowchart LR
 
 | Khía cạnh | Thiết kế |
 | --------- | -------- |
-| Thuật toán | AES-256-GCM (có xác thực — phát hiện ciphertext bị sửa), nonce 96-bit **sinh mới mỗi lần ghi**, **AAD = `credentialId \| projectId \| kek_version`** [v4] — không có AAD, ciphertext hợp lệ của bản ghi A có thể bị hoán đổi sang bản ghi B mà GCM không phát hiện |
+| Thuật toán | AES-256-GCM (có xác thực — phát hiện ciphertext bị sửa), nonce 96-bit **sinh mới mỗi lần ghi**, **AAD = `credentialId \| projectId \| dek_version`** [v4.10 — trước đây là `kek_version`, xem dòng Rotation] — không có AAD, ciphertext hợp lệ của bản ghi A có thể bị hoán đổi sang bản ghi B mà GCM không phát hiện |
 | DEK | Một Data Encryption Key **riêng cho mỗi project**. Lộ một DEK không làm lộ project khác. `dek_version` cho phép xoay DEK (re-encrypt payload của một project) [v4] |
 | KEK | Lấy từ AWS KMS / GCP KMS / Azure Key Vault ở môi trường thật; từ biến môi trường `UDP_KEK` ở môi trường lab. `kek_version` cho phép **rotate KEK mà không cần giải mã lại toàn bộ dữ liệu** — chỉ bọc lại DEK |
 | Rotation | Job `rotate-kek` đọc từng bản ghi, unwrap DEK bằng KEK cũ, wrap bằng KEK mới, tăng `kek_version`. Chạy được trong lúc hệ thống đang phục vụ |
 | Vòng đời plaintext | Chỉ tồn tại trong RAM của worker đang chạy job, dưới dạng `Buffer`, tối đa 15 phút với STATIC (`ResolvedCredential.expiresAt`), không ghi ra đĩa, không vào log, không vào error message trả về FE. **Giới hạn thật:** `Buffer.fill(0)` xóa được, nhưng bất kỳ `toString()` trung gian nào đều để lại bản sao cho GC — adapter bị cấm chuyển secret sang string (lint rule) [v4] |
 | So sánh không giải mã | `fingerprint` = SHA-256 của định danh public (roleArn / accessKeyId / serviceAccountEmail / clientId) — dùng để trả lời "credential này có phải cái tôi đã nhập lần trước không" mà không cần mở khóa |
 | Ghi vết | Mọi thao tác tạo/đổi/xóa credential ghi `AuditLog` với `before`/`after` **chỉ chứa fingerprint và metadata**, không chứa giá trị |
+
+**[v4.10] Vì sao AAD dùng `dek_version` chứ không phải `kek_version`:**
+
+Hai dòng ngay trên bất đồng với nhau. Dòng KEK tuyên bố xoay KEK "không cần giải mã lại
+toàn bộ dữ liệu — chỉ bọc lại DEK", còn dòng Rotation tăng `kek_version`. Nếu AAD chứa
+`kek_version` thì việc tăng nó **đổi AAD**, nên `auth_tag` của payload cũ không còn khớp:
+sau lần xoay KEK đầu tiên, **mọi credential của mọi tenant không giải mã được**. Lỗi này
+chỉ lộ ra ở production, vào đúng lúc người ta đang xoay khoá vì nghi khoá bị lộ.
+
+Đổi sang `dek_version` giữ nguyên tuyên bố của dòng KEK — `encrypted_payload` và `nonce`
+không đổi một byte khi xoay KEK — và **thêm** được một tính chất mà `kek_version` không
+có: chống phát lại một payload cũ sau khi DEK đã được xoay. Chống hoán đổi ciphertext giữa
+hai hàng vẫn do `credentialId | projectId` lo, không phải do trường thứ ba.
+
+Không cần migration: cột `dek_version INTEGER NOT NULL DEFAULT 1` đã có trong bảng.
+
+Guard tương ứng ở `env.ts`: **mọi** `v` trong `[1, UDP_KEK_VERSION]` đều phải có biến
+`UDP_KEK_V<v>`. Guard yếu hơn — chỉ đòi biến của version hiện tại — làm một hệ thống đặt
+`UDP_KEK_VERSION = 2` mà thiếu `UDP_KEK_V1` khởi động xanh rồi mất mọi hàng còn
+`kek_version = 1`, đúng hạng lỗi mà cả mục này sinh ra để chặn.
 
 **Federation — UDP không giữ bí mật dài hạn của khách [v4]:**
 
@@ -2296,9 +2411,17 @@ stateDiagram-v2
     CREATING --> CREATED : API trả về, ghi provider_id
     CREATED --> READY : waitReady() xong
     READY --> DELETING : teardown hoặc compensation
+    CREATING --> DELETING : compensation hàng chưa xong [v4.10]
+    CREATED --> DELETING : compensation hàng chưa waitReady [v4.10]
     DELETING --> DELETED : delete() trả về, hoặc NOT_FOUND
     DELETING --> ORPHAN_SUSPECTED : delete() thất bại quá số lần thử
     CREATING --> ORPHAN_SUSPECTED : lookup() thấy tài nguyên nhưng không khớp sổ
+
+    note right of CREATED
+        [v4.10] CHỈ `READY` là xong. Trả sớm
+        ở `CREATED` làm K4 sai âm thầm mà
+        lưới vẫn xanh 9/10 ô.
+    end note
 
     note right of CREATING
         Trạng thái NGUY HIỂM NHẤT:
@@ -2322,6 +2445,7 @@ stateDiagram-v2
 | - | ------------------- | ------------------- | ------------- | ---------------- | -------------------------- |
 | **K1** | Trước khi ghi sổ | Không có hàng | Chạy `lookup()`; không thấy thì `create()` bình thường | Không tạo trùng | Giống nhau, an toàn |
 | **K2** | **Sau khi ghi sổ, trước khi gọi API** | `CREATING`, `provider_id = NULL` | `lookup()` theo tag; không thấy thì `create()` | Không tạo trùng | State chưa ghi gì; refresh không thấy; an toàn |
+| **K2b** | **`lookup()` trả `indeterminate`** (cửa sổ lan truyền tag của API tagging nhất quán cuối) | `CREATING`, `provider_id = NULL` | **Cấm `create()`.** Retry có backoff tới `LOOKUP_INDETERMINATE_MAX_ATTEMPTS`; hết lượt thì job sang `FAILED` và hàng **giữ `CREATING`** | Không tạo trùng, và lượt job sau vẫn hội tụ được về `READY` — hàng ở `CREATING` đúng là trạng thái mà K2/K3 đã xử lý được khi resume. **Không** đặt `ORPHAN_SUSPECTED`: trạng thái đó không có cạnh ra, nên một blip mạng sẽ khoá step vĩnh viễn và vỡ chính yêu cầu (b) của I31 | Refresh đọc `null` rồi `apply` tạo tài nguyên thứ hai — cùng chế độ hỏng, không có chỗ nào phân biệt "chưa thấy" với "không có" |
 | **K3** | **Sau khi API trả về, trước khi ghi `provider_id`** | `CREATING`, `provider_id = NULL` | `lookup()` **thấy** tài nguyên, gắn `provider_id` vào hàng đã có, chuyển `CREATED` | **Không tạo trùng** | **Đây là ô Terraform thua:** tài nguyên tồn tại nhưng không có trong state. `apply` kế tiếp tạo **tài nguyên thứ hai**, hoặc lỗi `AlreadyExists` phải `import` bằng tay |
 | **K4** | Giữa `create()` và `waitReady()` | `CREATED` | `lookup()` xác nhận còn, gọi lại `waitReady()` | Idempotent | Tương đương |
 | **K5** | Giữa các step | Các hàng trước là `READY` | Tiếp từ step kế tiếp | Không làm lại việc đã xong | Tương đương |
@@ -2365,7 +2489,7 @@ Một `Service` kiểu `LoadBalancer` làm cloud-controller-manager tạo **ELB 
 
 UDP xử lý bằng ba bước, và đây là ví dụ cụ thể nhất cho luận điểm *"state file không biết đủ"*:
 
-1. `listTaggedResources()` quét theo tag của cluster để **phát hiện** ELB, ENI, EBS mang tag do Kubernetes gắn (`kubernetes.io/cluster/<name>`), ghi vào sổ với `managedByK8s = true` và `kind` tương ứng
+1. `listTaggedResources()` quét theo tag của cluster để **phát hiện** ELB, ENI, EBS mang tag do Kubernetes gắn (`kubernetes.io/cluster/<name>`), ghi vào sổ **với `step = 'K8S_MANAGED'`** và `kind` tương ứng ([v4.10] bảng `provisioned_resources` không có cột boolean nào cho việc này; `CreatedResource.managedByK8s` là kết quả phát hiện từ cloud, còn trong sổ thì tính chất đó nằm ở `step`)
 2. Teardown xóa **workload trước** (Service, PVC), rồi **chờ** ELB, ENI, EBS thực sự biến mất khỏi cloud, rồi mới xóa network
 3. Thứ không biến mất sau timeout được đánh `ORPHAN_SUSPECTED` kèm chi phí ước tính, hiển thị ở `GET /admin/orphan-resources` — **không im lặng bỏ qua**
 
@@ -2377,6 +2501,36 @@ ADR-06 quyết định *cách* control plane vào cluster; mục này là interf
 
 ```typescript
 type ClusterAccessMode = "direct" | "agent";
+
+/**
+ * [v4.10] Cổng Kubernetes — TÁCH VERB ĐỌC/GHI Ở TẦNG KIỂU.
+ *
+ * Trước v4.10 `KubernetesClient` được dùng ở `getClient()` mà chưa từng được định nghĩa.
+ * Định nghĩa nó thành hai phương thức theo nhóm verb, không phải một client kiểu SDK, vì
+ * bất biến I32 chiều (c) nói hệ thống **không bao giờ** tự sửa drift. Cho hàm quét drift
+ * nhận `ReadOnlyKubernetesClient` biến điều đó thành tính chất của KIỂU: nó *không thể*
+ * gọi verb ghi. Đếm lời gọi trên một hiện thực giả vẫn giữ làm lớp thứ hai, nhưng một
+ * phép đếm chỉ bắt được lỗi sau khi nó xảy ra.
+ */
+type K8sReadVerb = "get" | "list" | "watch";
+type K8sWriteVerb =
+  | "create" | "update" | "patch" | "replace" | "delete" | "deletecollection" | "apply";
+
+interface ObjectRef {
+  apiVersion: string;
+  kind: string;
+  namespace?: string;
+  name?: string;
+  labelSelector?: string;
+}
+
+interface ReadOnlyKubernetesClient {
+  read<T>(verb: K8sReadVerb, ref: ObjectRef): Promise<T | null>;
+}
+
+interface KubernetesClient extends ReadOnlyKubernetesClient {
+  write(verb: K8sWriteVerb, ref: ObjectRef, body?: unknown): Promise<void>;
+}
 
 /** Danh tính bên gọi — quyết định SA nào được cấp (§12.2). KHÔNG do bên gọi tự khai */
 type ControlPlaneIdentity = "workload" | "traffic" | "tooling";
@@ -2550,6 +2704,34 @@ interface DomainAdapter {
 }
 
 /** [v4] CI/CD adapter mở rộng thêm phần webhook — v3 nhắc ở §8.3 nhưng không có trong interface */
+/**
+ * [v4.10] Hai kiểu dưới đây trước v4.10 được DÙNG ở `CicdDomainAdapter` mà chưa từng
+ * được định nghĩa, nên interface đó không dịch được.
+ */
+interface WebhookDeployEvent {
+  /** `toolId` của adapter đã phân tích, ví dụ `"github-actions"` */
+  provider: string;
+  repo: string;
+  /** Nhánh hoặc tag đã đẩy */
+  ref: string;
+  commitSha: string;
+  /** Tên environment đích, suy từ `ref` theo cấu hình Golden Path */
+  environment: string;
+  /** Image đã build, nếu payload có. Vắng nghĩa là pipeline chưa push */
+  imageRef?: string;
+  actor: string;
+}
+
+interface PipelineTemplateParams {
+  projectSlug: string;
+  environments: { name: string; isProduction: boolean }[];
+  /** Địa chỉ registry lấy từ `CapabilityBinding` của `registry.oci` */
+  registryRef: string;
+  /** Flag mà template gắn sẵn nhãn `ff` cho (§6.8) */
+  flagKeys: string[];
+  rolloutStrategy: "udp-driven" | "tool-driven";
+}
+
 interface CicdDomainAdapter extends DomainAdapter {
   verifySignature(headers: Record<string, string>, rawBody: Buffer, secret: Buffer): boolean;   // so sánh hằng thời gian
   parsePayload(rawBody: Buffer): WebhookDeployEvent;
@@ -6760,6 +6942,28 @@ Phần này không có trong v2. Hội đồng gần như chắc chắn sẽ h�
 
 ```typescript
 // tests/contract/domain-adapter.contract.ts
+/**
+ * [v4.10] Trước v4.10 `AdapterFixture` được dùng ở đây mà chưa từng được định nghĩa.
+ *
+ * Luật của nó: **khai rỗng thì phép kiểm ĐẢO CHIỀU, không biến mất.** `externalHosts: []`
+ * nghĩa là *mọi* lời gọi ra ngoài là đỏ; `quotaDimensions: []` nghĩa là adapter *phải*
+ * chạy được với quota toàn 0 **và** không được tiêu thụ chiều nào. Không có luật này thì
+ * một fixture rỗng là cách rẻ nhất để làm cả bộ hợp đồng xanh.
+ */
+interface AdapterFixture {
+  validConfig: DomainToolConfig;
+  invalidConfigs: readonly DomainToolConfig[];
+  externalHosts: readonly string[];
+  quotaDimensions: readonly (keyof ResourceQuota)[];
+  /** Prefix nhãn bỏ qua khi so drift — mỗi cái PHẢI kèm lý do, để danh sách không mọc rêu */
+  ignoredLabelPrefixes: readonly { prefix: string; reason: string }[];
+  /** Cách sửa tay trên cluster để chiều (a) của I32 có đối tượng */
+  driftMutations: readonly {
+    name: string;
+    apply: (c: KubernetesClient) => Promise<void>;
+  }[];
+}
+
 export function runDomainAdapterContract(
   adapter: DomainAdapter,
   fixture: AdapterFixture,
@@ -6819,7 +7023,26 @@ export function runDomainAdapterContract(
 
 ```typescript
 // tests/contract/cloud-adapter.contract.ts
-export function runCloudAdapterContract(adapter: CloudAdapter, env: LocalStackOrReal) {
+/**
+ * [v4.10] `LocalStackOrReal` được đổi tên thành `CloudContractEnv` và định nghĩa thật.
+ *
+ * Tên cũ nói môi trường chỉ có hai lựa chọn, trong khi điều làm bộ này là HỢP ĐỒNG chứ
+ * không phải một script đo là: cả bốn thứ dưới đây đều là cổng. `control` là cửa hậu tác
+ * động ngoài luồng (xoá tag, xoá tài nguyên, bơm lỗi) — trên LocalStack nó là SDK cloud
+ * thật, nên thân test không đổi một dòng khi đổi môi trường.
+ */
+interface CloudContractEnv {
+  readonly driver: "in-process" | "child-process";
+  readonly ledger: () => Ledger;
+  readonly control: CloudControl;
+  /** Hằng số kỳ vọng VIẾT TAY — không suy từ `steps.length` của chính adapter */
+  readonly fixture: CloudFixture;
+}
+
+export function runCloudAdapterContract(
+  adapter: CloudAdapter,
+  env: CloudContractEnv,
+) {
   describe(adapter.providerId, () => {
 
     it("mọi ResourceStep khai lookupBy và đường đó thật sự tìm được tài nguyên", async () => {
@@ -6833,7 +7056,10 @@ export function runCloudAdapterContract(adapter: CloudAdapter, env: LocalStackOr
       // vẫn tìm thấy. Đây là điểm crash K8 của §4.5.
     });
 
-    it("create() gắn đủ 5 tag bắt buộc TRONG CÙNG lời gọi tạo", async () => {
+    it("create() gắn đủ tag bắt buộc TRONG CÙNG lời gọi tạo", async () => {
+      // [v4.10] BỐN khoá bắt buộc + `udp.ttl` CHỈ khi project có `expires_at`.
+      // Đòi đúng 5 khoá làm project `expiry_action = WARN` không đặt `expires_at`
+      // — mặc định của BYOC, hoàn toàn hợp lệ — hoặc đỏ, hoặc buộc gắn một tag bịa.
       // Kiểm bằng cách đọc lại tài nguyên ngay sau create(), trước mọi lời gọi khác.
       // Nếu adapter gắn tag bằng một lời gọi TagResource riêng, test này fail —
       // vì lời gọi riêng đó tạo ra một cửa sổ crash mới (§4.5 quy tắc 1).
