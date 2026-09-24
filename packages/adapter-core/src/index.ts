@@ -33,6 +33,7 @@ export type {
 } from "./cloud.js";
 export {
   CLOUD_ADAPTER_METHODS,
+  CREATED_RESOURCE_KINDS,
   CONDITIONAL_TTL_TAG_KEY,
   expectedTagKeys,
   REQUIRED_TAG_KEYS,
@@ -109,3 +110,18 @@ export {
   quotaViolations,
   validateCostEstimate,
 } from "./guardrails.js";
+
+export type {
+  TeardownBatch,
+  TeardownCloud,
+  TeardownOutcome,
+  WaitGoneResult,
+} from "./teardown.js";
+export {
+  discoverK8sManaged,
+  runTeardown,
+  TEARDOWN_TIER_OF_KIND,
+  teardownBatches,
+  teardownTierOf,
+  waitGone,
+} from "./teardown.js";

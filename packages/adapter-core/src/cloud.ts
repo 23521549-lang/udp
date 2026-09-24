@@ -58,6 +58,38 @@ export type CreatedResourceKind =
   | "k8s-eni";
 
 /**
+ * Đúng 22 giá trị của `CreatedResourceKind`, ở dạng chạy được.
+ *
+ * Kiểu TypeScript biến mất lúc chạy, nên "mọi kind đều được xếp bậc teardown" sẽ là một
+ * câu trong chú thích chứ không phải một phép kiểm. Một `kind` chưa xếp bậc sẽ bị xoá ở
+ * một thứ tự không xác định, và nếu nó giữ tham chiếu VPC thì bậc cuối vỡ.
+ */
+export const CREATED_RESOURCE_KINDS: readonly CreatedResourceKind[] = [
+  "vpc",
+  "subnet",
+  "internet-gateway",
+  "nat-gateway",
+  "elastic-ip",
+  "route-table",
+  "security-group",
+  "firewall-rule",
+  "cloud-router",
+  "nsg",
+  "iam-role",
+  "iam-policy",
+  "oidc-provider",
+  "service-account",
+  "managed-identity",
+  "cluster",
+  "nodegroup",
+  "addon",
+  "controlplane-sa",
+  "k8s-loadbalancer",
+  "k8s-volume",
+  "k8s-eni",
+];
+
+/**
  * Bốn khoá tag BẮT BUỘC, cộng `udp.ttl` CHỈ khi project có `expires_at`.
  *
  * Đòi đúng năm khoá làm một project `expiry_action = WARN` không đặt `expires_at` —
