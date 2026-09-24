@@ -60,6 +60,14 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   },
   releaseName: "udp-prometheus",
   quotaDimensions: ["maxStorageGb"],
+  /**
+   * Hai prefix này khớp `ignoredLabelPrefixes` của `AdapterFixture` trong `contract.test.ts`.
+   *
+   * Hai chỗ khai cùng một sự thậ­t, và đó là chủ ý: fixture nói adapter **tuyên bố**
+   * bỏ qua gì, còn ở đây là hành vi thậ­t. Bộ hợp đồng là chốt giữ hai bên khớp: nếu
+   * adapter bỏ qua nhiều hơn lời khai, một lần sửa tay sẽ không bị phát hiện.
+   */
+  ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
 
   values: (config, ctx) => {
     const parsed = prometheusGrafanaConfigSchema.parse(config);
@@ -81,7 +89,9 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
           storageSpec: {
             volumeClaimTemplate: {
               spec: {
-                resources: { requests: { storage: `${String(parsed.storageGb)}Gi` } },
+                resources: {
+                  requests: { storage: `${String(parsed.storageGb)}Gi` },
+                },
               },
             },
           },

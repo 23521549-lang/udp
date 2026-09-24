@@ -136,9 +136,8 @@ describe("prometheus-grafana", () => {
     it: (name, fn) => {
       void fn;
       it(name, async () => {
-        const { DOMAIN_CONTRACT_CHECKS } = await import(
-          "@udp/adapter-core/contract"
-        );
+        const { DOMAIN_CONTRACT_CHECKS } =
+          await import("@udp/adapter-core/contract");
         const check = DOMAIN_CONTRACT_CHECKS.find((c) => c.name === name);
         if (check === undefined) throw new Error(`không có phép "${name}"`);
         await check.run(adapter, envFor());

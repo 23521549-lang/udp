@@ -68,6 +68,54 @@ export interface HelmAdapterSpec {
    * fixture nói "tôi tiêu thụ chiều này", và phép d8 đòi adapter thật sự từ chối.
    */
   quotaDimensions: readonly (keyof DomainAdapterContext["quota"])[];
+  /**
+   * Prefix khoá được BỊ QUA khi so drift, mỗi cái kèm lý do.
+   *
+   * [v4.10] Trường này là cặp sinh đôi của `AdapterFixture.ignoredLabelPrefixes`, và
+   * nó tồn tại vì một lý do cụ thể: adapter tối thiểu của P20 phơi ra rằng lớp nền
+   * so **tậ­p con** (chỉ đối chiếu những khoá nó tự đặt, bỏ qua mọi khoá lạ), trong khi
+   * luậ­t của bộ hợp đồng nói `ignoredLabelPrefixes` RỖNG ⇒ **mọi** khác biệt là drift.
+   * Hai điều đó không thể cùng đúng.
+   *
+   * Chốt: so **đầy đủ** hai chiều, và khoá lạ cũng là drift **trừ khi** nó khớp một
+   * prefix ở đây. Nhời vậ­y "bỏ qua" trở thành một lời khai TƯỜNG MINH có lý do, thay
+   * vì một hành vi mặc định không ai biết.
+   */
+  ignoredKeyPrefixes?: readonly string[];
+}
+
+/**
+ * Có drift không — so ĐẦY ĐỦ HAI CHIỀU, không phải tậ­p con.
+ *
+ * Ba loại khác biệt, và loại thứ ba là loại bản đầu bỏ sót:
+ *
+ *  1. Khoá của ta có giá trị khác ⇒ drift.
+ *  2. Khoá của ta biến mất ⇒ drift.
+ *  3. Xuất hiện một khoá **lạ** ⇒ drift, trừ khi nó khớp một prefix được khai bỏ qua.
+ *
+ * Lần đầu chỉ có (1) và (2), nên một lần `patch` thêm trường không bị phát hiện — và
+ * `ignoredKeyPrefixes` khi ấy không có việc gì, vì mọi thứ lạ đều đã được bỏ qua sẵn.
+ */
+function driftBetween(
+  desired: Record<string, unknown>,
+  actual: Record<string, unknown>,
+  ignoredPrefixes: readonly string[],
+): { drifted: boolean; details?: string } {
+  const differing = Object.keys(desired).filter(
+    (k) => JSON.stringify(actual[k]) !== JSON.stringify(desired[k]),
+  );
+  const unexpected = Object.keys(actual).filter(
+    (k) => !(k in desired) && !ignoredPrefixes.some((p) => k.startsWith(p)),
+  );
+  if (differing.length === 0 && unexpected.length === 0) {
+    return { drifted: false };
+  }
+  const parts: string[] = [];
+  if (differing.length > 0) parts.push(`khác ở: ${differing.join(", ")}`);
+  if (unexpected.length > 0) {
+    parts.push(`có khoá lạ: ${unexpected.join(", ")}`);
+  }
+  return { drifted: true, details: parts.join("; ") };
 }
 
 const RELEASE_KIND = "HelmRelease";
@@ -170,7 +218,9 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
    */
   async function guarded<T>(
     fn: () => Promise<T>,
-  ): Promise<{ status: "SUCCESS"; data: T } | { status: "FAILED"; message: string }> {
+  ): Promise<
+    { status: "SUCCESS"; data: T } | { status: "FAILED"; message: string }
+  > {
     try {
       return { status: "SUCCESS", data: await fn() };
     } catch (err) {
@@ -234,15 +284,16 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
           valuesRef(ctx),
         );
         if (found === null) {
-          return { drifted: true, details: "thiếu ConfigMap giá trị của release" };
+          return {
+            drifted: true,
+            details: "thiếu ConfigMap giá trị của release",
+          };
         }
-        const desired = desiredOf(config, ctx);
-        const differing = Object.keys(desired).filter(
-          (k) => JSON.stringify(found[k]) !== JSON.stringify(desired[k]),
+        return driftBetween(
+          desiredOf(config, ctx),
+          found,
+          spec.ignoredKeyPrefixes ?? [],
         );
-        return differing.length === 0
-          ? { drifted: false }
-          : { drifted: true, details: `khác ở: ${differing.join(", ")}` };
       }),
 
     onDependencyChanged: (ctx, config, changed) =>
