@@ -76,33 +76,63 @@ export default tseslint.config(
       "@typescript-eslint/no-non-null-assertion": "error",
 
       /**
-       * CHỖ DÀNH SẴN cho HAI luật mà thiết kế gọi đích danh, chưa bật vì chưa
-       * có thư mục adapter nào để áp (R6 — không viết luật trước người dùng):
+       * Hai luật của thư mục adapter nằm ở KHỐI RIÊNG phía dưới, không ở đây.
        *
-       *   §4.6 và §12 T11 — cấm `fetch` trực tiếp trong thư mục adapter, mọi
-       *     lời gọi ra ngoài phải đi qua egress guard chống SSRF.
-       *   §4.3 — cấm adapter chuyển secret sang `string`.
-       *
-       * [v4.10] Hai sự thật đã sửa ở đây, và cả hai đều là loại sai làm người
-       * đọc tin vào một thứ không có:
-       *
-       *   1. Chú thích cũ nói "ba luật" rồi liệt kê hai. Một người đếm số sẽ
-       *      đi tìm luật thứ ba không tồn tại, hoặc tệ hơn, tin rằng có một
-       *      ràng buộc thứ ba đang bảo vệ mình.
-       *   2. Glob mẫu cũ là `adapters/` số nhiều, KHÔNG khớp thư mục thật. Cây
-       *      thư mục của §1.6 đặt adapter ở `modules/*-adapter/`, nên kể cả
-       *      khi ai đó bật khối này y nguyên, nó sẽ là một khối lint xanh vĩnh
-       *      viễn vì không khớp tệp nào — đúng loại bảo đảm tệ nhất.
-       *
-       * Khối này bật ở plan của adapter ĐẦU TIÊN, cùng một ô khẳng định "glob
-       * khớp ≥ 1 tệp thật". Đợi tới lúc đó không phải trì hoãn mà là chính R6:
+       * Chỗ dành sẵn cũ đã được thay bằng khối thật khi adapter đầu tiên xuất
+       * hiện (`modules/monitoring-adapter/prometheus-grafana/`) — đúng theo R6:
        * một luật viết trước người dùng là một luật không ai biết nó có chạy hay
        * không.
-       *
-       * Cả hai hiện thực bằng `no-restricted-imports` / `no-restricted-syntax`
-       * trong một khối `files` riêng trỏ tới `modules/*-adapter/`. Bất biến I35
-       * (dependency-cruiser) là công cụ khác, chạy ở CI.
        */
+    },
+  },
+
+  {
+    /**
+     * [v4.10] Hai luật CHỈ áp trong thư mục adapter (§4.6, §12 T11, §4.3).
+     *
+     * Glob trỏ tới cây THẬT của §1.6 — `modules/<domain>-adapter/<tool>/`. Chỗ
+     * dành sẵn cũ ghi `adapters/` số nhiều, không khớp tệp nào, nên nó sẽ là
+     * một khối lint xanh vĩnh viễn: đúng loại bảo đảm tệ nhất. `design-lint` có
+     * một ô khẳng định glob này khớp **ít nhất một tệp thật**, để lỗi đó không
+     * quay lại.
+     *
+     * **Luật 1 — cấm `fetch` toàn cục.** Mọi lời gọi ra ngoài của adapter phải
+     * đi qua `ctx.fetch`, tức qua egress guard chống SSRF. Một `fetch` trực
+     * tiếp vòng qua guard, và nó chạy được trên máy người viết adapter nên
+     * không ai thấy gì sai cho tới khi có người trỏ nó vào metadata endpoint
+     * của cloud.
+     *
+     * **Luật 2 — cấm adapter chuyển secret sang `string`.** Luật này KHÔNG
+     * hiện thực bằng lint, và nói rõ vì sao thay vì để người đọc đi tìm: ESLint
+     * không biết kiểu của một biểu thức trong `no-restricted-syntax`, nên mọi
+     * luật cú pháp cho nó đều là một xấp xỉ — cấm `String(x)` và `` `${x}` ``
+     * trong cả thư mục adapter thì chặn luôn mọi lần nối chuỗi hợp lệ, còn cấm
+     * hẹp hơn thì lách được bằng một biến trung gian. Bảo đảm THẬT nằm ở tầng
+     * kiểu và tầng chạy: `SecretBuffer.toString()` khai trả `never` và NÉM lúc
+     * chạy (`secret-buffer.test.ts`), `toJSON` cùng `inspect` trả `[REDACTED]`,
+     * và phép quét sentinel của P12 đi qua chín kênh ra ngoài. Một luật lint
+     * yếu hơn ở đây sẽ thêm nhiễu mà không thêm bảo đảm.
+     */
+    files: ["**/modules/*-adapter/**/*.ts"],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "fetch",
+          message:
+            "Adapter phải gọi ra ngoài qua `ctx.fetch` (egress guard, §12 T11), " +
+            "không dùng fetch toàn cục.",
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[object.name='globalThis'][property.name='fetch']",
+          message:
+            "Adapter phải gọi ra ngoài qua `ctx.fetch` (egress guard, §12 T11).",
+        },
+      ],
     },
   },
 
