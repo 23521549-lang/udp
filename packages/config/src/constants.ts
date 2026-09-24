@@ -460,6 +460,39 @@ export const JOB_LEASE = {
   renewIntervalMs: 30_000,
 } as const;
 
+/**
+ * [v4.10] Vòng thử lại khi `lookup()` trả `indeterminate` (§4.2, điểm crash K2b).
+ *
+ * Tagging API của cloud là nhất quán cuối: một tag vừa gắn có thể chưa thấy trong vài
+ * giây. Runner đọc "chưa thấy" thành "không có" sẽ `create()` lần hai và tạo trùng —
+ * đúng chế độ hỏng mà K3 sinh ra để chặn. Nên `indeterminate` là một lỗi TẠM, và runner
+ * chờ rồi tra lại thay vì quyết định.
+ *
+ * Vì sao có một BẤT BIẾN buộc tổng backoff không vượt nửa lease, và vì sao nó được kiểm
+ * bằng test chứ không chỉ ghi ở đây: vòng chờ này nằm TRONG một lượt job đang giữ lease.
+ * Nếu tổng thời gian chờ vượt `JOB_LEASE.durationSeconds` thì worker thứ hai nhận job và
+ * hai worker cùng `lookup`/`create` — tức chính bản sửa này tạo ra điểm crash K9. Nửa
+ * lease là mức để một lần gia hạn trượt cũng chưa vỡ.
+ *
+ * Hết lượt thì job sang `FAILED` và hàng GIỮ `CREATING`: đó là trạng thái mà K2/K3 đã xử
+ * lý được khi resume. Đặt `ORPHAN_SUSPECTED` là biến một blip mạng thành hỏng vĩnh viễn,
+ * vì trạng thái đó không có cạnh ra (§4.5).
+ */
+export const LOOKUP_INDETERMINATE = {
+  maxAttempts: 5,
+  /** Backoff tuyến tính: lần thử thứ n chờ n × giá trị này */
+  backoffStepMs: 2_000,
+} as const;
+
+/**
+ * Hàng `CREATING` quá mốc này phải NHÌN THẤY ĐƯỢC ở `GET /admin/orphan-resources`.
+ *
+ * Nó KHÔNG đổi `status`: đổi trạng thái chỉ được xảy ra khi `lookup()` ra mismatch, đúng
+ * ngữ nghĩa §4.5. Một hàng treo im lặng là tài nguyên có thể đang tính tiền mà không ai
+ * biết; một hàng bị đổi trạng thái sai là một hàng không còn resume được.
+ */
+export const STALE_CREATING_MINUTES = 15;
+
 // ============================================================
 // Change feed — ba tầng có tự kiểm (Design v4 ADR-05)
 // ============================================================

@@ -117,3 +117,14 @@ export function snapshotOf(rows: ProvisionedResourceRow[]): LedgerSnapshot {
     ),
   };
 }
+
+export {
+  FatalRunnerError,
+  FenceLostError,
+  LookupIndeterminateError,
+  rethrowIfFatal,
+  SimulatedCrash,
+  StepFailedError,
+} from "./errors.js";
+export { CloudAdapterRunner, quotaRejection } from "./runner.js";
+export type { RunnerDeps, RunOutcome, RunPlan } from "./runner.js";
