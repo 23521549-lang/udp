@@ -96,15 +96,75 @@ export function isSensitive(key: string): boolean {
  * lastError. Đệ quy, giữ nguyên cấu trúc để diff before/after vẫn đọc được.
  */
 export function redact<T>(value: T): T {
+  return redactInner(value, new WeakSet());
+}
+
+/** Chỗ của một tham chiếu vòng — xem chú thích trong `redactInner` */
+export const REDACTED_CYCLE = "[CYCLE]";
+
+/**
+ * [v4.10] Trường của `Error` được GIỮ LẠI, và vì sao điều đó là một bản sửa an toàn.
+ *
+ * `message`, `name`, `stack` và `cause` của `Error` là thuộc tính **không liệt kê được**,
+ * nên `Object.entries(err)` trả rỗng và bản trước biến mọi lỗi thành `{}`. Đã đo:
+ * `redact(new Error("x", { cause: inner }))` ra đúng `{}`.
+ *
+ * Hậu quả có hai mặt, và mặt thứ hai mới là lý do phải sửa:
+ *
+ *  1. Bí mật nằm sâu trong lỗi (`err.cause.config.headers.Authorization` — I12, §12 T3)
+ *     **biến mất**, nên nó an toàn. Nhưng nó an toàn do TÌNH CỜ, không do luật: hàm không
+ *     hề che nó, nó chỉ không nhìn thấy gì. Một lần ai đó thêm nhánh đọc `err.message`
+ *     là lỗ hổng mở lại, và không phép kiểm nào đỏ.
+ *  2. `ProvisioningJob.lastError` và `AuditLog.before/after` nhận `{}` cho MỌI lỗi, tức
+ *     những cột tồn tại để chẩn đoán thì không mang thông tin nào.
+ *
+ * `stack` KHÔNG được giữ, có chủ đích: `lastError` dùng cho retry và hiển thị (§2.2) nên
+ * mã lỗi cộng thông điệp là đủ, còn stack thì dài và đã có trong log qua serializer của
+ * pino. Giữ nó ở đây là nhân đôi dữ liệu lớn nhất vào một cột JSONB của mọi job thất bại.
+ */
+const ERROR_FIELDS = ["name", "message", "code"] as const;
+
+function redactInner<T>(value: T, seen: WeakSet<object>): T {
   if (value === null || typeof value !== "object") return value;
   // Date là object không có khoá riêng — đệ quy biến nó thành `{}`, và
   // `current.updatedAt` của 409 OPTIMISTIC_LOCK tới Portal thành rỗng (QA Plan #19)
   if (value instanceof Date) return value;
-  if (Array.isArray(value)) return value.map(redact) as T;
+
+  /**
+   * Vòng tham chiếu.
+   *
+   * Không phải giả thuyết: `err.cause = err` xảy ra khi một lớp bọc lỗi gói lại chính nó,
+   * và nhiều SDK giữ tham chiếu ngược từ `response` về `request`. Bản trước không có guard
+   * nào, nên một object như thế làm hàm này đệ quy tới tràn stack — trong đường ghi audit,
+   * tức một lần ghi audit làm sập tiến trình.
+   */
+  if (seen.has(value)) return REDACTED_CYCLE as T;
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactInner(item, seen)) as T;
+  }
 
   const result: Record<string, unknown> = {};
+
+  if (value instanceof Error) {
+    for (const field of ERROR_FIELDS) {
+      const val = (value as unknown as Record<string, unknown>)[field];
+      if (val !== undefined) {
+        result[field] = isSensitive(field)
+          ? REDACTED_PLACEHOLDER
+          : redactInner(val, seen);
+      }
+    }
+    if (value.cause !== undefined) {
+      result["cause"] = redactInner(value.cause, seen);
+    }
+  }
+
   for (const [key, val] of Object.entries(value)) {
-    result[key] = isSensitive(key) ? REDACTED_PLACEHOLDER : redact(val);
+    result[key] = isSensitive(key)
+      ? REDACTED_PLACEHOLDER
+      : redactInner(val, seen);
   }
   return result as T;
 }

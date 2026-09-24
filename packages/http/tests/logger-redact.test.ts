@@ -144,3 +144,81 @@ describe("redact — che đúng thứ cần che", () => {
     expect(useless.map((r) => r.source)).toEqual([]);
   });
 });
+
+/**
+ * [v4.10] AC-20 — che theo ĐỘ SÂU, và giữ được phần chẩn đoán của lỗi.
+ *
+ * Ca cụ thể mà §12 T3 / I12 nói tới: một số SDK cloud nhét credential vào `error.config`,
+ * nên bí mật nằm ở `err.cause.config.headers.Authorization` — bốn cấp. Ba tính chất phải
+ * đúng cùng lúc, và hai trong ba là bản sửa của v4.10.
+ */
+describe("redact — độ sâu và lỗi lồng nhau (AC-20)", () => {
+  function errorWithSecret(): Error {
+    const inner = new Error("SDK vỡ");
+    (inner as unknown as { config: unknown }).config = {
+      headers: { Authorization: "Bearer BI-MAT-THAT", "x-amz-date": "20260924" },
+    };
+    (inner as unknown as { code: string }).code = "AccessDenied";
+    return new Error("provision thất bại", { cause: inner });
+  }
+
+  it("bí mật ở cấp 4 (err.cause.config.headers.Authorization) bị CHE", () => {
+    const out = JSON.stringify(redact(errorWithSecret()));
+    expect(out).not.toContain("BI-MAT-THAT");
+    expect(out).toContain(REDACTED_PLACEHOLDER);
+  });
+
+  /**
+   * Và phần CHẨN ĐOÁN vẫn còn.
+   *
+   * Bản trước của `redact` trả `{}` cho mọi `Error` (bốn trường của Error là thuộc tính
+   * không liệt kê được), nên bí mật an toàn nhưng `ProvisioningJob.lastError` cũng rỗng.
+   * Không có phép này thì một bản "sửa" bằng cách bỏ hẳn nhánh Error vẫn xanh.
+   */
+  it("giữ name, message và code — kể cả ở lỗi gốc lồng bên trong", () => {
+    const out = redact(errorWithSecret()) as unknown as Record<string, unknown>;
+    expect(out["name"]).toBe("Error");
+    expect(out["message"]).toBe("provision thất bại");
+    const cause = out["cause"] as Record<string, unknown>;
+    expect(cause["message"]).toBe("SDK vỡ");
+    expect(cause["code"]).toBe("AccessDenied");
+  });
+
+  it("KHÔNG giữ stack — lastError là để retry và hiển thị, không phải bản sao của log", () => {
+    const out = redact(errorWithSecret()) as unknown as Record<string, unknown>;
+    expect(Object.keys(out)).not.toContain("stack");
+  });
+
+  /**
+   * Vòng tham chiếu KHÔNG được làm tràn stack.
+   *
+   * `err.cause = err` xảy ra khi một lớp bọc lỗi gói lại chính nó. Bản trước không có
+   * guard nào, nên một object như thế làm `redact` đệ quy tới tràn stack — trong đường
+   * GHI AUDIT, tức một lần ghi audit làm sập tiến trình.
+   */
+  it("err.cause trỏ về chính nó ⇒ trả về mốc vòng, không tràn stack", () => {
+    const err = new Error("vòng");
+    (err as unknown as { cause: unknown }).cause = err;
+    const out = redact(err) as unknown as Record<string, unknown>;
+    expect(out["cause"]).toBe("[CYCLE]");
+  });
+
+  it("object thường có vòng cũng không tràn stack", () => {
+    const a: Record<string, unknown> = { ten: "a" };
+    a["tu"] = a;
+    const out = redact(a);
+    expect(out["ten"]).toBe("a");
+    expect(out["tu"]).toBe("[CYCLE]");
+  });
+
+  it("mảng lồng trong lỗi vẫn được đi qua từng phần tử", () => {
+    const err = new Error("nhieu");
+    (err as unknown as { attempts: unknown }).attempts = [
+      { token: "BI-MAT-1" },
+      { token: "BI-MAT-2" },
+    ];
+    const out = JSON.stringify(redact(err));
+    expect(out).not.toContain("BI-MAT-1");
+    expect(out).not.toContain("BI-MAT-2");
+  });
+});

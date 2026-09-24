@@ -2365,6 +2365,18 @@ flowchart LR
 | So sánh không giải mã | `fingerprint` = SHA-256 của định danh public (roleArn / accessKeyId / serviceAccountEmail / clientId) — dùng để trả lời "credential này có phải cái tôi đã nhập lần trước không" mà không cần mở khóa |
 | Ghi vết | Mọi thao tác tạo/đổi/xóa credential ghi `AuditLog` với `before`/`after` **chỉ chứa fingerprint và metadata**, không chứa giá trị |
 
+**[v4.10] `encrypted_dek` là một blob TỰ CHỨA, và đó là hệ quả của dòng KEK:**
+
+Có **hai** lớp GCM trong một hàng — payload dưới DEK, và DEK dưới KEK — nên cần hai
+nonce và hai tag, trong khi bảng chỉ có **một** cột `nonce` và **một** cột `auth_tag`.
+Hai cột đó thuộc lớp **payload**; nonce và tag của lớp DEK nằm BÊN TRONG `encrypted_dek`
+theo dạng `base64(nonce‖tag‖ciphertext)`.
+
+Đây không phải một lựa chọn tùy ý mà là điều kiện để dòng KEK đúng: nếu hai lớp dùng
+chung hai cột thì mỗi lần bọc lại DEK buộc phải ghi lại cột `nonce`, và tuyên bố
+"`encrypted_payload` và `nonce` không đổi một byte khi xoay KEK" vỡ ngay. Cũng không cần
+migration: blob tự chứa nằm gọn trong cột `encrypted_dek` đã có.
+
 **[v4.10] Vì sao AAD dùng `dek_version` chứ không phải `kek_version`:**
 
 Hai dòng ngay trên bất đồng với nhau. Dòng KEK tuyên bố xoay KEK "không cần giải mã lại

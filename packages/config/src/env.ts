@@ -235,7 +235,14 @@ const envSchema = z
     BCRYPT_ROUNDS: z.coerce.number().int().min(12).max(15).default(12),
 
     // ---------- Envelope encryption (§4.3) ----------
-    UDP_KEK_VERSION: z.coerce.number().int().positive().default(1),
+    /**
+     * [v4.10] Trần là 2 vì `UDP_KEK_V2` là biến cuối cùng tồn tại.
+     *
+     * Một trần cao hơn là một lời hứa về những biến chưa có: `UDP_KEK_VERSION = 3` sẽ đi
+     * qua schema rồi vỡ ở refine — đúng, nhưng muộn hơn và với thông điệp khó hiểu hơn
+     * "phải ≤ 2".
+     */
+    UDP_KEK_VERSION: z.coerce.number().int().min(1).max(2).default(1),
     /**
      * KEK 32 byte mã hoá base64 — kiểm NGAY TẠI ĐÂY, không hứa hẹn ở đâu khác.
      *
@@ -246,6 +253,14 @@ const envSchema = z
      * này sinh ra để chặn.
      */
     UDP_KEK_V1: base64Key(32),
+    /**
+     * [v4.10] KEK version 2 — TUỲ CHỌN, và nó phải tuỳ chọn.
+     *
+     * Xoay KEK là việc hiếm, nên đòi biến này luôn có nghĩa là mọi môi trường phải sinh
+     * một khoá thứ hai không dùng tới — và một khoá không dùng tới là khoá không ai xoay,
+     * không ai soát, nhưng vẫn mở được mọi credential nếu nó rò.
+     */
+    UDP_KEK_V2: base64Key(32).optional(),
 
     // ---------- Bí mật nội bộ giữa 3 service ----------
     INTERNAL_SERVICE_SECRET: z.string().min(32),
@@ -380,13 +395,60 @@ const envSchema = z
       });
     }
 
-    // UDP_KEK_VERSION tồn tại để xoay KEK. Đặt version 2 mà không có UDP_KEK_V2
-    // thì lúc chạy tra ra undefined — xoay khoá làm hệ thống hỏng âm thầm.
-    if (env.UDP_KEK_VERSION !== 1) {
+    /**
+     * [v4.10] MỌI `v` trong `[1, UDP_KEK_VERSION]` đều phải có biến `UDP_KEK_V<v>`.
+     *
+     * Bản trước chỉ đòi `UDP_KEK_VERSION === 1`, tức nó chặn được việc xoay khoá nhưng
+     * KHÔNG phát biểu được điều kiện thật. Guard yếu hơn — chỉ đòi biến của version hiện
+     * tại — là guard làm một hệ thống đặt `UDP_KEK_VERSION = 2` mà thiếu `UDP_KEK_V1`
+     * khởi động XANH, rồi mất mọi hàng còn `kek_version = 1`. Và những hàng đó không mất
+     * ồn ào: chúng chỉ không giải mã được nữa, vào đúng lúc người ta đang xoay khoá vì
+     * nghi khoá bị lộ.
+     *
+     * **Ai bảo vệ `v = 1`:** không phải vòng lặp này mà chính schema — `UDP_KEK_V1` là
+     * `base64Key(32)` không `.optional()`, nên một môi trường thiếu nó không qua được
+     * bước parse, bất kể `UDP_KEK_VERSION` bằng mấy. Vòng lặp hôm nay do đó chỉ thật sự
+     * kiểm `v = 2`. Viết ra điều này vì một chú thích nói "vòng lặp bảo vệ mọi v" là một
+     * chú thích làm người đọc tin rằng có thể hạ `UDP_KEK_V1` xuống `.optional()` mà
+     * không mất gì.
+     *
+     * Vẫn là một vòng lặp chứ không phải một câu `if` cho `v = 2`: hình dạng của điều
+     * kiện là "với mọi v", và viết đúng hình dạng đó là cách version 3 không cần ai nhớ
+     * ra phải thêm một câu `if` nữa.
+     */
+    const keks: Readonly<Record<number, string | undefined>> = {
+      1: env.UDP_KEK_V1,
+      2: env.UDP_KEK_V2,
+    };
+    for (let v = 1; v <= env.UDP_KEK_VERSION; v += 1) {
+      if (keks[v] === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: [`UDP_KEK_V${String(v)}`],
+          message:
+            `thiếu khi UDP_KEK_VERSION = ${String(env.UDP_KEK_VERSION)} — ` +
+            `mọi hàng còn kek_version = ${String(v)} sẽ không giải mã được`,
+        });
+      }
+    }
+
+    /**
+     * Xoay khoá mà khoá mới TRÙNG khoá cũ là không xoay gì cả.
+     *
+     * Ca này không phải giả thuyết: cách nhanh nhất để "thử xoay khoá" là copy giá trị
+     * `UDP_KEK_V1` sang `UDP_KEK_V2` rồi tăng version. Mọi thứ chạy, `kek_version` lên 2,
+     * job `rotate-kek` báo thành công — và khoá được cho là đã thay thì vẫn mở được toàn
+     * bộ dữ liệu cũ lẫn mới.
+     */
+    if (
+      env.UDP_KEK_V2 !== undefined &&
+      env.UDP_KEK_V2 === env.UDP_KEK_V1
+    ) {
       ctx.addIssue({
         code: "custom",
-        path: ["UDP_KEK_VERSION"],
-        message: `chỉ hỗ trợ version 1 — chưa khai biến UDP_KEK_V${env.UDP_KEK_VERSION}`,
+        path: ["UDP_KEK_V2"],
+        message:
+          "trùng UDP_KEK_V1 — xoay khoá sang chính khoá cũ không thay thế gì",
       });
     }
 

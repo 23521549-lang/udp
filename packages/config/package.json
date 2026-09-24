@@ -11,13 +11,15 @@
     "./domains": "./src/domains.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
   }
 }
