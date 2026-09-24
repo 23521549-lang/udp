@@ -116,6 +116,71 @@ describe("ranh giới package", () => {
     expect(offenders).toEqual([]);
   });
 
+  /**
+   * [v4.10] `@udp/adapter-core` KHÔNG phụ thuộc `@udp/db`.
+   *
+   * Đây là cách giữ ma trận writer §1.2 bằng CẤU TRÚC thay vì bằng kỷ luật lập
+   * trình: chỉ Service 1 được ghi các bảng adapter, và một adapter không thể ghi
+   * thẳng vào database dù muốn, vì client không có ở đó để mà import. Không có
+   * phép kiểm này thì lời hứa đó chỉ là một dòng trong `package.json`.
+   *
+   * Nó cũng là điều kiện để lưới khôi phục 130 ô chạy được mà không cần database:
+   * runner nhận sổ qua một cổng, nên bản trong bộ nhớ là một hiện thực hợp lệ.
+   */
+  it("@udp/adapter-core KHÔNG phụ thuộc @udp/db", () => {
+    const core = byName.get("@udp/adapter-core");
+    expect(core, "không tìm thấy package @udp/adapter-core").toBeDefined();
+    expect((core as Pkg).deps).not.toContain("@udp/db");
+
+    const offenders = sourceFiles((core as Pkg).dir)
+      .filter((f) => /from\s+"@udp\/db/.test(readFileSync(f, "utf8")))
+      .map((f) => f.replace(ROOT, ""));
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * Bốn subpath, không ba và không năm.
+   *
+   * Mỗi subpath là một ranh giới có chủ đích: `.` là hợp đồng mà adapter hiện thực,
+   * `./runner` là cổng runner dùng, `./testing` là hiện thực giả tất định,
+   * `./contract` là bộ test hợp đồng dùng chung. Thêm một subpath thứ năm mà không
+   * nói ra là cách một package biến thành package thần thánh.
+   */
+  it("@udp/adapter-core khai đúng bốn subpath", () => {
+    const core = byName.get("@udp/adapter-core") as Pkg;
+    const json = JSON.parse(
+      readFileSync(join(core.dir, "package.json"), "utf8"),
+    ) as { exports: Record<string, string> };
+    expect(Object.keys(json.exports).sort()).toEqual([
+      ".",
+      "./contract",
+      "./runner",
+      "./testing",
+    ]);
+  });
+
+  /**
+   * `@udp/adapter-core` chỉ được import subpath thuần của `@udp/config`.
+   *
+   * Cùng lý lẽ với `shared-types`: entry chính của `@udp/config` chạy env validation
+   * lúc nạp module. Một package mà bộ test hợp đồng của người ngoài nhóm sẽ import
+   * (kiểm soát (b) của E1) không được đòi họ phải có `.env` đầy đủ.
+   */
+  it("@udp/adapter-core chỉ import subpath thuần của @udp/config", () => {
+    const core = byName.get("@udp/adapter-core") as Pkg;
+    const allowed = new Set(["@udp/config/constants", "@udp/config/domains"]);
+    const offenders: string[] = [];
+    for (const file of sourceFiles(core.dir)) {
+      for (const m of readFileSync(file, "utf8").matchAll(
+        /from\s+"(@udp\/config[^"]*)"/g,
+      )) {
+        if (!allowed.has(m[1] as string))
+          offenders.push(`${file.replace(ROOT, "")}: ${m[1] as string}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("@udp/shared-types chỉ import subpath @udp/config/constants", () => {
     // Entry chính của `@udp/config` chạy env validation lúc nạp module và ném
     // lỗi nếu thiếu biến. Một package chỉ chứa type mà kéo theo tác dụng phụ đó
