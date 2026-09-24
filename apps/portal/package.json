@@ -1,0 +1,39 @@
+{
+  "name": "@udp/portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Portal của UDP: React SPA cho developer (/app) — §10",
+  "//versions": "Ghim CHÍNH XÁC mọi phụ thuộc: router, query và vite đều đổi hành vi giữa các bản vá, và một cây phụ thuộc trôi là một lỗi chỉ tái hiện được trên máy người khác",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "5.90.2",
+    "@tanstack/react-router": "1.132.47",
+    "@udp/shared-types": "workspace:*",
+    "lucide-react": "0.544.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "zod": "3.25.76",
+    "zustand": "5.0.8"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.8.0",
+    "@testing-library/react": "16.3.0",
+    "@testing-library/user-event": "14.6.1",
+    "@types/react": "18.3.24",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "jsdom": "25.0.1",
+    "msw": "2.11.3",
+    "typescript": "^5.6.3",
+    "vite": "5.4.21",
+    "vitest": "2.1.9"
+  }
+}

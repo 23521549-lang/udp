@@ -1,0 +1,288 @@
+/*
+ * Phần Portal thêm vào bản mẫu (prototype.css). Luật của tệp này, do
+ * `tests/design-lint.test.ts` canh:
+ *   - màu CHỈ qua token `var(--…)` của bản mẫu — không hex, rgb hay oklch thô;
+ *   - không chiều rộng cố định lớn hơn màn hình điện thoại (375px).
+ */
+
+.boot {
+  display: grid;
+  place-items: center;
+  height: 100vh;
+  color: var(--ink-3);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.main {
+  position: relative;
+}
+
+.project-frame {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.project-frame[data-env-production="true"] .envsw {
+  box-shadow:
+    inset 0 0 0 1px var(--env-production),
+    0 0 0 3px var(--env-production-soft);
+}
+
+.me-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+/* ---------- trạng thái rỗng, đang tải, lỗi ---------- */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 16px;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+.field-error {
+  color: var(--red);
+  font-size: 12px;
+  margin: 0;
+}
+
+.help {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* ---------- form ---------- */
+.form,
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.f {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.f > label,
+.lbl {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.form .inp,
+.form .sel,
+.auth-form .inp {
+  height: 32px;
+  width: 100%;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.inp[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 1px var(--red);
+}
+
+.fs {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.fs legend {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.grid-f {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.grid-f .inp,
+.grid-f .sel {
+  width: 100%;
+}
+
+/* ---------- đăng nhập ---------- */
+.auth {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--bg);
+}
+
+.auth-card {
+  width: min(380px, 100%);
+  background: var(--panel);
+  border-radius: 12px;
+  box-shadow: var(--shadow-panel);
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.auth-card a {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ---------- danh sách ---------- */
+.rowbtn {
+  width: 100%;
+  text-align: left;
+}
+
+.lst button.rowbtn,
+.lst .rowbtn.it {
+  border-bottom: 1px solid var(--line);
+}
+
+.lst button.rowbtn:hover {
+  background: var(--hover);
+}
+
+.lst .rowbtn[aria-current="true"] {
+  background: var(--active);
+}
+
+.row.ro-row {
+  color: inherit;
+}
+
+.conds {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.env-controls .line {
+  margin-bottom: 12px;
+}
+
+.tester {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tester textarea.inp {
+  height: auto;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+details.cardc summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+details.cardc .q {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- bảng (luôn có wrapper cuộn ngang) ---------- */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line);
+  background: var(--raised);
+}
+
+.matrix {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+}
+
+.matrix th,
+.matrix td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.matrix thead th {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.matrix td {
+  text-align: center;
+}
+
+.diff {
+  flex-basis: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
+}
+
+.diff pre {
+  margin: 4px 0 0;
+  padding: 8px;
+  border-radius: 7px;
+  background: var(--sunk);
+  font-size: 11.5px;
+  overflow: auto;
+  max-height: 260px;
+}
+
+@media (max-width: 860px) {
+  .bar {
+    padding-left: 44px;
+  }
+  .page .lst a,
+  .page .lst div.it {
+    flex-wrap: wrap;
+  }
+}

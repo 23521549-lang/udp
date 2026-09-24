@@ -20,3 +20,11 @@ docs/measurements/raw/
 
 # Ban mau Portal da duyet (Plan #25 code theo): giu nguyen tung byte nhu luc duyet
 docs/design/portal-prototype.html
+
+# Bản chép CSS của bản mẫu trong Portal: cùng lý do — so NGUYÊN VĂN với bản mẫu
+# (apps/portal/tests/design-lint.test.ts), Prettier định dạng lại là vỡ phép so đó
+apps/portal/src/styles/prototype.css
+
+# Mẫu golden capture: DỮ LIỆU do `tests/helpers/wire-capture.ts` ghi, không phải mã —
+# định dạng lại tay là lệch với lần ghi kế tiếp
+services/core-backend/tests/fixtures/wire/

@@ -71,11 +71,13 @@ pnpm db:service-login udp_s3
 pnpm dev:core
 pnpm dev:flags
 pnpm dev:pd
+pnpm dev:portal
 ```
 
-> `dev:portal` chưa có mã nguồn — thư mục mới chỉ được đặt chỗ, chạy lệnh đó sẽ
-> báo không tìm thấy package. PD Controller cần Flag Service đang chạy
-> (`FLAG_SERVICE_URL`) và Prometheus (`PROMETHEUS_URL`) để đo canary.
+> `pnpm dev:portal` chạy Portal ở http://localhost:5173 và proxy `/api` sang Core Backend
+> (cổng 3001) — cùng origin nên cookie httpOnly đi kèm mà không cần CORS. PD Controller
+> cần Flag Service đang chạy (`FLAG_SERVICE_URL`) và Prometheus (`PROMETHEUS_URL`) để đo
+> canary.
 
 | Dịch vụ       | URL                   |
 | ------------- | --------------------- |
@@ -83,7 +85,7 @@ pnpm dev:pd
 | Flag Service  | http://localhost:3002 |
 | PD Controller | http://localhost:3003 |
 | Prometheus    | http://localhost:9090 |
-| Portal        | chưa hiện thực        |
+| Portal        | http://localhost:5173 |
 | Prisma Studio | `pnpm db:studio`      |
 
 ## Lệnh thường dùng

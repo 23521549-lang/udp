@@ -36,7 +36,12 @@ export default tseslint.config(
   },
 
   {
-    files: ["**/*.ts"],
+    /**
+     * [v4.11] `.tsx` cùng khối: bản trước chỉ khai đuôi `.ts`, tức lint mù hoàn toàn với
+     * mã React của Portal — cùng lỗi `".tsx".endsWith(".ts") === false` đã sửa ở cổng
+     * ranh giới package (b1a861d), lần này ở chính ESLint.
+     */
+    files: ["**/*.ts", "**/*.tsx"],
     extends: [tseslint.configs.base],
     languageOptions: {
       parserOptions: {
@@ -139,7 +144,7 @@ export default tseslint.config(
   {
     // Test được phép dùng `!` sau một khẳng định: ở đó dấu `!` không phải lời
     // hứa về thứ tự middleware mà là hệ quả của một `expect` ngay phía trên.
-    files: ["**/tests/**/*.ts"],
+    files: ["**/tests/**/*.ts", "**/tests/**/*.tsx"],
     rules: { "@typescript-eslint/no-non-null-assertion": "off" },
   },
 );

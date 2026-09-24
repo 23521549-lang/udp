@@ -1,0 +1,178 @@
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import {
+  ChartNoAxesColumnIncreasing,
+  Flag,
+  LayoutDashboard,
+  Lock,
+  Users,
+} from "lucide-react";
+import { Icon } from "../../components/Icon";
+import { ErrorState, Loading } from "../../components/States";
+import {
+  browserTimeZone,
+  formatDateTime,
+  formatPercent,
+} from "../../lib/format";
+import { qk } from "../../lib/query-keys";
+import { flagApi } from "../flag/flag-api";
+import { rolloutApi } from "../rollout/rollout-api";
+import { RolloutStatusLabel } from "../rollout/rollout-status";
+import { ProjectStatus } from "./ProjectsPage";
+import { ProjectBar } from "./ProjectBar";
+import { useProjectContext } from "./ProjectLayout";
+import { projectApi } from "./project-api";
+import { ROLE_LABEL } from "./roles";
+
+/**
+ * Tổng quan (§10.6) — phần có dữ liệu thật hôm nay: trạng thái project, ba chỉ số nhanh
+ * (flag đang bật ở env đang chọn, rollout đang chạy, thành viên), environment, và rollout
+ * gần nhất. ClusterInfo và Deployment cần endpoint chưa có (`portal-deployments`).
+ */
+export function OverviewPage() {
+  const { project, envs, env } = useProjectContext();
+  const tz = browserTimeZone();
+
+  const flags = useQuery({
+    queryKey: qk.flags(project.id, env.id, "stats"),
+    queryFn: () => flagApi.list(project.id, env.id, tz),
+    staleTime: 10_000,
+  });
+  const rollouts = useQuery({
+    queryKey: qk.rollouts(project.id, env.id),
+    queryFn: () => rolloutApi.list(project.id, env.id),
+  });
+  const members = useQuery({
+    queryKey: qk.members(project.id),
+    queryFn: () => projectApi.members(project.id),
+  });
+
+  const enabled =
+    flags.data?.flags.filter((f) => f.env?.isEnabled === true).length ?? 0;
+  const running =
+    rollouts.data?.rollouts.filter(
+      (r) => r.status === "IN_PROGRESS" || r.status === "PAUSED",
+    ).length ?? 0;
+
+  return (
+    <>
+      <ProjectBar title="Tổng quan" />
+      <div className="scroll">
+        <div className="mhead">
+          <span className="tile xl">
+            <Icon of={LayoutDashboard} size={21} />
+          </span>
+          <div>
+            <h1>{project.name}</h1>
+            <p>
+              <ProjectStatus status={project.status} /> · Vai của bạn:{" "}
+              {ROLE_LABEL[project.myRole]}
+            </p>
+          </div>
+        </div>
+        <div className="page">
+          <div className="kpis">
+            <Kpi
+              icon={Flag}
+              label={`Flag đang bật ở ${env.name}`}
+              value={flags.isPending ? "…" : String(enabled)}
+              sub={
+                flags.data === undefined
+                  ? ""
+                  : `trên ${String(flags.data.flags.length)} flag`
+              }
+            />
+            <Kpi
+              icon={ChartNoAxesColumnIncreasing}
+              label={`Rollout đang chạy ở ${env.name}`}
+              value={rollouts.isPending ? "…" : String(running)}
+              sub=""
+            />
+            <Kpi
+              icon={Users}
+              label="Thành viên"
+              value={
+                members.isPending
+                  ? "…"
+                  : String(members.data?.members.length ?? 0)
+              }
+              sub=""
+            />
+          </div>
+
+          <h2 className="h2">Environment</h2>
+          <div className="lst">
+            {[...envs]
+              .sort((a, b) => a.rank - b.rank)
+              .map((e) => (
+                <div key={e.id} className="it">
+                  <b style={{ fontWeight: 500 }}>{e.name}</b>
+                  {e.isProduction && <Icon of={Lock} size={12} />}
+                  <span className="mono c3">{e.k8sNamespace}</span>
+                  <span className="c3" style={{ marginLeft: "auto" }}>
+                    {e.autoDeploy ? "Tự deploy" : "Deploy thủ công"}
+                  </span>
+                </div>
+              ))}
+          </div>
+
+          <h2 className="h2">Rollout gần đây ở {env.name}</h2>
+          {rollouts.isPending ? (
+            <Loading />
+          ) : rollouts.isError ? (
+            <ErrorState error={rollouts.error} />
+          ) : rollouts.data.rollouts.length === 0 ? (
+            <p className="c3">Chưa có rollout nào ở environment này.</p>
+          ) : (
+            <div className="lst">
+              {rollouts.data.rollouts.slice(0, 5).map((r) => (
+                <Link
+                  key={r.id}
+                  to="/app/projects/$projectId/rollouts/$rolloutId"
+                  params={{ projectId: project.id, rolloutId: r.id }}
+                  search={{ env: env.id }}
+                >
+                  <span className="mono">
+                    {r.flagKey ?? r.workloadName ?? r.id.slice(0, 8)}
+                  </span>
+                  <RolloutStatusLabel status={r.status} />
+                  <span className="num c3">
+                    {formatPercent(r.currentTrafficPercentage)}
+                  </span>
+                  <span className="c3" style={{ marginLeft: "auto" }}>
+                    {formatDateTime(r.updatedAt)}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Kpi({
+  icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: typeof Flag;
+  label: string;
+  value: string;
+  sub: string;
+}) {
+  return (
+    <div className="kpi">
+      <div className="l">
+        <span className="tile">
+          <Icon of={icon} />
+        </span>
+        {label}
+      </div>
+      <div className="v num">{value}</div>
+      {sub !== "" && <div className="c3">{sub}</div>}
+    </div>
+  );
+}

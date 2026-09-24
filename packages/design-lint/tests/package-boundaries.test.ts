@@ -305,8 +305,14 @@ describe("ranh giới package", () => {
     for (const p of packages) {
       const imported = new Set<string>();
       for (const file of sourceFiles(p.dir)) {
+        /**
+         * [v4.11] Chỉ CÂU LỆNH `import`/`export … from` ở đầu dòng. Bản trước khớp
+         * `from "@udp/…"` ở bất cứ đâu, kể cả bên trong một chuỗi — Portal hiển thị
+         * đoạn mã mẫu `import { udpMetricsMiddleware } from "@udp/openfeature-provider/…"`
+         * cho người dùng chép, và cổng đọc nó thành một phụ thuộc của Portal.
+         */
         for (const m of readFileSync(file, "utf8").matchAll(
-          /from\s+"(@udp\/[^"/]+)/g,
+          /^(?:import|export)\b[^;]*?\sfrom\s+"(@udp\/[^"/]+)/gm,
         )) {
           if (m[1] !== undefined) imported.add(m[1]);
         }
