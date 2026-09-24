@@ -1,0 +1,27 @@
+{
+  "route": "GET /projects",
+  "status": 200,
+  "body": {
+    "projects": [
+      {
+        "id": "1ed08d27-0f53-417b-960c-2951ec078678",
+        "name": "proj-cc56eda1",
+        "ownerId": "f989689d-12e0-4efd-a4a3-a0c2bc914202",
+        "creationMode": "CREATE_NEW",
+        "languageRuntime": "nodejs",
+        "repoUrl": null,
+        "status": "DRAFT",
+        "resourceQuota": {
+          "maxNodes": 3,
+          "maxNodeSize": "medium",
+          "maxDatabases": 2,
+          "maxStorageGb": 50,
+          "maxLoadBalancers": 3
+        },
+        "expiresAt": null,
+        "createdAt": "2026-09-24T19:33:32.733Z",
+        "myRole": "OWNER"
+      }
+    ]
+  }
+}

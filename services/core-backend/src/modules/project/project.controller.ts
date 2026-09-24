@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { asyncHandler } from "@udp/http";
+import { asyncHandler, sendJson } from "@udp/http";
+import {
+  auditListResponseWire,
+  projectDetailResponseWire,
+  projectListResponseWire,
+  projectResponseWire,
+} from "@udp/shared-types/wire";
 import {
   requireAuth,
   requireUser,
@@ -17,6 +23,8 @@ import { flagRouter } from "../flag/flag.controller.js";
 import { rolloutRouter } from "../rollout/rollout.controller.js";
 import { segmentRouter } from "../segment/segment.routes.js";
 import * as projectService from "./project.service.js";
+import { auditEntryWireOf } from "../audit/audit.view.js";
+import { environmentWire, projectWire, roleOf } from "./project.view.js";
 import {
   createProjectSchema,
   updateQuotaSchema,
@@ -43,7 +51,20 @@ projectRouter.post(
     );
     // §8.1: 201 kèm cả danh sách environment, vì wizard của Portal hiển thị
     // ngay ba môi trường vừa sinh mà không gọi thêm lượt nào.
-    res.status(201).json({ project, environments });
+    //
+    // [v4.11] `myRole: "OWNER"` TƯỜNG MINH: route này không qua
+    // `requireMinProjectRole`, và repository tạo hàng OWNER trong cùng lệnh. Thiếu
+    // dòng này thì `sendJson` ném SAU KHI transaction đã commit ⇒ người dùng thấy
+    // lỗi, bấm lại ⇒ project thứ hai.
+    sendJson(
+      res,
+      projectDetailResponseWire,
+      {
+        project: projectWire(project, "OWNER"),
+        environments: environments.map(environmentWire),
+      },
+      201,
+    );
   }),
 );
 
@@ -57,8 +78,11 @@ projectRouter.get(
   "/",
   requireAuth,
   asyncHandler(async (req, res) => {
-    res.json({
-      projects: await projectService.listForUser(requireUser(req).sub),
+    const projects = await projectService.listForUser(requireUser(req).sub);
+    sendJson(res, projectListResponseWire, {
+      projects: projects.map(({ myRole, ...project }) =>
+        projectWire(project, myRole),
+      ),
     });
   }),
 );
@@ -71,7 +95,10 @@ projectRouter.get(
     const { environments, ...project } = await projectService.getById(
       projectIdParam(req),
     );
-    res.json({ project, environments });
+    sendJson(res, projectDetailResponseWire, {
+      project: projectWire(project, roleOf(req.projectRole)),
+      environments: environments.map(environmentWire),
+    });
   }),
 );
 
@@ -82,12 +109,13 @@ projectRouter.patch(
   requireMinProjectRole("OWNER"),
   validateBody(updateQuotaSchema),
   asyncHandler(async (req, res) => {
-    res.json({
-      project: await projectService.updateQuota(
-        projectIdParam(req),
-        req.body,
-        req,
-      ),
+    const project = await projectService.updateQuota(
+      projectIdParam(req),
+      req.body,
+      req,
+    );
+    sendJson(res, projectResponseWire, {
+      project: projectWire(project, roleOf(req.projectRole)),
     });
   }),
 );
@@ -103,12 +131,13 @@ projectRouter.patch(
   requireMinProjectRole("OWNER"),
   validateBody(updateTtlSchema),
   asyncHandler(async (req, res) => {
-    res.json({
-      project: await projectService.updateTtl(
-        projectIdParam(req),
-        req.body,
-        req,
-      ),
+    const project = await projectService.updateTtl(
+      projectIdParam(req),
+      req.body,
+      req,
+    );
+    sendJson(res, projectResponseWire, {
+      project: projectWire(project, roleOf(req.projectRole)),
     });
   }),
 );
@@ -142,7 +171,9 @@ projectRouter.get(
       projectIdParam(req),
       req.query as unknown as AuditQuery,
     );
-    res.json({ entries });
+    sendJson(res, auditListResponseWire, {
+      entries: entries.map(auditEntryWireOf),
+    });
   }),
 );
 

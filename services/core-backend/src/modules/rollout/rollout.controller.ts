@@ -1,10 +1,18 @@
 import { Router, type Request } from "express";
 import {
   asyncHandler,
+  sendJson,
   uuidParam,
   validateBody,
   validateQuery,
 } from "@udp/http";
+import {
+  rolloutActionResponseWire,
+  rolloutEventsResponseWire,
+  rolloutListResponseWire,
+  rolloutProbeResponseWire,
+  rolloutResponseWire,
+} from "@udp/shared-types/wire";
 import { appDepsOf } from "../../core/app-deps.js";
 import {
   requireAuth,
@@ -46,7 +54,7 @@ rolloutRouter.post(
   requireMinProjectRole("DEVELOPER"),
   validateBody(probeRolloutSchema),
   asyncHandler(async (req, res) => {
-    res.json({
+    sendJson(res, rolloutProbeResponseWire, {
       probe: await rolloutService.probe(
         appDepsOf(req),
         projectIdParam(req),
@@ -71,7 +79,7 @@ rolloutRouter.post(
       requireUser(req).sub,
       req,
     );
-    res.status(201).json({ rollout });
+    sendJson(res, rolloutResponseWire, { rollout }, 201);
   }),
 );
 
@@ -81,7 +89,7 @@ rolloutRouter.get(
   requireMinProjectRole("VIEWER"),
   validateQuery(listRolloutsQuerySchema),
   asyncHandler(async (req, res) => {
-    res.json({
+    sendJson(res, rolloutListResponseWire, {
       rollouts: await rolloutService.list(
         projectIdParam(req),
         req.query as unknown as ListRolloutsQuery,
@@ -95,7 +103,7 @@ rolloutRouter.get(
   requireAuth,
   requireMinProjectRole("VIEWER"),
   asyncHandler(async (req, res) => {
-    res.json({
+    sendJson(res, rolloutResponseWire, {
       rollout: await rolloutService.get(
         projectIdParam(req),
         rolloutIdParam(req),
@@ -110,7 +118,7 @@ rolloutRouter.get(
   requireMinProjectRole("VIEWER"),
   validateQuery(rolloutEventsQuerySchema),
   asyncHandler(async (req, res) => {
-    res.json({
+    sendJson(res, rolloutEventsResponseWire, {
       events: await rolloutService.events(
         projectIdParam(req),
         rolloutIdParam(req),
@@ -134,6 +142,11 @@ rolloutRouter.post(
       requireUser(req).sub,
       req,
     );
-    res.status(202).json({ ...accepted, status: "accepted" });
+    sendJson(
+      res,
+      rolloutActionResponseWire,
+      { ...accepted, status: "accepted" },
+      202,
+    );
   }),
 );

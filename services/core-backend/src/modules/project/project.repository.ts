@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { DEFAULT_ENVIRONMENTS, k8sNamespaceFor } from "@udp/config";
-import type { CreationMode, Prisma } from "@udp/db";
+import type { CreationMode, Prisma, ProjectRole } from "@udp/db";
 import { prisma } from "../../core/db.js";
 import { auditEntry } from "../audit/audit.service.js";
 import type {
@@ -120,12 +120,38 @@ export async function createWithDefaults(
  * tới. §12.2 tầng 1 vì thế áp thẳng vào đây — mọi truy vấn phải tự mang điều
  * kiện thuộc về ai. Bỏ dòng `where` này là rò toàn bộ project của mọi tenant.
  */
-export const listForUser = (userId: string): Promise<PublicProject[]> =>
-  prisma.project.findMany({
+export async function listForUser(
+  userId: string,
+): Promise<(PublicProject & { myRole: ProjectRole })[]> {
+  /**
+   * [v4.11] Vai của người gọi đọc trong CÙNG truy vấn (`take: 1` trên khoá
+   * `(project_id, user_id)` — nhiều nhất một hàng). Kiểu trả về khai tường minh vì
+   * gán object Prisma rộng cho kiểu hẹp là hợp lệ trong TS: `members` sẽ biến mất
+   * khỏi kiểu mà vẫn còn ở runtime, và `.strict()` của schema wire đỏ lúc chạy.
+   */
+  const rows = await prisma.project.findMany({
     where: { status: { not: "DELETED" }, members: { some: { userId } } },
-    select: PUBLIC_FIELDS,
+    select: {
+      ...PUBLIC_FIELDS,
+      members: { where: { userId }, select: { projectRole: true }, take: 1 },
+    },
     orderBy: { createdAt: "desc" },
   });
+  return rows.map(({ members, ...project }) => {
+    const membership = members[0];
+    /**
+     * `where` ở trên đã đòi `members.some`, nên thiếu hàng ở đây là mâu thuẫn dữ liệu
+     * (hàng bị xoá giữa hai phần của truy vấn). Ném, tuyệt đối không `?? "VIEWER"`:
+     * đó là hạ cấp phân quyền im lặng.
+     */
+    if (membership === undefined) {
+      throw new Error(
+        `project ${project.id} không có hàng thành viên của người gọi`,
+      );
+    }
+    return { ...project, myRole: membership.projectRole };
+  });
+}
 
 export const findById = (
   id: string,

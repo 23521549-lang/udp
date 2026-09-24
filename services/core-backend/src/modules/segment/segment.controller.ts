@@ -1,5 +1,9 @@
 import type { Request, RequestHandler } from "express";
-import { asyncHandler, uuidParam } from "@udp/http";
+import { asyncHandler, sendJson, uuidParam } from "@udp/http";
+import {
+  segmentListResponseWire,
+  segmentResponseWire,
+} from "@udp/shared-types/wire";
 import { appDepsOf } from "../../core/app-deps.js";
 import { projectIdParam } from "../../core/http/middlewares/project-role.middleware.js";
 import { auditContextOf } from "../audit/audit.service.js";
@@ -22,28 +26,31 @@ const segmentIdOf = (req: Request): string =>
   uuidParam(req, "segmentId", "Mã segment không hợp lệ");
 
 export const listSegments: RequestHandler = asyncHandler(async (req, res) => {
-  res.json(await segmentService.list(projectIdParam(req), req.query));
+  sendJson(
+    res,
+    segmentListResponseWire,
+    await segmentService.list(projectIdParam(req), req.query),
+  );
 });
 
 export const getSegment: RequestHandler = asyncHandler(async (req, res) => {
-  res.json({
+  sendJson(res, segmentResponseWire, {
     segment: await segmentService.get(projectIdParam(req), segmentIdOf(req)),
   });
 });
 
 export const createSegment: RequestHandler = asyncHandler(async (req, res) => {
-  res.status(201).json({
-    segment: await segmentService.create(
-      appDepsOf(req),
-      projectIdParam(req),
-      req.body as CreateSegmentBody,
-      auditContextOf(req),
-    ),
-  });
+  const segment = await segmentService.create(
+    appDepsOf(req),
+    projectIdParam(req),
+    req.body as CreateSegmentBody,
+    auditContextOf(req),
+  );
+  sendJson(res, segmentResponseWire, { segment }, 201);
 });
 
 export const updateSegment: RequestHandler = asyncHandler(async (req, res) => {
-  res.json({
+  sendJson(res, segmentResponseWire, {
     segment: await segmentService.update(
       appDepsOf(req),
       projectIdParam(req),

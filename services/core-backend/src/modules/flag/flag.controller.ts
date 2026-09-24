@@ -1,10 +1,23 @@
 import { Router, type Request } from "express";
 import {
   asyncHandler,
+  sendJson,
   uuidParam,
   validateBody,
   validateQuery,
 } from "@udp/http";
+import {
+  bulkArchiveResponseWire,
+  flagEnvResponseWire,
+  flagEnvsResponseWire,
+  flagListResponseWire,
+  flagResponseWire,
+  flagStatsViewResponseWire,
+  flagVariantsResponseWire,
+  rulesResponseWire,
+  staleFlagsResponseWire,
+} from "@udp/shared-types/wire";
+import { testerResultSchema } from "@udp/shared-types/flag-api";
 import { appDepsOf } from "../../core/app-deps.js";
 import { requireAuth } from "../../core/http/middlewares/auth.middleware.js";
 import {
@@ -55,14 +68,13 @@ flagRouter.post(
   requireMinProjectRole("DEVELOPER"),
   validateBody(createFlagBodySchema),
   asyncHandler(async (req, res) => {
-    res.status(201).json({
-      flag: await flagService.create(
-        appDepsOf(req),
-        projectIdParam(req),
-        req.body as CreateFlagBody,
-        auditContextOf(req),
-      ),
-    });
+    const flag = await flagService.create(
+      appDepsOf(req),
+      projectIdParam(req),
+      req.body as CreateFlagBody,
+      auditContextOf(req),
+    );
+    sendJson(res, flagResponseWire, { flag }, 201);
   }),
 );
 
@@ -72,7 +84,7 @@ flagRouter.get(
   requireMinProjectRole("VIEWER"),
   validateQuery(listFlagsQuerySchema),
   asyncHandler(async (req, res) => {
-    res.json({
+    sendJson(res, flagListResponseWire, {
       flags: await flagService.list(
         appDepsOf(req),
         projectIdParam(req),
@@ -97,7 +109,9 @@ flagRouter.get(
   requireMinProjectRole("VIEWER"),
   validateQuery(staleFlagsQueryBodySchema),
   asyncHandler(async (req, res) => {
-    res.json(
+    sendJson(
+      res,
+      staleFlagsResponseWire,
       await flagService.staleFlags(
         appDepsOf(req),
         projectIdParam(req),
@@ -113,7 +127,7 @@ flagRouter.post(
   requireMinProjectRole("MAINTAINER"),
   validateBody(bulkArchiveBodySchema),
   asyncHandler(async (req, res) => {
-    res.json({
+    sendJson(res, bulkArchiveResponseWire, {
       results: await flagService.bulkArchive(
         appDepsOf(req),
         projectIdParam(req),
@@ -129,7 +143,7 @@ flagRouter.get(
   requireAuth,
   requireMinProjectRole("VIEWER"),
   asyncHandler(async (req, res) => {
-    res.json({
+    sendJson(res, flagResponseWire, {
       flag: await flagService.get(projectIdParam(req), flagIdOf(req)),
     });
   }),
@@ -141,7 +155,9 @@ flagRouter.get(
   requireMinProjectRole("VIEWER"),
   validateQuery(flagStatsQuerySchema),
   asyncHandler(async (req, res) => {
-    res.json(
+    sendJson(
+      res,
+      flagStatsViewResponseWire,
       await flagService.flagStats(
         appDepsOf(req),
         projectIdParam(req),
@@ -158,7 +174,7 @@ flagRouter.get(
   requireMinProjectRole("VIEWER"),
   asyncHandler(async (req, res) => {
     const flag = await flagService.get(projectIdParam(req), flagIdOf(req));
-    res.json({ variants: flag.variants });
+    sendJson(res, flagVariantsResponseWire, { variants: flag.variants });
   }),
 );
 
@@ -168,7 +184,7 @@ flagRouter.get(
   requireMinProjectRole("VIEWER"),
   asyncHandler(async (req, res) => {
     const flag = await flagService.get(projectIdParam(req), flagIdOf(req));
-    res.json({ envs: flag.envs });
+    sendJson(res, flagEnvsResponseWire, { envs: flag.envs });
   }),
 );
 
@@ -178,7 +194,7 @@ flagRouter.patch(
   requireMinProjectRole("DEVELOPER"),
   validateBody(updateFlagBodySchema),
   asyncHandler(async (req, res) => {
-    res.json({
+    sendJson(res, flagResponseWire, {
       flag: await flagService.update(
         appDepsOf(req),
         projectIdParam(req),
@@ -197,7 +213,7 @@ flagRouter.patch(
   requireMinProjectRole("DEVELOPER"),
   validateBody(updateEnvBodySchema),
   asyncHandler(async (req, res) => {
-    res.json({
+    sendJson(res, flagEnvResponseWire, {
       env: await flagService.updateEnv(
         appDepsOf(req),
         projectIdParam(req),
@@ -216,7 +232,9 @@ flagRouter.get(
   requireAuth,
   requireMinProjectRole("VIEWER"),
   asyncHandler(async (req, res) => {
-    res.json(
+    sendJson(
+      res,
+      rulesResponseWire,
       await flagService.rules(projectIdParam(req), flagIdOf(req), envIdOf(req)),
     );
   }),
@@ -228,7 +246,9 @@ flagRouter.put(
   requireMinProjectRole("DEVELOPER"),
   validateBody(replaceRulesBodySchema),
   asyncHandler(async (req, res) => {
-    res.json(
+    sendJson(
+      res,
+      rulesResponseWire,
       await flagService.replaceRules(
         appDepsOf(req),
         projectIdParam(req),
@@ -248,7 +268,9 @@ flagRouter.post(
   requireMinProjectRole("VIEWER"),
   validateBody(evaluateBodySchema),
   asyncHandler(async (req, res) => {
-    res.json(
+    sendJson(
+      res,
+      testerResultSchema,
       await flagService.evaluateFlag(
         appDepsOf(req),
         projectIdParam(req),

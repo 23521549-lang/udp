@@ -1,0 +1,22 @@
+{
+  "route": "GET /projects/{id}/rollouts",
+  "status": 200,
+  "body": {
+    "rollouts": [
+      {
+        "id": "2fed0906-efb3-4ad2-aeb4-cfeb778cfd79",
+        "environmentId": "61391e3a-f004-4264-8dcc-87e3634c9f6d",
+        "scope": "FLAG_LEVEL",
+        "strategy": "CANARY",
+        "status": "IN_PROGRESS",
+        "currentTrafficPercentage": 0,
+        "baselinePercentage": 0,
+        "flagKey": "t-09951e1b",
+        "workloadName": "checkout",
+        "failReason": null,
+        "createdAt": "2026-09-24T19:39:46.817Z",
+        "updatedAt": "2026-09-24T19:39:48.086Z"
+      }
+    ]
+  }
+}

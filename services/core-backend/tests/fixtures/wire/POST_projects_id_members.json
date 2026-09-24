@@ -1,0 +1,16 @@
+{
+  "route": "POST /projects/{id}/members",
+  "status": 201,
+  "body": {
+    "member": {
+      "userId": "bbac18c9-ea8e-4e57-abae-ad17de0f5fad",
+      "projectRole": "MAINTAINER",
+      "createdAt": "2026-09-24T19:34:55.900Z",
+      "user": {
+        "id": "bbac18c9-ea8e-4e57-abae-ad17de0f5fad",
+        "email": "res-maint-413be535-ae1b-4b36-9ea6-7a811bf49459@udp.local",
+        "name": "Test User"
+      }
+    }
+  }
+}

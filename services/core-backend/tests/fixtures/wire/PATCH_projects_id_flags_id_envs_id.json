@@ -1,0 +1,19 @@
+{
+  "route": "PATCH /projects/{id}/flags/{id}/envs/{id}",
+  "status": 200,
+  "body": {
+    "env": {
+      "environment": {
+        "id": "e186beff-54ab-4b5c-bc44-0dd2c7462a3c",
+        "name": "dev",
+        "isProduction": false
+      },
+      "configId": "3694b69f-9645-4955-9d6f-1fbc512c3ee4",
+      "isEnabled": true,
+      "defaultVariantId": null,
+      "isTracked": false,
+      "ruleCount": 0,
+      "updatedAt": "2026-09-24T19:37:06.674Z"
+    }
+  }
+}

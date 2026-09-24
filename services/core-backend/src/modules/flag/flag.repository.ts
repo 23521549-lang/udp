@@ -1,4 +1,5 @@
-import type { FlagLifecycleStatus, Prisma } from "@udp/db";
+import type { FlagLifecycleStatus, Prisma, RuleType } from "@udp/db";
+import type { FlagServe } from "@udp/shared-types";
 import { prisma } from "../../core/db.js";
 import type {
   FlagDetail,
@@ -283,7 +284,7 @@ const ruleSelect = {
 const ruleViewOf = (row: {
   id: string;
   priority: number;
-  ruleType: string;
+  ruleType: RuleType;
   condition: unknown;
   serve: unknown;
   description: string | null;
@@ -292,7 +293,11 @@ const ruleViewOf = (row: {
   priority: row.priority,
   ruleType: row.ruleType,
   condition: row.condition,
-  serve: row.serve,
+  /**
+   * Cột JSONB đã qua `flagServeDbSchema` ở mọi đường ghi (S2). Ép ở đây, còn kiểm
+   * thật nằm ở `sendJson` (`ruleWire`) — một hàng lệch hình thành 500 có log.
+   */
+  serve: row.serve as FlagServe,
   description: row.description,
 });
 

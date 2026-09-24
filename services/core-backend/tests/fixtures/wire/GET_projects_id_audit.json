@@ -1,0 +1,23 @@
+{
+  "route": "GET /projects/{id}/audit",
+  "status": 200,
+  "body": {
+    "entries": [
+      {
+        "id": "01a0d4e9-032a-7362-86e2-b0546c7404af",
+        "action": "project.create",
+        "actorType": "USER",
+        "actorUserId": "5dec1846-d3fb-4d72-8b3d-9ddbff66db2e",
+        "targetType": "Project",
+        "targetId": "4db65052-2eaf-418e-b43b-f9c91fe5a253",
+        "environmentId": null,
+        "before": null,
+        "after": {
+          "name": "proj-1f95a5ad",
+          "creationMode": "CREATE_NEW"
+        },
+        "occurredAt": "2026-09-24T19:33:55.460Z"
+      }
+    ]
+  }
+}

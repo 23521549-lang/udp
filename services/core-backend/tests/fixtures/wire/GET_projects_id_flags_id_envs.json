@@ -1,0 +1,47 @@
+{
+  "route": "GET /projects/{id}/flags/{id}/envs",
+  "status": 200,
+  "body": {
+    "envs": [
+      {
+        "environment": {
+          "id": "62bcf403-a359-40cb-8778-11bb384d180a",
+          "name": "dev",
+          "isProduction": false
+        },
+        "configId": "60fe23d7-3929-41e3-85d8-be25f2217f9d",
+        "isEnabled": false,
+        "defaultVariantId": null,
+        "isTracked": false,
+        "ruleCount": 0,
+        "updatedAt": "2026-09-24T19:40:52.059Z"
+      },
+      {
+        "environment": {
+          "id": "70175c9e-db0a-46d8-be3b-4d9dc4bd7a32",
+          "name": "staging",
+          "isProduction": false
+        },
+        "configId": "42e13691-1272-4775-9c91-ded0ffaafe9d",
+        "isEnabled": false,
+        "defaultVariantId": null,
+        "isTracked": false,
+        "ruleCount": 0,
+        "updatedAt": "2026-09-24T19:40:52.059Z"
+      },
+      {
+        "environment": {
+          "id": "bb2e1d4e-bd9f-4284-8a2f-98357ca7df7b",
+          "name": "prod",
+          "isProduction": true
+        },
+        "configId": "bdb8fdb4-4a86-4ebe-ad8d-f149416eb0cc",
+        "isEnabled": false,
+        "defaultVariantId": null,
+        "isTracked": false,
+        "ruleCount": 0,
+        "updatedAt": "2026-09-24T19:40:52.059Z"
+      }
+    ]
+  }
+}

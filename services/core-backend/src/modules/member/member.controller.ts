@@ -1,6 +1,10 @@
 import { Router, type Request } from "express";
 import { uuidParam } from "@udp/http";
-import { asyncHandler } from "@udp/http";
+import { asyncHandler, sendJson } from "@udp/http";
+import {
+  memberListResponseWire,
+  memberResponseWire,
+} from "@udp/shared-types/wire";
 import { requireAuth } from "../../core/http/middlewares/auth.middleware.js";
 import {
   projectIdParam,
@@ -9,6 +13,7 @@ import {
 import { idempotent } from "../../core/http/middlewares/idempotency.middleware.js";
 import { validateBody } from "@udp/http";
 import * as memberService from "./member.service.js";
+import { memberWire } from "./member.view.js";
 import {
   addMemberSchema,
   transferOwnershipSchema,
@@ -34,7 +39,8 @@ memberRouter.get(
   requireAuth,
   requireMinProjectRole("VIEWER"),
   asyncHandler(async (req, res) => {
-    res.json({ members: await memberService.list(projectIdParam(req)) });
+    const members = await memberService.list(projectIdParam(req));
+    sendJson(res, memberListResponseWire, { members: members.map(memberWire) });
   }),
 );
 
@@ -51,7 +57,7 @@ memberRouter.post(
   idempotent("POST /projects/:id/members"),
   asyncHandler(async (req, res) => {
     const member = await memberService.add(projectIdParam(req), req.body, req);
-    res.status(201).json({ member });
+    sendJson(res, memberResponseWire, { member: memberWire(member) }, 201);
   }),
 );
 
@@ -67,7 +73,7 @@ memberRouter.patch(
       req.body,
       req,
     );
-    res.json({ member });
+    sendJson(res, memberResponseWire, { member: memberWire(member) });
   }),
 );
 
@@ -92,6 +98,6 @@ memberRouter.post(
       req.body,
       req,
     );
-    res.json({ member });
+    sendJson(res, memberResponseWire, { member: memberWire(member) });
   }),
 );

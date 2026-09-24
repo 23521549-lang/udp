@@ -1,0 +1,77 @@
+{
+  "route": "GET /projects/{id}/rollouts/{id}",
+  "status": 200,
+  "body": {
+    "rollout": {
+      "id": "2fed0906-efb3-4ad2-aeb4-cfeb778cfd79",
+      "projectId": "1be98354-e142-4fb5-96dc-f0634d075b2c",
+      "environment": {
+        "id": "61391e3a-f004-4264-8dcc-87e3634c9f6d",
+        "name": "dev",
+        "isProduction": false
+      },
+      "scope": "FLAG_LEVEL",
+      "controlMode": "udp-driven",
+      "strategy": "CANARY",
+      "status": "IN_PROGRESS",
+      "currentTrafficPercentage": 0,
+      "baselinePercentage": 0,
+      "flag": {
+        "id": "bfd695e4-cd10-4598-bf04-51aaf2f7ef65",
+        "key": "t-09951e1b",
+        "targetVariant": "on",
+        "targetingRuleId": "d1c2fc62-4943-4947-9f9d-52c3e045de5a"
+      },
+      "workloadName": "checkout",
+      "thresholds": {
+        "errorRate": 0.05,
+        "minErrors": 5,
+        "latencyP99Ms": 1000,
+        "relativeErrorRate": 1.5,
+        "maxConsecutiveBreaches": 2
+      },
+      "stepPercent": 10,
+      "stepIntervalSeconds": 300,
+      "analysisIntervalSeconds": 30,
+      "warmUpRequests": 100,
+      "metricWindowSeconds": 60,
+      "maxDurationSeconds": 86400,
+      "lastDecision": {
+        "decision": "HOLD",
+        "reason": "Mới 34/100 request",
+        "breach": false,
+        "breachStreak": 0,
+        "breachAt": null,
+        "at": "2026-09-22T10:00:00.000Z"
+      },
+      "latestMetricSnapshot": {
+        "canary": {
+          "requestCount": 100,
+          "errorCount": 1,
+          "errorRate": 0.01,
+          "hasData": true
+        },
+        "baseline": {
+          "requestCount": 100,
+          "errorCount": 1,
+          "errorRate": 0.01,
+          "hasData": true
+        },
+        "zScore": null,
+        "queries": {
+          "canary": [
+            "q1"
+          ],
+          "baseline": [
+            "q2"
+          ]
+        },
+        "windowSeconds": 60,
+        "at": "2026-09-22T10:00:00.000Z"
+      },
+      "events": [],
+      "createdAt": "2026-09-24T19:39:46.817Z",
+      "updatedAt": "2026-09-24T19:39:48.086Z"
+    }
+  }
+}

@@ -12,7 +12,11 @@
     "./sdk-stats": "./src/sdk-stats.ts",
     "./flag-stats": "./src/flag-stats.ts",
     "./segment-api": "./src/segment-api.ts",
-    "./capability": "./src/capability.ts"
+    "./capability": "./src/capability.ts",
+    "./wire": "./src/wire.ts",
+    "./flag-api": "./src/flag-api.ts",
+    "./condition": "./src/condition.ts",
+    "./rollout": "./src/rollout.ts"
   },
   "scripts": {
     "test": "vitest run",

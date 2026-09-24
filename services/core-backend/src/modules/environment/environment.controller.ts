@@ -1,10 +1,16 @@
 import { Router, type Request } from "express";
 import {
   asyncHandler,
+  sendJson,
   uuidParam,
   validateBody,
   validateQuery,
 } from "@udp/http";
+import {
+  sdkKeyCreatedResponseWire,
+  sdkKeyListResponseWire,
+  sdkKeyResponseWire,
+} from "@udp/shared-types/wire";
 import { appDepsOf } from "../../core/app-deps.js";
 import { requireAuth } from "../../core/http/middlewares/auth.middleware.js";
 import {
@@ -68,7 +74,9 @@ environmentRouter.get(
   requireMinProjectRole("VIEWER"),
   validateQuery(listSdkKeysQuerySchema),
   asyncHandler(async (req, res) => {
-    res.json(
+    sendJson(
+      res,
+      sdkKeyListResponseWire,
       await sdkKeyService.list(
         projectIdParam(req),
         environmentIdOf(req),
@@ -96,7 +104,7 @@ environmentRouter.post(
      * `res.set` sau đó là một lệnh không có tác dụng mà không ai báo lỗi.
      */
     res.set("Cache-Control", "no-store").set("Pragma", "no-cache");
-    res.status(201).json(created);
+    sendJson(res, sdkKeyCreatedResponseWire, created, 201);
   }),
 );
 
@@ -111,7 +119,9 @@ environmentRouter.delete(
      * trong response là cách duy nhất người dùng biết lần thu hồi thật đã xảy ra
      * lúc nào (AC-4.6).
      */
-    res.json(
+    sendJson(
+      res,
+      sdkKeyResponseWire,
       await sdkKeyService.revoke(
         appDepsOf(req),
         projectIdParam(req),

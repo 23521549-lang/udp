@@ -142,7 +142,7 @@ export function detailView({
     workloadName: session.workloadName,
     ...(session.versionNew === null ? {} : { versionNew: session.versionNew }),
     ...(session.versionOld === null ? {} : { versionOld: session.versionOld }),
-    thresholds: session.thresholds,
+    thresholds: session.thresholds as Record<string, unknown>,
     stepPercent: num(session.stepPercent),
     stepIntervalSeconds: session.stepIntervalSeconds,
     analysisIntervalSeconds: session.analysisIntervalSeconds,

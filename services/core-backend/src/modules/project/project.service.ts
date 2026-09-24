@@ -1,4 +1,5 @@
 import type { Request } from "express";
+import type { ProjectRole } from "@udp/db";
 import { NotFoundError } from "@udp/http";
 import * as repository from "./project.repository.js";
 import type {
@@ -34,7 +35,9 @@ export const create = (
     request,
   });
 
-export const listForUser = (userId: string): Promise<PublicProject[]> =>
+export const listForUser = (
+  userId: string,
+): Promise<(PublicProject & { myRole: ProjectRole })[]> =>
   repository.listForUser(userId);
 
 export async function getById(

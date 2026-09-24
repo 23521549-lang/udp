@@ -1,0 +1,13 @@
+{
+  "route": "POST /auth/refresh",
+  "status": 200,
+  "body": {
+    "user": {
+      "id": "dee6b7c8-f829-4555-bcb5-7a0f44ac5a56",
+      "email": "test-dbaf50c2-22e6-4d94-933e-06f5668f267d@udp.local",
+      "name": "Test User",
+      "platformRole": "USER"
+    },
+    "csrfToken": "fake-csrf-token-for-golden-capture"
+  }
+}

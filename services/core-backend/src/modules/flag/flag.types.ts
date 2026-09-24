@@ -1,5 +1,5 @@
 import { STALE_FLAG_THRESHOLDS } from "@udp/config";
-import { FlagLifecycleStatus, type FlagType } from "@udp/db";
+import { FlagLifecycleStatus, type FlagType, type RuleType } from "@udp/db";
 import {
   createFlagFields,
   createFlagRefine,
@@ -16,6 +16,7 @@ import {
   updateFlagFields,
   updateFlagRefine,
   type ErrorCode,
+  type FlagServe,
   type FlagStatsResponse,
   type FlagStatsSummary,
 } from "@udp/shared-types";
@@ -240,9 +241,10 @@ export interface FlagDetail {
 export interface RuleView {
   id: string;
   priority: number;
-  ruleType: string;
+  ruleType: RuleType;
   condition: unknown;
-  serve: unknown;
+  /** [v4.11] Có hình — `sendJson` kiểm nó bằng `ruleWire` trước khi lên dây */
+  serve: FlagServe;
   description: string | null;
 }
 

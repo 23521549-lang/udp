@@ -1,6 +1,10 @@
 import { Router, type Request } from "express";
 import { COOKIE_NAMES } from "@udp/config";
-import { UnauthenticatedError } from "@udp/http";
+import {
+  authSessionResponseWire,
+  meResponseWire,
+} from "@udp/shared-types/wire";
+import { sendJson, UnauthenticatedError } from "@udp/http";
 import { clearAuthCookies, setAuthCookies } from "../../core/http/cookies.js";
 import { asyncHandler } from "@udp/http";
 import {
@@ -48,7 +52,7 @@ authRouter.post(
       sessionContext(req),
     );
     const csrfToken = setAuthCookies(res, tokens, familyId);
-    res.status(201).json({ user, csrfToken });
+    sendJson(res, authSessionResponseWire, { user, csrfToken }, 201);
   }),
 );
 
@@ -62,7 +66,7 @@ authRouter.post(
       sessionContext(req),
     );
     const csrfToken = setAuthCookies(res, tokens, familyId);
-    res.json({ user, csrfToken });
+    sendJson(res, authSessionResponseWire, { user, csrfToken });
   }),
 );
 
@@ -104,7 +108,7 @@ authRouter.post(
       sessionContext(req),
     );
     const csrfToken = setAuthCookies(res, tokens, familyId);
-    res.json({ user, csrfToken });
+    sendJson(res, authSessionResponseWire, { user, csrfToken });
   }),
 );
 
@@ -116,6 +120,6 @@ authRouter.get(
     // requireAuth đã bảo đảm req.user tồn tại; dấu ! ở đây là an toàn và
     // được giới hạn trong đúng một dòng.
     const user = await authService.getCurrentUser(requireUser(req).sub);
-    res.json({ user });
+    sendJson(res, meResponseWire, { user });
   }),
 );

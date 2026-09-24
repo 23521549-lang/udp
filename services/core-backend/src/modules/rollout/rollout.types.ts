@@ -184,7 +184,8 @@ export interface RolloutDetail {
   workloadName: string | null;
   versionNew?: string;
   versionOld?: string;
-  thresholds: unknown;
+  /** [v4.11] Object JSONB — `sendJson` kiểm nó là object trước khi lên dây */
+  thresholds: Record<string, unknown>;
   stepPercent: number;
   stepIntervalSeconds: number;
   analysisIntervalSeconds: number;

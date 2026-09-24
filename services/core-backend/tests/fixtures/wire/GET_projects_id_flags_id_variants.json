@@ -1,0 +1,18 @@
+{
+  "route": "GET /projects/{id}/flags/{id}/variants",
+  "status": 200,
+  "body": {
+    "variants": [
+      {
+        "id": "09203fa4-252c-4ecb-a7f4-dd65ba647c14",
+        "key": "off",
+        "value": false
+      },
+      {
+        "id": "cbd34e74-0b8c-4b5e-8cdd-5972f1a922a6",
+        "key": "on",
+        "value": true
+      }
+    ]
+  }
+}

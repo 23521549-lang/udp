@@ -1,0 +1,51 @@
+{
+  "route": "POST /projects",
+  "status": 201,
+  "body": {
+    "project": {
+      "id": "2d7866c7-c147-4db0-82d5-b185f79166a4",
+      "name": "Dự án quản lý bán hàng trực tuyến cho doanh nghiệp vừa và nhỏ",
+      "ownerId": "d954b8aa-8a11-4114-9147-a722b709b56f",
+      "creationMode": "CREATE_NEW",
+      "languageRuntime": "nodejs",
+      "repoUrl": null,
+      "status": "DRAFT",
+      "resourceQuota": {
+        "maxNodes": 3,
+        "maxNodeSize": "medium",
+        "maxDatabases": 2,
+        "maxStorageGb": 50,
+        "maxLoadBalancers": 3
+      },
+      "expiresAt": null,
+      "createdAt": "2026-09-24T19:33:24.593Z",
+      "myRole": "OWNER"
+    },
+    "environments": [
+      {
+        "id": "d0862963-9270-42d8-a4c2-c5115a1084c1",
+        "name": "dev",
+        "k8sNamespace": "udp-du-an-quan-ly-ban-ha-2d7866-dev",
+        "isProduction": false,
+        "rank": 0,
+        "autoDeploy": true
+      },
+      {
+        "id": "4220a448-7dc6-4299-8667-c3d896d171bd",
+        "name": "staging",
+        "k8sNamespace": "udp-du-an-quan-ly-ban-ha-2d7866-staging",
+        "isProduction": false,
+        "rank": 1,
+        "autoDeploy": true
+      },
+      {
+        "id": "dbc1992d-98de-48fa-8c70-b6dc9f7cdded",
+        "name": "prod",
+        "k8sNamespace": "udp-du-an-quan-ly-ban-ha-2d7866-prod",
+        "isProduction": true,
+        "rank": 2,
+        "autoDeploy": false
+      }
+    ]
+  }
+}

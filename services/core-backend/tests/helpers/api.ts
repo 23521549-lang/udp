@@ -9,7 +9,7 @@ import request from "supertest";
  */
 
 export const API = "/api/v1";
-const PASSWORD = "dev-password-12345";
+export const PASSWORD = "dev-password-12345";
 
 export interface Actor {
   email: string;

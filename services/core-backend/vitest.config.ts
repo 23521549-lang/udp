@@ -17,6 +17,11 @@ export default defineConfig({
      */
     include: ["tests/**/*.test.ts", "src/modules/**/*.test.ts"],
     /**
+     * [v4.11] Golden capture của hợp đồng dây: không làm gì trừ khi
+     * `UDP_CAPTURE_WIRE=1` (xem `tests/helpers/wire-capture.ts`).
+     */
+    setupFiles: ["tests/helpers/wire-capture.ts"],
+    /**
      * Chay tuan tu, giong packages/db va flag-service.
      *
      * Truoc khi co service thu hai, de vitest fork tu do o day van an toan. Voi

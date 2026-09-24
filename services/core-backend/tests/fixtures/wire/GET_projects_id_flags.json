@@ -1,0 +1,278 @@
+{
+  "route": "GET /projects/{id}/flags",
+  "status": 200,
+  "body": {
+    "flags": [
+      {
+        "id": "79a767a6-80a2-4c4d-9046-724e504f1dc4",
+        "key": "f-c82ceed2",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "ACTIVE",
+        "activatedAt": "2026-09-24T19:37:48.467Z",
+        "updatedAt": "2026-09-24T19:37:48.782Z",
+        "env": {
+          "configId": "bc156f06-68c2-4b94-924f-80096141c23d",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "3cac319c-c5b2-4347-8f63-119346be1a2e",
+        "key": "f-f621a805",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "ACTIVE",
+        "activatedAt": "2026-09-24T19:37:43.570Z",
+        "updatedAt": "2026-09-24T19:37:43.900Z",
+        "env": {
+          "configId": "2f107491-1739-452c-9db4-6868e14278b9",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "18795445-ca58-4e25-898c-6acfb1898bca",
+        "key": "f-57104695",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "ACTIVE",
+        "activatedAt": "2026-09-24T19:37:39.205Z",
+        "updatedAt": "2026-09-24T19:37:39.539Z",
+        "env": {
+          "configId": "f80eb707-867d-4371-9c4d-bf0c7279adba",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "32003287-7a06-499d-9598-3fab9e2310ec",
+        "key": "f-5545fb4a",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:37:33.668Z",
+        "env": {
+          "configId": "49a9a750-82bc-4d88-824e-fb835c930569",
+          "isEnabled": true,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "61ca2568-527a-43e3-b301-2ca9cc125c42",
+        "key": "f-3ec8657a",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:37:31.724Z",
+        "env": {
+          "configId": "485a3df2-a283-49e5-8a42-0a27c2421c39",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "bacee87b-fc18-46dd-a2e2-81ffc5f0fac8",
+        "key": "f-d8bc42ec",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:37:29.346Z",
+        "env": {
+          "configId": "4d805dc0-781d-4968-80cb-01bc69be11d4",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "c2e976c3-8f4a-4576-8178-eb3b1c70a1b2",
+        "key": "f-17c0be45",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:37:27.942Z",
+        "env": {
+          "configId": "fdc281dd-11d5-40db-a83a-2f6854f9d0c6",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "8a4dd92d-9f41-4a62-bb79-100ccf7caea8",
+        "key": "f-5b542cd8",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:37:23.975Z",
+        "env": {
+          "configId": "f0191f32-1b5e-4ec9-8141-035c045dd75e",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 1
+        }
+      },
+      {
+        "id": "e6b5cb8a-0297-4300-a8d0-b95494c10e03",
+        "key": "f-5ba6e0a9",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:37:21.819Z",
+        "env": {
+          "configId": "b86d0a06-38ca-46ca-b2b5-4e6078d1245e",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "e8feb092-6704-4135-bcf8-2d127b7d3c90",
+        "key": "f-9bcdc923",
+        "flagType": "BOOLEAN",
+        "description": "b",
+        "lifecycleStatus": "ACTIVE",
+        "activatedAt": "2026-09-24T19:37:19.036Z",
+        "updatedAt": "2026-09-24T19:37:19.381Z",
+        "env": {
+          "configId": "be471ab8-0442-498c-8dbd-dd252f269b3e",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "b06c294a-57f2-4c51-8d4e-2069cd060b6d",
+        "key": "f-5d22eedc",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:37:07.749Z",
+        "env": {
+          "configId": "046a5e7b-d222-4739-952d-060b25cc6937",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "777992b5-6a45-4f2d-b55c-a4a9fc6b1d00",
+        "key": "f-1cf09ee2",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:37:05.386Z",
+        "env": {
+          "configId": "3694b69f-9645-4955-9d6f-1fbc512c3ee4",
+          "isEnabled": true,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "88c5ebfe-0098-49c0-af7d-c8188a447027",
+        "key": "f-a727b63e",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:36:59.997Z",
+        "env": {
+          "configId": "b25f19ba-16d7-4418-8e2d-4343cc7b5520",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "fd2959fc-080b-4f41-b3b0-a27d1ed07037",
+        "key": "f-8c55e8a8",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:36:58.485Z",
+        "env": {
+          "configId": "cdf99b38-a547-4204-984d-240476ce8feb",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "95c625c5-da37-4263-bdb3-84a837af0b62",
+        "key": "f-f680f3f3",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:36:56.762Z",
+        "env": {
+          "configId": "f8340c3d-a3a9-423b-be6d-86ac5c2aa381",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "a4b7d0e9-3c68-44ef-a52d-31eb56820d53",
+        "key": "f-5e6b50de",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:36:54.850Z",
+        "env": {
+          "configId": "bb0fc6af-42ee-4a40-9e7f-6d1bbd94cd86",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "b94850d2-34ae-41ff-a42d-4188a67a7b73",
+        "key": "f-e4d49ba7",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:36:53.373Z",
+        "env": {
+          "configId": "f98cd3ef-5db5-439c-a28f-242c197ba922",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      },
+      {
+        "id": "1248535a-2dab-47b4-88be-9c25726945e2",
+        "key": "f-9df618ee",
+        "flagType": "BOOLEAN",
+        "description": null,
+        "lifecycleStatus": "DRAFT",
+        "activatedAt": null,
+        "updatedAt": "2026-09-24T19:36:50.747Z",
+        "env": {
+          "configId": "35b0a92e-831a-4e80-8216-e077e5892252",
+          "isEnabled": false,
+          "isTracked": false,
+          "ruleCount": 0
+        }
+      }
+    ]
+  }
+}

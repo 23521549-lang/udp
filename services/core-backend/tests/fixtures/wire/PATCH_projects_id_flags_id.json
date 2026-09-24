@@ -1,0 +1,72 @@
+{
+  "route": "PATCH /projects/{id}/flags/{id}",
+  "status": 200,
+  "body": {
+    "flag": {
+      "id": "222de1fa-503b-4f05-bd46-aa2c6fdeafc4",
+      "key": "f-6077a466",
+      "flagType": "BOOLEAN",
+      "description": null,
+      "lifecycleStatus": "ARCHIVED",
+      "stickinessAttribute": "targetingKey",
+      "defaultVariantId": "0a312a36-12b5-45c6-a17f-1c25beae733f",
+      "permanent": false,
+      "activatedAt": "2026-09-24T19:37:57.351Z",
+      "createdAt": "2026-09-24T19:37:55.973Z",
+      "updatedAt": "2026-09-24T19:37:59.175Z",
+      "variants": [
+        {
+          "id": "6369b2c1-cd32-429b-8b43-2ce1ed761829",
+          "key": "off",
+          "value": false
+        },
+        {
+          "id": "0a312a36-12b5-45c6-a17f-1c25beae733f",
+          "key": "on",
+          "value": true
+        }
+      ],
+      "envs": [
+        {
+          "environment": {
+            "id": "e186beff-54ab-4b5c-bc44-0dd2c7462a3c",
+            "name": "dev",
+            "isProduction": false
+          },
+          "configId": "22c58e63-df23-4238-89aa-54f5be8293e4",
+          "isEnabled": false,
+          "defaultVariantId": null,
+          "isTracked": false,
+          "ruleCount": 0,
+          "updatedAt": "2026-09-24T19:37:55.973Z"
+        },
+        {
+          "environment": {
+            "id": "9cc0823e-a0b2-4630-85a0-b012bbe9cec5",
+            "name": "staging",
+            "isProduction": false
+          },
+          "configId": "3ec424e2-aac7-4ec3-a7fa-570bb88875f6",
+          "isEnabled": false,
+          "defaultVariantId": null,
+          "isTracked": false,
+          "ruleCount": 0,
+          "updatedAt": "2026-09-24T19:37:55.973Z"
+        },
+        {
+          "environment": {
+            "id": "8ea7820b-b5fb-4047-8d8b-6e8dbe943664",
+            "name": "prod",
+            "isProduction": true
+          },
+          "configId": "da39696d-c57d-4491-992c-9ce31411b217",
+          "isEnabled": false,
+          "defaultVariantId": null,
+          "isTracked": false,
+          "ruleCount": 0,
+          "updatedAt": "2026-09-24T19:37:55.973Z"
+        }
+      ]
+    }
+  }
+}
