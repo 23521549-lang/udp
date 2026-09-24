@@ -74,6 +74,7 @@ async function wipe(): Promise<void> {
       },
     });
   }
+  await admin.auditLog.deleteMany({ where: { projectId: { in: PROJECTS } } });
   await admin.provisionedResource.deleteMany({
     where: { projectId: { in: PROJECTS } },
   });

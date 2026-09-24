@@ -4,12 +4,14 @@ import type { ProvisionedResourceRow } from "../ledger.js";
 import {
   CloudAdapterRunner,
   SimulatedCrash,
+  type Fence,
   type Ledger,
   type RunnerObserver,
   type RunOutcome,
   type RunPlan,
 } from "../runner/index.js";
 import type { CloudContractEnv } from "./index.js";
+import { CONTRACT_PROJECT } from "./ledger.js";
 
 /**
  * [v4.10] Lưới khôi phục K1..K10 — phép `c5` của §13.2, và bằng chứng của đóng góp C3.
@@ -36,7 +38,14 @@ import type { CloudContractEnv } from "./index.js";
  *  (c) Không tài nguyên nào mang `udp.project` mà thiếu hàng trong sổ.
  */
 
-const PROJECT = "11111111-1111-4111-8111-111111111111";
+/**
+ * Cùng `projectId` với bộ hợp đồng sổ — MỘT hằng số, không phải hai bản cùng giá trị.
+ *
+ * Tầng 2 của lưới chạy trên `PrismaLedger`, nên `projectId` phải có một hàng `projects`
+ * thật. Môi trường dựng hàng đó theo `CONTRACT_PROJECT`; nếu lưới giữ bản chép riêng thì
+ * ngày hai chuỗi lệch nhau, mọi ô tầng 2 đỏ vì khoá ngoại chứ không vì tính chất nào.
+ */
+const PROJECT = CONTRACT_PROJECT;
 const OWNER = "chu@vi-du.test";
 const REGION = "ap-southeast-1";
 
@@ -138,12 +147,21 @@ export async function runFullProvision(args: {
   adapter: CloudAdapter;
   ledger: Ledger;
   observer: RunnerObserver;
+  /**
+   * Fence THẬT, khi có.
+   *
+   * Tầng 1 không có lease nào để mất nên mặc định là một fence luôn đồng ý. Tầng 2 truyền
+   * `PrismaFence` vào, và đó là cách ô K9 trở thành một ô có nghĩa: không có fence thật
+   * thì "worker mất lease bị chặn" không có gì để chặn, và ô đó xanh vì không có ai bị
+   * chặn chứ không vì cơ chế chặn hoạt động.
+   */
+  fence?: Fence;
 }): Promise<RunOutcome[]> {
   const outcomes: RunOutcome[] = [];
   for (const plan of plansOf(args.adapter)) {
     const runner = new CloudAdapterRunner({
       ledger: args.ledger,
-      fence: { assert: () => Promise.resolve() },
+      fence: args.fence ?? { assert: () => Promise.resolve() },
       observer: args.observer,
       sleep: () => Promise.resolve(),
     });

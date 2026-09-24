@@ -176,17 +176,30 @@ export function createPrismaFence(
     async assert(): Promise<void> {
       const row = await prisma.provisioningJob.findUnique({
         where: { id: lease.jobId },
-        select: { version: true, claimedBy: true },
+        select: { version: true, claimedBy: true, claimedUntil: true },
       });
       if (row === null) {
-        throw new FenceLostError(
-          `job ${lease.jobId} không còn tồn tại`,
-        );
+        throw new FenceLostError(`job ${lease.jobId} không còn tồn tại`);
       }
       if (row.version !== lease.version || row.claimedBy !== lease.workerId) {
         throw new FenceLostError(
           `lease của ${lease.workerId} đã mất: version ${String(lease.version)} → ` +
             `${String(row.version)}, người giữ ${String(row.claimedBy)}`,
+        );
+      }
+      /**
+       * HẠN cũng là một điều kiện, không chỉ `version` và người giữ.
+       *
+       * Thiếu nó, một worker ngủ quá hạn lease của chính mình vẫn đi tiếp gọi cloud, chỉ
+       * vì chưa ai kịp giành job. Đó đúng là nửa đầu của kịch bản ADR-02 — A mất kết nối
+       * 5 phút nhưng vẫn gọi được AWS — và nửa đó không cần B xuất hiện mới thành lỗi:
+       * job đang bỏ ngỏ cho người khác lấy, nên A phải dừng NGAY khi hết hạn, không phải
+       * khi có người lấy. Đây là chỗ duy nhất trong hệ thống hỏi câu đó.
+       */
+      if (row.claimedUntil === null || row.claimedUntil.getTime() <= Date.now()) {
+        throw new FenceLostError(
+          `lease của ${lease.workerId} đã hết hạn lúc ` +
+            `${row.claimedUntil?.toISOString() ?? "không rõ"}`,
         );
       }
     },

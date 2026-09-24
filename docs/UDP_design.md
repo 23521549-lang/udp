@@ -179,6 +179,21 @@ Bất biến bắt buộc: **`udp-driven` ⇒ CR không được chứa khối `
 | 4 | Viết **job đối soát** giữa `pgboss.job` và `ProvisioningJob` | pg-boss đánh dấu `failed` sau khi hết lượt retry trong khi `ProvisioningJob.state` vẫn là `CLUSTER`, khiến Portal hiển thị "đang tạo cluster" vĩnh viễn. Quy ước: **`ProvisioningJob` là nguồn sự thật nghiệp vụ**, pg-boss chỉ là cơ chế thực thi |
 | 5 | **Lease + fencing trên chính `ProvisioningJob`** (`claimed_by`, `claimed_until`, `version`; mọi UPDATE đều `WHERE version = $expected`) và **sổ tài nguyên ghi trước khi gọi cloud** (`ProvisionedResource` với `idempotency_key UNIQUE`, `status = CREATING`, cập nhật `provider_id` sau khi API trả về) | Worker A mất kết nối database 5 phút nhưng **vẫn gọi được AWS**; pg-boss giao job cho B; A tỉnh lại ghi đè cả mảng `created_resources` (JSONB) và tạo tiếp tài nguyên. `idempotencyKey` chỉ cứu được API có token (EKS `clientRequestToken` có; EC2 `CreateVpc` / `CreateSubnet` không có), nên khi resume adapter phải **tra cứu theo tag `udp.*` + `idempotency_key` trước khi tạo**. Sổ ghi trước cũng đóng lỗ hổng "API cloud thành công nhưng process chết trước khi ghi sổ" của v3 |
 
+> **[v4.10] Hai mệnh đề được thêm vào điều kiện 5 sau khi hiện thực và chạy lưới tầng 2.**
+>
+> **(a) `fence.assert()` phải kiểm cả HẠN, không chỉ `version` và người giữ.** Bản v4.9 nói
+> "mọi UPDATE đều `WHERE version = $expected`", và điều đó chỉ chặn được worker cũ **sau khi**
+> đã có worker mới giành job. Khoảng giữa hai mốc — lease của A đã hết hạn nhưng chưa ai
+> lấy — là một khoảng A vẫn "hợp lệ" theo `version`, trong khi job đã bỏ ngỏ cho người
+> khác. Đó đúng là nửa đầu của chính kịch bản ở cột bên phải: A mất kết nối database
+> nhưng **vẫn gọi được AWS**. Nên A phải dừng **ngay khi hết hạn**, không phải khi có
+> người lấy.
+>
+> **(b) Worker hoàn thành phải NHẢ lease.** Giữ tới hết `claimed_until` sau khi đã xong
+> nghĩa là project bị khoá thêm tới 300 giây mà không ai làm gì — và với một lượt
+> provision gồm nhiều job nối tiếp thì đó là một dây chừng đợi cộng dồn. Phát hiện lúc
+> 37 trong 40 ô của lưới tầng 2 đỏ với "không giành được lease".
+
 > Ràng buộc tương tự cũng áp dụng cho số đếm retry: pg-boss có `retryLimit` riêng, `ProvisioningJob.attempt` chỉ để hiển thị và đối soát — không dùng làm điều kiện dừng.
 
 #### ADR-03 — Ranh giới tin cậy của SDK endpoint và hai chế độ đánh giá

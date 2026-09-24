@@ -212,21 +212,41 @@ describe("fencing", () => {
    */
   it("worker mất lease bị chặn ở lần assert() kế tiếp (K9)", async () => {
     const jobId = await freshJob();
-    const past = new Date(Date.now() - 10 * DEFAULT_LEASE_MS);
+    /** Lease ngắn THẬT, không phải một lease đã hết hạn từ đầu */
     const leaseA = (await claim({
       prisma: s1,
       jobId,
       workerId: WORKER_A,
-      leaseMs: 1,
-      now: past,
+      leaseMs: 1_500,
     })) as JobLease;
 
     const fenceA = createPrismaFence(s1, leaseA);
+
+    /** (1) Còn hạn, còn của mình ⇒ đi tiếp */
     await expect(fenceA.assert()).resolves.toBeUndefined();
 
+    /**
+     * (2) HẾT HẠN mà CHƯA ai giành ⇒ vẫn phải dừng.
+     *
+     * Đây là nửa đầu của kịch bản ADR-02, và là nửa dễ bỏ sót: job đang bỏ ngỏ cho người
+     * khác lấy, nên A phải dừng ngay khi hết hạn chứ không phải khi có người lấy. Một
+     * fence chỉ so `version` sẽ cho A đi tiếp gọi cloud trong suốt khoảng trống này.
+     */
+    await new Promise<void>((resolve) => setTimeout(resolve, 1_600));
+    const stillHolder = await admin.provisioningJob.findUniqueOrThrow({
+      where: { id: jobId },
+      select: { claimedBy: true, version: true },
+    });
+    expect(stillHolder.claimedBy).toBe(WORKER_A);
+    expect(stillHolder.version).toBe(leaseA.version);
+    await expect(fenceA.assert()).rejects.toThrow(FenceLostError);
+
+    /** (3) B giành được vì lease đã hết hạn, và `version` đổi */
     const leaseB = await claim({ prisma: s1, jobId, workerId: WORKER_B });
     expect(leaseB).not.toBeNull();
+    expect((leaseB as JobLease).version).toBe(leaseA.version + 1);
 
+    /** (4) A vẫn bị chặn, giờ vì `version` đã đổi chứ không vì hạn */
     await expect(fenceA.assert()).rejects.toThrow(FenceLostError);
   });
 

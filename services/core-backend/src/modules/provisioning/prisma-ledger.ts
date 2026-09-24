@@ -196,9 +196,23 @@ export function createPrismaLedger(options: PrismaLedgerOptions): Ledger {
      * không bao giờ được thực thi — tức không bao giờ được kiểm.
      */
     async intend(intent: LedgerIntent): Promise<void> {
-      try {
-        await prisma.provisionedResource.create({
-          data: {
+      /**
+       * `INSERT ... ON CONFLICT DO NOTHING`, không phải "kiểm rồi ghi".
+       *
+       * `idempotency_key UNIQUE` là lớp chặn thứ hai của §4.5 sau `lookup()`, và nó chỉ
+       * thật khi đường ghi để nó nói. Một lần kiểm trước chỉ dịch cửa sổ chứ không đóng
+       * nó, và làm cho lớp chặn thứ hai không bao giờ được thực thi — tức không bao giờ
+       * được kiểm.
+       *
+       * `skipDuplicates` thay vì bắt `P2002`: cùng một câu SQL, cùng một bảo đảm, nhưng
+       * KHÔNG sinh một dòng `prisma:error` cho một đường đi **bình thường**. Mỗi lượt
+       * resume sau crash đều đi qua đây, nên bắt ngoại lệ ở đây nghĩa là mọi lần khôi
+       * phục thành công đều in một lỗi — và 40 ô của lưới tầng 2 in 40 lỗi giả, đủ để
+       * một lỗi thật lẫn vào mà không ai thấy.
+       */
+      const { count } = await prisma.provisionedResource.createMany({
+        data: [
+          {
             jobId,
             projectId: intent.projectId,
             step: intent.step,
@@ -208,26 +222,25 @@ export function createPrismaLedger(options: PrismaLedgerOptions): Ledger {
             region: intent.region,
             status: "CREATING",
           },
-        });
-      } catch (err) {
-        if (
-          !(err instanceof Prisma.PrismaClientKnownRequestError) ||
-          err.code !== "P2002"
-        ) {
-          throw err;
-        }
-        const existing = await prisma.provisionedResource.findUnique({
-          where: { idempotencyKey: intent.idempotencyKey },
-          select: { status: true },
-        });
-        if (existing === null) throw err;
-        if (existing.status === "CREATING") return;
-        throw new LedgerTransitionError(
-          intent.idempotencyKey,
-          existing.status,
-          "CREATING",
-        );
+        ],
+        skipDuplicates: true,
+      });
+      if (count === 1) return;
+
+      /** Đã có hàng: chỉ `CREATING` là hợp lệ (K2/K3 resume), còn lại là lỗi thật */
+      const existing = await prisma.provisionedResource.findUnique({
+        where: { idempotencyKey: intent.idempotencyKey },
+        select: { status: true },
+      });
+      if (existing === null) {
+        throw new LedgerMissingRowError(intent.idempotencyKey);
       }
+      if (existing.status === "CREATING") return;
+      throw new LedgerTransitionError(
+        intent.idempotencyKey,
+        existing.status,
+        "CREATING",
+      );
     },
 
     markCreated(idempotencyKey: string, providerId: string): Promise<void> {

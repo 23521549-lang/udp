@@ -80,3 +80,20 @@ export {
   LEDGER_CONTRACT_CHECKS,
   runLedgerContract,
 } from "./ledger.js";
+
+/**
+ * Lưới khôi phục — dùng chung cho cả hai tầng.
+ *
+ * Tầng 1 nằm trong `packages/adapter-core/tests`, tầng 2 nằm trong Service 1 (nó cần
+ * `PrismaLedger`, và `adapter-core` không được phụ thuộc `@udp/db`). Nên những hàm này
+ * phải đi qua subpath công khai, không phải qua một đường dẫn tương đối xuyên package.
+ */
+export type { GridAssertion, GridCell } from "./grid.js";
+export {
+  crashingObserver,
+  flatStepNames,
+  gridCell,
+  measureConvergence,
+  plansOf,
+  runFullProvision,
+} from "./grid.js";
