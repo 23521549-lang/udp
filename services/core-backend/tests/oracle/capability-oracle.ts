@@ -256,9 +256,18 @@ export function oracleValidate(
     order: null,
   });
 
+  /**
+   * [v4.10] Duyệt theo khoá ĐÃ SẮP, không theo thứ tự đầu vào.
+   *
+   * `return err(...)` dừng ở lỗi đầu tiên, và `adapters` phản ánh thứ tự người dùng bật
+   * tool — nên không sắp thì lỗi báo về phụ thuộc thứ tự bật. Xem §5.3, phần "thứ tự
+   * duyệt là chính tắc".
+   */
+  const inOrder = [...adapters].sort((x, y) => keyOf(x).localeCompare(keyOf(y)));
+
   // ---- 1. Bản đồ provider
   const provided = new Map<CapabilityId, ProviderEntry[]>();
-  for (const a of adapters) {
+  for (const a of inOrder) {
     for (const p of a.capabilities.provides) {
       provided.set(p.id, [
         ...(provided.get(p.id) ?? []),
@@ -280,14 +289,14 @@ export function oracleValidate(
 
   // ---- 2b. conflicts tool-level, kiểm CẢ HAI CHIỀU
   const ids = new Set(adapters.map(keyOf));
-  for (const a of adapters) {
+  for (const a of inOrder) {
     for (const c of a.capabilities.conflicts ?? []) {
       if (ids.has(c)) return err("CONFLICT", keyOf(a), [c]);
     }
   }
 
   // ---- 3. requires / anyOf / semver
-  for (const a of adapters) {
+  for (const a of inOrder) {
     for (const r of a.capabilities.requires) {
       const alts = isAnyOf(r) ? r.anyOf : [r];
       const ok = alts.some((x) =>
@@ -314,7 +323,7 @@ export function oracleValidate(
 
   // ---- 4. recommends: chỉ cảnh báo
   const warnings: OracleWarning[] = [];
-  for (const a of adapters) {
+  for (const a of inOrder) {
     for (const c of a.capabilities.recommends ?? []) {
       if (!provided.has(c)) {
         warnings.push({ code: "RECOMMENDED_MISSING", subject: keyOf(a), detail: [c] });
@@ -325,7 +334,7 @@ export function oracleValidate(
   // ---- 5. chọn provider
   const chosen: Record<string, string> = {};
   for (const [cap, ps] of [...provided].sort(([a], [b]) => a.localeCompare(b))) {
-    const consumers = adapters.filter((a) => consumes(a, cap));
+    const consumers = inOrder.filter((a) => consumes(a, cap));
     /** D-10 — không ai tiêu thụ thì không chọn, và KHÔNG báo nhập nhằng */
     if (consumers.length === 0) continue;
 
@@ -370,7 +379,7 @@ export function oracleValidate(
   }
 
   // ---- 6. verifyChosen
-  for (const a of adapters) {
+  for (const a of inOrder) {
     for (const r of flatRequirements(a)) {
       const picked = chosen[r.id];
       if (picked === undefined) continue;

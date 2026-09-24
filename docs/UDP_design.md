@@ -3070,6 +3070,23 @@ bên điều khiển traffic), còn preference là một lựa chọn về **dù
 hợp lệ**. Cho preference thắng `exclusive` nghĩa là một lựa chọn trên dropdown gỡ được một
 ràng buộc an toàn — và hệ quả là hai controller cùng chia traffic trên một cluster.
 
+**[v4.10] Thứ tự duyệt là CHÍNH TẮC, không phải thứ tự đầu vào.**
+
+Pseudo-code `return err(...)` ở lỗi đầu tiên, và `selected` là một **danh sách không có
+thứ tự có nghĩa** — nó phản ánh thứ tự người dùng bật tool. Hợp lại, hai điều đó làm
+**lỗi báo về phụ thuộc thứ tự bật**: một tổ hợp có cả một adapter thiếu capability và
+một adapter sai version sẽ báo `MISSING_CAPABILITY` hay `VERSION_MISMATCH` tùy người dùng
+bật cái nào trước.
+
+Người dùng thấy điều đó dưới dạng "bật lại theo thứ tự khác thì lỗi đổi" — một hành vi
+không ai báo lỗi được vì không ai tái tạo được. Chốt: **mọi vòng duyệt adapter và
+capability đều đi theo khoá đã SẮP** (`"<domainType>:<toolId>"` và `CapabilityId`). "Dừng ở
+lỗi đầu tiên" giữ nguyên; chỉ có điều "đầu tiên" trở thành một khái niệm xác định.
+
+Phát hiện bởi phép kiểm tính chất "kết quả bất biến theo hoán vị" ở P15. Đáng ghi lại:
+bộ differential 2000 mẫu **không** thấy lỗi này, vì oracle được viết từ cùng bản tài liệu
+nên nó sai giống hệt. Hai kỹ thuật bắt hai lớp lỗi khác nhau, và đó lý do cần cả hai.
+
 **[v4.10] `exclusive` là ràng buộc cluster-scoped TUYỆT ĐỐI (D-5).** `CapabilityBinding` có
 `environmentId?`, nên câu "chỉ một provider trong cluster" đọc được theo hai nghĩa: một provider
 cho mỗi environment, hay một provider cho cả cluster. Chốt: **cả cluster**. Không chốt thì
