@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 31.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 49.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -705,3 +705,254 @@ adapter.
 - **Ảnh hưởng tới kết luận:** nửa sau của AC-15. Phần "kiểu tồn tại và được đóng băng"
   đã xong và kiểm được; phần "verifySignature so theo thời gian hằng" thì chưa có mã để
   mà kiểm, và nói nó đã xong là nói sai.
+---
+
+# Plan #25 — Portal
+
+Mười tám mục dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
+còn Service 1 hôm nay chỉ có endpoint cho một phần. Làm một màn hình không có endpoint
+nghĩa là viết một cái giả rồi gọi nó là xong, nên phạm vi Plan #25 chia theo endpoint đã
+chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều kiện.
+
+## portal-cloud-step — wizard bước cấu hình cloud
+
+- **Vì sao nợ:** ba endpoint của bước này (`PUT /projects/:id/cloud`,
+  `POST .../cloud/validate`, `POST .../cloud/preflight`) chưa tồn tại ở Service 1. Cloud
+  Adapter và `preflightPermissions` đã có ở `@udp/adapter-core` (Plan #24) nhưng chưa có
+  route nào gọi tới.
+- **Tiền đề:** ba endpoint đó tồn tại.
+- **Lệnh:** test tích hợp của wizard theo khuôn `project.integration.test.ts`.
+- **Đạt:** nhập credential sai ⇒ `validate` trả danh sách quyền thiếu kèm mức tin cậy;
+  đúng ⇒ sang được bước kế. **Không đạt:** bước này báo thành công khi credential thiếu
+  quyền ⇒ người dùng chỉ biết lúc provisioning đổ.
+- **Tài nguyên:** không (dùng cloud mô phỏng của §13.2).
+- **Ảnh hưởng tới kết luận:** luồng 1 của §8.1 đi được đầu-cuối trên Portal. Hôm nay
+  project tạo ra đứng ở `DRAFT` và không có đường tự cấu hình cloud.
+
+## portal-domain-screens — Domain Config, Catalog, và Detail (drift/upgrade)
+
+- **Vì sao nợ:** cần `PUT /projects/:id/domains`, `GET /domains/catalog`, và hai route
+  Day-2 (`upgrade`, `drift`) — cả bốn chưa có. Registry hai tầng, `syncDomainCatalog`,
+  `upgradeDomain` và `scanDomainDrift` đã có và có test (Plan #24), nhưng chỉ ở tầng
+  quyết định.
+- **Tiền đề:** bốn endpoint đó tồn tại (xem `domains-catalog-route`, `domain-day2-route`).
+- **Lệnh:** test tích hợp ba màn hình + phép kiểm dương tính của I28 (adapter giả
+  `dummy/noop` xuất hiện trên catalog).
+- **Đạt:** bật một domain ⇒ thấy trạng thái theo thời gian thực; drift hiện badge và diff
+  đúng chỗ đã sửa. **Không đạt:** badge "đã trôi" không nói chỗ nào trôi ⇒ người vận hành
+  bỏ qua nó.
+- **Tài nguyên:** không cho phần UI; cluster thật cho phần drift (xem `E16`).
+- **Ảnh hưởng tới kết luận:** phép kiểm **dương tính** của I28 chưa chạy được đầu-cuối, và
+  đó là nửa quan trọng của chỉ số "0 file" ở C2.
+
+## portal-job-stream — nhật ký provisioning (SSE)
+
+- **Vì sao nợ:** `GET /projects/:id/jobs/:jobId/stream` cần hạ tầng `pg-boss` (§3.1), thứ
+  chưa dựng. §16 đã ghi giới hạn này từ v4.
+- **Tiền đề:** `jobs/boss.ts` tồn tại và có một job thật để stream.
+- **Lệnh:** test tích hợp với một `EventSource` giả.
+- **Đạt:** mỗi bước của job hiện đúng một dòng, và SSE **chỉ** gọi `invalidateQueries`.
+  **Không đạt:** SSE ghi thẳng vào cache ⇒ nó đá nhau với React Query (§10.14).
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** trải nghiệm "thấy hạ tầng đang dựng" của §8.1; hôm nay người
+  dùng chỉ thấy một trạng thái tĩnh.
+
+## portal-preview — xem trước, chi phí, thứ tự deploy
+
+- **Vì sao nợ:** `GET /projects/:id/preview` chưa có. `estimateCost` (bắt buộc ba mục) và
+  `deployOrder` (topo sort) đều đã có ở tầng hàm.
+- **Tiền đề:** endpoint đó tồn tại.
+- **Lệnh:** test tích hợp màn hình xem trước.
+- **Đạt:** hiện đủ ba mục chi phí và thứ tự deploy theo bậc. **Không đạt:** thiếu một mục
+  chi phí ⇒ người dùng thấy một con số nhỏ hơn hoá đơn thật.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** phần "nói trước cái giá" của §4.4 chưa tới được người dùng.
+
+## portal-deployments — Deployments và DORA
+
+- **Vì sao nợ:** `GET /projects/:id/deployments` và `GET /projects/:id/metrics/dora` chưa
+  có. Event Store đã đủ dữ liệu để tính.
+- **Tiền đề:** hai endpoint đó tồn tại.
+- **Lệnh:** test tích hợp hai màn hình.
+- **Đạt:** bốn chỉ số DORA đổi đúng khi khoảng thời gian đổi. **Không đạt:** chỉ số không
+  đổi theo khoảng ⇒ query key thiếu `range`.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** §16 đã ghi "DORA dashboard đầy đủ" là hướng phát triển; mục
+  này giữ nó ở đúng chỗ đó.
+
+## portal-admin — bốn màn hình Admin và Orphan
+
+- **Vì sao nợ:** toàn bộ nhóm `/admin/*` chưa có endpoint nào. `classifyOrphans` đã có ở
+  `@udp/adapter-core` nhưng không route nào phơi nó.
+- **Tiền đề:** nhóm endpoint đó tồn tại, và một cơ chế phân quyền `PLATFORM_ADMIN` ở tầng
+  route (đã có `platformRole` trong `PublicUser`).
+- **Lệnh:** test tích hợp bốn màn hình + ô âm: `USER` mở `/admin/*` ⇒ 403.
+- **Đạt:** orphan hiện kèm chi phí USD/giờ. **Không đạt:** một người dùng thường vào được
+  ⇒ lỗ phân quyền.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** §10.11; và `GET /admin/orphan-resources` là nơi duy nhất
+  §4.5 nói "không im lặng bỏ qua" tài nguyên mồ côi.
+
+## portal-env-crud — tạo và xoá environment
+
+- **Vì sao nợ:** `environmentRouter` hôm nay chỉ có ba route SDK key; không có đường tạo
+  hay xoá environment. Ba environment mặc định do `POST /projects` sinh.
+- **Tiền đề:** hai endpoint đó tồn tại, cùng một quyết định về `rank` và về việc xoá
+  environment đang có rollout.
+- **Lệnh:** test tích hợp, kèm ô âm: xoá environment đang có rollout `IN_PROGRESS` ⇒ 409.
+- **Đạt:** thêm environment thứ tư thì mọi query phạm vi env vẫn đúng. **Không đạt:** thêm
+  env làm cache của env khác lẫn ⇒ I38 vỡ.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** phạm vi "ba environment mặc định" là một giới hạn của bản
+  đầu, không phải của thiết kế.
+
+## portal-response-schema — endpoint chưa có schema response mức dây
+
+- **Vì sao nợ:** `@udp/shared-types` hôm nay có đúng **hai** schema response
+  (`flagStatsResponseSchema`, `staleFlagsResponseSchema`). Pha P0 của Plan #25 viết thêm
+  cho những response Portal tiêu thụ, nhưng endpoint nào chưa được Portal dùng thì chưa có
+  schema — và mục này là nơi ghi chúng, thay vì để một mock viết tay im lặng thay chỗ.
+- **Tiền đề:** không cần hạ tầng; đây là phần việc còn lại.
+- **Lệnh:** `pnpm --filter @udp/shared-types test` (phép kiểm golden capture).
+- **Đạt:** mỗi endpoint Portal gọi có một `*ResponseSchema`, và mỗi schema parse được một
+  response THẬT đã ghi lại. **Không đạt:** một mock viết tay lệch hình response ⇒ test xanh
+  mà app vỡ, đúng rủi ro R-P2.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** độ tin của toàn bộ bộ test Portal: nó chỉ mạnh bằng độ trung
+  thực của mock.
+
+## portal-responsive — đo thật ở 375px trên trình duyệt
+
+- **Vì sao nợ:** jsdom **không chạy layout**: `scrollWidth`, `clientWidth`,
+  `getBoundingClientRect()` đều trả 0, và media query không đổi gì. Một phép kiểm
+  "không tràn ngang" trong jsdom xanh với **mọi** layout, kể cả một bảng rộng 1600px.
+- **Tiền đề:** trình duyệt thật (chung điều kiện với `portal-e2e`).
+- **Lệnh:** mở từng route ở 375×812 và 1440×900, khẳng định `document.scrollingElement`
+  không tràn ngang.
+- **Đạt:** 0 route tràn ngang ở 375px. **Không đạt:** một route tràn ⇒ rail chưa đổi thành
+  thanh trên, hoặc một bảng thiếu wrapper.
+- **Tài nguyên:** ~500 MB browser + RAM.
+- **Ảnh hưởng tới kết luận:** câu "Portal dùng được trên điện thoại". Quét tĩnh (cấm chiều
+  rộng cố định, bắt buộc wrapper cho bảng) **không** thay được phép đo này, và Plan #25 ghi
+  rõ như vậy.
+
+## portal-rollout-create — tạo rollout khi project chưa có cluster và Prometheus
+
+- **Vì sao nợ:** `POST /rollouts/probe` cần một workload thật xuất metric HTTP; không có
+  cluster thì nó trả 422 `METRICS_NOT_AVAILABLE` hoặc 503. Tiền đề của Plan #25 là project
+  trỏ vào một cluster và một Prometheus có sẵn; nếu tiền đề đó không giữ được thì phần tạo
+  rollout chỉ chứng minh được bằng `msw`.
+- **Tiền đề:** một cluster và một Prometheus có sẵn (bring-your-own), hoặc
+  `portal-domain-screens` để bật domain Monitoring từ Portal.
+- **Lệnh:** test tích hợp tạo rollout với Prometheus thật.
+- **Đạt:** probe hai pha qua được, rollout lên `IN_PROGRESS`. **Không đạt:** probe luôn
+  rỗng ⇒ banner phải nói thật, KHÔNG link tới màn hình đã hoãn.
+- **Tài nguyên:** cluster + Prometheus (~2,5 GiB).
+- **Ảnh hưởng tới kết luận:** nửa "tạo" của luồng 5; nửa "canh và can thiệp" thì không nợ.
+
+## portal-config-promote — sao chép cấu hình từ dev sang staging/production
+
+- **Vì sao nợ:** §10.12 nêu đây là một lỗ hổng thật (người dùng phải gõ lại tay toàn bộ
+  rule ở production, đúng chỗ sai một ô là sự cố). Làm được bằng
+  `GET`/`PUT .../envs/:envId/rules` đã có, nhưng nó cần diff hai chiều và
+  `lastKnownUpdatedAt` của env đích, tức phụ thuộc phần optimistic lock của P3/P5.
+- **Tiền đề:** không cần hạ tầng; là phần việc còn lại sau P5.
+- **Lệnh:** test tích hợp: sao chép dev → prod, kèm ô âm "env đích đã đổi từ lúc đọc".
+- **Đạt:** diff hiện trước khi áp, và `bucket_salt` của env đích **không đổi** (I1).
+  **Không đạt:** `bucket_salt` đổi ⇒ mọi người dùng bị xáo lại nhánh, tức một lần sao chép
+  cấu hình thành một lần rollout ngoài ý muốn.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** bản đầu buộc nhập lại tay ở production — một giới hạn phải
+  nói ra, vì nó là chỗ dễ gây sự cố nhất.
+
+## portal-cmdk — bảng lệnh Ctrl+K và phím tắt đổi environment
+
+- **Vì sao nợ:** bản mẫu đã duyệt có cả hai, nhưng chúng không thuộc luồng nào của §8 và
+  làm chúng ở bản đầu sẽ kéo phạm vi. Ghi ra để AC so cấu trúc điều hướng với bản mẫu
+  **không nói dối**: nó biết hai thứ này cố ý chưa có.
+- **Tiền đề:** không cần hạ tầng; là phần việc còn lại sau P8.
+- **Lệnh:** test bàn phím: `Ctrl+K` mở bảng lệnh; `1`/`2`/`3` đổi environment.
+- **Đạt:** mọi hành động trong bảng lệnh đều tới được bằng bàn phím. **Không đạt:** bảng
+  lệnh bắt phím của trình duyệt ⇒ vi phạm a11y.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** độ trung thực của AC-P19 và AC so cấu trúc điều hướng.
+
+## portal-sse — nhận `flag_changed` qua SSE
+
+- **Vì sao nợ:** Service 2 có stream cho SDK, nhưng không có đường cho Portal (nó cần
+  session cookie, không phải SDK key). Không có SSE thì Portal thấy thay đổi của người
+  khác chậm bằng đúng `staleTime`.
+- **Tiền đề:** một endpoint SSE của Service 1 hoặc Service 2 nhận session cookie.
+- **Lệnh:** test tích hợp với `EventSource` giả.
+- **Đạt:** sự kiện tới ⇒ `setQueryData` **không** được gọi lần nào, chỉ `invalidateQueries`
+  (§10.14). Đây nguyên văn là AC-P24 của SPEC v2, chuyển vào đây vì giữ một AC thì phải
+  giữ cả thứ nó kiểm. **Không đạt:** SSE ghi thẳng vào cache ⇒ nó đá nhau với React Query.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** độ tươi của dữ liệu khi hai người cùng sửa; không ảnh hưởng
+  tới tính đúng.
+
+## portal-segment-quota — cảnh báo trần segment chính xác
+
+- **Vì sao nợ:** trần 4 MiB là trần của **cả project**, đo bằng `octet_length(conditions::text)`
+  trong SQL; `segmentPayloadBytesOf` ở JS là **chặn dưới**. Portal không có endpoint nào
+  trả tổng byte của các segment KHÁC, nên nó chỉ cảnh báo được theo segment đang sửa.
+- **Tiền đề:** một endpoint trả tổng byte hiện tại của project (hoặc `GET /segments` trả
+  thêm trường đó).
+- **Lệnh:** test với project ở đúng trần, thêm 1 KiB nữa.
+- **Đạt:** cảnh báo bật trước khi gửi, và khi FE tính ra dưới trần mà backend trả 413/422
+  thì UI vẫn xử lý được. **Không đạt:** người dùng mất công nhập rồi bị từ chối ở bước lưu.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** chất lượng thông báo trần, không phải tính đúng của trần.
+
+## portal-pagination — phân trang cho danh sách project và flag
+
+- **Vì sao nợ:** `GET /projects` và `GET /flags` không có tham số `cursor`/`limit` nào.
+  Với một project có vài trăm flag thì Portal tải hết một lần.
+- **Tiền đề:** hai endpoint đó nhận `cursor`/`limit`.
+- **Lệnh:** đo thời gian tải danh sách ở 200 flag × 3 env.
+- **Đạt:** p95 tải danh sách ≤ 500 ms. **Không đạt:** vượt ⇒ phân trang là bắt buộc, không
+  phải tuỳ chọn.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** câu "Portal dùng được khi project lớn" — cùng họ với
+  `stale-perf`, và phải đọc cùng nó.
+
+## portal-refresh-lock — khoá refresh giữa các tab ở trình duyệt không có Web Locks
+
+- **Vì sao nợ:** `refresh()` của Service 1 có phát hiện dùng lại token và nó gọi
+  `revokeFamily` (`auth.service.ts:143-149`), nên hai tab cùng refresh với cookie cũ làm
+  người dùng bị đăng xuất khỏi **mọi** tab. Plan #25 chặn bằng Web Locks
+  (`navigator.locks`), nhưng API đó không có ở mọi trình duyệt.
+- **Tiền đề:** một cơ chế khoá khác (SharedWorker, hoặc `BroadcastChannel` cộng bầu cử),
+  hoặc một quyết định bỏ hỗ trợ trình duyệt không có Web Locks.
+- **Lệnh:** test hai "tab" cùng gặp 401 trên môi trường không có `navigator.locks`.
+- **Đạt:** đúng một lời gọi `/auth/refresh` và cả hai tab vẫn đăng nhập. **Không đạt:** cả
+  hai bị đăng xuất ⇒ đúng ca này còn hở.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** ở những trình duyệt đó, ca đa tab còn hở — và nói ra tốt hơn
+  một lời hứa chung rằng "đã có single-flight".
+
+## portal-e2e — end-to-end trên trình duyệt thật
+
+- **Vì sao nợ:** Playwright cần ~500 MB tải browser cộng RAM; máy đo 7,7 GiB thường chỉ
+  trống 0,4–1,5 GiB. Một bộ e2e chạy được một lần rồi không ai chạy lại thì tệ hơn không có.
+- **Tiền đề:** ≥ 2 GiB RAM trống và ~500 MB đĩa, hoặc một runner CI.
+- **Lệnh:** `pnpm --filter @udp/portal e2e` (chưa có).
+- **Đạt:** ba luồng đi được đầu-cuối trên trình duyệt thật: đăng nhập, bật flag ở dev,
+  rollback một rollout. **Không đạt:** một luồng vỡ ở trình duyệt thật trong khi test
+  component xanh ⇒ chỗ lệch là một bài học về giới hạn của jsdom.
+- **Tài nguyên:** ~500 MB đĩa + ~1 GiB RAM.
+- **Ảnh hưởng tới kết luận:** ba thứ jsdom không đo được: layout, focus **thấy được**, và
+  kéo-thả bằng con trỏ.
+
+## portal-dx — đánh giá DX với người dùng thật
+
+- **Vì sao nợ:** cần người dùng thật; §16 đã ghi giới hạn "mẫu thuận tiện n = 10–15".
+- **Tiền đề:** có nhóm developer chịu thử.
+- **Đo:** thời gian hoàn thành ba tác vụ (bật flag ở một env, tạo rollout, rollback), cộng
+  SUS.
+- **Đạt:** ba tác vụ đều dưới 2 phút cho người chưa từng dùng. **Không đạt:** một tác vụ
+  quá 2 phút ⇒ chỗ chậm là chỗ phải sửa, và nó là một kết quả phải báo cáo chứ không phải
+  một test đỏ.
+- **Tài nguyên:** không (thời gian người).
+- **Ảnh hưởng tới kết luận:** phần đánh giá định tính của luận văn; không ảnh hưởng tính
+  đúng.

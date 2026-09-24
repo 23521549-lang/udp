@@ -72,7 +72,13 @@ function sourceFiles(dir: string): string[] {
       if (e === "node_modules" || e === "dist" || e === "generated") continue;
       const full = join(d, e);
       if (statSync(full).isDirectory()) walk(full);
-      else if (e.endsWith(".ts")) out.push(full);
+      /**
+       * [v4.11] `.tsx` cũng tính. `".tsx".endsWith(".ts")` là **false**, nên bản trước
+       * mù hoàn toàn với mã React — và một ô ranh giới quét 0 tệp thì xanh vĩnh viễn,
+       * đúng loại bảo đảm mà `adapter-lint-glob.test.ts` tồn tại để chống. Sửa TRƯỚC khi
+       * có tệp `.tsx` đầu tiên, để cái chốt sẵn sàng lúc nó cần.
+       */
+      else if (e.endsWith(".ts") || e.endsWith(".tsx")) out.push(full);
     }
   };
   walk(dir);

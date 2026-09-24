@@ -76,7 +76,9 @@ function ledger(): { text: string; items: LedgerItem[] } {
  */
 function debtCodesIn(text: string): string[] {
   const out = new Set<string>();
-  for (const m of text.matchAll(/S[ổo] n[ợo]: ((?:`[A-Za-z0-9][A-Za-z0-9-]*`(?:, )?)+)/g)) {
+  for (const m of text.matchAll(
+    /S[ổo] n[ợo]: ((?:`[A-Za-z0-9][A-Za-z0-9-]*`(?:, )?)+)/g,
+  )) {
     for (const code of (m[1] ?? "").matchAll(/`([A-Za-z0-9][A-Za-z0-9-]*)`/g)) {
       if (code[1] !== undefined) out.add(code[1]);
     }
@@ -84,11 +86,18 @@ function debtCodesIn(text: string): string[] {
   return [...out].sort();
 }
 
+/**
+ * [v4.11] Quét cả `.tsx`.
+ *
+ * Chiều kiểm của tệp này là "mã ⊆ sổ", nên một `Sổ nợ: \`ma-viet-sai\`` nằm trong một
+ * tệp `.tsx` sẽ **im lặng** thay vì đỏ nếu glob chỉ bắt `.ts`. Mở trước khi có tệp `.tsx`
+ * đầu tiên: một chốt chỉ sẵn sàng khi nó được mở trước lúc cần.
+ */
 function sourceFiles(): string[] {
   return ["packages", "services", "apps"].flatMap((dir) =>
-    globSync("*/src/**/*.ts", { cwd: resolve(ROOT, dir) })
-      .concat(globSync("*/tests/**/*.ts", { cwd: resolve(ROOT, dir) }))
-      .concat(globSync("*/scripts/**/*.ts", { cwd: resolve(ROOT, dir) }))
+    globSync("*/src/**/*.{ts,tsx}", { cwd: resolve(ROOT, dir) })
+      .concat(globSync("*/tests/**/*.{ts,tsx}", { cwd: resolve(ROOT, dir) }))
+      .concat(globSync("*/scripts/**/*.{ts,tsx}", { cwd: resolve(ROOT, dir) }))
       .map((p) => resolve(ROOT, dir, p)),
   );
 }
@@ -171,7 +180,9 @@ describe("sổ nợ kiểm chứng — ba nơi nói cùng một danh sách", () 
   it("mọi mã nợ §16 của tài liệu có mục trong sổ", () => {
     const cited = debtCodesIn(readDesignDoc().join("\n"));
     const known = new Set(ledger().items.map((i) => i.code));
-    expect(cited.length, "tài liệu phải trích ít nhất một mã").toBeGreaterThan(0);
+    expect(cited.length, "tài liệu phải trích ít nhất một mã").toBeGreaterThan(
+      0,
+    );
     expect(cited.filter((c) => !known.has(c))).toEqual([]);
   });
 
