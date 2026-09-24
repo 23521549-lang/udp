@@ -166,6 +166,25 @@ describe("CRASH_POINTS — tier là DỮ LIỆU", () => {
 
 describe("cổng thứ tự — hằng số kỳ vọng commit TRƯỚC steps của adapter", () => {
   /**
+   * Phép kiểm này KHÔNG được rỗng nghĩa.
+   *
+   * Một test "quét lịch sử" mà xanh vì không tìm thấy gì để kiểm là xanh giả kinh điển. Phép
+   * kiểm dưới đây luôn kiểm được một điều: hằng số kỳ vọng đã vào lịch sử git. Nó đã ĐỎ một
+   * lần thật ở pha P3 — trước khi `fixture.ts` được commit — nên nó có bằng chứng là nó bắt
+   * được.
+   *
+   * (Một bản vá script ở pha P7 đã vô tình xoá phép kiểm này; phát hiện ra vì số test tụt từ
+   * 14 xuống 13. Đó là lý do đếm số test của từng pha là một phần của sổ thi hành.)
+   */
+  it("file hằng số đã có trong lịch sử git", () => {
+    const commit = firstCommitOf(FIXTURE_FILE);
+    expect(
+      commit,
+      `${FIXTURE_FILE} phải được commit — nó là cổng thứ tự thứ ba`,
+    ).not.toBeNull();
+  });
+
+  /**
    * Ba trạng thái, và phép kiểm nói ra được cả ba.
    *
    * Bản đầu chỉ xử lý hai ("chưa tạo" và "đã commit") nên nó ĐỎ ở trạng thái thứ ba — file
