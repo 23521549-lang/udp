@@ -2,7 +2,20 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["tests/**/*.test.ts"],
+    /**
+     * [v4.10] D-7 — đường rò thứ chín, mở MỘT LẦN.
+     *
+     * Bản cũ chỉ khai `tests/**` , nên một contract test đặt trong thư mục adapter
+     * **không bao giờ chạy** và vitest không báo gì cả. Để nguyên thì câu "mọi adapter
+     * đều qua bộ test hợp đồng" thành sai mà không ai thấy; còn sửa cấu hình mỗi lần
+     * thêm adapter thì chính bất biến I28 (mọi adapter qua bộ hợp đồng) phụ thuộc vào
+     * việc ai đó nhớ sửa một dòng config.
+     *
+     * Nên mở một lần cho CẢ quy ước thư mục: `src/modules/**` phủ mọi adapter tương lai
+     * ở `modules/<domain>-adapter/<tool>/`. `design-lint` có một phép khẳng định đúng hai
+     * mẫu này còn nguyên, để một lần "dọn dẹp" config không âm thầm đóng lại đường rò.
+     */
+    include: ["tests/**/*.test.ts", "src/modules/**/*.test.ts"],
     /**
      * Chay tuan tu, giong packages/db va flag-service.
      *
