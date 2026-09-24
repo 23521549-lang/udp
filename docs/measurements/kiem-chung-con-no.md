@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 28.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 31.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -384,7 +384,7 @@ adapter.
   và chạy trên máy 7,7 GiB RAM không Docker; LocalStack cần Docker engine.
 - **Tiền đề:** Docker engine chạy + ≥ 2,5 GiB RAM trống. LocalStack bản miễn phí
   KHÔNG có EKS, nên ô cluster của lưới vẫn phải mô phỏng hoặc chuyển sang
-  `I31-aws-eks`.
+  `I31-aws`.
 - **Lệnh:** `pnpm --filter @udp/core-backend test -- grid-tier2` với
   `UDP_CLOUD_DRIVER=localstack` (biến đó CHƯA CÓ: nó là phần việc đầu tiên của lần
   chạy này, và nó chỉ đổi adapter được nạp chứ không đổi harness).
@@ -397,7 +397,7 @@ adapter.
   cloud mô phỏng chứng minh máy trạng thái khôi phục đúng theo ĐẶC TẢ hành vi cloud;
   nó không chứng minh đặc tả đó khớp một hiện thực cloud độc lập.
 
-## I31-aws-eks — lưới K1..K10 trên AWS thật
+## I31-aws — lưới K1..K10 trên AWS thật
 
 - **Vì sao nợ:** cần tài khoản AWS có ngân sách; một lượt lưới tạo và xoá VPC, NAT
   gateway, EKS cluster và nodegroup.
@@ -415,7 +415,7 @@ adapter.
 ## E15 — đối chứng Terraform và Pulumi trên cùng lưới
 
 - **Vì sao nợ:** phép đo cần hai binary (`terraform`, `pulumi`) và một cloud chạy
-  được lưới, tức nó bị chặn sau `I31-localstack` hoặc `I31-aws-eks`.
+  được lưới, tức nó bị chặn sau `I31-localstack` hoặc `I31-aws`.
 - **Tiền đề:** như trên, cộng cùng một hạ tầng đích được mô tả bằng ba cách (UDP
   adapter, HCL, Pulumi TypeScript) — ba bản mô tả phải tương đương, và việc chứng
   minh chúng tương đương là một phần của phép đo.
@@ -445,7 +445,7 @@ adapter.
   hiện thực giả không dựng được ⇒ thêm hình đó vào fake trước khi sửa code.
 - **Tài nguyên:** Docker + kind (~3 GiB) + 1 tiến trình Node.
 - **Ảnh hưởng tới kết luận:** **ADR-06** và bất biến **I24** (bound token 1 giờ,
-  không bao giờ xuống đĩa). Cùng mã nợ `cluster-access-real` được nhắc trong
+  không bao giờ xuống đĩa). Cùng mã nợ `clusteraccess-direct` được nhắc trong
   `cluster-access.ts`.
 
 ## E16 — ma trận drift, đối chứng Helm và Argo CD
@@ -466,7 +466,7 @@ adapter.
   ở dạng mạnh nhất. Chiều (c) ("không bao giờ tự sửa") KHÔNG nợ: nó được cưỡng chế ba
   tầng và có phép kiểm ba chu kỳ trên database thật.
 
-## I25-audit — audit log của API server
+## I25-cluster — audit log của API server
 
 - **Vì sao nợ:** I25 nói ba bên ghi vào cluster nhưng không bao giờ chồng quyền. Phần
   "không chồng quyền" kiểm được bằng hằng số `IDENTITY_SERVICE_ACCOUNTS` và bằng
@@ -481,7 +481,7 @@ adapter.
 - **Tài nguyên:** cluster (~3 GiB).
 - **Ảnh hưởng tới kết luận:** **I25**, và qua đó là mô hình multi-tenancy của §12.
 
-## I24-token-that — `TokenRequest` thật
+## I24-cluster — `TokenRequest` thật
 
 - **Vì sao nợ:** `TokenSource` là một cổng, và hiện thực giả trả một token tĩnh. Hạn
   một giờ, việc xin lại trước hạn, và "không bao giờ ghi xuống đĩa" kiểm được bằng
@@ -532,7 +532,7 @@ adapter.
 - **Đạt:** mọi ELB/ENI/EBS thuộc cluster đều được phát hiện, kể cả `shared`.
   **Không đạt:** sót một tài nguyên ⇒ `DeleteVpc` thất bại vĩnh viễn và khách tiếp
   tục bị tính tiền — đúng kịch bản §4.5 mô tả.
-- **Tài nguyên:** như `I31-aws-eks`.
+- **Tài nguyên:** như `I31-aws`.
 - **Ảnh hưởng tới kết luận:** ví dụ cụ thể nhất của **C3** ("state file không biết
   đủ"), và nó là ví dụ mà phản biện sẽ hỏi trước tiên.
 
@@ -548,7 +548,7 @@ adapter.
 - **Ảnh hưởng tới kết luận:** phần "bảo vệ chi phí" của §4.4. Cơ chế (từ chối trước
   khi gọi cloud, TTL, orphan-scan) đã có test; ĐỘ CHÍNH XÁC của con số thì chưa.
 
-## cluster-access-real — chế độ `direct` chạy thật (mã nợ nhắc trong mã nguồn)
+## clusteraccess-direct — chế độ `direct` chạy thật (mã nợ nhắc trong mã nguồn)
 
 - **Vì sao nợ:** trùng tiền đề với `I32-cluster` nhưng phạm vi hẹp hơn: mục này chỉ
   hỏi "đường vào cluster có chạy không", còn `I32-cluster` hỏi cả hình dạng lỗi.
@@ -653,3 +653,55 @@ adapter.
 - **Ảnh hưởng tới kết luận:** quy tắc thứ ba của §8.6. Hai kết cục (`ROLLED_BACK` và
   `ROLLBACK_FAILED`) đã tách bạch và có test; điều chưa có là một người gọi thật hạ
   được về bản cũ.
+## helm-real — Helm thật thay cho hai đối tượng mô phỏng
+
+- **Vì sao nợ:** lớp nền `HelmBasedAdapter` ghi hai đối tượng (`HelmRelease` và một
+  ConfigMap giá trị) qua `ClusterAccess`, và trong thế giới mô phỏng đó là toàn bộ sự
+  thật. Trên cluster thật, `helm upgrade --install` render chart thành hàng chục đối
+  tượng, chờ CRD sẵn sàng, và có hình lỗi riêng (`another operation in progress`,
+  release ở trạng thái `pending-upgrade`). Vòng đời của lớp nền chưa gặp những hình đó.
+- **Tiền đề:** cluster (`I32-cluster`) + Helm, hoặc Flux với `HelmRelease` thật.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- helm.real` (tệp CHƯA CÓ; nó dùng
+  lại đúng 42 phép của bộ hợp đồng, chỉ đổi `ClusterAccess` sang cluster thật).
+- **Đạt:** cả 42 phép xanh với chart Prometheus thật, và `detectDrift` sau `deploy`
+  trả `false` (không trôi giả vì chart tự thêm nhãn). **Không đạt:** trôi giả ngay sau
+  deploy ⇒ `ignoredKeyPrefixes` khai thiếu, và đó đúng là thứ chỉ cluster thật dạy được.
+- **Tài nguyên:** cluster + Helm (~3 GiB).
+- **Ảnh hưởng tới kết luận:** độ trung thực của "bốn adapter qua đủ 42 phép". Bộ hợp
+  đồng chứng minh lớp nền đúng theo ĐẶC TẢ của `ClusterAccess`; nó không chứng minh đặc
+  tả đó khớp Helm thật.
+
+## agent-mode — chế độ `agent` của ADR-06
+
+- **Vì sao nợ:** `ClusterAccess` có `mode: "direct" | "agent"` và mọi luồng nghiệp vụ
+  đi qua interface đó, nên đổi chế độ không chạm nghiệp vụ — đúng như ADR-06 thiết kế.
+  Hiện thực `agent` (một `udp-agent` giữ stream gRPC ra ngoài cho tenant không cho phép
+  API server có endpoint public) thì chưa có.
+- **Tiền đề:** một cluster không mở API server ra ngoài + một service gRPC của control
+  plane.
+- **Lệnh:** chạy đúng bộ `cluster-access` với `mode: "agent"`.
+- **Đạt:** mọi phép kiểm của chế độ `direct` cho cùng kết quả ở chế độ `agent` — đó là
+  điều kiện để câu "đổi chế độ không chạm luồng nghiệp vụ" có nghĩa. **Không đạt:** một
+  phép nào lệch ⇒ interface đang rò chi tiết của chế độ ra ngoài.
+- **Tài nguyên:** cluster + agent (~3,5 GiB).
+- **Ảnh hưởng tới kết luận:** nửa còn lại của **ADR-06**. Phần đã làm chứng minh
+  interface đủ cho `direct`; nó chưa chứng minh interface đủ cho cả hai.
+## cicd-adapter — họ CI/CD mới có mặt KIỂU, chưa có hiện thực
+
+- **Vì sao nợ:** `CicdDomainAdapter` mở rộng `DomainAdapter` bằng ba phương thức
+  (`verifySignature`, `parsePayload`, `renderPipelineTemplate`) và bề mặt đó đã được
+  đóng băng cùng hai interface kia (`adapter-interface-freeze.test.ts` đối chiếu tài
+  liệu với mã, từng tên). Nhưng chưa có adapter CI/CD nào hiện thực nó, nên
+  `verifySignature` — thứ PHẢI dùng `crypto.timingSafeEqual` để không rò thông tin qua
+  thời gian so chuỗi — chưa có thân để mà kiểm.
+- **Tiền đề:** không cần hạ tầng; đây là phần việc còn lại của một plan sau (adapter
+  `github-actions` hoặc `gitlab-ci`).
+- **Lệnh:** khi có adapter: bộ hợp đồng 42 phép cộng một phép kiểm CẤU TRÚC bằng AST
+  khẳng định `verifySignature` gọi `timingSafeEqual` và KHÔNG dùng `===` trên chữ ký.
+- **Đạt:** hai chữ ký khác độ dài trả `false` mà KHÔNG ném (`timingSafeEqual` ném khi
+  độ dài lệch, nên hiện thực phải kiểm độ dài trước), và AST không thấy phép so chuỗi
+  nào trên chữ ký. **Không đạt:** so bằng `===` ⇒ rò độ dài tiền tố khớp qua thời gian.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** nửa sau của AC-15. Phần "kiểu tồn tại và được đóng băng"
+  đã xong và kiểm được; phần "verifySignature so theo thời gian hằng" thì chưa có mã để
+  mà kiểm, và nói nó đã xong là nói sai.

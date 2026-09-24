@@ -23,7 +23,7 @@ import {
  *    xin mỗi lời gọi, token có bao giờ rời khỏi closure không, hình path của mọi verb,
  *    `404` là `null` với `read` và là thành công với `delete`.
  *  - KHÔNG kiểm được ở đây: API server thật có chấp nhận những path đó, và RBAC của §12.2
- *    có thật sự từ chối `udp-traffic` patch `deployments`. Hàng sổ nợ `cluster-access-real`
+ *    có thật sự từ chối `udp-traffic` patch `deployments`. Hàng sổ nợ `clusteraccess-direct`
  *    ghi hai phép đó, chạy trên một cluster kind thật.
  *
  * Phân biệt hai danh sách là phần quan trọng: một bộ test tiêm vận chuyển mà không nói

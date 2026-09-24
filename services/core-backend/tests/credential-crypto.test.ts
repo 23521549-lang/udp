@@ -98,6 +98,35 @@ describe("vòng mã hoá — giải mã trong bộ nhớ", () => {
     expect(back.toString("utf8")).toBe(SECRET);
   });
 
+  /**
+   * [v4.10] DEK là RIÊNG từng bản ghi - kiểm bằng cách HOÁN ĐỔI đúng một cột.
+   *
+   * §4.3 nói mỗi credential có DEK riêng, và AC-4.3 đòi "hai DEK khác nhau". Ba ô AAD ở
+   * dưới KHÔNG kiểm được điều đó: với một DEK dùng chung cho mọi bản ghi, AAD vẫn chặn
+   * mọi lần giải mã chéo, nên cả ba ô vẫn xanh. Đột biến M17 của P23 (`Buffer.alloc`
+   * thay cho `randomBytes`) sống sót đúng vì lỗ này.
+   *
+   * Phép kiểm: lấy bản ghi A, thay ĐÚNG cột `encrypted_dek` bằng của bản ghi B, giữ
+   * nguyên AAD của A. DEK khác nhau ⇒ giải mã thất bại. DEK dùng chung ⇒ nó THÀNH CÔNG,
+   * và đó là dấu hiệu duy nhất nhìn thấy được từ ngoài rằng khoá đang bị dùng chung.
+   *
+   * `unwrapDek` không được export, và không nên export chỉ để test: hoán đổi một cột là
+   * đúng thứ một kẻ tấn công có quyền đọc database làm được, nên phép kiểm này cũng là
+   * một phép kiểm về mô hình đe doạ.
+   */
+  it("DEK riêng từng bản ghi: hoán đổi encrypted_dek ⇒ KHÔNG giải mã được", () => {
+    const idA = identityOf(randomUUID());
+    const idB = identityOf(randomUUID());
+    const a = encryptCredential(Buffer.from(SECRET, "utf8"), idA);
+    const b = encryptCredential(Buffer.from(SECRET, "utf8"), idB);
+
+    expect(
+      codeOfThrow(() =>
+        decryptCredential({ ...a, encryptedDek: b.encryptedDek }, idA),
+      ),
+    ).toBe("CREDENTIAL_DECRYPT_FAILED");
+  });
+
   it("nonce đúng 24 ký tự HEX, auth_tag đúng 24 ký tự BASE64", () => {
     const enc = encryptCredential(
       Buffer.from(SECRET),
@@ -262,6 +291,21 @@ describe("fingerprint — so credential mà không mở envelope", () => {
     expect(fingerprintOf(arn)).toBe(fingerprintOf(arn));
     expect(fingerprintOf(arn)).toHaveLength(64);
     expect(sameFingerprint(fingerprintOf(arn), fingerprintOf(arn))).toBe(true);
+  });
+
+  /**
+   * [v4.10] Giá trị VÀNG - băm là SHA-256 của ĐÚNG định danh public, không muối.
+   *
+   * Hai phép trên chỉ khẳng định "cùng vào ra cùng, khác vào ra khác", và cả hai vẫn
+   * đúng nếu ai đó thêm một chuỗi cố định vào đầu vào (đột biến M19 của P23 sống sót ở
+   * đúng lỗ đó). Nhưng fingerprint tồn tại để so credential GIỮA các hệ thống: người vận
+   * hành tính `sha256(roleArn)` bằng tay rồi so với cột trong database. Thêm muối làm
+   * con số đó không so được nữa, và không test nào báo.
+   */
+  it("băm khớp giá trị vàng sha256(roleArn) — không muối, không tiền tố", () => {
+    expect(fingerprintOf("arn:aws:iam::123456789012:role/udp-tenant")).toBe(
+      "91c983ad7129d0fd0e0e4503b09d5d51cb4daa1fc51e69005633bc0a5dacbce6",
+    );
   });
 
   it("định danh khác ⇒ băm khác, và sameFingerprint trả false", () => {

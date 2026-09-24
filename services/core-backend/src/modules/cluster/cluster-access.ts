@@ -29,7 +29,7 @@ import {
  *
  * **Vận chuyển được TIÊM VÀO.** `KubeTransport` là một cổng, không phải `fetch` gọi
  * thẳng. Hai lý do: máy phát triển không có cluster nào để gọi (xem sổ nợ
- * `cluster-access-real`), và quan trọng hơn, mọi lời gọi ra ngoài phải đi qua egress
+ * `clusteraccess-direct`), và quan trọng hơn, mọi lời gọi ra ngoài phải đi qua egress
  * guard chống SSRF (§12 T11) — một `fetch` gọi thẳng trong tệp này là đúng thứ khối lint
  * thứ ba sẽ cấm khi thư mục adapter đầu tiên xuất hiện.
  */

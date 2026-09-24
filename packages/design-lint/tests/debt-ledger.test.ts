@@ -130,6 +130,37 @@ describe("sổ nợ kiểm chứng — hình dạng", () => {
     expect(items).toHaveLength(Number(declared));
   });
 
+  /**
+   * [v4.10] AC-9.5 thành một phép kiểm, không phải một câu đọc bằng mắt.
+   *
+   * Acceptance criterion AC-9.5 của Plan #24 kể tên MƯỜI MỘT mã nợ và đòi "mỗi mục nêu
+   * lệnh sẽ chạy và điều kiện hạ tầng cần". Phần "nêu lệnh và điều kiện" đã được hai ô
+   * trên canh cho mọi mục; phần "đủ mười một mã" thì cần chính danh sách đó, nên nó nằm
+   * ở đây.
+   *
+   * Bốn mã của sổ từng mang tên khác (`I31-aws-eks`, `cluster-access-real`,
+   * `I24-token-that`, `I25-audit`) - tên riêng của người viết sổ, không phải tên trong
+   * AC. Đã đổi về tên của AC ở P23: một tiêu chí nghiệm thu mà phải đọc bằng mắt để đối
+   * chiếu tên là một tiêu chí sẽ trôi.
+   */
+  it("đủ mười một mã nợ mà AC-9.5 kể tên", () => {
+    const required = [
+      "I31-localstack",
+      "I31-aws",
+      "I32-cluster",
+      "E15",
+      "E16",
+      "helm-real",
+      "clusteraccess-direct",
+      "I24-cluster",
+      "I25-cluster",
+      "cred-federation",
+      "agent-mode",
+    ];
+    const known = new Set(ledger().items.map((i) => i.code));
+    expect(required.filter((c) => !known.has(c))).toEqual([]);
+  });
+
   it("không mã nợ nào bị khai hai lần", () => {
     const codes = ledger().items.map((i) => i.code);
     expect(new Set(codes).size).toBe(codes.length);

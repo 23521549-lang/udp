@@ -233,7 +233,7 @@ describe("I32 chiều (c) - ba tầng", () => {
      * được, nên chính comment này là phép kiểm - nếu ngày nào đó `write` quay lại thì
      * `tsc` đỏ vì một `@ts-expect-error` không còn lỗi để mà chờ.
      */
-    // @ts-expect-error tầng kiểu: ReadOnlyKubernetesClient không có write
+    // @ts-expect-error TSX-04: ReadOnlyKubernetesClient không có write (tầng kiểu của I32 c)
     expect(client.write).toBeUndefined();
   });
 

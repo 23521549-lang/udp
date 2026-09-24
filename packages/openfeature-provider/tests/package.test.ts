@@ -205,10 +205,10 @@ import { UDPFeatureFlagProvider, type UDPProviderOptions } from "${PKG}";
 import { udpMetricsMiddleware } from "${PKG}/metrics";
 
 const options: UDPProviderOptions = { host: "http://h", sdkKey: "k" };
-// @ts-expect-error host phải là chuỗi — kiểu thật, không phải any
+// @ts-expect-error TSX-05: host phải là chuỗi — kiểu thật, không phải any
 const wrong: UDPProviderOptions = { host: 1, sdkKey: "k" };
 const provider = new UDPFeatureFlagProvider(options);
-// @ts-expect-error constructor công khai chỉ nhận MỘT tham số (chỗ tiêm test không lộ ra)
+// @ts-expect-error TSX-06: constructor công khai chỉ nhận MỘT tham số (chỗ tiêm test không lộ ra)
 new UDPFeatureFlagProvider(options, {});
 const version: number | undefined = provider.configVersion;
 const middleware = udpMetricsMiddleware({ serviceName: "s" });
