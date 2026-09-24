@@ -28,9 +28,9 @@ runLedgerContract(
  * số phép" là một test đỏ chứ không phải một dòng biến mất trong diff.
  */
 describe("meta — bộ hợp đồng Ledger", () => {
-  it("có đúng 18 phép, tên không trùng", () => {
-    expect(LEDGER_CONTRACT_CHECKS).toHaveLength(18);
-    expect(new Set(LEDGER_CONTRACT_CHECKS.map((c) => c.name)).size).toBe(18);
+  it("có đúng 20 phép, tên không trùng", () => {
+    expect(LEDGER_CONTRACT_CHECKS).toHaveLength(20);
+    expect(new Set(LEDGER_CONTRACT_CHECKS.map((c) => c.name)).size).toBe(20);
   });
 
   it("mọi phép đều có thân hàm thật, không phép nào rỗng", () => {
@@ -57,6 +57,7 @@ describe("meta — bộ hợp đồng Ledger", () => {
       markOrphanSuspected: () => Promise.resolve(),
       markRecreating: () => Promise.resolve(),
       byKey: () => Promise.resolve(null),
+      reasonOf: () => Promise.resolve(null),
       rowsOf: () => Promise.resolve([]),
     };
 
@@ -69,12 +70,17 @@ describe("meta — bộ hợp đồng Ledger", () => {
       }
     }
     /**
-     * Con số CHÍNH XÁC, không phải một ngưỡng lỏng: 16 trong 18. Hai phép còn xanh có lý
-     * do đúng và đã soát — "byKey trả null cho khoá không có" (sổ luôn-đồng-ý trả null,
-     * đó là hành vi ĐÚNG) và "lý do của ORPHAN_SUSPECTED không bị nuốt" (chỉ khẳng định
-     * khi hiện thực có `orphanReasonOf`, một năng lực tuỳ chọn). Chốt số chính xác nghĩa
-     * là làm yếu bất kỳ phép nào cũng là một test đỏ.
+     * Con số CHÍNH XÁC, không phải một ngưỡng lỏng: 18 trong 20. Hai phép còn xanh có lý
+     * do đúng và đã soát, và cả hai là cùng một lý do: "byKey trả null cho khoá không có"
+     * và "reasonOf trả null cho khoá không có" — sổ luôn-đồng-ý trả `null` ở cả hai, và
+     * `null` đúng là hành vi phải có. Chốt số chính xác nghĩa là làm yếu bất kỳ phép nào
+     * cũng là một test đỏ.
+     *
+     * [v4.10] Trước P9, phép "lý do của ORPHAN_SUSPECTED không bị nuốt" cũng nằm trong
+     * nhóm xanh, nhưng vì một lý do KHÔNG đúng: nó chỉ khẳng định khi hiện thực có
+     * `orphanReasonOf`. `reasonOf` giờ là phương thức của cổng, nên phép đó đã chuyển
+     * sang nhóm đỏ — 16/18 thành 18/20.
      */
-    expect(failed).toBe(16);
+    expect(failed).toBe(18);
   });
 });

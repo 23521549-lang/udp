@@ -80,8 +80,6 @@ export interface CloudFixture {
 
 export {
   InMemoryLedger,
-  LedgerMissingRowError,
-  LedgerTransitionError,
 } from "./in-memory-ledger.js";
 
 export {

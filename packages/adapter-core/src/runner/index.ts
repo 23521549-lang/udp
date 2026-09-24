@@ -59,6 +59,23 @@ export interface Ledger {
   markDeleted(idempotencyKey: string): Promise<void>;
   markOrphanSuspected(idempotencyKey: string, reason: string): Promise<void>;
   byKey(idempotencyKey: string): Promise<ProvisionedResourceRow | null>;
+  /**
+   * Lý do của TRẠNG THÁI HIỆN TẠI của hàng, hay `null` nếu trạng thái đó không cần
+   * lý do (tiến bình thường) hay hàng không tồn tại.
+   *
+   * Đây là một phương thức CỦA CỔNG, không phải một "năng lực tuỳ chọn" để bộ
+   * hợp đồng đi dò xem hiện thực có hay không. §13.2 viết thẳng: nới lỏng không được
+   * làm bằng một `return` sớm theo kiểu hiện thực — và một phép kiểm tự bỏ khi không
+   * thấy phương thức chính là hình dạng đó: nó xanh trên hiện thực Postgres mà chưa
+   * kiểm gì cả.
+   *
+   * "Của trạng thái hiện tại" là phần quan trọng. Sổ bền ghi lý do vào một bảng
+   * **append-only**, nên không có cách nào "xoá" lý do cũ khi hàng tiến lên
+   * `READY`. Phản ứng sai là trả về lý do cũ — một hàng `READY` kèm "delete thất bại
+   * 5 lần" là một dòng làm người trực đi sai đường. Nên lý do luôn được ghi KÈM
+   * trạng thái nó giải thích, và chỉ đọc được khi hai trạng thái đó còn khớp.
+   */
+  reasonOf(idempotencyKey: string): Promise<string | null>;
   /** Theo thứ tự chèn — compensation chạy ngược danh sách này */
   rowsOf(projectId: string): Promise<ProvisionedResourceRow[]>;
 }

@@ -439,6 +439,9 @@ importers:
 
   services/core-backend:
     dependencies:
+      '@udp/adapter-core':
+        specifier: workspace:*
+        version: link:../../packages/adapter-core
       '@udp/config':
         specifier: workspace:*
         version: link:../../packages/config

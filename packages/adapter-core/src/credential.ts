@@ -7,8 +7,30 @@
  * một package "chỉ có type" là mất chính hợp đồng đó.
  */
 
-/** Ba nhà cung cấp; trùng enum `CloudProvider` của database (§2.2) */
+/**
+ * Ba nhà cung cấp.
+ *
+ * [v4.10] Chú thích cũ ở đây nói "trùng enum `CloudProvider` của database (§2.2)".
+ * **Không trùng**: enum của Postgres là `AWS | GCP | AZURE`, hoa. Câu đó là loại chú
+ * thích tệ nhất — nó không chỉ sai, nó còn mời người đọc đặt một `as` vào giữa
+ * hai kiểu và tin rằng chúng cùng một thứ.
+ *
+ * Chữ thường giữ nguyên ở đây vì đây là dạng đi vào **tag trên tài nguyên cloud**
+ * và vào `idempotencyKey`, và cả hai là chuỗi đọc được bằng mắt trong console của nhà
+ * cung cấp. Đổi chúng sang chữ hoa để giống database là để một lủ tag đã gắn trên
+ * tài nguyên thật không còn khớp — tức ADR-08 mất đường tra cứu thứ nhất.
+ *
+ * Cách đúng là một **codec có kiểm**: xem `provider-codec.ts` của Service 1, và phép
+ * kiểm gương trong `design-lint` giữ hai danh sách không trôi khỏi nhau.
+ */
 export type CloudProvider = "aws" | "gcp" | "azure";
+
+/** Bản chạy được của `CloudProvider` — codec cần nó để chứng minh mình là TOÀN phần */
+export const CLOUD_PROVIDERS: readonly CloudProvider[] = [
+  "aws",
+  "gcp",
+  "azure",
+];
 
 /** BYOC: credential của khách. MANAGED: identity mặc định của chính platform */
 export type CredentialMode = "BYOC" | "MANAGED";

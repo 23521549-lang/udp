@@ -1,5 +1,9 @@
-import type { ProvisionedResourceRow } from "../ledger.js";
-import { isLedgerTransitionAllowed } from "../ledger.js";
+import type { ProvisionedResourceRow, ResourceStatus } from "../ledger.js";
+import {
+  isLedgerTransitionAllowed,
+  LedgerMissingRowError,
+  LedgerTransitionError,
+} from "../ledger.js";
 import type { Ledger, LedgerIntent } from "../runner/index.js";
 
 /**
@@ -19,32 +23,17 @@ import type { Ledger, LedgerIntent } from "../runner/index.js";
  * đó: compensation chạy **ngược** danh sách này, vì ADR-08 nói thứ tự compensation không
  * nằm trong sổ mà suy từ thứ tự đã ghi.
  */
-export class LedgerTransitionError extends Error {
-  constructor(
-    readonly idempotencyKey: string,
-    readonly from: string,
-    readonly to: string,
-  ) {
-    super(
-      `Sổ từ chối chuyển ${from} → ${to} cho ${idempotencyKey}: cạnh này không có trong máy trạng thái §4.5`,
-    );
-    this.name = "LedgerTransitionError";
-  }
-}
-
-export class LedgerMissingRowError extends Error {
-  constructor(readonly idempotencyKey: string) {
-    super(`Sổ không có hàng ${idempotencyKey}`);
-    this.name = "LedgerMissingRowError";
-  }
-}
-
 export class InMemoryLedger implements Ledger {
   readonly #rows = new Map<string, ProvisionedResourceRow>();
-  /** Lý do của `ORPHAN_SUSPECTED`, để test khẳng định nó không bị nuốt */
-  readonly #orphanReasons = new Map<string, string>();
-  /** Lý do của lần tạo lại, để test khẳng định chứng minh "không còn" được ghi */
-  readonly #recreateReasons = new Map<string, string>();
+  /**
+   * Lý do, ghi KÈM trạng thái mà nó giải thích.
+   *
+   * Bản Postgres ghi cùng thông tin này vào `audit_logs` (append-only), nên ở đây
+   * cũng KHÔNG xoá khi hàng tiến lên: cả hai hiện thục phải cùng một ngữ nghĩa, và
+   * "bản trong bộ nhớ xoá được, bản bền thì không" là đúng loại lệch làm 91 ô của
+   * tầng 1 mất giá trị chứng minh mà không ô nào đỏ.
+   */
+  readonly #reasons = new Map<string, { status: ResourceStatus; reason: string }>();
 
   /**
    * `ABSENT → CREATING`, và **idempotent khi hàng đã ở `CREATING`**.
@@ -91,7 +80,7 @@ export class InMemoryLedger implements Ledger {
     const row = this.#require(idempotencyKey);
     this.#transition(row, "CREATING");
     row.providerId = null;
-    this.#recreateReasons.set(idempotencyKey, reason);
+    this.#reasons.set(idempotencyKey, { status: "CREATING", reason });
     return Promise.resolve();
   }
 
@@ -112,7 +101,7 @@ export class InMemoryLedger implements Ledger {
 
   markOrphanSuspected(idempotencyKey: string, reason: string): Promise<void> {
     this.#transition(this.#require(idempotencyKey), "ORPHAN_SUSPECTED");
-    this.#orphanReasons.set(idempotencyKey, reason);
+    this.#reasons.set(idempotencyKey, { status: "ORPHAN_SUSPECTED", reason });
     return Promise.resolve();
   }
 
@@ -130,14 +119,15 @@ export class InMemoryLedger implements Ledger {
     );
   }
 
-  /** Chỉ dùng trong test: lý do của một hàng `ORPHAN_SUSPECTED` */
-  orphanReasonOf(idempotencyKey: string): string | undefined {
-    return this.#orphanReasons.get(idempotencyKey);
-  }
-
-  /** Chỉ dùng trong test: lý do của lần tạo lại gần nhất */
-  recreateReasonOf(idempotencyKey: string): string | undefined {
-    return this.#recreateReasons.get(idempotencyKey);
+  /** Lý do của TRẠNG THÁI HIỆN TẠI — xem cổng `Ledger` */
+  reasonOf(idempotencyKey: string): Promise<string | null> {
+    const row = this.#rows.get(idempotencyKey);
+    if (row === undefined) return Promise.resolve(null);
+    const noted = this.#reasons.get(idempotencyKey);
+    if (noted === undefined || noted.status !== row.status) {
+      return Promise.resolve(null);
+    }
+    return Promise.resolve(noted.reason);
   }
 
   #require(idempotencyKey: string): ProvisionedResourceRow {

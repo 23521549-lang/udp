@@ -74,4 +74,9 @@ export interface ContractRelaxation {
 export const CONTRACT_RELAXATIONS: readonly ContractRelaxation[] = [];
 
 export type { LedgerCheck, LedgerFactory, TestRunnerApi } from "./ledger.js";
-export { LEDGER_CONTRACT_CHECKS, runLedgerContract } from "./ledger.js";
+export {
+  CONTRACT_PROJECT,
+  CONTRACT_PROJECT_OTHER,
+  LEDGER_CONTRACT_CHECKS,
+  runLedgerContract,
+} from "./ledger.js";

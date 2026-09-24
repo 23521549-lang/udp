@@ -12,6 +12,15 @@ import type { Ledger, LedgerIntent } from "../runner/index.js";
  * Bộ này là **dữ liệu**, không phải một `describe()` cứng, vì cùng ba lý do của bộ hợp
  * đồng Cloud: đếm được số phép đã chạy, dùng lại y nguyên cho hiện thực thứ hai, và một
  * phép bị bỏ là một con số đổi chứ không phải một dòng biến mất trong diff.
+ *
+ * **Hai giả định mà một phép kiểm ở đây KHÔNG được đặt**, cả hai do hiện thực Postgres
+ * phơi ra ở P9:
+ *
+ *  1. *Hai sổ từ cùng một `makeLedger` là độc lập.* Không: một sổ bền chỉ "rỗng" lại được
+ *     bằng cách xoá hàng, nên lần gọi thứ hai xoá mất hàng của lần thứ nhất. Mỗi phép
+ *     dùng ĐÚNG MỘT sổ, và nhiều khoá nếu cần nhiều hàng.
+ *  2. *Một `projectId` tự bịa dùng được.* Không: đó là khoá ngoại. Dùng `CONTRACT_PROJECT`
+ *     và `CONTRACT_PROJECT_OTHER`, và môi trường dựng tiền đề cho cả hai.
  */
 
 /** Cách một môi trường test cung cấp một sổ RỖNG mới cho mỗi phép kiểm */
@@ -28,7 +37,18 @@ export interface TestRunnerApi {
   it(name: string, fn: () => Promise<void>): void;
 }
 
-const PROJECT = "11111111-1111-4111-8111-111111111111";
+/**
+ * Hai `projectId` mà bộ hợp đồng dùng — CÔNG KHAI, vì môi trường phải dựng chúng.
+ *
+ * `InMemoryLedger` chỉ cần hai chuỗi khác nhau. Sổ Postgres thì `project_id` là khoá
+ * ngoại, nên một `projectId` không có hàng project tương ứng làm `INSERT` vỡ vì
+ * ràng buộc chứ không vì ngụ nghĩa của sổ — một phép đỏ vì lý do sai. Hai hằng số
+ * này xuất ra ngoài để môi trường tạo đủ tiền đề, thay vì để phép kiểm tự yếu đi.
+ */
+export const CONTRACT_PROJECT = "11111111-1111-4111-8111-111111111111";
+export const CONTRACT_PROJECT_OTHER = "22222222-2222-4222-8222-222222222222";
+
+const PROJECT = CONTRACT_PROJECT;
 
 function intentOf(
   name: string,
@@ -45,8 +65,15 @@ function intentOf(
   };
 }
 
-/** Một khẳng định tối giản, để `./contract` không phụ thuộc thư viện assert nào */
-function assert(condition: boolean, message: string): void {
+/**
+ * Một khẳng định tối giản, để `./contract` không phụ thuộc thư viện assert nào.
+ *
+ * `asserts condition` chứ không phải `void`: nhờ vậy `assert(row !== null, ...)` THU HẸP
+ * kiểu, và phép kiểm phía sau đọc `row.status` mà không cần một `as` nào. Một `as` ở chỗ
+ * đó là cách một `null` đi lọt tới `.status` và báo "Cannot read properties of null" —
+ * tức phép kiểm đỏ với một thông điệp không nói gì về tính chất nó đang kiểm.
+ */
+function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
@@ -76,12 +103,9 @@ export const LEDGER_CONTRACT_CHECKS: readonly LedgerCheck[] = [
       await ledger.intend(intent);
       const row = await ledger.byKey(intent.idempotencyKey);
       assert(row !== null, "phải có hàng sau intend");
+      assert(row.status === "CREATING", `phải ở CREATING, thấy ${row.status}`);
       assert(
-        (row as ProvisionedResourceRow).status === "CREATING",
-        "phải ở CREATING",
-      );
-      assert(
-        (row as ProvisionedResourceRow).providerId === null,
+        row.providerId === null,
         "providerId phải null: đây chính là trạng thái của điểm crash K2/K3",
       );
     },
@@ -137,13 +161,14 @@ export const LEDGER_CONTRACT_CHECKS: readonly LedgerCheck[] = [
       await ledger.markReady(a.idempotencyKey);
       await ledger.markRecreating(a.idempotencyKey, "khách xoá ngoài luồng");
       const afterReady = await ledger.byKey(a.idempotencyKey);
+      assert(afterReady !== null, "hàng phải còn trong sổ");
       assert(
-        afterReady?.status === "CREATING",
-        `từ READY phải về CREATING, thấy ${String(afterReady?.status)}`,
+        afterReady.status === "CREATING",
+        `từ READY phải về CREATING, thấy ${afterReady.status}`,
       );
       assert(
-        afterReady?.providerId === null,
-        `provider_id cũ phải bị xoá, thấy ${String(afterReady?.providerId)}`,
+        afterReady.providerId === null,
+        `provider_id cũ phải bị xoá, thấy ${String(afterReady.providerId)}`,
       );
 
       const b = intentOf("b");
@@ -205,8 +230,10 @@ export const LEDGER_CONTRACT_CHECKS: readonly LedgerCheck[] = [
       await ledger.markCreated(intent.idempotencyKey, "vpc-42");
       const rows = await ledger.rowsOf(PROJECT);
       assert(rows.length === 1, "vẫn phải là một hàng");
-      assert(rows[0]?.providerId === "vpc-42", "providerId phải được gắn");
-      assert(rows[0]?.status === "CREATED", "phải ở CREATED");
+      const only = rows[0];
+      assert(only !== undefined, "hàng đầu phải có");
+      assert(only.providerId === "vpc-42", "providerId phải được gắn");
+      assert(only.status === "CREATED", `phải ở CREATED, thấy ${only.status}`);
     },
   },
   {
@@ -233,31 +260,44 @@ export const LEDGER_CONTRACT_CHECKS: readonly LedgerCheck[] = [
      * Hai cạnh này là bổ sung của v4.10. Bản v4.9 không có chúng, nên compensation một
      * hàng chưa `READY` là bất hợp pháp — mà đó là ca thường xuyên nhất sau crash.
      */
+    /**
+     * MỘT sổ, hai khoá — không phải hai sổ.
+     *
+     * [v4.10] Bản trước của phép này gọi `makeLedger()` hai lần trong cùng một phép và
+     * giả định hai sổ thu được ĐỘC LẬP. Giả định đó đúng với bản trong bộ nhớ và
+     * **không thể đúng** với một sổ bền: hai sổ đều đọc ghi cùng một bảng, và cách
+     * duy nhất để `makeLedger()` trả về một sổ RỖNG là xoá hàng — tức lần gọi thứ hai
+     * xoá mất hàng của lần thứ nhất. Phép đó đỏ trên Postgres vì một điều không liên
+     * quan đến điều nó định kiểm.
+     *
+     * Tính chất cần kiểm không hề cần hai sổ: hai khoá khác nhau trong cùng một sổ là
+     * đủ, và đó cũng là hình thật của compensation — 13 hàng của cùng một lượt.
+     */
     name: "compensation đi được từ CREATING và từ CREATED, không chỉ từ READY",
     async run(makeLedger) {
-      const a = await newLedger(makeLedger);
+      const ledger = await newLedger(makeLedger);
+
+      /** Nhánh một: chưa biết id nào (`CREATING`) ⇒ vẫn compensation được */
       const i1 = intentOf("a");
-      await a.intend(i1);
-      await a.markDeleting(i1.idempotencyKey);
-      await a.markDeleted(i1.idempotencyKey);
+      await ledger.intend(i1);
+      await ledger.markDeleting(i1.idempotencyKey);
+      await ledger.markDeleted(i1.idempotencyKey);
 
-      const b = await newLedger(makeLedger);
+      /** Nhánh hai: đã có id nhưng chưa `READY` — ca thường nhất sau một lần vỡ */
       const i2 = intentOf("b");
-      await b.intend(i2);
-      await b.markCreated(i2.idempotencyKey, "vpc-2");
-      await b.markDeleting(i2.idempotencyKey);
-      await b.markDeleted(i2.idempotencyKey);
+      await ledger.intend(i2);
+      await ledger.markCreated(i2.idempotencyKey, "vpc-2");
+      await ledger.markDeleting(i2.idempotencyKey);
+      await ledger.markDeleted(i2.idempotencyKey);
 
-      const rowA = await a.byKey(i1.idempotencyKey);
-      const rowB = await b.byKey(i2.idempotencyKey);
-      assert(
-        (rowA as ProvisionedResourceRow).status === "DELETED",
-        "A phải DELETED",
-      );
-      assert(
-        (rowB as ProvisionedResourceRow).status === "DELETED",
-        "B phải DELETED",
-      );
+      for (const key of [i1.idempotencyKey, i2.idempotencyKey]) {
+        const row = await ledger.byKey(key);
+        assert(row !== null, `${key} phải còn trong sổ`);
+        assert(
+          row.status === "DELETED",
+          `${key} phải DELETED, thấy ${String(row.status)}`,
+        );
+      }
     },
   },
   {
@@ -320,6 +360,16 @@ export const LEDGER_CONTRACT_CHECKS: readonly LedgerCheck[] = [
     },
   },
   {
+    /**
+     * Phiên bản trước của phép này chỉ khẳng định KHI hiện thục có `orphanReasonOf`,
+     * tức nó xanh vô điều kiện trên mọi hiện thục không có phương thức đó — đúng
+     * hình dạng "một `return` sớm theo kiểu hiện thục" mà §13.2 cấm. `reasonOf` giờ là
+     * phương thức của cổng, nên phép này vô điều kiện.
+     *
+     * §4.5 yêu cầu `GET /admin/orphan-resources` hiển thị "**không im lặng bỏ qua**",
+     * nên một hàng `ORPHAN_SUSPECTED` không đọc lại được lý do là một dòng bảo người
+     * trực "có gì sai" mà không nói sai gì.
+     */
     name: "lý do của ORPHAN_SUSPECTED không bị nuốt",
     async run(makeLedger) {
       const ledger = await newLedger(makeLedger);
@@ -329,16 +379,57 @@ export const LEDGER_CONTRACT_CHECKS: readonly LedgerCheck[] = [
         intent.idempotencyKey,
         "delete thất bại 5 lần",
       );
-      const withReason = ledger as unknown as {
-        orphanReasonOf?: (k: string) => string | undefined;
-      };
-      if (typeof withReason.orphanReasonOf === "function") {
-        assert(
-          withReason.orphanReasonOf(intent.idempotencyKey) ===
-            "delete thất bại 5 lần",
-          "lý do phải đọc lại được",
-        );
-      }
+      const reason = await ledger.reasonOf(intent.idempotencyKey);
+      assert(
+        reason === "delete thất bại 5 lần",
+        `lý do phải đọc lại được, thấy ${String(reason)}`,
+      );
+    },
+  },
+  {
+    /**
+     * Lý do thuộc về MỘT trạng thái, không phải về hàng.
+     *
+     * Sổ bền ghi lý do vào một bảng append-only, nên không xoá được. Nếu `reasonOf`
+     * trả lý do cũ sau khi hàng đã tiến lên thì một hàng `READY` lành lặn sẽ hiện kèm
+     * "delete thất bại 5 lần" — sai lệch tệ hơn không có lý do, vì nó gửi người trực
+     * đi điều tra một hàng không có vấn đề gì.
+     *
+     * Phép này đi qua hàng K7: `markRecreating` ghi lý do cho `CREATING`, rồi
+     * `markCreated` đẩy hàng sang `CREATED` — và từ đó lý do không còn áp.
+     */
+    name: "lý do thuộc về TRẠNG THÁI đã ghi: hàng tiến lên thì reasonOf trả null",
+    async run(makeLedger) {
+      const ledger = await newLedger(makeLedger);
+      const intent = intentOf("a");
+      await ledger.intend(intent);
+      await ledger.markCreated(intent.idempotencyKey, "vpc-1");
+      await ledger.markReady(intent.idempotencyKey);
+
+      /** Khách xoá ngoài luồng ⇒ tạo lại, kèm lý do */
+      await ledger.markRecreating(intent.idempotencyKey, "khách xoá ngoài luồng");
+      const during = await ledger.reasonOf(intent.idempotencyKey);
+      assert(
+        during === "khách xoá ngoài luồng",
+        `lý do của CREATING phải đọc được, thấy ${String(during)}`,
+      );
+
+      /** Tạo lại xong thì lý do đó không còn áp cho trạng thái mới */
+      await ledger.markCreated(intent.idempotencyKey, "vpc-2");
+      const after = await ledger.reasonOf(intent.idempotencyKey);
+      assert(
+        after === null,
+        `hàng đã tiến lên thì reasonOf phải null, thấy ${String(after)}`,
+      );
+    },
+  },
+  {
+    /** Khóa không có thì không có lý do — và KHÔNG được ném, giống `byKey` */
+    name: "reasonOf trả null cho khóa không có, không ném",
+    async run(makeLedger) {
+      const ledger = await newLedger(makeLedger);
+      const reason = await ledger.reasonOf("khong-ton-tai");
+      assert(reason === null, "phải trả null");
     },
   },
   {
@@ -385,7 +476,7 @@ export const LEDGER_CONTRACT_CHECKS: readonly LedgerCheck[] = [
     name: "rowsOf cô lập theo project — sổ của project khác không lẫn vào",
     async run(makeLedger) {
       const ledger = await newLedger(makeLedger);
-      const other = "22222222-2222-4222-8222-222222222222";
+      const other = CONTRACT_PROJECT_OTHER;
       await ledger.intend(intentOf("a"));
       await ledger.intend(
         intentOf("b", {

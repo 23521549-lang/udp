@@ -47,6 +47,7 @@ export type {
   ResolvedCredential,
 } from "./credential.js";
 export {
+  CLOUD_PROVIDERS,
   CREDENTIAL_DISPOSED,
   SECRET_TO_STRING_FORBIDDEN,
   SecretBuffer,
@@ -85,8 +86,13 @@ export type {
   ResourceStatus,
 } from "./ledger.js";
 export {
+  allowedSourcesOf,
+  PROVISION_STEPS,
+  RESOURCE_STATUSES,
   isLedgerTransitionAllowed,
   LEDGER_TRANSITIONS,
+  LedgerMissingRowError,
+  LedgerTransitionError,
   PROVISIONED_RESOURCE_ROW_FIELDS,
   PROVISIONED_RESOURCE_ROW_OMITTED,
 } from "./ledger.js";
