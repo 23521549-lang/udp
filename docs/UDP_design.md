@@ -2997,16 +2997,52 @@ function validateAndOrder(
   const warnings = adapters.flatMap((a) =>
     (a.capabilities.recommends ?? []).filter((c) => !provided.has(c)).map((c) => warn("RECOMMENDED_MISSING", key(a), c)));
 
-  // 5. Nhập nhằng: nhiều provider không-exclusive cho cùng capability ⇒ cần CapabilityPreference
+  // 5. [v4.10] Chọn provider. Xem bảng thứ tự ưu tiên ngay dưới khối mã này.
+  //    consumers(cap) = tập adapter THỪC SỰ cần cap (kể cả qua anyOf).
+  //    satisfying(cap) = provider thoả constraint của MỊI consumer đó.
   const chosen = new Map<CapabilityId, string>();
   for (const [cap, ps] of provided) {
-    if (ps.length === 1) { chosen.set(cap, ps[0].by); continue; }
-    const pref = prefs.find((p) => p.capabilityId === cap && ps.some((x) => x.by === p.providerToolId));
-    if (!pref) return err("AMBIGUOUS_PROVIDER", cap, ps.map((p) => p.by));
-    chosen.set(cap, pref.providerToolId);
+    const consumers = adapters.filter((a) => needs(a, cap));
+    // D-10: capability không ai tiêu thụ ⇒ KHÔNG chọn, KHÔNG báo nhập nhằng.
+    //       `chosen` thiếu khoá là trạng thái HỢP LỆ, `topoSort` phải chịu được.
+    if (consumers.length === 0) continue;
+
+    const satisfying = ps.filter((p) => consumers.every((c) => satisfiesFor(c, cap, p.version)));
+    const pref = prefs.find((p) => p.capabilityId === cap);
+
+    if (pref) {
+      // Preference mồ côi (trỏ tới tool không có trong tổ hợp) là LỖI KHỞĐỘNG,
+      // không phải một warning — `domain-config.diff.ts` phải xoá hàng đó trong
+      // cùng transaction với việc tắt/đổi tool.
+      if (!ps.some((x) => x.by === pref.providerToolId)) throw orphanPreference(cap, pref);
+      // D-4': preference LÀ quyết định. Nếu nó không thoả consumer thì báo
+      //       VERSION_MISMATCH NÊU TÊN nó — không im lặng chọn provider khác.
+      if (!satisfying.some((x) => x.by === pref.providerToolId))
+        return err("VERSION_MISMATCH", pref.providerToolId, cap);
+      chosen.set(cap, pref.providerToolId);
+      continue;
+    }
+
+    if (satisfying.length === 0) return err("VERSION_MISMATCH", cap, ps.map((p) => p.by));
+    if (satisfying.length === 1) { chosen.set(cap, satisfying[0].by); continue; }
+    // Liệt kê CHỈ provider thoả — đưa cả provider không thoả vào dropdown là mời
+    // người dùng chọn một lựa chọn sẽ VERSION_MISMATCH ở bước 6.
+    return err("AMBIGUOUS_PROVIDER", cap, satisfying.map((p) => p.by));
   }
 
-  // 6. Topological sort — nhà cung cấp deploy trước bên tiêu thụ; cluster-scoped trước namespace-scoped cùng bậc.
+  // 6. [v4.10] verifyChosen — consumer phải thoả constraint với provider ĐÃ CHỌN.
+  //    Bước 3 chỉ hỏi "có provider nào thoả không"; bước này hỏi "cái đã chọn có thoả
+  //    không". Thiếu nó thì Flagger `^2` bind vào Datadog 1.0.0 và validator trả `ok`.
+  for (const a of adapters)
+    for (const r of flatRequires(a)) {
+      const picked = chosen.get(r.id);
+      if (picked === undefined) continue;
+      const v = provided.get(r.id)?.find((p) => p.by === picked)?.version;
+      if (v !== undefined && !satisfies(v, r.constraint ?? "*"))
+        return err("VERSION_MISMATCH", key(a), r.id);
+    }
+
+  // 7. Topological sort — nhà cung cấp deploy trước bên tiêu thụ; cluster-scoped trước namespace-scoped cùng bậc.
   //    Chu trình ⇒ lỗi cấu hình, không phải deadlock lúc chạy.
   const order = topoSort(adapters, chosen);
   if (!order) return err("CYCLIC_DEPENDENCY");
@@ -3014,6 +3050,43 @@ function validateAndOrder(
   return ok(order, warnings); // các adapter cùng bậc được deploy song song
 }
 ```
+
+**[v4.10] Thứ tự ưu tiên TƯỜNG MINH, và vì sao nó phải được viết ra:**
+
+Bản v4.9 kiểm `exclusive` và `conflicts` ở bước 2, rồi đọc preference ở bước 5, trong khi
+văn xuôi ở chỗ khác nói "preference là quyết định" **không điều kiện**. Hai câu đó mâu thuẫn
+nhau ở đúng một ca: hai provider của một capability `exclusive` mà người dùng đã chọn một
+trong hai. Chốt lại theo bản gốc của pseudo-code:
+
+| Bước | Kiểm gì | Quan hệ với preference |
+| --- | --- | --- |
+| 1 | `conflicts` / `exclusive` | **ĐỘC LẬP** preference. Hai provider của một capability `exclusive` ⇒ `CONFLICT`, dù người dùng đã chọn một |
+| 2 | `requires` / `anyOf` / semver | Chưa đọc preference |
+| 3 | Chọn provider | Theo preference |
+| 4 | `verifyChosen` | Consumer phải thoả constraint với provider **ĐÃ CHỌN** |
+
+Lý lẽ cho thứ tự này: `exclusive` là một ràng buộc về **trạng thái cluster** (một cluster một
+bên điều khiển traffic), còn preference là một lựa chọn về **dùng cái nào trong nhiều cái
+hợp lệ**. Cho preference thắng `exclusive` nghĩa là một lựa chọn trên dropdown gỡ được một
+ràng buộc an toàn — và hệ quả là hai controller cùng chia traffic trên một cluster.
+
+**[v4.10] `exclusive` là ràng buộc cluster-scoped TUYỆT ĐỐI (D-5).** `CapabilityBinding` có
+`environmentId?`, nên câu "chỉ một provider trong cluster" đọc được theo hai nghĩa: một provider
+cho mỗi environment, hay một provider cho cả cluster. Chốt: **cả cluster**. Không chốt thì
+resolver đúng ở mọi test đơn-environment và **sai âm thầm** khi có environment thứ hai — dạng
+lỗi tệ nhất, vì nó xuất hiện ở khách hàng thứ hai chứ không ở CI.
+
+**[v4.10] Capability không ai tiêu thụ (D-10).** Bản cũ phát `AMBIGUOUS_PROVIDER` cho **mọi**
+capability có hơn một provider. Nhưng một capability không adapter nào `requires` thì không có
+gì phải chọn: chặn một tổ hợp hoàn toàn hợp lệ và bắt người dùng bấm một dropdown vô
+nghĩa. Hệ quả về kiểu: `chosen` **thiếu khoá** là trạng thái hợp lệ, và `topoSort` phải
+chịu được — một hiện thực đọc `chosen.get(cap)!` sẽ vỡ ở đúng ca này.
+
+**[v4.10] Preference mồ côi là lỗi khởi động, không phải warning.** Một hàng
+`capability_preferences` trỏ tới tool đã tắt phải được `domain-config.diff.ts` xoá **trong cùng
+transaction** với việc tắt/đổi tool. Hàng mồ côi còn lại là lỗi khởi động — chọn đường này
+thay vì thêm một mã lỗi mới, vì thêm mã lỗi là đổi danh mục lỗi của cả hệ thống, còn bỏ
+im lặng lựa chọn của người dùng thì là chính lỗi D-4' đang sửa.
 
 **Kết quả validator trả về cho Portal** — thông báo có hành động cụ thể, không phải chuỗi lỗi chung chung:
 
@@ -7032,8 +7105,11 @@ export function runDomainAdapterContract(
 
     it("khai báo capability nhất quán với binding trả về khi deploy", async () => {
       const res = await adapter.deploy(ctx, fixture.validConfig);
+      // [v4.10] `provides` là `{ id, version, exclusive? }[]`, không phải `string[]`.
+      // Bản cũ so `string[]` với `object[]` nên nó **không bao giờ xanh được** — một
+      // phép kiểm không thể xanh và một phép kiểm không tồn tại che chấn như nhau.
       expect(res.data.map((b) => b.id).sort())
-        .toEqual([...adapter.capabilities.provides].sort());
+        .toEqual(adapter.capabilities.provides.map((p) => p.id).sort());
     });
 
     it("chỉ tạo tài nguyên trong namespace của environment", async () => { /* ... */ });
@@ -7171,7 +7247,7 @@ export function runCloudAdapterContract(
 | I10 | **Mọi route có `:projectId` đều qua `requireProjectRole`** | Test quét bảng route, so với danh sách route được miễn trừ tường minh — bảo vệ khỏi việc quên middleware khi thêm route mới |
 | I11 | **`CLIENT` key không bao giờ nhận userId thô** | Snapshot test payload, khẳng định không chứa chuỗi userId của fixture. **[v4.6]** Áp cho mọi response OFREP: không userId của rule, không `ruleId`, `condition`, `bucketSalt`, không id environment |
 | I12 | **`redact()` che mọi khóa nhạy cảm**, **[v4.9]** kể cả `secretKey` | Property-based test trên object lồng nhau sinh ngẫu nhiên. **[v4.9]** Thêm một phép quét TOÀN BỘ database, log của CẢ HAI service và `idempotency_keys` theo mẫu chung của token (`udp_sk_`/`udp_ck_` + envSlug + 64 hex, suy từ chính hàm sinh token): plaintext SDK key không nằm ở chỗ nào trong số đó |
-| I13 | **Khai báo capability không có chu trình** | Test khởi động: chạy `topoSort` trên toàn bộ registry |
+| I13 | **[v4.10] Đồ thị capability của MỘT TỔ HỢP ĐÃ CHỌN không có chu trình** | **Hai** phép tách rời. (a) Test thuật toán: `topoSort` trên đồ thị **dựng tay** — chu trình 2 đỉnh, 3 đỉnh, tự-vòng, và ca `chosen` thiếu khoá (D-10). (b) Test registry: mọi tổ hợp **hợp lệ** sinh ra một đồ thị không chu trình. Bản cũ chạy `topoSort` trên **toàn bộ registry**, và sai theo hai chiều cùng lúc: 16 adapter thật không bao giờ có chu trình nên test **luôn xanh bất kể `topoSort` đúng hay sai**, còn topo sort cả registry lại cho chu trình **GIẢ** vì Flagger và Argo Rollouts không bao giờ cùng được chọn |
 | I14 | **`environment` không rò rỉ** — SDK key của `dev` không đọc được cấu hình `prod` | Test tích hợp trực tiếp **[v4.6]** Cả OFREP: cùng context, khoá dev nhận kết quả theo cấu hình dev, không chịu rule hay bật/tắt của prod (flag thuộc project nên có mặt ở mọi env — "không thấy" không phải phép thử đúng) **[v4.9]** Cả `/sdk/stats`: báo cáo gửi bằng khoá của `dev` chỉ cộng vào hàng stats của `dev`, và một `flagKey` chỉ tồn tại ở project khác đi vào `ignored` chứ không tạo hàng nào |
 | I15a | **Hệ thống tự hội tụ dù tầng delta sai** (đối chiếu bằng `config_hash`; `config_version` chỉ là số đếm chứ không phải checksum — §1.4, ADR-05) | Chủ động xóa một dòng khỏi `ConfigChangeLog`, hoặc bơm một delta hỏng; khẳng định replica phát hiện **hash lệch** — không chỉ version, vì delta sai nội dung nhưng đúng số vẫn qua được nếu chỉ so version — rồi vứt cache và **hội tụ về đúng cấu hình**. Không cần dàn dựng chạy đua — đây là test dễ viết nhất trong nhóm |
 | I15b | **Thứ tự `config_version` trùng thứ tự commit, không có hổng vĩnh viễn** | Mở transaction T1 (khóa hàng `Environment`, nhận version n) nhưng chưa commit; mở T2 cùng environment và khẳng định nó **bị chặn** ở bước khóa hàng cho tới khi T1 commit; sau đó T2 nhận đúng n+1. Chạy vòng poll giữa hai mốc và khẳng định replica không bao giờ thấy n+1 trước n. Đây là toàn bộ lý do v4 bỏ `xid8`: bảo đảm đến từ row-lock giữ tới commit chứ không từ kiểu dữ liệu con trỏ |
