@@ -63,3 +63,9 @@ export interface CloudFixture {
   /** Số step của fixture — `CRASH_POINTS.length` KHÔNG chặn được việc nó tụt từ 13 xuống 1 */
   expectedStepCount: number;
 }
+
+export {
+  InMemoryLedger,
+  LedgerMissingRowError,
+  LedgerTransitionError,
+} from "./in-memory-ledger.js";

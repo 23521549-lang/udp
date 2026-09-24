@@ -63,3 +63,6 @@ export interface ContractRelaxation {
 
 /** Sổ nới lỏng — số liệu E1 là `.length`, máy đếm được, không thể quên */
 export const CONTRACT_RELAXATIONS: readonly ContractRelaxation[] = [];
+
+export type { LedgerCheck, LedgerFactory, TestRunnerApi } from "./ledger.js";
+export { LEDGER_CONTRACT_CHECKS, runLedgerContract } from "./ledger.js";
