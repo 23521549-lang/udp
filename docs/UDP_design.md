@@ -6835,6 +6835,29 @@ Inline error:         form validation — always near the field, never toast
 
 **Ảnh hưởng tới state:** `RolloutDetail` phải phân biệt ba trạng thái "đang chờ" mà v3 gộp làm một: chờ đủ dữ liệu (`warmUp`), chờ cửa sổ metric ổn định sau bậc mới (`window`), và chờ đủ dwell (`dwell`). Gộp lại thì mọi thứ đều hiện "đang chờ" và người dùng không biết có nên lo hay không.
 
+### 10.15 Portal như đã dựng — những chỗ lệch §10.1–§10.14 và vì sao [v4.11]
+
+Plan #25 dựng Portal theo §10 và theo bản mẫu đã duyệt (`docs/design/`). Mỗi dòng dưới đây là một chỗ mã **cố ý** khác chữ của §10; giữ chữ cũ thì tài liệu nói một đằng, mã làm một nẻo.
+
+| Mã | Mục | §10 viết | Portal làm | Vì sao |
+| -- | --- | -------- | ---------- | ------ |
+| D-P1 | §10.1 | shadcn/ui + Tailwind | CSS của bản mẫu đã duyệt, chép **nguyên văn** (`prototype.css`) + `portal.css` chỉ dùng token; icon Lucide | Bản mẫu là chuẩn (DESIGN.md). Chép nguyên văn biến "giống bản mẫu" thành một phép so kiểm được (`design-lint.test.ts`), không phải một lời hứa |
+| D-P2 | §10.1 | Axios + interceptor | Một hàm `api(schema, path)` trên `fetch` (`lib/http.ts`) | Mọi response parse qua schema dây; thêm Axios chỉ để có interceptor là thêm một lớp mà test phải giả |
+| D-P3 | §10.2 | Route theo thư mục (file-based) | Cây route khai bằng mã (`app/router.tsx`) | `router-cli` và `router-plugin` không ràng phiên bản nhau ⇒ hai máy có thể sinh hai `routeTree.gen.ts` khác nhau. Cây khai bằng mã vẫn type-safe và không có tệp sinh để lệch |
+| D-P4 | §10.4 | `role: "USER" \| "ADMIN"`; refresh single-flight trong một tab | `platformRole: "USER" \| "PLATFORM_ADMIN"` (đúng §2.2); refresh dưới **Web Locks** kèm mốc `udp_refreshed_at` | `refresh()` có phát hiện dùng lại token ⇒ hai tab cùng trình cookie cũ là `revokeFamily`, đăng xuất mọi tab. Trình duyệt thiếu Web Locks: Sổ nợ: `portal-refresh-lock` |
+| D-P5 | §10.10 | Proxy tới cổng 3000 | Cổng 3001 | Cổng thật của Core Backend (README) |
+| D-P6 | §10.10 | `onError` toàn cục cho mutation ⇒ toast | Mỗi form tự quyết: lỗi trường ở cạnh ô nhập, lỗi chung ở toast/hộp thoại | Toast toàn cục chồng lên lỗi trường mà form đã hiện — trái chính quy tắc "Inline error: never toast" của §10.10 |
+| D-P7 | §9, §10.6 | Response project không nói vai của người gọi | Mọi response project mang `myRole` do **server** tính | Suy từ `GET /members` tốn thêm một request, đòi quyền đọc danh sách thành viên, và đẩy quyết định phân quyền vào trình duyệt. Portal chỉ dùng nó để ẩn nút |
+| D-P8 | §9 | Hình response chỉ khai bằng kiểu TS | Schema dây `.strict()` ở `@udp/shared-types/wire`; server gửi **qua** chúng (`sendJson`), lệch hình ⇒ 500 `ResponseContractError` có log, không phải 400 | `res.json()` biến `Date` thành chuỗi trong khi kiểu nói `Date`; và `ZodError` thoát khỏi controller thành "dữ liệu gửi lên không hợp lệ" cho một bug của server |
+| D-P9 | §10.5 | Wizard năm bước | Chỉ bước 1 (tên, cách tạo, runtime) | Bốn bước sau cần endpoint chưa có. Sổ nợ: `portal-cloud-step`, `portal-domain-screens`, `portal-preview`, `portal-job-stream` |
+| D-P10 | §10.8 | Kéo-thả rule bằng dnd-kit | Nút lên/xuống có nhãn | Dùng được bằng bàn phím và trình đọc màn hình; kéo bằng con trỏ cần trình duyệt thật để kiểm. Sổ nợ: `portal-e2e` |
+| D-P11 | §10.9 | Tạo rollout ba chiến lược, hai phạm vi | Chỉ FLAG_LEVEL + CANARY; kiểm trước bằng `canaryPairOf` — CÙNG hàm Service 1 dùng để từ chối | Service 3 chưa có executor cho phần còn lại (§7.2); hiện chúng ra chỉ để nhận 422 là nói sai về khả năng hệ thống. Sổ nợ: `portal-rollout-create` |
+| D-P12 | §10.12 | Tham số `envId` trên URL | Tham số `env`; id lạ (không thuộc project) bị thay bằng env mặc định | Một id dán từ project khác làm mọi query của trang trỏ sang dữ liệu không thuộc project này |
+| D-P13 | §10.14 | Rule đọc trong key của Flag Detail | Key riêng `["flagRules", projectId, flagId, envId]` | Rule có mốc optimistic lock riêng (`FlagEnvConfig.updated_at`); gộp vào key flag thì lưu rule phải nạp lại cả flag |
+| D-P14 | DESIGN.md §3 | "Geist có đủ tiếng Việt" (chưa kiểm) | **Đã đo** 25/09/2026: `cmap` của Geist 400/600 và Geist Mono 400 phủ đủ 102 ký tự (U+1EA0–U+1EF9 và 12 chữ cơ sở), thiếu 0 | QĐ-2 quyết bằng phép đo, không bằng metadata npm |
+
+**Cưỡng chế bằng máy, không bằng trí nhớ:** I38 (`tests/i38-query-keys.test.ts`: mọi key phạm vi env mang `envId`, không `queryKey: [` trần ngoài `query-keys.ts`), golden capture (`services/core-backend/tests/wire-golden.test.ts`: mỗi route Portal gọi có một response thật đã ghi và schema parse được nó; controller Portal tiêu thụ không gọi `res.json` trần), và lint thiết kế của Portal (không em-dash trong chữ giao diện, chỉ Lucide, màu chỉ qua token).
+
 ---
 
 ## 11. Golden Path Template
