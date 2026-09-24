@@ -69,3 +69,28 @@ export {
   LedgerMissingRowError,
   LedgerTransitionError,
 } from "./in-memory-ledger.js";
+
+export {
+  KINDS_WITH_IDEMPOTENCY_TOKEN,
+  KINDS_WITHOUT_CREATE_TAGS,
+  SIM_DEPENDENCY_VIOLATION,
+  SIM_NOT_FOUND,
+  SIM_PERMANENT,
+  SIM_SEPARATE_TAGGING_REJECTED,
+  SIM_THROTTLE,
+  SIM_TRANSIENT,
+  SimCloud,
+  SimCloudError,
+} from "./sim-cloud.js";
+export type { SimCloudOptions } from "./sim-cloud.js";
+
+export {
+  CLOUD_FIXTURE,
+  CONSISTENCY_VARIANTS,
+  CRASH_POINTS,
+  EXPECTED_BY_KIND,
+  EXPECTED_RESOURCE_COUNT,
+  EXPECTED_STEP_COUNT,
+  FIXTURE_STEPS,
+  K10_VARIANTS,
+} from "./fixture.js";
