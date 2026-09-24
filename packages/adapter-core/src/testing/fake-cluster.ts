@@ -48,6 +48,8 @@ export interface FakeClusterAccess extends ClusterAccess {
   readonly calls: readonly FakeCall[];
   /** Chỉ các verb GHI; I32(c) đòi danh sách này rỗng sau một lượt quét drift */
   readonly writes: readonly FakeCall[];
+  /** Đối tượng đang có trên cluster giả, khoá theo `refKey` — để test khẳng định trạng thái */
+  snapshot(): Readonly<Record<string, unknown>>;
   /** Số lần xin token, theo identity — để kiểm bộ nhớ đệm token (I24) */
   readonly tokenRequests: Readonly<Record<ControlPlaneIdentity, number>>;
   reset(): void;
@@ -77,15 +79,49 @@ export function createFakeClusterAccess(
   const objects = options.objects ?? {};
   const denied = new Set(options.denyIdentities ?? []);
 
+  /**
+   * Kho đối tượng SỐNG: `write` đổi nó, `read` đọc nó.
+   *
+   * [v4.10] Bản đầu của fake này chỉ **ghi nhật ký** lời gọi ghi rồi bỏ qua nội dung,
+   * nên `read` luôn trả đúng thứ được seed từ đầu. Điều đó làm phép d13 của bộ hợp
+   * đồng Domain **không dựng được**: `driftMutations` sửa một đối tượng trên cluster giả,
+   * rồi `detectDrift` đọc lại và không thấy gì khác — tức phép kiểm "phát hiện được
+   * sửa tay" luôn đỏ bất kể adapter đúng hay sai.
+   *
+   * Nhật ký lời gọi VẪN giữ, vì nó trả lời câu khác: "ai đã gọi verb nào" (I32
+   * chiều c, định danh của §12.2). Hai câu hỏi khác nhau, hai cơ chế khác nhau.
+   */
+  const store = new Map<string, unknown>(Object.entries(objects));
+
   function clientFor(identity: ControlPlaneIdentity): KubernetesClient {
     return {
       read<T>(verb: K8sReadVerb, ref: ObjectRef): Promise<T | null> {
         calls.push({ identity, verb, ref });
-        const found = objects[refKey(ref)];
+        const found = store.get(refKey(ref));
         return Promise.resolve(found === undefined ? null : (found as T));
       },
-      write(verb: K8sWriteVerb, ref: ObjectRef): Promise<void> {
+      write(verb: K8sWriteVerb, ref: ObjectRef, body?: unknown): Promise<void> {
         calls.push({ identity, verb, ref });
+        const key = refKey(ref);
+        if (verb === "delete" || verb === "deletecollection") {
+          store.delete(key);
+          return Promise.resolve();
+        }
+        /**
+         * `patch` và `apply` TRỘN vào giá trị cũ; `create`/`update`/`replace` thay hẳn.
+         *
+         * Phân biệt này không phải sự tỉ mỉ: một `driftMutation` thực tế là một lần
+         * `patch` thêm một nhãn, và nếu fake coi nó như `replace` thì đối tượng mất mọi
+         * trường khác — `detectDrift` sẽ thấy drift, nhưng vì một lý do bịa ra bởi fake.
+         */
+        if ((verb === "patch" || verb === "apply") && body !== null) {
+          const prev = store.get(key);
+          if (typeof prev === "object" && prev !== null && typeof body === "object") {
+            store.set(key, { ...prev, ...body });
+            return Promise.resolve();
+          }
+        }
+        store.set(key, body ?? {});
         return Promise.resolve();
       },
     };
@@ -148,6 +184,16 @@ export function createFakeClusterAccess(
     get tokenRequests() {
       return tokenRequests;
     },
+    snapshot() {
+      return Object.fromEntries(store);
+    },
+    /**
+     * `reset` xoá NHẬT KÝ, không xoá kho đối tượng.
+     *
+     * Hai thứ có vòng đời khác nhau: nhật ký là của một lượt đo ("teardown có gọi delete
+     * không"), còn kho là trạng thái cluster kéo dài qua nhiều lượt. Xoá cả hai làm phép
+     * `teardown sau deploy` mất đối tượng để xoá, và nó sẽ xanh vì không còn gì.
+     */
     reset() {
       calls.length = 0;
       tokenRequests.workload = 0;

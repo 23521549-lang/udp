@@ -97,3 +97,10 @@ export {
   plansOf,
   runFullProvision,
 } from "./grid.js";
+
+export type { DomainCheck, DomainContractEnv } from "./domain.js";
+export {
+  DOMAIN_CONTRACT_CHECKS,
+  DOMAIN_DESIGN_CHECK_IDS,
+  runDomainAdapterContract,
+} from "./domain.js";

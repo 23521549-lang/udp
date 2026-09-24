@@ -130,3 +130,12 @@ export type {
   FakeClusterAccess,
   FakeClusterOptions,
 } from "./fake-cluster.js";
+
+/** Adapter Domain GIA di qua tron bo hop dong — khuon cho hai adapter that cua P19/P20 */
+export {
+  countingRandom,
+  createFakeDomainAdapter,
+  fakeAdapterConfigSchema,
+  fakeAdapterFixture,
+} from "./fake-domain-adapter.js";
+export type { FakeDomainAdapterOptions } from "./fake-domain-adapter.js";
