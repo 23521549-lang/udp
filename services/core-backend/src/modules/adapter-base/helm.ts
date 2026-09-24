@@ -6,6 +6,7 @@ import type {
   DomainAdapter,
   DomainAdapterContext,
   DomainToolConfig,
+  ReadOnlyAdapterContext,
 } from "@udp/adapter-core";
 import type { ZodType } from "zod";
 
@@ -56,10 +57,10 @@ export interface HelmAdapterSpec {
    */
   values: (
     config: DomainToolConfig,
-    ctx: DomainAdapterContext,
+    ctx: ReadOnlyAdapterContext,
   ) => Record<string, unknown>;
   /** Binding mà adapter cung cấp sau khi deploy xong */
-  bindings: (ctx: DomainAdapterContext) => CapabilityBinding[];
+  bindings: (ctx: ReadOnlyAdapterContext) => CapabilityBinding[];
   /**
    * Chiều quota adapter tiêu thụ; lớp nền TỪ CHỐI khi chiều đó bằng 0.
    *
@@ -137,19 +138,19 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
    * của environment. Bản v3 bắt mọi adapter deploy vào namespace env, và điều đó không
    * thực hiện được cho nửa số domain.
    */
-  const nsOf = (ctx: DomainAdapterContext): string =>
+  const nsOf = (ctx: ReadOnlyAdapterContext): string =>
     spec.scope === "cluster"
       ? ctx.systemNamespace
       : (ctx.environment?.k8sNamespace ?? ctx.systemNamespace);
 
-  const releaseRef = (ctx: DomainAdapterContext) => ({
+  const releaseRef = (ctx: ReadOnlyAdapterContext) => ({
     apiVersion: "helm.toolkit.fluxcd.io/v2",
     kind: RELEASE_KIND,
     namespace: nsOf(ctx),
     name: spec.releaseName,
   });
 
-  const valuesRef = (ctx: DomainAdapterContext) => ({
+  const valuesRef = (ctx: ReadOnlyAdapterContext) => ({
     apiVersion: "v1",
     kind: VALUES_KIND,
     namespace: nsOf(ctx),
@@ -159,7 +160,7 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
   /** Nội dung mong muốn — `detectDrift` so với chính cấu trúc này */
   function desiredOf(
     config: DomainToolConfig,
-    ctx: DomainAdapterContext,
+    ctx: ReadOnlyAdapterContext,
   ): Record<string, unknown> {
     return {
       chart: spec.chart.name,
@@ -279,6 +280,39 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
          * đường nào ghi trong lúc quét.
          */
         const client = await ctx.k8s.getClient("tooling");
+        /**
+         * [v4.10] Đọc CẢ HAI đối tượng mà `applyRelease` đã ghi, không chỉ ConfigMap.
+         *
+         * Lưới E16 có một ô "xoá hẳn một Deployment", và trong mô hình mô phỏng của
+         * §13.2 thì `HelmRelease` là đối tượng đại diện cho workload đang chạy. Bản
+         * trước chỉ đọc ConfigMap giá trị, nên xoá release là một lần trôi KHÔNG bị phát
+         * hiện: ConfigMap vẫn nguyên, và `detectDrift` trả `false` trong khi trên cluster
+         * không còn gì chạy. Một hàm quét drift bỏ sót đúng loại trôi nặng nhất thì ba
+         * chiều của I32 chỉ còn là hai.
+         */
+        const release = await client.read<Record<string, unknown>>(
+          "get",
+          releaseRef(ctx),
+        );
+        if (release === null) {
+          return { drifted: true, details: "thiếu HelmRelease của tool" };
+        }
+        const releaseDrift = driftBetween(
+          {
+            chart: spec.chart.name,
+            version: spec.chart.version,
+            repo: spec.chart.repo,
+            valuesFrom: `${spec.releaseName}-values`,
+          },
+          release,
+          spec.ignoredKeyPrefixes ?? [],
+        );
+        if (releaseDrift.drifted) {
+          return {
+            drifted: true,
+            details: `HelmRelease ${releaseDrift.details ?? "đã trôi"}`,
+          };
+        }
         const found = await client.read<Record<string, unknown>>(
           "get",
           valuesRef(ctx),

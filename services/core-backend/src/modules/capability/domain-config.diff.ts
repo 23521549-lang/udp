@@ -42,6 +42,18 @@ export interface DomainChange {
     schemaVersion: string;
     endpoint?: string | null;
   }[];
+  /**
+   * [v4.10] `adapter_version` mới, khi lần đổi này là một lần NÂNG CẤP (§8.6).
+   *
+   * Vắng nghĩa là giữ nguyên - bật, tắt hay đổi tool đều không chạm cột này.
+   *
+   * Vì sao nó nằm ở ĐÂY chứ không là một `UPDATE` riêng của luồng nâng cấp: §8.6 nói
+   * `adapter_version` chỉ đổi sau khi healthcheck xanh, và cột đó là thứ `detectDrift()`
+   * so sánh. Hai lệnh `UPDATE` rời nhau để lại một cửa sổ mà binding đã mới còn version
+   * còn cũ; một lần crash đúng trong cửa sổ đó làm MỌI lượt quét sau báo trôi giả, và
+   * §8.6 gọi thẳng đó là hậu quả của việc ghi sai cột này.
+   */
+  adapterVersion?: string;
 }
 
 export interface DiffOutcome {
@@ -113,6 +125,9 @@ export async function applyDomainChange(
       data: {
         selectedTool: change.selectedTool,
         isEnabled: change.selectedTool !== null,
+        ...(change.adapterVersion === undefined
+          ? {}
+          : { adapterVersion: change.adapterVersion }),
       },
     });
 

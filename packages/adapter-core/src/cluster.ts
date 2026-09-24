@@ -74,7 +74,25 @@ export interface KubernetesClient extends ReadOnlyKubernetesClient {
   write(verb: K8sWriteVerb, ref: ObjectRef, body?: unknown): Promise<void>;
 }
 
-export interface ClusterAccess {
+/**
+ * [v4.10] Nửa CHỈ ĐỌC của `ClusterAccess` - kiểu mà đường quét drift nhận.
+ *
+ * Tách `ReadOnlyKubernetesClient` khỏi `KubernetesClient` chỉ là một nửa việc. Nửa còn
+ * lại là cái cổng để lấy client: nếu hàm quét drift nhận cả `ClusterAccess` thì nó gọi
+ * `getClient()` và có ngay trong tay một client GHI ĐƯỢC, và lời khai ở §4.6 ("cho hàm
+ * quét drift nhận `ReadOnlyKubernetesClient` biến điều đó thành tính chất của KIỂU") là
+ * một lời khai không có hiệu lực. Nó đã không có hiệu lực cho tới P21.
+ *
+ * `ClusterAccess` mở rộng interface này và thu hẹp kiểu trả về của `getClient`, nên mọi
+ * nơi đang truyền `ClusterAccess` vẫn biên dịch, còn đường quét drift chỉ thấy `read`.
+ */
+export interface ReadOnlyClusterAccess {
+  readonly mode: ClusterAccessMode;
+  readonly clusterId: string;
+  getClient(as: ControlPlaneIdentity): Promise<ReadOnlyKubernetesClient>;
+}
+
+export interface ClusterAccess extends ReadOnlyClusterAccess {
   readonly mode: ClusterAccessMode;
   readonly clusterId: string;
 
@@ -113,4 +131,35 @@ export interface ClusterAccess {
   probe(): Promise<
     AdapterResult<{ reachable: boolean; serverVersion?: string }>
   >;
+}
+
+/**
+ * [v4.10] Tầng HAI của I32 chiều (c): bóc `write` ở LÚC CHẠY, không chỉ ở tầng kiểu.
+ *
+ * Một bảo đảm ở tầng kiểu mất hiệu lực ngay khi ai đó viết một `as`, và phương thức
+ * trong TypeScript là **song biến**: một adapter khai `detectDrift(ctx:
+ * DomainAdapterContext)` vẫn thoả interface. Hàm này khoá cả hai lỗ đó, vì object trả về
+ * là object MỚI **chỉ có** `read`: một lời gọi `write` trên đó là `TypeError` tại chỗ,
+ * chứ không phải một lần ghi đè vào cluster của khách lúc 3 giờ sáng.
+ *
+ * Nó KHÔNG trả về chính `access` đã thu hẹp kiểu: làm như vậy thì `write` vẫn còn đó và
+ * một `as` lấy lại được.
+ */
+export function readOnlyAccess(
+  access: ReadOnlyClusterAccess,
+): ReadOnlyClusterAccess {
+  return {
+    mode: access.mode,
+    clusterId: access.clusterId,
+    async getClient(
+      as: ControlPlaneIdentity,
+    ): Promise<ReadOnlyKubernetesClient> {
+      const client = await access.getClient(as);
+      return {
+        read<T>(verb: K8sReadVerb, ref: ObjectRef): Promise<T | null> {
+          return client.read<T>(verb, ref);
+        },
+      };
+    },
+  };
 }

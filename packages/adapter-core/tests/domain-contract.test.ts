@@ -185,12 +185,19 @@ describe("meta — số phép và bảng truy vết", () => {
    *
    * Hai adapter "dễ tính", và hai con số khác nhau — việc đo hai lần là có chủ đích:
    *
-   *  - **Khai RỖNG** (`provides: []`, `requires: []`): 8 phép đỏ. Phần lớn phép còn xanh
+   *  - **Khai RỖNG** (`provides: []`, `requires: []`): 9 phép đỏ. Phần lớn phép còn xanh
    *    là vì chúng duyệt trên chính những danh sách đó — tức khai rỗng là một đường
    *    "không bị kiểm gì". Đó là lý do có một phép chặn ở cổng vào
    *    ("khai ít nhất một trong provides / requires").
-   *  - **Khai ĐỦ nhưng KHÔNG LÀM GÌ**: 9 phép đỏ. Đây là con số thật về răng của bộ
+   *  - **Khai ĐỦ nhưng KHÔNG LÀM GÌ**: 10 phép đỏ. Đây là con số thật về răng của bộ
    *    hợp đồng, và nó nhỏ hơn 42 rất nhiều.
+   *
+   * **[v4.10] Hai con số này TĂNG một ở P21, và đó là cách đọc chúng đúng.** Hai ô về
+   * `ignoredLabelPrefixes` trước đây chỉ đọc lời khai (mỗi prefix có kèm lý do không) rồi
+   * dừng, nên một adapter rỗng đi qua cả hai. Nay chúng sửa tay đúng những đối tượng
+   * adapter vừa ghi rồi đòi một phán quyết, nên một adapter không ghi gì bị bắt ngay ở
+   * cổng: nó không có đối tượng nào để mà sửa. Con số này là một PHÉP ĐO về bộ test, nên
+   * nó chỉ được đổi cùng với một lần đo lại - không bao giờ đổi để test xanh.
    *
    * **Nói thẳng điều con số thứ hai nghĩa là gì**, vì nó là giới hạn của cả kỹ thuật:
    * một adapter nói dối **nhất quán** (trả `SUCCESS`, tự báo healthy, tự báo không
@@ -203,17 +210,17 @@ describe("meta — số phép và bảng truy vết", () => {
    * Viết ra con số 9 thay vì nói "42 phép bảo vệ" là điểm khác nhau giữa một bộ test
    * biết giới hạn của mình và một bộ test cho cảm giác an toàn.
    */
-  it("adapter khai RỖNG: 8 phép đỏ, và cổng vào là một trong số đó", async () => {
+  it("adapter khai RỖNG: 9 phép đỏ, và cổng vào là một trong số đó", async () => {
     const empty = permissiveAdapter({ provides: [], requires: [] });
     const { failed, survivors } = await runAll(empty);
-    expect(failed).toBe(8);
+    expect(failed).toBe(9);
     expect(
       survivors,
       "phép chặn cổng vào phải Đỏ trước một khai báo rỗng",
     ).not.toContain("khai ít nhất một trong provides / requires");
   }, 30_000);
 
-  it("adapter khai ĐỦ nhưng KHÔNG LÀM GÌ: đúng 9 phép đỏ", async () => {
+  it("adapter khai ĐỦ nhưng KHÔNG LÀM GÌ: đúng 10 phép đỏ", async () => {
     const inert = permissiveAdapter({
       provides: [{ id: "metrics.query", version: "2.0.0" }],
       requires: [{ id: "registry.oci" }],
@@ -233,7 +240,7 @@ describe("meta — số phép và bảng truy vết", () => {
      * Một con số mình không nói được phép nào đang làm việc: đổi một phép mạnh thành
      * yếu và một phép yếu thành mạnh giữ nguyên tổng, và test vẫn xanh.
      */
-    expect(failed).toBe(9);
+    expect(failed).toBe(10);
     expect(
       DOMAIN_CONTRACT_CHECKS.map((c) => c.name).filter(
         (n) => !survivors.includes(n),
@@ -243,6 +250,7 @@ describe("meta — số phép và bảng truy vết", () => {
       "deploy rồi healthcheck phải trả healthy",
       "deploy đọc endpoint của dependency từ ctx.resolved, không tự đoán",
       "detectDrift trả true sau MỖI driftMutation của fixture",
+      "nhãn khớp ignoredLabelPrefixes KHÔNG tính là drift",
       "onDependencyChanged cập nhật theo binding MỚI",
       "progress được gọi ít nhất một lần khi deploy",
       "teardown sau deploy dọn sạch tài nguyên",

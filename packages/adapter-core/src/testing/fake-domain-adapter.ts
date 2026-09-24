@@ -52,6 +52,15 @@ export function countingRandom(seed = 0): () => string {
   };
 }
 
+/**
+ * Prefix khoá adapter giả bỏ qua khi so drift - KHỚP `fakeAdapterFixture()`.
+ *
+ * Hai chỗ khai cùng một sự thật, và đó là chủ ý: fixture là lời TUYÊN BỐ của adapter,
+ * hằng số này là HÀNH VI. Bộ hợp đồng là chốt giữ hai bên khớp nhau, vì một adapter bỏ
+ * qua nhiều hơn lời khai nghĩa là có một loại sửa tay không bao giờ bị phát hiện.
+ */
+const IGNORED_KEY_PREFIXES: readonly string[] = ["kubectl.kubernetes.io/"];
+
 export function createFakeDomainAdapter(
   options: FakeDomainAdapterOptions = {},
 ): DomainAdapter {
@@ -59,7 +68,7 @@ export function createFakeDomainAdapter(
   /** Nội dung mong muốn của ConfigMap — `detectDrift` so với chính nó */
   let desired: Record<string, unknown> = {};
 
-  const nsOf = (ctx: Parameters<DomainAdapter["deploy"]>[0]): string =>
+  const nsOf = (ctx: Parameters<DomainAdapter["detectDrift"]>[0]): string =>
     ctx.environment?.k8sNamespace ?? ctx.systemNamespace;
 
   const bindingsOf = (endpoint: string): CapabilityBinding[] => [
@@ -117,12 +126,22 @@ export function createFakeDomainAdapter(
      */
     await client.write(
       "apply",
-      { apiVersion: "v1", kind: CONFIG_KIND, namespace: ns, name: "fake-config" },
+      {
+        apiVersion: "v1",
+        kind: CONFIG_KIND,
+        namespace: ns,
+        name: "fake-config",
+      },
       desired,
     );
     await client.write(
       "apply",
-      { apiVersion: "helm.sh/v1", kind: RELEASE_KIND, namespace: ns, name: "fake-release" },
+      {
+        apiVersion: "helm.sh/v1",
+        kind: RELEASE_KIND,
+        namespace: ns,
+        name: "fake-release",
+      },
       { chartVersion: "1.2.3", revision: nextId() },
     );
     ctx.progress("đã áp cấu hình");
@@ -181,8 +200,9 @@ export function createFakeDomainAdapter(
       /**
        * Nhận client rồi CHỈ đọc.
        *
-       * Bảo đảm tầng kiểu là chữ ký `ReadOnlyKubernetesClient` ở §4.6; ở đây adapter tự
-       * giữ kỷ luật đó, và bộ hợp đồng đếm `writes` để kỷ luật ấy không phải một lời hứa.
+       * [v4.10] Bảo đảm tầng kiểu nằm ở chữ ký: `ctx.k8s` ở đây là `ReadOnlyClusterAccess`,
+       * nên `client` không có `write` để mà gọi. Bộ hợp đồng vẫn đếm `writes` làm tầng
+       * hai, vì một lời gọi bằng `as` phải bị bắt chứ không chỉ bị cấm.
        */
       const client = await ctx.k8s.getClient("tooling");
       const found = await client.read<Record<string, unknown>>("get", {
@@ -192,16 +212,44 @@ export function createFakeDomainAdapter(
         name: "fake-config",
       });
       if (found === null) {
-        return { status: "SUCCESS", data: { drifted: true, details: "thiếu ConfigMap" } };
+        return {
+          status: "SUCCESS",
+          data: { drifted: true, details: "thiếu ConfigMap" },
+        };
       }
-      const drifted = Object.entries(desired).some(
-        ([k, v]) => found[k] !== v,
+      /**
+       * [v4.10] So ĐẦY ĐỦ HAI CHIỀU, không phải tập con.
+       *
+       * Bản trước chỉ duyệt `Object.entries(desired)`, nên một khoá LẠ xuất hiện trên
+       * ConfigMap không bị phát hiện - trong khi fixture của chính adapter này khai đúng
+       * MỘT prefix được bỏ qua, tức mọi khoá khác phải là drift. Hai điều đó không thể
+       * cùng đúng.
+       *
+       * Adapter giả này là bản chứng minh "bộ hợp đồng thoả được", nên một lỗ ở đây là
+       * một lỗ ở bản mẫu mà 16 adapter thật sẽ đọc. Nó bị tìm ra ở P21, sau khi hai ô
+       * nhãn đổi từ đọc lời khai thành kiểm hành vi - và đó đúng là việc của một ô kiểm
+       * hành vi.
+       */
+      const differing = Object.keys(desired).filter(
+        (k) => JSON.stringify(found[k]) !== JSON.stringify(desired[k]),
       );
+      const unexpected = Object.keys(found).filter(
+        (k) =>
+          !(k in desired) &&
+          !IGNORED_KEY_PREFIXES.some((prefix) => k.startsWith(prefix)),
+      );
+      if (differing.length === 0 && unexpected.length === 0) {
+        return { status: "SUCCESS", data: { drifted: false } };
+      }
+      const parts = [
+        ...(differing.length > 0 ? [`khác ở: ${differing.join(", ")}`] : []),
+        ...(unexpected.length > 0
+          ? [`có khoá lạ: ${unexpected.join(", ")}`]
+          : []),
+      ];
       return {
         status: "SUCCESS",
-        data: drifted
-          ? { drifted, details: "ConfigMap khác cấu hình mong muốn" }
-          : { drifted },
+        data: { drifted: true, details: parts.join("; ") },
       };
     },
 
@@ -284,7 +332,8 @@ export function fakeAdapterFixture(): AdapterFixture {
     ignoredLabelPrefixes: [
       {
         prefix: "kubectl.kubernetes.io/",
-        reason: "kubectl tự thêm last-applied-configuration, không phải drift của ta",
+        reason:
+          "kubectl tự thêm last-applied-configuration, không phải drift của ta",
       },
     ],
     driftMutations: [

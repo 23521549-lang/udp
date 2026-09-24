@@ -6,6 +6,7 @@ import type {
   DomainAdapter,
   DomainAdapterContext,
   DomainToolConfig,
+  ReadOnlyAdapterContext,
 } from "@udp/adapter-core";
 import type { ZodType } from "zod";
 
@@ -46,10 +47,10 @@ export interface SaaSAdapterSpec {
   /** Thân request gửi lên nhà cung cấp */
   configureBody: (
     config: DomainToolConfig,
-    ctx: DomainAdapterContext,
+    ctx: ReadOnlyAdapterContext,
   ) => Record<string, unknown>;
   /** Binding mà adapter cung cấp sau khi cấu hình xong */
-  bindings: (ctx: DomainAdapterContext) => CapabilityBinding[];
+  bindings: (ctx: ReadOnlyAdapterContext) => CapabilityBinding[];
   quotaDimensions: readonly (keyof DomainAdapterContext["quota"])[];
   /**
    * Prefix khoá được BỊ QUA khi so drift, mỗi cái kèm lý do.
@@ -118,9 +119,9 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
    * Một tài khoản Datadog phục vụ cả project; dựng một cấu hình cho mỗi environment là
    * nhân số lần gọi API mà không thêm sự cô lập nào — dữ liệu vẫn nằm chung một tài khoản.
    */
-  const nsOf = (ctx: DomainAdapterContext): string => ctx.systemNamespace;
+  const nsOf = (ctx: ReadOnlyAdapterContext): string => ctx.systemNamespace;
 
-  const connectionRef = (ctx: DomainAdapterContext) => ({
+  const connectionRef = (ctx: ReadOnlyAdapterContext) => ({
     apiVersion: "v1",
     kind: CONNECTION_KIND,
     namespace: nsOf(ctx),
@@ -129,7 +130,7 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
 
   function desiredOf(
     config: DomainToolConfig,
-    ctx: DomainAdapterContext,
+    ctx: ReadOnlyAdapterContext,
   ): Record<string, unknown> {
     return {
       provider: spec.toolId,

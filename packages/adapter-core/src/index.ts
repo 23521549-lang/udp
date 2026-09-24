@@ -61,12 +61,14 @@ export type {
   K8sWriteVerb,
   KubernetesClient,
   ObjectRef,
+  ReadOnlyClusterAccess,
   ReadOnlyKubernetesClient,
 } from "./cluster.js";
 export {
   IDENTITY_SERVICE_ACCOUNTS,
   K8S_READ_VERBS,
   K8S_WRITE_VERBS,
+  readOnlyAccess,
 } from "./cluster.js";
 
 export type {
@@ -76,9 +78,14 @@ export type {
   DomainAdapterContext,
   DomainToolConfig,
   PipelineTemplateParams,
+  ReadOnlyAdapterContext,
   WebhookDeployEvent,
 } from "./domain.js";
-export { DOMAIN_ADAPTER_METHODS, DOMAIN_ADAPTER_PROPERTIES } from "./domain.js";
+export {
+  DOMAIN_ADAPTER_METHODS,
+  DOMAIN_ADAPTER_PROPERTIES,
+  readOnlyContext,
+} from "./domain.js";
 
 export type {
   ProvisionedResourceRow,

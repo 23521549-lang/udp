@@ -7,7 +7,12 @@ import type {
 } from "@udp/shared-types";
 import type { ZodType } from "zod";
 import type { ResourceQuota } from "./cloud.js";
-import type { ClusterAccess, KubernetesClient } from "./cluster.js";
+import { readOnlyAccess } from "./cluster.js";
+import type {
+  ClusterAccess,
+  KubernetesClient,
+  ReadOnlyClusterAccess,
+} from "./cluster.js";
 
 /**
  * [v4.10] Hợp đồng của Domain Adapter (§5.2) — **bảy** phương thức và **sáu** thuộc tính.
@@ -49,6 +54,38 @@ export interface DomainAdapterContext {
    * lỗi — nên lách được thì test đỏ.
    */
   fetch: typeof fetch;
+}
+
+/**
+ * [v4.10] Bối cảnh KHÔNG GHI ĐƯỢC - thứ mà `detectDrift` nhận.
+ *
+ * §4.6 nói rõ lý do tách verb đọc khỏi verb ghi: *"cho hàm quét drift nhận
+ * `ReadOnlyKubernetesClient` biến điều đó thành tính chất của KIỂU"*. Nhưng `detectDrift`
+ * lại nhận một `DomainAdapterContext`, mà `ctx.k8s.getClient()` trả về client đầy đủ, nên
+ * cho tới P21 lời khai đó không có hiệu lực - và chính chú thích trong bộ hợp đồng đang
+ * nói "tầng một là kiểu" trong khi tầng đó rỗng.
+ *
+ * Kiểu này cũng là kiểu của mọi hàm SUY DIỄN thuần của hai lớp nền (`values`, `bindings`,
+ * `configureBody`): chúng tính ra cái gì **nên** có, và không có việc gì phải ghi.
+ */
+export interface ReadOnlyAdapterContext extends Omit<
+  DomainAdapterContext,
+  "k8s"
+> {
+  k8s: ReadOnlyClusterAccess;
+}
+
+/**
+ * Hạ một bối cảnh đầy đủ xuống bối cảnh chỉ đọc - đường mà job quét drift dùng.
+ *
+ * Lúc chạy thật, `DRIFT_SCAN` có trong tay một `ClusterAccess` đầy đủ (nó cũng là
+ * process chạy `deploy`). Hàm này là chỗ chuyển đổi DUY NHẤT, nên "quyền ghi dừng ở đây"
+ * là một dòng mã chỉ ra được, không phải một quy ước người ta nhớ hoặc quên.
+ */
+export function readOnlyContext(
+  ctx: DomainAdapterContext | ReadOnlyAdapterContext,
+): ReadOnlyAdapterContext {
+  return { ...ctx, k8s: readOnlyAccess(ctx.k8s) };
 }
 
 export interface DomainAdapter {
@@ -95,11 +132,15 @@ export interface DomainAdapter {
   /**
    * Day-2: so trạng thái thật trên cluster với cấu hình mong muốn.
    *
-   * Nhận `ReadOnlyKubernetesClient` qua `ctx.k8s` ở chế độ chỉ đọc: chiều (c) của I32
-   * ("không bao giờ tự sửa") là tính chất của KIỂU, không phải của một phép đếm.
+   * [v4.10] Nhận `ReadOnlyAdapterContext`: chiều (c) của I32 ("không bao giờ tự sửa") là
+   * tính chất của KIỂU trước, rồi mới là một phép đếm. Đây là thay đổi chữ ký DUY NHẤT
+   * sau khi bề mặt interface được đóng băng ở P18 (tag `adapter-interface-v1`), và nó là
+   * một quyết định chứ không phải một lần thêm cho tiện: bề mặt giữ đúng **bảy phương
+   * thức** cùng tên, chỉ quyền của một tham số bị thu hẹp. Mọi adapter đang có vẫn biên
+   * dịch; adapter nào đang ghi trong lúc quét thì không.
    */
   detectDrift(
-    ctx: DomainAdapterContext,
+    ctx: ReadOnlyAdapterContext,
     config: DomainToolConfig,
   ): Promise<AdapterResult<{ drifted: boolean; details?: string }>>;
 

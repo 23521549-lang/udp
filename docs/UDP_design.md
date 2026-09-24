@@ -2583,10 +2583,26 @@ interface KubernetesClient extends ReadOnlyKubernetesClient {
   write(verb: K8sWriteVerb, ref: ObjectRef, body?: unknown): Promise<void>;
 }
 
+/**
+ * [v4.10] Nửa CHỈ ĐỌC của chính cổng vào cluster.
+ *
+ * Tách hai nhóm verb chỉ là một nửa việc; nửa còn lại là cái cổng để lấy client. Nếu
+ * hàm quét drift nhận cả `ClusterAccess` thì nó gọi `getClient()` và có ngay trong tay
+ * một client GHI ĐƯỢC, và lời khai ngay trên ("cho hàm quét drift nhận
+ * `ReadOnlyKubernetesClient` biến điều đó thành tính chất của KIỂU") không có hiệu lực.
+ * Nó đã không có hiệu lực từ v4 cho tới P21, và chính chú thích của bộ hợp đồng khi ấy
+ * đang nói "tầng một là kiểu" trong khi tầng đó rỗng.
+ */
+interface ReadOnlyClusterAccess {
+  readonly mode: ClusterAccessMode;
+  readonly clusterId: string;
+  getClient(as: ControlPlaneIdentity): Promise<ReadOnlyKubernetesClient>;
+}
+
 /** Danh tính bên gọi — quyết định SA nào được cấp (§12.2). KHÔNG do bên gọi tự khai */
 type ControlPlaneIdentity = "workload" | "traffic" | "tooling";
 
-interface ClusterAccess {
+interface ClusterAccess extends ReadOnlyClusterAccess {
   readonly mode: ClusterAccessMode;
   readonly clusterId: string;
 
@@ -2712,6 +2728,21 @@ interface DomainAdapterContext {
   fetch: typeof fetch;
 }
 
+/**
+ * [v4.10] Bối cảnh KHÔNG GHI ĐƯỢC - thứ mà `detectDrift` nhận.
+ *
+ * Bất biến I32 chiều (c) nói hệ thống không bao giờ tự sửa drift, và §4.6 nói rõ rằng
+ * đó là lý do tách verb đọc khỏi verb ghi. Nhưng `detectDrift` lại nhận một
+ * `DomainAdapterContext`, mà `ctx.k8s.getClient()` trả về client đầy đủ - nên lời khai
+ * đó không có hiệu lực. Kiểu này đóng cái lỗ hổng ấy: adapter không còn `write` để gọi.
+ *
+ * Nó cũng là kiểu của mọi hàm SUY DIỄN thuần của hai lớp nền ở §5.2 (`values`,
+ * `bindings`, `configureBody`): chúng tính ra cái gì NÊN có, và không có việc gì phải ghi.
+ */
+interface ReadOnlyAdapterContext extends Omit<DomainAdapterContext, "k8s"> {
+  k8s: ReadOnlyClusterAccess;
+}
+
 interface DomainAdapter {
   readonly domainType: DomainType;
   readonly toolId: string; // vd: "github-actions", "prometheus-grafana"
@@ -2738,8 +2769,15 @@ interface DomainAdapter {
   /** [v4] Day-2: nâng cấp chart/operator lên adapter.version mới mà không teardown */
   upgrade(ctx: DomainAdapterContext, config: DomainToolConfig, fromVersion: string): Promise<AdapterResult<CapabilityBinding[]>>;
 
-  /** [v4] Day-2: so trạng thái thật trên cluster với cấu hình mong muốn (helm diff, CR spec) */
-  detectDrift(ctx: DomainAdapterContext, config: DomainToolConfig): Promise<AdapterResult<{ drifted: boolean; details?: string }>>;
+  /**
+   * [v4] Day-2: so trạng thái thật trên cluster với cấu hình mong muốn (helm diff, CR spec).
+   *
+   * [v4.10] Nhận `ReadOnlyAdapterContext`, không phải `DomainAdapterContext`: I32 chiều
+   * (c) là tính chất của KIỂU trước, rồi mới là một phép đếm. Đây là thay đổi chữ ký duy
+   * nhất sau khi bề mặt interface được đóng băng (tag `adapter-interface-v1`), và nó giữ
+   * đúng bảy phương thức cùng tên — chỉ quyền của một tham số bị thu hẹp.
+   */
+  detectDrift(ctx: ReadOnlyAdapterContext, config: DomainToolConfig): Promise<AdapterResult<{ drifted: boolean; details?: string }>>;
 
   /**
    * [v4] Được gọi khi provider của một capability mà adapter này `requires` đổi
@@ -2796,7 +2834,7 @@ interface CicdDomainAdapter extends DomainAdapter {
 | Base class | Dùng cho | Adapter con chỉ phải viết |
 | ---------- | -------- | ------------------------- |
 | `HelmBasedAdapter` | Hầu hết heavy adapter và light adapter self-hosted: Prometheus, Loki, Istio, Argo CD, Flux, Gatekeeper, CNPG, Harbor, Vault… | Tên chart + repo + values từ `tool_config`, danh sách CRD phải chờ, các CR cần tạo sau khi chart sẵn sàng, cách tính `CapabilityBinding`. `deploy/upgrade/detectDrift/teardown` là `helm upgrade --install` / `helm diff` / `helm uninstall` có sẵn |
-| `SaaSAdapter` | Datadog, New Relic, Snyk, GHCR, ECR, GitHub Actions…: **không deploy gì vào cluster**, chỉ cấu hình phía SaaS (API key, webhook, secret trong namespace) | `configure()` gọi API SaaS qua `ctx.fetch`, tạo `Secret`/`ConfigMap` trong namespace env, trả binding |
+| `SaaSAdapter` | Datadog, New Relic, Snyk, GHCR, ECR, GitHub Actions…: **không deploy gì vào cluster**, chỉ cấu hình phía SaaS (API key, webhook, secret trong namespace) | `configure()` gọi API SaaS qua `ctx.fetch`, tạo `Secret`/`ConfigMap` trong namespace env, trả binding. **[v4.10]** `deploy()` của họ này **gọi thẳng** `configure()` — xem ngay dưới |
 
 > Đây cũng là "adapter không vừa khung" mà E1 cần: nếu `SaaSAdapter` viết được mà không sửa interface, khung không gò ép; nếu phải sửa, số lần sửa là số liệu.
 
@@ -3121,26 +3159,44 @@ im lặng lựa chọn của người dùng thì là chính lỗi D-4' đang s�
 
 **Lợi ích kép:** cùng một đồ thị vừa dùng để **chặn cấu hình sai**, vừa dùng để **sắp thứ tự deploy** (Prometheus trước Flagger; Registry trước CI/CD), **thứ tự teardown** (đảo ngược), và **tập consumer cần rebind**. Trong v2, thứ tự này nằm ngầm trong code orchestrator — thêm domain mới là phải sửa orchestrator, đúng thứ mà kiến trúc pluggable muốn tránh.
 
+**[v4.10] `deploy()` là điểm vào DUY NHẤT mà bộ hợp đồng gọi (D-18).**
+
+Hai chỗ của tài liệu từng nói hai điều khác nhau: mục này nói `SaaSAdapter` chỉ viết `configure()`, còn §13.2 lại gọi `deploy()` ở phép kiểm đầu tiên. Để nguyên thì **mọi** adapter họ SaaS đỏ ngay phép đầu, và nó đỏ vì một mâu thuẫn của tài liệu chứ không vì một lỗi của adapter.
+
+Chốt: lớp nền `SaaSAdapter` hiện thực `deploy()` **bằng cách gọi** `configure()`, nên bộ hợp đồng có đúng một điểm vào cho cả hai họ, và ngữ nghĩa "cài vào cluster" với "cấu hình bên ngoài" vẫn tách bạch ở chỗ nó thuộc về: bên trong lớp nền.
+
 #### Chỉ số "0 file" — bằng chứng định lượng của C2 [v4 viết lại]
 
 Tuyên bố "kiến trúc pluggable" là thứ ai cũng nói được, nên C2 gắn nó với một con số đo bằng `git diff --stat`: **thêm một domain hoặc một tool mới phải sửa bao nhiêu file nằm ngoài thư mục của adapter đó?** Kỳ vọng là **0**. Muốn con số đó đúng *và* trung thực, phải trả lời được từng đường mà một adapter mới có thể rò rỉ ra ngoài thư mục của nó:
 
 | Chỗ lõi thường phải biết về adapter mới | Cách UDP tránh |
 | ---------------------------------------- | -------------- |
-| File registry đăng ký adapter | **Auto-discovery lúc khởi động**: `fs.readdir` trên `modules/domain-adapter/*/*/` rồi `import()` động từng thư mục, kiểm bằng type guard là module có export đúng hình dạng `DomainAdapter`. Không dùng `import.meta.glob` vì đó là API của Vite, không có trong Node ESM |
+| File registry đăng ký adapter | **Auto-discovery lúc khởi động**: `fs.readdir` **hai tầng** trên `modules/<domainType>-adapter/<toolId>/` rồi `import()` động từng thư mục, kiểm bằng type guard là module có export đúng hình dạng `DomainAdapter`. Không dùng `import.meta.glob` vì đó là API của Vite, không có trong Node ESM. **[v4.10]** Đường dẫn ghi theo **cây thật** (`monitoring-adapter/prometheus-grafana/`): bản v4 ghi `modules/domain-adapter/<domain>/<tool>/`, một thư mục không tồn tại, nên cả job CI của I28 lẫn glob của lint đều trỏ vào chỗ trống — tức chúng xanh vì không có gì để kiểm |
 | Orchestrator biết thứ tự deploy | Thứ tự sinh ra từ topological sort trên đồ thị capability (§5.3), không có danh sách cứng ở đâu |
 | Validator biết ràng buộc của tool | Đọc `capabilities` khai ngay trong adapter |
 | Zod schema của `tool_config` | `configSchema` là thuộc tính của adapter |
 | Dropdown và catalog trên UI | UI dựng từ `GET /domains/catalog`, endpoint này trả về nội dung registry |
 | **Enum `DomainType` trong DDL** | **[v4] Đây là đường rò cuối cùng và là lý do v3 không thể đạt 0.** Thêm domain mới vào enum Postgres là một migration, tức một file ngoài thư mục adapter. v4 thay enum bằng **bảng tham chiếu `domain_catalog`** với khóa ngoại từ `domain_configs.domain_type`, và bảng này được **đồng bộ từ registry lúc service khởi động** |
-| Contract test | `tests/contract/*.ts` duyệt registry, adapter mới tự được nhận vào bộ test |
+| Contract test | **[v4.10]** Bộ hợp đồng là **dữ liệu** (`DOMAIN_CONTRACT_CHECKS` ở `@udp/adapter-core/contract`), và mỗi adapter có một `contract.test.ts` **nằm cạnh nó** duyệt danh sách đó. Nhờ vậy adapter mới mang theo cả lời gọi bộ hợp đồng của chính nó, và không file nào ngoài thư mục adapter phải đổi — nhưng nó chỉ đúng khi `include` của vitest phủ thư mục adapter (đường rò thứ chín ngay dưới) |
 | Seed và fixture | Adapter tự mang fixture của nó trong cùng thư mục |
+| **[v4.10] `include` của vitest — đường rò thứ CHÍN (D-7)** | `services/core-backend/vitest.config.ts` từng khai `include: ["tests/**/*.test.ts"]`, nên một contract test đặt **trong thư mục adapter** không bao giờ chạy, và vitest không báo gì cả. Hậu quả không phải một test đỏ mà là một câu tuyên bố thành sai: I28 nói mọi adapter đều qua bộ hợp đồng, và với cấu hình cũ thì câu đó đúng chỉ khi ai đó nhớ đặt test vào đúng chỗ. Đã mở **một lần** cho cả quy ước thư mục (`src/modules/**/*.test.ts`), kèm một phép kiểm trong `design-lint` khẳng định hai mẫu còn nguyên — sửa cấu hình mỗi lần thêm adapter thì chính I28 lại phụ thuộc vào việc ai đó nhớ sửa một dòng |
+| **[v4.10] Union `CapabilityId` — đường rò thứ MƯỜI (D-6)** | `CapabilityId` là union viết tay trong `@udp/shared-types`, nên một domain mới cần một capability **chưa có** phải sửa đúng một file ngoài thư mục adapter. Giữ union chứ không suy từ registry: suy từ registry làm mất kiểm kiểu lúc biên dịch ở cả `pd-controller` (nơi `metrics.query` và `traffic.control` được dùng như hằng), và mất nó là mất thứ đắt hơn con số 0. Nên **nói chính xác lại C2** thay vì che con số đi — xem phát biểu cuối mục |
 
 **Vì sao bảng tham chiếu không phải là nới lỏng ràng buộc:** khóa ngoại chặn giá trị lạ đúng như enum, sai chính tả `domain_type` vẫn bị database từ chối. Khác biệt là ràng buộc được đặt đúng chỗ. Enum trong DDL là **bản sao thứ hai** của một danh sách mà registry vốn đã sở hữu, và là bản sao bắt con người nhớ đồng bộ tay. Với `domain_catalog`, registry là nguồn sự thật duy nhất còn database chỉ cưỡng chế nó. Lựa chọn thay thế là đổi `domain_type` sang `VARCHAR` trần: con số cũng ra 0 nhưng **mất toàn vẹn ở tầng dữ liệu để lấy một con số đẹp**, và đó là thứ phản biện sẽ chỉ ra ngay.
 
-**Từ một phép đo thành một bảo đảm [v4]:** báo cáo "chúng tôi thêm adapter và đo được 0" là khẳng định về *một lần thí nghiệm*. v4 nâng nó thành **bất biến I28 (§13.3) cưỡng chế bằng CI**: một job đọc `git diff --name-only` của commit thêm adapter và **fail build** nếu có file thay đổi nằm ngoài `modules/domain-adapter/<domain>/<tool>/`. Khác biệt là giữa *"tôi chạy một lần và ra 0"* và *"kiến trúc không thể thoái hóa quá 0"*. Bất biến này cũng trả lời trước phản biện "bạn ra 0 vì bạn biết mẹo": mẹo gì thì CI vẫn chặn, và adapter thứ ba của E1 do người ngoài nhóm viết chỉ từ tài liệu phải qua đúng cổng đó.
+**Từ một phép đo thành một bảo đảm [v4]:** báo cáo "chúng tôi thêm adapter và đo được 0" là khẳng định về *một lần thí nghiệm*. v4 nâng nó thành **bất biến I28 (§13.3) cưỡng chế bằng CI**: một job đọc `git diff --name-only` của commit thêm adapter và **fail build** nếu có file thay đổi nằm ngoài `modules/<domainType>-adapter/<toolId>/` (**[v4.10]** đường dẫn theo cây thật). Khác biệt là giữa *"tôi chạy một lần và ra 0"* và *"kiến trúc không thể thoái hóa quá 0"*. Bất biến này cũng trả lời trước phản biện "bạn ra 0 vì bạn biết mẹo": mẹo gì thì CI vẫn chặn, và adapter thứ ba của E1 do người ngoài nhóm viết chỉ từ tài liệu phải qua đúng cổng đó.
 
-> Phát biểu cuối cùng của C2 vì vậy là: **thêm bất kỳ domain hoặc tool nào vào UDP không đòi hỏi sửa một dòng nào ngoài thư mục của adapter đó, và điều này được CI cưỡng chế chứ không phải được đo một lần.** Chỉ số báo cáo ở §14 E1.
+**[v4.10] C2 báo cáo HAI con số, không phải một (D-6).** Phát biểu "0 file" một mình là không trung thực với đường rò thứ mười, và một phản biện đọc `shared-types` sẽ thấy ngay. Nên:
+
+| Thêm gì | File phải sửa ngoài thư mục adapter |
+| ------- | ----------------------------------- |
+| Một **TOOL** vào domain đã có (Datadog vào `MONITORING`) | **0** |
+| Một **DOMAIN** dùng capability đã có | **0** |
+| Một **DOMAIN** cần capability **chưa có** | **1** — thêm một nhánh vào union `CapabilityId` |
+
+Con số thứ ba không phải một thất bại của kiến trúc: nó là cái giá đã chọn để giữ kiểm kiểu lúc biên dịch, và nó được nói ra thành một dòng trong bảng E1 thay vì bị làm tròn xuống 0.
+
+> Phát biểu cuối cùng của C2 vì vậy là: **thêm một tool vào domain đã có, hoặc một domain dùng capability đã có, không đòi hỏi sửa một dòng nào ngoài thư mục của adapter đó; một domain cần capability mới đòi hỏi đúng một file, và chỉ một. Cả hai con số được CI cưỡng chế chứ không phải được đo một lần.** Chỉ số báo cáo ở §14 E1.
 
 ### 5.4 MetricsProvider — trừu tượng hóa nguồn metrics [NEW: vá B10]
 
@@ -5262,6 +5318,18 @@ sequenceDiagram
 | **Nâng cấp thất bại thì hạ về bản cũ, không để trạng thái lửng lơ** | `adapter_version` chỉ đổi **sau khi** healthcheck xanh. Cột này là thứ `detectDrift()` so sánh, sai nó thì mọi lần quét sau đều báo trôi giả |
 | **Rebind sau nâng cấp dùng lại đúng cơ chế của CASE 3 (§8.2)** | Không viết đường thứ hai cho cùng một việc. Nâng cấp và đổi tool đều dẫn tới "binding đổi ⇒ consumer phải biết", nên chung một hàm |
 
+**[v4.10] Ba tầng cưỡng chế "không bao giờ tự sửa", và mỗi tầng bắt một loại lỗi khác:**
+
+| Tầng | Cơ chế | Bắt được gì |
+| ---- | ------ | ----------- |
+| Kiểu | `detectDrift(ctx: ReadOnlyAdapterContext)` (§5.2) | Một adapter *muốn* ghi thì không biên dịch được |
+| Lúc chạy | `readOnlyContext()` trả về một client MỚI chỉ có `read` | Một lần lách bằng `as` thành `TypeError` tại chỗ, thay vì thành một lần ghi đè vào cluster của khách |
+| Đếm | Bộ hợp đồng trao bối cảnh ĐẦY ĐỦ rồi đếm verb ghi | Adapter gian: phương thức trong TypeScript là song biến, nên tầng kiểu một mình không đủ |
+
+**Hình dạng `last_error` mà job quét ghi:** `{ step: "DRIFT_SCAN", message, adapterResult, at }`, với `adapterResult` là `DRIFTED` (đã trôi thật) hoặc `FAILED` (không quét được). Hai giá trị đó là hai việc khác nhau, và gộp chúng lại làm badge nói sai về nguyên nhân — người vận hành sẽ đi tìm ai đã sửa tay một thứ mà chẳng ai sửa. Một lượt quét sạch chỉ dọn badge do **chính nó** ghi: `last_error` là cột dùng chung với luồng provisioning, nên xoá vô điều kiện sẽ mất lý do của một lần deploy thất bại.
+
+**Ghi chỉ khi phán quyết ĐỔI.** Ba chu kỳ quét trên một domain đang trôi cho đúng một lần ghi. Không phải một tối ưu: `updated_at` là cột `@updatedAt`, nên ghi lại cùng một phán quyết mỗi 6 giờ làm cột "đổi lần cuối" của mọi domain nhảy bốn lần một ngày, và Portal hiện một domain không ai chạm tới như thể vừa có người sửa.
+
 > **Quan hệ với rollout đang chạy:** nâng cấp một domain cung cấp `metrics.query` hoặc `traffic.control` trong khi có `RolloutSession` đang `IN_PROGRESS` ở project đó bị **từ chối** với 409. Nâng cấp nguồn metrics giữa chừng làm cửa sổ so sánh của §7.4 không còn cùng một hệ quy chiếu, và một quyết định rollback dựa trên hai nguồn khác nhau là quyết định không có ý nghĩa.
 
 ---
@@ -7281,14 +7349,14 @@ export function runCloudAdapterContract(
 | **I25** | **Ba bên chạm K8s không bao giờ ghi cùng một loại đối tượng** [v4] | Bật audit log của API server trên cluster `kind`, chạy E2E đầy đủ, rồi phân tích log: nhóm theo `(user, resource, verb)` và khẳng định ba tập rời nhau đúng như §1.2 và §12.2. Kiểm cả chiều ngược: thử cho Service 3 `patch` một `Deployment` và khẳng định **API server** trả 403 — nếu chỉ code chặn thì bất biến này là lời hứa, không phải bảo đảm |
 | **I26** | **Local evaluation và OFREP cho cùng một kết quả** [v4] | Property-based: sinh ngẫu nhiên cấu hình flag (variant, rule, segment, distribution) và evaluation context, chạy qua `@udp/flag-evaluator` ở chế độ local và qua `POST /ofrep/v1/evaluate/flags`, khẳng định `ResolutionDetails` **giống hệt** từng trường, gồm cả `reason` và `variant`. Đây là điều kiện để ADR-03 không đánh đổi tính đúng lấy tính riêng tư. **[v4.6]** Mặt phẳng so là `Evaluation` của lõi chiếu xuống đúng các trường dây OFREP mang (`ofrepVisible` so với `fromOfrep`): reason, value, variant, errorCode, archived. Cấu hình đi qua route GHI thật; chỉ so khi hai phía ở CÙNG `configVersion`; phép so phải đi qua đủ TARGETING_MATCH, SPLIT, DEFAULT, DISABLED — không thì test rỗng **[v4.7]** Chạy thêm một lần với đường local là provider thật qua `OpenFeature.getClient()` (`getStringDetails`, chiếu `details` xuống cùng mặt phẳng) so với OFREP của Service 2 ở tiến trình con; bộ sinh và ví dụ cố định dùng chung ở `@udp/test-support` |
 | **I27** | **Manual override luôn thắng và không bao giờ bị bỏ sót** [v4] | Ghi `RolloutEvent(is_intent = true)` trên session đang `PAUSED`, `IN_PROGRESS` và `PENDING`; khẳng định cả ba đều được reconciler nhặt trong ≤ `LOOP_INTERVAL_MS` và intent được xử lý **trước** phân tích metrics. Trường hợp `PAUSED` là bug thật của v3: SQL claim bỏ sót `PAUSED` nên lệnh RESUME/ROLLBACK trên session đang tạm dừng không bao giờ chạy |
-| **I28** | **Thêm adapter không chạm file nào ngoài thư mục của nó** [v4 — bằng chứng của C2] | Job CI đọc `git diff --name-only` của commit và, nếu commit có thêm thư mục dưới `modules/domain-adapter/`, khẳng định **mọi** file thay đổi đều nằm trong `modules/domain-adapter/<domain>/<tool>/`. Fail build nếu không. Đây là thứ biến chỉ số "0 file" của §5.3 từ một phép đo thành một bảo đảm. Chạy kèm một test dương tính: thêm một adapter giả `dummy/noop` trong CI và khẳng định nó tự xuất hiện ở `GET /domains/catalog` mà không sửa gì |
+| **I28** | **Thêm adapter không chạm file nào ngoài thư mục của nó** [v4 — bằng chứng của C2] | Job CI đọc `git diff --name-only` của commit và, nếu commit có thêm thư mục dưới `modules/<domainType>-adapter/`, khẳng định **mọi** file thay đổi đều nằm trong `modules/<domainType>-adapter/<toolId>/`. Fail build nếu không. Đây là thứ biến chỉ số "0 file" của §5.3 từ một phép đo thành một bảo đảm. Chạy kèm một test dương tính: thêm một adapter giả `dummy/noop` trong CI và khẳng định nó tự xuất hiện ở `GET /domains/catalog` mà không sửa gì |
 | **I29** | **Đồng bộ `DomainCatalog` không bao giờ xóa hàng** [v4] | Khởi động với registry có 16 adapter, tạo `DomainConfig` dùng một domain, gỡ adapter đó khỏi registry rồi khởi động lại: khẳng định hàng vẫn còn với `is_available = false` và khóa ngoại của `DomainConfig` cũ **không** bị phá. Khẳng định thêm rằng không có endpoint HTTP nào ghi được vào bảng này |
 | **I30** | **Kill-switch của S3 hoạt động khi S2 chết, và chỉ khi đó** [v4] | (a) Tắt Service 2, kích hoạt rollback FLAG_LEVEL: khẳng định S3 retry tới `rollbackRetrySeconds` rồi ghi thẳng `flag_targeting_rules.serve` theo đúng kỷ luật ADR-05, đặt `fail_reason = DEPENDENCY_DOWN` và tăng `udp_rollback_blocked_total`; bật S2 lại và khẳng định replica của nó hội tụ về đúng giá trị mà S3 đã ghi. (b) Chiều ngược lại quan trọng hơn: khi S2 **còn sống**, kết nối bằng role `udp_s3` và thử `UPDATE flag_targeting_rules SET priority = ...` — khẳng định **database từ chối**, vì `GRANT` chỉ mở đúng cột `serve`. Ngoại lệ writer phải hẹp đúng bằng nhu cầu, và độ hẹp đó do Postgres cưỡng chế chứ không do code. **[v4.2]** Phần (b) đã có test dưới `udp_s3` thật (I22, lease test: không sửa được cột cấu hình rollout lẫn `users`). **[v4.3]** Phần (a) đã có test đầu cuối (`dependency-down.integration.test.ts`): executor trỏ vào cổng chết, kill-switch ghi `serve` về baseline qua `udp_s3` thật, `config_version` +1, outbox `rule.ramped`, hash khớp snapshot, `updated_at` được đẩy, rồi Service 2 khởi động lại phục vụ đúng giá trị đó qua `/sdk/config`; worker tỉnh muộn lùi cả transaction; kill-switch hỏng thì session vẫn đóng mà traffic giữ nguyên. Quyền hẹp thứ tư (`flag_env_configs.updated_at`) có ca dương và ca âm (`is_enabled`, `is_tracked` vẫn bị từ chối) |
 | **I31** | **Ma trận khôi phục của Cloud Adapter đúng ở cả mười điểm crash** [v4 — bằng chứng của C3] | Chạy tự động toàn bộ lưới K1 tới K10 của §4.5 trên LocalStack: với mỗi step và mỗi điểm kill, giết tiến trình worker, khởi động lại, rồi khẳng định ba điều — (a) `listTaggedResources()` trả về **đúng số tài nguyên mong đợi**, không nhiều hơn, tức là không tạo trùng; (b) trạng thái trong sổ hội tụ về `READY` hoặc `DELETED`, không kẹt ở `CREATING`; (c) không có tài nguyên nào mang tag `udp.project` mà **không** có hàng tương ứng trong sổ. Hai ô bắt buộc phải xanh: **K3** (crash sau khi API trả về, trước khi ghi `provider_id`) và **K10** (mất sạch sổ, phải hội tụ được qua `rebuildLedgerFromCloud()`) — đó là hai chỗ state file thua |
 | **I32** | **Drift được phát hiện, và không bao giờ bị tự sửa** [v4 — bằng chứng của C3] | (a) Deploy một domain rồi `kubectl edit` sửa replica của Deployment do Helm tạo; khẳng định `detectDrift()` trả `drifted = true` kèm diff đúng chỗ đã sửa. (b) Deploy xong chạy `detectDrift()` ngay, khẳng định trả `false` — trôi giả ngay sau khi cài nghĩa là hàm chuẩn hóa sai, và người dùng sẽ học cách bỏ qua cảnh báo. (c) **Chiều quan trọng nhất:** để drift tồn tại qua ba chu kỳ quét, khẳng định hệ thống **không** tự ghi đè và không có lời gọi ghi nào lên cluster; chỉ có `DomainConfig.last_error` được cập nhật |
 | **I33** | **SDK không bao giờ ném lỗi ra ứng dụng của khách** [v4 — §6.8] | Property-based: bơm cache hỏng, flag thiếu variant, JSON sai kiểu, context rỗng, provider chưa `READY`; khẳng định **mọi** lời gọi trả `ResolutionDetails` hợp lệ với `errorCode` phù hợp và **không ngoại lệ nào thoát ra**. Đây là phần duy nhất của UDP chạy trong tiến trình của người khác, nên một lỗi ở đây làm sập ứng dụng của khách chứ không phải control plane **[v4.6]** Phần LÕI đã có (fuzz snapshot và context bất kỳ qua `prepareSnapshot`/`evaluate`/`evaluateAll`); phần provider (cache hỏng, chưa `READY`) ở #21 **[v4.7]** Phần provider: fuzz body `/sdk/config` và event stream bất kỳ cùng context bất kỳ qua SDK thật — mọi getter trả đúng kiểu, không ngoại lệ; hook và middleware bọc try/catch |
 | **I34** | **Fail-static giữ đúng giá trị cuối và hội tụ sau khi hồi phục** [v4 — §6.8] | Ngắt mạng 5 phút giữa lúc có traffic; khẳng định mọi lời gọi vẫn trả đúng giá trị của snapshot cuối, `flagMetadata.stale = true`, và sau khi nối lại thì hội tụ về cấu hình mới trong một chu kỳ. Trạng thái xấu nhất phải là **cũ**, không bao giờ là **sai** hay **sập** **[v4.7]** Hiện thực: đơn vị (mất stream ⇒ polling, quá hạn ⇒ STALE đúng một lần, `trackedFlags` giữ nguyên, tươi lại ⇒ READY; 401 ⇒ ERROR rồi READY) và tích hợp (dừng Service 2 thật ⇒ STALE, giá trị cuối kèm `stale`; khởi động lại cùng cổng ⇒ READY). Ngắt 5 phút giữa lúc có traffic đo ở #22 **[v4.8] Đo 5 phút giữa lúc có traffic** (`pnpm --filter @udp/experiments i34`, `raw/I34-20260922-1916.json`, 20 lần đánh giá/giây): hố đen (proxy giữ kết nối, nuốt byte): 4 865 lần đánh giá, 0 sai/lỗi, STALE sau 110,8 s, hội tụ về thay đổi đã lỡ sau 8,1 s (ngưỡng 80 s) — ĐẠT; Service 2 chết: 4 836 lần đánh giá, 0 sai/lỗi, STALE sau 110,8 s, hội tụ về thay đổi đã lỡ sau 2,9 s (ngưỡng 80 s) — ĐẠT. STALE hợp lệ trong [100, 122] s kể từ lúc ngắt — đồng hồ "còn tươi" được làm mới mỗi nhịp tim nên lúc ngắt đã già tới một nhịp. Mất mạng trong cluster thật: sổ nợ (I34-cluster) |
-| **I35** | **Oracle của E8 không thể nhìn thấy validator** [v4] | dependency-cruiser (hoặc tương đương) chạy trong CI, khẳng định không file nào dưới `tests/oracle/` import bất cứ thứ gì dưới `modules/domain-adapter/capability/`. Vi phạm là **fail build**. Kèm hai kiểm tra bổ trợ: (a) `git log` xác nhận commit của oracle **đứng trước** commit của validator; (b) trên không gian test, oracle sinh ra **đủ cả 7 mã lỗi** của §5.3 — mã nào không bao giờ xuất hiện thì hoặc oracle sai, hoặc mã đó là code chết |
+| **I35** | **Oracle của E8 không thể nhìn thấy validator** [v4] | **[v4.10]** Một phép kiểm của `design-lint` đọc mã nguồn (`oracle-independence.test.ts`) khẳng định không file nào dưới `tests/oracle/` import bất cứ thứ gì dưới `modules/capability/` — hai lần sửa so với bản v4: cơ chế là một test trong bộ đã có chứ không phải `dependency-cruiser` (gói đó không có trong kho, và thêm một công cụ CI mới chỉ để canh một luật là một cái giá không cần trả), và đường dẫn là `modules/capability/` theo cây thật. Vi phạm là **fail build**. Kèm hai kiểm tra bổ trợ: (a) `git log` xác nhận commit của oracle **đứng trước** commit của validator; (b) trên không gian test, oracle sinh ra **đủ cả 7 mã lỗi** của §5.3 — mã nào không bao giờ xuất hiện thì hoặc oracle sai, hoặc mã đó là code chết |
 | **I36** | **Không mã lỗi nào tồn tại ngoài catalog** [v4] | `ProblemDetails.code` khai kiểu là `keyof typeof ERROR_CATALOG`, nên một mã gõ sai hoặc bịa ra **không biên dịch được**. Đây là cưỡng chế bằng type system chứ không phải bằng test, nên không có đường lách. Kèm một test quét mọi lời gọi `throw` trong backend để bắt trường hợp mã được dựng động từ chuỗi |
 | **I37** | **Mọi mã lỗi đều có thông điệp tiếng Việt** [v4] | Test duyệt toàn bộ `ERROR_CATALOG`, khẳng định mỗi mã có một khóa i18n tương ứng ở frontend và khóa đó không rỗng. Thêm mã mới mà quên dịch là **fail build**, thay vì hiện chuỗi mã trần cho người dùng cuối. Kiểm thêm chiều ngược: khóa i18n thừa (mã đã bị xóa) cũng fail, để catalog không phình theo thời gian |
 | **I38** | **Query key của dữ liệu theo environment luôn chứa `envId`** [v4] | Test duyệt mọi hook trong `api/`, đối chiếu với danh sách hook env-scoped khai **tường minh**; hook nào trong danh sách mà query key thiếu `envId` là fail. Bug mà bất biến này chặn: cấu hình flag của `dev` bị cache lẫn sang `prod` — §10.12 gọi đúng tên nó là "loại lỗi rất khó phát hiện bằng mắt". Ngoại lệ (Flag Env Matrix, **[v4.9]** `segments` và `segment` — segment thuộc project chứ không thuộc environment) phải khai vào danh sách miễn trừ, giống cách I10 miễn trừ route |
@@ -7369,7 +7437,7 @@ Một oracle viết bởi cùng người, sau khi đã viết validator, sẽ th
 | # | Quy tắc | Cưỡng chế bằng gì |
 | - | ------- | ----------------- |
 | 1 | Oracle là **brute-force duyệt toàn bộ tập con** của không gian adapter, quyết định hợp lệ hay không bằng cách áp thẳng bảng quy tắc ở §5.3. **Không** dựng đồ thị, **không** topological sort, **không** dùng chung một dòng code nào với validator | Review, cộng chính độ dài: oracle phải ngắn tới mức hiển nhiên đúng khi đọc |
-| 2 | Oracle nằm ở `tests/oracle/` và **bị cấm import** bất cứ thứ gì dưới `modules/domain-adapter/capability/` | **Bất biến I35**: dependency-cruiser fail build nếu vi phạm — cùng cơ chế với I28 |
+| 2 | Oracle nằm ở `tests/oracle/` và **bị cấm import** bất cứ thứ gì dưới `modules/capability/` | **Bất biến I35**: **[v4.10]** một phép kiểm của `design-lint` đọc mã nguồn và fail build nếu vi phạm |
 | 3 | Oracle được **commit trước** validator | `git log` là bằng chứng kiểm được, không phải lời kể trong luận văn |
 | 4 | Oracle phải sinh ra **cả 7 mã lỗi** của §5.3 ít nhất một lần trên không gian test | Test riêng. Mã nào không bao giờ xuất hiện thì hoặc oracle sai, hoặc mã đó là code chết — cả hai đều cần biết |
 | 5 | Sau khi hai bên khớp, chạy **mutation testing** lên validator. Mutant sống sót nghĩa là bộ sinh test còn yếu, không phải validator đúng | Số mutant bị giết là số liệu của E8 |
@@ -7567,6 +7635,11 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | **[v4.9] Khoá CLIENT công khai gọi OFREP một-flag đều đặn giữ được flag ở trạng thái vừa được đánh giá** | Khoá CLIENT vốn công khai theo thiết kế (ADR-03) và OFREP một-flag ĐƯỢC đếm, nên bất kỳ ai cũng chặn được archive một flag và giữ nó khỏi `UNUSED` vô hạn. Không rò dữ liệu, chỉ làm nhiễu cảnh báo cleanup | Đếm tách theo loại khoá, và cho chốt archive chỉ xét lượt của khoá SERVER |
 | **[v4.9] Mỗi lần sửa segment ghi payload đầy đủ vào outbox của MỌI environment** | Snapshot của mọi environment đều chứa mọi segment, nên delta phải tới mọi environment. Chi phí: tới 4 MiB nhân số environment cho MỘT lần sửa, giữ 7 ngày (§2.2) — và đó chính là lý do `CHANGE_FEED.maxDeltaBytes` có ngưỡng rơi về snapshot | Payload tham chiếu (chỉ id) rồi replica đọc lại — đổi lấy một truy vấn mỗi lần áp delta |
 | **[v4.9] Múi giờ lệch nửa giờ chỉ chính xác ở mức bucket giờ UTC** | Bucket là giờ UTC, nên với `Asia/Kolkata` (+05:30) hay `Australia/Adelaide` (+09:30), một ngày ĐỊA PHƯƠNG gom 24 bucket lệch nửa giờ so với nửa đêm địa phương thật. Sai số tối đa là một nửa bucket ở mỗi đầu cửa sổ | Bucket nửa giờ, đổi lấy gấp đôi số hàng |
+| **[v4.10] Lưới K1..K10 chạy trên cloud MÔ PHỎNG, không trên LocalStack** | Lưới giết tiến trình ở từng điểm cần một cloud có hành vi lỗi điều khiển được (nhất quán cuối của tagging, `DependencyViolation`, phân trang dở). Cloud mô phỏng của §13.2 cho đúng những hành vi đó và chạy được trên máy 7,7 GiB RAM không Docker; LocalStack cần Docker engine và ≥ 2,5 GB RAM trống. Sổ nợ: `I31-localstack`, `I31-aws-eks` | Chạy lại đúng lưới đó trên LocalStack rồi trên một tài khoản AWS thật; harness không đổi vì adapter là cổng |
+| **[v4.10] KEK trần đúng HAI version** | Hàng ngay trên đã nói KEK đọc từ biến môi trường; hàng này nói cái trần mà việc đó kéo theo. `UDP_KEK_VERSION` nhận 1 hoặc 2, và `rewrapDek()` chỉ biết đường đi giữa hai version đó. Trần là có chủ đích: một bảng version mở cần một nơi lưu KEK cũ (KMS hoặc Vault), còn ở lab thì "nơi lưu" là chính cấu hình process — version thứ ba chỉ làm tăng số bí mật nằm trong đó mà không thêm một tính chất nào. Cấu trúc `kek_version` của lược đồ thì không có trần, nên đây là trần của HIỆN THỰC, không của thiết kế | Chuyển KEK sang KMS; lúc đó version là một tham chiếu khoá, không phải một biến môi trường |
+| **[v4.10] Registry dùng `import()` động, nên thêm bundler vào kho là vỡ** | Auto-discovery đọc thư mục lúc chạy rồi `import()` theo `pathToFileURL(...).href`. Một bundler (esbuild, webpack) gom mã thành một file sẽ làm `readdir` trên thư mục nguồn trả về rỗng, và registry im lặng thấy **không có adapter nào** — không lỗi, chỉ là một catalog trống. Chỗ này là đánh đổi trực tiếp của chỉ số "0 file" | Nếu cần bundle: sinh một file manifest lúc build từ cùng phép quét thư mục, và cho registry đọc manifest khi nó tồn tại |
+| **[v4.10] `sslmode=require` sẽ đổi nghĩa ở `pg` v9 / `pg-connection-string` v3** | Đã đo (R24-1): bản hiện tại coi `require` là "mã hoá, không kiểm chứng chứng chỉ"; bản sau sẽ kiểm chứng, nên một chuỗi kết nối đang chạy sẽ **đổi hành vi** khi nâng thư viện — và nó đổi theo chiều an toàn hơn nhưng có thể làm dừng dịch vụ | Trước khi nâng: đổi sang `sslmode=verify-full` kèm CA của Supabase, hoặc `no-verify` tường minh nếu vẫn chấp nhận |
+| **[v4.10] `detectDrift` chạy theo lượt quét, chưa có lịch biểu** | Job `DRIFT_SCAN` và luồng nâng cấp của §8.6 đã có phần **quyết định** (hàm thuần + repository, kiểm được bằng database thật), nhưng chưa có cron của `pg-boss` gọi chúng mỗi 6 giờ và chưa có route để người dùng bấm quét ngay. Cùng lý lẽ với TTL và orphan-scan của §4.4: phần đáng kiểm là phần quyết định. Sổ nợ: `drift-scan-cron`, `domain-day2-route` | Dựng `jobs/boss.ts`, đăng ký cron và hai route, rồi gỡ mục này |
 | `DELETE /projects/:id` xoá mềm nhưng **chưa** enqueue teardown | §9 mô tả endpoint này là "soft-delete + enqueue teardown", nhưng hạ tầng `jobs/` (pg-boss, §3.1) chưa tồn tại nên chưa có hàng đợi để đẩy việc vào. Ghi nhận thay vì im lặng bỏ qua: tài nguyên cloud của một project đã xoá mềm hiện **không** tự được dọn | Dựng `jobs/boss.ts` và `teardown.job.ts`, enqueue ngay trong lệnh xoá mềm (cùng transaction, đúng ADR-02), rồi gỡ mục này |
 | `POST /projects/:id/members` đòi người được mời **đã có tài khoản** | §9 gọi đây là "mời theo email", nhưng cùng lý do với mục đăng ký ở đầu §16: chưa có hạ tầng mail. Một lời mời treo mà không đường nào gửi đi thì tệ hơn một lỗi 404 rõ ràng, và không bảng nào lưu nó | Khi có mail: thêm bảng lời mời, gửi thư kèm token, và cho phép mời địa chỉ chưa đăng ký |
 
@@ -7698,3 +7771,5 @@ _**B14** Bốn lớp bảo vệ chi phí: quota, ước tính, TTL, sổ tài ng
 _**B15** Đổi tên ATTRIBUTE_SPLIT, phát hiện stale flag, verify webhook theo adapter, làm rõ quyền ghi từng bảng._
 
 _Bổ sung mới: §12 Bảo mật và Multi-tenancy · §13 Testing Strategy · §14 Kế hoạch đánh giá thực nghiệm · §15 Chiến lược hạ tầng và chi phí._
+
+**[v4.10] Adapter framework — hai trục pluggable đi vào mã sản phẩm (24/09/2026):** `@udp/adapter-core` giữ hợp đồng của cả hai trục: `CloudAdapter` (**10** phương thức), `DomainAdapter` (**7** phương thức + **6** thuộc tính), `ClusterAccess`, `Ledger`/`Fence`, và hai bộ hợp đồng dưới dạng **dữ liệu** (`CLOUD_CONTRACT_CHECKS` với lưới K1..K10 nằm TRONG nó, `DOMAIN_CONTRACT_CHECKS` 42 phép) xuất qua subpath `./contract` nên không phụ thuộc test runner. `CloudAdapterRunner` dùng chung cho mọi cloud (ADR-07); `PrismaLedger` cưỡng chế máy trạng thái bằng **một** `UPDATE ... WHERE status IN (allowedSourcesOf(to))` và không ở đâu khác; lease + fencing trên `ProvisioningJob` (ADR-02); teardown có thứ tự chín bậc ở mã sản phẩm; bảo vệ chi phí của §4.4 (quota trước mọi lời gọi cloud, `estimateCost` bắt buộc ba mục, TTL, orphan-scan). Trục Domain: resolver capability bảy bước với oracle độc lập **viết trước** (E8), `capability-binding.repository` + rebind cho MỌI environment, registry hai tầng tự phát hiện adapter, và hai lớp nền (`HelmBasedAdapter`, `SaaSAdapter`) giữ **vòng đời** còn adapter khai **dữ liệu** — bốn adapter (`prometheus-grafana`, `datadog`, cộng hai adapter tối thiểu của hai họ) đi qua đúng 42 phép với **0 lần nới lỏng** (`docs/E1-relaxations.json`). Day-2 của §8.6 có cả hai nhánh: `DRIFT_SCAN` **phát hiện mà không bao giờ tự sửa** — chiều (c) của I32 được cưỡng chế **ba tầng** (kiểu: `detectDrift` nhận `ReadOnlyAdapterContext`; lúc chạy: `readOnlyContext` dựng một client MỚI chỉ có `read`; đếm: bộ hợp đồng trao bối cảnh đầy đủ rồi đếm verb ghi, vì phương thức trong TypeScript là **song biến** nên tầng kiểu một mình không đủ), lưới **năm** sửa đổi của E16 mỗi loại một ô cộng một ô âm, và một phép kiểm trên database thật khẳng định sau **ba chu kỳ** chỉ `last_error` + `updated_at` đổi; nâng cấp chạy lại validator TRƯỚC khi chạm cluster, thất bại thì hạ về bản cũ (và `ROLLBACK_FAILED` là một trạng thái riêng vì nó phải kêu to), `adapter_version` đổi **cùng transaction** với rebind. **Hai mươi ba mục sửa thiết kế (D-1..D-20 cộng D-30, D-31, D-32)**, trong đó bốn mục là lỗi của chính bản v4 do **test** tìm ra chứ không do đọc lại: D-30 (máy trạng thái không có cạnh quay lại `CREATING`, nên K7 không thể tạo lại một tài nguyên vừa bị xoá tay), D-18 (`deploy()` với `configure()` không có ranh giới, làm mọi adapter họ SaaS đỏ ở phép đầu tiên), và **hai lời khai không có hiệu lực**: §4.6 nói tách verb đọc khỏi verb ghi để "hàm quét drift nhận `ReadOnlyKubernetesClient`" trong khi `detectDrift` vẫn nhận bối cảnh đầy đủ, và I35 nói dependency-cruiser cưỡng chế trong khi gói đó không có trong kho (nay là một phép kiểm của `design-lint` đọc mã nguồn). C2 từ đây báo cáo **hai con số** chứ không một: thêm một **tool** vào domain đã có = **0** file ngoài thư mục adapter; thêm một **domain** cần capability **chưa có** = **1** file (union `CapabilityId`) — đường rò thứ **mười**, ghi thẳng vào bảng §5.3 cạnh đường rò thứ **chín** (`include` của vitest làm contract test đặt trong thư mục adapter không bao giờ chạy, và vitest không báo gì cả). Kiểm chứng: lưới K1..K10 ở **hai tầng** (tầng một trong tiến trình; tầng hai giết tiến trình con thật, với `PrismaLedger` và lease), differential test cho resolver với oracle viết trước, phép kiểm **tính chất theo hoán vị** — nó tìm ra lỗi "báo lỗi phụ thuộc thứ tự người dùng bật tool" mà 2000 mẫu differential không tìm ra, vì oracle viết từ cùng bản tài liệu nên nó sai giống hệt — và đột biến chạy tay có ghi bằng chứng cho từng chặng. Chưa làm, mỗi mục có mã sổ nợ **và** điều kiện chạy được (`docs/measurements/kiem-chung-con-no.md`, **28 mục**, mỗi mục sáu trường, đối chiếu ba nơi bằng một phép kiểm): SDK cloud thật và LocalStack cho lưới K, cluster thật cho `ClusterAccess`/I25/I24, đối chứng Terraform–Pulumi (E15) và Helm–Argo CD (E16), lịch biểu `pg-boss` cho `DRIFT_SCAN`, hai route Day-2, và federation của credential. Thiếu Docker loại bỏ **phép đo**, không loại bỏ một luật, một ô hay một phương thức nào.

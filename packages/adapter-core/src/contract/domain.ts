@@ -4,6 +4,7 @@ import type { KubernetesClient } from "../cluster.js";
 import {
   DOMAIN_ADAPTER_METHODS,
   DOMAIN_ADAPTER_PROPERTIES,
+  readOnlyContext,
   type AdapterFixture,
   type DomainAdapter,
   type DomainAdapterContext,
@@ -126,6 +127,46 @@ async function expectThrowsOrFails(
 /** Hai giá trị hợp lệ của `scope`, dạng CHẠY ĐƯỢC — xem chú thích tại chỗ dùng */
 const VALID_SCOPES: readonly string[] = ["cluster", "namespace"];
 
+/**
+ * [v4.10] Khoá KHÔNG khớp prefix nào - dùng cho nửa "phải là drift" của hai ô nhãn.
+ *
+ * Tên miền `udp.test/` là tên miền dành cho test, nên không adapter nào có lý do khai nó
+ * vào `ignoredLabelPrefixes`; nếu ai khai thì chính hai ô đó đỏ, và đó là kết quả đúng.
+ */
+const STRAY_KEY = "udp.test/nhan-la";
+
+/**
+ * Sửa tay MỌI đối tượng mà adapter vừa ghi, bằng một lần `patch` trộn thêm khoá.
+ *
+ * Vì sao "mọi" chứ không phải "một": bộ hợp đồng không biết adapter đọc lại đối tượng NÀO
+ * khi quét drift. Sửa đúng một đối tượng đoán bừa rồi khẳng định "phải phát hiện" là một ô
+ * đỏ sai với adapter đọc đối tượng khác; còn sửa đối tượng adapter không đọc rồi khẳng
+ * định "không được phát hiện" là một ô xanh sai. Danh sách lấy từ `writes` của lượt deploy
+ * vừa rồi, nên nó chính là tập đối tượng adapter tự nhận quản lý.
+ */
+async function patchEveryManagedObject(
+  env: DomainContractEnv,
+  patch: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  const seen = new Set<string>();
+  const refs = env.cluster.writes
+    .map((w) => w.ref)
+    .filter((ref) => {
+      const key = [ref.kind, ref.namespace ?? "-", ref.name ?? "-"].join("/");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  assert(
+    refs.length > 0,
+    "lượt deploy không ghi đối tượng nào, nên không có gì để sửa tay",
+  );
+  const client = await env.cluster.getClient("tooling");
+  for (const ref of refs) {
+    await client.write("patch", ref, patch);
+  }
+}
+
 const ZERO_QUOTA: ResourceQuota = {
   maxNodes: 0,
   maxNodeSize: "small",
@@ -142,7 +183,10 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     async run(adapter, env) {
       env.cluster.reset();
       const res = await adapter.deploy(env.context(), env.fixture.validConfig);
-      assert(res.status === "SUCCESS", `deploy phải SUCCESS, thấy ${res.status}`);
+      assert(
+        res.status === "SUCCESS",
+        `deploy phải SUCCESS, thấy ${res.status}`,
+      );
       /**
        * `deploy` phải có TÁC DỤNG quan sát được trên cluster.
        *
@@ -163,8 +207,14 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     name: "deploy hai lần với cùng config là idempotent",
     designCheckId: "d2",
     async run(adapter, env) {
-      const first = await adapter.deploy(env.context(), env.fixture.validConfig);
-      const second = await adapter.deploy(env.context(), env.fixture.validConfig);
+      const first = await adapter.deploy(
+        env.context(),
+        env.fixture.validConfig,
+      );
+      const second = await adapter.deploy(
+        env.context(),
+        env.fixture.validConfig,
+      );
       assert(first.status === "SUCCESS", "lần đầu phải SUCCESS");
       assert(second.status === "SUCCESS", "lần hai phải SUCCESS");
       /** Cùng tập binding, không phụ thuộc thứ tự */
@@ -280,8 +330,13 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     async run(adapter, env) {
       const res = await adapter.deploy(env.context(), env.fixture.validConfig);
       for (const b of res.data ?? []) {
-        const declared = adapter.capabilities.provides.find((p) => p.id === b.id);
-        assert(declared !== undefined, `binding ${b.id} không có trong provides`);
+        const declared = adapter.capabilities.provides.find(
+          (p) => p.id === b.id,
+        );
+        assert(
+          declared !== undefined,
+          `binding ${b.id} không có trong provides`,
+        );
         assert(
           b.version === declared.version,
           `binding ${b.id} version ${b.version} khác khai ${declared.version}`,
@@ -442,7 +497,8 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
         });
         text = JSON.stringify(res);
       } catch (err) {
-        text = err instanceof Error ? `${err.name} ${err.message}` : String(err);
+        text =
+          err instanceof Error ? `${err.name} ${err.message}` : String(err);
       }
       assert(!text.includes(sentinel), "secret rò ra thông điệp lỗi");
     },
@@ -454,8 +510,15 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     designCheckId: "d10",
     async run(adapter, env) {
       await adapter.deploy(env.context(), env.fixture.validConfig);
-      const up = await adapter.upgrade(env.context(), env.fixture.validConfig, adapter.version);
-      assert(up.status === "SUCCESS", `upgrade phải SUCCESS, thấy ${up.status}`);
+      const up = await adapter.upgrade(
+        env.context(),
+        env.fixture.validConfig,
+        adapter.version,
+      );
+      assert(
+        up.status === "SUCCESS",
+        `upgrade phải SUCCESS, thấy ${up.status}`,
+      );
       const health = await adapter.healthcheck(env.context());
       assert(health.data?.healthy === true, "sau upgrade phải healthy");
     },
@@ -473,7 +536,8 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
       await adapter.deploy(env.context(), env.fixture.validConfig);
       const before = adapter.version;
       await expectThrowsOrFails(
-        () => adapter.upgrade(
+        () =>
+          adapter.upgrade(
             env.context(),
             env.fixture.validConfig,
             "0.0.0-khong-ton-tai",
@@ -493,7 +557,18 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     designCheckId: "d12",
     async run(adapter, env) {
       await adapter.deploy(env.context(), env.fixture.validConfig);
-      const res = await adapter.detectDrift(env.context(), env.fixture.validConfig);
+      /**
+       * [v4.10] Gọi qua `readOnlyContext` - ĐÚNG đường mà job `DRIFT_SCAN` dùng.
+       *
+       * Bản trước truyền bối cảnh đầy đủ, nên tầng chạy của I32 chiều (c) (client bị bóc
+       * `write`) không được adapter nào đi qua: bốn adapter đều xanh mà chưa chắc chạy
+       * được khi client thật sự không có `write`. Nay mọi ô drift đi đường sản phẩm, còn
+       * ô đếm verb ghi ở dưới cố tình giữ bối cảnh ĐẦY ĐỦ - nó là ô bắt gian.
+       */
+      const res = await adapter.detectDrift(
+        readOnlyContext(env.context()),
+        env.fixture.validConfig,
+      );
       assert(res.status === "SUCCESS", "detectDrift phải SUCCESS");
       assert(
         res.data?.drifted === false,
@@ -513,7 +588,10 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
         await adapter.deploy(env.context(), env.fixture.validConfig);
         const client = await env.cluster.getClient("tooling");
         await m.apply(client);
-        const res = await adapter.detectDrift(env.context(), env.fixture.validConfig);
+        const res = await adapter.detectDrift(
+          readOnlyContext(env.context()),
+          env.fixture.validConfig,
+        );
         assert(
           res.data?.drifted === true,
           `driftMutation "${m.name}" không bị phát hiện`,
@@ -534,7 +612,22 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     async run(adapter, env) {
       await adapter.deploy(env.context(), env.fixture.validConfig);
       env.cluster.reset();
-      await adapter.detectDrift(env.context(), env.fixture.validConfig);
+      /**
+       * CỐ TÌNH truyền bối cảnh ĐẦY ĐỦ: đây là ô bắt gian.
+       *
+       * Phương thức trong TypeScript là song biến, nên một adapter khai
+       * `detectDrift(ctx: DomainAdapterContext)` vẫn thoả interface và vẫn ghi được khi
+       * ai đó gọi nó với bối cảnh đầy đủ - ví dụ một route `POST /domains/:type/drift`
+       * viết vội. Ô này đưa cho adapter đúng cái quyền đó rồi đếm xem nó có dùng không.
+       */
+      const res = await adapter.detectDrift(
+        env.context(),
+        env.fixture.validConfig,
+      );
+      assert(
+        res.status === "SUCCESS",
+        "detectDrift phải SUCCESS cả khi được trao bối cảnh đầy đủ",
+      );
       assert(
         env.cluster.writes.length === 0,
         `detectDrift gọi ${String(env.cluster.writes.length)} verb ghi: ` +
@@ -543,6 +636,22 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     },
   },
   {
+    /**
+     * [v4.10] Ô này từng chỉ đọc lời khai, giờ nó kiểm HÀNH VI.
+     *
+     * Bản trước khẳng định "mỗi prefix có lý do" rồi dừng - tức một adapter bỏ qua đúng
+     * những prefix đã khai vẫn xanh, và một adapter bỏ qua MỌI khoá lạ cũng xanh. Đó là
+     * ô xanh-nhưng-sai đã tìm ra ở P21: chính nó lẽ ra phải đỏ ở P20, khi hai lớp nền còn
+     * so tập con.
+     *
+     * Hai nửa, và nửa thứ hai là nửa quan trọng:
+     *
+     *  1. Thêm một khoá mang prefix ĐÃ KHAI vào mọi đối tượng adapter ghi ⇒ KHÔNG drift.
+     *  2. Thêm một khoá KHÔNG khớp prefix nào ⇒ PHẢI drift.
+     *
+     * Không có nửa (2) thì lời khai `ignoredLabelPrefixes` là một tờ giấy phép rỗng: một
+     * adapter bỏ qua tất cả vẫn qua được nửa (1).
+     */
     name: "nhãn khớp ignoredLabelPrefixes KHÔNG tính là drift",
     designCheckId: null,
     async run(adapter, env) {
@@ -556,11 +665,40 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
           `prefix ${prefix} phải kèm lý do, để danh sách không mọc rêu`,
         );
       }
-      await Promise.resolve();
+      const first = env.fixture.ignoredLabelPrefixes[0];
+      assert(first !== undefined, "không thể tới đây");
+
+      await adapter.deploy(env.context(), env.fixture.validConfig);
+      await patchEveryManagedObject(env, { [`${first.prefix}sua-tay`]: "1" });
+      const ignored = await adapter.detectDrift(
+        readOnlyContext(env.context()),
+        env.fixture.validConfig,
+      );
+      assert(
+        ignored.data?.drifted === false,
+        `khoá mang prefix đã khai "${first.prefix}" bị tính là drift: ` +
+          (ignored.data?.details ?? ignored.message ?? ""),
+      );
+
+      await patchEveryManagedObject(env, { [STRAY_KEY]: "1" });
+      const stray = await adapter.detectDrift(
+        readOnlyContext(env.context()),
+        env.fixture.validConfig,
+      );
+      assert(
+        stray.data?.drifted === true,
+        `khoá lạ "${STRAY_KEY}" KHÔNG khớp prefix nào mà vẫn không bị tính là drift`,
+      );
     },
   },
   {
-    /** Chiều đảo: khai rỗng ⇒ MỌI khác biệt nhãn đều là drift */
+    /**
+     * Chiều đảo: khai rỗng ⇒ MỌI khác biệt đều là drift.
+     *
+     * [v4.10] Cũng từ một ô đọc lời khai (`length === 0` khẳng định `length === 0`) thành
+     * một ô kiểm hành vi. Hai adapter tối thiểu của P20 khai rỗng, nên nhánh này có người
+     * chạy; hai adapter thật khai không rỗng và chạy nhánh trên.
+     */
     name: "khai ignoredLabelPrefixes RỖNG ⇒ mọi khác biệt nhãn đều là drift",
     designCheckId: null,
     async run(adapter, env) {
@@ -568,12 +706,16 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
         await Promise.resolve();
         return;
       }
-      /** Không có prefix nào được bỏ qua, nên danh sách phải RỖNG — khẳng định nó */
-      assert(
-        env.fixture.ignoredLabelPrefixes.length === 0,
-        "không thể tới đây",
+      await adapter.deploy(env.context(), env.fixture.validConfig);
+      await patchEveryManagedObject(env, { [STRAY_KEY]: "1" });
+      const res = await adapter.detectDrift(
+        readOnlyContext(env.context()),
+        env.fixture.validConfig,
       );
-      await Promise.resolve();
+      assert(
+        res.data?.drifted === true,
+        "khai rỗng mà một khoá lạ vẫn không bị tính là drift",
+      );
     },
   },
 
@@ -606,7 +748,11 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
         const res = await adapter.onDependencyChanged(
           env.context(),
           env.fixture.validConfig,
-          { id: "db.instance", version: "1.0.0", providedBy: "khong:lien-quan" },
+          {
+            id: "db.instance",
+            version: "1.0.0",
+            providedBy: "khong:lien-quan",
+          },
         );
         assert(
           res.status === "SUCCESS",
@@ -651,9 +797,9 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
       await adapter.deploy(env.context(), env.fixture.validConfig);
       /** Một capability mà adapter KHÔNG requires — lấy cái đầu tiên ngoài danh sách */
       const needed = new Set(flatRequires(adapter).map((r) => r.id));
-      const unrelated = (["db.instance", "cost.query", "policy.admission"] as const).find(
-        (c) => !needed.has(c),
-      );
+      const unrelated = (
+        ["db.instance", "cost.query", "policy.admission"] as const
+      ).find((c) => !needed.has(c));
       if (unrelated === undefined) {
         await Promise.resolve();
         return;
@@ -908,7 +1054,10 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     name: "configure() chạy được độc lập với deploy()",
     designCheckId: null,
     async run(adapter, env) {
-      const res = await adapter.configure(env.context(), env.fixture.validConfig);
+      const res = await adapter.configure(
+        env.context(),
+        env.fixture.validConfig,
+      );
       assert(
         res.status === "SUCCESS",
         `configure phải SUCCESS, thấy ${res.status}`,
@@ -973,7 +1122,11 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
        * và điều đó vỡ ngay khi người dùng đổi provider.
        */
       await expectThrowsOrFails(
-        () => adapter.deploy(env.context({ resolved: {} }), env.fixture.validConfig),
+        () =>
+          adapter.deploy(
+            env.context({ resolved: {} }),
+            env.fixture.validConfig,
+          ),
         "adapter có requires mà deploy được với resolved rỗng ⇒ nó tự đoán endpoint",
       );
     },
@@ -992,11 +1145,14 @@ export function runDomainAdapterContract(
   env: DomainContractEnv,
   api: TestRunnerApi,
 ): void {
-  api.describe(`hợp đồng Domain Adapter: ${adapter.domainType}:${adapter.toolId}`, () => {
-    for (const check of DOMAIN_CONTRACT_CHECKS) {
-      api.it(check.name, async () => {
-        await check.run(adapter, env);
-      });
-    }
-  });
+  api.describe(
+    `hợp đồng Domain Adapter: ${adapter.domainType}:${adapter.toolId}`,
+    () => {
+      for (const check of DOMAIN_CONTRACT_CHECKS) {
+        api.it(check.name, async () => {
+          await check.run(adapter, env);
+        });
+      }
+    },
+  );
 }

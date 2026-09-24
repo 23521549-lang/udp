@@ -10,7 +10,16 @@ Máy đo hiện tại (22/09/2026): Windows 11, i7-12650H, 7,7 GiB RAM (thườn
 0,4–1,5 GiB, có lúc phân trang nặng), Docker tắt, không có k6/Prometheus/cluster;
 database Supabase `ap-southeast-1`.
 
-Mỗi mục có: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / không đạt, tài nguyên tối thiểu.
+Mỗi mục có **sáu** trường: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / không đạt, tài
+nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường thứ sáu là trường quan
+trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
+đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
+
+**Số mục hiện tại: 28.** Con số này được một phép kiểm của `design-lint` đối chiếu
+với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
+`docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
+dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
+có địa chỉ.
 
 ---
 
@@ -25,6 +34,7 @@ Mỗi mục có: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / khôn
 - **Đạt:** mọi ô p99 SDK < 1 000 µs; p50 của từng vòng lệch nhau < 20%.
   **Không đạt:** bất kỳ ô nào p99 SDK ≥ 1 000 µs trên máy yên ⇒ "< 1 ms" bị bác bỏ.
 - **Tài nguyên:** 1 tiến trình Node + 1 Service 2 (~300 MiB).
+- **Ảnh hưởng tới kết luận:** số µs chính thức của **E3**. Kết luận "đánh giá cục bộ dưới 1 ms" vẫn đứng (mọi p99 SDK đo được đều < 1 ms), nhưng con số nêu trong luận văn phải từ máy yên, nếu không nó là một con số về máy đo chứ không về hệ thống.
 
 ## E3-stats — độ trễ đánh giá khi `reportStats` BẬT (ngưỡng hồi quy R21)
 
@@ -52,6 +62,7 @@ Mỗi mục có: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / khôn
   chuỗi variant).
 - **Tài nguyên:** 1 tiến trình Node (`--skip-remote` nên không cần Service 2 và
   không truy vấn database), ~2 phút mỗi nhánh với `--rounds 5`.
+- **Ảnh hưởng tới kết luận:** ngưỡng hồi quy **R21** và quyết định có bật `reportStats` mặc định. Chưa đo thì mặc định phải là TẮT.
 
 ## E4-ci — lan truyền cấu hình ở hình học CI
 
@@ -64,6 +75,7 @@ Mỗi mục có: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / khôn
 - **Đạt:** 12 ô đủ 100 lần, `timeouts` = 0; báo cáo p50/p99 từng ô, truy vấn và byte
   mỗi lần. **Không đạt:** ô nào có `timeouts` > 0 ⇒ điều tra trước khi dùng số.
 - **Tài nguyên:** 1 Service 2 mỗi lúc (~300 MiB), ~50 phút.
+- **Ảnh hưởng tới kết luận:** số chính thức của **E4** và câu "delta rẻ hơn snapshot". Số dev-geometry đủ để so hai nhánh với nhau nhưng không đủ để nêu như độ trễ của hệ thống.
 
 ## E4-segment — lan truyền cấu hình khi delta mang payload segment
 
@@ -99,6 +111,7 @@ Mỗi mục có: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / khôn
   lớn (4 MiB × 10 environment nằm trong `config_change_log`, giữ 7 ngày) — phải xoá
   theo ID ngay sau khi đo, như `segment-cap-perf` đã làm, chứ không chờ job dọn; ~30
   phút.
+- **Ảnh hưởng tới kết luận:** phạm vi của kết luận **E4**: hiện nó chỉ được chứng minh ở đầu nhẹ nhất của trục payload, tức chưa nói gì về đúng trường hợp mà ngưỡng `maxDeltaBytes` được đặt ra để xử lý.
 
 ## E5 — MTTD/MTTR của auto-rollback (ba nhánh)
 
@@ -128,6 +141,7 @@ Mỗi mục có: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / khôn
   `clock.stable = true`. **Không đạt / loại:** `clock.stable = false`, `marks.t3` thiếu,
   session không ROLLBACK trong 20 phút — giữ file, ghi lý do loại ở `README.md`.
 - **Tài nguyên:** ~2,5 GiB RAM (Prometheus, 3 service, 2 app, tải).
+- **Ảnh hưởng tới kết luận:** đóng góp **C1** ở phần số liệu: MTTD/MTTR và blast radius so với Flagger/Argo Rollouts. Cơ chế đã chạy và có test tích hợp, nhưng **so sánh** ba nhánh là phần chưa có số.
 
 ## E6 — gai lỗi thoáng qua không gây rollback
 
@@ -138,6 +152,7 @@ Mỗi mục có: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / khôn
   `rollout_sessions.status` 5 phút.
 - **Đạt:** `maxConsecutiveBreaches = 2` ⇒ KHÔNG rollback. **Không đạt:** rollback ở 2.
 - **Tài nguyên:** như E5.
+- **Ảnh hưởng tới kết luận:** câu "auto-rollback không nhạy quá mức" — tức đối chứng ÂM của C1. Thiếu nó thì E5 chỉ chứng minh hệ thống biết rollback, không chứng minh nó biết KHÔNG rollback.
 
 ## E14-prometheus — dung lượng TSDB và scrape duration
 
@@ -149,6 +164,7 @@ Mỗi mục có: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / khôn
 - **Đạt:** head series khớp công thức R·S·M·(B+3)·(1+T·V) (đã khớp phía app).
   **Không đạt:** lệch > 1% ⇒ điều tra nhãn Prometheus gắn thêm.
 - **Tài nguyên:** Prometheus ~500 MiB–2 GiB tuỳ T.
+- **Ảnh hưởng tới kết luận:** phần chi phí quan sát của **E14**: cardinality cộng thêm đã tính được bằng công thức và đo được phía ứng dụng, nhưng dung lượng TSDB và scrape duration là số phía Prometheus.
 
 ## I34-cluster — mất mạng trong cluster thật
 
@@ -161,6 +177,7 @@ Mỗi mục có: vì sao nợ, tiền đề, lệnh, dấu hiệu đạt / khôn
 - **Đạt:** `pass = true` ở cả hai pha. **Không đạt:** bất kỳ lần đánh giá sai/lỗi
   trong lúc ngắt, hoặc không hội tụ trong ngưỡng.
 - **Tài nguyên:** cluster nhỏ (1 node).
+- **Ảnh hưởng tới kết luận:** bất biến **I34** ở hình học thật. Bản đã đo dùng hố đen mạng và một lần Service 2 chết trên cùng một máy; mất mạng trong cluster thật có thêm DNS và kube-proxy.
 
 ## stale-perf — p95 của `/flags/stale` và `/flags?include=stats` ở 864 000 hàng
 
@@ -234,6 +251,7 @@ WHERE f.project_id = $p;` rồi `VACUUM (ANALYZE) flag_evaluation_stats;` — t�
   hàng rollup theo ngày" nếu chính SQL vượt ngân sách.
 - **Tài nguyên:** ~110 MB dữ liệu tạm trong database (đã xoá sau khi đo: 0 hàng còn
   lại), 1 tiến trình Node cho mỗi service.
+- **Ảnh hưởng tới kết luận:** ngưỡng p95 của hai endpoint danh sách ở quy mô 864 000 hàng, tức câu "Portal vẫn dùng được khi project lớn".
 
 ## segment-cap-perf — đường ghi segment khi project ở TRẦN 4 MiB với 10 environment
 
@@ -346,3 +364,292 @@ WHERE f.project_id = $p;` rồi `VACUUM (ANALYZE) flag_evaluation_stats;` — t�
   phép đo, 0 dòng `config_change_log` của outbox `segment.updated`, 0 dòng `audit_logs`
   `segment.*`, `danglingSegmentRules` = 0; số đếm toàn bảng TRƯỚC = SAU (projects 8,
   environments 17, segments 1, config_change_log 4, audit_logs 4, feature_flags 6).
+- **Ảnh hưởng tới kết luận:** trần 4 MiB của segment: nó được cưỡng chế bằng CHECK và bằng phép kiểm, nhưng ĐƯỜNG GHI ở đúng trần đó chưa được đo cùng ngân sách transaction.
+---
+
+# Plan #24 — Adapter framework
+
+Mười tám mục dưới đây đến từ một chỗ duy nhất: **hợp đồng adapter được thiết kế để
+chạy trên cloud thật và cluster thật, còn máy đo không có cả hai.** Điều đó loại bỏ
+**phép đo** và **lần chạy lại trên hạ tầng thật**, không loại bỏ một luật, một ô hay
+một phương thức nào — mọi hành vi đều đã chạy trên cloud mô phỏng (§13.2) và trên
+`ClusterAccess` giả, với lưới K1..K10 ở hai tầng và bộ hợp đồng 42 phép cho bốn
+adapter.
+
+## I31-localstack — lưới K1..K10 trên LocalStack
+
+- **Vì sao nợ:** lưới giết tiến trình cần một cloud có hành vi lỗi ĐIỀU KHIỂN ĐƯỢC
+  (nhất quán cuối của tagging, `DependencyViolation` khi xoá VPC, phân trang dở,
+  `indeterminate` khi tra cứu). Cloud mô phỏng của §13.2 cho đúng những hành vi đó
+  và chạy trên máy 7,7 GiB RAM không Docker; LocalStack cần Docker engine.
+- **Tiền đề:** Docker engine chạy + ≥ 2,5 GiB RAM trống. LocalStack bản miễn phí
+  KHÔNG có EKS, nên ô cluster của lưới vẫn phải mô phỏng hoặc chuyển sang
+  `I31-aws-eks`.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- grid-tier2` với
+  `UDP_CLOUD_DRIVER=localstack` (biến đó CHƯA CÓ: nó là phần việc đầu tiên của lần
+  chạy này, và nó chỉ đổi adapter được nạp chứ không đổi harness).
+- **Đạt:** cả 10 điểm crash cho cùng kết cục như trên cloud mô phỏng, và mỗi ô có ít
+  nhất một lượt `PrismaLedger` thật. **Không đạt:** ô nào lệch ⇒ chỗ lệch là một hành
+  vi cloud mà mô phỏng đoán sai, và nó phải được sửa vào mô phỏng chứ không vào
+  adapter.
+- **Tài nguyên:** Docker + LocalStack (~1,2 GiB) + 1 tiến trình Node.
+- **Ảnh hưởng tới kết luận:** độ trung thực của **I31** và của **E15**. Lưới trên
+  cloud mô phỏng chứng minh máy trạng thái khôi phục đúng theo ĐẶC TẢ hành vi cloud;
+  nó không chứng minh đặc tả đó khớp một hiện thực cloud độc lập.
+
+## I31-aws-eks — lưới K1..K10 trên AWS thật
+
+- **Vì sao nợ:** cần tài khoản AWS có ngân sách; một lượt lưới tạo và xoá VPC, NAT
+  gateway, EKS cluster và nodegroup.
+- **Tiền đề:** tài khoản AWS + hạn mức chi + credential có đủ 14 quyền mà
+  `preflightPermissions` liệt kê.
+- **Lệnh:** như `I31-localstack` với `UDP_CLOUD_DRIVER=aws`.
+- **Đạt:** 10 điểm crash cho cùng kết cục; sau mỗi ô, `orphan-scan` trả về rỗng.
+  **Không đạt:** còn tài nguyên mồ côi sau teardown ⇒ đó là tiền thật của khách, và
+  nó là lỗi nặng nhất mà hợp đồng adapter có thể có.
+- **Tài nguyên:** ~2 USD/lượt (NAT gateway theo giờ là phần đắt nhất) + 1 tiến trình
+  Node.
+- **Ảnh hưởng tới kết luận:** **C3** ở dạng mạnh nhất của nó, và cả hình dạng tag
+  `kubernetes.io/cluster/*` mà `k8s-managed-discovery` đang nợ.
+
+## E15 — đối chứng Terraform và Pulumi trên cùng lưới
+
+- **Vì sao nợ:** phép đo cần hai binary (`terraform`, `pulumi`) và một cloud chạy
+  được lưới, tức nó bị chặn sau `I31-localstack` hoặc `I31-aws-eks`.
+- **Tiền đề:** như trên, cộng cùng một hạ tầng đích được mô tả bằng ba cách (UDP
+  adapter, HCL, Pulumi TypeScript) — ba bản mô tả phải tương đương, và việc chứng
+  minh chúng tương đương là một phần của phép đo.
+- **Lệnh:** `pnpm --filter @udp/experiments e15` (script CHƯA CÓ).
+- **Đạt:** với mỗi điểm crash, ghi lại: có khôi phục tự động được không, có cần can
+  thiệp tay không, và có tạo trùng tài nguyên không. **Không đạt:** không có ngưỡng
+  đạt/không đạt — E15 là một MA TRẬN, và một ô mà UDP xử lý kém hơn Terraform là một
+  kết quả phải báo cáo, không phải một test đỏ.
+- **Tài nguyên:** như `I31-*` + hai binary.
+- **Ảnh hưởng tới kết luận:** **C3** chuyển từ một lập luận ("state file không biết
+  đủ") thành một vị trí có số liệu. Thiếu E15 thì luận điểm vẫn đứng bằng lý lẽ và
+  bằng lưới của chính UDP, nhưng không có đối chứng ngoài.
+
+## I32-cluster — `ClusterAccess` trên cluster Kubernetes thật
+
+- **Vì sao nợ:** `createDirectClusterAccess` đã tách `KubeTransport` và `TokenSource`
+  nên đường xác thực, bộ nhớ đệm token và `objectPath` kiểm được bằng transport giả.
+  Thứ KHÔNG kiểm được bằng giả: hình dạng lỗi thật của API server (410 Gone khi
+  watch hết hạn, 429 kèm `Retry-After`), và `TokenRequest` thật.
+- **Tiền đề:** `kind` hoặc `k3d` một node (~3 GiB RAM) + Docker.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- cluster-access.real`
+  (tệp CHƯA CÓ; nó dùng lại đúng các phép kiểm của `cluster-access.test.ts`, chỉ đổi
+  transport).
+- **Đạt:** `probe` trả `reachable: true` kèm `serverVersion`; `read` trên đối tượng
+  không tồn tại trả `null` chứ không ném; `write("delete")` hai lần liên tiếp đều
+  thành công (idempotent). **Không đạt:** bất kỳ lời gọi nào ném với một hình lỗi mà
+  hiện thực giả không dựng được ⇒ thêm hình đó vào fake trước khi sửa code.
+- **Tài nguyên:** Docker + kind (~3 GiB) + 1 tiến trình Node.
+- **Ảnh hưởng tới kết luận:** **ADR-06** và bất biến **I24** (bound token 1 giờ,
+  không bao giờ xuống đĩa). Cùng mã nợ `cluster-access-real` được nhắc trong
+  `cluster-access.ts`.
+
+## E16 — ma trận drift, đối chứng Helm và Argo CD
+
+- **Vì sao nợ:** ba trong bốn thứ E16 đo đã có số trên thế giới mô phỏng (có phát
+  hiện được không, diff có chỉ đúng chỗ không, hành vi mặc định là báo cáo hay tự ghi
+  đè — xem `day2-drift.test.ts`, lưới 5 sửa đổi + ô âm). Hai thứ còn thiếu cần cluster
+  thật: **độ trễ phát hiện**, và lưới trên đối tượng THẬT do chart render ra
+  (Deployment, image tag) thay vì trên đối tượng tương đương mà adapter tự ghi.
+- **Tiền đề:** cluster (`I32-cluster`) + Argo CD (~1,5 GiB thêm) + Helm.
+- **Lệnh:** `pnpm --filter @udp/experiments e16` (script CHƯA CÓ).
+- **Đạt:** với mỗi loại sửa đổi, ba cơ chế được ghi: phát hiện/không, độ trễ, và hành
+  vi mặc định. **Không đạt:** không có ngưỡng — E16 là phép đo, và điều nó phải cho
+  thấy là **một lựa chọn có vị trí**: Argo CD tự sync, Helm chỉ biết khi có người chạy
+  `diff`, UDP phát hiện mà không tự sửa.
+- **Tài nguyên:** cluster + Argo CD + Prometheus không cần.
+- **Ảnh hưởng tới kết luận:** nửa Domain Adapter của **C3** và chiều (a) của **I32**
+  ở dạng mạnh nhất. Chiều (c) ("không bao giờ tự sửa") KHÔNG nợ: nó được cưỡng chế ba
+  tầng và có phép kiểm ba chu kỳ trên database thật.
+
+## I25-audit — audit log của API server
+
+- **Vì sao nợ:** I25 nói ba bên ghi vào cluster nhưng không bao giờ chồng quyền. Phần
+  "không chồng quyền" kiểm được bằng hằng số `IDENTITY_SERVICE_ACCOUNTS` và bằng
+  `ClusterAccess` giả (identity bị từ chối thì không có client). Phần "API server
+  cưỡng chế" thì chỉ audit log của API server nói được.
+- **Tiền đề:** cluster có audit policy bật, ghi ra file đọc được.
+- **Lệnh:** chạy một lượt deploy đầy đủ rồi `grep` audit log theo `user.username`.
+- **Đạt:** mọi dòng ghi của lượt deploy mang đúng SA `udp-tooling`; không dòng nào
+  mang `udp-workload` hay `udp-traffic`. **Không đạt:** một dòng sai SA ⇒ có một
+  đường trong mã nghiệp vụ lấy client bằng identity khác, và nó không lộ ra ở test
+  đơn vị.
+- **Tài nguyên:** cluster (~3 GiB).
+- **Ảnh hưởng tới kết luận:** **I25**, và qua đó là mô hình multi-tenancy của §12.
+
+## I24-token-that — `TokenRequest` thật
+
+- **Vì sao nợ:** `TokenSource` là một cổng, và hiện thực giả trả một token tĩnh. Hạn
+  một giờ, việc xin lại trước hạn, và "không bao giờ ghi xuống đĩa" kiểm được bằng
+  cách đếm lời gọi và đọc bộ nhớ đệm trong closure; nhưng hạn THẬT do API server cấp.
+- **Tiền đề:** cluster.
+- **Lệnh:** như `I32-cluster`, thêm một phép kiểm đọc `exp` của token.
+- **Đạt:** `exp - iat` = 3600 giây; token thứ hai được xin trước hạn; không có token
+  nào xuất hiện trong `audit_logs`, trong log, hay trong `cloud_credentials`.
+  **Không đạt:** một token nằm trong bất kỳ nơi nào ở trên ⇒ vi phạm I24 trực tiếp.
+- **Tài nguyên:** cluster.
+- **Ảnh hưởng tới kết luận:** **I24**.
+
+## preflight-confidence — `preflightPermissions` đo đúng `exact` hay `heuristic`
+
+- **Vì sao nợ:** hàm trả về một danh sách quyền còn thiếu kèm một mức TIN CẬY. Phân
+  biệt `exact` (API cloud nói thẳng) với `heuristic` (suy từ một lời gọi thử) chỉ
+  kiểm được khi có một credential **bị gỡ quyền có chủ đích**.
+- **Tiền đề:** tài khoản cloud thật + một IAM user thiếu đúng một quyền đã biết.
+- **Lệnh:** `POST /projects/:id/cloud/preflight` với credential đó.
+- **Đạt:** quyền bị gỡ nằm trong danh sách trả về, và `confidence` đúng với cách đã
+  suy ra nó. **Không đạt:** danh sách rỗng ⇒ preflight cho cảm giác an toàn sai, và
+  đó là kiểu sai tệ nhất cho một hàm tên là "preflight".
+- **Tài nguyên:** tài khoản cloud (không tốn tiền: chỉ gọi API mô tả quyền).
+- **Ảnh hưởng tới kết luận:** câu "UDP nói trước cho bạn biết thiếu quyền gì" ở §4.4.
+
+## getkubeauth-that — `getKubeAuthToken` với STS/OAuth/AAD thật
+
+- **Vì sao nợ:** ba cloud cấp token cho kubeconfig theo ba cách khác nhau
+  (`aws eks get-token`, OAuth của GCP, AAD của Azure). Hiện thực giả trả token tĩnh
+  nên đường ký và đường đổi token chưa chạy thật.
+- **Tiền đề:** tài khoản của ít nhất một cloud.
+- **Lệnh:** một script gọi `getKubeAuthToken` rồi dùng token đó `GET /version`.
+- **Đạt:** API server nhận token. **Không đạt:** 401 ⇒ đường ký sai, và nó chỉ lộ ra
+  ở đây.
+- **Tài nguyên:** tài khoản cloud + cluster của cloud đó.
+- **Ảnh hưởng tới kết luận:** tính khả thi của ADR-06 chế độ `direct` trên cả ba
+  cloud, tức phần "pluggable" của trục Cloud Adapter.
+
+## k8s-managed-discovery — hình dạng tag `kubernetes.io/cluster/*` thật
+
+- **Vì sao nợ:** teardown có thứ tự dựa trên việc PHÁT HIỆN được ELB/ENI/EBS do
+  Kubernetes sinh ra, và cách phát hiện là quét tag `kubernetes.io/cluster/<name>`.
+  Cloud mô phỏng gắn đúng tag đó vì nó được viết như vậy; AWS thật gắn tag theo phiên
+  bản cloud-controller-manager, và có tài nguyên chỉ mang `kubernetes.io/cluster/x =
+  owned` còn có tài nguyên mang `shared`.
+- **Tiền đề:** AWS thật + một cluster có Service LoadBalancer và một PVC.
+- **Lệnh:** `listTaggedResources` rồi so với `aws elbv2 describe-tags`.
+- **Đạt:** mọi ELB/ENI/EBS thuộc cluster đều được phát hiện, kể cả `shared`.
+  **Không đạt:** sót một tài nguyên ⇒ `DeleteVpc` thất bại vĩnh viễn và khách tiếp
+  tục bị tính tiền — đúng kịch bản §4.5 mô tả.
+- **Tài nguyên:** như `I31-aws-eks`.
+- **Ảnh hưởng tới kết luận:** ví dụ cụ thể nhất của **C3** ("state file không biết
+  đủ"), và nó là ví dụ mà phản biện sẽ hỏi trước tiên.
+
+## estimatecost-vs-bill — `estimateCost` so với hoá đơn thật
+
+- **Vì sao nợ:** hàm bắt buộc trả ba mục và tổng theo giờ; số của nó lấy từ bảng giá
+  cứng trong adapter. Chỉ một tháng chạy thật nói được sai số.
+- **Tiền đề:** một project chạy liên tục ≥ 30 ngày trên tài khoản thật.
+- **Lệnh:** so `estimateCost` lúc provision với Cost Explorer sau 30 ngày.
+- **Đạt:** sai số ≤ 20% cho tổng. **Không đạt:** > 20% ⇒ bảng giá hoặc mô hình sử
+  dụng sai, và phải nói rõ con số thật trong luận văn thay vì bỏ mục này.
+- **Tài nguyên:** tài khoản cloud + 30 ngày.
+- **Ảnh hưởng tới kết luận:** phần "bảo vệ chi phí" của §4.4. Cơ chế (từ chối trước
+  khi gọi cloud, TTL, orphan-scan) đã có test; ĐỘ CHÍNH XÁC của con số thì chưa.
+
+## cluster-access-real — chế độ `direct` chạy thật (mã nợ nhắc trong mã nguồn)
+
+- **Vì sao nợ:** trùng tiền đề với `I32-cluster` nhưng phạm vi hẹp hơn: mục này chỉ
+  hỏi "đường vào cluster có chạy không", còn `I32-cluster` hỏi cả hình dạng lỗi.
+  Giữ hai mã vì chú thích trong `cluster-access.ts` đã trỏ vào mã này.
+- **Tiền đề:** như `I32-cluster` (kind/k3d một node + Docker).
+- **Lệnh:** như `I32-cluster`.
+- **Đạt:** `probe` trả `reachable: true`; một lượt deploy đầy đủ của một adapter thật
+  chạy hết. **Không đạt:** bất kỳ lời gọi nào ném ⇒ đường vào cluster chưa chạy thật.
+- **Tài nguyên:** như `I32-cluster`.
+- **Ảnh hưởng tới kết luận:** như `I32-cluster`.
+
+## quota-lb-webhook — trần load balancer cần admission webhook
+
+- **Vì sao nợ:** `ResourceQuota` được cưỡng chế TRƯỚC mọi lời gọi cloud, nên một
+  adapter không tạo được nhiều LB hơn trần. Nhưng một `Service` kiểu `LoadBalancer`
+  do **workload của tenant** tạo ra làm cloud-controller-manager tạo một ELB mà không
+  đi qua adapter nào — và trần của UDP không thấy nó.
+- **Tiền đề:** cluster + quyền cài admission webhook.
+- **Lệnh:** tạo `maxLoadBalancers + 1` Service LoadBalancer bằng `kubectl`.
+- **Đạt:** webhook từ chối Service thứ `n+1` kèm thông điệp nêu trần. **Không đạt:**
+  ELB thứ `n+1` được tạo ⇒ trần chi phí bị vượt qua bằng một đường mà UDP không canh,
+  và đó là tiền của khách.
+- **Tài nguyên:** cluster + webhook (~100 MiB).
+- **Ảnh hưởng tới kết luận:** phạm vi chính xác của "bảo vệ chi phí" ở §4.4: hiện nó
+  đúng cho tài nguyên **UDP tạo**, không cho tài nguyên **workload tạo**. Câu đó phải
+  được nói đúng như vậy chừng nào mục này còn nợ.
+
+## cred-federation — Federation (STS/OIDC) mới có mặt KIỂU
+
+- **Vì sao nợ:** `CredentialMode` và `CloudAuthKind` đã khai đủ sáu cách xác thực,
+  và lược đồ có cột cho chúng. Đường resolve thật hiện chỉ có nhánh khoá tĩnh đã mã
+  hoá; nhánh federation (assume role qua OIDC, workload identity) chưa có hiện thực
+  vì nó đòi một endpoint OIDC công khai của control plane.
+- **Tiền đề:** control plane có URL công khai + một tài khoản cloud tin URL đó.
+- **Lệnh:** `POST /projects/:id/cloud/validate` với `authKind` federation.
+- **Đạt:** resolve trả về credential tạm có hạn, và `dispose()` xoá nó khỏi bộ nhớ.
+  **Không đạt:** nhánh ném "chưa hiện thực" ⇒ đúng trạng thái hôm nay, và nó phải
+  ném tường minh chứ không im lặng rơi về khoá tĩnh.
+- **Tài nguyên:** tài khoản cloud + một endpoint công khai.
+- **Ảnh hưởng tới kết luận:** mô hình đe doạ của §4.3. Khoá tĩnh đã mã hoá là đường
+  đang dùng; federation là đường **giảm được** thời gian sống của bí mật, và chừng
+  nào nó còn nợ thì câu "bí mật không sống quá một giờ" chỉ đúng cho token cluster,
+  không cho credential cloud.
+
+## domains-catalog-route — `GET /domains/catalog` chưa có route
+
+- **Vì sao nợ:** registry hai tầng và `syncDomainCatalog` đã có và có test; §5.3 nói
+  UI dựng dropdown từ endpoint này, nhưng route thì chưa được viết (cùng lát cắt với
+  các route Day-2 dưới đây).
+- **Tiền đề:** không cần hạ tầng gì; đây là phần việc còn lại, không phải một phép đo.
+- **Lệnh:** `GET /api/v1/domains/catalog` sau khi viết route.
+- **Đạt:** trả đủ 16 domain của registry kèm `isAvailable`, và một adapter mới tự
+  xuất hiện mà không sửa file nào ngoài thư mục của nó (đúng phép kiểm dương tính của
+  I28). **Không đạt:** phải sửa một file ngoài ⇒ chỉ số "0 file" của C2 sai.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** phép kiểm DƯƠNG TÍNH của **I28** (thêm adapter giả và
+  thấy nó xuất hiện trên catalog) chưa chạy được đầu-cuối.
+
+## drift-scan-cron — lịch biểu 6 giờ cho job `DRIFT_SCAN`
+
+- **Vì sao nợ:** `scanDomainDrift` là hàm thuần trên các cổng được tiêm, và nó có
+  phép kiểm ba chu kỳ trên database thật. Cái chưa có là `pg-boss` cron gọi nó — cùng
+  lý lẽ với TTL và orphan-scan của §4.4: phần đáng kiểm là phần QUYẾT ĐỊNH.
+- **Tiền đề:** `jobs/boss.ts` (hạ tầng hàng đợi, §3.1) tồn tại.
+- **Lệnh:** đăng ký cron rồi `pnpm --filter @udp/core-backend test -- day2-cron`.
+- **Đạt:** một lượt cron quét mọi project `ACTIVE`, và hai lượt liên tiếp trên một
+  domain đang trôi chỉ ghi `last_error` một lần. **Không đạt:** lượt thứ hai ghi lại
+  ⇒ `updated_at` của mọi domain nhảy bốn lần một ngày.
+- **Tài nguyên:** không (pg-boss dùng chính database).
+- **Ảnh hưởng tới kết luận:** §8.6 nhánh A chạy được **tự động**. Hành vi thì đã đủ
+  bằng chứng; điều còn thiếu là không ai gọi nó theo lịch.
+
+## domain-day2-route — route nâng cấp và quét drift
+
+- **Vì sao nợ:** `upgradeDomain` cưỡng chế bốn quy tắc của §8.6 và có test cho từng
+  quy tắc, nhưng `POST /projects/:id/domains/:domainId/upgrade` và
+  `POST .../drift` chưa được viết. `requireProjectRole(MAINTAINER)` và xác nhận hai
+  bước cho environment production là việc của controller, nên chúng đi cùng route.
+- **Tiền đề:** không cần hạ tầng.
+- **Lệnh:** test tích hợp như `rollout.integration.test.ts`.
+- **Đạt:** 409 khi có rollout đang chạy, 422 khi tổ hợp capability không còn hợp lệ,
+  403 khi thiếu quyền, 428 khi thiếu xác nhận hai bước ở production, 202 khi hợp lệ.
+  **Không đạt:** bất kỳ mã nào khác ⇒ luồng §8.6 chưa đúng ở tầng HTTP.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** §8.6 nhánh B đi tới được người dùng. Quyết định đã
+  kiểm; cổng quyền thì chưa.
+
+## upgrade-rollback-that — hạ về bản cũ cần instance adapter bản cũ
+
+- **Vì sao nợ:** `upgradeDomain` gọi `rollback()` như một CỔNG, vì `target` là adapter
+  bản MỚI và lớp nền Helm từ chối một `fromVersion` không phải version của chính nó —
+  nó từ chối đúng. Người gọi thật phải giữ được instance adapter bản cũ, và registry
+  hôm nay chỉ nạp MỘT version cho mỗi `(domainType, toolId)`.
+- **Tiền đề:** registry nạp được nhiều version của cùng một adapter, hoặc image giữ
+  lại bản cũ.
+- **Lệnh:** một test tích hợp nâng cấp thất bại rồi khẳng định chart trên cluster giả
+  trở về đúng nội dung của bản cũ.
+- **Đạt:** nội dung sau rollback khớp bit-đối-bit nội dung trước nâng cấp. **Không
+  đạt:** khác ⇒ trạng thái lửng lơ mà quy tắc thứ ba của §8.6 cấm, và `ROLLBACK_FAILED`
+  hiện chỉ báo được rằng nó đã xảy ra, không sửa được nó.
+- **Tài nguyên:** không.
+- **Ảnh hưởng tới kết luận:** quy tắc thứ ba của §8.6. Hai kết cục (`ROLLED_BACK` và
+  `ROLLBACK_FAILED`) đã tách bạch và có test; điều chưa có là một người gọi thật hạ
+  được về bản cũ.
