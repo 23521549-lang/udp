@@ -47,6 +47,19 @@ export interface ErrorCodeSpec {
 }
 
 /**
+ * [v4.11] Slug `type` cho lỗi CSRF — tệp này có **0 import** nên Portal dùng được.
+ *
+ * Vì sao cần một slug riêng: 403 vì thiếu quyền và 403 vì CSRF sai đều là
+ * `ForbiddenError`, và `type` của Problem Details suy từ `kind`, nên cả hai ra
+ * `.../forbidden`. Không có slug này thì client buộc phải đọc câu tiếng Việt để phân
+ * biệt hai ca — một hợp đồng bằng chuỗi hiển thị.
+ *
+ * Nó nằm ở đây chứ không ở `@udp/http` vì `@udp/http` kéo cả `express`, `pino` và
+ * Prisma; một client trình duyệt không được import gói đó.
+ */
+export const CSRF_INVALID_SLUG = "csrf-invalid";
+
+/**
  * Danh mục 24 mã lỗi (§9).
  *
  * CẢNH BÁO CHO NGƯỜI SỬA FILE NÀY — hai chữ `as const satisfies` là bắt buộc.

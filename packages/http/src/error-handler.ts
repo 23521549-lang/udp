@@ -15,7 +15,7 @@ import {
   ROUTE_NOT_FOUND_SLUG,
 } from "./errors.js";
 import { logger, redact } from "./logger.js";
-import { buildProblem, sendProblem } from "./problem.js";
+import { buildProblem, sendProblem, traceIdOf } from "./problem.js";
 
 /**
  * Bọc handler async để lỗi được chuyển tới errorHandler.
@@ -114,7 +114,11 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   // `instance`/`traceId` của request này
   if (err instanceof RelayedProblemError) {
     logger.warn(
-      { status: err.statusCode, code: err.problemCode },
+      {
+        status: err.statusCode,
+        code: err.problemCode,
+        traceId: traceIdOf(req),
+      },
       "Relayed business error",
     );
     const p = err.problem;
@@ -126,6 +130,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
         ...(p.code === undefined
           ? { title: p.title, typeSlug: `http-${String(err.statusCode)}` }
           : { code: p.code }),
+        /** [v4.11] Slug tường minh sống sót qua đường chuyển tiếp — xem `withTypeSlug` */
+        ...(err.typeSlug === undefined
+          ? {}
+          : { typeSlugOverride: err.typeSlug }),
         ...(p.detail === undefined ? {} : { detail: p.detail }),
         ...(p.errors === undefined ? {} : { errors: p.errors }),
         ...(p.current === undefined ? {} : { current: p.current }),
@@ -171,6 +179,15 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
               typeSlug: err.kind.toLowerCase().replaceAll("_", "-"),
             }
           : { code: err.problemCode }),
+        /**
+         * [v4.11] Slug đặt tường minh THẮNG slug suy từ `kind`.
+         *
+         * `withTypeSlug` đã chặn ca "lỗi có mã" bằng cách ném, nên tới đây chỉ còn ca
+         * hợp lệ: hai lỗi cùng `kind` cần client phân biệt (403 thiếu quyền với 403 CSRF).
+         */
+        ...(err.typeSlug === undefined
+          ? {}
+          : { typeSlugOverride: err.typeSlug }),
         detail: err.message,
         /**
          * §8.4: "409 Conflict + bản mới nhất để hiển thị diff". Qua `redact()` như
@@ -195,7 +212,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
    */
   const dbError = dbConstraintError(err);
   if (dbError !== undefined) {
-    logger.warn({ err, code: dbError.code }, "Database constraint violation");
+    logger.warn(
+      { err, code: dbError.code, traceId: traceIdOf(req) },
+      "Database constraint violation",
+    );
     sendProblem(
       res,
       buildProblem({
@@ -223,7 +243,10 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
    */
   const unavailable = dbAvailabilityError(err);
   if (unavailable !== undefined) {
-    logger.error({ err }, "Database unavailable — pool exhausted");
+    logger.error(
+      { err, traceId: traceIdOf(req) },
+      "Database unavailable — pool exhausted",
+    );
     sendProblem(
       res,
       buildProblem({
@@ -241,7 +264,15 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
    * KHÔNG trả thông báo gốc ra ngoài ở production — thông báo lỗi thường lộ
    * đường dẫn file, tên bảng, thậm chí chuỗi kết nối database.
    */
-  logger.error({ err }, "Unexpected error");
+  /**
+   * [v4.11] `traceId` trong dòng log.
+   *
+   * `traceId` mà người dùng đọc cho support lấy từ `req.id`, nhưng dòng log này trước
+   * đây không mang nó — nên `grep` theo traceId chỉ ra dòng "request completed" của
+   * `pino-http`, KHÔNG ra dòng có stack. Portal là consumer đầu tiên thật sự bảo người
+   * dùng đọc id đó, nên nó phải tra được.
+   */
+  logger.error({ err, traceId: traceIdOf(req) }, "Unexpected error");
   sendProblem(
     res,
     buildProblem({

@@ -28,14 +28,26 @@ const PROBLEM_TYPE_BASE = "https://udp.dev/problems";
  * không cần dựng thêm hạ tầng correlation nào. Nếu vì lý do gì không có id,
  * trả chuỗi rỗng thay vì bịa ra một id không tra được trong log.
  */
-function traceIdOf(req: Request): string {
+export function traceIdOf(req: Request): string {
   const id: unknown = (req as Request & { id?: unknown }).id;
   return typeof id === "string" || typeof id === "number" ? String(id) : "";
 }
 
 /** `type` URI suy từ mã, không cần bảng thứ hai */
-function typeUriOf(code: ErrorCode | undefined, fallbackSlug: string): string {
-  const slug = code ? code.toLowerCase().replaceAll("_", "-") : fallbackSlug;
+/**
+ * [v4.11] Thứ tự ưu tiên: slug ĐẶT TƯỜNG MINH → slug suy từ mã → slug dự phòng.
+ *
+ * Slug tường minh thắng mã vì client tra catalog bằng `code`, còn `type` chỉ là một định
+ * danh — nên cho phép một lỗi tự nói nó thuộc loại nào không làm mất gì, mà lại mở được
+ * ca "hai lỗi cùng `kind` cần phân biệt" (403 thiếu quyền với 403 CSRF).
+ */
+function typeUriOf(
+  code: ErrorCode | undefined,
+  fallbackSlug: string,
+  override?: string,
+): string {
+  const slug =
+    override ?? (code ? code.toLowerCase().replaceAll("_", "-") : fallbackSlug);
   return `${PROBLEM_TYPE_BASE}/${slug}`;
 }
 
@@ -47,6 +59,8 @@ export interface BuildProblemInput {
   /** Chi tiết của đúng lần này. PHẢI đã qua redact() nếu có thể chứa secret (I12) */
   detail?: string;
   code?: ErrorCode;
+  /** [v4.11] Slug `type` đặt tường minh — thắng cả `code`. Xem `typeUriOf` */
+  typeSlugOverride?: string;
   errors?: ProblemDetails["errors"];
   suggestedAction?: ProblemDetails["suggestedAction"];
   /** Dùng cho lỗi giao thức không có mã nghiệp vụ, vd "not-found", "internal" */
@@ -74,13 +88,14 @@ export function buildProblem({
   errors,
   suggestedAction,
   typeSlug = "about:blank",
+  typeSlugOverride,
   current,
   resourceId,
 }: BuildProblemInput): ProblemDetails {
   const resolvedTitle = title ?? (code ? ERROR_CATALOG[code].title : "Error");
 
   return {
-    type: typeUriOf(code, typeSlug),
+    type: typeUriOf(code, typeSlug, typeSlugOverride),
     title: resolvedTitle,
     status,
     ...(detail === undefined ? {} : { detail }),

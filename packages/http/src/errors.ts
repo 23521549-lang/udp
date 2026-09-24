@@ -61,6 +61,9 @@ export abstract class AppError extends Error {
    */
   resourceId: string | undefined;
 
+  /** [v4.11] Slug `type` đặt tường minh — xem `withTypeSlug` */
+  typeSlug: string | undefined;
+
   /**
    * Chữ ký giữ nguyên hai tham số đầu để mọi lời gọi `new XError("...")` sẵn có
    * không phải sửa. Tham số thứ ba là tuỳ chọn, dùng khi lỗi có mã nghiệp vụ.
@@ -75,6 +78,7 @@ export abstract class AppError extends Error {
   ) {
     super(message);
     this.resourceId = undefined;
+    this.typeSlug = undefined;
     this.name = new.target.name;
     Error.captureStackTrace(this, new.target);
   }
@@ -82,6 +86,30 @@ export abstract class AppError extends Error {
   /** Gắn id tài nguyên liên quan — xem `resourceId` */
   withResource(resourceId: string): this {
     this.resourceId = resourceId;
+    return this;
+  }
+
+  /**
+   * [v4.11] Slug RIÊNG cho `type` của Problem Details, khi hai lỗi cùng `kind` cần phân
+   * biệt được ở client.
+   *
+   * Ca cụ thể: 403 vì thiếu quyền và 403 vì CSRF sai đều là `ForbiddenError`, nên slug
+   * suy từ `kind` cho cả hai là `forbidden` và client phải đọc câu tiếng Việt để rẽ
+   * nhánh. Đây là cách sửa nhỏ nhất; **không** thêm một `kind` mới, vì `kind` ánh xạ ngữ
+   * nghĩa HTTP và chẻ nó ra làm mờ chính ánh xạ đó.
+   *
+   * NÉM khi lỗi đã có `problemCode`: với một lỗi có mã, `type` được suy từ mã (client tra
+   * catalog bằng mã), nên đặt slug ở đó là một lời gọi **không có tác dụng**. Một hàm chỉ
+   * chạy ở nửa số ca mà không báo gì là cái bẫy đắt hơn vấn đề nó đi sửa.
+   */
+  withTypeSlug(slug: string): this {
+    if (this.problemCode !== undefined) {
+      throw new Error(
+        `withTypeSlug("${slug}") vô nghĩa khi lỗi đã có problemCode ` +
+          `"${this.problemCode}": type suy từ mã, không từ slug`,
+      );
+    }
+    this.typeSlug = slug;
     return this;
   }
 }
@@ -99,6 +127,19 @@ export class UnauthenticatedError extends AppError {
 export class ForbiddenError extends AppError {
   readonly statusCode = 403;
   readonly kind = "FORBIDDEN" as const;
+}
+
+/**
+ * [v4.11] Response của CHÍNH server không khớp schema đã khai — một lỗi hợp đồng, 500.
+ *
+ * Vì sao cần một lớp riêng thay vì để `ZodError` thoát ra: `errorHandler` bắt `ZodError`
+ * **trước** mọi nhánh khác và trả **400 "Dữ liệu gửi lên không hợp lệ"** kèm đường dẫn
+ * trường — tức một bug của server hiện ra như lỗi của người dùng, và nhánh đó không log
+ * gì cả. Người dùng sẽ ngồi sửa form cho một lỗi họ không gây ra.
+ */
+export class ResponseContractError extends AppError {
+  readonly statusCode = 500;
+  readonly kind = "INTERNAL" as const;
 }
 
 export class NotFoundError extends AppError {
