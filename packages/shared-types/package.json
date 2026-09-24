@@ -11,7 +11,8 @@
     "./change-feed": "./src/change-feed.ts",
     "./sdk-stats": "./src/sdk-stats.ts",
     "./flag-stats": "./src/flag-stats.ts",
-    "./segment-api": "./src/segment-api.ts"
+    "./segment-api": "./src/segment-api.ts",
+    "./capability": "./src/capability.ts"
   },
   "scripts": {
     "test": "vitest run",

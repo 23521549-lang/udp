@@ -16,10 +16,61 @@
  * thứ tự deploy thật do đồ thị capability sinh ra (§5.3), không do cột này.
  */
 
+/**
+ * [v4.10] 16 domain của §5.2, đặt ở ĐÂY chứ không ở `@udp/adapter-core`.
+ *
+ * Lý do: danh mục 16 hàng và guard của nó vốn đã sống trong file này, nên một
+ * union thứ hai ở package khác là một bản sao phải nhớ đồng bộ bằng tay — đúng
+ * cái §5.3 loại bỏ khi thay enum DDL bằng bảng `domain_catalog`. Ở đây union và
+ * danh mục nằm cạnh nhau và guard dưới cuối file đối chiếu TẬP TÊN của chúng.
+ *
+ * Trung thực về chỉ số "0 file" của C2: thêm một TOOL vào domain đã có không chạm
+ * file nào ngoài thư mục adapter. Thêm một DOMAIN hoàn toàn mới thì phải sửa đúng
+ * file này (và `capability.ts` nếu cần capability chưa có). E1 vì vậy báo HAI con
+ * số, không phải một.
+ */
+export type DomainType =
+  | "CICD"
+  | "CONTAINER_REGISTRY"
+  | "INFRA"
+  | "GITOPS"
+  | "MONITORING"
+  | "LOGGING"
+  | "TRACING"
+  | "SERVICE_MESH"
+  | "INGRESS"
+  | "SECRETS"
+  | "SECURITY"
+  | "POLICY"
+  | "DATABASE"
+  | "PROGRESSIVE_DELIVERY"
+  | "COST"
+  | "ARTIFACT_REGISTRY";
+
+/** Đúng 16 giá trị của `DomainType` — cho type guard của registry và cho guard dưới cuối file */
+export const DOMAIN_TYPES: readonly DomainType[] = [
+  "CICD",
+  "CONTAINER_REGISTRY",
+  "INFRA",
+  "GITOPS",
+  "MONITORING",
+  "LOGGING",
+  "TRACING",
+  "SERVICE_MESH",
+  "INGRESS",
+  "SECRETS",
+  "SECURITY",
+  "POLICY",
+  "DATABASE",
+  "PROGRESSIVE_DELIVERY",
+  "COST",
+  "ARTIFACT_REGISTRY",
+];
+
 export type DomainTier = "CORE" | "STANDARD" | "ADVANCED";
 
 export interface DomainCatalogEntry {
-  domainType: string;
+  domainType: DomainType;
   tier: DomainTier;
   displayName: string;
   defaultOrder: number;
@@ -137,5 +188,36 @@ const EXPECTED_DOMAIN_COUNT = 16;
 if (DOMAIN_CATALOG_SEED.length !== EXPECTED_DOMAIN_COUNT) {
   throw new Error(
     `DOMAIN_CATALOG_SEED có ${DOMAIN_CATALOG_SEED.length} domain, thiết kế §5.5 nói ${EXPECTED_DOMAIN_COUNT}.`,
+  );
+}
+
+/**
+ * [v4.10] Đối chiếu TẬP TÊN, không chỉ đếm.
+ *
+ * Guard chỉ đếm là một tautology: 15 domain thật cộng một domain viết sai chính tả
+ * vẫn ra 16, và lỗi chỉ lộ ra bằng một khóa ngoại vỡ giữa luồng provisioning. Hai
+ * chiều dưới đây bắt cả hai hướng lệch: thiếu một `DomainType` trong danh mục, và
+ * một hàng danh mục mang giá trị không có trong union.
+ */
+const seeded = new Set<string>(DOMAIN_CATALOG_SEED.map((d) => d.domainType));
+const declared = new Set<string>(DOMAIN_TYPES);
+
+const missingFromSeed = DOMAIN_TYPES.filter((d) => !seeded.has(d));
+if (missingFromSeed.length > 0) {
+  throw new Error(
+    `DOMAIN_CATALOG_SEED thiếu domain: ${missingFromSeed.join(", ")}.`,
+  );
+}
+
+const unknownInSeed = [...seeded].filter((d) => !declared.has(d));
+if (unknownInSeed.length > 0) {
+  throw new Error(
+    `DOMAIN_CATALOG_SEED có domain không nằm trong DomainType: ${unknownInSeed.join(", ")}.`,
+  );
+}
+
+if (DOMAIN_TYPES.length !== EXPECTED_DOMAIN_COUNT) {
+  throw new Error(
+    `DOMAIN_TYPES có ${DOMAIN_TYPES.length} giá trị, thiết kế §5.2 nói ${EXPECTED_DOMAIN_COUNT}.`,
   );
 }

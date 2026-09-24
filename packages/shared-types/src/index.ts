@@ -20,7 +20,9 @@
  *   - `ResolvedCredential` (§4.1) → plan Cloud Adapter đầu tiên. Nó không phải
  *     type thuần: có `dispose()` và bị cấm serialize (I12, I24), nên đặt vào một
  *     package "chỉ có type" là mất hợp đồng.
- *   - `CapabilityDeclaration`, `CapabilityBinding` (§5.3) → plan Domain Adapter.
+ *   (`CapabilityDeclaration`, `CapabilityBinding` đã vào `./capability` ở Plan #24:
+  chúng là dữ liệu THUẦN và Portal cần chúng, khác `ResolvedCredential` bị loại vì
+  có hành vi.)
  *
  * Lý do hoãn: chưa có adapter nào tồn tại. Type viết trước khi có người tiêu thụ
  * gần như chắc chắn sai theo cách không phát hiện được, và lúc sửa thì đã bị
@@ -59,6 +61,17 @@ export {
 } from "./evaluation.js";
 
 export type { AdapterOperationStatus, AdapterResult } from "./adapter.js";
+
+export type {
+  CapabilityAnyOf,
+  CapabilityBinding,
+  CapabilityDeclaration,
+  CapabilityId,
+  CapabilityProvision,
+  CapabilityRequirement,
+  CapabilityRequires,
+} from "./capability.js";
+export { CAPABILITY_IDS, isAnyOf } from "./capability.js";
 export {
   canaryPairOf,
   DECISIONS,
