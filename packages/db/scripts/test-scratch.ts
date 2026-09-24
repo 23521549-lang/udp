@@ -98,11 +98,24 @@ try {
      * `--no-bail` khác root `pnpm test` có chủ đích: mặc định pnpm dừng cấp lịch
      * ngay khi một gói đỏ, nên một lỗi ở `@udp/db` làm CI câm về 249 test của hai
      * service (đã đo). Ở đây cần thấy TOÀN BỘ bức tranh; mã thoát vẫn là 1.
+     *
+     * [v4.10] `--workspace-concurrency=1` là BẮT BUỘC, không phải một tuỳ chọn cho
+     * chậm mà chắc. Mặc định `pnpm -r` cấp lịch song song theo số core, và hai bộ
+     * test của kho này **tự khởi động service thật** trong `beforeAll`:
+     * `rollout.integration.test.ts` của Service 1 dựng một Service 2 thật với hạn
+     * 90 giây, còn `flag-service` và `pd-controller` cùng lúc mở kết nối tới
+     * Supabase. Đã đo trên máy 7,7 GiB: chạy song song làm hook đó quá hạn, và
+     * vitest báo cả **19 ô là "skipped"** — mã thoát vẫn 1, nhưng dòng báo đọc như
+     * "cố tình bỏ qua" chứ không như "không chạy được", tức đúng loại xanh-mà-không-
+     * chạy mà cả G-01 và đường rò thứ chín của Plan #24 tồn tại để chống.
+     *
+     * Cái giá là thời gian: các gói chạy lần lượt. Đổi lại, một lượt CI cho cùng
+     * một kết quả hai lần liên tiếp — điều kiện tối thiểu để dùng nó làm cổng.
      */
     step(
-      "3/3 toàn bộ test (pnpm -r --no-bail --if-present test)",
+      "3/3 toàn bộ test (pnpm -r --no-bail --if-present --workspace-concurrency=1 test)",
       "pnpm",
-      ["-r", "--no-bail", "--if-present", "test"],
+      ["-r", "--no-bail", "--if-present", "--workspace-concurrency=1", "test"],
       ROOT,
       testEnv(childEnv),
     );

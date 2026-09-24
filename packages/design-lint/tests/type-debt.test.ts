@@ -28,6 +28,35 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(import.meta.dirname, "../../..");
 
 /**
+ * Dạng LỜI GỌI của một phép kiểm bị tắt, tách ra thành hằng có tên để **ô đối chứng**
+ * dưới cùng kiểm được chính nó.
+ *
+ * Quét dạng lời gọi chứ không quét chuỗi trần: ba chỗ trong kho nhắc tên những thứ này
+ * trong chú thích, và cả ba nhắc để nói "không được làm thế" (bộ hợp đồng giải thích vì
+ * sao một phép bị nới lỏng phải là một hàng trong `CONTRACT_RELAXATIONS`). Một phép kiểm
+ * bắt cả chú thích sẽ buộc người ta bỏ câu giải thích đi để test xanh, tức nó làm mã TỆ hơn.
+ */
+const DISABLED_TEST_CALL =
+  /\b(it|test|describe)\.(only|skip|todo)\s*\(|\bit\.each\s*\.\s*skip\b/;
+
+const AS_ANY = /\bas\s+any\b/;
+const TODO_MARK = /\b(TODO|FIXME)\b/;
+
+/**
+ * Tệp NÀY tự loại trừ, theo ĐÚNG đường dẫn chứ không theo một mẫu rộng.
+ *
+ * Lý do: nó chứa chính những mẫu nó đi tìm — trong chú thích giải thích luật, và trong
+ * tên của các phép kiểm. Đây là một quyết định nhìn thấy được, cùng hình dạng với việc
+ * loại trừ `packages/db/src/generated/`.
+ *
+ * Nó cũng là một bài học về chính cổng này: bốn phép ở đây XANH ở lần chạy đầu vì tệp
+ * còn chưa được `git` theo dõi, nên `git ls-files` không liệt kê nó và nó **không thấy
+ * chính mình**. Chỉ tới lượt CI trên database sạch — sau khi commit — hai phép mới đỏ.
+ * Một cổng xanh vì không nhìn thấy mình là một cổng chưa từng chạy.
+ */
+const SELF = "packages/design-lint/tests/type-debt.test.ts";
+
+/**
  * Baseline ĐÃ ĐO (P23, 24/09/2026) — đổi nó là một quyết định, không phải một lần sửa test.
  *
  * Sáu chỉ thị: TSX-01..03 ở `cluster-access.test.ts` (ba SA của §12.2, và
@@ -58,9 +87,11 @@ interface Hit {
 function scan(pattern: RegExp): Hit[] {
   const hits: Hit[] = [];
   for (const rel of trackedSources()) {
+    if (rel === SELF) continue;
     const source = readFileSync(resolve(ROOT, rel), "utf8");
     source.split("\n").forEach((text, i) => {
-      if (pattern.test(text)) hits.push({ file: rel, line: i + 1, text: text.trim() });
+      if (pattern.test(text))
+        hits.push({ file: rel, line: i + 1, text: text.trim() });
     });
   }
   return hits;
@@ -76,9 +107,7 @@ describe("G-02 — không test nào bị tắt", () => {
    * cả chú thích sẽ buộc người ta bỏ câu giải thích đi để test xanh, tức nó làm mã TỆ hơn.
    */
   it("0 lời gọi only / skip / todo trong toàn bộ test", () => {
-    const hits = scan(
-      /\b(it|test|describe)\.(only|skip|todo)\s*\(|\bit\.each\s*\.\s*skip\b/,
-    );
+    const hits = scan(DISABLED_TEST_CALL);
     expect(
       hits.map((h) => `${h.file}:${String(h.line)}`),
       "một test bị tắt vẫn đếm là 'xanh' trong báo cáo",
@@ -90,7 +119,11 @@ describe("G-03 — nợ kiểu ghim bằng số, mỗi ngoại lệ có mã", ()
   it("số @ts-expect-error đúng baseline đã đo", () => {
     const hits = scan(/@ts-expect-error/);
     /** Chỉ dòng CHỈ THỊ, không tính chú thích bàn về nó */
-    const directives = hits.filter((h) => /^\s*\/\/\s*@ts-expect-error/.test(h.text) || h.text.startsWith("// @ts-expect-error"));
+    const directives = hits.filter(
+      (h) =>
+        /^\s*\/\/\s*@ts-expect-error/.test(h.text) ||
+        h.text.startsWith("// @ts-expect-error"),
+    );
     expect(
       directives.length,
       `thêm hoặc bớt chỉ thị thì sửa TS_EXPECT_ERROR_BASELINE và nói vì sao: ${directives
@@ -111,16 +144,35 @@ describe("G-03 — nợ kiểu ghim bằng số, mỗi ngoại lệ có mã", ()
   });
 
   /**
+   * Ô ĐỐI CHỨNG — cùng phép quét PHẢI bắt được dạng lời gọi, và PHẢI bỏ qua chuỗi trần.
+   *
+   * Không có ô này thì một lần "sửa cho hết đỏ" có thể làm regex yếu đi (ví dụ đòi thêm
+   * một dấu cách) và cả ba phép trên xanh vĩnh viễn mà không kiểm gì. Cùng lý lẽ với ô
+   * đối chứng của phép quét sentinel ở `credential-sentinel.test.ts`.
+   */
+  it("đối chứng: phép quét BẮT dạng lời gọi và BỎ QUA chuỗi trần", () => {
+    expect(DISABLED_TEST_CALL.test('it.skip("x", () => {})')).toBe(true);
+    expect(DISABLED_TEST_CALL.test("describe.only(")).toBe(true);
+    expect(DISABLED_TEST_CALL.test("test.todo (")).toBe(true);
+    /** Chuỗi trần trong chú thích: KHÔNG được bắt */
+    expect(DISABLED_TEST_CALL.test("ba chỗ nhắc it.skip trong chú thích")).toBe(
+      false,
+    );
+    expect(AS_ANY.test("const x = y as any;")).toBe(true);
+    expect(AS_ANY.test("chuỗi nói về asAnyThing")).toBe(false);
+  });
+
+  /**
    * `as any` và `TODO`/`FIXME`: đếm dạng MÃ, hiện là 0.
    *
    * Cùng lý lẽ với G-02 về chú thích: kho có một chú thích giải thích vì sao `(req as any)`
    * là cách sai, và nó phải được giữ.
    */
   it("0 `as any` và 0 TODO/FIXME trong mã", () => {
-    const anyHits = scan(/\bas\s+any\b/).filter(
+    const anyHits = scan(AS_ANY).filter(
       (h) => !h.text.startsWith("*") && !h.text.startsWith("//"),
     );
-    const todoHits = scan(/\b(TODO|FIXME)\b/).filter(
+    const todoHits = scan(TODO_MARK).filter(
       (h) => !h.text.includes("không có TODO"),
     );
     expect(anyHits.map((h) => `${h.file}:${String(h.line)}`)).toEqual([]);
