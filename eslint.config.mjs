@@ -76,15 +76,31 @@ export default tseslint.config(
       "@typescript-eslint/no-non-null-assertion": "error",
 
       /**
-       * CHỖ DÀNH SẴN cho ba luật mà thiết kế gọi đích danh, chưa bật vì chưa
+       * CHỖ DÀNH SẴN cho HAI luật mà thiết kế gọi đích danh, chưa bật vì chưa
        * có thư mục adapter nào để áp (R6 — không viết luật trước người dùng):
        *
        *   §4.6 và §12 T11 — cấm `fetch` trực tiếp trong thư mục adapter, mọi
        *     lời gọi ra ngoài phải đi qua egress guard chống SSRF.
        *   §4.3 — cấm adapter chuyển secret sang `string`.
        *
-       * Cả ba hiện thực bằng `no-restricted-imports` / `no-restricted-syntax`
-       * trong một khối `files: ["**\/adapters/**"]` riêng. Bất biến I35
+       * [v4.10] Hai sự thật đã sửa ở đây, và cả hai đều là loại sai làm người
+       * đọc tin vào một thứ không có:
+       *
+       *   1. Chú thích cũ nói "ba luật" rồi liệt kê hai. Một người đếm số sẽ
+       *      đi tìm luật thứ ba không tồn tại, hoặc tệ hơn, tin rằng có một
+       *      ràng buộc thứ ba đang bảo vệ mình.
+       *   2. Glob mẫu cũ là `adapters/` số nhiều, KHÔNG khớp thư mục thật. Cây
+       *      thư mục của §1.6 đặt adapter ở `modules/*-adapter/`, nên kể cả
+       *      khi ai đó bật khối này y nguyên, nó sẽ là một khối lint xanh vĩnh
+       *      viễn vì không khớp tệp nào — đúng loại bảo đảm tệ nhất.
+       *
+       * Khối này bật ở plan của adapter ĐẦU TIÊN, cùng một ô khẳng định "glob
+       * khớp ≥ 1 tệp thật". Đợi tới lúc đó không phải trì hoãn mà là chính R6:
+       * một luật viết trước người dùng là một luật không ai biết nó có chạy hay
+       * không.
+       *
+       * Cả hai hiện thực bằng `no-restricted-imports` / `no-restricted-syntax`
+       * trong một khối `files` riêng trỏ tới `modules/*-adapter/`. Bất biến I35
        * (dependency-cruiser) là công cụ khác, chạy ở CI.
        */
     },

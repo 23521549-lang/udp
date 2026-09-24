@@ -114,3 +114,19 @@ export {
   simTags,
 } from "./sim-adapter.js";
 export type { SimAdapterOptions } from "./sim-adapter.js";
+
+/**
+ * MOT hien thuc gia duy nhat cua `ClusterAccess` (QD-27) — dung o P11 va P18.
+ *
+ * Xem chu thich trong `fake-cluster.ts` ve vi sao "mot" la phan quan trong.
+ */
+export {
+  ClusterIdentityDeniedError,
+  createFakeClusterAccess,
+  refKey,
+} from "./fake-cluster.js";
+export type {
+  FakeCall,
+  FakeClusterAccess,
+  FakeClusterOptions,
+} from "./fake-cluster.js";
