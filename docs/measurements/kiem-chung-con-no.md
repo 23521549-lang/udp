@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 48.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 47.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -713,7 +713,7 @@ owned` còn có tài nguyên mang `shared`.
 
 # Plan #25 — Portal
 
-Mười tám mục (nay còn mười bảy) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
+Mười tám mục (nay còn mười sáu) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
 còn Service 1 hôm nay chỉ có endpoint cho một phần. Làm một màn hình không có endpoint
 nghĩa là viết một cái giả rồi gọi nó là xong, nên phạm vi Plan #25 chia theo endpoint đã
 chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều kiện.
@@ -722,6 +722,13 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > đổi environment; bằng chứng là `apps/portal/tests/palette.test.tsx` (mọi lệnh tới được
 > bằng bàn phím, phím số không bị bắt khi đang gõ). Mục đã rời sổ; ghi ở đây để số mục
 > giảm có lý do đọc được.
+>
+> **Đã trả (25/09/2026):** `portal-config-promote` — sao chép rule giữa environment, diff
+> hiện trước khi áp; rule khớp (cùng loại, cùng điều kiện) mang `id` của rule ĐÍCH nên
+> `bucket_salt` ở đích giữ nguyên (server giữ salt theo `id`, `rule-replace.integration`);
+> `id` nguồn không bao giờ được gửi. Bằng chứng: `apps/portal/tests/promote.test.tsx`, kể
+> cả ô âm "env đích đổi từ lúc đọc" ⇒ 409; đột biến "gửi id nguồn" ⇒ 3 ô đỏ. Phần chưa
+> kiểm ở mức này: một lượt đầu-cuối trên database thật (máy thiếu RAM hôm đo).
 
 ## portal-cloud-step — wizard bước cấu hình cloud
 
@@ -858,21 +865,6 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
   rỗng ⇒ banner phải nói thật, KHÔNG link tới màn hình đã hoãn.
 - **Tài nguyên:** cluster + Prometheus (~2,5 GiB).
 - **Ảnh hưởng tới kết luận:** nửa "tạo" của luồng 5; nửa "canh và can thiệp" thì không nợ.
-
-## portal-config-promote — sao chép cấu hình từ dev sang staging/production
-
-- **Vì sao nợ:** §10.12 nêu đây là một lỗ hổng thật (người dùng phải gõ lại tay toàn bộ
-  rule ở production, đúng chỗ sai một ô là sự cố). Làm được bằng
-  `GET`/`PUT .../envs/:envId/rules` đã có, nhưng nó cần diff hai chiều và
-  `lastKnownUpdatedAt` của env đích, tức phụ thuộc phần optimistic lock của P3/P5.
-- **Tiền đề:** không cần hạ tầng; là phần việc còn lại sau P5.
-- **Lệnh:** test tích hợp: sao chép dev → prod, kèm ô âm "env đích đã đổi từ lúc đọc".
-- **Đạt:** diff hiện trước khi áp, và `bucket_salt` của env đích **không đổi** (I1).
-  **Không đạt:** `bucket_salt` đổi ⇒ mọi người dùng bị xáo lại nhánh, tức một lần sao chép
-  cấu hình thành một lần rollout ngoài ý muốn.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** bản đầu buộc nhập lại tay ở production — một giới hạn phải
-  nói ra, vì nó là chỗ dễ gây sự cố nhất.
 
 ## portal-sse — nhận `flag_changed` qua SSE
 

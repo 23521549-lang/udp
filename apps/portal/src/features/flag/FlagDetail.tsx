@@ -4,7 +4,7 @@ import type {
   PublicEnvironmentWire,
   RulesResponseWire,
 } from "@udp/shared-types/wire";
-import { Archive, Copy, Lock, Play, Plus, X } from "lucide-react";
+import { Archive, Copy, CopyPlus, Lock, Play, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
@@ -19,6 +19,7 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { flagApi } from "./flag-api";
 import { LIFECYCLE_LABEL } from "./flag-labels";
+import { PromoteDialog } from "./PromoteDialog";
 import { RuleCard, variantColor } from "./RuleEditor";
 import {
   changeCount,
@@ -455,6 +456,7 @@ function RulesEditor({
     draftsFromWire(server.rules),
   );
   const [confirmProd, setConfirmProd] = useState(false);
+  const [promoting, setPromoting] = useState(false);
 
   const changes = changeCount(drafts, server.rules);
   const problems = useMemo(
@@ -515,8 +517,24 @@ function RulesEditor({
       <div className="sect">
         <h3>Rule ở {env.name}</h3>
         <span className="c3">xét từ trên xuống</span>
-        {canEdit && (
-          <div className="r">
+        <div className="r">
+          {can(project.myRole, "DEVELOPER") && (
+            <button
+              type="button"
+              className="btn"
+              disabled={changes > 0}
+              title={
+                changes > 0
+                  ? "Lưu hoặc bỏ thay đổi trước khi sao chép"
+                  : undefined
+              }
+              onClick={() => setPromoting(true)}
+            >
+              <Icon of={CopyPlus} />
+              Sao chép sang...
+            </button>
+          )}
+          {canEdit && (
             <button
               type="button"
               className="btn"
@@ -525,9 +543,17 @@ function RulesEditor({
               <Icon of={Plus} />
               Thêm rule
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
+      {promoting && (
+        <PromoteDialog
+          flag={flag}
+          source={env}
+          sourceRules={server}
+          onClose={() => setPromoting(false)}
+        />
+      )}
       {drafts.length === 0 && (
         <p className="c3">
           Chưa có rule. Mọi người dùng nhận variant mặc định.
