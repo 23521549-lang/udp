@@ -1,6 +1,6 @@
 # Plan #31 — Bí mật của tool, MetricsProvider theo nhà cung cấp, Monitoring (4) + Tracing (3) — SPEC
 
-Trạng thái: **v1, 26/09/2026**. Nguồn: §5.2 (`configSchema`, `.describe("secret")`), §2.2
+Trạng thái: **v1.1, 26/09/2026 — XONG** (thêm QĐ-7..QĐ-9 trong lúc làm). Nguồn: §5.2 (`configSchema`, `.describe("secret")`), §2.2
 (`tool_config` — "trường đánh dấu secret được mã hóa như §4.3 TRƯỚC khi lưu"), §4.3 (envelope
 AES-256-GCM), §5.4 (mỗi adapter `metrics.query` PHẢI kèm một `MetricsProvider`), §5.5
 (Monitoring, Tracing); yêu cầu chủ dự án: đủ mọi tool của §5.5.
@@ -55,6 +55,19 @@ ADR-06 cho Prometheus trong cluster).
 - **QĐ-6 — Lớp nền SaaS xác thực bằng bí mật:** `authHeaders(config)` gắn khoá vào lời gọi
   qua `ctx.fetch` (egress guard vẫn chặn host lạ). Datadog bỏ `credentialRef` (trỏ tới một
   kho không tồn tại) sang `apiKey`/`appKey` bí mật.
+
+- **QĐ-7 — Adapter khai nguồn metrics bằng export có tên** (`metricsSource`, cạnh export mặc
+  định): `{ kind, of(config, binding) → MetricsSource }`. Registry từ chối nạp adapter
+  `provides: metrics.query` mà không khai, hay khai `kind` lệch major đã `provides` (§5.4: "kiểm
+  ở lúc khởi động registry"); chiều đảo cũng đỏ. Không thêm thuộc tính vào `DomainAdapter`
+  (interface 7 + 6 đã đóng băng), C2 giữ 0 tệp ngoài thư mục adapter. Nguồn là DỮ LIỆU;
+  bên dùng dựng provider bằng `fetch` của chính nó (egress guard).
+- **QĐ-8 — `traces.sink` lấy major làm giao thức dây**: 1 = OTLP (Jaeger, Tempo, Dynatrace),
+  2 = Zipkin v2 JSON (Zipkin) — cùng cách §5.3 dùng major cho ngôn ngữ truy vấn.
+- **QĐ-9 — 0 lỗi khi CÓ lưu lượng** (tìm ra khi viết provider SaaS): histogram không sinh
+  series cho nhãn chưa từng quan sát, nên nhánh khoẻ không có series 5xx và truy vấn lỗi
+  trả rỗng — `decide()` HOLD mãi đúng canary tốt nhất. PromQL `(lỗi or 0 * tổng)`; provider
+  SaaS áp cùng luật; không lưu lượng vẫn là "không biết" (I7).
 
 ## 3. Tiêu chí chấp nhận
 
