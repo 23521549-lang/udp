@@ -7,6 +7,13 @@ const nf = new Intl.NumberFormat("vi-VN");
 const pf = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 });
 
 export const formatNumber = (n: number): string => nf.format(n);
+/** Byte theo đơn vị nhị phân — trần segment là 4 MiB, không phải 4 MB */
+export function formatBytes(n: number): string {
+  if (n >= 1024 * 1024) return `${pf.format(n / (1024 * 1024))} MiB`;
+  if (n >= 1024) return `${pf.format(n / 1024)} KiB`;
+  return `${nf.format(n)} B`;
+}
+
 export const formatPercent = (n: number): string => `${pf.format(n)}%`;
 
 export function compactNumber(n: number): string {

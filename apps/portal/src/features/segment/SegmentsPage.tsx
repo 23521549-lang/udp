@@ -5,7 +5,10 @@ import type {
   CreateSegmentFields,
   UpdateSegmentFields,
 } from "@udp/shared-types/segment-api";
-import type { SegmentDetailWire } from "@udp/shared-types/wire";
+import type {
+  SegmentDetailWire,
+  SegmentListResponseWire,
+} from "@udp/shared-types/wire";
 import { Pencil, Plus, Trash2, Users, X } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -14,13 +17,14 @@ import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
-import { formatNumber, relativeTime } from "../../lib/format";
+import { formatBytes, formatNumber, relativeTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { AttributeConditions, TagInput } from "../flag/RuleEditor";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { segmentApi } from "./segment-api";
+import { quotaVerdict, segmentSizeOf } from "./segment-quota";
 
 /**
  * Segment (§2.2, v4.9): nhóm người dùng dùng lại ở nhiều rule. Thuộc PROJECT — một bản
@@ -152,6 +156,7 @@ export function SegmentsPage() {
       {editing !== null && (
         <SegmentDialog
           segment={editing === "new" ? undefined : editing}
+          quota={quota}
           onClose={() => setEditing(null)}
           onSaved={(id) => {
             setEditing(null);
@@ -304,10 +309,12 @@ function SegmentPeek({
 
 function SegmentDialog({
   segment,
+  quota,
   onClose,
   onSaved,
 }: {
   segment: SegmentDetailWire | undefined;
+  quota: SegmentListResponseWire["quota"] | undefined;
   onClose: () => void;
   onSaved: (segmentId: string) => void;
 }) {
@@ -355,6 +362,22 @@ function SegmentDialog({
     },
   });
   const fields = fieldErrorsOf(save.error);
+
+  // Cảnh báo TRƯỚC khi gửi (sổ nợ `portal-segment-quota`); server vẫn là nơi quyết
+  const size = segmentSizeOf({ all, userIds });
+  const verdict =
+    quota === undefined
+      ? undefined
+      : quotaVerdict({
+          projectBytes: quota.payloadBytes,
+          maxBytes: quota.maxPayloadBytes,
+          editingBytes: segment?.summary.payloadBytes ?? 0,
+          next: size,
+        });
+  const countFull =
+    segment === undefined && quota !== undefined
+      ? quota.segmentCount >= quota.maxSegments
+      : false;
 
   return (
     <Dialog
@@ -422,6 +445,24 @@ function SegmentDialog({
           onChange={setAll}
         />
       </div>
+      {quota !== undefined && verdict !== undefined && (
+        <p
+          className={verdict.verdict === "ok" ? "help" : "field-error"}
+          role={verdict.verdict === "ok" ? undefined : "alert"}
+        >
+          {verdict.verdict === "over"
+            ? `Vượt trần dung lượng của project: sau khi lưu ít nhất ${formatBytes(verdict.projectedLower)} trên ${formatBytes(quota.maxPayloadBytes)}. Máy chủ sẽ từ chối.`
+            : verdict.verdict === "maybe"
+              ? `Sát trần dung lượng của project (khoảng ${formatBytes(verdict.projectedLower)} trên ${formatBytes(quota.maxPayloadBytes)}); có thể bị từ chối.`
+              : `Dung lượng sau khi lưu: khoảng ${formatBytes(verdict.projectedLower)} trên ${formatBytes(quota.maxPayloadBytes)}.`}
+        </p>
+      )}
+      {countFull && (
+        <p className="field-error" role="alert">
+          Project đã có {quota?.segmentCount}/{quota?.maxSegments} segment: tạo
+          thêm sẽ bị từ chối.
+        </p>
+      )}
       {save.isError && (
         <p role="alert" className="field-error">
           {Object.values(fields)[0] ?? messageOf(save.error)}

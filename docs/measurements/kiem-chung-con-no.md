@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 47.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 46.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -713,7 +713,7 @@ owned` còn có tài nguyên mang `shared`.
 
 # Plan #25 — Portal
 
-Mười tám mục (nay còn mười sáu) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
+Mười tám mục (nay còn mười lăm) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
 còn Service 1 hôm nay chỉ có endpoint cho một phần. Làm một màn hình không có endpoint
 nghĩa là viết một cái giả rồi gọi nó là xong, nên phạm vi Plan #25 chia theo endpoint đã
 chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều kiện.
@@ -729,6 +729,13 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > `id` nguồn không bao giờ được gửi. Bằng chứng: `apps/portal/tests/promote.test.tsx`, kể
 > cả ô âm "env đích đổi từ lúc đọc" ⇒ 409; đột biến "gửi id nguồn" ⇒ 3 ô đỏ. Phần chưa
 > kiểm ở mức này: một lượt đầu-cuối trên database thật (máy thiếu RAM hôm đo).
+>
+> **Đã trả (25/09/2026):** `portal-segment-quota` — tiền đề "GET /segments trả tổng byte"
+> đã có sẵn (`quota.payloadBytes`). Portal dự báo sau-khi-lưu bằng hai con số: chặn dưới
+> (JSON gọn, cùng tính chất với `segmentPayloadBytesOf`: jsonb::text chỉ dài hơn) và ước
+> lượng trên (cộng số `,`/`:`); trừ bản cũ khi sửa. Cảnh báo, không chặn — `quota` có thể
+> đã cũ. Bằng chứng: `apps/portal/tests/segment-quota.test.tsx` (sát trần + ~1 KiB ⇒ cảnh
+> báo trước khi gửi; dưới trần mà server trả 422 ⇒ UI vẫn nói lỗi).
 
 ## portal-cloud-step — wizard bước cấu hình cloud
 
@@ -879,19 +886,6 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 - **Tài nguyên:** không.
 - **Ảnh hưởng tới kết luận:** độ tươi của dữ liệu khi hai người cùng sửa; không ảnh hưởng
   tới tính đúng.
-
-## portal-segment-quota — cảnh báo trần segment chính xác
-
-- **Vì sao nợ:** trần 4 MiB là trần của **cả project**, đo bằng `octet_length(conditions::text)`
-  trong SQL; `segmentPayloadBytesOf` ở JS là **chặn dưới**. Portal không có endpoint nào
-  trả tổng byte của các segment KHÁC, nên nó chỉ cảnh báo được theo segment đang sửa.
-- **Tiền đề:** một endpoint trả tổng byte hiện tại của project (hoặc `GET /segments` trả
-  thêm trường đó).
-- **Lệnh:** test với project ở đúng trần, thêm 1 KiB nữa.
-- **Đạt:** cảnh báo bật trước khi gửi, và khi FE tính ra dưới trần mà backend trả 413/422
-  thì UI vẫn xử lý được. **Không đạt:** người dùng mất công nhập rồi bị từ chối ở bước lưu.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** chất lượng thông báo trần, không phải tính đúng của trần.
 
 ## portal-pagination — phân trang cho danh sách project và flag
 
