@@ -372,7 +372,113 @@
         "displayName": "Tracing",
         "defaultOrder": 60,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "jaeger",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traces.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionHours",
+                  "required": false,
+                  "default": 72,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 720
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "tempo",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traces.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionHours",
+                  "required": false,
+                  "default": 72,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 720
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "zipkin",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traces.sink",
+                "version": "2.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "maxSpans",
+                  "required": false,
+                  "default": 500000,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 10000,
+                  "max": 5000000
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "SERVICE_MESH",

@@ -27,7 +27,12 @@ import express from "express";
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const WIRE_FIXTURE_DIR = join(here, "..", "fixtures", "wire");
-const MAX_BYTES = 24_000;
+/**
+ * Trần kích cỡ một mẫu. 96 KB chứ không 24 KB (Plan #31): catalog domain với đủ 66 tool của
+ * §5.5 là ~70 KB, và một response vượt trần thì KHÔNG được ghi — golden đóng băng ở bản cũ mà
+ * không ai hay, đúng thứ golden capture tồn tại để chống.
+ */
+const MAX_BYTES = 96_000;
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
 /** `GET /api/v1/projects/<uuid>/flags` → `GET /projects/{id}/flags` */

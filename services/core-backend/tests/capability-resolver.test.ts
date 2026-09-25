@@ -14,6 +14,9 @@ import dynatrace from "../src/modules/monitoring-adapter/dynatrace/index.js";
 import grafanaCloud from "../src/modules/monitoring-adapter/grafana-cloud/index.js";
 import newRelic from "../src/modules/monitoring-adapter/newrelic/index.js";
 import victoriaMetrics from "../src/modules/monitoring-adapter/victoria-metrics/index.js";
+import jaeger from "../src/modules/tracing-adapter/jaeger/index.js";
+import tempo from "../src/modules/tracing-adapter/tempo/index.js";
+import zipkin from "../src/modules/tracing-adapter/zipkin/index.js";
 import {
   oracleSatisfies,
   oracleValidate,
@@ -704,6 +707,27 @@ describe("AC-6 — adapter Monitoring THẬT trước một consumer PromQL (Pla
       expect(res.valid).toBe(true);
       expect(res.chosen["metrics.query"]).toBe(adapterKey(provider));
     }
+  });
+});
+
+describe("traces.sink — major là GIAO THỨC dây (Plan #31)", () => {
+  /** Consumer chỉ gửi OTLP (hình của một collector) */
+  const otlpOnly: ResolvableAdapter = {
+    domainType: "LOGGING",
+    toolId: "otlp-only",
+    capabilities: {
+      provides: [],
+      requires: [{ id: "traces.sink", constraint: "^1" }],
+    },
+  };
+
+  it("Jaeger, Tempo (OTLP @1) ⇒ hợp lệ; Zipkin (v2 JSON @2) ⇒ VERSION_MISMATCH", () => {
+    for (const provider of [jaeger, tempo]) {
+      expect(validateAndOrder([provider, otlpOnly]).valid).toBe(true);
+    }
+    expect(validateAndOrder([zipkin, otlpOnly]).errors[0]?.code).toBe(
+      "VERSION_MISMATCH",
+    );
   });
 });
 
