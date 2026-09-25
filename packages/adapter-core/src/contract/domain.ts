@@ -764,12 +764,19 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
         );
         return;
       }
+      /**
+       * Binding MỚI cùng hình với binding đang dùng — chỉ đổi provider và endpoint (Plan #32).
+       *
+       * Một capability có hợp đồng dây (`logs.sink@1` mang `attributes.protocol`, traffic-split
+       * mang `attributes.provider`) thì binding trống thuộc tính là binding SAI, và adapter từ
+       * chối nó là ĐÚNG. Phép kiểm đưa một binding hợp lệ; nó vẫn đòi SUCCESS và có ghi.
+       */
+      const current = env.context().resolved[first.id];
       const res = await adapter.onDependencyChanged(
         env.context(),
         env.fixture.validConfig,
         {
-          id: first.id,
-          version: "9.9.9",
+          ...(current ?? { id: first.id, version: "9.9.9" }),
           providedBy: "khac:provider-moi",
           endpoint: "http://provider-moi:8080",
         },

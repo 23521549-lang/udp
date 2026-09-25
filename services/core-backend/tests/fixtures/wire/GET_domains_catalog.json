@@ -364,7 +364,266 @@
         "displayName": "Logging",
         "defaultOrder": 50,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "datadog-logs",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "site",
+                  "required": true,
+                  "kind": "enum",
+                  "options": [
+                    "datadoghq.com",
+                    "datadoghq.eu",
+                    "ap1.datadoghq.com"
+                  ]
+                },
+                {
+                  "key": "apiKey",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "elk",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "nodeCount",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 30,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                },
+                {
+                  "key": "kibana",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "fluent-bit",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [],
+            "requires": [
+              {
+                "id": "logs.sink",
+                "constraint": "^1"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "logs.sink": "Fluent Bit cần nơi nhận log: bật Datadog, New Relic hay Dynatrace ở domain Monitoring"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "excludeSystemNamespaces",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "fluentd",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [],
+            "requires": [
+              {
+                "id": "logs.sink",
+                "constraint": "^1"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "logs.sink": "Fluentd cần nơi nhận log: bật Datadog, New Relic hay Dynatrace ở domain Monitoring"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "bufferGb",
+                  "required": false,
+                  "default": 5,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 100
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "loki",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionHours",
+                  "required": false,
+                  "default": 168,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 24,
+                  "max": 8760
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 20,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "opensearch",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "adminPassword",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 30,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "splunk",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "hecEndpoint",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "hecToken",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "index",
+                  "required": false,
+                  "default": "main",
+                  "kind": "string"
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "TRACING",

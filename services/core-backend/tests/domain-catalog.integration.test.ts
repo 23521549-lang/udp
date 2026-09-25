@@ -121,7 +121,19 @@ describe("GET /domains/catalog", () => {
       "prometheus-grafana",
       "victoria-metrics",
     ]);
-    expect(domains.find((d) => d.domainType === "LOGGING")?.tools).toEqual([]);
+    expect(
+      domains
+        .find((d) => d.domainType === "LOGGING")
+        ?.tools.map((t) => t.toolId),
+    ).toEqual([
+      "datadog-logs",
+      "elk",
+      "fluent-bit",
+      "fluentd",
+      "loki",
+      "opensearch",
+      "splunk",
+    ]);
   });
 
   it("I28 dương tính: thêm MỘT thư mục adapter ⇒ nó hiện trên catalog, 0 tệp khác", async () => {

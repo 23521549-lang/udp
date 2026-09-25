@@ -1,6 +1,6 @@
 # Plan #32 — Logging đủ bảy tool, lớp nền Helm nhiều release, hợp đồng `logs.sink` — SPEC
 
-Trạng thái: **v1, 26/09/2026**. Nguồn: §5.5 Logging (sáu dòng; dòng "Fluentd / Fluentbit" là HAI
+Trạng thái: **v1.1, 26/09/2026 — XONG** (QĐ-4 thêm `readsSecretValues`; phép d14 dựng binding cùng hình). Nguồn: §5.5 Logging (sáu dòng; dòng "Fluentd / Fluentbit" là HAI
 tool), §5.2 (`HelmBasedAdapter`), §5.3 (capability, binding `attributes`), §12.2 (`secrets` chỉ
 trong `udp-system`), Plan #31 (bí mật của tool, `Secret` của release); yêu cầu chủ dự án: đủ
 mọi tool của §5.5.

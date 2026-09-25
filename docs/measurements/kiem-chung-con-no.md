@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 39.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 40.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -730,6 +730,26 @@ owned` còn có tài nguyên mang `shared`.
 - **Ảnh hưởng tới kết luận:** câu "auto-rollback không chỉ chạy với Prometheus" của §5.4
   và đóng góp **C1** ở phía nguồn metrics: cơ chế chọn nguồn theo binding đã có test tích
   hợp, còn độ đúng của từng ngôn ngữ truy vấn trên dữ liệu thật là phần chưa đo.
+
+## saas-logs-real — đích log SaaS trên tài khoản thật
+
+- **Vì sao nợ:** năm provider `logs.sink@1` gửi ra ngoài cluster (Splunk HEC, Datadog intake qua
+  adapter Datadog Logs và adapter Datadog của Monitoring, New Relic Log API, Dynatrace log
+  ingest) cùng output tương ứng của Fluent Bit và Fluentd (Plan #32) chỉ được kiểm ở dạng cấu
+  hình render ra — plugin nào, khoá qua `secretKeyRef` nào. Log có thật sự tới nơi, đúng index
+  và đúng nhãn hay không thì chỉ tài khoản thật trả lời được.
+- **Tiền đề:** cluster (`I32-cluster`) + Helm thật (`helm-real`); tài khoản dùng thử Splunk
+  Cloud, Datadog, New Relic, Dynatrace; khoá đặt qua Portal (bí mật của tool).
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- logs.real` (tệp CHƯA CÓ; nó bật từng cặp
+  forwarder × sink trên sample-app, phát một dòng log có chuỗi canh rồi truy vấn API tìm kiếm
+  của nhà cung cấp).
+- **Đạt:** chuỗi canh xuất hiện ở mỗi đích trong ≤ 2 phút, mang nhãn namespace và workload;
+  khoá không xuất hiện trong ConfigMap hay log của pod forwarder. **Không đạt:** thiếu ở đích
+  nào ⇒ sửa output của forwarder cho giao thức đó.
+- **Tài nguyên:** cluster (~3 GiB) + bốn tài khoản SaaS dùng thử.
+- **Ảnh hưởng tới kết luận:** câu "forwarder gửi được tới BẤT KỲ provider `logs.sink` nào" của
+  Plan #32: hợp đồng dây và việc chọn plugin đã có test, còn đường đi thật tới từng nhà cung cấp
+  là phần chưa đo.
 
 ## agent-mode — chế độ `agent` của ADR-06
 
