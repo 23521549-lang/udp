@@ -1,8 +1,9 @@
-import type {
-  ClusterAccess,
-  DomainAdapter,
-  DomainAdapterContext,
-  ResourceQuota,
+import {
+  readOnlyContext,
+  type ClusterAccess,
+  type DomainAdapter,
+  type DomainAdapterContext,
+  type ResourceQuota,
 } from "@udp/adapter-core";
 import type { Fence } from "@udp/adapter-core/runner";
 import { Prisma, type DomainStatus, type PrismaClient } from "@udp/db";
@@ -349,7 +350,11 @@ export function perEnvironment(
     detectDrift: async (ctx, config) => {
       const drifted: string[] = [];
       for (const environment of environments) {
-        const res = await adapter.detectDrift({ ...ctx, environment }, config);
+        // Bối cảnh vào đã chỉ đọc; hạ lần nữa để bất biến I32-c đứng ở MỌI chỗ gọi
+        const res = await adapter.detectDrift(
+          readOnlyContext({ ...ctx, environment }),
+          config,
+        );
         if (res.status !== "SUCCESS" || res.data === undefined) return res;
         if (res.data.drifted) {
           drifted.push(

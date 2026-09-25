@@ -79,7 +79,7 @@ export type DomainUpgradeBody = z.infer<typeof domainUpgradeBodySchema>;
 
 /** Slug `type` của lỗi Portal rẽ nhánh — không thêm mã vào catalog 24 mã (I36) */
 export const DOMAIN_ERROR_SLUGS = {
-  /** Project đã triển khai (hay đang triển khai): áp cấu hình cần job DOMAIN_APPLY (sổ nợ `domain-day2-route`) */
+  /** Project đang có lượt triển khai chạy: lưu cấu hình domain sau khi lượt đó xong */
   needsApplyJob: "domains-need-apply-job",
   /** Domain hay tool không có trong registry, hoặc domain đã bị gỡ khỏi catalog */
   unknownTool: "domain-tool-unknown",

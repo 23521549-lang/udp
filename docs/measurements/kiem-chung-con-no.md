@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 39.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 38.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -662,23 +662,14 @@ owned` còn có tài nguyên mang `shared`.
 > (`provision-job.integration.test.ts`, AC-7). Cùng đợt: lịch TTL (`project-ttl.integration.test.ts`)
 > và orphan-scan (AC-6), job TEARDOWN + `DELETE /projects/:id` dọn hạ tầng.
 
-## domain-day2-route — route nâng cấp và quét drift
-
-- **Vì sao nợ:** `upgradeDomain` cưỡng chế bốn quy tắc của §8.6 và có test cho từng
-  quy tắc, nhưng `POST /projects/:id/domains/:type/upgrade` và
-  `POST .../drift` chưa được viết. [v4.11, Plan #27] Tiền đề cũ ("không cần hạ tầng")
-  SAI: cả hai route CHẠY adapter trên cluster (`contextFor` cần `ClusterAccess` thật —
-  `I32-cluster`) qua job `DOMAIN_APPLY` (hàng đợi `pg-boss` đã có từ Plan #28; job `DOMAIN_APPLY` thì chưa). Một route
-  trả 202 mà không có gì thực thi là stub, nên Plan #27 dừng ở phần ĐỌC: `GET …/drift`
-  đọc kết quả lượt quét đã ghi (`project-domain.integration.test.ts`).
-- **Tiền đề:** `jobs/boss.ts` (hàng đợi) + một `KubeTransport` thật cho `ClusterAccess`.
-- **Lệnh:** test tích hợp như `rollout.integration.test.ts`.
-- **Đạt:** 409 khi có rollout đang chạy, 422 khi tổ hợp capability không còn hợp lệ,
-  403 khi thiếu quyền, 428 khi thiếu xác nhận hai bước ở production, 202 kèm `jobId` của
-  một job thật. **Không đạt:** bất kỳ mã nào khác ⇒ luồng §8.6 chưa đúng ở tầng HTTP.
-- **Tài nguyên:** cluster (hoặc cluster mô phỏng có transport) + database.
-- **Ảnh hưởng tới kết luận:** §8.6 nhánh B đi tới được người dùng. Quyết định đã
-  kiểm; cổng quyền và đường thực thi thì chưa.
+> **Đã trả (26/09/2026, Plan #30):** `domain-day2-route` — `POST /projects/:id/domains/:type/drift`
+> (quét ngay, đồng bộ, cùng `scanDomainDrift`) và `POST …/upgrade` (409 khi rollout đang chạy
+> hay đã mới nhất, 428 khi production chưa gõ tên domain, 202 kèm job `DOMAIN_APPLY` thật),
+> cùng `PUT /domains` cho project ĐANG chạy ⇒ job áp năm CASE của §8.2 (đổi tool blue/green:
+> dựng mới → healthcheck → binding → `onDependencyChanged` mọi env → gỡ cũ). Bằng chứng:
+> `provision-job.integration.test.ts` (DOMAIN_APPLY + HTTP Plan #30), `domain-apply-plan.test.ts`,
+> `domain.test.tsx`. Hạ về bản cũ khi nâng cấp hỏng vẫn là nợ `upgrade-rollback-that`; chạy
+> trên cluster thật là `I32-cluster`.
 
 ## upgrade-rollback-that — hạ về bản cũ cần instance adapter bản cũ
 
