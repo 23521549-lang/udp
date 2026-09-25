@@ -115,7 +115,11 @@ describe("GET /domains/catalog", () => {
     const monitoring = domains.find((d) => d.domainType === "MONITORING");
     expect(monitoring?.tools.map((t) => t.toolId)).toEqual([
       "datadog",
+      "dynatrace",
+      "grafana-cloud",
+      "newrelic",
       "prometheus-grafana",
+      "victoria-metrics",
     ]);
     expect(domains.find((d) => d.domainType === "LOGGING")?.tools).toEqual([]);
   });

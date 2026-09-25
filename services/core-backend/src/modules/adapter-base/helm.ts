@@ -60,8 +60,11 @@ export interface HelmAdapterSpec {
     config: DomainToolConfig,
     ctx: ReadOnlyAdapterContext,
   ) => Record<string, unknown>;
-  /** Binding mà adapter cung cấp sau khi deploy xong */
-  bindings: (ctx: ReadOnlyAdapterContext) => CapabilityBinding[];
+  /** Binding mà adapter cung cấp sau khi deploy xong — endpoint có thể theo vùng của config */
+  bindings: (
+    ctx: ReadOnlyAdapterContext,
+    config: DomainToolConfig,
+  ) => CapabilityBinding[];
   /**
    * Chiều quota adapter tiêu thụ; lớp nền TỪ CHỐI khi chiều đó bằng 0.
    *
@@ -244,7 +247,7 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     await client.write("apply", valuesRef(ctx), desired);
     await client.write("apply", releaseRef(ctx), releaseSpec());
     ctx.progress(`${spec.toolId} đã sẵn sàng`);
-    return spec.bindings(ctx);
+    return spec.bindings(ctx, config);
   }
 
   /**

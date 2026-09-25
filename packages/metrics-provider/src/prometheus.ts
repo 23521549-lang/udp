@@ -42,6 +42,14 @@ export interface PrometheusProviderOptions {
   timeoutMs?: number;
   /** Tên metric của app nếu không theo OTel semconv (`RolloutSession.metric_queries`) */
   metricBase?: string;
+  /** Endpoint PromQL có xác thực (Grafana Cloud/Mimir: instance id + access token) */
+  basicAuth?: { username: string; password: string };
+  /**
+   * "Sống" nghĩa là gì: `/-/ready` của Prometheus/VictoriaMetrics, hay một truy vấn
+   * `vector(1)` — endpoint PromQL được host (Mimir) không mở đường quản trị dưới đường truy
+   * vấn, nên chỉ có truy vấn trả lời được câu đó. Mặc định `/-/ready`.
+   */
+  readiness?: "ready-endpoint" | "query";
   fetch?: typeof fetch;
 }
 
@@ -74,6 +82,8 @@ export class PrometheusMetricsProvider implements MetricsProvider {
   private readonly timeoutMs: number;
   private readonly templates: QueryTemplates;
   private readonly fetchImpl: typeof fetch;
+  private readonly headers: Record<string, string>;
+  private readonly readiness: "ready-endpoint" | "query";
 
   constructor(options: PrometheusProviderOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
@@ -82,6 +92,15 @@ export class PrometheusMetricsProvider implements MetricsProvider {
     this.timeoutMs = options.timeoutMs ?? METRICS_PROVIDER.queryTimeoutMs;
     this.templates = queryTemplates(options.metricBase);
     this.fetchImpl = options.fetch ?? fetch;
+    this.headers =
+      options.basicAuth === undefined
+        ? {}
+        : {
+            Authorization: `Basic ${Buffer.from(
+              `${options.basicAuth.username}:${options.basicAuth.password}`,
+            ).toString("base64")}`,
+          };
+    this.readiness = options.readiness ?? "ready-endpoint";
   }
 
   get scrapeLagSeconds(): number {
@@ -124,7 +143,12 @@ export class PrometheusMetricsProvider implements MetricsProvider {
 
   async probe(t: MetricTarget): Promise<AdapterResult<ProbeOutcome>> {
     const started = Date.now();
-    const ready = await this.get("/-/ready");
+    const ready =
+      this.readiness === "query"
+        ? (await this.query("vector(1)")).kind === "ok"
+          ? "ok"
+          : undefined
+        : await this.get("/-/ready");
     if (ready === undefined) {
       return {
         status: "FAILED",
@@ -263,7 +287,7 @@ export class PrometheusMetricsProvider implements MetricsProvider {
     return timedRequest(
       this.fetchImpl,
       `${this.baseUrl}${path}`,
-      {},
+      { headers: this.headers },
       this.timeoutMs,
     );
   }

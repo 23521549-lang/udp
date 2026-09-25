@@ -10,6 +10,10 @@ import {
   validateAndOrder,
   type ResolvableAdapter,
 } from "../src/modules/capability/capability.resolver.js";
+import dynatrace from "../src/modules/monitoring-adapter/dynatrace/index.js";
+import grafanaCloud from "../src/modules/monitoring-adapter/grafana-cloud/index.js";
+import newRelic from "../src/modules/monitoring-adapter/newrelic/index.js";
+import victoriaMetrics from "../src/modules/monitoring-adapter/victoria-metrics/index.js";
 import {
   oracleSatisfies,
   oracleValidate,
@@ -669,6 +673,40 @@ describe("topoSort — bậc, chu trình, tự-vòng", () => {
  * hằng số kiểm được của N5, và hạ nó xuống là làm yếu bộ test theo cách không để lại dấu
  * trong diff ngoài một chữ số.
  */
+describe("AC-6 — adapter Monitoring THẬT trước một consumer PromQL (Plan #31)", () => {
+  /** Hình của Flagger (§5.3): đòi `metrics.query` nói PromQL — adapter thật tới ở Plan #33 */
+  const flagger: ResolvableAdapter = {
+    domainType: "PROGRESSIVE_DELIVERY",
+    toolId: "flagger",
+    capabilities: {
+      provides: [],
+      requires: [{ id: "metrics.query", constraint: "^2" }],
+    },
+  };
+
+  it("New Relic hay Dynatrace (ngôn ngữ riêng, @1) ⇒ VERSION_MISMATCH ở consumer, đúng capability", () => {
+    for (const provider of [newRelic, dynatrace]) {
+      const res = validateAndOrder([provider, flagger]);
+      expect(res.valid).toBe(false);
+      expect(res.errors).toEqual([
+        expect.objectContaining({
+          code: "VERSION_MISMATCH",
+          subject: adapterKey(flagger),
+          detail: ["metrics.query"],
+        }),
+      ]);
+    }
+  });
+
+  it("VictoriaMetrics (2.1.0) hay Grafana Cloud (2.0.0) — cùng họ PromQL ⇒ hợp lệ, bind đúng nguồn", () => {
+    for (const provider of [victoriaMetrics, grafanaCloud]) {
+      const res = validateAndOrder([provider, flagger]);
+      expect(res.valid).toBe(true);
+      expect(res.chosen["metrics.query"]).toBe(adapterKey(provider));
+    }
+  });
+});
+
 describe("meta — hằng số và trần thời gian", () => {
   it("DIFFERENTIAL_SAMPLES là 20 000, chốt sau phép đo", () => {
     expect(DIFFERENTIAL_SAMPLES).toBe(20_000);

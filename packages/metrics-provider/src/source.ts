@@ -19,9 +19,11 @@ export type MetricsSource =
       baseUrl: string;
       /**
        * Prometheus/VictoriaMetrics TRONG cluster tenant: chỉ tới được qua API-server service
-       * proxy (ADR-06) — bên dùng chưa có đường đó thì đi `PROMETHEUS_URL` (§16).
+       * proxy (ADR-06) — bên dùng chưa có đường đó thì đi `PROMETHEUS_URL` (§16). Ngoài
+       * cluster là endpoint PromQL được host (Grafana Cloud/Mimir).
        */
       inCluster: boolean;
+      basicAuth?: { username: string; password: string };
     }
   | { kind: "datadog"; site: DatadogSite; apiKey: string; appKey: string }
   | {
@@ -76,6 +78,11 @@ export function createMetricsProvider(
     case "prometheus":
       return new PrometheusMetricsProvider({
         baseUrl: source.baseUrl,
+        ...(source.basicAuth === undefined
+          ? {}
+          : { basicAuth: source.basicAuth }),
+        // Endpoint được host không mở `/-/ready` dưới đường truy vấn — hỏi bằng truy vấn
+        readiness: source.inCluster ? "ready-endpoint" : "query",
         ...options,
       });
     case "datadog":

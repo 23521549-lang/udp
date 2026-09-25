@@ -92,6 +92,167 @@
             }
           },
           {
+            "toolId": "dynatrace",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "1.0.0"
+              },
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              },
+              {
+                "id": "traces.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "environmentUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "apiToken",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "dataIngestToken",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "mode",
+                  "required": false,
+                  "default": "cloudNativeFullStack",
+                  "kind": "enum",
+                  "options": [
+                    "cloudNativeFullStack",
+                    "classicFullStack",
+                    "applicationMonitoring"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "grafana-cloud",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "2.0.0"
+              },
+              {
+                "id": "metrics.scrape",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "logs.sink",
+              "traces.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "prometheusUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "prometheusUser",
+                  "required": true,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 0
+                },
+                {
+                  "key": "accessToken",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "newrelic",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "1.0.0"
+              },
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "traces.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "accountId",
+                  "required": true,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 0
+                },
+                {
+                  "key": "region",
+                  "required": true,
+                  "kind": "enum",
+                  "options": [
+                    "US",
+                    "EU"
+                  ]
+                },
+                {
+                  "key": "licenseKey",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "userKey",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "lowDataMode",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
             "toolId": "prometheus-grafana",
             "version": "1.0.0",
             "scope": "cluster",
@@ -142,6 +303,55 @@
                   "integer": true,
                   "min": 1,
                   "max": 1000
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "victoria-metrics",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "2.1.0"
+              },
+              {
+                "id": "metrics.scrape",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "logs.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionDays",
+                  "required": true,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 365
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 20,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                },
+                {
+                  "key": "grafana",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
                 }
               ]
             }

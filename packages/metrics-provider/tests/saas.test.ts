@@ -382,3 +382,38 @@ describe("createMetricsProvider", () => {
     });
   });
 });
+
+describe("PromQL được host (Grafana Cloud/Mimir)", () => {
+  it("basic auth trên MỌI lời gọi; sống = truy vấn vector(1), không phải /-/ready", async () => {
+    const { fetchImpl, calls } = fakeFetch((url) => ({
+      status: 200,
+      body: {
+        status: "success",
+        data: {
+          resultType: "vector",
+          result: url.searchParams.get("query")?.startsWith("vector")
+            ? [{ metric: {}, value: [0, "1"] }]
+            : [{ metric: {}, value: [0, "3"] }],
+        },
+      },
+    }));
+    const provider = createMetricsProvider(
+      {
+        kind: "prometheus",
+        baseUrl: "https://prometheus-prod-01.grafana.net/api/prom",
+        inCluster: false,
+        basicAuth: { username: "123456", password: "glc_x" },
+      },
+      { fetch: fetchImpl, timeoutMs: 500 },
+    );
+    const outcome = await provider.probe(workload);
+    expect(outcome.data).toMatchObject({ reachable: true, hasSeries: true });
+    expect(calls.map((c) => c.url.pathname)).not.toContain("/api/prom/-/ready");
+    expect(calls[0]?.url.searchParams.get("query")).toBe("vector(1)");
+    for (const call of calls) {
+      expect(call.init?.headers).toEqual({
+        Authorization: `Basic ${Buffer.from("123456:glc_x").toString("base64")}`,
+      });
+    }
+  });
+});
