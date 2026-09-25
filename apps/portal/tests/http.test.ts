@@ -8,7 +8,7 @@ import {
   refreshSession,
   setSessionExpiredHandler,
 } from "../src/lib/http";
-import { API, server } from "./msw";
+import { API, golden, server } from "./msw";
 
 const ok = z.object({ ok: z.literal(true) }).strict();
 
@@ -295,5 +295,32 @@ describe("lớp HTTP: hai tab, không có Web Locks", () => {
       createRefresher(() => noLock)(startedAt),
     ]);
     expect(refreshes).toBe(2);
+  });
+});
+
+describe("danh sách flag nhiều trang", () => {
+  it("project có 230 flag ⇒ đọc đủ 3 trang, không mất flag nào", async () => {
+    const { flagApi } = await import("../src/features/flag/flag-api");
+    const tpl = golden<{ flags: Record<string, unknown>[] }>(
+      "GET /projects/{id}/flags",
+    ).flags[0]!;
+    const all = Array.from({ length: 230 }, (_, i) => ({
+      ...tpl,
+      id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      key: `f-${String(i)}`,
+    }));
+    const offsets: number[] = [];
+    server.use(
+      http.get(`${API}/projects/:id/flags`, ({ request }) => {
+        const url = new URL(request.url);
+        const offset = Number(url.searchParams.get("offset"));
+        const limit = Number(url.searchParams.get("limit"));
+        offsets.push(offset);
+        return HttpResponse.json({ flags: all.slice(offset, offset + limit) });
+      }),
+    );
+    const res = await flagApi.list("p", "e", "UTC");
+    expect(res.flags).toHaveLength(230);
+    expect(offsets).toEqual([0, 100, 200]);
   });
 });

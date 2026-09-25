@@ -12,10 +12,15 @@ import {
   flagStatsViewResponseWire,
   rulesResponseWire,
   staleFlagsResponseWire,
+  type FlagSummaryWire,
 } from "@udp/shared-types/wire";
 import { api } from "../../lib/http";
 
 const f = (projectId: string) => `/projects/${projectId}/flags`;
+/** Trần `limit` của `GET /flags` ở Service 1 */
+const PAGE = 100;
+/** Chặn vòng lặp vô hạn nếu server lỡ trả trang đầy mãi */
+const MAX_FLAGS = 10_000;
 
 export interface UpdateFlagInput {
   lastKnownUpdatedAt: string;
@@ -32,10 +37,23 @@ export interface UpdateEnvInput {
 }
 
 export const flagApi = {
-  list: (projectId: string, envId: string, tz: string) =>
-    api(flagListResponseWire, f(projectId), {
-      query: { envId, include: "stats", tz, limit: 100 },
-    }),
+  /**
+   * MỌI flag của project ở env này. Server trần 100 hàng mỗi lần (`limit` ≤ 100), nên đọc
+   * theo trang tới khi một trang ngắn hơn trần — chỉ gọi một trang là project thứ 101 flag
+   * mất flag khỏi danh sách mà không ai thấy. Phân trang thật ở giao diện là sổ nợ
+   * `portal-pagination`.
+   */
+  list: async (projectId: string, envId: string, tz: string) => {
+    const flags: FlagSummaryWire[] = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const page = await api(flagListResponseWire, f(projectId), {
+        query: { envId, include: "stats", tz, limit: PAGE, offset },
+      });
+      flags.push(...page.flags);
+      if (page.flags.length < PAGE || offset >= MAX_FLAGS) break;
+    }
+    return { flags };
+  },
   get: (projectId: string, flagId: string) =>
     api(flagResponseWire, `${f(projectId)}/${flagId}`),
   create: (projectId: string, body: CreateFlagFields) =>
