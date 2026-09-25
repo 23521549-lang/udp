@@ -1,0 +1,70 @@
+{
+  "route": "GET /projects/{id}/deployments",
+  "status": 200,
+  "body": {
+    "deployments": [
+      {
+        "deploymentId": "1d6304be-21c9-410f-acbc-72433b4efb8d",
+        "status": "ROLLBACK",
+        "workloadName": null,
+        "imageTag": null,
+        "commitSha": null,
+        "triggeredBy": "AUTO",
+        "rolloutSessionId": "8f6f864f-671e-4a8f-9f7b-c475c63ffc39",
+        "restoresDeploymentId": "f63e69e2-3622-47ee-bffa-35967cfd0c97",
+        "startedAt": "2026-09-24T18:16:21.168Z",
+        "lastEventAt": "2026-09-24T18:16:21.168Z",
+        "events": [
+          {
+            "id": "01a0d690-603a-73fb-9fdb-290df37ff612",
+            "eventType": "ROLLBACK",
+            "occurredAt": "2026-09-24T18:16:21.168Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "f63e69e2-3622-47ee-bffa-35967cfd0c97",
+        "status": "DEPLOY_SUCCESS",
+        "workloadName": null,
+        "imageTag": null,
+        "commitSha": "abcdef1234567",
+        "triggeredBy": "WEBHOOK",
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-09-24T17:16:21.168Z",
+        "lastEventAt": "2026-09-24T17:16:21.168Z",
+        "events": [
+          {
+            "id": "01a0d690-603a-73fb-9fdb-2749cdf3c298",
+            "eventType": "DEPLOY_SUCCESS",
+            "occurredAt": "2026-09-24T17:16:21.168Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "7f56abc9-55f5-488e-bd4f-d4573c57f392",
+        "status": "DEPLOY_SUCCESS",
+        "workloadName": null,
+        "imageTag": "v1",
+        "commitSha": null,
+        "triggeredBy": "WEBHOOK",
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-09-23T01:16:21.168Z",
+        "lastEventAt": "2026-09-23T02:16:21.168Z",
+        "events": [
+          {
+            "id": "01a0d690-603a-73fb-9fdb-1dc01ce4f462",
+            "eventType": "DEPLOY_START",
+            "occurredAt": "2026-09-23T01:16:21.168Z"
+          },
+          {
+            "id": "01a0d690-603a-73fb-9fdb-207e0efcb130",
+            "eventType": "DEPLOY_SUCCESS",
+            "occurredAt": "2026-09-23T02:16:21.168Z"
+          }
+        ]
+      }
+    ]
+  }
+}
