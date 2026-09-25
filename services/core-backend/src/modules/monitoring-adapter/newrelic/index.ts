@@ -7,6 +7,7 @@ import {
 } from "@udp/metrics-provider";
 import { agentClusterName } from "../../adapter-base/agent-cluster.js";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
+import { logsSinkBinding } from "../../adapter-base/logs-sink.js";
 
 /**
  * Adapter New Relic (§5.5 Monitoring, Plan #31) — họ Helm CÓ agent (QĐ-3).
@@ -92,6 +93,10 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   secretValues: (config) => ({
     global: { licenseKey: newRelicConfigSchema.parse(config).licenseKey },
   }),
+  /** Khoá phẳng cho forwarder khác gửi log tới New Relic (logs.sink@1, Plan #32) */
+  secretKeys: (config) => ({
+    "license-key": newRelicConfigSchema.parse(config).licenseKey,
+  }),
 
   bindings: (_ctx, config) => {
     const { region } = newRelicConfigSchema.parse(config);
@@ -102,12 +107,14 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
         providedBy: "monitoring:newrelic",
         endpoint: `https://${newRelicApiHost(region)}/graphql`,
       },
-      {
-        id: "logs.sink",
-        version: "1.0.0",
-        providedBy: "monitoring:newrelic",
+      logsSinkBinding("monitoring:newrelic", {
+        protocol: "newrelic",
         endpoint: logEndpoint(region),
-      },
+        credential: {
+          secretName: "udp-newrelic-secrets",
+          secretKey: "license-key",
+        },
+      }),
     ];
   },
 });

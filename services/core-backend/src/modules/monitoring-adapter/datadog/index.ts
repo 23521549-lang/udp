@@ -5,6 +5,7 @@ import {
   datadogApiHost,
   type MetricsSourceDeclaration,
 } from "@udp/metrics-provider";
+import { logsSinkBinding } from "../../adapter-base/logs-sink.js";
 import { createSaaSAdapter } from "../../adapter-base/saas.js";
 
 /**
@@ -93,12 +94,15 @@ const adapter: DomainAdapter = createSaaSAdapter({
         providedBy: "monitoring:datadog",
         endpoint: `https://${datadogApiHost(site)}/api/v1/query`,
       },
-      {
-        id: "logs.sink",
-        version: "1.0.0",
-        providedBy: "monitoring:datadog",
+      // logs.sink@1 (Plan #32): khoá ingest nằm trong Secret kết nối mà lớp nền SaaS ghi
+      logsSinkBinding("monitoring:datadog", {
+        protocol: "datadog",
         endpoint: `https://http-intake.logs.${site}/api/v2/logs`,
-      },
+        credential: {
+          secretName: "udp-datadog-connection-key",
+          secretKey: "api-key",
+        },
+      }),
     ];
   },
 });

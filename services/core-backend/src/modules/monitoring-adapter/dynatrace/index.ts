@@ -3,6 +3,7 @@ import type { DomainAdapter } from "@udp/adapter-core";
 import type { MetricsSourceDeclaration } from "@udp/metrics-provider";
 import { agentClusterName } from "../../adapter-base/agent-cluster.js";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
+import { logsSinkBinding } from "../../adapter-base/logs-sink.js";
 
 /**
  * Adapter Dynatrace (§5.5 Monitoring, Plan #31) — họ Helm CÓ agent (QĐ-3).
@@ -78,13 +79,14 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     const { apiToken, dataIngestToken } = dynatraceConfigSchema.parse(config);
     return { dynakube: { tokens: { apiToken, dataIngestToken } } };
   },
+  /** Token ingest dạng phẳng cho forwarder khác gửi log tới Dynatrace (logs.sink@1, Plan #32) */
+  secretKeys: (config) => ({
+    "data-ingest-token": dynatraceConfigSchema.parse(config).dataIngestToken,
+  }),
 
   bindings: (_ctx, config) => {
     const { environmentUrl } = dynatraceConfigSchema.parse(config);
-    const at = (
-      id: "metrics.query" | "logs.sink" | "traces.sink",
-      path: string,
-    ) => ({
+    const at = (id: "metrics.query" | "traces.sink", path: string) => ({
       id,
       version: "1.0.0",
       providedBy: "monitoring:dynatrace",
@@ -92,7 +94,14 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     });
     return [
       at("metrics.query", "/api/v2/metrics/query"),
-      at("logs.sink", "/api/v2/logs/ingest"),
+      logsSinkBinding("monitoring:dynatrace", {
+        protocol: "dynatrace",
+        endpoint: `${environmentUrl}/api/v2/logs/ingest`,
+        credential: {
+          secretName: "udp-dynatrace-secrets",
+          secretKey: "data-ingest-token",
+        },
+      }),
       at("traces.sink", "/api/v2/otlp/v1/traces"),
     ];
   },
