@@ -108,15 +108,15 @@ describe("lease", () => {
    */
   it("lease đã hết hạn thì worker khác giành được", async () => {
     const jobId = await freshJob();
-    const past = new Date(Date.now() - 10 * DEFAULT_LEASE_MS);
+    // Lease 1 ms theo đồng hồ của DATABASE; chờ nó qua hẳn
     const first = await claim({
       prisma: s1,
       jobId,
       workerId: WORKER_A,
       leaseMs: 1,
-      now: past,
     });
     expect(first).not.toBeNull();
+    await new Promise((r) => setTimeout(r, 50));
 
     const second = await claim({ prisma: s1, jobId, workerId: WORKER_B });
     expect(second).not.toBeNull();
@@ -170,6 +170,34 @@ describe("lease", () => {
   });
 });
 
+describe("[v4.11] đồng hồ database và trạng thái (Plan #28 QĐ-2)", () => {
+  it("job đã kết thúc KHÔNG giành được — không chạy lại provisioning đã xong", async () => {
+    for (const state of ["DONE", "FAILED", "COMPENSATION_FAILED"] as const) {
+      const jobId = await freshJob();
+      await admin.provisioningJob.update({
+        where: { id: jobId },
+        data: { state },
+      });
+      expect(await claim({ prisma: s1, jobId, workerId: WORKER_A })).toBeNull();
+    }
+  });
+
+  it("lease đã hết thì không gia hạn được, và fence từ chối", async () => {
+    const jobId = await freshJob();
+    const lease = (await claim({
+      prisma: s1,
+      jobId,
+      workerId: WORKER_A,
+      leaseMs: 1,
+    })) as JobLease;
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await renew(s1, lease)).toBe(false);
+    await expect(createPrismaFence(s1, lease).assert()).rejects.toThrow(
+      /hết hạn/,
+    );
+  });
+});
+
 describe("fencing", () => {
   it("mọi lần ghi state đều WHERE version = expected, và version tăng", async () => {
     const jobId = await freshJob();
@@ -199,7 +227,9 @@ describe("fencing", () => {
       jobId,
       workerId: WORKER_A,
     })) as JobLease;
-    await expect(createPrismaFence(s1, lease).assert()).resolves.toBeUndefined();
+    await expect(
+      createPrismaFence(s1, lease).assert(),
+    ).resolves.toBeUndefined();
   });
 
   /**

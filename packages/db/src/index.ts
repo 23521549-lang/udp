@@ -103,6 +103,8 @@ export { writeWithOutbox } from "./outbox.js";
 export type { ConfigChangeType, OutboxState, OutboxWrite } from "./outbox.js";
 export { createSessionConnector } from "./session.js";
 export { createListenAccelerator } from "./listen-accelerator.js";
+export { keepLease } from "./lease-keeper.js";
+export type { LeaseKeeper, LeaseKeeperOptions } from "./lease-keeper.js";
 export { ACTIVE_ROLLOUT_STATUS_SQL } from "./rollout-status.js";
 export { loadTimezoneNames } from "./timezones.js";
 export type { TimezoneSource } from "./timezones.js";

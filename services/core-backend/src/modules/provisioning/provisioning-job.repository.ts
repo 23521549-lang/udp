@@ -32,7 +32,6 @@ export interface ClaimOptions {
   workerId: string;
   /** Độ dài lease; pg-boss `heartbeatSeconds` ≈ 300 nên mặc định khớp nó */
   leaseMs?: number;
-  now?: Date;
 }
 
 /** Mặc định khớp `heartbeatSeconds` ≈ 300 của pg-boss (ADR-02 điều kiện 2) */
@@ -48,40 +47,42 @@ export const DEFAULT_LEASE_MS = 300_000;
  *  - `claimed_by = workerId`: chính worker này giành lại sau một lần mất kết nối ngắn.
  *    Thiếu nhánh này thì một worker bị ngắt 2 giây phải chờ hết lease của **chính nó**.
  *
- * `version` tăng đúng một, và số MỚI là fence token. Vì `UPDATE` này lọc theo
- * `version = $expected` ở các hàm dưới chứ không ở đây, chỗ này dùng `updateMany` với
- * điều kiện lease: hai worker cùng giành thì Postgres tuần tự hoá, người thứ hai thấy
- * `claimed_until` đã ở tương lai và nhận 0 hàng.
+ * `version` tăng đúng một, và số MỚI là fence token. Hai worker cùng giành thì Postgres
+ * tuần tự hoá, người thứ hai thấy `claimed_until` đã ở tương lai và nhận 0 hàng.
+ *
+ * [v4.11] Hai điều kiện thêm (Plan #28 QĐ-2):
+ *
+ *  - **Đồng hồ của DATABASE** (`now()`), không của tiến trình: hai bản sao Service 1 lệch
+ *    đồng hồ vài chục giây là hai ý kiến khác nhau về "lease đã hết hạn chưa" — đúng kẽ
+ *    hở mà lease sinh ra để đóng. Một thước cho mọi worker là thước của database.
+ *  - **Job chưa kết thúc**: giành lease một job `DONE`/`FAILED`/`COMPENSATION_FAILED` là
+ *    mời một worker chạy lại provisioning đã xong.
  */
 export async function claim(options: ClaimOptions): Promise<JobLease | null> {
   const { prisma, jobId, workerId } = options;
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
-  const now = options.now ?? new Date();
-  const claimedUntil = new Date(now.getTime() + leaseMs);
-
-  const { count } = await prisma.provisioningJob.updateMany({
-    where: {
-      id: jobId,
-      OR: [
-        { claimedUntil: null },
-        { claimedUntil: { lt: now } },
-        { claimedBy: workerId },
-      ],
-    },
-    data: {
-      claimedBy: workerId,
-      claimedUntil,
-      version: { increment: 1 },
-      heartbeatAt: now,
-    },
-  });
-  if (count !== 1) return null;
-
-  const row = await prisma.provisioningJob.findUniqueOrThrow({
-    where: { id: jobId },
-    select: { version: true },
-  });
-  return { jobId, workerId, version: row.version, claimedUntil };
+  const rows = await prisma.$queryRaw<
+    { version: number; claimed_until: Date }[]
+  >`
+    UPDATE provisioning_jobs
+       SET claimed_by = ${workerId},
+           claimed_until = now() + make_interval(secs => ${leaseMs / 1000}),
+           version = version + 1,
+           heartbeat_at = now(),
+           updated_at = now()
+     WHERE id = ${jobId}::uuid
+       AND state NOT IN ('DONE', 'FAILED', 'COMPENSATION_FAILED')
+       AND (claimed_until IS NULL OR claimed_until < now() OR claimed_by = ${workerId})
+ RETURNING version, claimed_until`;
+  const row = rows[0];
+  return row === undefined
+    ? null
+    : {
+        jobId,
+        workerId,
+        version: row.version,
+        claimedUntil: row.claimed_until,
+      };
 }
 
 /**
@@ -98,19 +99,20 @@ export async function renew(
   prisma: PrismaClient,
   lease: JobLease,
   leaseMs = DEFAULT_LEASE_MS,
-  now = new Date(),
 ): Promise<boolean> {
-  const { count } = await prisma.provisioningJob.updateMany({
-    where: {
-      id: lease.jobId,
-      version: lease.version,
-      claimedBy: lease.workerId,
-    },
-    data: {
-      claimedUntil: new Date(now.getTime() + leaseMs),
-      heartbeatAt: now,
-    },
-  });
+  /**
+   * `claimed_until > now()`: gia hạn một lease ĐÃ hết là giành lại nó mà không qua `claim`
+   * — trong khoảnh khắc đó một worker khác có thể vừa giành được (và `version` sẽ chặn nó
+   * ở lần ghi kế, nhưng lời gọi cloud giữa hai thời điểm thì không ai chặn).
+   */
+  const count = await prisma.$executeRaw`
+    UPDATE provisioning_jobs
+       SET claimed_until = now() + make_interval(secs => ${leaseMs / 1000}),
+           heartbeat_at = now()
+     WHERE id = ${lease.jobId}::uuid
+       AND version = ${lease.version}
+       AND claimed_by = ${lease.workerId}
+       AND claimed_until > now()`;
   return count === 1;
 }
 
@@ -133,9 +135,7 @@ export async function setState(
     data: {
       state,
       version: { increment: 1 },
-      ...(lastError === undefined
-        ? {}
-        : { lastError: lastError as never }),
+      ...(lastError === undefined ? {} : { lastError: lastError as never }),
     },
   });
   if (count !== 1) return null;
@@ -174,17 +174,25 @@ export function createPrismaFence(
 ): Fence {
   return {
     async assert(): Promise<void> {
-      const row = await prisma.provisioningJob.findUnique({
-        where: { id: lease.jobId },
-        select: { version: true, claimedBy: true, claimedUntil: true },
-      });
-      if (row === null) {
+      const [row] = await prisma.$queryRaw<
+        {
+          version: number;
+          claimed_by: string | null;
+          claimed_until: Date | null;
+          alive: boolean;
+        }[]
+      >`
+        SELECT version, claimed_by, claimed_until,
+               COALESCE(claimed_until > now(), false) AS alive
+          FROM provisioning_jobs
+         WHERE id = ${lease.jobId}::uuid`;
+      if (row === undefined) {
         throw new FenceLostError(`job ${lease.jobId} không còn tồn tại`);
       }
-      if (row.version !== lease.version || row.claimedBy !== lease.workerId) {
+      if (row.version !== lease.version || row.claimed_by !== lease.workerId) {
         throw new FenceLostError(
           `lease của ${lease.workerId} đã mất: version ${String(lease.version)} → ` +
-            `${String(row.version)}, người giữ ${String(row.claimedBy)}`,
+            `${String(row.version)}, người giữ ${String(row.claimed_by)}`,
         );
       }
       /**
@@ -196,10 +204,11 @@ export function createPrismaFence(
        * job đang bỏ ngỏ cho người khác lấy, nên A phải dừng NGAY khi hết hạn, không phải
        * khi có người lấy. Đây là chỗ duy nhất trong hệ thống hỏi câu đó.
        */
-      if (row.claimedUntil === null || row.claimedUntil.getTime() <= Date.now()) {
+      // [v4.11] Hạn so với đồng hồ của DATABASE — cùng thước với `claim` và `renew`
+      if (!row.alive) {
         throw new FenceLostError(
           `lease của ${lease.workerId} đã hết hạn lúc ` +
-            `${row.claimedUntil?.toISOString() ?? "không rõ"}`,
+            `${row.claimed_until?.toISOString() ?? "không rõ"}`,
         );
       }
     },
