@@ -18,14 +18,14 @@ tự teardown chín bậc, §4.4 lớp 3 (TTL) và lớp 4 (orphan-scan), §8.6 
 
 ## 2. Ràng buộc nền
 
-| Mã  | Ràng buộc                                                                                     | Nguồn         |
-| --- | --------------------------------------------------------------------------------------------- | ------------- |
-| R1  | Nguồn sự thật là TAG trên cloud; sổ là gợi ý thứ tự                                           | ADR-08        |
-| R2  | K8S_MANAGED xoá trước và CHỜ biến mất trước bậc mạng; hết hạn chờ ⇒ `ORPHAN_SUSPECTED`         | §4.2, §4.5    |
-| R3  | Không bao giờ tự xoá project có environment production đã deploy                              | §4.4 lớp 3    |
-| R4  | Mọi quyết định tiêu/thôi tiêu tiền của hệ thống ghi `AuditLog(actor SYSTEM)` TRƯỚC khi làm    | §4.4          |
-| R5  | Quét drift chỉ ghi `last_error` (I32 chiều c)                                                 | §8.6          |
-| R6  | Không thoái cấp: K1..K10, golden, I10, I22, I38, lưới Plan #28                                | yêu cầu       |
+| Mã  | Ràng buộc                                                                                  | Nguồn      |
+| --- | ------------------------------------------------------------------------------------------ | ---------- |
+| R1  | Nguồn sự thật là TAG trên cloud; sổ là gợi ý thứ tự                                        | ADR-08     |
+| R2  | K8S_MANAGED xoá trước và CHỜ biến mất trước bậc mạng; hết hạn chờ ⇒ `ORPHAN_SUSPECTED`     | §4.2, §4.5 |
+| R3  | Không bao giờ tự xoá project có environment production đã deploy                           | §4.4 lớp 3 |
+| R4  | Mọi quyết định tiêu/thôi tiêu tiền của hệ thống ghi `AuditLog(actor SYSTEM)` TRƯỚC khi làm | §4.4       |
+| R5  | Quét drift chỉ ghi `last_error` (I32 chiều c)                                              | §8.6       |
+| R6  | Không thoái cấp: K1..K10, golden, I10, I22, I38, lưới Plan #28                             | yêu cầu    |
 
 ## 3. Quyết định
 
@@ -70,16 +70,16 @@ của `classifyOrphans`) ⇒ audit kèm USD/giờ. Không lịch nào tự xoá 
 
 ## 4. Tiêu chí chấp nhận
 
-| Mã    | Tiêu chí                                                                                                   | Cách kiểm            |
-| ----- | ---------------------------------------------------------------------------------------------------------- | -------------------- |
-| AC-1  | TEARDOWN trên SimCloud: cloud không còn tài nguyên của project, mọi hàng sổ DELETED, `cluster_access` null | tích hợp             |
-| AC-2  | K8S_MANAGED (LB mô phỏng mang tag cluster) xoá trước bậc mạng; không biến mất kịp ⇒ ORPHAN_SUSPECTED        | tích hợp             |
-| AC-3  | `DELETE /projects/:id` ACTIVE ⇒ 204 + job TEARDOWN QUEUED trong cùng transaction; DRAFT trống ⇒ không job   | tích hợp             |
-| AC-4  | Xoá khi PROVISION đang chạy ⇒ hủy + bù trừ; project KHÔNG trở lại DRAFT/ERROR                              | tích hợp             |
-| AC-5  | TTL: mốc 24h ghi cảnh báo đúng một lần qua hai lượt; production đã deploy ⇒ blocked, không xoá            | tích hợp + thuần     |
-| AC-6  | orphan-scan: CREATING cũ tìm thấy theo tag ⇒ CREATED; không thấy ⇒ giữ nguyên                              | tích hợp             |
-| AC-7  | drift-scan: ba chu kỳ chỉ đổi `last_error`/`updated_at` (dùng lại phép kiểm I32-c)                          | tích hợp             |
-| AC-8  | Không thoái cấp                                                                                            | lệnh cổng            |
+| Mã   | Tiêu chí                                                                                                   | Cách kiểm        |
+| ---- | ---------------------------------------------------------------------------------------------------------- | ---------------- |
+| AC-1 | TEARDOWN trên SimCloud: cloud không còn tài nguyên của project, mọi hàng sổ DELETED, `cluster_access` null | tích hợp         |
+| AC-2 | K8S_MANAGED (LB mô phỏng mang tag cluster) xoá trước bậc mạng; không biến mất kịp ⇒ ORPHAN_SUSPECTED       | tích hợp         |
+| AC-3 | `DELETE /projects/:id` ACTIVE ⇒ 204 + job TEARDOWN QUEUED trong cùng transaction; DRAFT trống ⇒ không job  | tích hợp         |
+| AC-4 | Xoá khi PROVISION đang chạy ⇒ hủy + bù trừ; project KHÔNG trở lại DRAFT/ERROR                              | tích hợp         |
+| AC-5 | TTL: mốc 24h ghi cảnh báo đúng một lần qua hai lượt; production đã deploy ⇒ blocked, không xoá             | tích hợp + thuần |
+| AC-6 | orphan-scan: CREATING cũ tìm thấy theo tag ⇒ CREATED; không thấy ⇒ giữ nguyên                              | tích hợp         |
+| AC-7 | drift-scan: ba chu kỳ chỉ đổi `last_error`/`updated_at` (dùng lại phép kiểm I32-c)                         | tích hợp         |
+| AC-8 | Không thoái cấp                                                                                            | lệnh cổng        |
 
 ## 5. Nợ kiểm chứng
 
@@ -88,7 +88,7 @@ Trả `drift-scan-cron`.
 
 ## 6. Nhật ký review
 
-| Vòng | Phát hiện                                                                   | Xử lý |
-| ---- | --------------------------------------------------------------------------- | ----- |
-| v1   | Bù trừ của Plan #28 ghi project DRAFT/ERROR — sẽ hồi sinh project đã xoá mềm | QĐ-3  |
+| Vòng | Phát hiện                                                                    | Xử lý                    |
+| ---- | ---------------------------------------------------------------------------- | ------------------------ |
+| v1   | Bù trừ của Plan #28 ghi project DRAFT/ERROR — sẽ hồi sinh project đã xoá mềm | QĐ-3                     |
 | v1   | Nháp đầu đòi gõ tên project (428) cho DELETE — §9 không có, Portal đã tự hỏi | Giữ hợp đồng 204 hiện có |
