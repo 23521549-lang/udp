@@ -1,6 +1,6 @@
 # Plan #35 — Container Registry (6), Artifact & Package Registry (3) — SPEC
 
-Trạng thái: **v1, 26/09/2026**. Nguồn: §5.5 Container Registry (Tier 1) và Artifact & Package
+Trạng thái: **v1, 26/09/2026 — XONG**. Nguồn: §5.5 Container Registry (Tier 1) và Artifact & Package
 Registry (Tier 3), §5.3 (`registry.oci`), §8.3 (`PipelineTemplateParams.registryRef`), §12.2
 (quyền của ba ServiceAccount), Plan #31 (bí mật của tool).
 

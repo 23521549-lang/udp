@@ -26,6 +26,40 @@ export const HELM_IGNORED_PREFIXES: AdapterFixture["ignoredLabelPrefixes"] = [
   },
 ];
 
+/** Prefix mà lớp nền `RegistryAdapter` bỏ qua — ConfigMap mô tả chỉ bị kubectl chạm */
+export const REGISTRY_IGNORED_PREFIXES: AdapterFixture["ignoredLabelPrefixes"] =
+  [
+    {
+      prefix: "kubectl.kubernetes.io/",
+      reason:
+        "kubectl tự thêm last-applied-configuration mỗi lần ai đó apply bằng tay",
+    },
+  ];
+
+/** Sửa tay ConfigMap mô tả mà lớp nền `RegistryAdapter` ghi cho `toolId` (Plan #35) */
+export function registryDriftMutations(
+  toolId: string,
+  namespace: string = CONTRACT_SYSTEM_NAMESPACE,
+): Mutations {
+  const described = {
+    apiVersion: "v1",
+    kind: "ConfigMap",
+    namespace,
+    name: `udp-registry-${toolId}`,
+  };
+  return [
+    {
+      name: "sửa tay địa chỉ registry trong ConfigMap mô tả",
+      apply: (c) =>
+        c.write("patch", described, { registry: { server: "ai-do.vi-du" } }),
+    },
+    {
+      name: "xoá hẳn ConfigMap mô tả registry",
+      apply: (c) => c.write("delete", described),
+    },
+  ];
+}
+
 const ref = (kind: string, name: string, namespace: string): ObjectRef => ({
   apiVersion: kind === "HelmRelease" ? "helm.toolkit.fluxcd.io/v2" : "v1",
   kind,

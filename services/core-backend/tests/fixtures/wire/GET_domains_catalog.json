@@ -9,7 +9,240 @@
         "displayName": "Container Registry",
         "defaultOrder": 10,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "acr",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "registryName",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "tokenName",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "tokenPassword",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "docker-hub",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "namespace",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "username",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "accessToken",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "ecr",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "accountId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "region",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "repositoryPrefix",
+                  "required": false,
+                  "default": "udp",
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "gcp-artifact-registry",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "projectId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "location",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "repository",
+                  "required": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "ghcr",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "owner",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "username",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "token",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "harbor",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "policy.admission"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "externalUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "adminPassword",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 50,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 5,
+                  "max": 2000
+                },
+                {
+                  "key": "pullRobotName",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "pullRobotSecret",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "CICD",
@@ -1621,7 +1854,167 @@
         "displayName": "Artifact & Package Registry",
         "defaultOrder": 160,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "artifactory",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "packages.store",
+                "version": "1.0.0"
+              },
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "externalUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "adminPassword",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 100,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 10,
+                  "max": 2000
+                },
+                {
+                  "key": "pullUser",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "pullToken",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "github-packages",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "packages.store",
+                "version": "1.0.0"
+              },
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "owner",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "username",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "token",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "nexus",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "packages.store",
+                "version": "1.0.0"
+              },
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "externalUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "adminPassword",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 100,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 10,
+                  "max": 2000
+                },
+                {
+                  "key": "dockerPort",
+                  "required": false,
+                  "default": 8082,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1024,
+                  "max": 65535
+                },
+                {
+                  "key": "pullUser",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "pullPassword",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          }
+        ]
       }
     ]
   }
