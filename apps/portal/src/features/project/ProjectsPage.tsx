@@ -21,17 +21,32 @@ export const PROJECT_STATUS: Record<
   DELETED: { label: "Đã xoá", ok: false },
 };
 
+/**
+ * Trạng thái project, kèm nhãn hết hạn khi TTL đã qua (§4.4 lớp 3): với `WARN` máy chủ chỉ
+ * cảnh báo và KHÔNG xoá, nên nhãn này là nơi duy nhất người dùng thấy project đã quá hạn.
+ */
 export function ProjectStatus({
   status,
+  expiresAt = null,
+  now = Date.now(),
 }: {
   status: PublicProjectWire["status"];
+  expiresAt?: string | null;
+  now?: number;
 }) {
   const s = PROJECT_STATUS[status];
+  const expired =
+    expiresAt !== null &&
+    status !== "DELETED" &&
+    new Date(expiresAt).getTime() <= now;
   return (
-    <span className={s.ok ? "stt" : "stt warn"}>
-      <Icon of={s.ok ? CircleCheck : CircleAlert} />
-      {s.label}
-    </span>
+    <>
+      <span className={s.ok ? "stt" : "stt warn"}>
+        <Icon of={s.ok ? CircleCheck : CircleAlert} />
+        {s.label}
+      </span>
+      {expired && <span className="chip soft">Hết hạn</span>}
+    </>
   );
 }
 
@@ -94,7 +109,7 @@ export function ProjectsPage() {
                   <span className="chip soft">{ROLE_LABEL[p.myRole]}</span>
                   <span className="c3 mono">{p.languageRuntime}</span>
                   <span style={{ marginLeft: "auto" }}>
-                    <ProjectStatus status={p.status} />
+                    <ProjectStatus status={p.status} expiresAt={p.expiresAt} />
                   </span>
                   <span className="c3 num">{relativeTime(p.createdAt)}</span>
                 </Link>

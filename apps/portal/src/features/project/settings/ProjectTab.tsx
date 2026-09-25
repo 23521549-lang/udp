@@ -201,7 +201,7 @@ export function ProjectTab() {
       {deleting && (
         <ConfirmDialog
           title={`Xoá ${project.name}?`}
-          description="Project bị xoá mềm: nhật ký kiểm toán được giữ. Tài nguyên cloud chưa được tự dọn."
+          description="UDP dừng lượt triển khai đang chạy (nếu có) rồi xoá mọi tài nguyên đã dựng trên cloud của bạn. Nhật ký kiểm toán được giữ."
           confirmLabel="Xoá project"
           danger
           typeToConfirm={project.name}

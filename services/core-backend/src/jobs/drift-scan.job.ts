@@ -18,7 +18,7 @@ import { tagsOf } from "../modules/provisioning/provision-plan.js";
 import { messageOf, type JobInput, type JobKit } from "./job-kit.js";
 
 /**
- * Lịch `drift-scan` (§8.6 nhánh A, trả nợ `drift-scan-cron`): quét domain ACTIVE của mọi
+ * Lịch `drift-scan` (§8.6 nhánh A, Plan #29): quét domain ACTIVE của mọi
  * project ACTIVE qua `scanDomainDrift` — chỗ DUY NHẤT hạ bối cảnh xuống chỉ đọc, và chỉ ghi
  * `last_error` khi phán quyết đổi (I32 chiều c). Không bao giờ tự sửa.
  *

@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 40.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 39.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -656,19 +656,11 @@ owned` còn có tài nguyên mang `shared`.
   "UDP không giữ bí mật dài hạn của khách" đúng về THIẾT KẾ và về mã đã kiểm bằng cổng
   giả, nhưng chưa có bằng chứng từ một cloud thật chấp nhận token của UDP.
 
-## drift-scan-cron — lịch biểu 6 giờ cho job `DRIFT_SCAN`
-
-- **Vì sao nợ:** `scanDomainDrift` là hàm thuần trên các cổng được tiêm, và nó có
-  phép kiểm ba chu kỳ trên database thật. Cái chưa có là `pg-boss` cron gọi nó — cùng
-  lý lẽ với TTL và orphan-scan của §4.4: phần đáng kiểm là phần QUYẾT ĐỊNH.
-- **Tiền đề:** `jobs/boss.ts` (hạ tầng hàng đợi, §3.1) tồn tại.
-- **Lệnh:** đăng ký cron rồi `pnpm --filter @udp/core-backend test -- day2-cron`.
-- **Đạt:** một lượt cron quét mọi project `ACTIVE`, và hai lượt liên tiếp trên một
-  domain đang trôi chỉ ghi `last_error` một lần. **Không đạt:** lượt thứ hai ghi lại
-  ⇒ `updated_at` của mọi domain nhảy bốn lần một ngày.
-- **Tài nguyên:** không (pg-boss dùng chính database).
-- **Ảnh hưởng tới kết luận:** §8.6 nhánh A chạy được **tự động**. Hành vi thì đã đủ
-  bằng chứng; điều còn thiếu là không ai gọi nó theo lịch.
+> **Đã trả (25/09/2026, Plan #29):** `drift-scan-cron` — lịch `udp-drift-scan` của pg-boss
+> (6 giờ) quét mọi project `ACTIVE`; ba lượt trên một domain đang trôi ghi `last_error` đúng
+> MỘT lần, adapter theo namespace được hỏi ở mọi environment
+> (`provision-job.integration.test.ts`, AC-7). Cùng đợt: lịch TTL (`project-ttl.integration.test.ts`)
+> và orphan-scan (AC-6), job TEARDOWN + `DELETE /projects/:id` dọn hạ tầng.
 
 ## domain-day2-route — route nâng cấp và quét drift
 

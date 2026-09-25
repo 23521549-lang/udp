@@ -65,8 +65,11 @@ export function OverviewPage() {
           <div>
             <h1>{project.name}</h1>
             <p>
-              <ProjectStatus status={project.status} /> · Vai của bạn:{" "}
-              {ROLE_LABEL[project.myRole]}
+              <ProjectStatus
+                status={project.status}
+                expiresAt={project.expiresAt}
+              />{" "}
+              · Vai của bạn: {ROLE_LABEL[project.myRole]}
             </p>
           </div>
         </div>
