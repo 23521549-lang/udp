@@ -59,6 +59,13 @@ export interface RunPlan {
   steps: readonly ResourceStep[];
   credential: ResolvedCredential;
   quota: ResourceQuota;
+  /**
+   * [v4.11] Tài nguyên của các pha TRƯỚC, khoá theo tên step — đi vào `prior` cùng tài
+   * nguyên của lượt này (Plan #28 QĐ-3). Kế hoạch thật có step cluster phụ thuộc subnet của
+   * pha mạng; không có trường này thì pha CLUSTER chạy riêng thiếu cha. Không bao giờ vào
+   * `created` của kết quả: lượt này không tạo chúng.
+   */
+  inherited?: Readonly<Record<string, CreatedResource>>;
   /** Số tài nguyên mà kế hoạch này sẽ tạo, để kiểm quota TRƯỚC khi gọi cloud */
   plannedNodes?: number;
   plannedLoadBalancers?: number;
@@ -287,8 +294,11 @@ export class CloudAdapterRunner {
       await this.#fence.assert(); // RUN11 (3/6)
       await this.#observer.onPhase("before-create", step.name);
       try {
-        /** RUN12: `prior` chỉ chứa step đứng trước, khoá theo `name` */
-        resource = await step.create(plan.credential, { ...created });
+        /** RUN12: `prior` chỉ chứa step đứng trước (kể cả của pha trước), khoá theo `name` */
+        resource = await step.create(plan.credential, {
+          ...plan.inherited,
+          ...created,
+        });
       } catch (err) {
         rethrowIfFatal(err); // RUN13
         throw new StepFailedError(step.name, err);

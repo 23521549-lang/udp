@@ -18,7 +18,12 @@ import {
   type ResourceStep,
 } from "@udp/adapter-core";
 import type { AdapterResult } from "@udp/shared-types";
-import { isGatewayError, safeMessage, type CloudGateway } from "./gateway.js";
+import {
+  GatewayError,
+  isGatewayError,
+  safeMessage,
+  type CloudGateway,
+} from "./gateway.js";
 import {
   CONTROL_PLANE_SERVICE_ACCOUNTS,
   planProblems,
@@ -140,11 +145,22 @@ export function createPlannedAdapter(
         }
       },
 
-      create: (cred, prior) => {
+      create: async (cred, prior) => {
         const parents: Record<string, CreatedResource> = {};
         for (const name of spec.dependsOn) {
           const parent = prior[name];
-          if (parent !== undefined) parents[name] = parent;
+          /**
+           * [v4.11] Cha vắng là LỖI, không bỏ qua: bản trước im lặng bỏ, cổng mô phỏng không
+           * đọc cha, và kế hoạch thật chỉ vỡ ở cloud thật — pha CLUSTER chạy tách khỏi pha
+           * mạng mà không mang tài nguyên của nó (Plan #28 QĐ-3).
+           */
+          if (parent === undefined) {
+            throw new GatewayError(
+              "permanent",
+              `step ${spec.name} thiếu tài nguyên cha ${name} trong prior`,
+            );
+          }
+          parents[name] = parent;
         }
         return gatewayFor(cred).create({
           kind: spec.kind,

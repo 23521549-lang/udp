@@ -831,19 +831,27 @@ export const CLOUD_CONTRACT_CHECKS: readonly CloudCheck[] = [
     designCheckId: null,
     run: async (adapter) => {
       const cred = credential();
-      await createAllNetwork(adapter, cred);
-      const clusterStep = adapter
-        .clusterSteps(clusterParams(), {
-          networkId: "vpc-1",
-          networkName: "udp",
-          cidrBlock: "10.0.0.0/16",
-        })
-        .find((s) => s.kind === "cluster");
-      assert(
-        clusterStep !== undefined,
-        "adapter phải có một step kind=cluster",
-      );
-      const cluster = await (clusterStep as ResourceStepLike).create(cred, {});
+      /**
+       * [v4.11] `prior` đúng RUN12: tài nguyên pha mạng cộng mọi step cluster đứng trước.
+       * Bản trước gọi `create(cred, {})` — một adapter đọc cha (kế hoạch thật: `cluster`
+       * cần subnet) vỡ ở đây, và một lõi âm thầm bỏ cha vắng thì qua được (Plan #28 QĐ-3).
+       */
+      const prior = await createAllNetwork(adapter, cred);
+      const steps = adapter.clusterSteps(clusterParams(), {
+        networkId: "vpc-1",
+        networkName: "udp",
+        cidrBlock: "10.0.0.0/16",
+      });
+      const at = steps.findIndex((s) => s.kind === "cluster");
+      assert(at >= 0, "adapter phải có một step kind=cluster");
+      for (const step of steps.slice(0, at)) {
+        prior[step.name] = await (step as ResourceStepLike).create(cred, {
+          ...prior,
+        });
+      }
+      const cluster = await (steps[at] as ResourceStepLike).create(cred, {
+        ...prior,
+      });
 
       const status = await adapter.getClusterStatus(cred, cluster.id);
       assert(status.status === "SUCCESS", "getClusterStatus phải thành công");

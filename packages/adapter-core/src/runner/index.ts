@@ -159,4 +159,5 @@ export {
   StepFailedError,
 } from "./errors.js";
 export { CloudAdapterRunner, quotaRejection } from "./runner.js";
+export { inheritFromLedger, InheritedPhaseIncompleteError } from "./inherit.js";
 export type { RunnerDeps, RunOutcome, RunPlan } from "./runner.js";
