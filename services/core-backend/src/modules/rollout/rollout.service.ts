@@ -12,6 +12,7 @@ import type { ProbeOutcome } from "@udp/metrics-provider";
 import { canaryPairOf, flagServeDbSchema } from "@udp/shared-types";
 import type { Request } from "express";
 import type { AppDeps } from "../../core/app-deps.js";
+import { metricsSourceFor } from "../capability/metrics-source.resolver.js";
 import type { TrackOutcome } from "../../core/clients/flag-service.client.js";
 import * as repository from "./rollout.repository.js";
 import { detailView, eventView, summaryView } from "./rollout.view.js";
@@ -54,13 +55,19 @@ interface Probed {
  */
 async function probeWorkload(
   deps: AppDeps,
-  namespace: string,
+  where: { projectId: string; environmentId: string; namespace: string },
   workloadName: string,
   metricQueries: ProbeRolloutInput["metricQueries"],
 ): Promise<Probed> {
+  // Nguồn theo binding metrics.query CỦA environment này (§5.4, Plan #31 AC-5)
+  const source = await metricsSourceFor({
+    projectId: where.projectId,
+    environmentId: where.environmentId,
+    registry: await deps.domainRegistry(),
+  });
   const outcome = await deps
-    .metricsFor(metricQueries)
-    .probe({ namespace, workloadName });
+    .metricsFor(source, metricQueries)
+    .probe({ namespace: where.namespace, workloadName });
   const data = outcome.data;
   if (data?.reachable !== true) {
     throw new ServiceUnavailableError("Nguồn metrics không tới được");
@@ -93,7 +100,7 @@ export async function probe(
   }
   const probed = await probeWorkload(
     deps,
-    namespace,
+    { projectId, environmentId: input.envId, namespace },
     input.workloadName,
     input.metricQueries,
   );
@@ -155,7 +162,7 @@ export async function create(
 
   const probed = await probeWorkload(
     deps,
-    target.namespace,
+    { projectId, environmentId: input.envId, namespace: target.namespace },
     input.workloadName,
     input.metricQueries,
   );

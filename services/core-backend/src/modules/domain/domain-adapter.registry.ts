@@ -6,6 +6,10 @@ import {
   DOMAIN_ADAPTER_PROPERTIES,
 } from "@udp/adapter-core";
 import type { DomainAdapter } from "@udp/adapter-core";
+import {
+  METRICS_QUERY_MAJOR,
+  type MetricsSourceDeclaration,
+} from "@udp/metrics-provider";
 
 /**
  * [v4.10] Registry TỰ KHÁM PHÁ adapter theo hai tầng thư mục (§1.6).
@@ -110,6 +114,52 @@ export interface LoadedAdapter {
   adapter: DomainAdapter;
   /** Đường dẫn đã nạp — để thông điệp lỗi nói được adapter nào ở đâu */
   at: string;
+  /** Nguồn metrics của adapter `provides: metrics.query` (§5.4) — vắng với mọi adapter khác */
+  metricsSource?: MetricsSourceDeclaration;
+}
+
+/**
+ * §5.4: adapter `provides: metrics.query` PHẢI kèm nguồn metrics có version khớp — kiểm ở
+ * lúc nạp registry, không phải lúc chạy rollout. Và chiều đảo: khai nguồn metrics mà không
+ * cung cấp `metrics.query` là một lời khai không ai đọc tới.
+ */
+export function metricsSourceOf(
+  adapter: DomainAdapter,
+  exported: unknown,
+  at: string,
+): MetricsSourceDeclaration | undefined {
+  const provided = adapter.capabilities.provides.find(
+    (p) => p.id === "metrics.query",
+  );
+  if (provided === undefined) {
+    if (exported !== undefined) {
+      throw new InvalidAdapterError(
+        at,
+        "xuất metricsSource mà không provides metrics.query",
+      );
+    }
+    return undefined;
+  }
+  const declared = exported as Partial<MetricsSourceDeclaration> | undefined;
+  if (
+    declared === undefined ||
+    typeof declared.of !== "function" ||
+    typeof declared.kind !== "string" ||
+    !(declared.kind in METRICS_QUERY_MAJOR)
+  ) {
+    throw new InvalidAdapterError(
+      at,
+      "provides metrics.query nhưng không xuất metricsSource hợp lệ (§5.4)",
+    );
+  }
+  const major = Number(provided.version.split(".")[0]);
+  if (METRICS_QUERY_MAJOR[declared.kind] !== major) {
+    throw new InvalidAdapterError(
+      at,
+      `metricsSource "${declared.kind}" nói metrics.query@${String(METRICS_QUERY_MAJOR[declared.kind])}, adapter provides ${provided.version}`,
+    );
+  }
+  return declared as MetricsSourceDeclaration;
 }
 
 /**
@@ -153,7 +203,8 @@ export async function loadAdapters(
         );
       }
 
-      const candidate = (mod as { default?: unknown }).default;
+      const exported = mod as { default?: unknown; metricsSource?: unknown };
+      const candidate = exported.default;
       if (candidate === undefined) {
         throw new InvalidAdapterError(at, "không có export mặc định");
       }
@@ -163,7 +214,17 @@ export async function loadAdapters(
       if (out.some((x) => x.key === key)) {
         throw new InvalidAdapterError(at, `khoá trùng: ${key}`);
       }
-      out.push({ key, adapter: candidate, at });
+      const metricsSource = metricsSourceOf(
+        candidate,
+        exported.metricsSource,
+        at,
+      );
+      out.push({
+        key,
+        adapter: candidate,
+        at,
+        ...(metricsSource === undefined ? {} : { metricsSource }),
+      });
     }
   }
   return out;

@@ -147,3 +147,22 @@ describe("datadog — khoá là bí mật (Plan #31 QĐ-5, QĐ-6)", () => {
     expect(await client.read("get", keySecret)).toBeNull();
   });
 });
+
+describe("datadog — vùng dữ liệu theo site (Plan #31)", () => {
+  it("site EU ⇒ lời gọi cấu hình và binding đều ở vùng EU, không ở Mỹ", async () => {
+    const eu = { ...fixture(), externalHosts: ["api.datadoghq.eu"] };
+    const env = domainContractEnv(eu);
+    const res = await adapter.deploy(env.context(), {
+      ...eu.validConfig,
+      site: "datadoghq.eu",
+    });
+    expect(res.status).toBe("SUCCESS");
+    expect(env.fetchLog).toEqual([
+      "https://api.datadoghq.eu/api/v1/integration/udp",
+    ]);
+    expect(res.data?.map((b) => b.endpoint)).toEqual([
+      "https://api.datadoghq.eu/api/v1/query",
+      "https://http-intake.logs.datadoghq.eu/api/v2/logs",
+    ]);
+  });
+});

@@ -13,6 +13,7 @@ import {
   createRegistry,
   InvalidAdapterError,
   loadAdapters,
+  metricsSourceOf,
   registryKey,
 } from "../src/modules/domain/domain-adapter.registry.js";
 import {
@@ -94,6 +95,54 @@ describe("registry tự khám phá hai tầng", () => {
         toolId: "Prometheus-Grafana",
       } as never),
     ).toBe("monitoring:prometheus-grafana");
+  });
+});
+
+describe("§5.4 — adapter metrics.query PHẢI kèm nguồn metrics, kiểm lúc nạp (Plan #31)", () => {
+  const providing = (version: string) =>
+    ({
+      capabilities: {
+        provides: [{ id: "metrics.query", version }],
+        requires: [],
+      },
+    }) as never;
+  const source = (kind: string) => ({
+    kind,
+    of: () => ({ kind, baseUrl: "http://x", inCluster: true }),
+  });
+
+  it("khai đúng loại và version ⇒ nhận", () => {
+    expect(
+      metricsSourceOf(providing("2.1.0"), source("prometheus"), "x")?.kind,
+    ).toBe("prometheus");
+    expect(
+      metricsSourceOf(providing("1.0.0"), source("datadog"), "x")?.kind,
+    ).toBe("datadog");
+  });
+
+  it("thiếu, sai hình, hay lệch ngôn ngữ (PromQL@2 khai nguồn DQL@1) ⇒ NÉM", () => {
+    expect(() => metricsSourceOf(providing("2.0.0"), undefined, "x")).toThrow(
+      InvalidAdapterError,
+    );
+    expect(() =>
+      metricsSourceOf(providing("2.0.0"), { kind: "prometheus" }, "x"),
+    ).toThrow(/metricsSource hợp lệ/);
+    expect(() =>
+      metricsSourceOf(providing("2.0.0"), source("datadog"), "x"),
+    ).toThrow(/metrics.query@1/);
+    expect(() =>
+      metricsSourceOf(providing("1.0.0"), source("khong-co"), "x"),
+    ).toThrow(InvalidAdapterError);
+  });
+
+  it("chiều đảo: không provides metrics.query mà xuất metricsSource ⇒ NÉM; không xuất ⇒ vắng", () => {
+    const plain = {
+      capabilities: { provides: [{ id: "logs.sink", version: "1.0.0" }] },
+    } as never;
+    expect(() => metricsSourceOf(plain, source("prometheus"), "x")).toThrow(
+      /không provides metrics.query/,
+    );
+    expect(metricsSourceOf(plain, undefined, "x")).toBeUndefined();
   });
 });
 

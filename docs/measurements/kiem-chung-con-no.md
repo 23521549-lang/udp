@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 38.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 39.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -706,6 +706,30 @@ owned` còn có tài nguyên mang `shared`.
 - **Ảnh hưởng tới kết luận:** độ trung thực của "bốn adapter qua đủ 42 phép". Bộ hợp
   đồng chứng minh lớp nền đúng theo ĐẶC TẢ của `ClusterAccess`; nó không chứng minh đặc
   tả đó khớp Helm thật.
+
+## saas-metrics-real — nguồn metrics SaaS trên tài khoản thật
+
+- **Vì sao nợ:** ba `MetricsProvider` SaaS (Datadog Metrics Query API v1, NRQL qua
+  NerdGraph của New Relic, Metrics API v2 của Dynatrace — Plan #31) được kiểm trước một
+  `fetch` giả trả đúng hình API trong tài liệu của từng nhà cung cấp. Cái giả không kiểm
+  được **quy ước thu thập**: tên metric và tên nhãn mà agent của từng nhà cung cấp tạo ra
+  khi scrape `/metrics` của Golden Path (`udp.<metricBase>` + `kube_namespace` ở Datadog,
+  `<metricBase>_count` + `namespace` ở New Relic, `k8s.namespace.name` ở Dynatrace), và
+  cách mỗi bên lưu nhãn rỗng `ff=""`.
+- **Tiền đề:** tài khoản dùng thử của ba nhà cung cấp; một cluster (`I32-cluster`) chạy
+  sample-app với agent tương ứng (adapter Monitoring của Plan #31); khoá đặt qua Portal
+  (bí mật của tool, không qua `.env`).
+- **Lệnh:** `pnpm --filter @udp/metrics-provider test -- saas.real` (tệp CHƯA CÓ; nó chạy
+  đúng bốn truy vấn phân tích và `probe()` của mỗi provider trên dữ liệu thật, song song
+  với PromQL trên cùng lưu lượng).
+- **Đạt:** với cùng cửa sổ, `requestCount`/`errorCount` của mỗi nguồn SaaS lệch PromQL
+  ≤ 5%, p99 lệch ≤ 10%; series tổng không đếm lặp (`ff` rỗng loại đúng); `probe()` pha 2
+  thấy nhãn `ff` của flag. **Không đạt:** truy vấn trả rỗng trên dữ liệu có thật ⇒ quy
+  ước thu thập sai, sửa ngôn ngữ truy vấn của provider đó.
+- **Tài nguyên:** cluster (~3 GiB) + ba tài khoản SaaS dùng thử.
+- **Ảnh hưởng tới kết luận:** câu "auto-rollback không chỉ chạy với Prometheus" của §5.4
+  và đóng góp **C1** ở phía nguồn metrics: cơ chế chọn nguồn theo binding đã có test tích
+  hợp, còn độ đúng của từng ngôn ngữ truy vấn trên dữ liệu thật là phần chưa đo.
 
 ## agent-mode — chế độ `agent` của ADR-06
 

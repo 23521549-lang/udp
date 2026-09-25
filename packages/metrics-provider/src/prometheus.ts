@@ -7,6 +7,7 @@ import type {
   ProbeOutcome,
   ScrapeIntervalSource,
 } from "./provider.js";
+import { timedRequest } from "./http.js";
 import { queryTemplates, type QueryTemplates } from "./query-templates.js";
 
 /**
@@ -257,38 +258,13 @@ export class PrometheusMetricsProvider implements MetricsProvider {
     return max;
   }
 
-  /**
-   * GET có hạn chờ; mọi lỗi (mạng, mã ≠ 2xx, quá hạn) về `undefined`.
-   *
-   * Hạn chờ do CHÍNH provider giữ (`Promise.race`), không chỉ nhờ `signal`: một
-   * `fetch` tiêm vào hay một proxy không tôn trọng `AbortSignal` vẫn không được
-   * giữ vòng reconciliation treo quá `timeoutMs`. Signal vẫn gửi đi để bên có
-   * tôn trọng thì huỷ được kết nối thật.
-   */
-  private async get(path: string): Promise<string | undefined> {
-    const controller = new AbortController();
-    let timer: NodeJS.Timeout | undefined;
-    const expired = new Promise<undefined>((resolve) => {
-      timer = setTimeout(() => {
-        controller.abort();
-        resolve(undefined);
-      }, this.timeoutMs);
-    });
-    const request = (async (): Promise<string | undefined> => {
-      try {
-        const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
-          signal: controller.signal,
-        });
-        if (!res.ok) return undefined;
-        return await res.text();
-      } catch {
-        return undefined;
-      }
-    })();
-    try {
-      return await Promise.race([request, expired]);
-    } finally {
-      clearTimeout(timer);
-    }
+  /** GET có hạn chờ; mọi lỗi về `undefined` (xem `timedRequest`) */
+  private get(path: string): Promise<string | undefined> {
+    return timedRequest(
+      this.fetchImpl,
+      `${this.baseUrl}${path}`,
+      {},
+      this.timeoutMs,
+    );
   }
 }

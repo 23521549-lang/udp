@@ -43,19 +43,22 @@ describe("nhãn ff của §6.6", () => {
 });
 
 describe("bốn truy vấn của §7.4", () => {
-  it("requestCount và errorCount là increase() tuyệt đối, errorCount thêm 5..", () => {
-    expect(q.requestCount(flag, 60)).toBe(
-      'sum(increase(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", ff="checkout_v2=on"}[60s]))',
-    );
+  it("requestCount và errorCount là increase() tuyệt đối, errorCount thêm 5.. và là 0 khi CÓ lưu lượng mà không lỗi", () => {
+    const total =
+      'sum(increase(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", ff="checkout_v2=on"}[60s]))';
+    expect(q.requestCount(flag, 60)).toBe(total);
     expect(q.errorCount(flag, 60)).toBe(
-      'sum(increase(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", ff="checkout_v2=on", http_response_status_code=~"5.."}[60s]))',
+      '(sum(increase(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", ff="checkout_v2=on", http_response_status_code=~"5.."}[60s])) or 0 * ' +
+        `${total})`,
     );
   });
 
-  it("errorRate là tỉ số hai rate() cùng cửa sổ", () => {
+  it("errorRate là tỉ số hai rate() cùng cửa sổ, tử số 0 khi có lưu lượng mà không lỗi", () => {
+    const total =
+      'sum(rate(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", service_version="1.4.0", ff=""}[30s]))';
     expect(q.errorRate(service, 30)).toBe(
-      'sum(rate(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", service_version="1.4.0", http_response_status_code=~"5..", ff=""}[30s])) / ' +
-        'sum(rate(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", service_version="1.4.0", ff=""}[30s]))',
+      '(sum(rate(http_server_request_duration_seconds_count{service_name="checkout", namespace="udp-demo-dev", service_version="1.4.0", http_response_status_code=~"5..", ff=""}[30s])) or 0 * ' +
+        `${total}) / ${total}`,
     );
   });
 

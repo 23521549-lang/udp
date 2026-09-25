@@ -1,5 +1,10 @@
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
+import {
+  DATADOG_SITES,
+  datadogApiHost,
+  type MetricsSourceDeclaration,
+} from "@udp/metrics-provider";
 import { createSaaSAdapter } from "../../adapter-base/saas.js";
 
 /**
@@ -20,7 +25,7 @@ import { createSaaSAdapter } from "../../adapter-base/saas.js";
 
 export const datadogConfigSchema = z.object({
   /** `datadoghq.com`, `datadoghq.eu`... — quyết định nơi dữ liệu nằm */
-  site: z.enum(["datadoghq.com", "datadoghq.eu", "ap1.datadoghq.com"]),
+  site: z.enum(DATADOG_SITES),
   /**
    * Khoá API (32 hex) và khoá ứng dụng (40 hex) — BÍ MẬT (Plan #31 QĐ-6): niêm phong khi
    * lưu, không lên dây, chỉ mở trong bộ nhớ worker. Định dạng chặt để bắt lỗi dán nhầm
@@ -51,7 +56,7 @@ const adapter: DomainAdapter = createSaaSAdapter({
     recommends: ["traces.sink"],
   },
   configSchema: datadogConfigSchema,
-  apiHost: "api.datadoghq.com",
+  apiHost: (config) => datadogApiHost(datadogConfigSchema.parse(config).site),
   connectionName: "udp-datadog-connection",
   quotaDimensions: [],
   /** Khớp `ignoredLabelPrefixes` của fixture — xem chú thích tương tự ở prometheus-grafana */
@@ -78,20 +83,33 @@ const adapter: DomainAdapter = createSaaSAdapter({
     "api-key": datadogConfigSchema.parse(config).apiKey,
   }),
 
-  bindings: () => [
-    {
-      id: "metrics.query",
-      version: "1.0.0",
-      providedBy: "monitoring:datadog",
-      endpoint: "https://api.datadoghq.com/api/v1/query",
-    },
-    {
-      id: "logs.sink",
-      version: "1.0.0",
-      providedBy: "monitoring:datadog",
-      endpoint: "https://http-intake.logs.datadoghq.com/api/v2/logs",
-    },
-  ],
+  /** Endpoint theo vùng dữ liệu của tài khoản — site EU mà trỏ Mỹ là 403 hay mất dữ liệu */
+  bindings: (_ctx, config) => {
+    const { site } = datadogConfigSchema.parse(config);
+    return [
+      {
+        id: "metrics.query",
+        version: "1.0.0",
+        providedBy: "monitoring:datadog",
+        endpoint: `https://${datadogApiHost(site)}/api/v1/query`,
+      },
+      {
+        id: "logs.sink",
+        version: "1.0.0",
+        providedBy: "monitoring:datadog",
+        endpoint: `https://http-intake.logs.${site}/api/v2/logs`,
+      },
+    ];
+  },
 });
 
 export default adapter;
+
+/** §5.4: nguồn metrics của canary analysis — cùng site và khoá mà adapter đã cấu hình */
+export const metricsSource: MetricsSourceDeclaration = {
+  kind: "datadog",
+  of: (config) => {
+    const { site, apiKey, appKey } = datadogConfigSchema.parse(config);
+    return { kind: "datadog", site, apiKey, appKey };
+  },
+};

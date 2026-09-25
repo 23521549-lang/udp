@@ -71,6 +71,18 @@ function analysisMatchers(
   return matchersOf(t, isBranchTarget(t) ? extra : [...extra, 'ff=""']);
 }
 
+/**
+ * Không có series lỗi nào KHI CÓ lưu lượng là 0 lỗi, không phải "không biết" (Plan #31).
+ *
+ * Histogram chỉ sinh series cho bộ nhãn đã từng quan sát: một nhánh khoẻ chưa từng trả 5xx
+ * không có series `http_response_status_code=~"5.."`, và `sum(...)` trên tập rỗng là vector
+ * RỖNG — `hasData: false`, nên `decide()` HOLD mãi một canary không có lỗi nào. `or` với
+ * `0 * <tổng>` cho đúng 0 khi series tổng CÓ mặt, và vẫn rỗng khi không có lưu lượng nào:
+ * I7 giữ nguyên — "không biết" không bao giờ thành "không lỗi".
+ */
+const zeroWhenTraffic = (errors: string, total: string): string =>
+  `(${errors} or 0 * ${total})`;
+
 export interface QueryTemplates {
   requestCount(t: MetricTarget, windowSec: number): string;
   errorCount(t: MetricTarget, windowSec: number): string;
@@ -99,14 +111,20 @@ export function queryTemplates(
   }
   const count = `${metricBase}_count`;
   const bucket = `${metricBase}_bucket`;
+  const over = (fn: "increase" | "rate", t: MetricTarget, w: number) => ({
+    total: `sum(${fn}(${count}${analysisMatchers(t)}${windowOf(w)}))`,
+    errors: `sum(${fn}(${count}${analysisMatchers(t, [ERROR_STATUS])}${windowOf(w)}))`,
+  });
   return {
-    requestCount: (t, w) =>
-      `sum(increase(${count}${analysisMatchers(t)}${windowOf(w)}))`,
-    errorCount: (t, w) =>
-      `sum(increase(${count}${analysisMatchers(t, [ERROR_STATUS])}${windowOf(w)}))`,
-    errorRate: (t, w) =>
-      `sum(rate(${count}${analysisMatchers(t, [ERROR_STATUS])}${windowOf(w)})) / ` +
-      `sum(rate(${count}${analysisMatchers(t)}${windowOf(w)}))`,
+    requestCount: (t, w) => over("increase", t, w).total,
+    errorCount: (t, w) => {
+      const q = over("increase", t, w);
+      return zeroWhenTraffic(q.errors, q.total);
+    },
+    errorRate: (t, w) => {
+      const q = over("rate", t, w);
+      return `${zeroWhenTraffic(q.errors, q.total)} / ${q.total}`;
+    },
     latencyP99: (t, w) =>
       `histogram_quantile(0.99, sum by (le) (rate(${bucket}${analysisMatchers(t)}${windowOf(w)})))`,
     probeSeries: (t, w) => {

@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import type { Request } from "express";
 import { env } from "@udp/config";
-import type { MetricsProvider } from "@udp/metrics-provider";
+import type { MetricsProvider, MetricsSource } from "@udp/metrics-provider";
 import type { MetricQueries } from "@udp/shared-types";
 import {
   createFlagServiceClient,
@@ -38,9 +38,13 @@ export interface AppDeps {
   /**
    * Provider cho một lần probe — tạo mới mỗi lời gọi, KHÔNG cache theo
    * `metricBase`: ở đây khoá đến từ request người dùng, cache là rò bộ nhớ theo
-   * số chuỗi khác nhau họ gửi (QA Plan #18).
+   * số chuỗi khác nhau họ gửi (QA Plan #18). `source` là nguồn của environment
+   * suy từ binding `metrics.query` (Plan #31); `null` khi project chưa có binding.
    */
-  metricsFor(metricQueries: MetricQueries | undefined): MetricsProvider;
+  metricsFor(
+    source: MetricsSource | null,
+    metricQueries: MetricQueries | undefined,
+  ): MetricsProvider;
   flagService: FlagServiceClient;
   /**
    * [v4.11] UDP là OIDC issuer (Plan #26 QĐ-5) — `null` khi chưa cấu hình: federation

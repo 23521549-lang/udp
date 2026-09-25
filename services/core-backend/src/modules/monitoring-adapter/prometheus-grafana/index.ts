@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
+import type { MetricsSourceDeclaration } from "@udp/metrics-provider";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
 
 /**
@@ -122,3 +123,19 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
 });
 
 export default adapter;
+
+/**
+ * §5.4: PromQL trên Prometheus TRONG cluster tenant — endpoint của binding là địa chỉ
+ * ClusterIP, chỉ tới được qua API-server service proxy (ADR-06).
+ */
+export const metricsSource: MetricsSourceDeclaration = {
+  kind: "prometheus",
+  of: (_config, binding) => {
+    if (binding.endpoint === undefined) {
+      throw new Error(
+        "binding metrics.query của prometheus-grafana thiếu endpoint",
+      );
+    }
+    return { kind: "prometheus", baseUrl: binding.endpoint, inCluster: true };
+  },
+};

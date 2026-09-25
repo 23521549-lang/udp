@@ -1688,7 +1688,7 @@ src/
 ├── core/
 │   ├── orchestrator/           ← Điều phối luồng nghiệp vụ end-to-end
 │   ├── app-deps.ts             ← [v4.4] phụ thuộc RA NGOÀI tiến trình (nguồn metrics, Service 2) — createApp(deps), test thay được
-│   ├── metrics-source.ts       ← [v4.4] PrometheusMetricsProvider cho probe pha 1 — PROMETHEUS_URL chung tới khi có ADR-06 (§16)
+│   ├── metrics-source.ts       ← [v4.11] provider cho probe pha 1 theo nguồn của binding metrics.query; Prometheus trong cluster vẫn PROMETHEUS_URL (§16)
 │   ├── clients/
 │   │   └── flag-service.client.ts ← [v4.4] POST /internal/rollouts/:id/track — SUCCESS | LIMIT | REJECTED | UNAVAILABLE;
 │   │                                  [v4.5] bốn lời gọi GHI flag kèm người làm/IP/UA: 404/409/422 ⇒ tới Portal nguyên vẹn,
@@ -4642,6 +4642,8 @@ sum(rate(http_server_request_duration_seconds_count{
 ```
 
 > **[v4.7] `ff=""` ở mọi truy vấn không nhắm nhánh.** Middleware ghi mỗi request vào series tổng `ff=""` CỘNG mỗi series tracked (§6.6), nên bốn truy vấn phân tích (request count, error count, error rate, p99) khi chưa có matcher `ff` tự thêm `ff=""` — không có nó thì một request đánh giá T tracked flag được đếm 1 + T lần. Truy vấn probe (pha 1 và `ff=~"^<key>=.*"` của pha 2) giữ nguyên: thêm `ff=""` ở đó thì pha 2 luôn rỗng và mọi rollout FLAG_LEVEL hết hạn. `namespace` không do middleware phát mà do Prometheus gắn khi scrape — job `sample-app` của #22 phải gắn nó, và `service_name` phải bằng `workloadName` của rollout.
+
+> **[v4.11] Số lỗi là 0 khi CÓ lưu lượng mà không có series 5xx (Plan #31).** Histogram chỉ sinh series cho bộ nhãn đã quan sát, nên nhánh khoẻ chưa từng trả 5xx không có series lỗi và `sum(...)` trên tập rỗng là vector rỗng — `hasData = false`, `decide()` HOLD mãi đúng canary tốt nhất. Truy vấn lỗi (error count, tử số error rate) viết `(<lỗi> or 0 * <tổng>)`: ra 0 khi series tổng có mặt, vẫn rỗng khi không có lưu lượng nào — I7 không đổi. Nguồn SaaS (§5.4) áp cùng luật ở phía provider.
 
 | Cơ chế | Mô tả |
 | ------ | ----- |
@@ -7626,7 +7628,7 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | **Flag đánh giá sau khi response đã gửi, hoặc trong job nền, không được gắn nhãn** | Không có request store để ghi vào. Chỉ mất phần *attribution theo request*, counter của `MetricsHook` vẫn có. Ảnh hưởng: C1 không phủ được flag chỉ dùng trong worker nền | Store theo job, hoặc đo ở tầng khác cho workload không phải HTTP |
 | **C1 yêu cầu ứng dụng cài middleware của UDP và dùng `UDPFeatureFlagProvider`** ([v4.7] hook do provider tự gắn) | Không có cách nào biết một request đã chạy nhánh nào của flag mà không có sự hợp tác của ứng dụng. Golden Path tích hợp sẵn; `Import Existing Repo` phát hiện và hướng dẫn; `probe()` chặn tạo rollout nếu thiếu middleware (pha 1) và S3 không áp bậc đầu khi chưa thấy nhãn `ff` (pha 2, [v4.4]), nên **không bao giờ chạy mù** | Auto-instrumentation qua eBPF hoặc OTel agent |
 | **[v4.4] Lát cắt Luồng 5: chỉ FLAG_LEVEL + CANARY** | S1 trả 422 cho SERVICE_LEVEL và ATTRIBUTE_SPLIT/BLUE_GREEN: S3 chưa có executor cho chúng, và tạo được một rollout không bao giờ chạy là nói dối người dùng | Executor SERVICE_LEVEL khi có cluster-access (ADR-06); chiến lược thủ công (§7.2) |
-| **[v4.4] S1 và S3 đọc metric qua `PROMETHEUS_URL` chung** | ADR-06 muốn đi qua API-server service proxy của cluster tenant; hôm nay chưa có cluster-access nên cả hai service dùng một địa chỉ cấu hình | `MetricsProvider` theo capability `metrics.query` của environment — chữ ký `metricsFor` không đổi |
+| **[v4.4→v4.11] Prometheus TRONG cluster và Service 3 còn đọc metric qua `PROMETHEUS_URL` chung** | [v4.11, Plan #31] S1 đã chọn nguồn theo binding `metrics.query` của environment: Datadog/New Relic/Dynatrace đi thẳng API của nhà cung cấp qua egress guard với khoá mở trong bộ nhớ. Còn lại hai chỗ: Prometheus/VictoriaMetrics trong cluster tenant chỉ tới được qua API-server service proxy (ADR-06), và S3 chưa chọn nguồn theo binding (cần mở bí mật của tool ngoài S1). Truy vấn SaaS trên tài khoản thật: Sổ nợ: `saas-metrics-real` | `proxyService` cho nguồn trong cluster và nguồn theo binding ở S3 (Plan #39) |
 | **[v4.4] Probe theo lưu lượng: app gần như không có traffic không qua được** | Pha 1 và pha 2 đòi series TĂNG trong 5 phút (`probeWindowSeconds`); một workload dev không có request nào trong 5 phút bị báo "chưa xuất metric" (pha 1) hoặc HOLD (pha 2). Đổi lại, series cũ của rollout trước không mở nhầm cổng | Tạo chút traffic trước khi rollout; hoặc cửa sổ probe theo cấu hình |
 | **[v4.4] Mỗi flag tối đa một rollout sống** | Nhãn `ff` theo flag, không theo workload: hai rollout cùng flag trên hai workload không tách được bằng metric | Nhãn kèm workload nếu có nhu cầu thật |
 | **[v4.5] Audit của Luồng 4 tin người làm do Service 1 khai** | S2 ghi `actor_user_id`, IP, UA theo header của lời gọi đã qua bí mật nội bộ; bên giữ bí mật đó giả được người làm (cùng giới hạn của §12 T12) | Xác thực nội bộ bằng SA token + TokenReview (§12 T12); ký người làm kèm request |

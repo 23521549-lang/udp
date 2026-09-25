@@ -407,6 +407,12 @@ export const METRICS_PROVIDER = {
    * traffic vẫn qua.
    */
   probeWindowSeconds: 300,
+  /**
+   * Nguồn SaaS (Datadog, New Relic, Dynatrace — Plan #31): agent của nhà cung cấp scrape
+   * `/metrics` rồi đẩy lô theo chu kỳ 60 giây mặc định, và API không cho đo chu kỳ đó.
+   * Dùng làm độ trễ scrape VÀ scrape interval "assumed" — validator ép cửa sổ ≥ 4 × 60s.
+   */
+  saasExportIntervalSeconds: 60,
 } as const;
 
 /**

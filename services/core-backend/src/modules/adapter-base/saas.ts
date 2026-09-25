@@ -40,8 +40,11 @@ export interface SaaSAdapterSpec {
   version: string;
   capabilities: CapabilityDeclaration;
   configSchema: ZodType;
-  /** Host API của nhà cung cấp — phải khớp `externalHosts` của `AdapterFixture` */
-  apiHost: string;
+  /**
+   * Host API của nhà cung cấp — phải khớp `externalHosts` của `AdapterFixture`. Hàm khi host
+   * theo cấu hình (vùng dữ liệu: Datadog EU trả lời ở `api.datadoghq.eu`, không ở Mỹ).
+   */
+  apiHost: string | ((config: DomainToolConfig) => string);
   /** Tên ConfigMap để lại trong cluster cho workload đọc */
   connectionName: string;
   /** Đường dẫn API để cấu hình; lớp nền gọi nó qua `ctx.fetch` */
@@ -58,8 +61,11 @@ export interface SaaSAdapterSpec {
    * vào `Secret` `<connectionName>-key` trong `udp-system`, KHÔNG vào ConfigMap kết nối.
    */
   secretValues?: (config: DomainToolConfig) => Record<string, string>;
-  /** Binding mà adapter cung cấp sau khi cấu hình xong */
-  bindings: (ctx: ReadOnlyAdapterContext) => CapabilityBinding[];
+  /** Binding mà adapter cung cấp sau khi cấu hình xong — endpoint có thể theo vùng của config */
+  bindings: (
+    ctx: ReadOnlyAdapterContext,
+    config: DomainToolConfig,
+  ) => CapabilityBinding[];
   quotaDimensions: readonly (keyof DomainAdapterContext["quota"])[];
   /**
    * Prefix khoá được BỊ QUA khi so drift, mỗi cái kèm lý do.
@@ -137,6 +143,9 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
     name: spec.connectionName,
   });
 
+  const hostOf = (config: DomainToolConfig): string =>
+    typeof spec.apiHost === "string" ? spec.apiHost : spec.apiHost(config);
+
   const secretName = `${spec.connectionName}-key`;
   const secretOf = (
     config: DomainToolConfig,
@@ -153,7 +162,7 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
     const secret = secretOf(config, ctx);
     return {
       provider: spec.toolId,
-      apiHost: spec.apiHost,
+      apiHost: hostOf(config),
       /**
        * TÊN secret và băm, KHÔNG phải giá trị: workload đọc ConfigMap này để biết mount
        * secret nào, còn giá trị chỉ nằm trong `Secret` (Plan #31 QĐ-5).
@@ -195,7 +204,7 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
      * adapter gọi thêm một host lạ bị bắt.
      */
     const res = await ctx.fetch(
-      `https://${spec.apiHost}${spec.configurePath(config)}`,
+      `https://${hostOf(config)}${spec.configurePath(config)}`,
       {
         method: "POST",
         headers: {
@@ -217,7 +226,7 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
     if (secret !== null) await client.write("apply", secret.ref, secret.body);
     await client.write("apply", connectionRef(ctx), desiredOf(config, ctx));
     ctx.progress(`${spec.toolId} đã cấu hình`);
-    return spec.bindings(ctx);
+    return spec.bindings(ctx, config);
   }
 
   async function guarded<T>(
