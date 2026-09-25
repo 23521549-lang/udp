@@ -11,6 +11,7 @@ import { CONTRACT_SYSTEM_NAMESPACE } from "@udp/adapter-core/testing";
  */
 
 type Mutations = AdapterFixture["driftMutations"];
+type Client = Parameters<Mutations[number]["apply"]>[0];
 
 /** Hai prefix mà lớp nền Helm của mọi adapter bỏ qua khi so drift — mỗi cái kèm lý do */
 export const HELM_IGNORED_PREFIXES: AdapterFixture["ignoredLabelPrefixes"] = [
@@ -32,10 +33,17 @@ const ref = (kind: string, name: string, namespace: string): ObjectRef => ({
   name,
 });
 
-/** Sửa tay từng đối tượng mà lớp nền Helm ghi cho `releaseName` */
+/**
+ * Sửa tay từng đối tượng mà lớp nền Helm ghi cho `releaseName` — và cho MỖI release đi kèm
+ * (Plan #32): trôi ở bất kỳ release nào của nhóm cũng phải bị thấy.
+ */
 export function helmDriftMutations(
   releaseName: string,
-  options: { secrets?: boolean; namespace?: string } = {},
+  options: {
+    secrets?: boolean;
+    namespace?: string;
+    companions?: readonly string[];
+  } = {},
 ): Mutations {
   const ns = options.namespace ?? CONTRACT_SYSTEM_NAMESPACE;
   return [
@@ -50,11 +58,25 @@ export function helmDriftMutations(
       name: "xoá hẳn HelmRelease (workload không còn chạy)",
       apply: (c) => c.write("delete", ref("HelmRelease", releaseName, ns)),
     },
+    ...(options.companions ?? []).flatMap((companion) => [
+      {
+        name: `xoá hẳn HelmRelease đi kèm ${companion}`,
+        apply: (c: Client) =>
+          c.write("delete", ref("HelmRelease", companion, ns)),
+      },
+      {
+        name: `sửa tay ConfigMap giá trị của ${companion}`,
+        apply: (c: Client) =>
+          c.write("patch", ref("ConfigMap", `${companion}-values`, ns), {
+            chartVersion: "0.0.0-ai-do-sua-tay",
+          }),
+      },
+    ]),
     ...(options.secrets === true
       ? [
           {
             name: "xoá Secret của release (agent mất khoá)",
-            apply: (c: Parameters<Mutations[number]["apply"]>[0]) =>
+            apply: (c: Client) =>
               c.write("delete", ref("Secret", `${releaseName}-secrets`, ns)),
           },
         ]

@@ -7,6 +7,7 @@ import type {
   DomainAdapterContext,
   DomainToolConfig,
   ReadOnlyAdapterContext,
+  ReadOnlyKubernetesClient,
 } from "@udp/adapter-core";
 import type { ZodType } from "zod";
 import { secretRef, toolSecret, type ToolSecret } from "./cluster-secret.js";
@@ -95,6 +96,34 @@ export interface HelmAdapterSpec {
    * không được khai: §12.2 chỉ cho `tooling` chạm `secrets` trong `udp-system`.
    */
   secretValues?: (config: DomainToolConfig) => Record<string, unknown>;
+  /**
+   * Khoá PHẲNG trong cùng `Secret` (Plan #32) — thứ workload khác mount bằng `secretKeyRef`
+   * (mật khẩu, HEC token, license key), không đọc được từ `values.yaml` lồng nhau. Binding
+   * trỏ tới chúng bằng TÊN `Secret` + khoá, không bao giờ bằng giá trị.
+   */
+  secretKeys?: (config: DomainToolConfig) => Record<string, string>;
+  /**
+   * Release ĐI KÈM, theo thứ tự áp (Plan #32): máy chủ lưu trữ là release chính, giao diện
+   * và bộ thu log đi sau; gỡ thì ngược lại. Không mang bí mật riêng — đọc `Secret` của release
+   * chính trong cùng namespace (một bí mật, một chỗ niêm phong, một chỗ xoá).
+   */
+  companions?: readonly HelmCompanion[];
+}
+
+export interface HelmCompanion {
+  /** Tên release riêng, ổn định qua các lượt deploy */
+  releaseName: string;
+  chart: HelmChartRef;
+  /** Cùng luật với `values` của release chính: NÉM khi thiếu binding */
+  values: (
+    config: DomainToolConfig,
+    ctx: ReadOnlyAdapterContext,
+  ) => Record<string, unknown>;
+  /**
+   * Release này cũng nhận `secretValues` (qua `secretValuesFrom` tới CÙNG `Secret` của release
+   * chính) — cho chart chỉ nhận bí mật dưới dạng giá trị Helm (issuer key của Linkerd).
+   */
+  readsSecretValues?: boolean;
 }
 
 /**
@@ -142,12 +171,33 @@ export class HelmAdapterError extends Error {
   }
 }
 
+/** Một release của adapter — release chính hay một release đi kèm */
+interface HelmUnit extends HelmCompanion {
+  primary: boolean;
+}
+
 export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
-  if (spec.secretValues !== undefined && spec.scope !== "cluster") {
+  const hasSecret =
+    spec.secretValues !== undefined || spec.secretKeys !== undefined;
+  if (hasSecret && spec.scope !== "cluster") {
     // Lỗi của mã adapter, bắt lúc nạp registry chứ không lúc khách bật tool
     throw new HelmAdapterError(
-      `${spec.toolId}: secretValues chỉ dành cho adapter cluster-scoped (§12.2)`,
+      `${spec.toolId}: bí mật trên cluster chỉ dành cho adapter cluster-scoped (§12.2)`,
     );
+  }
+
+  /** Release chính rồi các release đi kèm — ĐÚNG thứ tự áp; gỡ theo thứ tự ngược */
+  const units: readonly HelmUnit[] = [
+    {
+      releaseName: spec.releaseName,
+      chart: spec.chart,
+      values: spec.values,
+      primary: true,
+    },
+    ...(spec.companions ?? []).map((c) => ({ ...c, primary: false })),
+  ];
+  if (new Set(units.map((u) => u.releaseName)).size !== units.length) {
+    throw new HelmAdapterError(`${spec.toolId}: hai release trùng tên`);
   }
 
   /**
@@ -162,18 +212,18 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
       ? ctx.systemNamespace
       : (ctx.environment?.k8sNamespace ?? ctx.systemNamespace);
 
-  const releaseRef = (ctx: ReadOnlyAdapterContext) => ({
+  const releaseRef = (unit: HelmUnit, ctx: ReadOnlyAdapterContext) => ({
     apiVersion: "helm.toolkit.fluxcd.io/v2",
     kind: RELEASE_KIND,
     namespace: nsOf(ctx),
-    name: spec.releaseName,
+    name: unit.releaseName,
   });
 
-  const valuesRef = (ctx: ReadOnlyAdapterContext) => ({
+  const valuesRef = (unit: HelmUnit, ctx: ReadOnlyAdapterContext) => ({
     apiVersion: "v1",
     kind: VALUES_KIND,
     namespace: nsOf(ctx),
-    name: `${spec.releaseName}-values`,
+    name: `${unit.releaseName}-values`,
   });
 
   const secretName = `${spec.releaseName}-secrets`;
@@ -181,34 +231,43 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     config: DomainToolConfig,
     ctx: ReadOnlyAdapterContext,
   ): ToolSecret | null =>
-    spec.secretValues === undefined
-      ? null
-      : toolSecret(nsOf(ctx), secretName, {
-          "values.yaml": JSON.stringify(spec.secretValues(config)),
-        });
+    hasSecret
+      ? toolSecret(nsOf(ctx), secretName, {
+          ...(spec.secretValues === undefined
+            ? {}
+            : { "values.yaml": JSON.stringify(spec.secretValues(config)) }),
+          ...spec.secretKeys?.(config),
+        })
+      : null;
 
   /** HelmRelease mong muốn — `applyRelease` ghi và `detectDrift` so cùng một cấu trúc */
-  const releaseSpec = (): Record<string, unknown> => ({
-    chart: spec.chart.name,
-    version: spec.chart.version,
-    repo: spec.chart.repo,
-    valuesFrom: `${spec.releaseName}-values`,
-    ...(spec.secretValues === undefined
-      ? {}
-      : { secretValuesFrom: secretName }),
+  const releaseSpec = (unit: HelmUnit): Record<string, unknown> => ({
+    chart: unit.chart.name,
+    version: unit.chart.version,
+    repo: unit.chart.repo,
+    valuesFrom: `${unit.releaseName}-values`,
+    ...((unit.primary || unit.readsSecretValues === true) &&
+    spec.secretValues !== undefined
+      ? { secretValuesFrom: secretName }
+      : {}),
   });
 
-  /** Nội dung mong muốn — `detectDrift` so với chính cấu trúc này */
+  /**
+   * Nội dung mong muốn của ConfigMap giá trị — `detectDrift` so với chính cấu trúc này. Băm
+   * của bí mật vào MỌI release: release đi kèm cũng đọc `Secret`, và đổi khoá phải làm cả
+   * nhóm thấy giá trị mới.
+   */
   function desiredOf(
+    unit: HelmUnit,
     config: DomainToolConfig,
     ctx: ReadOnlyAdapterContext,
   ): Record<string, unknown> {
     const secret = secretOf(config, ctx);
     return {
-      chart: spec.chart.name,
-      chartVersion: spec.chart.version,
-      repo: spec.chart.repo,
-      values: spec.values(config, ctx),
+      chart: unit.chart.name,
+      chartVersion: unit.chart.version,
+      repo: unit.chart.repo,
+      values: unit.values(config, ctx),
       ...(secret === null ? {} : { secretsDigest: secret.digest }),
     };
   }
@@ -236,18 +295,72 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     }
     assertQuota(ctx);
 
-    ctx.progress(`áp ${spec.chart.name} ${spec.chart.version}`);
     /** Identity CỐ ĐỊNH là `tooling` — adapter không có đường chọn khác (§12.2) */
     const client = await ctx.k8s.getClient("tooling");
-    const desired = desiredOf(config, ctx);
     const secret = secretOf(config, ctx);
-
     // Secret trước: release không bao giờ trỏ tới một Secret chưa có
     if (secret !== null) await client.write("apply", secret.ref, secret.body);
-    await client.write("apply", valuesRef(ctx), desired);
-    await client.write("apply", releaseRef(ctx), releaseSpec());
+    for (const unit of units) {
+      ctx.progress(`áp ${unit.chart.name} ${unit.chart.version}`);
+      await client.write(
+        "apply",
+        valuesRef(unit, ctx),
+        desiredOf(unit, config, ctx),
+      );
+      await client.write("apply", releaseRef(unit, ctx), releaseSpec(unit));
+    }
     ctx.progress(`${spec.toolId} đã sẵn sàng`);
     return spec.bindings(ctx, config);
+  }
+
+  /**
+   * Trôi của MỘT release — đọc CẢ HAI đối tượng đã ghi, không chỉ ConfigMap.
+   *
+   * [v4.10] Lưới E16 có một ô "xoá hẳn một Deployment", và trong mô hình mô phỏng của
+   * §13.2 thì `HelmRelease` là đối tượng đại diện cho workload đang chạy. Bản trước chỉ đọc
+   * ConfigMap giá trị, nên xoá release là một lần trôi KHÔNG bị phát hiện. Release đi kèm
+   * mang tên nó trong `details`, để người vận hành biết phần nào của nhóm đã trôi.
+   */
+  async function unitDrift(
+    client: ReadOnlyKubernetesClient,
+    unit: HelmUnit,
+    config: DomainToolConfig,
+    ctx: ReadOnlyAdapterContext,
+  ): Promise<{ drifted: boolean; details?: string }> {
+    const prefix = unit.primary ? "" : `${unit.releaseName}: `;
+    const ignored = spec.ignoredKeyPrefixes ?? [];
+    const release = await client.read<Record<string, unknown>>(
+      "get",
+      releaseRef(unit, ctx),
+    );
+    if (release === null) {
+      return { drifted: true, details: `${prefix}thiếu HelmRelease của tool` };
+    }
+    const releaseDrift = driftBetween(releaseSpec(unit), release, ignored);
+    if (releaseDrift.drifted) {
+      return {
+        drifted: true,
+        details: `${prefix}HelmRelease ${releaseDrift.details ?? "đã trôi"}`,
+      };
+    }
+    const found = await client.read<Record<string, unknown>>(
+      "get",
+      valuesRef(unit, ctx),
+    );
+    if (found === null) {
+      return {
+        drifted: true,
+        details: `${prefix}thiếu ConfigMap giá trị của release`,
+      };
+    }
+    const valuesDrift = driftBetween(
+      desiredOf(unit, config, ctx),
+      found,
+      ignored,
+    );
+    return valuesDrift.drifted && !unit.primary
+      ? { drifted: true, details: `${prefix}${valuesDrift.details ?? ""}` }
+      : valuesDrift;
   }
 
   /**
@@ -321,51 +434,12 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
          * đường nào ghi trong lúc quét.
          */
         const client = await ctx.k8s.getClient("tooling");
-        /**
-         * [v4.10] Đọc CẢ HAI đối tượng mà `applyRelease` đã ghi, không chỉ ConfigMap.
-         *
-         * Lưới E16 có một ô "xoá hẳn một Deployment", và trong mô hình mô phỏng của
-         * §13.2 thì `HelmRelease` là đối tượng đại diện cho workload đang chạy. Bản
-         * trước chỉ đọc ConfigMap giá trị, nên xoá release là một lần trôi KHÔNG bị phát
-         * hiện: ConfigMap vẫn nguyên, và `detectDrift` trả `false` trong khi trên cluster
-         * không còn gì chạy. Một hàm quét drift bỏ sót đúng loại trôi nặng nhất thì ba
-         * chiều của I32 chỉ còn là hai.
-         */
-        const release = await client.read<Record<string, unknown>>(
-          "get",
-          releaseRef(ctx),
-        );
-        if (release === null) {
-          return { drifted: true, details: "thiếu HelmRelease của tool" };
+        for (const unit of units) {
+          const drift = await unitDrift(client, unit, config, ctx);
+          if (drift.drifted) return drift;
         }
-        const releaseDrift = driftBetween(
-          releaseSpec(),
-          release,
-          spec.ignoredKeyPrefixes ?? [],
-        );
-        if (releaseDrift.drifted) {
-          return {
-            drifted: true,
-            details: `HelmRelease ${releaseDrift.details ?? "đã trôi"}`,
-          };
-        }
-        const found = await client.read<Record<string, unknown>>(
-          "get",
-          valuesRef(ctx),
-        );
-        if (found === null) {
-          return {
-            drifted: true,
-            details: "thiếu ConfigMap giá trị của release",
-          };
-        }
-        const valuesDrift = driftBetween(
-          desiredOf(config, ctx),
-          found,
-          spec.ignoredKeyPrefixes ?? [],
-        );
         const secret = secretOf(config, ctx);
-        if (valuesDrift.drifted || secret === null) return valuesDrift;
+        if (secret === null) return { drifted: false };
         /**
          * Secret bị xoá hay sửa tay cũng là trôi — agent mất khoá mà ConfigMap vẫn nguyên.
          * `details` chỉ nêu TÊN khoá (`driftBetween` không in giá trị), nên bí mật đọc lại
@@ -396,48 +470,62 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
         /** Capability không liên quan ⇒ no-op THÀNH CÔNG, và không ghi gì */
         if (!needed.includes(changed.id)) return undefined;
         /**
-         * Áp lại release với `resolved` MỚI.
+         * Áp lại giá trị của MỌI release với `resolved` MỚI.
          *
-         * `spec.values` đọc `ctx.resolved`, nên áp lại là cách duy nhất để endpoint mới đi
-         * vào giá trị Helm. Sửa tay một trường trong ConfigMap sẽ để release và ConfigMap
-         * lệch nhau, và lần `detectDrift` sau báo trôi.
+         * `values` đọc `ctx.resolved`, nên áp lại là cách duy nhất để endpoint mới đi vào giá
+         * trị Helm — của release chính lẫn release đi kèm (bộ thu log trỏ tới sink). Sửa tay
+         * một trường trong ConfigMap sẽ để release và ConfigMap lệch nhau.
          */
         const client = await ctx.k8s.getClient("tooling");
-        await client.write("patch", valuesRef(ctx), {
-          values: spec.values(config, {
-            ...ctx,
-            resolved: { ...ctx.resolved, [changed.id]: changed },
-          }),
-        });
+        const next = {
+          ...ctx,
+          resolved: { ...ctx.resolved, [changed.id]: changed },
+        };
+        for (const unit of units) {
+          await client.write("patch", valuesRef(unit, ctx), {
+            values: unit.values(config, next),
+          });
+        }
         return undefined;
       }),
 
     healthcheck: (ctx) =>
       guarded(async () => {
         const client = await ctx.k8s.getClient("tooling");
-        const found = await client.read("get", releaseRef(ctx));
+        const missing: string[] = [];
+        for (const unit of units) {
+          if ((await client.read("get", releaseRef(unit, ctx))) === null) {
+            missing.push(unit.releaseName);
+          }
+        }
         /** Chưa cài ⇒ `healthy: false`, KHÔNG ném: Portal gọi hàm này ở mọi trạng thái */
-        return found === null
-          ? { healthy: false, details: "chưa có Helm release" }
-          : { healthy: true };
+        return missing.length === 0
+          ? { healthy: true }
+          : {
+              healthy: false,
+              details: `chưa có Helm release ${missing.join(", ")}`,
+            };
       }),
 
     teardown: (ctx, reason) =>
       guarded(async () => {
         const client = await ctx.k8s.getClient("tooling");
-        await client.write("delete", releaseRef(ctx));
-        /**
-         * `reason = "switch"` GIỮ ConfigMap giá trị.
-         *
-         * Đổi tool thì cấu hình cũ còn ích: người vận hành so được cái mới với cái cũ, và
-         * một lần đổi ngược lại không mất thiết lập. Tắt domain hay xoá project thì dọn
-         * sạch — §5.2 nói `reason` tồn tại đúng để phân biệt hai việc đó.
-         */
-        if (reason !== "switch") {
-          await client.write("delete", valuesRef(ctx));
+        // Ngược thứ tự áp: bộ thu log và giao diện đi trước máy chủ lưu trữ
+        for (const unit of [...units].reverse()) {
+          await client.write("delete", releaseRef(unit, ctx));
+          /**
+           * `reason = "switch"` GIỮ ConfigMap giá trị.
+           *
+           * Đổi tool thì cấu hình cũ còn ích: người vận hành so được cái mới với cái cũ, và
+           * một lần đổi ngược lại không mất thiết lập. Tắt domain hay xoá project thì dọn
+           * sạch — §5.2 nói `reason` tồn tại đúng để phân biệt hai việc đó.
+           */
+          if (reason !== "switch") {
+            await client.write("delete", valuesRef(unit, ctx));
+          }
         }
         // Bí mật thì KHÔNG giữ kể cả khi đổi tool: khoá không sống lâu hơn tool dùng nó
-        if (spec.secretValues !== undefined) {
+        if (hasSecret) {
           await client.write("delete", secretRef(nsOf(ctx), secretName));
         }
         return undefined;
