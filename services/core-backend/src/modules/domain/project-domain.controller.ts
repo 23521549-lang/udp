@@ -68,6 +68,7 @@ projectDomainRouter.post(
   asyncHandler(async (req, res) => {
     sendJson(res, domainValidationResponseWire, {
       validation: await domains.validate(
+        projectIdParam(req),
         req.body as DomainTargetState,
         await appDepsOf(req).domainRegistry(),
       ),

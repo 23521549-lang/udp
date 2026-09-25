@@ -23,6 +23,7 @@ import type { EnqueueJob } from "../provisioning/provisioning.service.js";
 import { applyToRunning } from "./domain-apply.service.js";
 import type { DomainAdapterRegistry } from "./domain-adapter.registry.js";
 import * as store from "./domain-config.store.js";
+import { resolveKept, sealSecrets } from "./tool-secrets.js";
 import {
   resolveTarget,
   validateTarget,
@@ -80,6 +81,58 @@ export async function drift(
   };
 }
 
+/**
+ * Giá trị giữ chỗ của bí mật ⇒ bản rõ của bí mật ĐÃ LƯU, chỉ khi domain vẫn dùng CÙNG tool:
+ * đổi tool mà mang theo "giữ nguyên" là đem khoá của tool cũ cho tool mới.
+ */
+async function withKeptSecrets<T extends DomainTargetState>(
+  projectId: string,
+  state: T,
+  registry: DomainAdapterRegistry,
+): Promise<T> {
+  const stored = new Map(
+    (await store.storedToolConfigs(projectId)).map((r) => [r.domainType, r]),
+  );
+  return {
+    ...state,
+    domains: state.domains.map((d) => {
+      const adapter = registry.get(d.domainType, d.toolId);
+      if (adapter === undefined) return d;
+      const previous = stored.get(d.domainType);
+      const kept =
+        previous !== undefined &&
+        previous.selectedTool?.toLowerCase() === d.toolId.toLowerCase()
+          ? previous.toolConfig
+          : null;
+      return {
+        ...d,
+        config: resolveKept(
+          { schema: adapter.configSchema, projectId, domainType: d.domainType },
+          d.config,
+          kept,
+        ),
+      };
+    }),
+  };
+}
+
+/** Niêm phong bí mật của trạng thái đích — SAU khi đã kiểm bằng `configSchema` */
+const sealed = (
+  projectId: string,
+  targets: readonly ResolvedTarget[],
+): ResolvedTarget[] =>
+  targets.map((t) => ({
+    ...t,
+    config: sealSecrets(
+      {
+        schema: t.adapter.configSchema,
+        projectId,
+        domainType: t.domainType,
+      },
+      t.config,
+    ),
+  }));
+
 async function resolveAndValidate(
   state: DomainTargetState,
   registry: DomainAdapterRegistry,
@@ -99,10 +152,16 @@ async function resolveAndValidate(
 }
 
 export async function validate(
+  projectId: string,
   state: DomainTargetState,
   registry: DomainAdapterRegistry,
 ): Promise<DomainValidationWire> {
-  return (await resolveAndValidate(state, registry)).view;
+  return (
+    await resolveAndValidate(
+      await withKeptSecrets(projectId, state, registry),
+      registry,
+    )
+  ).view;
 }
 
 export async function put(
@@ -112,7 +171,13 @@ export async function put(
   registry: DomainAdapterRegistry,
   enqueue: EnqueueJob,
 ): Promise<{ status: 200 | 202; body: PutDomainsResponseWire }> {
-  const { targets, view } = await resolveAndValidate(body, registry);
+  const resolved = await resolveAndValidate(
+    await withKeptSecrets(projectId, body, registry),
+    registry,
+  );
+  const { view } = resolved;
+  // Từ đây trở đi mọi chỗ ghi (bảng, payload job, audit) chỉ thấy bản niêm phong
+  const targets = sealed(projectId, resolved.targets);
   const first = view.errors[0];
   if (first !== undefined) {
     const error = new UnprocessableError(

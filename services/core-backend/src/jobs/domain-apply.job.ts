@@ -33,6 +33,7 @@ import { domainApplyPayloadSchema } from "../modules/domain/domain-apply.payload
 import type { DomainAdapterRegistry } from "../modules/domain/domain-adapter.registry.js";
 import { catalogAvailability } from "../modules/domain/domain-config.store.js";
 import { resolveTarget } from "../modules/domain/domain-target.js";
+import { openSecrets, sealSecrets } from "../modules/domain/tool-secrets.js";
 import {
   adapterContext,
   callOnTargets,
@@ -143,13 +144,18 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
           `không còn adapter ${String(r.selectedTool)} cho ${r.domainType} đang chạy`,
         );
       }
-      const config =
+      const stored =
         typeof r.toolConfig === "object" &&
         r.toolConfig !== null &&
         !Array.isArray(r.toolConfig)
           ? (r.toolConfig as Record<string, unknown>)
           : {};
-      states.push({ domainType: r.domainType, adapter, config });
+      // So cấu hình trên bản RÕ: ciphertext mới mỗi lần lưu không phải "đổi cấu hình" (QĐ-2)
+      states.push({
+        domainType: r.domainType,
+        adapter,
+        config: openSecrets({ projectId, domainType: r.domainType }, stored),
+      });
     }
     return { states, rowOf };
   }
@@ -235,8 +241,28 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
     ctx.failures.push({ domainType: t.domainType, message });
   };
 
+  /** Đích để deploy: bản rõ cho adapter, bản niêm phong để ghi */
+  const targetOf = (
+    ctx: ApplyContext,
+    id: string,
+    t: DomainState,
+  ): DeployTarget => ({
+    id,
+    ...t,
+    storedConfig: sealSecrets(
+      {
+        schema: t.adapter.configSchema,
+        projectId: ctx.input.projectId,
+        domainType: t.domainType,
+      },
+      t.config,
+    ),
+  });
+
   /** Hàng cho một domain được bật: có sẵn (đã tắt) hay tạo mới, ở DEPLOYING */
   async function rowFor(ctx: ApplyContext, t: DomainState): Promise<string> {
+    const toolConfig = targetOf(ctx, "", t)
+      .storedConfig as Prisma.InputJsonValue;
     const row = await prisma.domainConfig.upsert({
       where: {
         projectId_domainType: {
@@ -249,13 +275,13 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
         domainType: t.domainType,
         isEnabled: true,
         selectedTool: t.adapter.toolId,
-        toolConfig: t.config as Prisma.InputJsonValue,
+        toolConfig,
         domainStatus: "DEPLOYING",
       },
       update: {
         isEnabled: true,
         selectedTool: t.adapter.toolId,
-        toolConfig: t.config as Prisma.InputJsonValue,
+        toolConfig,
         domainStatus: "DEPLOYING",
       },
       select: { id: true },
@@ -303,7 +329,7 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
         op.kind === "enable"
           ? await rowFor(ctx, op.target)
           : (ctx.rowOf.get(op.target.domainType) ?? "");
-      const t: DeployTarget = { id, ...op.target };
+      const t = targetOf(ctx, id, op.target);
       const outcome = await callOnTargets(
         ctx.input,
         t,
@@ -323,7 +349,7 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
 
     // CASE 3: blue/green — mới dựng và khoẻ TRƯỚC khi cũ bị chạm
     const id = ctx.rowOf.get(op.target.domainType) ?? "";
-    const fresh: DeployTarget = { id, ...op.target };
+    const fresh = targetOf(ctx, id, op.target);
     const before = (await bindingsOfProject(prisma, ctx.input.projectId))
       .filter((b) => b.domainConfigId === id)
       .map(bindingOf);
@@ -408,7 +434,18 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
     const { registry } = phase;
     let targets;
     try {
-      targets = resolveTarget(target, registry, await catalogAvailability());
+      // Payload mang bản niêm phong; mở trong bộ nhớ rồi kiểm bằng CHÍNH configSchema
+      const opened = {
+        ...target,
+        domains: target.domains.map((d) => ({
+          ...d,
+          config: openSecrets(
+            { projectId: input.projectId, domainType: d.domainType },
+            d.config,
+          ),
+        })),
+      };
+      targets = resolveTarget(opened, registry, await catalogAvailability());
     } catch (e) {
       if (e instanceof ZodError) {
         throw new PhaseFailedError("cấu hình đích không còn khớp schema");
@@ -523,10 +560,12 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
       providerToolId: p.providerToolId,
     }));
     const stored = await bindingsOfProject(prisma, input.projectId);
-    const config =
+    const config = openSecrets(
+      { projectId: input.projectId, domainType },
       typeof row.toolConfig === "object" && row.toolConfig !== null
         ? (row.toolConfig as Record<string, unknown>)
-        : {};
+        : {},
+    );
     const wrapped = perEnvironment(adapter, phase.environments);
     const outcome = await upgradeDomain(
       {

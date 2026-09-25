@@ -17,6 +17,7 @@ import {
   perEnvironment,
   resolvedFor,
 } from "../modules/provisioning/domain-phase.js";
+import { openSecrets } from "../modules/domain/tool-secrets.js";
 import { tagsOf } from "../modules/provisioning/provision-plan.js";
 import { messageOf, type JobInput, type JobKit } from "./job-kit.js";
 
@@ -64,10 +65,20 @@ export async function sweepDrift(
   const registry = await kit.deps.domainRegistry();
 
   for (const { id: projectId } of projects) {
-    const rows = (await activeDomainsOfProject(prisma, projectId)).filter(
-      (r) =>
-        options.domainType === undefined || r.domainType === options.domainType,
-    );
+    const rows = (await activeDomainsOfProject(prisma, projectId))
+      .filter(
+        (r) =>
+          options.domainType === undefined ||
+          r.domainType === options.domainType,
+      )
+      // Adapter so cấu hình mong muốn với cluster: cần bản RÕ, chỉ trong bộ nhớ
+      .map((r) => ({
+        ...r,
+        toolConfig: openSecrets(
+          { projectId, domainType: r.domainType },
+          r.toolConfig,
+        ),
+      }));
     const job = await prisma.provisioningJob.findFirst({
       where: { projectId, jobType: "PROVISION", state: "DONE" },
       orderBy: { createdAt: "desc" },

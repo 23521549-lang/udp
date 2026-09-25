@@ -1177,3 +1177,138 @@ describe(
     });
   },
 );
+
+describe(
+  "bí mật của tool đi hết vòng đời (Plan #31 P1: AC-1, AC-2)",
+  { timeout: 180_000 },
+  () => {
+    const SENTINEL = "canhBiMatP31Vong1f0e9d8c7b6a";
+    const SENTINEL_2 = "canhBiMatP31Vong2a1b2c3d4e5f";
+
+    /** Adapter giả có trường bí mật, ghi lại bản RÕ mà nó nhận ở mỗi lời gọi */
+    function secretWorld() {
+      const w = applyWorld();
+      const seen: string[] = [];
+      const base = fakeDomain({
+        domainType: "COST",
+        toolId: "fake-cost",
+        scope: "cluster",
+      }).adapter;
+      const secretive: DomainAdapter = {
+        ...base,
+        configSchema: z
+          .object({ apiKey: z.string().min(8).describe("secret") })
+          .strict(),
+        deploy: (ctx, config) => {
+          seen.push(`deploy:${String(config.apiKey)}`);
+          return base.deploy(ctx, config);
+        },
+        configure: (ctx, config) => {
+          seen.push(`configure:${String(config.apiKey)}`);
+          return base.configure(ctx, config);
+        },
+      };
+      const registry: DomainAdapterRegistry = {
+        get: (domainType, toolId) =>
+          domainType === "COST" && toolId === "fake-cost"
+            ? secretive
+            : w.registry.get(domainType, toolId),
+        all: () => [],
+      };
+      return { registry, seen };
+    }
+
+    const nowhere = async (projectId: string, needle: string) => {
+      const [configs, jobs, audits] = await Promise.all([
+        admin.domainConfig.findMany({
+          where: { projectId },
+          select: { toolConfig: true },
+        }),
+        admin.provisioningJob.findMany({
+          where: { projectId },
+          select: { payload: true, lastError: true },
+        }),
+        admin.auditLog.findMany({
+          where: { projectId },
+          select: { before: true, after: true },
+        }),
+      ]);
+      return !JSON.stringify([configs, jobs, audits]).includes(needle);
+    };
+
+    it("niêm phong khi lưu, che trên dây, giữ chỗ giữ bản cũ, adapter nhận bản rõ — cả nháp lẫn đang chạy", async () => {
+      const { registry, seen } = secretWorld();
+      const projectId = await readyProject();
+      const { http } = appFor(registry, null);
+      const url = `${API}/projects/${projectId}/domains`;
+      const domainsWithCost = (apiKey: unknown) => [
+        { domainType: "MONITORING", toolId: "fake-metrics", config: {} },
+        {
+          domainType: "PROGRESSIVE_DELIVERY",
+          toolId: "fake-rollouts",
+          config: {},
+        },
+        { domainType: "COST", toolId: "fake-cost", config: { apiKey } },
+      ];
+      const version = async () =>
+        (await as(owner, request(http).get(url)).expect(200)).body
+          .domainSetVersion as number;
+
+      // Nháp: lưu thẳng — bảng giữ bản niêm phong, dây chỉ thấy giữ chỗ
+      const saved = await as(
+        owner,
+        request(http)
+          .put(url)
+          .send({
+            domains: domainsWithCost(SENTINEL),
+            preferences: [],
+            lastKnownDomainSetVersion: await version(),
+          }),
+      ).expect(200);
+      expect(JSON.stringify(saved.body)).not.toContain(SENTINEL);
+      expect(
+        (
+          saved.body.domains as { domainType: string; toolConfig: unknown }[]
+        ).find((d) => d.domainType === "COST")?.toolConfig,
+      ).toEqual({ apiKey: { $udpSecret: "kept" } });
+      expect(await nowhere(projectId, SENTINEL)).toBe(true);
+
+      // Gửi lại giữ chỗ ⇒ vẫn đúng bí mật cũ
+      await as(
+        owner,
+        request(http)
+          .put(url)
+          .send({
+            domains: domainsWithCost({ $udpSecret: "kept" }),
+            preferences: [],
+            lastKnownDomainSetVersion: await version(),
+          }),
+      ).expect(200);
+
+      const jobId = await seedJob(projectId);
+      await workerWith(registry, fakeClusters()).run(jobId, { final: false });
+      expect((await snapshot(projectId, jobId)).job.state).toBe("DONE");
+      expect(seen).toContain(`deploy:${SENTINEL}`);
+
+      // Đang chạy: đổi bí mật ⇒ job, payload niêm phong, adapter cấu hình lại bằng bản rõ mới
+      const applied = await as(
+        owner,
+        request(http)
+          .put(url)
+          .send({
+            domains: domainsWithCost(SENTINEL_2),
+            preferences: [],
+            lastKnownDomainSetVersion: await version(),
+          }),
+      ).expect(202);
+      expect(await nowhere(projectId, SENTINEL_2)).toBe(true);
+      await workerWith(registry, fakeClusters()).run(
+        applied.body.job.id as string,
+        { final: false },
+      );
+      expect(seen).toContain(`configure:${SENTINEL_2}`);
+      expect(await nowhere(projectId, SENTINEL_2)).toBe(true);
+      expect(await nowhere(projectId, SENTINEL)).toBe(true);
+    });
+  },
+);

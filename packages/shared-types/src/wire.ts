@@ -877,6 +877,8 @@ export const domainConfigFieldWire = z
     key: z.string().min(1),
     kind: z.enum(["string", "number", "boolean", "enum", "json"]),
     required: z.boolean(),
+    /** Trường bí mật: giá trị lưu niêm phong, trên dây là `{ "$udpSecret": "kept" }` */
+    secret: z.boolean().optional(),
     default: z.union([z.string(), z.number(), z.boolean()]).optional(),
     options: z.array(z.string()).optional(),
     min: z.number().optional(),

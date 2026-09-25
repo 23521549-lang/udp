@@ -6,6 +6,7 @@ import type {
 } from "@udp/shared-types/wire";
 import { prisma } from "../../core/db.js";
 import type { ResolvedTarget } from "./domain-target.js";
+import { maskSecrets } from "./tool-secrets.js";
 
 /**
  * `domain_configs` + `capability_preferences` + `projects.domain_set_version` của MỘT
@@ -40,11 +41,46 @@ function domainView(
     domainType,
     isEnabled: row?.isEnabled ?? false,
     selectedTool: row?.selectedTool ?? null,
-    toolConfig: objectOrNull(row?.toolConfig),
+    // Bí mật đã niêm phong KHÔNG lên dây: Portal thấy giá trị giữ chỗ (Plan #31)
+    toolConfig: maskConfig(objectOrNull(row?.toolConfig)),
     status: row?.domainStatus ?? null,
     adapterVersion: row?.adapterVersion ?? null,
     updatedAt: row?.updatedAt.toISOString() ?? null,
   };
+}
+
+const maskConfig = (
+  config: Record<string, unknown> | null,
+): Record<string, unknown> | null =>
+  config === null ? null : maskSecrets(config);
+
+export interface StoredToolConfig {
+  domainType: string;
+  selectedTool: string | null;
+  isEnabled: boolean;
+  /** Nguyên trạng trong bảng — bí mật còn NIÊM PHONG */
+  toolConfig: Record<string, unknown>;
+}
+
+/** `tool_config` thô của mọi domain đã cấu hình — cho giải giữ chỗ và mở bí mật */
+export async function storedToolConfigs(
+  projectId: string,
+): Promise<StoredToolConfig[]> {
+  const rows = await prisma.domainConfig.findMany({
+    where: { projectId },
+    select: {
+      domainType: true,
+      selectedTool: true,
+      isEnabled: true,
+      toolConfig: true,
+    },
+  });
+  return rows.map((r) => ({
+    domainType: r.domainType,
+    selectedTool: r.selectedTool,
+    isEnabled: r.isEnabled,
+    toolConfig: objectOrNull(r.toolConfig) ?? {},
+  }));
 }
 
 export interface ProjectDomainState {

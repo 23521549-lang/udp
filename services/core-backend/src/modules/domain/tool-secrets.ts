@@ -46,7 +46,7 @@ export const isKept = (v: unknown): boolean =>
   record(v) && v.$udpSecret === "kept" && Object.keys(v).length === 1;
 
 /** Trường có `.describe("secret")` ở bất kỳ lớp bọc nào (`optional`, `default`, `nullable`) */
-function isSecretField(schema: ZodTypeAny): boolean {
+export function isSecretField(schema: ZodTypeAny): boolean {
   let node: ZodTypeAny = schema;
   for (;;) {
     if (node.description === SECRET_DESCRIPTION) return true;

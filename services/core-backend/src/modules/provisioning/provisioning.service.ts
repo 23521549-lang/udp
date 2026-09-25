@@ -28,7 +28,9 @@ import type { DomainAdapterRegistry } from "../domain/domain-adapter.registry.js
 import {
   catalogAvailability,
   projectDomains,
+  storedToolConfigs,
 } from "../domain/domain-config.store.js";
+import { openSecrets } from "../domain/tool-secrets.js";
 import { resolveTarget, validateTarget } from "../domain/domain-target.js";
 import { resourceQuotaSchema } from "../project/project.types.js";
 import { closeFinishedCycle } from "./prisma-ledger.js";
@@ -90,14 +92,18 @@ async function deployOrderOf(
 ): Promise<string[][] | null> {
   const state = await projectDomains(projectId);
   if (state === null) throw new NotFoundError(PROJECT_NOT_FOUND);
+  // Cấu hình THÔ từ bảng, bí mật mở trong bộ nhớ — bản trên dây đã bị che (Plan #31)
   const target = {
-    domains: state.view.domains.flatMap((d) =>
+    domains: (await storedToolConfigs(projectId)).flatMap((d) =>
       d.isEnabled && d.selectedTool !== null
         ? [
             {
               domainType: d.domainType,
               toolId: d.selectedTool,
-              config: d.toolConfig ?? {},
+              config: openSecrets(
+                { projectId, domainType: d.domainType },
+                d.toolConfig,
+              ),
             },
           ]
         : [],

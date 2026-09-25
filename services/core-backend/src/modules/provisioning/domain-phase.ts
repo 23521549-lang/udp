@@ -24,6 +24,7 @@ import {
   type StoredBinding,
 } from "../capability/capability-binding.repository.js";
 import { SYSTEM_NAMESPACE } from "../cluster/bootstrap.js";
+import { openSecrets } from "../domain/tool-secrets.js";
 import type { DomainAdapterRegistry } from "../domain/domain-adapter.registry.js";
 
 /**
@@ -71,7 +72,10 @@ export interface DeployTarget {
   id: string;
   domainType: string;
   adapter: DomainAdapter;
+  /** Bản RÕ cho adapter — chỉ sống trong bộ nhớ worker */
   config: Record<string, unknown>;
+  /** Bản ghi xuống bảng — bí mật NIÊM PHONG (Plan #31); không bao giờ là `config` */
+  storedConfig: Record<string, unknown>;
 }
 
 interface EnabledDomain extends DeployTarget {
@@ -128,7 +132,18 @@ async function enabledDomains(
         message: `không còn adapter ${String(r.selectedTool)} cho ${r.domainType}`,
       };
     }
-    const parsed = adapter.configSchema.safeParse(r.toolConfig ?? {});
+    const stored =
+      typeof r.toolConfig === "object" &&
+      r.toolConfig !== null &&
+      !Array.isArray(r.toolConfig)
+        ? (r.toolConfig as Record<string, unknown>)
+        : {};
+    const parsed = adapter.configSchema.safeParse(
+      openSecrets(
+        { projectId: input.projectId, domainType: r.domainType },
+        stored,
+      ),
+    );
     if (!parsed.success) {
       return {
         domainType: r.domainType,
@@ -140,6 +155,7 @@ async function enabledDomains(
       domainType: r.domainType,
       adapter,
       config: parsed.data as Record<string, unknown>,
+      storedConfig: stored,
       alreadyActive:
         r.domainStatus === "ACTIVE" && r.adapterVersion === adapter.version,
     });
@@ -309,7 +325,7 @@ export async function persistDeployed(
       data: {
         isEnabled: true,
         selectedTool: target.adapter.toolId,
-        toolConfig: target.config as Prisma.InputJsonValue,
+        toolConfig: target.storedConfig as Prisma.InputJsonValue,
         adapterVersion: target.adapter.version,
         domainStatus: "ACTIVE",
         lastError: Prisma.DbNull,

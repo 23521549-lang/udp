@@ -1,5 +1,6 @@
 import { z, type ZodTypeAny } from "zod";
 import type { DomainConfigFieldWire } from "@udp/shared-types/wire";
+import { isSecretField } from "./tool-secrets.js";
 
 /**
  * `configSchema` của adapter ⇒ mô tả trường cho form của Portal (Plan #27 QĐ-3).
@@ -64,6 +65,8 @@ function fieldOf(key: string, schema: ZodTypeAny): DomainConfigFieldWire {
   const base = {
     key,
     required,
+    // Bí mật (Plan #31): Portal vẽ ô mật khẩu và không bao giờ nhận lại giá trị
+    ...(isSecretField(schema) ? { secret: true } : {}),
     ...(isScalar(defaultValue) ? { default: defaultValue } : {}),
   };
   if (inner instanceof z.ZodString) return { ...base, kind: "string" };
