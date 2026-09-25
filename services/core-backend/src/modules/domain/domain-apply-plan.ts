@@ -44,6 +44,8 @@ export interface ApplyPlan {
   rebinds: CapabilityId[];
   /** Provider đã chọn cho từng capability ở trạng thái ĐÍCH */
   chosen: Record<string, string>;
+  /** Bậc của đồ thị ĐÍCH (khoá adapter) — thứ tự báo tin cho consumer */
+  order: string[][];
 }
 
 /** So cấu hình theo NỘI DUNG — thứ tự khoá khác nhau không phải một lần đổi cấu hình */
@@ -141,5 +143,11 @@ export function planDomainApply(args: {
     .map(([cap]) => cap as CapabilityId)
     .sort();
 
-  return { deployTiers, disables, rebinds, chosen: targetOrder.chosen };
+  return {
+    deployTiers,
+    disables,
+    rebinds,
+    chosen: targetOrder.chosen,
+    order: targetOrder.tiers,
+  };
 }

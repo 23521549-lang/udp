@@ -6,7 +6,11 @@ import type {
 } from "@udp/adapter-core";
 import type { Fence } from "@udp/adapter-core/runner";
 import { Prisma, type DomainStatus, type PrismaClient } from "@udp/db";
-import type { CapabilityBinding, CapabilityId } from "@udp/shared-types";
+import type {
+  AdapterResult,
+  CapabilityBinding,
+  CapabilityId,
+} from "@udp/shared-types";
 import {
   adapterKey,
   validateAndOrder,
@@ -61,11 +65,15 @@ export type DomainPhaseOutcome =
   | { status: "DONE"; deployed: string[] }
   | { status: "FAILED"; domainType: string; message: string };
 
-interface EnabledDomain {
+/** Một domain cụ thể: hàng `domain_configs` + adapter + cấu hình đã parse */
+export interface DeployTarget {
   id: string;
   domainType: string;
   adapter: DomainAdapter;
   config: Record<string, unknown>;
+}
+
+interface EnabledDomain extends DeployTarget {
   alreadyActive: boolean;
 }
 
@@ -74,8 +82,10 @@ interface Problem {
   message: string;
 }
 
+export type DomainErrorStep = "DEPLOY" | "TEARDOWN" | "HEALTHCHECK" | "NOTIFY";
+
 /** `last_error` của domain — cùng hình `{ step, message, adapterResult }` mà Portal đọc */
-const lastErrorOf = (step: "DEPLOY" | "TEARDOWN", message: string) => ({
+export const lastErrorOf = (step: DomainErrorStep, message: string) => ({
   step,
   message,
   adapterResult: "FAILED",
@@ -212,15 +222,16 @@ export function resolvedFor(
 }
 
 /** `scope = cluster` ⇒ một lần, không environment; `namespace` ⇒ mỗi environment một lần */
-const targetsOf = (
-  domain: EnabledDomain,
+export const targetsOf = (
+  adapter: DomainAdapter,
   environments: readonly PhaseEnvironment[],
 ): (PhaseEnvironment | undefined)[] =>
-  domain.adapter.scope === "cluster" ? [undefined] : [...environments];
+  adapter.scope === "cluster" ? [undefined] : [...environments];
 
-function contextFor(
+/** Bối cảnh cho MỘT lời gọi adapter trên MỘT đích (cluster, hay một environment) */
+export function adapterContext(
   input: DomainPhaseInput,
-  domain: EnabledDomain,
+  adapter: DomainAdapter,
   env: PhaseEnvironment | undefined,
   resolved: Partial<Record<CapabilityId, CapabilityBinding>>,
 ): DomainAdapterContext {
@@ -233,31 +244,39 @@ function contextFor(
     resolved,
     tags: input.tags,
     progress: (m) => {
-      input.progress(`${domain.domainType}: ${m}`);
+      input.progress(`${adapter.domainType}: ${m}`);
     },
     fetch: input.fetch,
   };
 }
 
-/** Deploy một domain lên mọi đích của nó; binding + `ACTIVE` ghi trong MỘT transaction */
-async function deployOne(
+type BindingCall = (
+  ctx: DomainAdapterContext,
+  config: Record<string, unknown>,
+) => Promise<AdapterResult<CapabilityBinding[]>>;
+
+/**
+ * Gọi `deploy`/`configure` của một adapter trên MỌI đích của nó; binding theo namespace mang
+ * environment vừa gọi. `resolved` nạp lại TỪ BẢNG mỗi lần — không từ bộ nhớ worker.
+ */
+export async function callOnTargets(
   input: DomainPhaseInput,
-  domain: EnabledDomain,
+  target: DeployTarget,
   chosen: Readonly<Record<string, string>>,
-): Promise<string | null> {
+  call: BindingCall,
+): Promise<{ bindings: CapabilityBinding[] } | { error: string }> {
   const stored = await bindingsOfProject(input.prisma, input.projectId);
   const bindings: CapabilityBinding[] = [];
-  for (const env of targetsOf(domain, input.environments)) {
+  for (const env of targetsOf(target.adapter, input.environments)) {
     const resolved = resolvedFor(stored, chosen, env?.id ?? null);
-    const result = await domain.adapter.deploy(
-      contextFor(input, domain, env, resolved),
-      domain.config,
+    const result = await call(
+      adapterContext(input, target.adapter, env, resolved),
+      target.config,
     );
     if (result.status !== "SUCCESS") {
-      return result.message ?? `deploy trả ${result.status}`;
+      return { error: result.message ?? `adapter trả ${result.status}` };
     }
     for (const b of result.data ?? []) {
-      // Adapter theo namespace khai binding cho environment nó vừa deploy
       bindings.push(
         env === undefined || b.environmentId !== undefined
           ? b
@@ -265,20 +284,135 @@ async function deployOne(
       );
     }
   }
-  await input.prisma.$transaction(async (tx) => {
+  return { bindings };
+}
+
+/**
+ * Ghi một domain đã chạy xong lên cluster: binding + tool + cấu hình + `adapter_version` +
+ * `ACTIVE` trong MỘT transaction. `replace` xoá binding cũ của hàng trước (đổi tool: tool
+ * mới có thể không cung cấp lại mọi capability của tool cũ).
+ */
+export async function persistDeployed(
+  prisma: PrismaClient,
+  target: DeployTarget,
+  bindings: readonly CapabilityBinding[],
+  options: { replace: boolean },
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    if (options.replace) await deleteBindingsOfDomainConfig(tx, target.id);
     for (const b of bindings) {
-      await upsertBinding(tx, bindingRowOf(domain.id, b));
+      await upsertBinding(tx, bindingRowOf(target.id, b));
     }
     await tx.domainConfig.update({
-      where: { id: domain.id },
+      where: { id: target.id },
       data: {
+        isEnabled: true,
+        selectedTool: target.adapter.toolId,
+        toolConfig: target.config as Prisma.InputJsonValue,
+        adapterVersion: target.adapter.version,
         domainStatus: "ACTIVE",
-        adapterVersion: domain.adapter.version,
         lastError: Prisma.DbNull,
       },
     });
   });
+}
+
+/** Deploy một domain lên mọi đích của nó; `null` = thành công, chuỗi = lý do lỗi */
+async function deployOne(
+  input: DomainPhaseInput,
+  domain: EnabledDomain,
+  chosen: Readonly<Record<string, string>>,
+): Promise<string | null> {
+  const outcome = await callOnTargets(input, domain, chosen, (ctx, config) =>
+    domain.adapter.deploy(ctx, config),
+  );
+  if ("error" in outcome) return outcome.error;
+  await persistDeployed(input.prisma, domain, outcome.bindings, {
+    replace: false,
+  });
   return null;
+}
+
+/**
+ * Bọc một adapter theo namespace để các hook mà luồng Day-2 gọi MỘT lần (`detectDrift`,
+ * `onDependencyChanged`, `upgrade`, `healthcheck`) chạy trên MỌI environment rồi gộp kết
+ * quả: trôi, lỗi hay không khoẻ ở một environment là của cả domain; binding của `upgrade`
+ * mang environment của nó. Adapter phạm vi cluster đi thẳng.
+ */
+export function perEnvironment(
+  adapter: DomainAdapter,
+  environments: readonly PhaseEnvironment[],
+): DomainAdapter {
+  if (adapter.scope === "cluster") return adapter;
+  return {
+    ...adapter,
+    detectDrift: async (ctx, config) => {
+      const drifted: string[] = [];
+      for (const environment of environments) {
+        const res = await adapter.detectDrift({ ...ctx, environment }, config);
+        if (res.status !== "SUCCESS" || res.data === undefined) return res;
+        if (res.data.drifted) {
+          drifted.push(
+            `${environment.name}: ${res.data.details ?? "đã trôi cấu hình"}`,
+          );
+        }
+      }
+      return {
+        status: "SUCCESS",
+        data:
+          drifted.length === 0
+            ? { drifted: false }
+            : { drifted: true, details: drifted.join("; ") },
+      };
+    },
+    onDependencyChanged: async (ctx, config, changed) => {
+      for (const environment of environments) {
+        const res = await adapter.onDependencyChanged(
+          { ...ctx, environment },
+          config,
+          changed,
+        );
+        if (res.status !== "SUCCESS") return res;
+      }
+      return { status: "SUCCESS" };
+    },
+    upgrade: async (ctx, config, fromVersion) => {
+      const bindings: CapabilityBinding[] = [];
+      for (const environment of environments) {
+        const res = await adapter.upgrade(
+          { ...ctx, environment },
+          config,
+          fromVersion,
+        );
+        if (res.status !== "SUCCESS" || res.data === undefined) return res;
+        bindings.push(
+          ...res.data.map((b) =>
+            b.environmentId === undefined
+              ? { ...b, environmentId: environment.id }
+              : b,
+          ),
+        );
+      }
+      return { status: "SUCCESS", data: bindings };
+    },
+    healthcheck: async (ctx) => {
+      for (const environment of environments) {
+        const res = await adapter.healthcheck({ ...ctx, environment });
+        if (res.status !== "SUCCESS" || res.data?.healthy !== true) {
+          return res.status === "SUCCESS"
+            ? {
+                status: "SUCCESS",
+                data: {
+                  healthy: false,
+                  details: `${environment.name}: ${res.data?.details ?? "không khoẻ"}`,
+                },
+              }
+            : res;
+        }
+      }
+      return { status: "SUCCESS", data: { healthy: true } };
+    },
+  };
 }
 
 export async function runDomainPhase(
@@ -343,14 +477,16 @@ export async function runDomainPhase(
 /** Domain đã chạm cluster (kể cả dở dang) — thứ bù trừ phải gỡ */
 const TOUCHED: readonly DomainStatus[] = ["DEPLOYING", "ACTIVE", "ERROR"];
 
-async function teardownOne(
+/** Gỡ một domain khỏi mọi đích của nó; `null` = thành công, chuỗi = lý do lỗi */
+export async function teardownTarget(
   input: DomainPhaseInput,
-  domain: EnabledDomain,
+  adapter: DomainAdapter,
+  reason: "disable" | "switch" | "project-teardown",
 ): Promise<string | null> {
-  for (const env of targetsOf(domain, input.environments)) {
-    const r = await domain.adapter.teardown(
-      contextFor(input, domain, env, {}),
-      "project-teardown",
+  for (const env of targetsOf(adapter, input.environments)) {
+    const r = await adapter.teardown(
+      adapterContext(input, adapter, env, {}),
+      reason,
     );
     if (r.status !== "SUCCESS" && r.status !== "NOT_FOUND") {
       return r.message ?? `teardown trả ${r.status}`;
@@ -380,7 +516,11 @@ export async function teardownDomains(
     await input.fence.assert();
     await Promise.all(
       tier.map(async (d) => {
-        const message = await teardownOne(input, d).catch(messageOf);
+        const message = await teardownTarget(
+          input,
+          d.adapter,
+          "project-teardown",
+        ).catch(messageOf);
         if (message !== null) failures.push(`${d.domainType}: ${message}`);
         await input.prisma.$transaction(async (tx) => {
           if (message === null) await deleteBindingsOfDomainConfig(tx, d.id);

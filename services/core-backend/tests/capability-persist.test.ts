@@ -209,6 +209,7 @@ describe("rebind — MỌI environment, không chỉ environment đang xem (AC-1
 
     const changed = await rebindProvider(s1, {
       projectId: PROJECT,
+      domainConfigId: monitoringConfigId,
       capabilityId: "metrics.query",
       providedBy: "monitoring:victoriametrics",
       schemaVersion: "2.1.0",
@@ -238,6 +239,7 @@ describe("rebind — MỌI environment, không chỉ environment đang xem (AC-1
 
     await rebindProvider(s1, {
       projectId: PROJECT,
+      domainConfigId: monitoringConfigId,
       capabilityId: "metrics.query",
       providedBy: "monitoring:victoriametrics",
       schemaVersion: "2.1.0",
@@ -246,6 +248,53 @@ describe("rebind — MỌI environment, không chỉ environment đang xem (AC-1
     const rows = await bindingsOfProject(s1, PROJECT);
     const scrape = rows.find((r) => r.capabilityId === "metrics.scrape");
     expect(scrape?.providedBy).toBe("monitoring:prometheus-grafana");
+  });
+
+  it("[v4.11] rebind KHÔNG chạm binding của domain KHÁC cùng cung cấp capability đó", async () => {
+    const logging = await admin.domainConfig.create({
+      data: {
+        projectId: PROJECT,
+        domainType: "LOGGING",
+        isEnabled: true,
+        selectedTool: "victoria",
+      },
+      select: { id: true },
+    });
+    await upsertBinding(s1, {
+      domainConfigId: logging.id,
+      environmentId: null,
+      capabilityId: "metrics.query",
+      providedBy: "logging:victoria",
+      schemaVersion: "2.1.0",
+      endpoint: "http://vmselect:8481",
+      attributes: null,
+    });
+    await upsertBinding(s1, {
+      domainConfigId: monitoringConfigId,
+      environmentId: null,
+      capabilityId: "metrics.query",
+      providedBy: "monitoring:prometheus-grafana",
+      schemaVersion: "2.0.0",
+      endpoint: "http://prometheus:9090",
+      attributes: null,
+    });
+
+    const changed = await rebindProvider(s1, {
+      projectId: PROJECT,
+      domainConfigId: monitoringConfigId,
+      capabilityId: "metrics.query",
+      providedBy: "monitoring:grafana-cloud",
+      schemaVersion: "2.0.0",
+    });
+    expect(changed).toBe(1);
+    const rows = await bindingsOfProject(s1, PROJECT);
+    expect(
+      rows.find((r) => r.domainConfigId === logging.id)?.providedBy,
+    ).toBe("logging:victoria");
+    await admin.capabilityBinding.deleteMany({
+      where: { domainConfigId: logging.id },
+    });
+    await admin.domainConfig.delete({ where: { id: logging.id } });
   });
 
   it("rebind KHÔNG chạm project khác", async () => {
@@ -260,6 +309,7 @@ describe("rebind — MỌI environment, không chỉ environment đang xem (AC-1
     });
     const changed = await rebindProvider(s1, {
       projectId: "88888888-8888-4888-8888-888888888888",
+      domainConfigId: monitoringConfigId,
       capabilityId: "metrics.query",
       providedBy: "monitoring:victoriametrics",
       schemaVersion: "2.1.0",

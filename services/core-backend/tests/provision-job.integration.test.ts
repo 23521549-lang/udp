@@ -130,6 +130,9 @@ interface FakeDomain {
   drifted: boolean;
 }
 
+/** Nhật ký sự kiện CHUNG của mọi adapter giả — để khẳng định thứ tự giữa các adapter */
+const events: string[] = [];
+
 function fakeDomain(spec: {
   domainType: DomainType;
   toolId: string;
@@ -137,7 +140,11 @@ function fakeDomain(spec: {
   provides?: CapabilityBinding[];
   requires?: { id: "metrics.query"; constraint: string }[];
   failDeploy?: boolean;
+  unhealthy?: boolean;
 }): FakeDomain {
+  const log = (verb: string) => {
+    events.push(`${spec.toolId}:${verb}`);
+  };
   const self: FakeDomain = {
     deploys: [],
     teardowns: 0,
@@ -157,6 +164,7 @@ function fakeDomain(spec: {
       },
       configSchema: z.object({}).strict(),
       deploy: (ctx) => {
+        log("deploy");
         self.deploys.push({
           environment: ctx.environment?.name ?? null,
           resolved: ctx.resolved,
@@ -178,10 +186,19 @@ function fakeDomain(spec: {
             : { drifted: false },
         });
       },
-      onDependencyChanged: () => Promise.resolve({ status: "SUCCESS" }),
-      healthcheck: () =>
-        Promise.resolve({ status: "SUCCESS", data: { healthy: true } }),
-      teardown: () => {
+      onDependencyChanged: (ctx, _config, changed) => {
+        log(`notify:${changed.providedBy}:${ctx.environment?.name ?? "-"}`);
+        return Promise.resolve({ status: "SUCCESS" });
+      },
+      healthcheck: () => {
+        log("healthcheck");
+        return Promise.resolve({
+          status: "SUCCESS",
+          data: { healthy: spec.unhealthy !== true },
+        });
+      },
+      teardown: (_ctx, reason) => {
+        log(`teardown:${reason}`);
         self.teardowns += 1;
         return Promise.resolve({ status: "SUCCESS" });
       },
@@ -808,5 +825,197 @@ describe("lịch orphan-scan và drift-scan", { timeout: 120_000 }, () => {
       "prod",
       "staging",
     ]);
+  });
+});
+
+/** Registry cho luồng áp domain: tool Monitoring thứ hai + một domain Tracing độc lập */
+function applyWorld(options: { unhealthySwitch?: boolean } = {}) {
+  const base = domainsWith();
+  const metricsB = fakeDomain({
+    domainType: "MONITORING",
+    toolId: "fake-metrics-b",
+    scope: "cluster",
+    unhealthy: options.unhealthySwitch === true,
+    provides: [
+      {
+        id: "metrics.query",
+        version: "2.1.0",
+        providedBy: "monitoring:fake-metrics-b",
+        endpoint: "http://vmselect.udp-system:8481",
+      },
+    ],
+  });
+  const tracer = fakeDomain({
+    domainType: "TRACING",
+    toolId: "fake-tracer",
+    scope: "cluster",
+  });
+  const all = [base.metrics, base.delivery, metricsB, tracer];
+  const registry: DomainAdapterRegistry = {
+    get: (domainType, toolId) =>
+      all.find(
+        (d) =>
+          d.adapter.domainType === domainType && d.adapter.toolId === toolId,
+      )?.adapter,
+    all: () => [],
+  };
+  return { ...base, metricsB, tracer, registry };
+}
+
+/** Project đã chạy (PROVISION DONE) với fake-metrics + fake-rollouts */
+async function activeProject(registry: DomainAdapterRegistry) {
+  const projectId = await readyProject();
+  const provisioned = await seedJob(projectId);
+  await workerWith(registry, fakeClusters()).run(provisioned, {
+    final: false,
+  });
+  expect((await snapshot(projectId, provisioned)).job.state).toBe("DONE");
+  return { projectId, provisioned };
+}
+
+async function seedApply(
+  projectId: string,
+  provisioned: string,
+  domains: { domainType: string; toolId: string }[],
+): Promise<string> {
+  const source = await admin.provisioningJob.findUniqueOrThrow({
+    where: { id: provisioned },
+    select: { payload: true },
+  });
+  const job = await admin.provisioningJob.create({
+    data: {
+      projectId,
+      jobType: "DOMAIN_APPLY",
+      payload: {
+        infra: source.payload ?? {},
+        change: {
+          kind: "apply",
+          target: {
+            domains: domains.map((d) => ({ ...d, config: {} })),
+            preferences: [],
+          },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  return job.id;
+}
+
+const domainRows = (projectId: string) =>
+  admin.domainConfig.findMany({
+    where: { projectId },
+    select: {
+      domainType: true,
+      selectedTool: true,
+      isEnabled: true,
+      domainStatus: true,
+    },
+    orderBy: { domainType: "asc" },
+  });
+
+describe("job DOMAIN_APPLY", { timeout: 120_000 }, () => {
+  it("AC-3: đổi tool là blue/green — dựng mới, kiểm khoẻ, báo consumer ở MỌI env, RỒI mới gỡ cũ", async () => {
+    const w = applyWorld();
+    const { projectId, provisioned } = await activeProject(w.registry);
+    const jobId = await seedApply(projectId, provisioned, [
+      { domainType: "MONITORING", toolId: "fake-metrics-b" },
+      { domainType: "PROGRESSIVE_DELIVERY", toolId: "fake-rollouts" },
+    ]);
+    events.length = 0;
+
+    await workerWith(w.registry, fakeClusters()).run(jobId, { final: false });
+
+    expect((await snapshot(projectId, jobId)).job.state).toBe("DONE");
+    const at = (e: string) => events.indexOf(e);
+    expect(at("fake-metrics-b:deploy")).toBeGreaterThanOrEqual(0);
+    expect(at("fake-metrics-b:healthcheck")).toBeGreaterThan(
+      at("fake-metrics-b:deploy"),
+    );
+    const notified = events.filter((e) =>
+      e.startsWith("fake-rollouts:notify:monitoring:fake-metrics-b"),
+    );
+    expect(notified.map((e) => e.split(":").at(-1)).sort()).toEqual([
+      "dev",
+      "prod",
+      "staging",
+    ]);
+    expect(at("fake-metrics:teardown:switch")).toBeGreaterThan(
+      Math.max(...notified.map(at)),
+    );
+
+    const bindings = await admin.capabilityBinding.findMany({
+      where: { domainConfig: { projectId }, capabilityId: "metrics.query" },
+      select: { providedBy: true },
+    });
+    expect(bindings).toEqual([{ providedBy: "monitoring:fake-metrics-b" }]);
+    expect(await domainRows(projectId)).toEqual(
+      expect.arrayContaining([
+        {
+          domainType: "MONITORING",
+          selectedTool: "fake-metrics-b",
+          isEnabled: true,
+          domainStatus: "ACTIVE",
+        },
+      ]),
+    );
+  });
+
+  it("AC-3 nhánh hỏng: tool mới không khoẻ ⇒ gỡ cái MỚI, GIỮ cái cũ, consumer không bị chạm", async () => {
+    const w = applyWorld({ unhealthySwitch: true });
+    const { projectId, provisioned } = await activeProject(w.registry);
+    const jobId = await seedApply(projectId, provisioned, [
+      { domainType: "MONITORING", toolId: "fake-metrics-b" },
+      { domainType: "PROGRESSIVE_DELIVERY", toolId: "fake-rollouts" },
+    ]);
+    events.length = 0;
+
+    await workerWith(w.registry, fakeClusters()).run(jobId, { final: false });
+
+    const s = await snapshot(projectId, jobId);
+    expect(s.job.state).toBe("FAILED");
+    expect(events).toContain("fake-metrics-b:teardown:switch");
+    expect(events).not.toContain("fake-metrics:teardown:switch");
+    expect(events.some((e) => e.includes(":notify:"))).toBe(false);
+    const monitoring = (await domainRows(projectId)).find(
+      (r) => r.domainType === "MONITORING",
+    );
+    expect(monitoring).toMatchObject({
+      selectedTool: "fake-metrics",
+      domainStatus: "ERROR",
+    });
+  });
+
+  it("AC-2 + AC-4: bật domain mới và tắt domain cũ — tắt đi SAU, bằng lý do disable", async () => {
+    const w = applyWorld();
+    const { projectId, provisioned } = await activeProject(w.registry);
+    const jobId = await seedApply(projectId, provisioned, [
+      { domainType: "MONITORING", toolId: "fake-metrics" },
+      { domainType: "TRACING", toolId: "fake-tracer" },
+    ]);
+    events.length = 0;
+
+    await workerWith(w.registry, fakeClusters()).run(jobId, { final: false });
+
+    expect((await snapshot(projectId, jobId)).job.state).toBe("DONE");
+    expect(events.indexOf("fake-tracer:deploy")).toBeLessThan(
+      events.indexOf("fake-rollouts:teardown:disable"),
+    );
+    expect(await domainRows(projectId)).toEqual(
+      expect.arrayContaining([
+        {
+          domainType: "PROGRESSIVE_DELIVERY",
+          selectedTool: "fake-rollouts",
+          isEnabled: false,
+          domainStatus: "PENDING",
+        },
+        {
+          domainType: "TRACING",
+          selectedTool: "fake-tracer",
+          isEnabled: true,
+          domainStatus: "ACTIVE",
+        },
+      ]),
+    );
   });
 });

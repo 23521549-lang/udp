@@ -90,6 +90,7 @@ export async function applyDomainChange(
       for (const r of change.rebind ?? []) {
         bindingsRebound += await rebindProvider(tx, {
           projectId,
+          domainConfigId: change.domainConfigId,
           capabilityId: r.capabilityId,
           providedBy: r.providedBy,
           schemaVersion: r.schemaVersion,

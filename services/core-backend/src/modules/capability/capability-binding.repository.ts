@@ -151,6 +151,13 @@ export async function rebindProvider(
   tx: Tx,
   args: {
     projectId: string;
+    /**
+     * [v4.11] Domain đổi provider — CHỈ binding của nó được viết lại. §5.3 cho phép nhiều
+     * provider không-exclusive cho cùng capability (Prometheus và VictoriaMetrics cùng cho
+     * `metrics.query`); lọc theo capability thôi thì rebind một bên ghi đè binding của bên
+     * kia, và preference chọn giữa hai bên không còn gì để chọn (Plan #30).
+     */
+    domainConfigId: string;
     capabilityId: string;
     /** `"<domainType>:<toolId>"` mới */
     providedBy: string;
@@ -167,6 +174,7 @@ export async function rebindProvider(
       FROM domain_configs d
      WHERE b.domain_config_id = d.id
        AND d.project_id = ${args.projectId}::uuid
+       AND b.domain_config_id = ${args.domainConfigId}::uuid
        AND b.capability_id = ${args.capabilityId}`;
 }
 

@@ -13,7 +13,10 @@ import {
   scanDomainDrift,
   type DriftScanOutcome,
 } from "../modules/day2/drift-scan.js";
-import { resolvedFor } from "../modules/provisioning/domain-phase.js";
+import {
+  perEnvironment,
+  resolvedFor,
+} from "../modules/provisioning/domain-phase.js";
 import { tagsOf } from "../modules/provisioning/provision-plan.js";
 import { messageOf, type JobInput, type JobKit } from "./job-kit.js";
 
@@ -38,36 +41,6 @@ export class ClusterUnreachableError extends Error {
 export interface DriftSweepOutcome {
   scanned: DriftScanOutcome[];
   skipped: { projectId: string; reason: string }[];
-}
-
-/** Gộp `detectDrift` của một adapter theo namespace qua mọi environment */
-function perEnvironment(
-  adapter: DomainAdapter,
-  input: JobInput,
-): DomainAdapter {
-  if (adapter.scope === "cluster") return adapter;
-  return {
-    ...adapter,
-    detectDrift: async (ctx, config) => {
-      const drifted: string[] = [];
-      for (const environment of input.environments) {
-        const res = await adapter.detectDrift({ ...ctx, environment }, config);
-        if (res.status !== "SUCCESS" || res.data === undefined) return res;
-        if (res.data.drifted) {
-          drifted.push(
-            `${environment.name}: ${res.data.details ?? "đã trôi cấu hình"}`,
-          );
-        }
-      }
-      return {
-        status: "SUCCESS",
-        data:
-          drifted.length === 0
-            ? { drifted: false }
-            : { drifted: true, details: drifted.join("; ") },
-      };
-    },
-  };
 }
 
 export async function sweepDrift(
@@ -126,7 +99,7 @@ export async function sweepDrift(
               const adapter = registry.get(domainType, toolId);
               return adapter === undefined
                 ? undefined
-                : perEnvironment(adapter, input);
+                : perEnvironment(adapter, input.environments);
             },
             contextFor,
             writeDrift: (id, record) => writeDriftRecord(prisma, id, record),
