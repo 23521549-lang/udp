@@ -7,6 +7,10 @@ import {
   type FlagServiceClient,
 } from "./clients/flag-service.client.js";
 import { metricsFor } from "./metrics-source.js";
+import {
+  oidcIssuerFromConfig,
+  type OidcIssuer,
+} from "../modules/oidc/oidc.issuer.js";
 
 /**
  * Phụ thuộc RA NGOÀI tiến trình của Service 1 — thứ test phải thay được mà không
@@ -28,6 +32,11 @@ export interface AppDeps {
    */
   metricsFor(metricQueries: MetricQueries | undefined): MetricsProvider;
   flagService: FlagServiceClient;
+  /**
+   * [v4.11] UDP là OIDC issuer (Plan #26 QĐ-5) — `null` khi chưa cấu hình: federation
+   * GCP/Azure khi ấy báo lỗi cấu hình, credential tĩnh và AWS vẫn chạy.
+   */
+  oidcIssuer: OidcIssuer | null;
 }
 
 /** Bản thật, dựng từ cấu hình — `createApp()` dùng khi không được truyền deps */
@@ -38,6 +47,7 @@ export function defaultAppDeps(): AppDeps {
       baseUrl: env.FLAG_SERVICE_URL,
       secret: env.INTERNAL_SERVICE_SECRET,
     }),
+    oidcIssuer: oidcIssuerFromConfig(env),
   };
 }
 

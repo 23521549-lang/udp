@@ -75,6 +75,7 @@ beforeAll(async () => {
   appWith = (fetchImpl) =>
     createApp({
       metricsFor: () => new FakeMetricsProvider(),
+      oidcIssuer: null,
       flagService: createFlagServiceClient({
         baseUrl: started.baseUrl,
         secret: env.INTERNAL_SERVICE_SECRET,
@@ -992,6 +993,7 @@ describe("lỗi cấu hình giữa hai service KHÔNG tới Portal như lỗi c�
   it("S1 cầm sai bí mật nội bộ ⇒ S2 trả 401 ⇒ S1 trả 500 (không 401 — Portal sẽ đăng xuất người dùng)", async () => {
     const misconfigured = createApp({
       metricsFor: () => new FakeMetricsProvider(),
+      oidcIssuer: null,
       flagService: createFlagServiceClient({
         baseUrl: s2?.baseUrl ?? "",
         secret: "x".repeat(40),

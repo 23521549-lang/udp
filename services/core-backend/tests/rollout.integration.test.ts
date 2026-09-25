@@ -122,6 +122,7 @@ beforeAll(async () => {
   s2 = started;
   app = createApp({
     metricsFor: () => fake,
+    oidcIssuer: null,
     flagService: createFlagServiceClient({
       baseUrl: started.baseUrl,
       secret: env.INTERNAL_SERVICE_SECRET,
@@ -369,6 +370,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
   it("Service 2 không phản hồi ⇒ 503, session đã xoá, đúng MỘT audit bù trừ", async () => {
     const dead = createApp({
       metricsFor: () => fake,
+      oidcIssuer: null,
       flagService: createFlagServiceClient({
         baseUrl: `http://127.0.0.1:${String(await freePort())}`,
         secret: env.INTERNAL_SERVICE_SECRET,
@@ -390,6 +392,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
     // `track` giả: trong lúc S1 chờ, "S3" đã claim (version đẩy lên) rồi S2 không phản hồi
     const touched = createApp({
       metricsFor: () => fake,
+      oidcIssuer: null,
       // Client thật, chỉ `track` bị thay — mọi lời gọi khác giữ đúng hợp đồng
       flagService: {
         ...createFlagServiceClient({

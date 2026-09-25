@@ -1,3 +1,4 @@
+import { createPrivateKey } from "node:crypto";
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 import { fileURLToPath } from "node:url";
@@ -84,6 +85,54 @@ const durationSeconds = z
     const unit = value.slice(-1) as DurationUnit;
     return amount * SECONDS_PER_UNIT[unit];
   });
+
+/**
+ * [v4.11] Khoá riêng RSA dạng PEM, MÃ HOÁ BASE64 để nằm gọn trên một dòng `.env`.
+ *
+ * Kiểm ngay tại đây rằng nó là khoá RSA đọc được và dài ≥ 2048 bit: một khoá hỏng mà chỉ
+ * lộ ra lúc cloud của khách gọi đổi token là một lỗi xa chỗ phải sửa tới ba bước.
+ */
+function rsaPrivateKeyBase64Pem() {
+  return z.string().superRefine((value, ctx) => {
+    try {
+      const key = createPrivateKey(
+        Buffer.from(value, "base64").toString("utf8"),
+      );
+      const bits = key.asymmetricKeyDetails?.modulusLength ?? 0;
+      if (key.asymmetricKeyType !== "rsa" || bits < 2048) {
+        ctx.addIssue({
+          code: "custom",
+          message: `phải là khoá RSA ≥ 2048 bit, đang là ${String(key.asymmetricKeyType)} ${String(bits)} bit`,
+        });
+      }
+    } catch {
+      ctx.addIssue({
+        code: "custom",
+        message: "không phải base64 của một khoá riêng PEM đọc được",
+      });
+    }
+  });
+}
+
+/**
+ * [v4.11] Biến TUỲ CHỌN mà chuỗi rỗng nghĩa là "chưa đặt".
+ *
+ * `.env.example` từng khai các biến tuỳ chọn là `KEY=""`, và `.env` chép từ đó mang chuỗi
+ * rỗng. Không có bước này thì chuỗi rỗng đi thẳng vào `.regex()`/`.uuid()` và một môi
+ * trường không bật tính năng ấy lại không khởi động được.
+ */
+function optionalSetting<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
+}
+
+/** Issuer OIDC: URL tuyệt đối, không query/fragment, không `/` cuối (OpenID Discovery §3) */
+const oidcIssuerUrl = z
+  .string()
+  .url()
+  .refine(
+    (v) => !v.endsWith("/") && !v.includes("?") && !v.includes("#"),
+    "không có `/` cuối, query hay fragment",
+  );
 
 const envSchema = z
   .object({
@@ -360,16 +409,59 @@ const envSchema = z
     JOB_RETRY_LIMIT: z.coerce.number().int().min(0).default(3),
     PGBOSS_SCHEMA: z.string().default("pgboss"),
 
+    // ---------- UDP là OIDC issuer (Plan #26 QĐ-5, tuỳ chọn) ----------
+    /**
+     * [v4.11] Federation GCP (Workload Identity) và Azure (federated credential) tin token
+     * do UDP ký: cloud của khách đọc `<issuer>/.well-known/openid-configuration` rồi JWKS.
+     * Hai biến đi CÙNG NHAU; thiếu cả hai thì federation GCP/Azure báo lỗi cấu hình rõ
+     * ràng, còn credential tĩnh và AWS (AssumeRole) vẫn chạy.
+     */
+    UDP_OIDC_ISSUER: optionalSetting(oidcIssuerUrl),
+    UDP_OIDC_SIGNING_KEY: optionalSetting(rsaPrivateKeyBase64Pem()),
+
+    // ---------- AWS federation: UDP là bên được tin (Plan #26 QĐ-5, tuỳ chọn) ----------
+    /**
+     * [v4.11] `AWS_ROLE`: khách tạo role tin `UDP_AWS_PRINCIPAL_ARN` với điều kiện
+     * `sts:ExternalId` = HMAC-SHA256(`UDP_EXTERNAL_ID_SECRET`, projectId) — tất định theo
+     * project, không đoán được, không phải lưu. Principal PHẢI là identity nền mà Service 1
+     * chạy dưới nó (IRSA / instance role), vì chính nó gọi `sts:AssumeRole`. Hai biến đi
+     * cùng nhau; thiếu cả hai thì `AWS_ROLE` báo "chưa bật", khoá tĩnh vẫn chạy.
+     */
+    UDP_AWS_PRINCIPAL_ARN: optionalSetting(
+      z
+        .string()
+        .regex(
+          /^arn:aws[\w-]*:iam::\d{12}:(role|user)\/[\w+=,.@/-]{1,512}$/,
+          "phải là ARN của một IAM role hoặc user",
+        ),
+    ),
+    UDP_EXTERNAL_ID_SECRET: optionalSetting(z.string().min(32)),
+
     // ---------- Cloud MANAGED mode (tuỳ chọn) ----------
-    MANAGED_AWS_ACCESS_KEY_ID: z.string().optional(),
-    MANAGED_AWS_SECRET_ACCESS_KEY: z.string().optional(),
-    MANAGED_AWS_REGION: z.string().default("ap-southeast-1"),
-    MANAGED_GCP_SERVICE_ACCOUNT_JSON: z.string().optional(),
-    MANAGED_GCP_PROJECT_ID: z.string().optional(),
-    MANAGED_AZURE_TENANT_ID: z.string().optional(),
-    MANAGED_AZURE_CLIENT_ID: z.string().optional(),
-    MANAGED_AZURE_CLIENT_SECRET: z.string().optional(),
-    MANAGED_AZURE_SUBSCRIPTION_ID: z.string().optional(),
+    /**
+     * [v4.11] Cloud mà UDP nhận triển khai vào tài khoản CỦA CHÍNH NÓ, dùng identity nền
+     * của platform (§4.3: IRSA / workload identity / managed identity) — không khoá tĩnh
+     * nào trong env. Danh sách phân tách bằng dấu phẩy; rỗng = không nhận MANAGED.
+     */
+    MANAGED_CLOUDS: z
+      .string()
+      .default("")
+      .transform((v) =>
+        v
+          .split(",")
+          .map((x) => x.trim())
+          .filter((x) => x !== ""),
+      )
+      .pipe(z.array(z.enum(["aws", "gcp", "azure"]))),
+    /** Project GCP đích của MANAGED — bắt buộc khi `gcp` có trong `MANAGED_CLOUDS` */
+    MANAGED_GCP_PROJECT_ID: optionalSetting(
+      z.string().regex(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/),
+    ),
+    /** Subscription + resource group đích của MANAGED — bắt buộc khi có `azure` */
+    MANAGED_AZURE_SUBSCRIPTION_ID: optionalSetting(z.string().uuid()),
+    MANAGED_AZURE_RESOURCE_GROUP: optionalSetting(
+      z.string().regex(/^[\w().-]{1,90}$/),
+    ),
   })
   /**
    * Ràng buộc LIÊN BIẾN — thứ không kiểm được khi xét từng biến một.
@@ -451,6 +543,78 @@ const envSchema = z
         path: ["UDP_KEK_V2"],
         message:
           "trùng UDP_KEK_V1 — xoay khoá sang chính khoá cũ không thay thế gì",
+      });
+    }
+
+    if (
+      (env.UDP_AWS_PRINCIPAL_ARN === undefined) !==
+      (env.UDP_EXTERNAL_ID_SECRET === undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: [
+          env.UDP_AWS_PRINCIPAL_ARN === undefined
+            ? "UDP_AWS_PRINCIPAL_ARN"
+            : "UDP_EXTERNAL_ID_SECRET",
+        ],
+        message:
+          "UDP_AWS_PRINCIPAL_ARN và UDP_EXTERNAL_ID_SECRET đi cùng nhau — trust policy " +
+          "của khách cần cả principal lẫn ExternalId",
+      });
+    }
+
+    if (
+      env.MANAGED_CLOUDS.includes("gcp") &&
+      env.MANAGED_GCP_PROJECT_ID === undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MANAGED_GCP_PROJECT_ID"],
+        message:
+          "bắt buộc khi MANAGED_CLOUDS có gcp — MANAGED cần biết project đích",
+      });
+    }
+    if (
+      env.MANAGED_CLOUDS.includes("azure") &&
+      (env.MANAGED_AZURE_SUBSCRIPTION_ID === undefined ||
+        env.MANAGED_AZURE_RESOURCE_GROUP === undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MANAGED_AZURE_RESOURCE_GROUP"],
+        message:
+          "MANAGED_AZURE_SUBSCRIPTION_ID và MANAGED_AZURE_RESOURCE_GROUP bắt buộc khi " +
+          "MANAGED_CLOUDS có azure",
+      });
+    }
+
+    if (
+      (env.UDP_OIDC_ISSUER === undefined) !==
+      (env.UDP_OIDC_SIGNING_KEY === undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: [
+          env.UDP_OIDC_ISSUER === undefined
+            ? "UDP_OIDC_ISSUER"
+            : "UDP_OIDC_SIGNING_KEY",
+        ],
+        message:
+          "UDP_OIDC_ISSUER và UDP_OIDC_SIGNING_KEY đi cùng nhau — có issuer mà không " +
+          "khoá thì không ký được token, có khoá mà không issuer thì cloud không tìm được JWKS",
+      });
+    }
+
+    if (
+      env.NODE_ENV === "production" &&
+      env.UDP_OIDC_ISSUER !== undefined &&
+      !env.UDP_OIDC_ISSUER.startsWith("https://")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["UDP_OIDC_ISSUER"],
+        message:
+          "phải là https ở production — Google STS và Entra ID chỉ tin issuer https",
       });
     }
 

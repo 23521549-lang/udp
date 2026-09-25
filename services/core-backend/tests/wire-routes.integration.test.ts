@@ -42,6 +42,7 @@ beforeAll(async () => {
   s2 = started;
   app = createApp({
     metricsFor: () => new FakeMetricsProvider(),
+    oidcIssuer: null,
     flagService: createFlagServiceClient({
       baseUrl: started.baseUrl,
       secret: env.INTERNAL_SERVICE_SECRET,

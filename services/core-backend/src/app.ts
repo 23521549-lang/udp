@@ -16,6 +16,7 @@ import { metricsRouter } from "./modules/health/metrics.controller.js";
 import { authRouter } from "./modules/auth/auth.controller.js";
 import { projectRouter } from "./modules/project/project.controller.js";
 import { adminRouter } from "./modules/admin/admin.controller.js";
+import { createOidcRouter } from "./modules/oidc/oidc.controller.js";
 import { isSegmentWriteRequest } from "./modules/segment/segment.routes.js";
 import { defaultAppDeps, setAppDeps, type AppDeps } from "./core/app-deps.js";
 import { API_PREFIX } from "./core/http/api-prefix.js";
@@ -89,6 +90,8 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
   // Đặt TRƯỚC rate limiter: Prometheus scrape đều đặn và không được bị chặn.
   app.use(healthRouter);
   app.use(metricsRouter);
+  // [v4.11] Discovery + JWKS của OIDC issuer: cloud của khách đọc, cũng không qua API
+  app.use(createOidcRouter(deps.oidcIssuer));
 
   /**
    * Hai lớp bảo vệ áp cho TOÀN BỘ API thay vì rải trong từng controller.

@@ -141,6 +141,7 @@ beforeAll(async () => {
   logTap = tapServiceLog();
   app = createApp({
     metricsFor: () => new FakeMetricsProvider(),
+    oidcIssuer: null,
     flagService: createFlagServiceClient({
       baseUrl: started.baseUrl,
       secret: env.INTERNAL_SERVICE_SECRET,
