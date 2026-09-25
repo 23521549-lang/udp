@@ -2,7 +2,7 @@ import { SecretBuffer, type ResolvedCredential } from "@udp/adapter-core";
 import { describe, expect, it } from "vitest";
 import { createGcpGateway } from "../../src/gcp/gateway.js";
 import { labelKeyHash } from "../../src/gcp/labels.js";
-import { fakeGoogle, type FakeReply } from "./fake-google.js";
+import { fakeHttp, type FakeReply } from "../helpers/fake-http.js";
 
 /** Cổng GCP trên Google giả: phân loại lỗi, dấu sở hữu, chờ xoá, tra theo label */
 
@@ -28,7 +28,7 @@ function credential(): ResolvedCredential {
 }
 
 function gatewayOn(routes: Record<string, FakeReply | FakeReply[]>) {
-  const google = fakeGoogle(routes);
+  const google = fakeHttp(routes);
   const gateway = createGcpGateway({
     region: REGION,
     credential: credential(),

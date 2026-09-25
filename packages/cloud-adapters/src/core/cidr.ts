@@ -40,3 +40,22 @@ export function subnetCidr(
   const network = base - (base % 2 ** (32 - prefix));
   return format(network + index * size, newPrefix);
 }
+
+/** Hai khối IPv4 có địa chỉ chung (khối này chứa khối kia, hoặc trùng nhau) */
+export function cidrsOverlap(a: string, b: string): boolean {
+  const x = parse(a);
+  const y = parse(b);
+  const prefix = Math.min(x.prefix, y.prefix);
+  const size = 2 ** (32 - prefix);
+  return Math.floor(x.base / size) === Math.floor(y.base / size);
+}
+
+/** Địa chỉ thứ `offset` tính từ địa chỉ mạng của khối (không kèm độ dài tiền tố) */
+export function hostAddress(block: string, offset: number): string {
+  const { base, prefix } = parse(block);
+  const size = 2 ** (32 - prefix);
+  if (!Number.isInteger(offset) || offset < 0 || offset >= size) {
+    throw new Error(`${block} không có địa chỉ thứ ${String(offset)}`);
+  }
+  return format(base - (base % size) + offset, 32).replace(/\/32$/, "");
+}

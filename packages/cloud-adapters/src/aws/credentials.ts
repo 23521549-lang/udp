@@ -1,12 +1,16 @@
 import { AssumeRoleCommand, STSClient } from "@aws-sdk/client-sts";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
-import {
+import type {
+  CredentialMode,
+  ResolvedCredential,
   SecretBuffer,
-  type CredentialMode,
-  type ResolvedCredential,
 } from "@udp/adapter-core";
 import { z } from "zod";
-import { GatewayError } from "../core/gateway.js";
+import {
+  parseStoredPayload,
+  resolvedCredential,
+  STATIC_CREDENTIAL_TTL_MS,
+} from "../core/credential-exchange.js";
 import type { AwsSession } from "./clients.js";
 import { aws } from "./errors.js";
 import { required } from "./resources/types.js";
@@ -43,7 +47,7 @@ export const awsStoredPayloadSchemas = {
     .strict(),
 } as const;
 
-export const STATIC_CREDENTIAL_TTL_MS = 15 * 60 * 1000;
+export { STATIC_CREDENTIAL_TTL_MS };
 const SESSION_SECONDS = 3600;
 
 export interface AwsExchangeInput {
@@ -60,40 +64,19 @@ export interface AwsExchangeInput {
   now?: () => number;
 }
 
-function resolved(
+const resolved = (
   mode: CredentialMode,
   authKind: "AWS_ROLE" | "AWS_KEY",
   session: AwsSession,
   expiresAt: Date,
-): ResolvedCredential {
-  const payload = new SecretBuffer(JSON.stringify(session));
-  return {
-    provider: "aws",
-    mode,
-    authKind,
-    payload,
-    expiresAt,
-    dispose: () => payload.dispose(),
-  };
-}
+): ResolvedCredential =>
+  resolvedCredential("aws", mode, authKind, session, expiresAt);
 
-function parseStored<K extends keyof typeof awsStoredPayloadSchemas>(
+const parseStored = <K extends keyof typeof awsStoredPayloadSchemas>(
   kind: K,
   stored: SecretBuffer,
-): z.infer<(typeof awsStoredPayloadSchemas)[K]> {
-  return stored.use((buf) => {
-    const parsed = awsStoredPayloadSchemas[kind].safeParse(
-      JSON.parse(buf.toString("utf8")),
-    );
-    if (!parsed.success) {
-      throw new GatewayError(
-        "configuration",
-        `payload ${kind} đã lưu sai hình`,
-      );
-    }
-    return parsed.data;
-  });
-}
+): z.infer<(typeof awsStoredPayloadSchemas)[K]> =>
+  parseStoredPayload(awsStoredPayloadSchemas[kind], kind, stored);
 
 const sessionFrom = (c: {
   AccessKeyId?: string | undefined;

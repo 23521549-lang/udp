@@ -1,11 +1,17 @@
 import { createSign } from "node:crypto";
-import {
+import type {
+  CredentialMode,
+  ResolvedCredential,
   SecretBuffer,
-  type CredentialMode,
-  type ResolvedCredential,
 } from "@udp/adapter-core";
 import { z } from "zod";
-import { GatewayError } from "../core/gateway.js";
+import {
+  parseStoredPayload,
+  requiredToken as tokenOrThrow,
+  resolvedCredential,
+  STATIC_CREDENTIAL_TTL_MS,
+  tokenEndpointCall,
+} from "../core/credential-exchange.js";
 import type { Fetch } from "./http.js";
 import type { GcpSession } from "./session.js";
 
@@ -25,7 +31,7 @@ const TOKEN_URI = "https://oauth2.googleapis.com/token";
 const STS_URI = "https://sts.googleapis.com/v1/token";
 const METADATA_TOKEN =
   "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-export const STATIC_CREDENTIAL_TTL_MS = 15 * 60 * 1000;
+export { STATIC_CREDENTIAL_TTL_MS };
 const SESSION_SECONDS = 3600;
 
 const gcpProjectId = z
@@ -63,55 +69,11 @@ export interface GcpExchangeInput {
   now?: () => number;
 }
 
-function parseStored<K extends keyof typeof gcpStoredPayloadSchemas>(
+const parseStored = <K extends keyof typeof gcpStoredPayloadSchemas>(
   kind: K,
   stored: SecretBuffer,
-): z.infer<(typeof gcpStoredPayloadSchemas)[K]> {
-  return stored.use((buf) => {
-    const parsed = gcpStoredPayloadSchemas[kind].safeParse(
-      JSON.parse(buf.toString("utf8")),
-    );
-    if (!parsed.success) {
-      throw new GatewayError(
-        "configuration",
-        `payload ${kind} đã lưu sai hình`,
-      );
-    }
-    return parsed.data;
-  });
-}
-
-interface OAuthError {
-  error?: string | { status?: string; message?: string };
-}
-
-/** Lỗi của endpoint token: `invalid_grant`/`unauthorized_client`/403 là credential sai */
-async function tokenCall<T>(
-  fetchImpl: Fetch,
-  url: string,
-  init: RequestInit,
-): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetchImpl(url, init);
-  } catch {
-    throw new GatewayError("transient", `không tới được ${new URL(url).host}`);
-  }
-  const body = (await res.json().catch(() => ({}))) as T & OAuthError;
-  if (res.ok) return body;
-  const code =
-    typeof body.error === "string" ? body.error : (body.error?.status ?? "");
-  const permission =
-    res.status === 401 ||
-    res.status === 403 ||
-    /invalid_grant|unauthorized_client|invalid_client|PERMISSION_DENIED|UNAUTHENTICATED/.test(
-      code,
-    );
-  throw new GatewayError(
-    permission ? "permission" : res.status >= 500 ? "transient" : "permanent",
-    `${new URL(url).host} ⇒ ${String(res.status)} ${code}`,
-  );
-}
+): z.infer<(typeof gcpStoredPayloadSchemas)[K]> =>
+  parseStoredPayload(gcpStoredPayloadSchemas[kind], kind, stored);
 
 const base64url = (b: Buffer | string): string =>
   Buffer.from(b)
@@ -141,22 +103,13 @@ export function serviceAccountAssertion(
   return `${header}.${claims}.${base64url(signer.sign(privateKeyPem))}`;
 }
 
-function resolved(
+const resolved = (
   mode: CredentialMode,
   authKind: "GCP_WIF" | "GCP_KEY",
   session: GcpSession,
   expiresAt: Date,
-): ResolvedCredential {
-  const payload = new SecretBuffer(JSON.stringify(session));
-  return {
-    provider: "gcp",
-    mode,
-    authKind,
-    payload,
-    expiresAt,
-    dispose: () => payload.dispose(),
-  };
-}
+): ResolvedCredential =>
+  resolvedCredential("gcp", mode, authKind, session, expiresAt);
 
 export async function exchangeGcpCredential(
   input: GcpExchangeInput,
@@ -165,11 +118,12 @@ export async function exchangeGcpCredential(
 
   if (input.mode === "MANAGED") {
     const { gcpProjectId: project } = parseStored("MANAGED", input.stored);
-    const t = await tokenCall<{ access_token?: string; expires_in?: number }>(
-      input.fetch,
-      METADATA_TOKEN,
-      { headers: { "Metadata-Flavor": "Google" } },
-    );
+    const t = await tokenEndpointCall<{
+      access_token?: string;
+      expires_in?: number;
+    }>(input.fetch, METADATA_TOKEN, {
+      headers: { "Metadata-Flavor": "Google" },
+    });
     return resolved(
       "MANAGED",
       input.authKind,
@@ -185,7 +139,7 @@ export async function exchangeGcpCredential(
       key.private_key,
       Math.floor(now() / 1000),
     );
-    const t = await tokenCall<{ access_token?: string }>(
+    const t = await tokenEndpointCall<{ access_token?: string }>(
       input.fetch,
       TOKEN_URI,
       {
@@ -212,7 +166,7 @@ export async function exchangeGcpCredential(
   const audience =
     `//iam.googleapis.com/projects/${wif.projectNumber}/locations/global/` +
     `workloadIdentityPools/${wif.poolId}/providers/${wif.providerId}`;
-  const federated = await tokenCall<{ access_token?: string }>(
+  const federated = await tokenEndpointCall<{ access_token?: string }>(
     input.fetch,
     STS_URI,
     {
@@ -228,7 +182,7 @@ export async function exchangeGcpCredential(
       }),
     },
   );
-  const impersonated = await tokenCall<{
+  const impersonated = await tokenEndpointCall<{
     accessToken?: string;
     expireTime?: string;
   }>(
@@ -260,8 +214,5 @@ export async function exchangeGcpCredential(
 }
 
 function requiredToken(token: string | undefined): string {
-  if (token === undefined || token === "") {
-    throw new GatewayError("transient", "Google không trả access token");
-  }
-  return token;
+  return tokenOrThrow(token, "Google");
 }

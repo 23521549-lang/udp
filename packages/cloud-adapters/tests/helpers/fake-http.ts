@@ -1,8 +1,6 @@
-import type { Fetch } from "../../src/gcp/http.js";
-
 /**
- * Google giả cho test gateway/credential: bảng `"METHOD đường-dẫn"` ⇒ hàng đợi phản hồi.
- * Mỗi lời gọi lấy phản hồi đầu hàng đợi (phản hồi cuối được giữ lại để lặp); lời gọi
+ * Cloud giả ở tầng HTTP cho test gateway/credential (Google, ARM, Entra ID): bảng
+ * `"METHOD đường-dẫn"` ⇒ hàng đợi phản hồi. Mỗi lời gọi lấy phản hồi đầu hàng đợi (phản hồi cuối được giữ lại để lặp); lời gọi
  * không có trong bảng là lỗi của test, không phải 404 im lặng.
  */
 export interface FakeReply {
@@ -19,8 +17,8 @@ export interface RecordedCall {
   body: unknown;
 }
 
-export function fakeGoogle(routes: Record<string, FakeReply | FakeReply[]>): {
-  fetch: Fetch;
+export function fakeHttp(routes: Record<string, FakeReply | FakeReply[]>): {
+  fetch: typeof fetch;
   calls: RecordedCall[];
 } {
   const queues = new Map(
@@ -48,7 +46,7 @@ export function fakeGoogle(routes: Record<string, FakeReply | FakeReply[]>): {
     const reply = queue?.length === 1 ? queue[0] : queue?.shift();
     if (reply === undefined) {
       return Promise.reject(
-        new Error(`fake Google: không có route ${method} ${path}`),
+        new Error(`HTTP giả: không có route ${method} ${path}`),
       );
     }
     const text =

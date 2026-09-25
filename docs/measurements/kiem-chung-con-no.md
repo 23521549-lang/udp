@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 44.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 45.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -434,6 +434,30 @@ adapter.
   trình Node.
 - **Ảnh hưởng tới kết luận:** **C3** trên cloud thứ hai — bằng chứng rằng lõi điều phối
   không mang giả định riêng của AWS (tag lúc tạo, id do cloud cấp).
+
+## I31-azure — lưới K1..K10 và một vòng đời AKS trên Azure thật
+
+- **Vì sao nợ:** cần một subscription Azure có ngân sách. [v4.11, Plan #26 P4] Adapter
+  Azure THẬT đã có (`@udp/cloud-adapters/azure`: qua 38/38 phép hợp đồng trên SimCloud;
+  cổng ARM kiểm bằng ARM giả ở tầng request — không PUT đè, gỡ NAT khỏi subnet trước khi
+  xoá, phân trang `nextLink` chỉ trên host ARM; đổi token `AZURE_FEDERATED` /
+  `AZURE_SECRET` / IMDS). Thứ ARM giả không kiểm được: độ trễ lan truyền của managed
+  identity sang Entra ID (role assignment có thể nhận `PrincipalNotFound` vài chục giây
+  đầu — cổng phân loại là `dependency`), thời gian tạo AKS, và việc app registration của
+  khách chấp nhận token OIDC do UDP ký (sau P5).
+- **Tiền đề:** subscription + một resource group dành cho UDP; service principal có
+  Contributor, Role Based Access Control Administrator (giới hạn ở Network Contributor)
+  và Azure Kubernetes Service RBAC Cluster Admin trên resource group — đủ các quyền mà
+  `AZURE_REQUIRED_PERMISSIONS` liệt kê; provider `Microsoft.ContainerService`,
+  `Microsoft.Network`, `Microsoft.ManagedIdentity` đã đăng ký.
+- **Lệnh:** như `I31-localstack` với `UDP_CLOUD_DRIVER=azure`.
+- **Đạt:** 10 điểm crash cho cùng kết cục; sau mỗi ô, `orphan-scan` trả về rỗng — kể cả
+  node resource group `MC_*` do AKS sinh. **Không đạt:** còn tài nguyên mồ côi, hoặc
+  teardown dừng ở NAT gateway/Public IP vì "đang dùng".
+- **Tài nguyên:** ~1,5 USD/lượt (AKS tier Standard + NAT gateway theo giờ) + 1 tiến
+  trình Node.
+- **Ảnh hưởng tới kết luận:** **C3** trên cloud thứ ba — nơi tạo là PUT tạo-hoặc-cập-nhật
+  và mọi DELETE là bất đồng bộ, hai tính chất mà AWS và GCP không có ở cùng dạng.
 
 ## E15 — đối chứng Terraform và Pulumi trên cùng lưới
 

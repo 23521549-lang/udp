@@ -6,7 +6,7 @@ import {
   serviceAccountAssertion,
   STATIC_CREDENTIAL_TTL_MS,
 } from "../../src/gcp/credentials.js";
-import { fakeGoogle } from "./fake-google.js";
+import { fakeHttp } from "../helpers/fake-http.js";
 
 /** Đổi credential GCP (§4.3, Plan #26 AC-9) */
 
@@ -35,7 +35,7 @@ const IMPERSONATE = `https://iamcredentials.googleapis.com/v1/projects/-/service
 
 describe("GCP_WIF (federation mặc định)", () => {
   it("token OIDC của UDP ⇒ STS ⇒ generateAccessToken; hạn là hạn Google trả", async () => {
-    const google = fakeGoogle({
+    const google = fakeHttp({
       [`POST ${STS}`]: { body: { access_token: "federated" } },
       [`POST ${IMPERSONATE}`]: {
         body: { accessToken: "ya29.sa", expireTime: "2026-09-25T01:00:00Z" },
@@ -72,7 +72,7 @@ describe("GCP_WIF (federation mặc định)", () => {
   });
 
   it("khách đã xoá provider khỏi pool (invalid_grant) ⇒ permission", async () => {
-    const google = fakeGoogle({
+    const google = fakeHttp({
       [`POST ${STS}`]: { status: 400, body: { error: "invalid_grant" } },
     });
     await expect(
@@ -87,7 +87,7 @@ describe("GCP_WIF (federation mặc định)", () => {
   });
 
   it("payload sai hình ⇒ configuration, KHÔNG gọi Google", async () => {
-    const google = fakeGoogle({});
+    const google = fakeHttp({});
     await expect(
       exchangeGcpCredential({
         mode: "BYOC",
@@ -111,7 +111,7 @@ describe("GCP_KEY (khoá JSON dự phòng)", () => {
   };
 
   it("JWT RS256 ký đúng khoá, gửi grant jwt-bearer; bản trong RAM sống 15 phút", async () => {
-    const google = fakeGoogle({
+    const google = fakeHttp({
       "POST https://oauth2.googleapis.com/token": {
         body: { access_token: "ya29.key", expires_in: 3599 },
       },
@@ -158,7 +158,7 @@ describe("GCP_KEY (khoá JSON dự phòng)", () => {
         authKind: "GCP_KEY",
         stored: stored({ ...keyFile, type: "authorized_user" }),
         federationToken: noFederation,
-        fetch: fakeGoogle({}).fetch,
+        fetch: fakeHttp({}).fetch,
       }),
     ).rejects.toMatchObject({ errorClass: "configuration" });
   });
@@ -175,7 +175,7 @@ describe("GCP_KEY (khoá JSON dự phòng)", () => {
 
 describe("MANAGED", () => {
   it("token từ metadata server, có header Metadata-Flavor", async () => {
-    const google = fakeGoogle({
+    const google = fakeHttp({
       "GET http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token":
         { body: { access_token: "ya29.managed", expires_in: 1800 } },
     });
@@ -199,7 +199,7 @@ describe("MANAGED", () => {
         authKind: "GCP_WIF",
         stored: stored({ gcpProjectId: "udp-managed" }),
         federationToken: noFederation,
-        fetch: fakeGoogle({}).fetch,
+        fetch: fakeHttp({}).fetch,
       }),
     ).rejects.toMatchObject({ errorClass: "transient" });
   });
