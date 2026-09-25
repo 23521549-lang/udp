@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { DEFAULT_ENVIRONMENTS, k8sNamespaceFor } from "@udp/config";
 import type { CreationMode, Prisma, ProjectRole } from "@udp/db";
+import { NotFoundError } from "@udp/http";
 import { prisma } from "../../core/db.js";
 import { auditEntry } from "../audit/audit.service.js";
 import type {
@@ -236,17 +237,35 @@ export const updateTtl = (
   );
 
 /**
- * Xoá mềm.
+ * Xoá mềm, cùng một việc khác trong CÙNG transaction (giao việc dọn hạ tầng).
  *
  * `prisma.project.delete()` sẽ **luôn** thất bại: `AuditLog.project` là
  * `ON DELETE RESTRICT`, và chính hàm này vừa ghi một hàng audit trỏ vào project
  * đó. §2.3 nói rõ đấy là chủ đích — sổ kiểm toán phải sống lâu hơn thứ nó ghi.
+ * Điều kiện `status <> DELETED`: xoá lần hai là 404, không phải một hàng audit thứ hai.
  */
-export const softDelete = (
+export function softDeleteWith<T>(
   id: string,
   request: Request,
-): Promise<PublicProject> =>
-  updateWithAudit(
-    { status: "DELETED" },
-    { id, action: "project.delete", request },
-  );
+  alsoDo: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    const moved = await tx.project.updateMany({
+      where: { id, status: { not: "DELETED" } },
+      data: { status: "DELETED" },
+    });
+    if (moved.count === 0) throw new NotFoundError("Không tìm thấy project");
+    await tx.auditLog.create({
+      data: {
+        ...auditEntry({
+          action: "project.delete",
+          targetType: "Project",
+          targetId: id,
+          request,
+        }),
+        projectId: id,
+      },
+    });
+    return alsoDo(tx);
+  });
+}

@@ -5,7 +5,7 @@ import { createApp } from "./app.js";
 import { defaultAppDeps } from "./core/app-deps.js";
 import { createEgressFetch } from "./core/egress/egress.js";
 import { startJobQueue, type JobQueue } from "./jobs/boss.js";
-import { createProvisionWorker } from "./jobs/provision.job.js";
+import { createJobWorker } from "./jobs/job-worker.js";
 import { reconcileJobs } from "./jobs/reconcile.js";
 import {
   createClusterRuntime,
@@ -63,7 +63,7 @@ async function startJobs(): Promise<JobQueue> {
     heartbeatSeconds: JOB_LEASE.renewIntervalMs / 1_000,
     pollingIntervalSeconds: JOB_QUEUE.pollingIntervalSeconds,
   });
-  const worker = createProvisionWorker({
+  const worker = createJobWorker({
     prisma,
     platform: deps.cloud,
     domainRegistry: deps.domainRegistry,
@@ -76,9 +76,7 @@ async function startJobs(): Promise<JobQueue> {
       errorRetryMs: JOB_LEASE.renewErrorRetryMs,
     },
   });
-  await queue.workProvision((jobId, attempt) =>
-    worker.provision(jobId, attempt),
-  );
+  await queue.workJobs((jobId, attempt) => worker.run(jobId, attempt));
   await queue.workCompensation((jobId) => worker.compensate(jobId));
   await queue.scheduleReconcile(JOB_QUEUE.reconcileCron, async () => {
     const outcome = await reconcileJobs(prisma, queue);
@@ -96,7 +94,7 @@ const queue = await startJobs().catch((err: unknown) => {
 
 const app = createApp({
   ...deps,
-  provisioning: { ...deps.provisioning, enqueue: queue.enqueueProvision },
+  provisioning: { ...deps.provisioning, enqueue: queue.enqueueJob },
 });
 const server = app.listen(env.CORE_BACKEND_PORT, () => {
   logger.info(

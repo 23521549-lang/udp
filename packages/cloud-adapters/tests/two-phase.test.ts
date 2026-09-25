@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   SecretBuffer,
   type CloudProvider,
+  type CreatedResource,
   type ResolvedCredential,
   type ResourceQuota,
 } from "@udp/adapter-core";
@@ -124,7 +125,15 @@ function world(provider: CloudProvider, plan: ProviderPlan, codec: TagCodec) {
     quota: QUOTA,
     ...(inherited === undefined ? {} : { inherited }),
   });
-  return { cloud, ledger, runner, networkSteps, clusterSteps, planOf };
+  return {
+    adapter,
+    cloud,
+    ledger,
+    runner,
+    networkSteps,
+    clusterSteps,
+    planOf,
+  };
 }
 
 const CLOUDS = [
@@ -182,6 +191,49 @@ describe.each(CLOUDS)("%s: hai pha tách rời", (provider, plan, codec) => {
     expect(outcome.status).toBe("COMPENSATED");
     const rows = await w.ledger.rowsOf(PROJECT);
     expect(rows.every((r) => r.status === "DELETED")).toBe(true);
+    expect(w.cloud.listTaggedPage(PROJECT).items).toEqual([]);
+  });
+
+  it("listTaggedResources thấy cả tài nguyên Kubernetes sinh cho cluster; teardown xoá nó TRƯỚC mạng", async () => {
+    const w = world(provider, plan, codec);
+    const network = await w.runner().run(w.planOf("NETWORK", w.networkSteps));
+    if (network.status !== "SUCCESS") throw new Error(network.status);
+    await w.runner().run(w.planOf("CLUSTER", w.clusterSteps, network.created));
+    const elb = await w.cloud.seedK8sManaged({
+      kind: "k8s-loadbalancer",
+      clusterName: plan.physicalName(PROJECT, "cluster"),
+      attachedTo: network.created["vpc"]?.id ?? "",
+    });
+
+    const listed = await w.adapter.listTaggedResources(
+      credential(provider),
+      PROJECT,
+    );
+    expect(listed.status).toBe("SUCCESS");
+    expect(listed.data?.find((r) => r.id === elb.id)?.managedByK8s).toBe(true);
+
+    // Kind không gắn tag lúc tạo (GCP/Azure) không có trong danh sách theo tag: teardown
+    // lấy thêm hàng sổ, tra lại bằng `lookupById` — đúng đường job TEARDOWN đi
+    const seen = new Set((listed.data ?? []).map((r) => r.id));
+    const fromLedger: CreatedResource[] = [];
+    for (const row of await w.ledger.rowsOf(PROJECT)) {
+      const step = [...w.networkSteps, ...w.clusterSteps].find(
+        (s) => s.idempotencyKey === row.idempotencyKey,
+      );
+      if (step === undefined || row.providerId === null) continue;
+      if (seen.has(row.providerId)) continue;
+      const found = await step.lookupById(credential(provider), row.providerId);
+      if (found.kind === "found") fromLedger.push(found.resource);
+    }
+    const torn = await w.adapter.teardown(credential(provider), [
+      ...(listed.data ?? []),
+      ...fromLedger,
+    ]);
+    expect(torn.data?.failed).toEqual([]);
+    const deleted = torn.data?.deleted ?? [];
+    expect(deleted.indexOf(elb.id)).toBeLessThan(
+      deleted.indexOf(network.created["vpc"]?.id ?? ""),
+    );
     expect(w.cloud.listTaggedPage(PROJECT).items).toEqual([]);
   });
 

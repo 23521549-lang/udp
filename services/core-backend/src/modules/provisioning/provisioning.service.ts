@@ -60,7 +60,7 @@ export interface ProvisioningDeps {
 }
 
 /** Gửi job sang hàng đợi — `null` khi tiến trình này không chạy hàng đợi (đối soát gửi) */
-export type EnqueueProvision = ((jobId: string) => Promise<void>) | null;
+export type EnqueueJob = ((jobId: string) => Promise<void>) | null;
 
 const PROJECT_NOT_FOUND = "Không tìm thấy project";
 const JOB_NOT_FOUND = "Không tìm thấy job";
@@ -281,7 +281,7 @@ export async function provision(
   body: ProvisionBody,
   request: Request,
   deps: ProvisioningDeps,
-  enqueue: EnqueueProvision,
+  enqueue: EnqueueJob,
 ): Promise<ProvisioningJobWire> {
   const { preview: view, payload } = await planOf(projectId, deps);
   const blocker = view.blockers[0];
@@ -467,4 +467,61 @@ export async function cancel(
     },
   });
   return jobView(await jobOrNotFound(projectId, jobId));
+}
+
+/** Hàng sổ có thể còn là tài nguyên thật trên cloud */
+const LIVE_RESOURCE_STATUSES = [
+  "CREATING",
+  "CREATED",
+  "READY",
+  "DELETING",
+] as const;
+
+/**
+ * Phần hạ tầng của lệnh xoá mềm project (§9 "soft-delete + enqueue teardown", Plan #29
+ * QĐ-3) — chạy TRONG transaction của lệnh xoá, nên không có khoảnh khắc nào project đã
+ * xoá mà không ai được giao dọn.
+ *
+ * - Có job PROVISION còn hủy được ⇒ yêu cầu hủy: bù trừ của chính nó là teardown, một job
+ *   thứ hai chỉ tranh cùng tài nguyên. Job đang bù trừ ⇒ để nó xong.
+ * - Không job nào chạy mà sổ còn tài nguyên sống ⇒ job TEARDOWN mang payload của lượt
+ *   PROVISION gần nhất (cloud, region, tag).
+ * - Project chưa từng dựng gì ⇒ không có gì để dọn.
+ *
+ * Trả id job cần gửi sang hàng đợi sau commit, hay `null`.
+ */
+export async function retireInfrastructure(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+): Promise<string | null> {
+  const active = await tx.provisioningJob.findFirst({
+    where: { projectId, state: { notIn: [...TERMINAL_STATES] } },
+    select: { id: true },
+  });
+  if (active !== null) {
+    await tx.provisioningJob.updateMany({
+      where: { id: active.id, state: { in: [...CANCELLABLE_STATES] } },
+      data: { state: "CANCEL_REQUESTED" },
+    });
+    return null;
+  }
+  const live = await tx.provisionedResource.count({
+    where: { projectId, status: { in: [...LIVE_RESOURCE_STATUSES] } },
+  });
+  if (live === 0) return null;
+  const source = await tx.provisioningJob.findFirst({
+    where: { projectId, jobType: "PROVISION" },
+    orderBy: { createdAt: "desc" },
+    select: { payload: true },
+  });
+  if (source === null) return null;
+  const job = await tx.provisioningJob.create({
+    data: {
+      projectId,
+      jobType: "TEARDOWN",
+      payload: source.payload ?? {},
+    },
+    select: { id: true },
+  });
+  return job.id;
 }

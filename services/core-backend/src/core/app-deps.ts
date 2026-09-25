@@ -20,7 +20,7 @@ import {
   createRegistry,
   type DomainAdapterRegistry,
 } from "../modules/domain/domain-adapter.registry.js";
-import type { EnqueueProvision } from "../modules/provisioning/provisioning.service.js";
+import type { EnqueueJob } from "../modules/provisioning/provisioning.service.js";
 
 /**
  * Phụ thuộc RA NGOÀI tiến trình của Service 1 — thứ test phải thay được mà không
@@ -66,7 +66,7 @@ export interface AppDeps {
 
 export interface ProvisioningRuntime {
   egressCidrs: readonly string[];
-  enqueue: EnqueueProvision;
+  enqueue: EnqueueJob;
 }
 
 /** Gốc cây adapter của sản phẩm: `src/modules` (hay `dist/modules` khi đã build) */

@@ -326,9 +326,28 @@ export function createPlannedAdapter(
       }
     },
 
+    /**
+     * Tài nguyên mang tag project, CỘNG tài nguyên Kubernetes sinh cho cluster của project
+     * (ELB/ENI/EBS mang `kubernetes.io/cluster/<tên cluster>` = `owned` | `shared`, §4.2).
+     * Adapter không tạo chúng nên chúng không mang `udp.project`; teardown mà không thấy
+     * chúng thì bậc mạng vỡ vĩnh viễn trong khi chúng vẫn tính tiền. Hình tag thật của từng
+     * cloud là nợ `k8s-managed-discovery`.
+     */
     listTaggedResources: async (credential, projectId) => {
       try {
-        return ok(await gatewayFor(credential).listByProject(projectId));
+        const gateway = gatewayFor(credential);
+        const own = await gateway.listByProject(projectId);
+        const clusterTag = `kubernetes.io/cluster/${plan.physicalName(projectId, "cluster")}`;
+        const seen = new Set(own.map((r) => r.id));
+        const k8s: CreatedResource[] = [];
+        for (const value of ["owned", "shared"]) {
+          for (const r of await gateway.findByTag(clusterTag, value)) {
+            if (seen.has(r.id)) continue;
+            seen.add(r.id);
+            k8s.push({ ...r, managedByK8s: true });
+          }
+        }
+        return ok([...own, ...k8s]);
       } catch (e) {
         return failed<CreatedResource[]>(safeMessage(e));
       }

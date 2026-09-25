@@ -289,3 +289,74 @@ describe("jobs", () => {
     expect(data.job.state).toBe("FAILED");
   });
 });
+
+describe("DELETE /projects/:id (Plan #29 P3)", () => {
+  const seedProvisioned = async (pid: string, state: "DONE" | "QUEUED") => {
+    const job = await admin.provisioningJob.create({
+      data: {
+        projectId: pid,
+        jobType: "PROVISION",
+        state,
+        payload: { marker: "payload-cua-lan-provision" },
+      },
+      select: { id: true },
+    });
+    return job.id;
+  };
+
+  it("project chưa dựng gì ⇒ 204, không job nào; xoá lần hai ⇒ 404", async () => {
+    const { projectId: pid } = await world.newProject(owner);
+    const before = enqueued.length;
+    await as(owner, request(app).delete(url("", pid))).expect(204);
+    expect(enqueued).toHaveLength(before);
+    expect(
+      await admin.provisioningJob.count({ where: { projectId: pid } }),
+    ).toBe(0);
+    await as(owner, request(app).delete(url("", pid))).expect(404);
+  });
+
+  it("còn tài nguyên sống ⇒ TEARDOWN mang payload của lượt PROVISION, gửi hàng đợi", async () => {
+    const { projectId: pid } = await world.newProject(owner);
+    const provisioned = await seedProvisioned(pid, "DONE");
+    await admin.provisionedResource.create({
+      data: {
+        jobId: provisioned,
+        projectId: pid,
+        step: "NETWORK",
+        kind: "vpc",
+        idempotencyKey: `${pid}:NETWORK:vpc:vpc`,
+        providerId: "vpc-con-song",
+        provider: "AWS",
+        region: "ap-southeast-1",
+        status: "READY",
+      },
+    });
+
+    await as(owner, request(app).delete(url("", pid))).expect(204);
+    const teardown = await admin.provisioningJob.findFirstOrThrow({
+      where: { projectId: pid, jobType: "TEARDOWN" },
+      select: { id: true, state: true, payload: true },
+    });
+    expect(teardown).toMatchObject({
+      state: "QUEUED",
+      payload: { marker: "payload-cua-lan-provision" },
+    });
+    expect(enqueued.at(-1)).toBe(teardown.id);
+    await admin.provisionedResource.deleteMany({ where: { projectId: pid } });
+  });
+
+  it("PROVISION đang chạy ⇒ yêu cầu hủy (bù trừ là teardown), không job thứ hai", async () => {
+    const { projectId: pid } = await world.newProject(owner);
+    const running = await seedProvisioned(pid, "QUEUED");
+    await as(owner, request(app).delete(url("", pid))).expect(204);
+    const jobs = await admin.provisioningJob.findMany({
+      where: { projectId: pid },
+      select: { id: true, state: true },
+    });
+    expect(jobs).toEqual([{ id: running, state: "CANCEL_REQUESTED" }]);
+  });
+
+  it("MAINTAINER ⇒ 403", async () => {
+    await as(maintainer, request(app).delete(url(""))).expect(403);
+  });
+});

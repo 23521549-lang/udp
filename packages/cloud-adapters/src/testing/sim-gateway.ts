@@ -71,6 +71,15 @@ async function guarded<T>(fn: () => T | Promise<T>): Promise<T> {
   }
 }
 
+/** Kind tồn tại độc lập với tài nguyên mà nó tham chiếu — xoá theo bậc `oidc-iam` SAU cluster */
+const REFERENCE_ONLY_KINDS: readonly CreatedResourceKind[] = [
+  "oidc-provider",
+  "iam-role",
+  "iam-policy",
+  "service-account",
+  "managed-identity",
+];
+
 export function createSimGateway(options: SimGatewayOptions): CloudGateway {
   const { cloud, codec, provider } = options;
 
@@ -110,8 +119,12 @@ export function createSimGateway(options: SimGatewayOptions): CloudGateway {
 
     create: (req) =>
       guarded(() => {
-        // SimCloud gắn một cha; lấy step phụ thuộc đầu tiên theo thứ tự khai của kế hoạch
-        const parent = Object.values(req.parents)[0];
+        // SimCloud gắn một cha; lấy step phụ thuộc đầu tiên theo thứ tự khai của kế hoạch.
+        // Kind định danh chỉ THAM CHIẾU cha (OIDC provider trỏ issuer của cluster), không bị
+        // nó chứa: gắn vào thì cluster không xoá được trước chúng, trái thứ tự §4.2
+        const parent = REFERENCE_ONLY_KINDS.includes(req.kind)
+          ? undefined
+          : Object.values(req.parents)[0];
         return withProvider(
           cloud.createResource({
             kind: req.kind,

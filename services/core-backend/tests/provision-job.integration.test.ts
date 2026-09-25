@@ -9,6 +9,7 @@ import { SimulatedCrash, type RunnerObserver } from "@udp/adapter-core/runner";
 import { KINDS_WITHOUT_CREATE_TAGS } from "@udp/adapter-core/testing";
 import { env } from "@udp/config";
 import type { DomainType } from "@udp/config/domains";
+import { awsPlan } from "@udp/cloud-adapters/aws";
 import { createPrismaClient } from "@udp/db";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
 import type { CapabilityBinding } from "@udp/shared-types";
@@ -18,10 +19,8 @@ import { z } from "zod";
 import { createApp } from "../src/app.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { prisma as s1 } from "../src/core/db.js";
-import {
-  createProvisionWorker,
-  type ProvisionWorkerDeps,
-} from "../src/jobs/provision.job.js";
+import type { JobKitDeps } from "../src/jobs/job-kit.js";
+import { createJobWorker } from "../src/jobs/job-worker.js";
 import type { ClusterRuntime } from "../src/modules/cluster/cluster-runtime.js";
 import type { DomainAdapterRegistry } from "../src/modules/domain/domain-adapter.registry.js";
 import { closeFinishedCycle } from "../src/modules/provisioning/prisma-ledger.js";
@@ -264,9 +263,9 @@ async function seedJob(projectId: string): Promise<string> {
 function workerWith(
   registry: DomainAdapterRegistry,
   clusters: FakeClusters,
-  over: Partial<ProvisionWorkerDeps> = {},
+  over: Partial<JobKitDeps> = {},
 ) {
-  return createProvisionWorker({
+  return createJobWorker({
     prisma: s1,
     platform,
     domainRegistry: () => Promise.resolve(registry),
@@ -399,7 +398,7 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
     const clusters = fakeClusters();
     const { metrics, delivery, registry } = domainsWith();
 
-    await workerWith(registry, clusters).provision(jobId, { final: false });
+    await workerWith(registry, clusters).run(jobId, { final: false });
 
     const s = await snapshot(projectId, jobId);
     expect(s.job).toMatchObject({ state: "DONE", claimedBy: null });
@@ -446,7 +445,7 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
       ),
     });
 
-    await worker.provision(jobId, { final: false });
+    await worker.run(jobId, { final: false });
 
     const s = await snapshot(projectId, jobId);
     expect(s.job).toMatchObject({ state: "FAILED", claimedBy: null });
@@ -467,14 +466,14 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
         "cluster",
         () => new Error("InsufficientCapacity"),
       ),
-    }).provision(failed, { final: false });
+    }).run(failed, { final: false });
     expect((await snapshot(projectId, failed)).job.state).toBe("FAILED");
 
     // Đúng thứ `POST /provision` làm trong transaction tạo job
     const closed = await closeFinishedCycle(admin, projectId);
     expect(closed.length).toBeGreaterThan(0);
     const retry = await seedJob(projectId);
-    await workerWith(registry, fakeClusters()).provision(retry, {
+    await workerWith(registry, fakeClusters()).run(retry, {
       final: false,
     });
 
@@ -492,14 +491,14 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
     const worker = workerWith(registry, clusters);
 
     clusters.failNextBootstrap();
-    await expect(worker.provision(jobId, { final: false })).rejects.toThrow(
+    await expect(worker.run(jobId, { final: false })).rejects.toThrow(
       "API server chưa trả lời",
     );
     const mid = await snapshot(projectId, jobId);
     expect(mid.job).toMatchObject({ state: "CLUSTER_ACCESS", claimedBy: null });
     const created = await onCloud(projectId);
 
-    await worker.provision(jobId, { final: false });
+    await worker.run(jobId, { final: false });
     expect((await snapshot(projectId, jobId)).job.state).toBe("DONE");
     expect(await onCloud(projectId)).toBe(created);
   });
@@ -516,19 +515,19 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
         () => new SimulatedCrash("after-create-commit"),
       ),
     });
-    await expect(dying.provision(jobId, { final: false })).rejects.toThrow(
+    await expect(dying.run(jobId, { final: false })).rejects.toThrow(
       SimulatedCrash,
     );
     expect((await snapshot(projectId, jobId)).job.state).toBe("CLUSTER");
 
     // Lease còn sống ⇒ worker khác KHÔNG được vào (ném để pg-boss thử lại, không bỏ job)
     const successor = workerWith(registry, fakeClusters());
-    await expect(successor.provision(jobId, { final: false })).rejects.toThrow(
+    await expect(successor.run(jobId, { final: false })).rejects.toThrow(
       "đang được một worker khác giữ lease",
     );
 
     await leaseExpiry();
-    await successor.provision(jobId, { final: false });
+    await successor.run(jobId, { final: false });
     const s = await snapshot(projectId, jobId);
     expect(s.job.state).toBe("DONE");
     expect(await onCloud(projectId)).toBe(taggable(s.rows));
@@ -539,7 +538,7 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
     const jobId = await seedJob(projectId);
     const { metrics, registry } = domainsWith(true);
 
-    await workerWith(registry, fakeClusters()).provision(jobId, {
+    await workerWith(registry, fakeClusters()).run(jobId, {
       final: false,
     });
 
@@ -565,7 +564,7 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
 
     await workerWith(registry, fakeClusters(), {
       observer: cancelOnCluster,
-    }).provision(jobId, { final: false });
+    }).run(jobId, { final: false });
 
     const s = await snapshot(projectId, jobId);
     expect(s.job.state).toBe("FAILED");
@@ -574,12 +573,37 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
     expect(await onCloud(projectId)).toBe(0);
   });
 
+  it("project bị xoá mềm giữa chừng ⇒ bù trừ xong KHÔNG hồi sinh project (Plan #29 QĐ-3)", async () => {
+    const projectId = await readyProject();
+    const jobId = await seedJob(projectId);
+    const { registry } = domainsWith();
+    const deleteOnCluster: RunnerObserver = {
+      async onPhase(phase, stepName) {
+        if (phase === "before-lookup" && stepName === "cluster") {
+          await admin.project.update({
+            where: { id: projectId },
+            data: { status: "DELETED" },
+          });
+          await requestCancel(s1, jobId);
+        }
+      },
+    };
+    await workerWith(registry, fakeClusters(), {
+      observer: deleteOnCluster,
+    }).run(jobId, { final: false });
+
+    const s = await snapshot(projectId, jobId);
+    expect(s.job.state).toBe("FAILED");
+    expect(s.project.status).toBe("DELETED");
+    expect(await onCloud(projectId)).toBe(0);
+  });
+
   it("hủy khi còn QUEUED ⇒ không chạm cloud, không sự kiện deploy lẻ, project giữ DRAFT", async () => {
     const projectId = await readyProject();
     const jobId = await seedJob(projectId);
     expect(await requestCancel(s1, jobId)).toBe(true);
 
-    await workerWith(domainsWith().registry, fakeClusters()).provision(jobId, {
+    await workerWith(domainsWith().registry, fakeClusters()).run(jobId, {
       final: false,
     });
 
@@ -603,7 +627,7 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
           "cluster",
           () => new SimulatedCrash("before-lookup"),
         ),
-      }).provision(jobId, { final: true }),
+      }).run(jobId, { final: true }),
     ).rejects.toThrow(SimulatedCrash);
     expect(await onCloud(projectId)).toBeGreaterThan(0);
 
@@ -612,5 +636,67 @@ describe("job PROVISION", { timeout: 120_000 }, () => {
     const s = await snapshot(projectId, jobId);
     expect(s.job.state).toBe("FAILED");
     expect(await onCloud(projectId)).toBe(0);
+  });
+});
+
+/** Job TEARDOWN mang lại payload của lượt PROVISION (cloud, region, tag) — như `DELETE` */
+async function seedTeardown(projectId: string, from: string): Promise<string> {
+  const source = await admin.provisioningJob.findUniqueOrThrow({
+    where: { id: from },
+    select: { payload: true },
+  });
+  const job = await admin.provisioningJob.create({
+    data: {
+      projectId,
+      jobType: "TEARDOWN",
+      payload: source.payload ?? {},
+    },
+    select: { id: true },
+  });
+  return job.id;
+}
+
+describe("job TEARDOWN", { timeout: 120_000 }, () => {
+  it("AC-1 + AC-2: gỡ domain, xoá tài nguyên Kubernetes sinh TRƯỚC mạng, cloud sạch, sổ DELETED", async () => {
+    const projectId = await readyProject();
+    const provisioned = await seedJob(projectId);
+    const { metrics, delivery, registry } = domainsWith();
+    const worker = workerWith(registry, fakeClusters());
+    await worker.run(provisioned, { final: false });
+    expect((await snapshot(projectId, provisioned)).job.state).toBe("DONE");
+
+    const vpc = await admin.provisionedResource.findFirstOrThrow({
+      where: { projectId, kind: "vpc" },
+      select: { providerId: true },
+    });
+    const elb = await platform.cloud.seedK8sManaged({
+      kind: "k8s-loadbalancer",
+      clusterName: awsPlan.physicalName(projectId, "cluster"),
+      attachedTo: vpc.providerId ?? "",
+    });
+
+    const teardown = await seedTeardown(projectId, provisioned);
+    await worker.run(teardown, { final: false });
+
+    const s = await snapshot(projectId, teardown);
+    expect(s.job).toMatchObject({ state: "DONE", claimedBy: null });
+    expect(s.project.clusterAccess).toBeNull();
+    expect(s.rows.every((r) => r.status === "DELETED")).toBe(true);
+    expect(await onCloud(projectId)).toBe(0);
+    expect(platform.cloud.describeById(elb.id)).toBeNull();
+    expect(metrics.teardowns).toBe(1);
+    expect(delivery.teardowns).toBe(3);
+  });
+
+  it("chạy lại một TEARDOWN đã xong là không làm gì (idempotent)", async () => {
+    const projectId = await readyProject();
+    const provisioned = await seedJob(projectId);
+    const { registry } = domainsWith();
+    const worker = workerWith(registry, fakeClusters());
+    await worker.run(provisioned, { final: false });
+    const teardown = await seedTeardown(projectId, provisioned);
+    await worker.run(teardown, { final: false });
+    await worker.compensate(teardown);
+    expect((await snapshot(projectId, teardown)).job.state).toBe("DONE");
   });
 });

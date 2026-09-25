@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { asyncHandler, sendJson } from "@udp/http";
+import { appDepsOf } from "../../core/app-deps.js";
 import {
   auditListResponseWire,
   projectDetailResponseWire,
@@ -151,7 +152,11 @@ projectRouter.delete(
   requireAuth,
   requireMinProjectRole("OWNER"),
   asyncHandler(async (req, res) => {
-    await projectService.remove(projectIdParam(req), req);
+    await projectService.remove(
+      projectIdParam(req),
+      req,
+      appDepsOf(req).provisioning.enqueue,
+    );
     res.status(204).end();
   }),
 );

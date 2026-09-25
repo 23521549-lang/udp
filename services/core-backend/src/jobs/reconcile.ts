@@ -35,7 +35,7 @@ const NON_TERMINAL_RUNNING = [
 
 export async function reconcileJobs(
   prisma: PrismaClient,
-  queue: Pick<JobQueue, "stateOf" | "enqueueProvision" | "enqueueCompensation">,
+  queue: Pick<JobQueue, "stateOf" | "enqueueJob" | "enqueueCompensation">,
 ): Promise<ReconcileOutcome> {
   const outcome: ReconcileOutcome = { resent: [], compensating: [] };
 
@@ -47,7 +47,7 @@ export async function reconcileJobs(
   for (const { id } of queued) {
     const state = await queue.stateOf(id);
     if (state === null) {
-      await queue.enqueueProvision(id);
+      await queue.enqueueJob(id);
       outcome.resent.push(id);
     } else if (state === "failed" || state === "cancelled") {
       // Chưa ai chạm tài nguyên nào nhưng pg-boss đã bỏ: bù trừ cũng là đường kết thúc đúng

@@ -47,6 +47,8 @@ export const SIM_LABELS = {
 } as const;
 
 export interface SimCloudPlatform extends CloudPlatform {
+  /** Cửa hậu của cloud mô phỏng — test gieo tài nguyên Kubernetes sinh, đếm lời gọi */
+  readonly cloud: SimCloud;
   /** Payload đã giải mã mà mỗi lần đổi token nhận — để kiểm nó bị xoá sau đó (AC-9) */
   readonly exchanged: SecretBuffer[];
   readonly requests: Omit<ExchangeRequest, "stored">[];
@@ -71,6 +73,7 @@ export function simCloudPlatform(
     );
 
   return {
+    cloud,
     exchanged,
     requests,
     capabilities: capabilitiesOf({ MANAGED_CLOUDS: [], ...config }, oidcIssuer),

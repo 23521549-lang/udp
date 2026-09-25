@@ -21,7 +21,8 @@ import { logger } from "@udp/http";
  */
 
 export const QUEUES = {
-  provision: "udp-provision",
+  /** Mọi `ProvisioningJob` (PROVISION, TEARDOWN, …) — worker rẽ theo `job_type` */
+  jobs: "udp-jobs",
   /** Bù trừ một job mà lượt cuối không tự bù được (worker chết) — do đối soát gửi */
   compensate: "udp-compensate",
   reconcile: "udp-job-reconcile",
@@ -38,13 +39,13 @@ export interface Attempt {
 }
 
 export interface JobQueue {
-  /** Gửi job PROVISION cho một `ProvisioningJob` — idempotent theo id */
-  enqueueProvision(jobId: string): Promise<void>;
+  /** Gửi một `ProvisioningJob` sang hàng đợi — idempotent theo id */
+  enqueueJob(jobId: string): Promise<void>;
   /** Gửi job bù trừ — idempotent theo `ProvisioningJob` (một job bù trừ đang chờ là đủ) */
   enqueueCompensation(jobId: string): Promise<void>;
   /** Trạng thái của job pg-boss cùng id; `null` = pg-boss chưa từng nhận (hoặc đã dọn) */
   stateOf(jobId: string): Promise<BossJobState | null>;
-  workProvision(
+  workJobs(
     handler: (jobId: string, attempt: Attempt) => Promise<void>,
   ): Promise<void>;
   workCompensation(
@@ -89,7 +90,7 @@ export async function startJobQueue(
     logger.error({ err }, "pg-boss lỗi nền");
   });
   await boss.start();
-  await boss.createQueue(QUEUES.provision, {
+  await boss.createQueue(QUEUES.jobs, {
     retryLimit: options.retryLimit,
     retryBackoff: true,
     retryDelay: 30,
@@ -106,8 +107,8 @@ export async function startJobQueue(
   await boss.createQueue(QUEUES.reconcile, { retryLimit: 0 });
 
   return {
-    enqueueProvision: async (jobId) => {
-      await boss.send(QUEUES.provision, { jobId } satisfies ProvisionData, {
+    enqueueJob: async (jobId) => {
+      await boss.send(QUEUES.jobs, { jobId } satisfies ProvisionData, {
         id: jobId,
       });
     },
@@ -119,13 +120,13 @@ export async function startJobQueue(
     },
 
     stateOf: async (jobId) => {
-      const [job] = await boss.findJobs(QUEUES.provision, { id: jobId });
+      const [job] = await boss.findJobs(QUEUES.jobs, { id: jobId });
       return job?.state ?? null;
     },
 
-    workProvision: async (handler) => {
+    workJobs: async (handler) => {
       await boss.work(
-        QUEUES.provision,
+        QUEUES.jobs,
         {
           pollingIntervalSeconds: options.pollingIntervalSeconds,
           localConcurrency: 1,

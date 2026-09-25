@@ -87,11 +87,11 @@ async function job(
 describe("gửi job", () => {
   it("gửi hai lần cùng id ⇒ một job pg-boss", async () => {
     const id = randomUUID();
-    await queue.enqueueProvision(id);
-    await queue.enqueueProvision(id);
-    expect(await raw.findJobs(QUEUES.provision, { id })).toHaveLength(1);
+    await queue.enqueueJob(id);
+    await queue.enqueueJob(id);
+    expect(await raw.findJobs(QUEUES.jobs, { id })).toHaveLength(1);
     expect(await queue.stateOf(id)).toBe("created");
-    await raw.deleteJob(QUEUES.provision, id);
+    await raw.deleteJob(QUEUES.jobs, id);
   });
 });
 
@@ -105,15 +105,15 @@ describe("đối soát (ADR-02 đk 4)", () => {
     outcome = await reconcileJobs(admin, queue);
     expect(outcome.resent).toContain(old);
     expect(await queue.stateOf(old)).toBe("created");
-    await raw.deleteJob(QUEUES.provision, old);
+    await raw.deleteJob(QUEUES.jobs, old);
   });
 
   it("pg-boss đã bỏ cuộc mà job còn ở CLUSTER, không ai giữ lease ⇒ gửi job BÙ TRỪ, không tự đánh FAILED", async () => {
     const id = await job("CLUSTER");
-    await queue.enqueueProvision(id);
-    const [fetched] = await raw.fetch(QUEUES.provision);
+    await queue.enqueueJob(id);
+    const [fetched] = await raw.fetch(QUEUES.jobs);
     expect(fetched?.id).toBe(id);
-    await raw.fail(QUEUES.provision, id);
+    await raw.fail(QUEUES.jobs, id);
     expect(await queue.stateOf(id)).toBe("failed");
 
     const outcome = await reconcileJobs(admin, queue);
@@ -146,12 +146,12 @@ describe("worker nhận việc", () => {
   it("handler nhận đúng jobId; retryLimit 0 ⇒ lượt đầu cũng là lượt CUỐI", async () => {
     const id = randomUUID();
     const seen = new Promise<{ jobId: string; final: boolean }>((resolve) => {
-      void queue.workProvision((jobId, attempt) => {
+      void queue.workJobs((jobId, attempt) => {
         resolve({ jobId, final: attempt.final });
         return Promise.resolve();
       });
     });
-    await queue.enqueueProvision(id);
+    await queue.enqueueJob(id);
     await expect(seen).resolves.toEqual({ jobId: id, final: true });
   });
 });

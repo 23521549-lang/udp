@@ -1,6 +1,10 @@
 import type { Request } from "express";
 import type { ProjectRole } from "@udp/db";
-import { NotFoundError } from "@udp/http";
+import { logger, NotFoundError } from "@udp/http";
+import {
+  retireInfrastructure,
+  type EnqueueJob,
+} from "../provisioning/provisioning.service.js";
 import * as repository from "./project.repository.js";
 import type {
   CreateProjectInput,
@@ -89,12 +93,23 @@ export async function updateTtl(
 }
 
 /**
- * Xoá mềm.
+ * Xoá mềm + giao việc dọn hạ tầng (§9 "soft-delete + enqueue teardown", Plan #29 QĐ-3).
  *
- * §9 mô tả endpoint này là "soft-delete + enqueue teardown". Phần enqueue chưa
- * làm được: hạ tầng `jobs/` (pg-boss) của §3.1 chưa tồn tại, nên chưa có hàng
- * đợi nào để đẩy việc vào. Ghi rõ ở đây thay vì im lặng bỏ qua — tài nguyên
- * cloud của project bị xoá mềm hiện KHÔNG tự được dọn.
+ * Xoá mềm, audit và job TEARDOWN (hay yêu cầu hủy job PROVISION đang chạy) đi trong MỘT
+ * transaction; job chỉ được gửi sang hàng đợi SAU commit — hỏng ở đó thì đối soát gửi lại
+ * (outbox, Plan #28 QĐ-1).
  */
-export const remove = (id: string, request: Request): Promise<PublicProject> =>
-  repository.softDelete(id, request);
+export async function remove(
+  id: string,
+  request: Request,
+  enqueue: EnqueueJob,
+): Promise<void> {
+  const jobId = await repository.softDeleteWith(id, request, (tx) =>
+    retireInfrastructure(tx, id),
+  );
+  if (jobId !== null && enqueue !== null) {
+    await enqueue(jobId).catch((err: unknown) => {
+      logger.warn({ err, jobId }, "Chưa gửi được job TEARDOWN sang hàng đợi");
+    });
+  }
+}
