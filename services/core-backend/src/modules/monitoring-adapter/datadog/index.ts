@@ -21,8 +21,19 @@ import { createSaaSAdapter } from "../../adapter-base/saas.js";
 export const datadogConfigSchema = z.object({
   /** `datadoghq.com`, `datadoghq.eu`... — quyết định nơi dữ liệu nằm */
   site: z.enum(["datadoghq.com", "datadoghq.eu", "ap1.datadoghq.com"]),
-  /** Tên credential đã lưu ở `cloud_credentials`; KHÔNG phải giá trị khoá */
-  credentialRef: z.string().min(1),
+  /**
+   * Khoá API (32 hex) và khoá ứng dụng (40 hex) — BÍ MẬT (Plan #31 QĐ-6): niêm phong khi
+   * lưu, không lên dây, chỉ mở trong bộ nhớ worker. Định dạng chặt để bắt lỗi dán nhầm
+   * khoá này vào ô kia trước khi Datadog trả 403.
+   */
+  apiKey: z
+    .string()
+    .regex(/^[0-9a-f]{32}$/i)
+    .describe("secret"),
+  appKey: z
+    .string()
+    .regex(/^[0-9a-f]{40}$/i)
+    .describe("secret"),
   /** Số host tối đa gửi metrics — ảnh hưởng hoá đơn của khách */
   maxHosts: z.number().int().min(1).max(10_000).default(50),
 });
@@ -47,21 +58,25 @@ const adapter: DomainAdapter = createSaaSAdapter({
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/"],
 
   configurePath: () => "/api/v1/integration/udp",
+  /**
+   * Thân request KHÔNG mang khoá: khoá đi trong header, vì thân request là thứ có thể
+   * vọng lại trong một thông điệp lỗi của nhà cung cấp.
+   */
   configureBody: (config) => {
     const parsed = datadogConfigSchema.parse(config);
+    return { site: parsed.site, maxHosts: parsed.maxHosts };
+  },
+  authHeaders: (config) => {
+    const parsed = datadogConfigSchema.parse(config);
     return {
-      site: parsed.site,
-      maxHosts: parsed.maxHosts,
-      /**
-       * Gửi TÊN credential, không gửi giá trị.
-       *
-       * Giá trị khoá đi trong header `Authorization` do egress guard gắn, nên nó không
-       * bao giờ nằm trong thân request — và thân request là thứ có thể vọng lại trong một
-       * thông điệp lỗi của nhà cung cấp.
-       */
-      credentialRef: parsed.credentialRef,
+      "DD-API-KEY": parsed.apiKey,
+      "DD-APPLICATION-KEY": parsed.appKey,
     };
   },
+  /** Chỉ khoá ingest vào cluster cho log shipper; khoá ứng dụng (đọc/ghi cấu hình) ở lại UDP */
+  secretValues: (config) => ({
+    "api-key": datadogConfigSchema.parse(config).apiKey,
+  }),
 
   bindings: () => [
     {

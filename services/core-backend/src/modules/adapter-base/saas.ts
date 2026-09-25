@@ -9,6 +9,7 @@ import type {
   ReadOnlyAdapterContext,
 } from "@udp/adapter-core";
 import type { ZodType } from "zod";
+import { secretRef, toolSecret, type ToolSecret } from "./cluster-secret.js";
 
 /**
  * [v4.10] `SaaSAdapter` — lớp nền cho họ adapter cấu hình một dịch vụ NGOÀI cluster (§5.2).
@@ -27,8 +28,9 @@ import type { ZodType } from "zod";
  *
  *  1. **Mọi lời gọi ra ngoài đi qua `ctx.fetch`.** Lớp nền không bao giờ chạm `fetch` toàn
  *     cục, và một khối lint chặn nó trong cả thư mục adapter.
- *  2. **Không ghi khoá API vào cluster.** Nó ghi TÊN secret, không ghi giá trị: I24 cấm
- *     bí mật sống quá một giờ nằm trên đĩa, và một ConfigMap là đĩa.
+ *  2. **Khoá API không vào ConfigMap hay thân request.** Nó đi trong header do
+ *     `authHeaders` khai, và phần workload cần thì vào `Secret` (Plan #31 QĐ-5, QĐ-6);
+ *     ConfigMap chỉ mang TÊN secret và băm của nó.
  *  3. **`teardown` KHÔNG xoá tài khoản ở nhà cung cấp.** Xem chú thích tại chỗ.
  */
 
@@ -49,6 +51,13 @@ export interface SaaSAdapterSpec {
     config: DomainToolConfig,
     ctx: ReadOnlyAdapterContext,
   ) => Record<string, unknown>;
+  /** Header xác thực với nhà cung cấp, từ bí mật đã mở của config (Plan #31 QĐ-6) */
+  authHeaders?: (config: DomainToolConfig) => Record<string, string>;
+  /**
+   * Khoá mà workload trong cluster cần (ví dụ khoá ingest của log shipper): lớp nền ghi
+   * vào `Secret` `<connectionName>-key` trong `udp-system`, KHÔNG vào ConfigMap kết nối.
+   */
+  secretValues?: (config: DomainToolConfig) => Record<string, string>;
   /** Binding mà adapter cung cấp sau khi cấu hình xong */
   bindings: (ctx: ReadOnlyAdapterContext) => CapabilityBinding[];
   quotaDimensions: readonly (keyof DomainAdapterContext["quota"])[];
@@ -128,21 +137,28 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
     name: spec.connectionName,
   });
 
+  const secretName = `${spec.connectionName}-key`;
+  const secretOf = (
+    config: DomainToolConfig,
+    ctx: ReadOnlyAdapterContext,
+  ): ToolSecret | null =>
+    spec.secretValues === undefined
+      ? null
+      : toolSecret(nsOf(ctx), secretName, spec.secretValues(config));
+
   function desiredOf(
     config: DomainToolConfig,
     ctx: ReadOnlyAdapterContext,
   ): Record<string, unknown> {
+    const secret = secretOf(config, ctx);
     return {
       provider: spec.toolId,
       apiHost: spec.apiHost,
       /**
-       * TÊN secret, KHÔNG phải giá trị.
-       *
-       * Workload đọc ConfigMap này để biết phải mount secret nào; khoá API thật sống ở
-       * `cloud_credentials` đã mã hoá (§4.3). Ghi giá trị vào đây là đặt một bí mật dài
-       * hạn lên đĩa của cluster tenant, tức đúng thứ I24 cấm.
+       * TÊN secret và băm, KHÔNG phải giá trị: workload đọc ConfigMap này để biết mount
+       * secret nào, còn giá trị chỉ nằm trong `Secret` (Plan #31 QĐ-5).
        */
-      secretName: `${spec.connectionName}-key`,
+      ...(secret === null ? {} : { secretName, secretsDigest: secret.digest }),
       settings: spec.configureBody(config, ctx),
     };
   }
@@ -182,7 +198,10 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
       `https://${spec.apiHost}${spec.configurePath(config)}`,
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...spec.authHeaders?.(config),
+        },
         body: JSON.stringify(spec.configureBody(config, ctx)),
       },
     );
@@ -194,6 +213,8 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
     }
 
     const client = await ctx.k8s.getClient("tooling");
+    const secret = secretOf(config, ctx);
+    if (secret !== null) await client.write("apply", secret.ref, secret.body);
     await client.write("apply", connectionRef(ctx), desiredOf(config, ctx));
     ctx.progress(`${spec.toolId} đã cấu hình`);
     return spec.bindings(ctx);
@@ -265,11 +286,29 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
         if (found === null) {
           return { drifted: true, details: "thiếu ConfigMap kết nối" };
         }
-        return driftBetween(
+        const connectionDrift = driftBetween(
           desiredOf(config, ctx),
           found,
           spec.ignoredKeyPrefixes ?? [],
         );
+        const secret = secretOf(config, ctx);
+        if (connectionDrift.drifted || secret === null) return connectionDrift;
+        /** Như lớp nền Helm: Secret mất hay bị sửa là trôi; `details` chỉ nêu TÊN khoá */
+        const stored = await client.read<Record<string, unknown>>(
+          "get",
+          secret.ref,
+        );
+        if (stored === null) {
+          return { drifted: true, details: "thiếu Secret kết nối" };
+        }
+        const secretDrift = driftBetween(
+          secret.body,
+          stored,
+          spec.ignoredKeyPrefixes ?? [],
+        );
+        return secretDrift.drifted
+          ? { drifted: true, details: `Secret ${secretDrift.details ?? ""}` }
+          : secretDrift;
       }),
 
     onDependencyChanged: (ctx, config, changed) =>
@@ -313,6 +352,9 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
          */
         void reason;
         await client.write("delete", connectionRef(ctx));
+        if (spec.secretValues !== undefined) {
+          await client.write("delete", secretRef(nsOf(ctx), secretName));
+        }
         return undefined;
       }),
   };

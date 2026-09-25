@@ -9,6 +9,7 @@ import type {
   ReadOnlyAdapterContext,
 } from "@udp/adapter-core";
 import type { ZodType } from "zod";
+import { secretRef, toolSecret, type ToolSecret } from "./cluster-secret.js";
 
 /**
  * [v4.10] `HelmBasedAdapter` — lớp nền cho họ adapter cài bằng Helm (§5.2).
@@ -83,6 +84,14 @@ export interface HelmAdapterSpec {
    * vì một hành vi mặc định không ai biết.
    */
   ignoredKeyPrefixes?: readonly string[];
+  /**
+   * Giá trị Helm MANG BÍ MẬT (license key, API key của agent) — Plan #31 QĐ-5.
+   *
+   * Lớp nền ghi chúng vào `Secret` `<releaseName>-secrets` và release đọc qua
+   * `secretValuesFrom`; ConfigMap giá trị chỉ mang BĂM của chúng. Adapter `namespace`
+   * không được khai: §12.2 chỉ cho `tooling` chạm `secrets` trong `udp-system`.
+   */
+  secretValues?: (config: DomainToolConfig) => Record<string, unknown>;
 }
 
 /**
@@ -131,6 +140,13 @@ export class HelmAdapterError extends Error {
 }
 
 export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
+  if (spec.secretValues !== undefined && spec.scope !== "cluster") {
+    // Lỗi của mã adapter, bắt lúc nạp registry chứ không lúc khách bật tool
+    throw new HelmAdapterError(
+      `${spec.toolId}: secretValues chỉ dành cho adapter cluster-scoped (§12.2)`,
+    );
+  }
+
   /**
    * Namespace đích, suy từ `scope` — adapter KHÔNG được tự chọn.
    *
@@ -157,16 +173,40 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     name: `${spec.releaseName}-values`,
   });
 
+  const secretName = `${spec.releaseName}-secrets`;
+  const secretOf = (
+    config: DomainToolConfig,
+    ctx: ReadOnlyAdapterContext,
+  ): ToolSecret | null =>
+    spec.secretValues === undefined
+      ? null
+      : toolSecret(nsOf(ctx), secretName, {
+          "values.yaml": JSON.stringify(spec.secretValues(config)),
+        });
+
+  /** HelmRelease mong muốn — `applyRelease` ghi và `detectDrift` so cùng một cấu trúc */
+  const releaseSpec = (): Record<string, unknown> => ({
+    chart: spec.chart.name,
+    version: spec.chart.version,
+    repo: spec.chart.repo,
+    valuesFrom: `${spec.releaseName}-values`,
+    ...(spec.secretValues === undefined
+      ? {}
+      : { secretValuesFrom: secretName }),
+  });
+
   /** Nội dung mong muốn — `detectDrift` so với chính cấu trúc này */
   function desiredOf(
     config: DomainToolConfig,
     ctx: ReadOnlyAdapterContext,
   ): Record<string, unknown> {
+    const secret = secretOf(config, ctx);
     return {
       chart: spec.chart.name,
       chartVersion: spec.chart.version,
       repo: spec.chart.repo,
       values: spec.values(config, ctx),
+      ...(secret === null ? {} : { secretsDigest: secret.digest }),
     };
   }
 
@@ -197,14 +237,12 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     /** Identity CỐ ĐỊNH là `tooling` — adapter không có đường chọn khác (§12.2) */
     const client = await ctx.k8s.getClient("tooling");
     const desired = desiredOf(config, ctx);
+    const secret = secretOf(config, ctx);
 
+    // Secret trước: release không bao giờ trỏ tới một Secret chưa có
+    if (secret !== null) await client.write("apply", secret.ref, secret.body);
     await client.write("apply", valuesRef(ctx), desired);
-    await client.write("apply", releaseRef(ctx), {
-      chart: spec.chart.name,
-      version: spec.chart.version,
-      repo: spec.chart.repo,
-      valuesFrom: `${spec.releaseName}-values`,
-    });
+    await client.write("apply", releaseRef(ctx), releaseSpec());
     ctx.progress(`${spec.toolId} đã sẵn sàng`);
     return spec.bindings(ctx);
   }
@@ -298,12 +336,7 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
           return { drifted: true, details: "thiếu HelmRelease của tool" };
         }
         const releaseDrift = driftBetween(
-          {
-            chart: spec.chart.name,
-            version: spec.chart.version,
-            repo: spec.chart.repo,
-            valuesFrom: `${spec.releaseName}-values`,
-          },
+          releaseSpec(),
           release,
           spec.ignoredKeyPrefixes ?? [],
         );
@@ -323,11 +356,33 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
             details: "thiếu ConfigMap giá trị của release",
           };
         }
-        return driftBetween(
+        const valuesDrift = driftBetween(
           desiredOf(config, ctx),
           found,
           spec.ignoredKeyPrefixes ?? [],
         );
+        const secret = secretOf(config, ctx);
+        if (valuesDrift.drifted || secret === null) return valuesDrift;
+        /**
+         * Secret bị xoá hay sửa tay cũng là trôi — agent mất khoá mà ConfigMap vẫn nguyên.
+         * `details` chỉ nêu TÊN khoá (`driftBetween` không in giá trị), nên bí mật đọc lại
+         * không rời bộ nhớ worker.
+         */
+        const stored = await client.read<Record<string, unknown>>(
+          "get",
+          secret.ref,
+        );
+        if (stored === null) {
+          return { drifted: true, details: "thiếu Secret của release" };
+        }
+        const secretDrift = driftBetween(
+          secret.body,
+          stored,
+          spec.ignoredKeyPrefixes ?? [],
+        );
+        return secretDrift.drifted
+          ? { drifted: true, details: `Secret ${secretDrift.details ?? ""}` }
+          : secretDrift;
       }),
 
     onDependencyChanged: (ctx, config, changed) =>
@@ -377,6 +432,10 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
          */
         if (reason !== "switch") {
           await client.write("delete", valuesRef(ctx));
+        }
+        // Bí mật thì KHÔNG giữ kể cả khi đổi tool: khoá không sống lâu hơn tool dùng nó
+        if (spec.secretValues !== undefined) {
+          await client.write("delete", secretRef(nsOf(ctx), secretName));
         }
         return undefined;
       }),

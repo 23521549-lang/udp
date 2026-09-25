@@ -33,16 +33,17 @@ describe("describeConfigSchema", () => {
     });
   });
 
-  it("datadog: enum mang đủ lựa chọn, chuỗi bắt buộc", () => {
+  it("datadog: enum mang đủ lựa chọn, khoá là chuỗi bắt buộc đánh dấu bí mật", () => {
     const d = describeConfigSchema(datadogConfigSchema);
-    expect(d.kind === "object" && d.fields.slice(0, 2)).toEqual([
+    expect(d.kind === "object" && d.fields.slice(0, 3)).toEqual([
       {
         key: "site",
         kind: "enum",
         required: true,
         options: ["datadoghq.com", "datadoghq.eu", "ap1.datadoghq.com"],
       },
-      { key: "credentialRef", kind: "string", required: true },
+      { key: "apiKey", kind: "string", required: true, secret: true },
+      { key: "appKey", kind: "string", required: true, secret: true },
     ]);
   });
 

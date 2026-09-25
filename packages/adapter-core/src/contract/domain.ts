@@ -1139,10 +1139,15 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
  * `api` được TIÊM VÀO nên tệp này không import vitest — cùng lý lẽ với bộ hợp đồng Cloud
  * và Ledger: `./contract` là thứ adapter bên ngoài import được, và một dependency vào
  * test runner ở đó sẽ buộc mọi người dùng cài vitest.
+ *
+ * `makeEnv` là một HÀM: mỗi phép nhận môi trường MỚI (Plan #31 P2). Dùng chung một môi
+ * trường làm các phép ảnh hưởng nhau qua kho đối tượng của cluster giả — phép `teardown`
+ * xoá ConfigMap và phép `detectDrift` chạy sau thấy drift vì lý do của phép trước; một bộ
+ * test mà thứ tự quyết định kết quả thì không nói được gì.
  */
 export function runDomainAdapterContract(
   adapter: DomainAdapter,
-  env: DomainContractEnv,
+  makeEnv: () => DomainContractEnv,
   api: TestRunnerApi,
 ): void {
   api.describe(
@@ -1150,7 +1155,7 @@ export function runDomainAdapterContract(
     () => {
       for (const check of DOMAIN_CONTRACT_CHECKS) {
         api.it(check.name, async () => {
-          await check.run(adapter, env);
+          await check.run(adapter, makeEnv());
         });
       }
     },

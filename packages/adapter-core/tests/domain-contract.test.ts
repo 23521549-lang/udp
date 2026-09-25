@@ -75,31 +75,9 @@ function envFor(): DomainContractEnv {
   };
 }
 
-/** Chạy trọn bộ hợp đồng cho adapter giả — mỗi phép nhận một env MỚI */
+/** Chạy trọn bộ hợp đồng cho adapter giả — mỗi phép nhận một env MỚI (xem `runDomainAdapterContract`) */
 describe("adapter giả đi qua trọn bộ hợp đồng", () => {
-  runDomainAdapterContract(createFakeDomainAdapter(), envFor(), {
-    describe,
-    it: (name, fn) => {
-      it(name, async () => {
-        /**
-         * Env mới cho MỖI phép.
-         *
-         * Dùng chung một env làm các phép ảnh hưởng nhau qua kho đối tượng của cluster
-         * giả: phép `teardown` xoá ConfigMap, và phép `detectDrift` chạy sau đó sẽ thấy
-         * drift vì lý do của phép trước. Một bộ test mà thứ tự quyết định kết quả thì
-         * không nói được gì.
-         */
-        void fn;
-        const env = envFor();
-        const adapter = createFakeDomainAdapter();
-        const check = DOMAIN_CONTRACT_CHECKS.find((c) => c.name === name);
-        if (check === undefined) {
-          throw new Error(`không tìm thấy phép "${name}"`);
-        }
-        await check.run(adapter, env);
-      });
-    },
-  });
+  runDomainAdapterContract(createFakeDomainAdapter(), envFor, { describe, it });
 });
 
 /**

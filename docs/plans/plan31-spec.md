@@ -44,8 +44,11 @@ ADR-06 cho Prometheus trong cluster).
 
 - **QĐ-5 — Bí mật TRÊN cluster:** `HelmBasedAdapter` nhận thêm `secretValues(config)`; lớp nền
   ghi chúng vào một `Secret` trong namespace của release (`udp-system` với adapter cluster)
-  và HelmRelease đọc qua `valuesFrom`, KHÔNG BAO GIỜ vào ConfigMap giá trị. Drift so băm
-  SHA-256 của phần bí mật (ghi trong ConfigMap), không đọc ngược Secret. §12.2 cho phép
+  và HelmRelease đọc qua `valuesFrom`, KHÔNG BAO GIỜ vào ConfigMap giá trị. ConfigMap mang
+  băm SHA-256 của phần bí mật (đổi khoá ⇒ release thấy đổi); drift đọc lại Secret và so với
+  thân mong muốn — xoá hay sửa tay Secret cũng là trôi — nhưng chi tiết drift chỉ nêu TÊN
+  khoá, không bao giờ giá trị (v1.1, P1b: mạnh hơn bản "không đọc ngược Secret", vì bản đó
+  bỏ sót đúng ca agent mất khoá mà ConfigMap vẫn nguyên). §12.2 cho phép
   `secrets` TRONG namespace của chính SA ("không `secrets` ngoài namespace của mình"), nhưng
   `bootstrap.ts` đang cấm tuyệt đối — sửa: Role `udp-tooling` trong `udp-system` có
   `secrets`; bộ kiểm RBAC vẫn đỏ với `secrets` trong ClusterRole hay namespace khác.

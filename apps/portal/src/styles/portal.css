@@ -105,6 +105,13 @@
   gap: 6px;
 }
 
+/* Ô bí mật: "Đã lưu" + "Đổi", hay ô mật khẩu + "Giữ khoá cũ" (Plan #31) */
+.secret-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .inp[aria-invalid="true"] {
   box-shadow: inset 0 0 0 1px var(--red);
 }

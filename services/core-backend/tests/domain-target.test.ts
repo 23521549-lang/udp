@@ -58,7 +58,11 @@ const ALL_AVAILABLE = new Map(
   ),
 );
 
-const DATADOG_CONFIG = { site: "datadoghq.com", credentialRef: "dd" };
+const DATADOG_CONFIG = {
+  site: "datadoghq.com",
+  apiKey: "0123456789abcdef0123456789abcdef",
+  appKey: "fedcba9876543210fedcba9876543210fedcba98",
+};
 const PROM_CONFIG = { retentionDays: 7 };
 
 const run = (state: DomainTargetState, registry = REGISTRY) => {
@@ -211,7 +215,8 @@ describe("trạng thái đích sai", () => {
       expect(e).toBeInstanceOf(ZodError);
       expect((e as ZodError).issues.map((i) => i.path.join("."))).toEqual([
         "domains.0.config.site",
-        "domains.0.config.credentialRef",
+        "domains.0.config.apiKey",
+        "domains.0.config.appKey",
       ]);
     }
   });

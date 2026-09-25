@@ -2,12 +2,11 @@ import {
   DOMAIN_CONTRACT_CHECKS,
   type DomainContractEnv,
 } from "@udp/adapter-core/contract";
-import type {
-  AdapterFixture,
-  DomainAdapter,
-  DomainAdapterContext,
-} from "@udp/adapter-core";
-import { createFakeClusterAccess } from "@udp/adapter-core/testing";
+import type { AdapterFixture, DomainAdapter } from "@udp/adapter-core";
+import {
+  CONTRACT_SYSTEM_NAMESPACE as SYSTEM_NS,
+  domainContractEnv,
+} from "@udp/adapter-core/testing";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createHelmBasedAdapter } from "../src/modules/adapter-base/helm.js";
@@ -30,7 +29,6 @@ import { createSaaSAdapter } from "../src/modules/adapter-base/saas.js";
  * `tests/`, và registry sản phẩm không bao giờ thấy chúng.
  */
 
-const SYSTEM_NS = "udp-system";
 const NOOP_HOST = "api.vi-du-noop.test";
 
 /** Schema tối thiểu: đúng một trường bắt buộc */
@@ -121,50 +119,8 @@ function fixtureFor(kind: "helm" | "saas"): AdapterFixture {
   };
 }
 
-function envFor(kind: "helm" | "saas"): DomainContractEnv {
-  const cluster = createFakeClusterAccess({ clusterId: `c-noop-${kind}` });
-  const progressLog: string[] = [];
-  const fetchLog: string[] = [];
-
-  const context = (
-    over: Partial<DomainAdapterContext> = {},
-  ): DomainAdapterContext => ({
-    k8s: cluster,
-    systemNamespace: SYSTEM_NS,
-    region: "ap-southeast-1",
-    quota: {
-      maxNodes: 3,
-      maxNodeSize: "medium",
-      maxDatabases: 2,
-      maxStorageGb: 50,
-      maxLoadBalancers: 3,
-    },
-    resolved: {},
-    tags: {},
-    progress: (m) => progressLog.push(m),
-    fetch: (input) => {
-      const url = String(input);
-      fetchLog.push(url);
-      if (kind === "helm") {
-        /** Họ Helm khai `externalHosts` rỗng, nên mọi lời gọi là một vi phạm */
-        return Promise.reject(new Error("egress không được phép"));
-      }
-      let host = "";
-      try {
-        host = new URL(url).host;
-      } catch {
-        host = "";
-      }
-      if (host !== NOOP_HOST) {
-        return Promise.reject(new Error(`egress tới ${host} bị từ chối`));
-      }
-      return Promise.resolve(new Response("{}", { status: 200 }));
-    },
-    ...over,
-  });
-
-  return { cluster, fixture: fixtureFor(kind), context, progressLog, fetchLog };
-}
+const envFor = (kind: "helm" | "saas"): DomainContractEnv =>
+  domainContractEnv(fixtureFor(kind));
 
 for (const [label, make, kind] of [
   ["noop-helm", noopHelmAdapter, "helm"],

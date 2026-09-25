@@ -54,7 +54,11 @@ const url = (pid = projectId) => `${API}/projects/${pid}/domains`;
 const DATADOG = {
   domainType: "MONITORING",
   toolId: "datadog",
-  config: { site: "datadoghq.com", credentialRef: "dd-main" },
+  config: {
+    site: "datadoghq.com",
+    apiKey: "0123456789abcdef0123456789abcdef",
+    appKey: "fedcba9876543210fedcba9876543210fedcba98",
+  },
 };
 const put = (actor: Actor, body: object, pid = projectId) =>
   as(actor, request(app).put(url(pid)).send(body));
@@ -112,9 +116,11 @@ describe("PUT /domains", () => {
       selectedTool: "datadog",
       status: "PENDING",
       adapterVersion: "1.0.0",
+      // Khoá là bí mật: trên dây chỉ còn giá trị giữ chỗ (Plan #31)
       toolConfig: {
         site: "datadoghq.com",
-        credentialRef: "dd-main",
+        apiKey: { $udpSecret: "kept" },
+        appKey: { $udpSecret: "kept" },
         maxHosts: 50,
       },
     });
@@ -168,7 +174,7 @@ describe("PUT /domains", () => {
     const version = await versionOf();
     const bad = await put(maintainer, {
       lastKnownDomainSetVersion: version,
-      domains: [{ ...DATADOG, config: { site: "khac", credentialRef: "x" } }],
+      domains: [{ ...DATADOG, config: { ...DATADOG.config, site: "khac" } }],
       preferences: [],
     }).expect(400);
     expect(bad.body.errors[0].field).toBe("domains.0.config.site");

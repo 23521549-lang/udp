@@ -1,3 +1,4 @@
+import { isKeptSecret, KEPT_SECRET } from "@udp/shared-types/domain-api";
 import type {
   DomainConfigFieldWire,
   DomainToolWire,
@@ -23,7 +24,7 @@ export function ConfigForm({
   value: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   disabled: boolean;
-  /** Lỗi của máy chủ theo khoá trường (`site`, `credentialRef`…) */
+  /** Lỗi của máy chủ theo khoá trường (`site`, `apiKey`…) */
   errors: Record<string, string>;
 }) {
   if (tool.config.kind === "json") {
@@ -82,6 +83,22 @@ function FieldInput({
   const errorLine = error !== undefined && (
     <span className="field-error">{error}</span>
   );
+  if (field.secret === true) {
+    return (
+      <div className="f">
+        <label htmlFor={id}>{label}</label>
+        <SecretInput
+          id={id}
+          name={field.key}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          invalid={error !== undefined}
+        />
+        {errorLine}
+      </div>
+    );
+  }
   switch (field.kind) {
     case "boolean":
       return (
@@ -172,6 +189,83 @@ function FieldInput({
         />
       );
   }
+}
+
+/**
+ * Ô bí mật (Plan #31): máy chủ không bao giờ trả giá trị, chỉ `KEPT_SECRET` — "đã lưu". Không
+ * đụng tới ⇒ gửi lại giữ chỗ ⇒ giữ khoá cũ; "Đổi" rồi gõ ⇒ khoá mới; "Giữ khoá cũ" ⇒ thôi đổi.
+ */
+function SecretInput({
+  id,
+  name,
+  value,
+  onChange,
+  disabled,
+  invalid,
+}: {
+  id: string;
+  /** Khoá trường — tên riêng cho nút "Giữ khoá cũ" khi nhiều ô bí mật cùng mở */
+  name: string;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  disabled: boolean;
+  invalid: boolean;
+}) {
+  const saved = isKeptSecret(value);
+  const [editing, setEditing] = useState(false);
+  const [previous, setPrevious] = useState(value);
+  if (value !== previous) {
+    setPrevious(value);
+    // Vừa lưu xong (khoá mới thành "đã lưu") ⇒ về lại trạng thái đã lưu
+    if (saved && !isKeptSecret(previous)) setEditing(false);
+  }
+
+  if (saved && !editing) {
+    return (
+      <div className="secret-row">
+        <span className="chip soft">Đã lưu</span>
+        <button
+          type="button"
+          id={id}
+          className="btn"
+          disabled={disabled}
+          onClick={() => setEditing(true)}
+        >
+          Đổi
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="secret-row">
+      <input
+        id={id}
+        className="inp"
+        type="password"
+        autoComplete="new-password"
+        disabled={disabled}
+        value={typeof value === "string" ? value : ""}
+        aria-invalid={invalid}
+        onChange={(e) =>
+          onChange(e.target.value === "" ? undefined : e.target.value)
+        }
+      />
+      {editing && (
+        <button
+          type="button"
+          className="btn"
+          aria-label={`Giữ khoá cũ của ${name}`}
+          disabled={disabled}
+          onClick={() => {
+            onChange({ ...KEPT_SECRET });
+            setEditing(false);
+          }}
+        >
+          Giữ khoá cũ
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Ô JSON: giữ chữ người dùng gõ, chỉ đẩy ra ngoài khi parse được */

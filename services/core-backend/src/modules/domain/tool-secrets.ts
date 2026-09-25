@@ -1,4 +1,5 @@
 import { UnprocessableError } from "@udp/http";
+import { isKeptSecret, KEPT_SECRET } from "@udp/shared-types/domain-api";
 import { z, type ZodTypeAny } from "zod";
 import {
   decryptCredential,
@@ -25,7 +26,6 @@ import {
  */
 
 export const SECRET_DESCRIPTION = "secret";
-export const KEPT_SECRET = { $udpSecret: "kept" } as const;
 
 /** Phiên bản DEK của bí mật tool — xoay DEK là việc riêng, như credential cloud */
 const TOOL_SECRET_DEK_VERSION = 1;
@@ -41,9 +41,6 @@ const record = (v: unknown): v is Record<string, unknown> =>
 
 export const isSealed = (v: unknown): v is SealedSecret =>
   record(v) && v.$udpSecret === 1 && typeof v.encryptedPayload === "string";
-
-export const isKept = (v: unknown): boolean =>
-  record(v) && v.$udpSecret === "kept" && Object.keys(v).length === 1;
 
 /** Trường có `.describe("secret")` ở bất kỳ lớp bọc nào (`optional`, `default`, `nullable`) */
 export function isSecretField(schema: ZodTypeAny): boolean {
@@ -108,7 +105,7 @@ export function resolveKept(
 ): Config {
   const out: Config = { ...config };
   for (const field of secretFieldsOf(scope.schema)) {
-    if (!isKept(out[field])) continue;
+    if (!isKeptSecret(out[field])) continue;
     const stored = previous?.[field];
     if (!isSealed(stored)) {
       throw new UnprocessableError(

@@ -7153,7 +7153,7 @@ ADR-01 dựa hoàn toàn vào bất biến "ba bên ghi vào cluster nhưng khô
 | ----------------------------------- | -------- | --------- | --------------------------- |
 | `udp-workload` | Service 1 (§8.3) | `deployments`, `rollouts`, `services`, `configmaps`: get/list/watch/create/update/patch — chỉ trong namespace của environment | **Không** `patch` trên `virtualservices`/`trafficsplits`; **không** subresource `rollouts/promote`. S1 không thể chạm đường traffic |
 | `udp-traffic` | Service 3 (§7.3) | `virtualservices`, `trafficsplits`, ingress: create/update/patch; `rollouts`: get + subresource `promote`/`abort`/`retry`; `services/proxy`: get **chỉ trên service của nguồn metrics** | **Không** `patch` trên `deployments`, **không** `patch` trên `rollouts` (chỉ subresource). Nên S3 không thể sửa `spec.template` kể cả khi có bug |
-| `udp-tooling` | Domain adapter chạy trong worker của S1 (§8.2, §8.6) | Helm release, CRD, operator CR trong `udp-system`; CR theo namespace env | **Không** đụng `deployments` của workload tenant, **không** đụng đối tượng traffic |
+| `udp-tooling` | Domain adapter chạy trong worker của S1 (§8.2, §8.6) | Helm release, CRD, operator CR trong `udp-system`; `secrets` **chỉ** trong `udp-system` (khoá của agent, Plan #31); CR theo namespace env | **Không** đụng `deployments` của workload tenant, **không** đụng đối tượng traffic |
 
 Cả ba đều **không** có: `secrets` ngoài namespace của mình, `escalate`/`bind` (leo thang RBAC), `pods/exec` (vào shell container của tenant — không luồng nào ở §8 cần), và không dùng wildcard `*` ở bất kỳ verb hay resource nào.
 

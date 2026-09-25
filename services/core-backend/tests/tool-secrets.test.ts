@@ -2,9 +2,9 @@ import { UnprocessableError } from "@udp/http";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CredentialDecryptError } from "../src/modules/credential/credential.crypto.js";
+import { KEPT_SECRET } from "@udp/shared-types/domain-api";
 import {
   isSealed,
-  KEPT_SECRET,
   maskSecrets,
   openSecrets,
   resolveKept,

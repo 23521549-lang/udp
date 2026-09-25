@@ -68,8 +68,15 @@
                   ]
                 },
                 {
-                  "key": "credentialRef",
+                  "key": "apiKey",
                   "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "appKey",
+                  "required": true,
+                  "secret": true,
                   "kind": "string"
                 },
                 {

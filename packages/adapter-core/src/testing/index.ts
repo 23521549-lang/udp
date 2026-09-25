@@ -131,6 +131,13 @@ export type {
   FakeClusterOptions,
 } from "./fake-cluster.js";
 
+/** Moi truong cua bo hop dong Domain, dung MOT cho (Plan #31 P2) */
+export {
+  CONTRACT_SYSTEM_NAMESPACE,
+  domainContractEnv,
+} from "./domain-contract-env.js";
+export type { DomainContractEnvOptions } from "./domain-contract-env.js";
+
 /** Adapter Domain GIA di qua tron bo hop dong — khuon cho hai adapter that cua P19/P20 */
 export {
   countingRandom,

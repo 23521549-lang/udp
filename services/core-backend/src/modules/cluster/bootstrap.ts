@@ -80,6 +80,8 @@ const TOOLING_SYSTEM_RULES: PolicyRule[] = [
     verbs: [...RW, "delete"],
   },
   { apiGroups: [""], resources: ["configmaps"], verbs: [...RW, "delete"] },
+  /** Khoá của agent (Plan #31 QĐ-5) — chỉ trong namespace của chính SA, đúng §12.2 */
+  { apiGroups: [""], resources: ["secrets"], verbs: [...RW, "delete"] },
 ];
 
 /** CRD là đối tượng phạm vi cluster — operator của domain cần cài chúng */
@@ -269,7 +271,7 @@ export function bootstrapManifests(input: BootstrapInput): Manifest[] {
 
 /** Verb và resource mà KHÔNG SA nào của UDP được có (§12.2 cột "cố tình không được phép") */
 const FORBIDDEN_VERBS = ["*", "escalate", "bind", "impersonate"];
-const FORBIDDEN_RESOURCES = ["*", "pods/exec", "pods/attach", "secrets"];
+const FORBIDDEN_RESOURCES = ["*", "pods/exec", "pods/attach"];
 
 /** Mọi vi phạm quy tắc §12.2 trong các Role/ClusterRole — rỗng là đạt */
 export function rbacProblems(manifests: readonly Manifest[]): string[] {
@@ -277,13 +279,19 @@ export function rbacProblems(manifests: readonly Manifest[]): string[] {
   for (const m of manifests) {
     if (m.ref.kind !== "Role" && m.ref.kind !== "ClusterRole") continue;
     const rules = (m.body.rules ?? []) as PolicyRule[];
+    // §12.2: "không `secrets` ngoài namespace của mình" — ba SA sống trong udp-system
+    const ownNamespace =
+      m.ref.kind === "Role" && m.ref.namespace === SYSTEM_NAMESPACE;
     for (const r of rules) {
       for (const v of r.verbs) {
         if (FORBIDDEN_VERBS.includes(v))
           problems.push(`${String(m.ref.name)}: verb ${v}`);
       }
       for (const res of r.resources) {
-        if (FORBIDDEN_RESOURCES.includes(res)) {
+        if (
+          FORBIDDEN_RESOURCES.includes(res) ||
+          (res === "secrets" && !ownNamespace)
+        ) {
           problems.push(`${String(m.ref.name)}: resource ${res}`);
         }
       }

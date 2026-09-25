@@ -1,9 +1,9 @@
+import { runDomainAdapterContract } from "@udp/adapter-core/contract";
+import type { AdapterFixture } from "@udp/adapter-core";
 import {
-  runDomainAdapterContract,
-  type DomainContractEnv,
-} from "@udp/adapter-core/contract";
-import type { AdapterFixture, DomainAdapterContext } from "@udp/adapter-core";
-import { createFakeClusterAccess } from "@udp/adapter-core/testing";
+  CONTRACT_SYSTEM_NAMESPACE as SYSTEM_NS,
+  domainContractEnv,
+} from "@udp/adapter-core/testing";
 import { describe, it } from "vitest";
 import adapter from "./index.js";
 
@@ -24,8 +24,6 @@ import adapter from "./index.js";
  *  - `quotaDimensions` có `maxStorageGb`: Prometheus giữ metrics trên PVC, nên nó phải
  *    TỪ CHỐI khi chiều đó bằng 0.
  */
-
-const SYSTEM_NS = "udp-system";
 
 function fixture(): AdapterFixture {
   return {
@@ -84,64 +82,19 @@ function fixture(): AdapterFixture {
   };
 }
 
-function envFor(): DomainContractEnv {
-  const cluster = createFakeClusterAccess({ clusterId: "c-p19" });
-  const progressLog: string[] = [];
-  const fetchLog: string[] = [];
+/** Binding mà adapter `requires`: Grafana kéo dashboard từ registry của project */
+const REGISTRY = {
+  id: "registry.oci",
+  version: "1.0.0",
+  providedBy: "container_registry:harbor",
+  endpoint: "harbor.udp-system:443",
+} as const;
 
-  const context = (
-    over: Partial<DomainAdapterContext> = {},
-  ): DomainAdapterContext => ({
-    k8s: cluster,
-    systemNamespace: SYSTEM_NS,
-    region: "ap-southeast-1",
-    quota: {
-      maxNodes: 3,
-      maxNodeSize: "medium",
-      maxDatabases: 2,
-      maxStorageGb: 50,
-      maxLoadBalancers: 3,
-    },
-    resolved: {
-      "registry.oci": {
-        id: "registry.oci",
-        version: "1.0.0",
-        providedBy: "container_registry:harbor",
-        endpoint: "harbor.udp-system:443",
-      },
-    },
-    tags: { "udp.project": "p19" },
-    progress: (m) => progressLog.push(m),
-    /** Ghi nhật ký rồi NÉM: adapter này khai không gọi ra ngoài, nên mọi egress là lỗi */
-    fetch: (input) => {
-      fetchLog.push(String(input));
-      throw new Error("egress không được phép cho adapter này");
-    },
-    ...over,
-  });
-
-  return { cluster, fixture: fixture(), context, progressLog, fetchLog };
-}
-
-/**
- * Mỗi phép nhận một env MỚI.
- *
- * Dùng chung một env làm các phép ảnh hưởng nhau qua kho đối tượng của cluster giả: phép
- * `teardown` xoá ConfigMap, và phép `detectDrift` chạy sau sẽ thấy drift vì lý do của
- * phép trước. Một bộ test mà thứ tự quyết định kết quả thì không nói được gì.
- */
 describe("prometheus-grafana", () => {
-  runDomainAdapterContract(adapter, envFor(), {
-    describe,
-    it: (name, fn) => {
-      void fn;
-      it(name, async () => {
-        const { DOMAIN_CONTRACT_CHECKS } =
-          await import("@udp/adapter-core/contract");
-        const check = DOMAIN_CONTRACT_CHECKS.find((c) => c.name === name);
-        if (check === undefined) throw new Error(`không có phép "${name}"`);
-        await check.run(adapter, envFor());
-      });
-    },
-  });
+  runDomainAdapterContract(
+    adapter,
+    () =>
+      domainContractEnv(fixture(), { resolved: { "registry.oci": REGISTRY } }),
+    { describe, it },
+  );
 });

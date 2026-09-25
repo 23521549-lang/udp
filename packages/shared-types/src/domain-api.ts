@@ -68,6 +68,19 @@ export const putDomainsBodySchema = z
 export type PutDomainsBody = z.infer<typeof putDomainsBodySchema>;
 
 /**
+ * Giá trị giữ chỗ của một trường bí mật trên dây (Plan #31 QĐ-1): máy chủ trả nó thay cho
+ * bí mật đã lưu, Portal gửi lại đúng nó ⇒ giữ nguyên bí mật cũ.
+ */
+export const KEPT_SECRET = { $udpSecret: "kept" } as const;
+
+export const isKeptSecret = (v: unknown): boolean =>
+  typeof v === "object" &&
+  v !== null &&
+  !Array.isArray(v) &&
+  (v as Record<string, unknown>).$udpSecret === "kept" &&
+  Object.keys(v).length === 1;
+
+/**
  * Body của `POST /projects/:id/domains/:type/upgrade` (§8.6). Nâng cấp chạm cluster dùng
  * chung cho MỌI environment, nên project có production phải gõ lại tên domain (428 nếu
  * thiếu hay sai) — cùng cơ chế xác nhận hai bước của §8.4.

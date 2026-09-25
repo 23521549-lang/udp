@@ -37,12 +37,17 @@
         "selectedTool": "datadog",
         "toolConfig": {
           "site": "datadoghq.com",
-          "maxHosts": 50,
-          "credentialRef": "dd-main"
+          "apiKey": {
+            "$udpSecret": "kept"
+          },
+          "appKey": {
+            "$udpSecret": "kept"
+          },
+          "maxHosts": 50
         },
         "status": "PENDING",
         "adapterVersion": "1.0.0",
-        "updatedAt": "2026-09-25T06:42:35.636Z"
+        "updatedAt": "2026-09-25T20:14:15.023Z"
       },
       {
         "domainType": "LOGGING",

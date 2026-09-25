@@ -54,8 +54,23 @@ const rulesOf = (
 describe("manifest bootstrap (§12.2)", () => {
   const manifests = bootstrapManifests(INPUT);
 
-  it("không vi phạm nào: không wildcard, không escalate/bind/impersonate, không pods/exec, không secrets", () => {
+  it("không vi phạm nào: không wildcard, không escalate/bind/impersonate, không pods/exec, không secrets ngoài udp-system", () => {
     expect(rbacProblems(manifests)).toEqual([]);
+  });
+
+  it("chỉ udp-tooling có secrets, và chỉ trong Role của udp-system (Plan #31 AC-8)", () => {
+    const withSecrets = manifests.filter(
+      (m) =>
+        (m.ref.kind === "Role" || m.ref.kind === "ClusterRole") &&
+        ((m.body.rules ?? []) as { resources: string[] }[]).some((r) =>
+          r.resources.includes("secrets"),
+        ),
+    );
+    expect(
+      withSecrets.map(
+        (m) => `${m.ref.kind}:${String(m.ref.namespace)}/${String(m.ref.name)}`,
+      ),
+    ).toEqual([`Role:${SYSTEM_NAMESPACE}/udp-tooling`]);
   });
 
   it("ba ServiceAccount rời nhau trong udp-system", () => {
@@ -135,6 +150,26 @@ describe("manifest bootstrap (§12.2)", () => {
       },
     ];
     expect(rbacProblems(bad)).toHaveLength(4);
+  });
+
+  it("secrets: hợp lệ trong Role của udp-system, đỏ ở ClusterRole và ở namespace khác", () => {
+    const rules = [{ apiGroups: [""], resources: ["secrets"], verbs: ["get"] }];
+    const manifest = (kind: string, namespace?: string): Manifest => ({
+      ref: {
+        apiVersion: "rbac.authorization.k8s.io/v1",
+        kind,
+        name: "x",
+        ...(namespace === undefined ? {} : { namespace }),
+      },
+      body: { rules },
+    });
+    expect(rbacProblems([manifest("Role", SYSTEM_NAMESPACE)])).toEqual([]);
+    expect(rbacProblems([manifest("ClusterRole")])).toEqual([
+      "x: resource secrets",
+    ]);
+    expect(rbacProblems([manifest("Role", "p-0f0f-dev")])).toEqual([
+      "x: resource secrets",
+    ]);
   });
 });
 

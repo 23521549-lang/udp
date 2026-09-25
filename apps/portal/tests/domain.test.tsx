@@ -104,7 +104,7 @@ describe("trang Domain", () => {
     await userEvent.click(
       await screen.findByRole("switch", { name: "Bật Monitoring" }),
     );
-    // Trường của datadog: enum `site`, chuỗi `credentialRef`, số `maxHosts` mặc định 50
+    // Trường của datadog: enum `site`, hai khoá bí mật, số `maxHosts` mặc định 50
     expect(screen.getByLabelText("site *")).toBeInTheDocument();
     expect(screen.getByLabelText("maxHosts")).toHaveValue(50);
 
@@ -120,6 +120,40 @@ describe("trang Domain", () => {
       lastKnownDomainSetVersion: saved.domainSetVersion,
       domains: [{ domainType: "MONITORING", toolId: "datadog" }],
       preferences: saved.preferences,
+    });
+  });
+
+  it("ô bí mật: 'Đã lưu' thay cho giá trị; Đổi ⇒ gửi khoá mới, Giữ khoá cũ ⇒ gửi lại giữ chỗ (Plan #31)", async () => {
+    const NEW_KEY = "0123456789abcdef0123456789abcdef";
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    const { puts } = useDomainHandlers({ saved: savedWith(true) });
+    renderApp(domainsUrl(detail));
+
+    // Đã lưu: chỉ có nút "Đổi", không một ô nào mang giá trị
+    await userEvent.click(await screen.findByLabelText("apiKey *"));
+    const apiKey = screen.getByLabelText("apiKey *");
+    expect(apiKey).toHaveAttribute("type", "password");
+    await userEvent.type(apiKey, NEW_KEY);
+
+    await userEvent.click(screen.getByLabelText("appKey *"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Giữ khoá cũ của appKey" }),
+    );
+    expect(screen.getByLabelText("appKey *")).toHaveTextContent("Đổi");
+    expect(screen.queryByText(NEW_KEY)).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Lưu cấu hình domain" }),
+    );
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toMatchObject({
+      domains: [
+        {
+          domainType: "MONITORING",
+          config: { apiKey: NEW_KEY, appKey: { $udpSecret: "kept" } },
+        },
+      ],
     });
   });
 
