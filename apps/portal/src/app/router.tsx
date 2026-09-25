@@ -7,17 +7,15 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { Toaster } from "../components/Toast";
+import { AdminLayout } from "../features/admin/AdminLayout";
+import { AdminCredentialsPage } from "../features/admin/pages/AdminCredentialsPage";
+import { AdminJobsPage } from "../features/admin/pages/AdminJobsPage";
+import { AdminOrphansPage } from "../features/admin/pages/AdminOrphansPage";
+import { AdminProjectsPage } from "../features/admin/pages/AdminProjectsPage";
+import { AdminSystemPage } from "../features/admin/pages/AdminSystemPage";
+import { AdminUsersPage } from "../features/admin/pages/AdminUsersPage";
 import { useAuthStore } from "../features/auth/auth-store";
 import { LoginPage, RegisterPage } from "../features/auth/AuthPages";
-import {
-  AdminCredentialsPage,
-  AdminJobsPage,
-  AdminLayout,
-  AdminOrphansPage,
-  AdminProjectsPage,
-  AdminSystemPage,
-  AdminUsersPage,
-} from "../features/admin/AdminPages";
 import { DeploymentsPage } from "../features/deployment/DeploymentsPage";
 import { CleanupPage } from "../features/flag/CleanupPage";
 import { FlagsPage } from "../features/flag/FlagsPage";
