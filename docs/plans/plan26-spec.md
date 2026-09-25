@@ -142,7 +142,7 @@ lộ bí mật). `PUT /cloud`, `POST /cloud/validate`, `POST /cloud/preflight`: 
 Sổ đã có sẵn các mục cho phần chạy trên cloud THẬT — Plan #26 cập nhật chúng, không ghi
 trùng: `I31-aws` (lưới trên AWS thật), `preflight-confidence`, `getkubeauth-that`,
 `k8s-managed-discovery`, `estimatecost-vs-bill`, `cred-federation`. Chỉ thêm mục mới cho
-lưới trên GCP và Azure (chưa có mục tương đương `I31-aws`) ở P3/P4.
+lưới trên GCP và Azure (chưa có mục tương đương `I31-aws`) ở P3/P4: `I31-gcp`, `I31-azure`.
 
 ## 6. Rủi ro
 
@@ -155,8 +155,12 @@ lưới trên GCP và Azure (chưa có mục tương đương `I31-aws`) ở P3/
 
 ## 7. Nhật ký review
 
-| Vòng    | Phát hiện                                                                                                          | Xử lý                                               |
-| ------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
-| v1 → v2 | Bộ hợp đồng cần `CloudFixture` viết tay cho từng adapter, nếu không AC-1 sẽ dùng nhầm fixture của adapter mô phỏng | thêm vào QĐ-2 và vào plan (mỗi cloud một fixture)   |
-| v1 → v2 | Phép kiểm tag của bộ hợp đồng đọc thẳng `SimCloud.listAll()`; label GCP đã mã hoá sẽ làm mọi phép tag đỏ giả       | cổng mô phỏng mã hoá + kiểm hợp lệ + giải mã ở biên |
-| P2      | Định ghi `cloud-aws-live` — trùng `I31-aws` và bốn mục khác đã có                                                  | cập nhật mục cũ, §5 viết lại                        |
+| Vòng    | Phát hiện                                                                                                                                                                                           | Xử lý                                                                                                                                   |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| v1 → v2 | Bộ hợp đồng cần `CloudFixture` viết tay cho từng adapter, nếu không AC-1 sẽ dùng nhầm fixture của adapter mô phỏng                                                                                  | thêm vào QĐ-2 và vào plan (mỗi cloud một fixture)                                                                                       |
+| v1 → v2 | Phép kiểm tag của bộ hợp đồng đọc thẳng `SimCloud.listAll()`; label GCP đã mã hoá sẽ làm mọi phép tag đỏ giả                                                                                        | cổng mô phỏng mã hoá + kiểm hợp lệ + giải mã ở biên                                                                                     |
+| P2      | Định ghi `cloud-aws-live` — trùng `I31-aws` và bốn mục khác đã có                                                                                                                                   | cập nhật mục cũ, §5 viết lại                                                                                                            |
+| P3      | QĐ-3 định dùng `google-auth-library` và `@azure/identity` chỉ để lấy token; đo lại: đổi token của cả hai chỉ là (a) ký JWT RS256 — `node:crypto` làm được — và (b) một POST form tới endpoint token | GCP và Azure dùng REST qua `fetch` TIÊM VÀO, không thư viện; test bằng HTTP giả ở tầng request                                          |
+| P3      | Label GCP chỉ nhận `[a-z0-9_-]`: `udp.ttl` (ISO) và `udp.key` (có `:` và chữ hoa) không đặt thẳng được                                                                                              | `udp-ttl` = epoch mili-giây; `udp.key` tách thành `udp-step`/`udp-kind`/`udp-name` + `udp-key` = 40 hex SHA-256 để tra và kiểm toàn vẹn |
+| P3      | GCP chỉ cluster GKE có label; network, subnet, firewall, router, NAT, service account, node pool KHÔNG có                                                                                           | các kind đó tra theo tên tất định; `description` mang `udp.key` để tên trùng với tài nguyên của khách bị từ chối thay vì bị nhận nhầm   |
+| P3      | Bộ hợp đồng đỏ: `udp.owner` là email, mà `@` và `.` không được phép trong giá trị label — GKE thật sẽ từ chối tạo cluster                                                                           | mã thoát byte UTF-8 (`_xx`) đi–về chính xác cho mọi chuỗi; quá 63 ký tự chia khúc `<khoá>_2`…; test email, tiếng Việt, giá trị dài      |

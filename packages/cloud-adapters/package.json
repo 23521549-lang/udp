@@ -10,6 +10,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./aws": "./src/aws/index.ts",
+    "./gcp": "./src/gcp/index.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {

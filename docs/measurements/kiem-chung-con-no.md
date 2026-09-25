@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 43.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 44.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -414,6 +414,26 @@ adapter.
   Node.
 - **Ảnh hưởng tới kết luận:** **C3** ở dạng mạnh nhất của nó, và cả hình dạng tag
   `kubernetes.io/cluster/*` mà `k8s-managed-discovery` đang nợ.
+
+## I31-gcp — lưới K1..K10 và một vòng đời GKE trên GCP thật
+
+- **Vì sao nợ:** cần một project GCP có billing. [v4.11, Plan #26 P3] Adapter GCP THẬT
+  đã có (`@udp/cloud-adapters/gcp`: qua 38/38 phép hợp đồng trên SimCloud với tính chất
+  gắn label ĐÚNG của GCP — chỉ cluster có label; cổng REST kiểm bằng Google giả ở tầng
+  request; đổi token `GCP_WIF`/`GCP_KEY` kiểm chữ ký JWT thật). Thứ HTTP giả không kiểm
+  được: hình dạng operation thật của Compute, thời gian tạo GKE, và việc Workload
+  Identity Federation của khách chấp nhận token OIDC do UDP ký (sau P5).
+- **Tiền đề:** project GCP + billing + service account có đủ quyền mà
+  `GCP_REQUIRED_PERMISSIONS` liệt kê; Compute, Container, IAM, IAM Credentials, STS và
+  Cloud Resource Manager API đã bật.
+- **Lệnh:** như `I31-localstack` với `UDP_CLOUD_DRIVER=gcp`.
+- **Đạt:** 10 điểm crash cho cùng kết cục; sau mỗi ô, `orphan-scan` trả về rỗng; label
+  đọc lại từ GKE giải mã về đúng tag chuẩn. **Không đạt:** còn tài nguyên mồ côi, hoặc
+  Google từ chối một label mà `gcpLabelCodec.problems` cho qua.
+- **Tài nguyên:** ~1,5 USD/lượt (phí quản lý cluster GKE + Cloud NAT theo giờ) + 1 tiến
+  trình Node.
+- **Ảnh hưởng tới kết luận:** **C3** trên cloud thứ hai — bằng chứng rằng lõi điều phối
+  không mang giả định riêng của AWS (tag lúc tạo, id do cloud cấp).
 
 ## E15 — đối chứng Terraform và Pulumi trên cùng lưới
 
