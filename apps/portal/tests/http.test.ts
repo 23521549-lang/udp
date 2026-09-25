@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   api,
   ApiError,
+  createRefresher,
   refreshSession,
   setSessionExpiredHandler,
 } from "../src/lib/http";
@@ -232,5 +233,67 @@ describe("lớp HTTP: lỗi", () => {
     await expect(
       api(null, "/probe", { method: "DELETE" }),
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * Trả mục nợ `portal-refresh-lock`: hai tab cùng gặp 401 trên trình duyệt KHÔNG có Web
+ * Locks. Tiêu chí Đạt: đúng MỘT lời gọi /auth/refresh và cả hai tab vẫn đăng nhập.
+ */
+describe("lớp HTTP: hai tab, không có Web Locks", () => {
+  it("hai tab cùng refresh ⇒ đúng một /auth/refresh, cả hai nhận true", async () => {
+    let refreshes = 0;
+    server.use(
+      http.post(`${API}/auth/refresh`, async () => {
+        refreshes += 1;
+        await new Promise((r) => setTimeout(r, 30));
+        return HttpResponse.json({});
+      }),
+    );
+    const tabA = createRefresher(() => undefined);
+    const tabB = createRefresher(() => undefined);
+    const startedAt = Date.now() - 5;
+    const [a, b] = await Promise.all([tabA(startedAt), tabB(startedAt)]);
+    expect([a, b]).toEqual([true, true]);
+    expect(refreshes).toBe(1);
+    expect(localStorage.getItem("udp_refresh_lease")).toBeNull();
+  });
+
+  it("lease của tab đã chết (hết hạn) không chặn mãi", async () => {
+    let refreshes = 0;
+    server.use(
+      http.post(`${API}/auth/refresh`, () => {
+        refreshes += 1;
+        return HttpResponse.json({});
+      }),
+    );
+    localStorage.setItem(
+      "udp_refresh_lease",
+      JSON.stringify({ owner: "tab-da-chet", expiresAt: Date.now() - 1 }),
+    );
+    await expect(createRefresher(() => undefined)(Date.now())).resolves.toBe(
+      true,
+    );
+    expect(refreshes).toBe(1);
+  });
+
+  it("đối chứng: KHÔNG khoá gì thì hai tab refresh hai lần — đúng ca bị revokeFamily", async () => {
+    let refreshes = 0;
+    server.use(
+      http.post(`${API}/auth/refresh`, async () => {
+        refreshes += 1;
+        await new Promise((r) => setTimeout(r, 30));
+        return HttpResponse.json({});
+      }),
+    );
+    const noLock = {
+      request: (_n: string, cb: () => Promise<boolean>) => cb(),
+    } as unknown as LockManager;
+    const startedAt = Date.now() - 5;
+    await Promise.all([
+      createRefresher(() => noLock)(startedAt),
+      createRefresher(() => noLock)(startedAt),
+    ]);
+    expect(refreshes).toBe(2);
   });
 });

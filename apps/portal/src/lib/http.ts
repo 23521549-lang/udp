@@ -70,8 +70,6 @@ export function setSessionExpiredHandler(handler: ExpiredHandler): void {
 
 // ------------------------------------------------------------- refresh
 
-let inFlight: Promise<boolean> | undefined;
-
 const nowMs = (): number => Date.now();
 
 function readRefreshedAt(): number {
@@ -104,34 +102,115 @@ async function postRefresh(): Promise<boolean> {
   }
 }
 
+// ---------------- khoá giữa tab khi KHÔNG có Web Locks (sổ nợ đã trả: portal-refresh-lock)
+
+const LEASE_KEY = "udp_refresh_lease";
+/** Lâu hơn một lượt refresh bình thường; tab chết giữa chừng thì lease tự hết hạn */
+export const LEASE_MS = 8_000;
+/** Chờ các tab cùng ghi lease lắng xuống rồi đọc lại xem ai thắng */
+const SETTLE_MS = 40;
+const POLL_MS = 60;
+
+interface Lease {
+  owner: string;
+  expiresAt: number;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function readLease(): Lease | null {
+  try {
+    const raw = localStorage.getItem(LEASE_KEY);
+    if (raw === null) return null;
+    const v = JSON.parse(raw) as Partial<Lease>;
+    return typeof v.owner === "string" && typeof v.expiresAt === "number"
+      ? { owner: v.owner, expiresAt: v.expiresAt }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Refresh phiên — MỘT lần cho mọi request đang chờ trong tab này, và dưới khoá giữa
- * các tab nếu trình duyệt có Web Locks.
+ * Lease trong localStorage — thay Web Locks ở trình duyệt không có nó.
+ *
+ * localStorage không có compare-and-set, nên "ghi rồi chờ lắng rồi đọc lại": hai tab cùng
+ * ghi thì chỉ bản ghi sau còn lại, và chỉ chủ của bản đó chạy. Tab thua chờ; trong lúc
+ * chờ, nếu tab thắng refresh xong (`udp_refreshed_at` mới hơn mốc request) thì `run` của
+ * tab thua thấy điều đó và KHÔNG refresh lần hai. Lease chỉ chứa một id ngẫu nhiên và một
+ * mốc hết hạn — không dữ liệu người dùng, không token (§10.4).
+ *
+ * Giới hạn còn lại, nói thẳng: nếu storage bị chặn (chế độ riêng tư của vài trình duyệt)
+ * thì không có kênh chung nào giữa tab, và ca hai tab cùng refresh còn hở như trước.
+ */
+async function withStorageLease(run: () => Promise<boolean>): Promise<boolean> {
+  const me = crypto.randomUUID();
+  const giveUpAt = nowMs() + LEASE_MS * 2;
+  while (nowMs() < giveUpAt) {
+    const current = readLease();
+    if (current === null || current.expiresAt < nowMs()) {
+      try {
+        localStorage.setItem(
+          LEASE_KEY,
+          JSON.stringify({ owner: me, expiresAt: nowMs() + LEASE_MS }),
+        );
+      } catch {
+        return run();
+      }
+      await sleep(SETTLE_MS);
+      if (readLease()?.owner === me) {
+        try {
+          return await run();
+        } finally {
+          if (readLease()?.owner === me) localStorage.removeItem(LEASE_KEY);
+        }
+      }
+    }
+    await sleep(POLL_MS);
+  }
+  return run();
+}
+
+/**
+ * Bộ refresh của MỘT tab. Tách thành factory để test dựng được hai "tab" độc lập (mỗi
+ * tab một single-flight riêng) trên cùng một localStorage — đúng tình huống cần kiểm.
+ */
+export function createRefresher(
+  lockApi: () => LockManager | undefined = () =>
+    typeof navigator === "undefined" ? undefined : navigator.locks,
+): (startedAt: number) => Promise<boolean> {
+  let inFlight: Promise<boolean> | undefined;
+  return (startedAt) => {
+    if (inFlight !== undefined) return inFlight;
+
+    const run = async (): Promise<boolean> => {
+      if (readRefreshedAt() > startedAt) return true;
+      return postRefresh();
+    };
+
+    const locks = lockApi();
+    // Kiểu DOM khai `request` trả Promise<Promise<T>>; lúc chạy nó đã được làm phẳng
+    const locked: Promise<boolean> =
+      locks === undefined
+        ? withStorageLease(run)
+        : locks.request(REFRESH_LOCK, run).then((v) => v);
+    const out = locked.finally(() => {
+      inFlight = undefined;
+    });
+    inFlight = out;
+    return out;
+  };
+}
+
+/**
+ * Refresh phiên — MỘT lần cho mọi request đang chờ trong tab này, và dưới khoá giữa các
+ * tab (Web Locks; không có thì lease localStorage).
  *
  * `startedAt`: mốc request gốc được gửi. Nếu tab khác refresh xong SAU mốc đó thì cookie
  * mới đã có, request gốc chỉ cần gửi lại — refresh lần nữa là trình cookie đã xoay và
  * tự đăng xuất mọi tab.
  */
-export function refreshSession(startedAt: number): Promise<boolean> {
-  if (inFlight !== undefined) return inFlight;
-
-  const run = async (): Promise<boolean> => {
-    if (readRefreshedAt() > startedAt) return true;
-    return postRefresh();
-  };
-
-  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
-  // Kiểu DOM khai `request` trả Promise<Promise<T>>; lúc chạy nó đã được làm phẳng
-  const locked: Promise<boolean> =
-    locks === undefined
-      ? run()
-      : locks.request(REFRESH_LOCK, run).then((v) => v);
-  const out = locked.finally(() => {
-    inFlight = undefined;
-  });
-  inFlight = out;
-  return out;
-}
+export const refreshSession = createRefresher();
 
 // ------------------------------------------------------------- request
 

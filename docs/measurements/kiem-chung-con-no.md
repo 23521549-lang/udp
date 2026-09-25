@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 46.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 45.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -713,7 +713,7 @@ owned` còn có tài nguyên mang `shared`.
 
 # Plan #25 — Portal
 
-Mười tám mục (nay còn mười lăm) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
+Mười tám mục (nay còn mười bốn) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
 còn Service 1 hôm nay chỉ có endpoint cho một phần. Làm một màn hình không có endpoint
 nghĩa là viết một cái giả rồi gọi nó là xong, nên phạm vi Plan #25 chia theo endpoint đã
 chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều kiện.
@@ -736,6 +736,13 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > lượng trên (cộng số `,`/`:`); trừ bản cũ khi sửa. Cảnh báo, không chặn — `quota` có thể
 > đã cũ. Bằng chứng: `apps/portal/tests/segment-quota.test.tsx` (sát trần + ~1 KiB ⇒ cảnh
 > báo trước khi gửi; dưới trần mà server trả 422 ⇒ UI vẫn nói lỗi).
+>
+> **Đã trả (25/09/2026):** `portal-refresh-lock` — trình duyệt không có Web Locks dùng
+> lease trong localStorage ("ghi, chờ lắng, đọc lại"; lease chỉ gồm id ngẫu nhiên và hạn,
+> tự hết hạn khi tab chết). Bằng chứng: `apps/portal/tests/http.test.ts` dựng HAI bộ
+> refresh độc lập trên cùng storage ⇒ đúng một `/auth/refresh`, cả hai `true`; đối chứng
+> không khoá ⇒ hai lần; đột biến bỏ lease ⇒ đỏ. Còn hở, nói rõ trong mã: storage bị chặn
+> hoàn toàn thì không có kênh chung giữa tab.
 
 ## portal-cloud-step — wizard bước cấu hình cloud
 
@@ -898,21 +905,6 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 - **Tài nguyên:** không.
 - **Ảnh hưởng tới kết luận:** câu "Portal dùng được khi project lớn" — cùng họ với
   `stale-perf`, và phải đọc cùng nó.
-
-## portal-refresh-lock — khoá refresh giữa các tab ở trình duyệt không có Web Locks
-
-- **Vì sao nợ:** `refresh()` của Service 1 có phát hiện dùng lại token và nó gọi
-  `revokeFamily` (`auth.service.ts:143-149`), nên hai tab cùng refresh với cookie cũ làm
-  người dùng bị đăng xuất khỏi **mọi** tab. Plan #25 chặn bằng Web Locks
-  (`navigator.locks`), nhưng API đó không có ở mọi trình duyệt.
-- **Tiền đề:** một cơ chế khoá khác (SharedWorker, hoặc `BroadcastChannel` cộng bầu cử),
-  hoặc một quyết định bỏ hỗ trợ trình duyệt không có Web Locks.
-- **Lệnh:** test hai "tab" cùng gặp 401 trên môi trường không có `navigator.locks`.
-- **Đạt:** đúng một lời gọi `/auth/refresh` và cả hai tab vẫn đăng nhập. **Không đạt:** cả
-  hai bị đăng xuất ⇒ đúng ca này còn hở.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** ở những trình duyệt đó, ca đa tab còn hở — và nói ra tốt hơn
-  một lời hứa chung rằng "đã có single-flight".
 
 ## portal-e2e — end-to-end trên trình duyệt thật
 
