@@ -75,13 +75,26 @@ export interface DirectClusterAccessOptions {
 
 export const DEFAULT_REFRESH_SKEW_MS = 300_000;
 
+/**
+ * Tên số nhiều của một kind — đúng quy tắc mà API server dùng cho kind dựng sẵn và mà
+ * `controller-gen` dùng cho CRD: `NetworkPolicy` ⇒ `networkpolicies`, `Ingress` ⇒
+ * `ingresses`. [v4.11] Bản trước chỉ thêm "s" (`networkpolicys`, `ingresss`) — sai đúng ở hai
+ * kind mà bootstrap cluster (Plan #28) phải tạo.
+ */
+export function pluralOf(kind: string): string {
+  const lower = kind.toLowerCase();
+  if (/[^aeiou]y$/.test(lower)) return `${lower.slice(0, -1)}ies`;
+  if (/(s|x|z|ch|sh)$/.test(lower)) return `${lower}es`;
+  return `${lower}s`;
+}
+
 /** Path của một `ObjectRef` theo quy ước REST của Kubernetes */
 export function objectPath(ref: ObjectRef): string {
   const core = ref.apiVersion === "v1";
   const base = core ? "/api/v1" : `/apis/${ref.apiVersion}`;
   const scope =
     ref.namespace === undefined ? "" : `/namespaces/${ref.namespace}`;
-  const plural = `${ref.kind.toLowerCase()}s`;
+  const plural = pluralOf(ref.kind);
   const name = ref.name === undefined ? "" : `/${ref.name}`;
   const query =
     ref.labelSelector === undefined
@@ -103,6 +116,9 @@ const METHOD_OF: Readonly<Record<K8sReadVerb | K8sWriteVerb, string>> = {
   delete: "DELETE",
   deletecollection: "DELETE",
 };
+
+/** Chủ sở hữu trường của mọi server-side apply do control plane UDP gửi */
+export const FIELD_MANAGER = "udp-control-plane";
 
 export class ClusterCallFailedError extends Error {
   readonly code = "CLUSTER_CALL_FAILED";
@@ -151,16 +167,29 @@ export function createDirectClusterAccess(
     body?: unknown,
   ): Promise<Response> {
     const path = objectPath(ref);
-    const suffix = verb === "watch" ? (path.includes("?") ? "&" : "?") + "watch=1" : "";
+    const sep = path.includes("?") ? "&" : "?";
+    /**
+     * [v4.11] `apply` là SERVER-SIDE APPLY (tạo hoặc cập nhật, idempotent) chứ không phải
+     * merge-patch: merge-patch lên đối tượng chưa có trả 404, nên lần bootstrap đầu tiên của
+     * mọi cluster sẽ vỡ. `force=true` để UDP giành lại trường nó quản lý khi ai đó sửa tay.
+     */
+    const suffix =
+      verb === "watch"
+        ? `${sep}watch=1`
+        : verb === "apply"
+          ? `${sep}fieldManager=${FIELD_MANAGER}&force=true`
+          : "";
     const token = await tokenFor(identity);
     const res = await transport.request(`${apiEndpoint}${path}${suffix}`, {
       method: METHOD_OF[verb],
       headers: {
         authorization: `Bearer ${token}`,
         "content-type":
-          verb === "patch" || verb === "apply"
-            ? "application/merge-patch+json"
-            : "application/json",
+          verb === "apply"
+            ? "application/apply-patch+yaml"
+            : verb === "patch"
+              ? "application/merge-patch+json"
+              : "application/json",
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });

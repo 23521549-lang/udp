@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 import {
   createDirectClusterAccess,
   DEFAULT_REFRESH_SKEW_MS,
+  FIELD_MANAGER,
   objectPath,
+  pluralOf,
   type BoundToken,
   type KubeTransport,
 } from "../src/modules/cluster/cluster-access.js";
@@ -92,6 +94,44 @@ describe("objectPath — hình path theo quy ước Kubernetes", () => {
         labelSelector: "app=web",
       }),
     ).toBe("/api/v1/namespaces/ns/pods?labelSelector=app%3Dweb");
+  });
+});
+
+describe("[v4.11] số nhiều của kind và server-side apply (Plan #28 P3)", () => {
+  it.each([
+    ["NetworkPolicy", "networkpolicies"],
+    ["Ingress", "ingresses"],
+    ["ResourceQuota", "resourcequotas"],
+    ["ServiceAccount", "serviceaccounts"],
+    ["ClusterRoleBinding", "clusterrolebindings"],
+    ["Gateway", "gateways"],
+    ["HelmRelease", "helmreleases"],
+  ])("%s ⇒ %s", (kind, plural) => {
+    expect(pluralOf(kind)).toBe(plural);
+  });
+
+  it("apply là server-side apply: content-type apply-patch, fieldManager, force", async () => {
+    const { transport, seen } = transportOf(() => new Response("{}", { status: 200 }));
+    const access = createDirectClusterAccess({
+      clusterId: "c",
+      apiEndpoint: ENDPOINT,
+      transport,
+      tokens: tokensOf().source,
+    });
+    const client = await access.getClient("tooling");
+    await client.write(
+      "apply",
+      { apiVersion: "networking.k8s.io/v1", kind: "NetworkPolicy", namespace: "ns", name: "deny" },
+      { kind: "NetworkPolicy" },
+    );
+    const call = seen[0];
+    expect(call?.url).toBe(
+      `${ENDPOINT}/apis/networking.k8s.io/v1/namespaces/ns/networkpolicies/deny?fieldManager=${FIELD_MANAGER}&force=true`,
+    );
+    expect(call?.init.method).toBe("PATCH");
+    expect((call?.init.headers as Record<string, string>)["content-type"]).toBe(
+      "application/apply-patch+yaml",
+    );
   });
 });
 
