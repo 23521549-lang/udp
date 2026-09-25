@@ -9,6 +9,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./aws": "./src/aws/index.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {
@@ -16,11 +17,22 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-crypto/sha256-js": "5.2.0",
+    "@aws-sdk/client-ec2": "3.1140.0",
+    "@aws-sdk/client-eks": "3.1140.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "3.1140.0",
+    "@aws-sdk/client-iam": "3.1140.0",
+    "@aws-sdk/client-resource-groups-tagging-api": "3.1140.0",
+    "@aws-sdk/client-sts": "3.1140.0",
+    "@aws-sdk/credential-providers": "3.1140.0",
+    "@smithy/protocol-http": "5.6.2",
+    "@smithy/signature-v4": "5.7.3",
     "@udp/adapter-core": "workspace:*",
     "@udp/shared-types": "workspace:*",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "aws-sdk-client-mock": "4.1.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   }

@@ -134,6 +134,13 @@ interface SimState {
     waitReadyPolls: number;
     rejectSeparateTagging: boolean;
     pageSize: number;
+    /**
+     * Kind mà cloud mô phỏng không cho gắn tag lúc tạo (S-4). Tuỳ cloud: SimCloud mặc định
+     * mô phỏng một cloud mà route table không nhận tag; bộ hợp đồng của một Cloud Adapter
+     * THẬT dựng SimCloud với đúng tập của cloud đó (Plan #26). Thiếu trường (state cũ) ⇒
+     * mặc định.
+     */
+    kindsWithoutCreateTags?: CreatedResourceKind[];
   };
 }
 
@@ -145,12 +152,18 @@ export interface SimCloudOptions {
   waitReadyPolls?: number;
   rejectSeparateTagging?: boolean;
   pageSize?: number;
+  kindsWithoutCreateTags?: readonly CreatedResourceKind[];
   /** Giá trị canh nhét vào mọi lỗi, để phép quét rò rỉ có đối tượng thật */
   sentinel?: string;
 }
 
 const EMPTY = (
-  o: Required<Omit<SimCloudOptions, "statePath" | "workerId" | "sentinel">>,
+  o: Required<
+    Omit<
+      SimCloudOptions,
+      "statePath" | "workerId" | "sentinel" | "kindsWithoutCreateTags"
+    >
+  > & { kindsWithoutCreateTags: readonly CreatedResourceKind[] },
 ): SimState => ({
   seq: 0,
   resources: {},
@@ -163,6 +176,7 @@ const EMPTY = (
     waitReadyPolls: o.waitReadyPolls,
     rejectSeparateTagging: o.rejectSeparateTagging,
     pageSize: o.pageSize,
+    kindsWithoutCreateTags: [...o.kindsWithoutCreateTags],
   },
 });
 
@@ -192,6 +206,8 @@ export class SimCloud implements CloudControl {
           waitReadyPolls: options.waitReadyPolls ?? 2,
           rejectSeparateTagging: options.rejectSeparateTagging ?? false,
           pageSize: options.pageSize ?? 2,
+          kindsWithoutCreateTags:
+            options.kindsWithoutCreateTags ?? KINDS_WITHOUT_CREATE_TAGS,
         }),
       );
       return;
@@ -218,6 +234,8 @@ export class SimCloud implements CloudControl {
       state.config.rejectSeparateTagging = options.rejectSeparateTagging;
     if (options.pageSize !== undefined)
       state.config.pageSize = options.pageSize;
+    if (options.kindsWithoutCreateTags !== undefined)
+      state.config.kindsWithoutCreateTags = [...options.kindsWithoutCreateTags];
     this.#save(state);
   }
 
@@ -313,7 +331,9 @@ export class SimCloud implements CloudControl {
 
     state.seq += 1;
     const id = `${args.kind}-${String(state.seq)}`;
-    const canTagAtCreate = !KINDS_WITHOUT_CREATE_TAGS.includes(args.kind);
+    const canTagAtCreate = !(
+      state.config.kindsWithoutCreateTags ?? KINDS_WITHOUT_CREATE_TAGS
+    ).includes(args.kind);
     const stored: StoredResource = {
       kind: args.kind,
       id,

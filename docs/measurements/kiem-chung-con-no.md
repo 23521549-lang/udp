@@ -401,7 +401,9 @@ adapter.
 ## I31-aws — lưới K1..K10 trên AWS thật
 
 - **Vì sao nợ:** cần tài khoản AWS có ngân sách; một lượt lưới tạo và xoá VPC, NAT
-  gateway, EKS cluster và nodegroup.
+  gateway, EKS cluster và nodegroup. [v4.11] Adapter AWS THẬT đã có
+  (`@udp/cloud-adapters/aws`: qua 38/38 phép hợp đồng trên SimCloud, cổng SDK kiểm ở
+  tầng command) — phần còn nợ chỉ là chạy nó trên tài khoản thật.
 - **Tiền đề:** tài khoản AWS + hạn mức chi + credential có đủ 14 quyền mà
   `preflightPermissions` liệt kê.
 - **Lệnh:** như `I31-localstack` với `UDP_CLOUD_DRIVER=aws`.

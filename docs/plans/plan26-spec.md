@@ -137,14 +137,12 @@ lộ bí mật). `PUT /cloud`, `POST /cloud/validate`, `POST /cloud/preflight`: 
 | AC-11 | Mọi response mới có schema dây `.strict()` và mẫu golden thật                                                                                                                       | `wire-golden.test.ts`                              |
 | AC-12 | Không thoái cấp: typecheck, lint, format các tệp chạm, mọi bộ test hiện có xanh                                                                                                     | lệnh cổng từng pha                                 |
 
-## 5. Nợ kiểm chứng dự kiến (ghi sổ, không phải nợ kỹ thuật)
+## 5. Nợ kiểm chứng (ghi sổ, không phải nợ kỹ thuật)
 
-| Mã                        | Vì sao                                                                                       | Tiền đề                         |
-| ------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------- |
-| `cloud-aws-live`          | Cổng AWS thật chỉ kiểm được trên tài khoản AWS (EKS không chạy trên LocalStack bản miễn phí) | tài khoản AWS + ngân sách       |
-| `cloud-gcp-live`          | Cổng GCP thật cần project GCP có billing                                                     | project GCP                     |
-| `cloud-azure-live`        | Cổng Azure thật cần subscription + resource group                                            | subscription Azure              |
-| `cred-federation` (đã có) | Đổi token federation đầu-cuối cần tài khoản ba cloud tin OIDC issuer công khai của UDP       | issuer công khai + ba tài khoản |
+Sổ đã có sẵn các mục cho phần chạy trên cloud THẬT — Plan #26 cập nhật chúng, không ghi
+trùng: `I31-aws` (lưới trên AWS thật), `preflight-confidence`, `getkubeauth-that`,
+`k8s-managed-discovery`, `estimatecost-vs-bill`, `cred-federation`. Chỉ thêm mục mới cho
+lưới trên GCP và Azure (chưa có mục tương đương `I31-aws`) ở P3/P4.
 
 ## 6. Rủi ro
 
@@ -161,3 +159,4 @@ lộ bí mật). `PUT /cloud`, `POST /cloud/validate`, `POST /cloud/preflight`: 
 | ------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- |
 | v1 → v2 | Bộ hợp đồng cần `CloudFixture` viết tay cho từng adapter, nếu không AC-1 sẽ dùng nhầm fixture của adapter mô phỏng | thêm vào QĐ-2 và vào plan (mỗi cloud một fixture)   |
 | v1 → v2 | Phép kiểm tag của bộ hợp đồng đọc thẳng `SimCloud.listAll()`; label GCP đã mã hoá sẽ làm mọi phép tag đỏ giả       | cổng mô phỏng mã hoá + kiểm hợp lệ + giải mã ở biên |
+| P2      | Định ghi `cloud-aws-live` — trùng `I31-aws` và bốn mục khác đã có                                                  | cập nhật mục cũ, §5 viết lại                        |
