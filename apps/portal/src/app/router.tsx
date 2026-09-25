@@ -212,9 +212,9 @@ const deploymentsRoute = createRoute({
 });
 
 export interface SettingsSearch {
-  tab?: "keys" | "members" | "audit" | "project";
+  tab?: "keys" | "members" | "audit" | "cloud" | "project";
 }
-const TABS = ["keys", "members", "audit", "project"] as const;
+const TABS = ["keys", "members", "audit", "cloud", "project"] as const;
 export const settingsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "settings",

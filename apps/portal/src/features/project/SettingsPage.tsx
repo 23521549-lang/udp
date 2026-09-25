@@ -3,6 +3,8 @@ import { Settings2 } from "lucide-react";
 import type { SettingsSearch } from "../../app/router";
 import { Icon } from "../../components/Icon";
 import { ProjectBar } from "./ProjectBar";
+import { CloudPanel } from "./cloud/CloudPanel";
+import { useProjectContext } from "./ProjectLayout";
 import { AuditTab } from "./settings/AuditTab";
 import { MembersTab } from "./settings/MembersTab";
 import { ProjectTab } from "./settings/ProjectTab";
@@ -13,6 +15,7 @@ const TAB_LABEL: Record<Tab, string> = {
   keys: "SDK key",
   members: "Thành viên",
   audit: "Nhật ký",
+  cloud: "Cloud",
   project: "Project",
 };
 
@@ -20,6 +23,7 @@ export function SettingsPage() {
   const search = useSearch({ from: "/app/projects/$projectId/settings" });
   const navigate = useNavigate();
   const tab: Tab = search.tab ?? "keys";
+  const { project } = useProjectContext();
 
   return (
     <>
@@ -31,7 +35,7 @@ export function SettingsPage() {
           </span>
           <div>
             <h1>Cài đặt</h1>
-            <p>SDK key, thành viên, nhật ký và trần tài nguyên.</p>
+            <p>SDK key, thành viên, nhật ký, cloud và trần tài nguyên.</p>
           </div>
         </div>
         <div className="page">
@@ -59,6 +63,9 @@ export function SettingsPage() {
           {tab === "keys" && <SdkKeysTab />}
           {tab === "members" && <MembersTab />}
           {tab === "audit" && <AuditTab />}
+          {tab === "cloud" && (
+            <CloudPanel projectId={project.id} role={project.myRole} />
+          )}
           {tab === "project" && <ProjectTab />}
         </div>
       </div>

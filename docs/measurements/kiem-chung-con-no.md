@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 45.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 44.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -623,22 +623,31 @@ owned` còn có tài nguyên mang `shared`.
   đúng cho tài nguyên **UDP tạo**, không cho tài nguyên **workload tạo**. Câu đó phải
   được nói đúng như vậy chừng nào mục này còn nợ.
 
-## cred-federation — Federation (STS/OIDC) mới có mặt KIỂU
+## cred-federation — Federation (STS/OIDC) đã có mã, chưa chạy với cloud thật
 
-- **Vì sao nợ:** `CredentialMode` và `CloudAuthKind` đã khai đủ sáu cách xác thực,
-  và lược đồ có cột cho chúng. Đường resolve thật hiện chỉ có nhánh khoá tĩnh đã mã
-  hoá; nhánh federation (assume role qua OIDC, workload identity) chưa có hiện thực
-  vì nó đòi một endpoint OIDC công khai của control plane.
-- **Tiền đề:** control plane có URL công khai + một tài khoản cloud tin URL đó.
-- **Lệnh:** `POST /projects/:id/cloud/validate` với `authKind` federation.
-- **Đạt:** resolve trả về credential tạm có hạn, và `dispose()` xoá nó khỏi bộ nhớ.
-  **Không đạt:** nhánh ném "chưa hiện thực" ⇒ đúng trạng thái hôm nay, và nó phải
-  ném tường minh chứ không im lặng rơi về khoá tĩnh.
-- **Tài nguyên:** tài khoản cloud + một endpoint công khai.
-- **Ảnh hưởng tới kết luận:** mô hình đe doạ của §4.3. Khoá tĩnh đã mã hoá là đường
-  đang dùng; federation là đường **giảm được** thời gian sống của bí mật, và chừng
-  nào nó còn nợ thì câu "bí mật không sống quá một giờ" chỉ đúng cho token cluster,
-  không cho credential cloud.
+- **Vì sao nợ:** [v4.11, Plan #26 P5–P6] Cả ba nhánh federation đã hiện thực và chạy
+  qua `POST /projects/:id/cloud/validate`: `AWS_ROLE` (AssumeRole + ExternalId =
+  HMAC theo project), `GCP_WIF` (token OIDC do Service 1 ký ⇒ STS ⇒
+  `generateAccessToken`), `AZURE_FEDERATED` (client assertion là token OIDC của UDP).
+  Service 1 phục vụ discovery + JWKS; token ký kiểm được bằng CHÍNH JWKS công bố
+  (test thuần + tích hợp); resolver xoá payload giải mã ngay sau khi đổi token (AC-9).
+  Thứ chưa kiểm được: một cloud THẬT tin issuer công khai của UDP — cần URL công khai
+  mà máy dev không có.
+- **Tiền đề:** Service 1 có URL https công khai (`UDP_OIDC_ISSUER`) + khoá ký; một
+  tài khoản mỗi cloud đã cấu hình theo đúng khối lệnh mà `GET /cloud/setup` sinh ra;
+  với AWS, Service 1 chạy dưới principal `UDP_AWS_PRINCIPAL_ARN`.
+- **Lệnh:** `PUT /projects/:id/cloud` với `authKind` federation, rồi
+  `POST /projects/:id/cloud/validate` và `/cloud/preflight`.
+- **Đạt:** validate `valid: true` cho cả ba cloud, `expiresAt` của credential ≤ 1 giờ,
+  và xoá federated credential / trust policy phía khách làm lần validate kế tiếp trả
+  `valid: false` (thu hồi không cần xoay khoá). **Không đạt:** cloud từ chối token vì
+  lệch `iss`/`aud`/`sub` ⇒ khối lệnh setup hoặc claim của token sai — sửa ở
+  `cloud.setup.ts` / `oidc.issuer.ts`, không nới điều kiện phía khách.
+- **Tài nguyên:** ba tài khoản cloud (không tạo tài nguyên tính tiền) + một endpoint
+  công khai.
+- **Ảnh hưởng tới kết luận:** mô hình đe doạ của §4.3. Chừng nào mục này còn nợ, câu
+  "UDP không giữ bí mật dài hạn của khách" đúng về THIẾT KẾ và về mã đã kiểm bằng cổng
+  giả, nhưng chưa có bằng chứng từ một cloud thật chấp nhận token của UDP.
 
 ## domains-catalog-route — `GET /domains/catalog` chưa có route
 
@@ -803,21 +812,15 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > luật "không hạ admin cuối cùng" test bằng hàm thuần vì seed luôn có một admin. Orphan
 > hiện USD/giờ, giá không biết là "chưa rõ giá" (không phải 0). Giới hạn: nửa quét cloud
 > theo tag chưa chạy — response mang `cloudScanned: false` và màn hình nói điều đó.
-
-## portal-cloud-step — wizard bước cấu hình cloud
-
-- **Vì sao nợ:** ba endpoint của bước này (`PUT /projects/:id/cloud`,
-  `POST .../cloud/validate`, `POST .../cloud/preflight`) chưa tồn tại ở Service 1. Cloud
-  Adapter và `preflightPermissions` đã có ở `@udp/adapter-core` (Plan #24) nhưng chưa có
-  route nào gọi tới.
-- **Tiền đề:** ba endpoint đó tồn tại.
-- **Lệnh:** test tích hợp của wizard theo khuôn `project.integration.test.ts`.
-- **Đạt:** nhập credential sai ⇒ `validate` trả danh sách quyền thiếu kèm mức tin cậy;
-  đúng ⇒ sang được bước kế. **Không đạt:** bước này báo thành công khi credential thiếu
-  quyền ⇒ người dùng chỉ biết lúc provisioning đổ.
-- **Tài nguyên:** không (dùng cloud mô phỏng của §13.2).
-- **Ảnh hưởng tới kết luận:** luồng 1 của §8.1 đi được đầu-cuối trên Portal. Hôm nay
-  project tạo ra đứng ở `DRAFT` và không có đường tự cấu hình cloud.
+>
+> **Đã trả (25/09/2026):** `portal-cloud-step` — năm route `/projects/:id/cloud`
+> (Plan #26 P6) và bước 2 của wizard + thẻ Cloud trong Cài đặt (P7). Bằng chứng:
+> `cloud.integration.test.ts` — credential lưu mã hoá, quét sentinel DB và log sạch, đúng
+> một bản active, `validate` trả `valid: false` kèm lý do khi cloud từ chối, `preflight`
+> trả ĐÚNG các quyền thiếu, 409/422/503 có slug riêng, payload giải mã bị xoá sau mỗi lần
+> đổi token; test Portal `cloud.test.tsx` — ba vai trò, lỗi định dạng chặn ở trang không
+> gửi bí mật đi, wizard tạo xong ở lại bước cloud. Phần còn nợ là cloud THẬT, ở
+> `cred-federation` và `I31-*`.
 
 ## portal-domain-screens — Domain Config, Catalog, và Detail (drift/upgrade)
 

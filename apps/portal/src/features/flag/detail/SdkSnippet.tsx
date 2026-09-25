@@ -1,8 +1,6 @@
 import type { FlagDetailWire } from "@udp/shared-types/wire";
-import { Copy } from "lucide-react";
 import { useState } from "react";
-import { Icon } from "../../../components/Icon";
-import { toast } from "../../../components/Toast";
+import { CodeBlock } from "../../../components/CodeBlock";
 
 export function SdkSnippet({ flag }: { flag: FlagDetailWire }) {
   const [lang, setLang] = useState<"node" | "python">("node");
@@ -39,25 +37,7 @@ export function SdkSnippet({ flag }: { flag: FlagDetailWire }) {
           </button>
         </div>
       </div>
-      <div className="code">
-        <pre>{code}</pre>
-        <button
-          type="button"
-          className="ib cp"
-          aria-label="Sao chép"
-          onClick={() => {
-            // clipboard vắng mặt ngoài HTTPS dù kiểu DOM nói có: đi qua Promise để thành lỗi bắt được
-            void Promise.resolve()
-              .then(() => navigator.clipboard.writeText(code))
-              .then(
-                () => toast.info("Đã sao chép"),
-                () => toast.error("Không sao chép được"),
-              );
-          }}
-        >
-          <Icon of={Copy} />
-        </button>
-      </div>
+      <CodeBlock code={code} />
     </section>
   );
 }

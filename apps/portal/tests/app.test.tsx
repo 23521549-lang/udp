@@ -11,18 +11,13 @@ import { describe, expect, it } from "vitest";
 import { safeRedirect } from "../src/features/auth/AuthPages";
 import { defaultEnvOf } from "../src/features/project/env";
 import { API, golden, server } from "./msw";
+import { projectFixture, useProjectHandlers } from "./project-fixtures";
 import { renderApp } from "./render";
 
 /**
  * Test đi qua cả ứng dụng: router thật, guard thật, React Query thật. Body của mọi
  * handler lấy từ golden capture của Service 1 — test không tự nghĩ ra hình response.
  */
-
-function projectFixture(role: "OWNER" | "MAINTAINER" | "DEVELOPER" | "VIEWER") {
-  const detail = golden<ProjectDetailResponseWire>("GET /projects/{id}");
-  detail.project.myRole = role;
-  return detail;
-}
 
 const envOf = (d: ProjectDetailResponseWire, production: boolean) => {
   const e = d.environments.find((x) => x.isProduction === production);
@@ -63,18 +58,6 @@ function flagFixture(detail: ProjectDetailResponseWire): {
     },
   };
   return { flag, summary };
-}
-
-function useProjectHandlers(detail: ProjectDetailResponseWire) {
-  server.use(
-    http.get(`${API}/projects/:id`, () => HttpResponse.json(detail)),
-    http.get(`${API}/projects/:id/rollouts`, () =>
-      HttpResponse.json({ rollouts: [] }),
-    ),
-    http.get(`${API}/projects/:id/members`, () =>
-      HttpResponse.json(golden("GET /projects/{id}/members")),
-    ),
-  );
 }
 
 describe("đăng nhập và guard", () => {

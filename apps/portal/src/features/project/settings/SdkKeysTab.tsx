@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SdkKeyWire } from "@udp/shared-types/wire";
-import { Check, Copy, KeyRound } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { useState } from "react";
+import { CodeBlock } from "../../../components/CodeBlock";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Dialog } from "../../../components/Dialog";
 import { Icon } from "../../../components/Icon";
@@ -133,7 +134,6 @@ function CreateKeyDialog({ onClose }: { onClose: () => void }) {
   const [keyType, setKeyType] = useState<"SERVER" | "CLIENT">("SERVER");
   const [label, setLabel] = useState("");
   const [secret, setSecret] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const create = useMutation({
     mutationFn: () =>
@@ -161,26 +161,7 @@ function CreateKeyDialog({ onClose }: { onClose: () => void }) {
           </button>
         }
       >
-        <div className="code">
-          <pre aria-label="SDK key">{secret}</pre>
-          <button
-            type="button"
-            className="ib cp"
-            aria-label="Sao chép key"
-            onClick={() => {
-              // clipboard vắng mặt ngoài HTTPS dù kiểu DOM nói có
-              void Promise.resolve()
-                .then(() => navigator.clipboard.writeText(secret))
-                .then(
-                  () => setCopied(true),
-                  () =>
-                    toast.error("Không sao chép được, hãy chọn và chép tay"),
-                );
-            }}
-          >
-            <Icon of={copied ? Check : Copy} />
-          </button>
-        </div>
+        <CodeBlock code={secret} label="SDK key" copyLabel="Sao chép key" />
       </Dialog>
     );
   }

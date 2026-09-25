@@ -59,6 +59,10 @@ export const qk = {
   dora: (projectId: string, envId: string, days: number) =>
     ["dora", projectId, envId, days] as const,
 
+  cloud: (projectId: string) => ["cloud", projectId] as const,
+  cloudSetup: (projectId: string, provider: string) =>
+    ["cloudSetup", projectId, provider] as const,
+
   adminUsers: (search: string) => ["admin", "users", search] as const,
   adminProjects: (status: string) => ["admin", "projects", status] as const,
   adminCredentials: () => ["admin", "credentials"] as const,
@@ -100,6 +104,8 @@ export const NOT_ENV_SCOPED = {
   segment: "segment thuộc project (§2.2)",
   rollout: "id rollout đã gắn đúng một env",
   activeRollouts: "watcher auto-rollback của cả project (§10.9)",
+  cloud: "credential cloud thuộc project, một bản cho mọi env (§4.3)",
+  cloudSetup: "dữ liệu setup theo project và cloud, không theo env",
   adminUsers: "toàn hệ thống, không thuộc project nào",
   adminProjects: "toàn hệ thống",
   adminCredentials: "toàn hệ thống",

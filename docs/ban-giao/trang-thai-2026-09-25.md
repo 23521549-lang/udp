@@ -108,3 +108,36 @@ trong phiên này, nhưng vẫn phải chạy khi máy có ≥ 2 GiB trống.
 Bẫy mới: chạy Prettier từ `apps/portal` thì nó KHÔNG đọc `.prettierignore` ở gốc — đã
 định dạng lại `prototype.css`, và cổng "chép nguyên văn" bắt được ngay. Luôn chạy
 Prettier từ gốc repo.
+
+## 5. Plan #26 — Cloud Adapter AWS/GCP/Azure và bước cloud (`plan26-spec.md`, `plan26-plan.md`)
+
+| Commit    | Việc                                                                                                        | Bằng chứng                                                      |
+| --------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `124b086` | P1 lõi `@udp/cloud-adapters`: kế hoạch + cổng trung tính + một lõi điều phối                                | hợp đồng Cloud 38/38 trên kế hoạch đối chứng                    |
+| `dda4ece` | P2 AWS (EKS), SDK v3                                                                                        | 38/38, cổng kiểm ở tầng command                                 |
+| `32069b2` | P3 GCP (GKE), REST qua `fetch` tiêm vào; codec label đi–về                                                  | 38/38; hợp đồng bắt được `udp.owner` (email) vi phạm luật label |
+| `df8055a` | **Sửa lõi**: xoá trong một bậc theo thứ tự NGƯỢC kế hoạch (EIP trước NAT ⇒ cloud thật từ chối ⇒ mồ côi)     | cổng giả từ chối xoá thứ đang dùng                              |
+| `5287c22` | P4 Azure (AKS), ARM REST; không bao giờ PUT đè; gỡ NAT khỏi subnet trước khi xoá                            | 38/38, 83 test cổng                                             |
+| `ebc4eaf` | P5 Service 1 là OIDC issuer; env federation AWS + MANAGED dùng identity nền (bỏ nhóm khoá tĩnh `MANAGED_*`) | S1 678/678; kid kiểm bằng vector RFC 7638                       |
+| `1683fc1` | P6 năm route `/projects/:id/cloud`, resolver, migration `cloud_credentials.region`                          | tích hợp 18/18 + quét sentinel DB/log; golden +5                |
+| (P7+P8)   | Portal: thẻ Cloud + bước 2 của wizard; `CodeBlock` dùng chung; slug lỗi `type`; trả `portal-cloud-step`     | Portal 100/100, build xanh, design-lint 124/124                 |
+
+**Migration đã áp lên DB dev:** `20260925090000_cloud_credential_region` (`migrate deploy`).
+
+**Env đổi** (xem `.env.example`): thêm `UDP_OIDC_ISSUER` + `UDP_OIDC_SIGNING_KEY`,
+`UDP_AWS_PRINCIPAL_ARN` + `UDP_EXTERNAL_ID_SECRET`, `MANAGED_CLOUDS` +
+`MANAGED_GCP_PROJECT_ID` / `MANAGED_AZURE_SUBSCRIPTION_ID` / `MANAGED_AZURE_RESOURCE_GROUP`.
+Nhóm `MANAGED_AWS_ACCESS_KEY_ID`… bị bỏ (không mã nào đọc, trái §4.3). Biến tuỳ chọn để
+chuỗi rỗng = chưa đặt, nên `.env` cũ vẫn khởi động.
+
+**Nợ kiểm chứng của plan (sổ, không phải nợ kỹ thuật):** `I31-aws`, `I31-gcp`,
+`I31-azure` (lưới K1..K10 trên cloud thật), `cred-federation` (cloud thật tin issuer
+công khai của UDP). Sổ nợ: 43 → 45 → **44** mục.
+
+**Chưa kiểm lại:** lượt S1 đầy đủ cuối cùng chạy trong khi tôi còn sửa tệp — 31/32 tệp
+xanh, tệp cloud đỏ 3 ca vì đổi import giữa lượt, chạy lại riêng trên mã cuối: xanh.
+`pnpm test:scratch` vẫn chưa có lượt xanh trọn vẹn (thiếu RAM).
+
+Bẫy mới: mẫu golden giữ MỘT response mỗi route — test Portal cần cloud khác cloud của mẫu
+thì đổi nhãn trên hình dạng đã kiểm (`setupFor` trong `cloud.test.tsx`), không tự viết
+response.

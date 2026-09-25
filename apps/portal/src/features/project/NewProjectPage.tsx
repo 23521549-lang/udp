@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Icon } from "../../components/Icon";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
+import type { PublicProjectWire } from "@udp/shared-types/wire";
+import { CloudPanel } from "./cloud/CloudPanel";
 import { projectApi, type CreateProjectInput } from "./project-api";
 
 const RUNTIMES = [
@@ -13,15 +15,80 @@ const RUNTIMES = [
 ] as const;
 
 /**
- * Bước 1 của wizard (§10.5) — bước DUY NHẤT có endpoint hôm nay.
+ * Wizard tạo project (§10.5): bước 1 tạo project, bước 2 kết nối cloud (Plan #26).
  *
- * Bốn bước sau (cloud, domain, xem trước, provisioning) cần endpoint chưa tồn tại ở
- * Service 1 (sổ nợ `portal-cloud-step`, `portal-domain-screens`, `portal-preview`,
- * `portal-job-stream`). Trang nói thật điều đó thay vì dựng bốn màn hình giả: project tạo
- * ra đứng ở DRAFT, và flag, segment, rollout, SDK key đều dùng được ngay.
+ * Ba bước sau (domain, xem trước, provisioning) cần endpoint chưa tồn tại ở Service 1
+ * (sổ nợ `portal-domain-screens`, `portal-preview`, `portal-job-stream`). Trang nói thật
+ * điều đó thay vì dựng màn hình giả: project tạo ra đứng ở DRAFT, và flag, segment,
+ * rollout, SDK key đều dùng được ngay. Bước cloud bỏ qua được và làm lại ở Cài đặt.
  */
 export function NewProjectPage() {
+  const [created, setCreated] = useState<PublicProjectWire | null>(null);
+  return created === null ? (
+    <CreateStep onCreated={setCreated} />
+  ) : (
+    <CloudStep project={created} />
+  );
+}
+
+function WizardBar({ step }: { step: string }) {
+  return (
+    <div className="bar">
+      <div className="crumbs">
+        <Link to="/app/projects">Project</Link>
+        <span className="sep">/</span>
+        <b>Tạo project</b>
+        <span className="sep">/</span>
+        <span>{step}</span>
+      </div>
+    </div>
+  );
+}
+
+function CloudStep({ project }: { project: PublicProjectWire }) {
   const navigate = useNavigate();
+  const [saved, setSaved] = useState(false);
+  const open = () =>
+    void navigate({
+      to: "/app/projects/$projectId",
+      params: { projectId: project.id },
+      search: {},
+    });
+  return (
+    <>
+      <WizardBar step="Bước 2/2: Cloud" />
+      <div className="scroll">
+        <div className="page" style={{ maxWidth: 760 }}>
+          <h1 className="title">Kết nối cloud</h1>
+          <p className="lead">
+            Project {project.name} đã tạo. Chọn nơi UDP dựng hạ tầng; có thể làm
+            sau ở Cài đặt, thẻ Cloud.
+          </p>
+          <CloudPanel
+            projectId={project.id}
+            role={project.myRole}
+            onSaved={() => setSaved(true)}
+          />
+          <div className="form-actions">
+            <button
+              type="button"
+              className={saved ? "btn pri" : "btn"}
+              onClick={open}
+            >
+              {saved ? "Mở project" : "Để sau"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CreateStep({
+  onCreated,
+}: {
+  onCreated: (project: PublicProjectWire) => void;
+}) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CreateProjectInput>({
     name: "",
@@ -44,24 +111,14 @@ export function NewProjectPage() {
     onSuccess: async (data) => {
       queryClient.setQueryData(qk.project(data.project.id), data);
       await queryClient.invalidateQueries({ queryKey: qk.projects() });
-      await navigate({
-        to: "/app/projects/$projectId",
-        params: { projectId: data.project.id },
-        search: {},
-      });
+      onCreated(data.project);
     },
   });
   const fields = fieldErrorsOf(create.error);
 
   return (
     <>
-      <div className="bar">
-        <div className="crumbs">
-          <Link to="/app/projects">Project</Link>
-          <span className="sep">/</span>
-          <b>Tạo project</b>
-        </div>
-      </div>
+      <WizardBar step="Bước 1/2: Project" />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 640 }}>
           <h1 className="title">Tạo project</h1>
@@ -71,9 +128,8 @@ export function NewProjectPage() {
           <div className="lock">
             <Icon of={Info} />
             <span>
-              Bước cấu hình cloud và domain chưa có trên Portal. Project mới
-              đứng ở trạng thái Nháp; flag, segment, rollout và SDK key dùng
-              được ngay.
+              Bước cấu hình domain chưa có trên Portal. Project mới đứng ở trạng
+              thái Nháp; flag, segment, rollout và SDK key dùng được ngay.
             </span>
           </div>
           <form

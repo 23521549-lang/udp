@@ -286,3 +286,48 @@ details.cardc .q {
     flex-wrap: wrap;
   }
 }
+
+/* ---------- bước cloud (Plan #26) ---------- */
+.form textarea.inp {
+  height: auto;
+  padding: 8px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.opts.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.opts button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.snips {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.snips h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.check-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 18px;
+}
+
+.check-result ul {
+  margin: 0;
+  padding-left: 18px;
+  font-family: var(--mono);
+  font-size: 12px;
+}

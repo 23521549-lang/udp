@@ -1,4 +1,9 @@
-import { ERROR_CATALOG, type ErrorCode } from "@udp/shared-types/problem";
+import { CLOUD_ERROR_SLUGS } from "@udp/shared-types/cloud-api";
+import {
+  CSRF_INVALID_SLUG,
+  ERROR_CATALOG,
+  type ErrorCode,
+} from "@udp/shared-types/problem";
 import { isApiError } from "./http";
 
 /**
@@ -48,6 +53,25 @@ const STATUS_COPY: Record<number, string> = {
   429: "Thao tác quá nhanh. Đợi một chút rồi thử lại.",
 };
 
+/**
+ * [v4.11] Lỗi KHÔNG có mã nghiệp vụ nhưng có slug `type` riêng — hai lỗi cùng status mà
+ * người dùng cần hai câu khác nhau (403 vì CSRF khác 403 vì thiếu quyền). Slug không có ở
+ * đây thì đi tiếp các nhánh dưới, và `detail` của máy chủ vẫn được dùng.
+ */
+const SLUG_COPY: Record<string, string> = {
+  [CSRF_INVALID_SLUG]: "Phiên làm việc đã đổi. Tải lại trang rồi thử lại.",
+  [CLOUD_ERROR_SLUGS.notConfigured]:
+    "Project chưa cấu hình cloud. Lưu credential trước rồi kiểm tra.",
+  [CLOUD_ERROR_SLUGS.methodUnavailable]:
+    "Cách xác thực này chưa được bật trên máy chủ UDP. Chọn cách khác hoặc báo quản trị.",
+};
+
+/** Slug cuối của `type` (`https://.../problems/<slug>`) — để component rẽ nhánh theo lỗi */
+export function problemSlugOf(error: unknown): string | undefined {
+  if (!isApiError(error)) return undefined;
+  return error.problem?.type.split("/").pop();
+}
+
 const isErrorCode = (code: string): code is ErrorCode => code in ERROR_CATALOG;
 
 /**
@@ -71,6 +95,8 @@ export function messageOf(error: unknown): string {
       ? `${text} Mã tra cứu: ${problem?.traceId ?? "?"}`
       : text;
   }
+  const slugCopy = SLUG_COPY[problemSlugOf(error) ?? ""];
+  if (slugCopy !== undefined) return slugCopy;
   const field = problem?.errors?.[0];
   if (field !== undefined) return field.message;
   if (error.status >= 500) {
