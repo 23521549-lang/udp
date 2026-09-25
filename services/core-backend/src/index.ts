@@ -1,6 +1,8 @@
 import { env } from "@udp/config";
 import { assertServiceIdentity, prisma } from "./core/db.js";
 import { createApp } from "./app.js";
+import { defaultAppDeps } from "./core/app-deps.js";
+import { assertRegistryCoveredByCatalog } from "./modules/domain/domain-catalog.sync.js";
 import { logger } from "@udp/http";
 
 /**
@@ -22,7 +24,23 @@ try {
   process.exit(1);
 }
 
-const app = createApp();
+/**
+ * [v4.11] Registry Domain Adapter khớp catalog TRƯỚC khi mở cổng (Plan #27 QĐ-2): một
+ * adapter khai domain mà catalog không biết (hay đã gỡ) sẽ hiện trên Portal rồi vỡ ở lần
+ * ghi `domain_configs` đầu tiên vì khoá ngoại. Sập lúc boot là chỗ đúng để thấy nó.
+ */
+const deps = defaultAppDeps();
+try {
+  await assertRegistryCoveredByCatalog(prisma, await deps.domainRegistry());
+} catch (err) {
+  logger.fatal(
+    { err },
+    "Không khởi động: registry Domain Adapter lệch catalog",
+  );
+  process.exit(1);
+}
+
+const app = createApp(deps);
 const server = app.listen(env.CORE_BACKEND_PORT, () => {
   logger.info(
     { port: env.CORE_BACKEND_PORT, env: env.NODE_ENV },

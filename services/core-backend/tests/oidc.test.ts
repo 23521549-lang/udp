@@ -11,7 +11,7 @@ import {
 } from "../src/modules/oidc/oidc.issuer.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
-import { inertCloudPlatform } from "./helpers/cloud-platform.js";
+import { inertCloudPlatform, noDomainAdapters } from "./helpers/inert-deps.js";
 
 /**
  * UDP là OIDC issuer (Plan #26 P5): token ký ra kiểm được bằng CHÍNH JWKS công bố — đúng
@@ -118,6 +118,7 @@ describe("endpoint công khai", () => {
       }),
       oidcIssuer,
       cloud: inertCloudPlatform,
+      domainRegistry: noDomainAdapters,
     });
   const app = appWith(createOidcIssuer({ issuer: ISSUER, privateKeyPem: PEM }));
 

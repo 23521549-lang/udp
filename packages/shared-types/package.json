@@ -17,7 +17,8 @@
     "./flag-api": "./src/flag-api.ts",
     "./condition": "./src/condition.ts",
     "./rollout": "./src/rollout.ts",
-    "./cloud-api": "./src/cloud-api.ts"
+    "./cloud-api": "./src/cloud-api.ts",
+    "./domain-api": "./src/domain-api.ts"
   },
   "scripts": {
     "test": "vitest run",

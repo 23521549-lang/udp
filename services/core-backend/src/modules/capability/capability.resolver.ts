@@ -121,8 +121,16 @@ export class InvalidCapabilityDeclarationError extends Error {
   }
 }
 
+/**
+ * `"<domaintype>:<toolid>"` VIẾT THƯỜNG — cùng quy ước với `provided_by` và
+ * `capability_preferences.provider_tool_id` (§2.2) và với `registryKey` của registry.
+ *
+ * [v4.11] Bản trước giữ nguyên chữ hoa của `domainType` (`MONITORING:…`) trong khi
+ * preference lưu ở database viết thường: mọi preference thật bị ném thành
+ * `OrphanPreferenceError`. Test không thấy vì fixture dùng `domainType: "d"`.
+ */
 export const adapterKey = (a: ResolvableAdapter): string =>
-  `${a.domainType}:${a.toolId}`;
+  `${a.domainType}:${a.toolId}`.toLowerCase();
 
 /** Mọi `CapabilityRequirement` của một adapter, phẳng hoá cả nhánh `anyOf` */
 export function flatRequirements(a: ResolvableAdapter): CapabilityRequirement[] {

@@ -198,6 +198,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
           ? { current: redact(err.current) }
           : {}),
         ...(err.resourceId === undefined ? {} : { resourceId: err.resourceId }),
+        ...(err.suggestedAction === undefined
+          ? {}
+          : { suggestedAction: err.suggestedAction }),
       }),
     );
     return;

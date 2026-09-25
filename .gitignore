@@ -51,3 +51,6 @@ coverage/
 playwright-report/
 test-results/
 *.log
+
+# Cây adapter tạm của test I28 dương tính (domain-catalog.integration.test.ts)
+services/core-backend/tests/.registry-*/

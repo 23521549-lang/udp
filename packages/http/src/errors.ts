@@ -2,6 +2,7 @@ import {
   ERROR_CATALOG,
   type ErrorCode,
   type FieldError,
+  type SuggestedAction,
 } from "@udp/shared-types/problem";
 
 /**
@@ -65,6 +66,12 @@ export abstract class AppError extends Error {
   typeSlug: string | undefined;
 
   /**
+   * [v4.11] Việc người dùng làm được để hết lỗi (§5.3: "Bật Prometheus") — đi ra trường
+   * `suggestedAction` của Problem Details để Portal vẽ thành nút, không phải một câu chữ.
+   */
+  suggestedAction: SuggestedAction | undefined;
+
+  /**
    * Chữ ký giữ nguyên hai tham số đầu để mọi lời gọi `new XError("...")` sẵn có
    * không phải sửa. Tham số thứ ba là tuỳ chọn, dùng khi lỗi có mã nghiệp vụ.
    *
@@ -79,8 +86,15 @@ export abstract class AppError extends Error {
     super(message);
     this.resourceId = undefined;
     this.typeSlug = undefined;
+    this.suggestedAction = undefined;
     this.name = new.target.name;
     Error.captureStackTrace(this, new.target);
+  }
+
+  /** Gắn hành động gợi ý — xem `suggestedAction` */
+  withSuggestedAction(action: SuggestedAction): this {
+    this.suggestedAction = action;
+    return this;
   }
 
   /** Gắn id tài nguyên liên quan — xem `resourceId` */

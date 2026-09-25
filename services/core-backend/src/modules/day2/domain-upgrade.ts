@@ -31,7 +31,7 @@ import {
  *
  * **Cái gì KHÔNG ở đây:** `requireProjectRole(MAINTAINER)` và xác nhận hai bước cho
  * environment production là việc của controller (§9), cùng chỗ với mọi phép kiểm quyền
- * khác. Route `POST /projects/:id/domains/:domainId/upgrade` và lịch biểu `pg-boss` nằm
+ * khác. Route `POST /projects/:id/domains/:type/upgrade` và lịch biểu `pg-boss` nằm
  * trong sổ nợ - phần QUYẾT ĐỊNH của luồng kiểm được mà không cần dựng hàng đợi, và đó là
  * cùng lý lẽ đã dùng ở P5 cho TTL và orphan-scan.
  */

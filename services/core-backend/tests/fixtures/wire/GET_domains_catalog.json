@@ -1,0 +1,242 @@
+{
+  "route": "GET /domains/catalog",
+  "status": 200,
+  "body": {
+    "domains": [
+      {
+        "domainType": "CONTAINER_REGISTRY",
+        "tier": "CORE",
+        "displayName": "Container Registry",
+        "defaultOrder": 10,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "CICD",
+        "tier": "CORE",
+        "displayName": "CI/CD",
+        "defaultOrder": 20,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "INFRA",
+        "tier": "CORE",
+        "displayName": "Infrastructure as Code",
+        "defaultOrder": 30,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "MONITORING",
+        "tier": "STANDARD",
+        "displayName": "Monitoring",
+        "defaultOrder": 40,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "datadog",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "1.0.0"
+              },
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "traces.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "site",
+                  "required": true,
+                  "kind": "enum",
+                  "options": [
+                    "datadoghq.com",
+                    "datadoghq.eu",
+                    "ap1.datadoghq.com"
+                  ]
+                },
+                {
+                  "key": "credentialRef",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "maxHosts",
+                  "required": false,
+                  "default": 50,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 10000
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "prometheus-grafana",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "2.0.0"
+              },
+              {
+                "id": "metrics.scrape",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "registry.oci"
+              }
+            ],
+            "recommends": [
+              "logs.sink"
+            ],
+            "conflicts": [],
+            "hints": {
+              "registry.oci": "Bật domain Container Registry để Grafana kéo được dashboard của bạn"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionDays",
+                  "required": true,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 365
+                },
+                {
+                  "key": "dashboards",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 20,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "LOGGING",
+        "tier": "STANDARD",
+        "displayName": "Logging",
+        "defaultOrder": 50,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "TRACING",
+        "tier": "STANDARD",
+        "displayName": "Tracing",
+        "defaultOrder": 60,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "SERVICE_MESH",
+        "tier": "STANDARD",
+        "displayName": "Service Mesh",
+        "defaultOrder": 70,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "INGRESS",
+        "tier": "STANDARD",
+        "displayName": "Ingress",
+        "defaultOrder": 80,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "PROGRESSIVE_DELIVERY",
+        "tier": "STANDARD",
+        "displayName": "Progressive Delivery",
+        "defaultOrder": 90,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "GITOPS",
+        "tier": "STANDARD",
+        "displayName": "GitOps",
+        "defaultOrder": 100,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "SECRETS",
+        "tier": "STANDARD",
+        "displayName": "Secrets Management",
+        "defaultOrder": 110,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "SECURITY",
+        "tier": "STANDARD",
+        "displayName": "Security Scanning",
+        "defaultOrder": 120,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "POLICY",
+        "tier": "STANDARD",
+        "displayName": "Policy & Governance",
+        "defaultOrder": 130,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "DATABASE",
+        "tier": "STANDARD",
+        "displayName": "Database Operators",
+        "defaultOrder": 140,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "COST",
+        "tier": "ADVANCED",
+        "displayName": "Cost Management",
+        "defaultOrder": 150,
+        "isAvailable": true,
+        "tools": []
+      },
+      {
+        "domainType": "ARTIFACT_REGISTRY",
+        "tier": "ADVANCED",
+        "displayName": "Artifact & Package Registry",
+        "defaultOrder": 160,
+        "isAvailable": true,
+        "tools": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "route": "GET /projects/{id}/domains/MONITORING/drift",
+  "status": 200,
+  "body": {
+    "drift": {
+      "verdict": "DRIFTED",
+      "message": "configmap/monitoring-values: retention 15d ≠ 7d",
+      "at": "2026-09-25T00:00:00.000Z"
+    }
+  }
+}

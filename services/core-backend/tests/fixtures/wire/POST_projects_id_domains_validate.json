@@ -1,0 +1,24 @@
+{
+  "route": "POST /projects/{id}/domains/validate",
+  "status": 200,
+  "body": {
+    "validation": {
+      "valid": true,
+      "errors": [],
+      "warnings": [
+        {
+          "code": "RECOMMENDED_MISSING",
+          "subject": "monitoring:datadog",
+          "detail": [
+            "traces.sink"
+          ]
+        }
+      ],
+      "deployOrder": [
+        [
+          "monitoring:datadog"
+        ]
+      ]
+    }
+  }
+}

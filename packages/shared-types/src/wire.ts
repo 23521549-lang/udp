@@ -12,6 +12,7 @@ import {
   cloudProviderSchema,
   cloudRegionSchema,
 } from "./cloud-api.js";
+import { capabilityPreferenceSchema } from "./domain-api.js";
 
 /**
  * [v4.11] Hình dạng TRÊN DÂY của những response mà Portal tiêu thụ.
@@ -855,6 +856,173 @@ export const adminSystemResponseWire = z
   })
   .strict();
 
+// ------------------------------------------------------------- domain (Plan #27)
+
+const domainTierWire = z.enum(["CORE", "STANDARD", "ADVANCED"]);
+const domainStatusWire = z.enum([
+  "PENDING",
+  "DEPLOYING",
+  "ACTIVE",
+  "SWITCHING",
+  "RECONFIGURING",
+  "TEARINGDOWN",
+  "BLOCKED",
+  "ERROR",
+]);
+
+/** Một trường của form cấu hình tool, suy từ `configSchema` của adapter (QĐ-3) */
+export const domainConfigFieldWire = z
+  .object({
+    key: z.string().min(1),
+    kind: z.enum(["string", "number", "boolean", "enum", "json"]),
+    required: z.boolean(),
+    default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    options: z.array(z.string()).optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+    integer: z.boolean().optional(),
+  })
+  .strict();
+
+const capabilityRequirementWire = z
+  .object({ id: z.string(), constraint: z.string().optional() })
+  .strict();
+
+export const domainToolWire = z
+  .object({
+    toolId: z.string().min(1),
+    version: z.string().min(1),
+    scope: z.enum(["cluster", "namespace"]),
+    provides: z.array(
+      z
+        .object({
+          id: z.string(),
+          version: z.string(),
+          exclusive: z.boolean().optional(),
+        })
+        .strict(),
+    ),
+    requires: z.array(
+      z.union([
+        capabilityRequirementWire,
+        z.object({ anyOf: z.array(capabilityRequirementWire) }).strict(),
+      ]),
+    ),
+    recommends: z.array(z.string()),
+    conflicts: z.array(z.string()),
+    /** Câu gợi ý do adapter khai (§5.3), theo capability */
+    hints: z.record(z.string()),
+    config: z.union([
+      z
+        .object({
+          kind: z.literal("object"),
+          fields: z.array(domainConfigFieldWire),
+        })
+        .strict(),
+      z.object({ kind: z.literal("json") }).strict(),
+    ]),
+  })
+  .strict();
+
+export const domainCatalogEntryWire = z
+  .object({
+    domainType: z.string().min(1),
+    tier: domainTierWire,
+    displayName: z.string(),
+    defaultOrder: z.number().int(),
+    isAvailable: z.boolean(),
+    /** Tool của registry cho domain này — rỗng là "chưa có công cụ", không phải lỗi */
+    tools: z.array(domainToolWire),
+  })
+  .strict();
+
+export const domainCatalogResponseWire = z
+  .object({ domains: z.array(domainCatalogEntryWire) })
+  .strict();
+
+export const projectDomainWire = z
+  .object({
+    domainType: z.string().min(1),
+    isEnabled: z.boolean(),
+    selectedTool: z.string().nullable(),
+    toolConfig: z.record(z.unknown()).nullable(),
+    /** `null` = chưa từng cấu hình (không có hàng `domain_configs`) */
+    status: domainStatusWire.nullable(),
+    adapterVersion: z.string().nullable(),
+    updatedAt: isoDateTime.nullable(),
+  })
+  .strict();
+
+export const projectDomainsResponseWire = z
+  .object({
+    domainSetVersion: z.number().int().nonnegative(),
+    domains: z.array(projectDomainWire),
+    preferences: z.array(capabilityPreferenceSchema),
+  })
+  .strict();
+
+export const projectDomainResponseWire = z
+  .object({ domain: projectDomainWire })
+  .strict();
+
+const validationIssueWire = z
+  .object({
+    code: z.enum([
+      "MISSING_CAPABILITY",
+      "MISSING_ANY_OF",
+      "CONFLICT",
+      "VERSION_MISMATCH",
+      "AMBIGUOUS_PROVIDER",
+      "CYCLIC_DEPENDENCY",
+    ]),
+    subject: z.string(),
+    detail: z.array(z.string()),
+    suggestedAction: z
+      .object({
+        type: z.enum(["ENABLE_DOMAIN", "SWITCH_TOOL", "CHOOSE_PROVIDER"]),
+        domainType: z.string(),
+        toolId: z.string().optional(),
+        capabilityId: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+/** §9 `DomainValidationResponse` — không có `rebindPlan` trước khi có binding (D-P) */
+export const domainValidationResponseWire = z
+  .object({
+    validation: z
+      .object({
+        valid: z.boolean(),
+        errors: z.array(validationIssueWire),
+        warnings: z.array(
+          z
+            .object({
+              code: z.literal("RECOMMENDED_MISSING"),
+              subject: z.string(),
+              detail: z.array(z.string()),
+            })
+            .strict(),
+        ),
+        deployOrder: z.array(z.array(z.string())).nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const domainDriftResponseWire = z
+  .object({
+    drift: z
+      .object({
+        verdict: z.enum(["NOT_DEPLOYED", "CLEAN", "DRIFTED", "SCAN_FAILED"]),
+        message: z.string().nullable(),
+        at: isoDateTime.nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
 // ------------------------------------------------------------- cloud của project
 
 /**
@@ -998,3 +1166,14 @@ export type CloudValidationWire = z.infer<
 export type CloudPreflightWire = z.infer<
   typeof cloudPreflightResponseWire
 >["preflight"];
+export type DomainConfigFieldWire = z.infer<typeof domainConfigFieldWire>;
+export type DomainToolWire = z.infer<typeof domainToolWire>;
+export type DomainCatalogEntryWire = z.infer<typeof domainCatalogEntryWire>;
+export type ProjectDomainWire = z.infer<typeof projectDomainWire>;
+export type ProjectDomainsResponseWire = z.infer<
+  typeof projectDomainsResponseWire
+>;
+export type DomainValidationWire = z.infer<
+  typeof domainValidationResponseWire
+>["validation"];
+export type DomainDriftWire = z.infer<typeof domainDriftResponseWire>["drift"];

@@ -26,15 +26,9 @@ import {
 import type { OidcIssuer } from "../../src/modules/oidc/oidc.issuer.js";
 
 /**
- * `CloudPlatform` cho test Service 1 — không bao giờ gọi cloud thật.
+ * `CloudPlatform` mô phỏng cho test Service 1 — không bao giờ gọi cloud thật. Bản "trơ"
+ * cho test không dùng cloud ở `inert-deps.ts`.
  */
-
-/** Cho test không đụng tới cloud: mọi lời gọi là lỗi của chính test đó */
-export const inertCloudPlatform: CloudPlatform = {
-  capabilities: capabilitiesOf({ MANAGED_CLOUDS: [] }, null),
-  adapterFor: () => null,
-  exchange: () => Promise.reject(new Error("test này không dùng cloud")),
-};
 
 const PLANS: Readonly<
   Record<CloudProvider, { plan: ProviderPlan; codec: TagCodec }>

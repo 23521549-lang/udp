@@ -396,6 +396,38 @@ describe("exclusive — ba ô", () => {
   });
 });
 
+describe("[v4.11] khoá viết thường như dữ liệu thật", () => {
+  it("domainType chữ hoa (MONITORING) và preference đọc từ database (chữ thường) khớp nhau", () => {
+    const provider = (toolId: string): ResolvableAdapter => ({
+      domainType: "MONITORING",
+      toolId,
+      capabilities: {
+        provides: [{ id: "metrics.query", version: "2.0.0" }],
+        requires: [],
+      },
+    });
+    const consumer: ResolvableAdapter = {
+      domainType: "PROGRESSIVE_DELIVERY",
+      toolId: "flagger",
+      capabilities: {
+        provides: [],
+        requires: [{ id: "metrics.query", constraint: "^2" }],
+      },
+    };
+    const res = validateAndOrder(
+      [provider("prometheus-grafana"), provider("victoriametrics"), consumer],
+      [
+        {
+          capabilityId: "metrics.query",
+          providerToolId: "monitoring:victoriametrics",
+        },
+      ],
+    );
+    expect(res.valid).toBe(true);
+    expect(res.chosen["metrics.query"]).toBe("monitoring:victoriametrics");
+  });
+});
+
 describe("conflicts tool-level — bốn ô", () => {
   it("khai một chiều vẫn bị bắt (chiều xuôi)", () => {
     const res = validateAndOrder([

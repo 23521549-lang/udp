@@ -1,0 +1,19 @@
+{
+  "route": "GET /projects/{id}/domains/MONITORING",
+  "status": 200,
+  "body": {
+    "domain": {
+      "domainType": "MONITORING",
+      "isEnabled": false,
+      "selectedTool": "datadog",
+      "toolConfig": {
+        "site": "datadoghq.com",
+        "maxHosts": 50,
+        "credentialRef": "dd-main"
+      },
+      "status": "ACTIVE",
+      "adapterVersion": "1.0.0",
+      "updatedAt": "2026-09-25T06:42:42.782Z"
+    }
+  }
+}

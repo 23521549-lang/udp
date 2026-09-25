@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import type { Request } from "express";
 import { env } from "@udp/config";
 import type { MetricsProvider } from "@udp/metrics-provider";
@@ -15,6 +16,10 @@ import {
   createCloudPlatform,
   type CloudPlatform,
 } from "../modules/cloud/cloud.platform.js";
+import {
+  createRegistry,
+  type DomainAdapterRegistry,
+} from "../modules/domain/domain-adapter.registry.js";
 
 /**
  * Phụ thuộc RA NGOÀI tiến trình của Service 1 — thứ test phải thay được mà không
@@ -46,6 +51,20 @@ export interface AppDeps {
    * tiêm bản dựng trên cổng mô phỏng, không bao giờ gọi cloud thật.
    */
   cloud: CloudPlatform;
+  /**
+   * [v4.11] Registry Domain Adapter (Plan #27 QĐ-2) — nạp MỘT lần rồi nhớ; `index.ts` chờ
+   * nó và kiểm registry ↔ catalog trước khi mở cổng. Test tiêm registry trên cây fixture.
+   */
+  domainRegistry: () => Promise<DomainAdapterRegistry>;
+}
+
+/** Gốc cây adapter của sản phẩm: `src/modules` (hay `dist/modules` khi đã build) */
+const MODULES_ROOT = fileURLToPath(new URL("../modules", import.meta.url));
+
+/** Một lời hứa cho cả tiến trình — nạp lại cây adapter mỗi request là I/O vô ích */
+function memoized<T>(load: () => Promise<T>): () => Promise<T> {
+  let pending: Promise<T> | undefined;
+  return () => (pending ??= load());
 }
 
 /** Bản thật, dựng từ cấu hình — `createApp()` dùng khi không được truyền deps */
@@ -59,6 +78,7 @@ export function defaultAppDeps(): AppDeps {
     }),
     oidcIssuer,
     cloud: createCloudPlatform(env, oidcIssuer),
+    domainRegistry: memoized(() => createRegistry({ root: MODULES_ROOT })),
   };
 }
 

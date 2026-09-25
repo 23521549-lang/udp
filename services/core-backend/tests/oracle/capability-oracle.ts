@@ -106,8 +106,9 @@ export class OrphanPreferenceError extends Error {
   }
 }
 
+/** Viết thường như `provided_by` của §2.2 — tài liệu nói vậy, oracle đọc từ tài liệu */
 export const keyOf = (a: OracleAdapter): string =>
-  `${a.domainType}:${a.toolId}`;
+  `${a.domainType}:${a.toolId}`.toLowerCase();
 
 /**
  * So semver theo cách CỐ Ý ĐƠN GIẢN, và nói rõ nó phủ tới đâu.

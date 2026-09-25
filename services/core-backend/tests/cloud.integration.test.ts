@@ -19,11 +19,11 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import {
-  inertCloudPlatform,
   SIM_LABELS,
   simCloudPlatform,
   type SimCloudPlatform,
 } from "./helpers/cloud-platform.js";
+import { inertCloudPlatform, noDomainAdapters } from "./helpers/inert-deps.js";
 import { tapServiceLog, type LogTap } from "./helpers/log-tap.js";
 import type { CloudPlatform } from "../src/modules/cloud/cloud.platform.js";
 
@@ -56,6 +56,7 @@ const appOn = (cloud: CloudPlatform) =>
     }),
     oidcIssuer: null,
     cloud,
+    domainRegistry: noDomainAdapters,
   });
 
 let platform: SimCloudPlatform;

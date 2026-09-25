@@ -6,6 +6,7 @@ import {
   ConflictError,
   relayedProblemOf,
   ServiceUnavailableError,
+  UnprocessableError,
 } from "../src/errors.js";
 import { logger } from "../src/logger.js";
 
@@ -58,6 +59,29 @@ describe("errorHandler — resourceId và 503", () => {
       resourceId: "0190a1b2-c3d4-4e5f-8a6b-7c8d9e0f1a2b",
     });
     expect(JSON.stringify(body)).not.toContain("secret");
+  });
+
+  it("[v4.11] suggestedAction đi ra Problem Details để Portal vẽ thành nút", async () => {
+    const { status, body } = await respond(
+      new UnprocessableError(
+        "Flagger cần metrics.query",
+        undefined,
+        "MISSING_CAPABILITY",
+      ).withSuggestedAction({
+        type: "ENABLE_DOMAIN",
+        domainType: "MONITORING",
+        toolId: "prometheus-grafana",
+      }),
+    );
+    expect(status).toBe(422);
+    expect(body).toMatchObject({
+      code: "MISSING_CAPABILITY",
+      suggestedAction: {
+        type: "ENABLE_DOMAIN",
+        domainType: "MONITORING",
+        toolId: "prometheus-grafana",
+      },
+    });
   });
 
   it("ServiceUnavailableError ⇒ 503 PROVIDER_UNAVAILABLE, log mức error", async () => {
