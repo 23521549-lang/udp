@@ -1131,7 +1131,121 @@
         "displayName": "GitOps",
         "defaultOrder": 100,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "argo-cd",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "gitops.sync",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "repoUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "revision",
+                  "required": false,
+                  "default": "main",
+                  "kind": "string"
+                },
+                {
+                  "key": "path",
+                  "required": false,
+                  "default": ".",
+                  "kind": "string"
+                },
+                {
+                  "key": "token",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "syncPolicy",
+                  "required": false,
+                  "default": "automated",
+                  "kind": "enum",
+                  "options": [
+                    "automated",
+                    "manual"
+                  ]
+                },
+                {
+                  "key": "highAvailability",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "flux",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "gitops.sync",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "repoUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "revision",
+                  "required": false,
+                  "default": "main",
+                  "kind": "string"
+                },
+                {
+                  "key": "path",
+                  "required": false,
+                  "default": ".",
+                  "kind": "string"
+                },
+                {
+                  "key": "token",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "intervalMinutes",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 60
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "SECRETS",
@@ -1139,7 +1253,237 @@
         "displayName": "Secrets Management",
         "defaultOrder": 110,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "aws-secrets-manager",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "region",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "roleArn",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "rotationPollSeconds",
+                  "required": false,
+                  "default": 120,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 30,
+                  "max": 3600
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "azure-key-vault",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "keyVaultName",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "tenantId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "clientId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "rotationPollSeconds",
+                  "required": false,
+                  "default": 120,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 30,
+                  "max": 3600
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "external-secrets",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "concurrent",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 10
+                },
+                {
+                  "key": "webhook",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "gcp-secret-manager",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "projectId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "gcpServiceAccount",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "rotationPollSeconds",
+                  "required": false,
+                  "default": 120,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 30,
+                  "max": 3600
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "sealed-secrets",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "gitops.sync"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "keyRenewDays",
+                  "required": false,
+                  "default": 30,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 0,
+                  "max": 365
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "vault",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 100
+                },
+                {
+                  "key": "injector",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "csi",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "SECURITY",
@@ -1155,7 +1499,105 @@
         "displayName": "Policy & Governance",
         "defaultOrder": 130,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "gatekeeper",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "policy.admission",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                },
+                {
+                  "key": "auditIntervalSeconds",
+                  "required": false,
+                  "default": 60,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 30,
+                  "max": 3600
+                },
+                {
+                  "key": "failurePolicy",
+                  "required": false,
+                  "default": "Ignore",
+                  "kind": "enum",
+                  "options": [
+                    "Ignore",
+                    "Fail"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "kyverno",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "policy.admission",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "podSecurityStandard",
+                  "required": false,
+                  "default": "baseline",
+                  "kind": "enum",
+                  "options": [
+                    "baseline",
+                    "restricted"
+                  ]
+                },
+                {
+                  "key": "validationFailureAction",
+                  "required": false,
+                  "default": "Audit",
+                  "kind": "enum",
+                  "options": [
+                    "Audit",
+                    "Enforce"
+                  ]
+                },
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "DATABASE",
