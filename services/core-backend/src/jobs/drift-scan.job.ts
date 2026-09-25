@@ -46,8 +46,10 @@ export interface DriftSweepOutcome {
 export async function sweepDrift(
   kit: JobKit,
   options: {
-    /** Giới hạn lượt quét vào các project này — test dùng, lịch thật quét hết */
+    /** Giới hạn lượt quét vào các project này — test và "quét ngay" dùng */
     only?: readonly string[];
+    /** Chỉ một domain — route quét ngay (Plan #30 QĐ-4) */
+    domainType?: string;
   } = {},
 ): Promise<DriftSweepOutcome> {
   const { prisma } = kit.deps;
@@ -62,7 +64,10 @@ export async function sweepDrift(
   const registry = await kit.deps.domainRegistry();
 
   for (const { id: projectId } of projects) {
-    const rows = await activeDomainsOfProject(prisma, projectId);
+    const rows = (await activeDomainsOfProject(prisma, projectId)).filter(
+      (r) =>
+        options.domainType === undefined || r.domainType === options.domainType,
+    );
     const job = await prisma.provisioningJob.findFirst({
       where: { projectId, jobType: "PROVISION", state: "DONE" },
       orderBy: { createdAt: "desc" },

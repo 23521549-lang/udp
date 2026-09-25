@@ -4,13 +4,14 @@ import type {
   ProjectDomainsResponseWire,
   ProjectRoleWire,
 } from "@udp/shared-types/wire";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { isApiError } from "../../lib/http";
 import { qk } from "../../lib/query-keys";
 import { can } from "../project/roles";
+import { JobLog } from "../provisioning/JobLog";
 import { domainApi } from "./domain-api";
 import {
   chooseTool,
@@ -49,20 +50,46 @@ export function DomainPanel({
     queryKey: qk.domains(projectId),
     queryFn: () => domainApi.list(projectId),
   });
+  const queryClient = useQueryClient();
+  /**
+   * Job áp cấu hình của project ĐANG chạy — giữ ở đây, ngoài `key` của trình sửa: khoá
+   * `domain_set_version` tăng ngay khi lưu nên trình sửa dựng lại, còn tiến độ phải ở lại.
+   */
+  const [applying, setApplying] = useState<string | null>(null);
+  const refresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: qk.domains(projectId) });
+  }, [queryClient, projectId]);
   if (catalog.isPending || saved.isPending) return <Loading />;
   if (catalog.isError) return <ErrorState error={catalog.error} />;
   if (saved.isError) return <ErrorState error={saved.error} />;
   return (
-    <DomainEditor
-      // Mỗi lần lưu (hay tải lại sau xung đột) dựng lại bản nháp từ bản mới nhất
-      key={saved.data.domainSetVersion}
-      projectId={projectId}
-      catalog={catalog.data.domains}
-      saved={saved.data}
-      canTry={can(role, "DEVELOPER")}
-      canSave={can(role, "MAINTAINER")}
-      {...(onSaved === undefined ? {} : { onSaved })}
-    />
+    <>
+      {applying !== null && (
+        <section aria-label="Đang áp cấu hình domain">
+          <p className="lead">
+            Project đang chạy: cấu hình mới được áp lên cluster theo thứ tự phụ
+            thuộc. Bảng dưới vẫn là cấu hình đang chạy cho tới khi áp xong.
+          </p>
+          <JobLog
+            projectId={projectId}
+            jobId={applying}
+            role={role}
+            onTerminal={refresh}
+          />
+        </section>
+      )}
+      <DomainEditor
+        // Mỗi lần lưu (hay tải lại sau xung đột) dựng lại bản nháp từ bản mới nhất
+        key={saved.data.domainSetVersion}
+        projectId={projectId}
+        catalog={catalog.data.domains}
+        saved={saved.data}
+        canTry={can(role, "DEVELOPER")}
+        canSave={can(role, "MAINTAINER")}
+        onApplying={setApplying}
+        {...(onSaved === undefined ? {} : { onSaved })}
+      />
+    </>
   );
 }
 
@@ -110,6 +137,7 @@ function DomainEditor({
   saved,
   canTry,
   canSave,
+  onApplying,
   onSaved,
 }: {
   projectId: string;
@@ -117,6 +145,7 @@ function DomainEditor({
   saved: ProjectDomainsResponseWire;
   canTry: boolean;
   canSave: boolean;
+  onApplying: (jobId: string) => void;
   onSaved?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -132,9 +161,14 @@ function DomainEditor({
         ...targetOf(draft),
         lastKnownDomainSetVersion: saved.domainSetVersion,
       }),
-    onSuccess: (data) => {
-      queryClient.setQueryData(qk.domains(projectId), data);
-      toast.info("Đã lưu cấu hình domain");
+    onSuccess: ({ job, ...current }) => {
+      queryClient.setQueryData(qk.domains(projectId), current);
+      if (job === null) {
+        toast.info("Đã lưu cấu hình domain");
+      } else {
+        toast.info("Đang áp cấu hình domain lên cluster");
+        onApplying(job.id);
+      }
       onSaved?.();
     },
     onError: async (error) => {

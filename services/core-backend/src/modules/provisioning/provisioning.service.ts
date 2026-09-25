@@ -220,7 +220,7 @@ export async function preview(
 
 // ------------------------------------------------------------- job
 
-const JOB_SELECT = {
+export const JOB_SELECT = {
   id: true,
   jobType: true,
   state: true,

@@ -1,7 +1,10 @@
 import type {
   DomainValidationWire,
+  JobDetailWire,
   ProjectDetailResponseWire,
+  ProjectDomainWire,
   ProjectDomainsResponseWire,
+  PutDomainsResponseWire,
 } from "@udp/shared-types/wire";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -36,6 +39,8 @@ function useDomainHandlers(options: {
   saved: ProjectDomainsResponseWire;
   validation?: DomainValidationWire;
   putStatus?: number;
+  /** Project ĐANG chạy: PUT trả 202 kèm job DOMAIN_APPLY (mẫu golden) */
+  running?: boolean;
 }) {
   const puts: unknown[] = [];
   let validations = 0;
@@ -67,7 +72,19 @@ function useDomainHandlers(options: {
             },
             { status: 409 },
           )
-        : HttpResponse.json(golden("PUT /projects/{id}/domains"));
+        : options.running === true
+          ? HttpResponse.json(golden("PUT /projects/{id}/domains"), {
+              status: 202,
+            })
+          : HttpResponse.json({
+              ...golden<PutDomainsResponseWire>("PUT /projects/{id}/domains"),
+              job: null,
+            });
+    }),
+    http.get(`${API}/projects/:id/jobs/:jobId`, () => {
+      const d = golden<JobDetailWire>("GET /projects/{id}/jobs/{id}");
+      d.job.jobType = "DOMAIN_APPLY";
+      return HttpResponse.json(d);
     }),
   );
   return { puts, validationCount: () => validations };
@@ -180,6 +197,124 @@ describe("trang Domain", () => {
       (await screen.findAllByText("Chưa có công cụ nào cho domain này."))
         .length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("project đang chạy (Plan #30)", () => {
+  it("lưu ⇒ tiến độ áp cấu hình hiện ngay; bảng vẫn là cấu hình đang chạy", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    const { puts } = useDomainHandlers({
+      saved: savedWith(false),
+      running: true,
+    });
+    renderApp(domainsUrl(detail));
+
+    await userEvent.click(
+      await screen.findByRole("switch", { name: "Bật Monitoring" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Lưu cấu hình domain" }),
+    );
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(
+      await screen.findByRole("region", { name: "Đang áp cấu hình domain" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("region", { name: "Tiến độ triển khai" }),
+    ).toBeInTheDocument();
+  });
+});
+
+function useDetailHandlers(adapterVersion: string) {
+  const upgrades: unknown[] = [];
+  let scans = 0;
+  server.use(
+    http.get(`${API}/domains/catalog`, () =>
+      HttpResponse.json(golden("GET /domains/catalog")),
+    ),
+    http.get(`${API}/projects/:id/domains/MONITORING`, () => {
+      const d = golden<{ domain: ProjectDomainWire }>(
+        "GET /projects/{id}/domains/MONITORING",
+      );
+      d.domain = { ...d.domain, isEnabled: true, adapterVersion };
+      return HttpResponse.json(d);
+    }),
+    http.get(`${API}/projects/:id/domains/MONITORING/drift`, () =>
+      HttpResponse.json({
+        drift: { verdict: "CLEAN", message: null, at: null },
+      }),
+    ),
+    http.post(`${API}/projects/:id/domains/MONITORING/drift`, () => {
+      scans += 1;
+      return HttpResponse.json(
+        golden("POST /projects/{id}/domains/MONITORING/drift"),
+      );
+    }),
+    http.post(
+      `${API}/projects/:id/domains/MONITORING/upgrade`,
+      async ({ request }) => {
+        upgrades.push(await request.json());
+        return HttpResponse.json(
+          golden("POST /projects/{id}/domains/MONITORING/upgrade"),
+          { status: 202 },
+        );
+      },
+    ),
+    http.get(`${API}/projects/:id/jobs/:jobId`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/jobs/{id}")),
+    ),
+  );
+  return { upgrades, scanCount: () => scans };
+}
+
+describe("thao tác Day-2 ở chi tiết domain", () => {
+  it("MAINTAINER: quét ngay ⇒ phán quyết mới thay kết quả cũ", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    const calls = useDetailHandlers("1.0.0");
+    renderApp(`${domainsUrl(detail)}/MONITORING`);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Quét drift ngay/ }),
+    );
+    await waitFor(() => expect(calls.scanCount()).toBe(1));
+    const result = await screen.findByRole("status", { name: "Kết quả drift" });
+    expect(within(result).getByText(/Đã trôi/)).toBeInTheDocument();
+  });
+
+  it("bản đang chạy cũ hơn registry ⇒ nút nâng cấp; production đòi gõ tên domain rồi hiện tiến độ", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    const calls = useDetailHandlers("0.9.0");
+    renderApp(`${domainsUrl(detail)}/MONITORING`);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Nâng cấp lên 1.0.0/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const confirm = within(dialog).getByRole("button", { name: "Nâng cấp" });
+    expect(confirm).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole("textbox"), "MONITORING");
+    await userEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(calls.upgrades).toEqual([{ confirm: "MONITORING" }]),
+    );
+    expect(
+      await screen.findByRole("region", { name: "Tiến độ triển khai" }),
+    ).toBeInTheDocument();
+  });
+
+  it("bản đang chạy đã mới nhất ⇒ không có nút nâng cấp; VIEWER không có thao tác nào", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    useDetailHandlers("1.0.0");
+    renderApp(`${domainsUrl(detail)}/MONITORING`);
+    await screen.findByRole("button", { name: /Quét drift ngay/ });
+    expect(
+      screen.queryByRole("button", { name: /Nâng cấp/ }),
+    ).not.toBeInTheDocument();
   });
 });
 

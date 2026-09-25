@@ -1019,3 +1019,161 @@ describe("job DOMAIN_APPLY", { timeout: 120_000 }, () => {
     );
   });
 });
+
+/** App riêng cho luồng HTTP của Plan #30: registry của `applyWorld`, hàng đợi ghi id */
+function appFor(
+  registry: DomainAdapterRegistry,
+  scanDrift: ((projectId: string, domainType: string) => Promise<void>) | null,
+) {
+  const enqueued: string[] = [];
+  const http = createApp({
+    metricsFor: () => new FakeMetricsProvider(),
+    flagService: createFlagServiceClient({
+      baseUrl: "http://127.0.0.1:9",
+      secret: env.INTERNAL_SERVICE_SECRET,
+    }),
+    oidcIssuer: null,
+    cloud: platform,
+    domainRegistry: () => Promise.resolve(registry),
+    provisioning: {
+      egressCidrs: ["203.0.113.0/24"],
+      enqueue: (jobId) => {
+        enqueued.push(jobId);
+        return Promise.resolve();
+      },
+      scanDrift,
+    },
+  });
+  return { http, enqueued };
+}
+
+describe(
+  "HTTP domain cho project đang chạy (Plan #30 P3)",
+  { timeout: 120_000 },
+  () => {
+    const domainsUrl = (projectId: string) =>
+      `${API}/projects/${projectId}/domains`;
+
+    it("AC-1: PUT trên ACTIVE ⇒ 202 job DOMAIN_APPLY, khoá tăng, bảng giữ thứ đang chạy; khoá cũ ⇒ 409", async () => {
+      const w = applyWorld();
+      const { projectId } = await activeProject(w.registry);
+      const { http, enqueued } = appFor(w.registry, null);
+      const before = await as(
+        owner,
+        request(http).get(domainsUrl(projectId)),
+      ).expect(200);
+      const version = before.body.domainSetVersion as number;
+      const body = {
+        domains: [
+          { domainType: "MONITORING", toolId: "fake-metrics-b", config: {} },
+          {
+            domainType: "PROGRESSIVE_DELIVERY",
+            toolId: "fake-rollouts",
+            config: {},
+          },
+        ],
+        preferences: [],
+        lastKnownDomainSetVersion: version,
+      };
+
+      const res = await as(
+        owner,
+        request(http).put(domainsUrl(projectId)).send(body),
+      ).expect(202);
+      expect(res.body.job).toMatchObject({
+        jobType: "DOMAIN_APPLY",
+        state: "QUEUED",
+      });
+      expect(res.body.domainSetVersion).toBe(version + 1);
+      expect(
+        (
+          res.body.domains as {
+            domainType: string;
+            selectedTool: string | null;
+          }[]
+        ).find((d) => d.domainType === "MONITORING")?.selectedTool,
+      ).toBe("fake-metrics");
+      expect(enqueued).toEqual([res.body.job.id]);
+
+      await as(
+        owner,
+        request(http).put(domainsUrl(projectId)).send(body),
+      ).expect(409);
+
+      await workerWith(w.registry, fakeClusters()).run(
+        res.body.job.id as string,
+        {
+          final: false,
+        },
+      );
+      const after = await as(
+        owner,
+        request(http).get(domainsUrl(projectId)),
+      ).expect(200);
+      expect(
+        (
+          after.body.domains as {
+            domainType: string;
+            selectedTool: string | null;
+          }[]
+        ).find((d) => d.domainType === "MONITORING")?.selectedTool,
+      ).toBe("fake-metrics-b");
+    });
+
+    it("AC-6: nâng cấp — production đòi gõ tên domain (428); đúng ⇒ job, adapter_version mới; lần hai ⇒ 409", async () => {
+      const w = applyWorld();
+      const { projectId } = await activeProject(w.registry);
+      const { http } = appFor(w.registry, null);
+      await admin.domainConfig.updateMany({
+        where: { projectId, domainType: "MONITORING" },
+        data: { adapterVersion: "0.9.0" },
+      });
+      const upgradeUrl = `${domainsUrl(projectId)}/MONITORING/upgrade`;
+
+      await as(owner, request(http).post(upgradeUrl).send({})).expect(428);
+      const res = await as(
+        owner,
+        request(http).post(upgradeUrl).send({ confirm: "MONITORING" }),
+      ).expect(202);
+      await workerWith(w.registry, fakeClusters()).run(
+        res.body.job.id as string,
+        {
+          final: false,
+        },
+      );
+      const row = await admin.domainConfig.findFirstOrThrow({
+        where: { projectId, domainType: "MONITORING" },
+        select: { adapterVersion: true },
+      });
+      expect(row.adapterVersion).toBe("1.0.0");
+      const again = await as(
+        owner,
+        request(http).post(upgradeUrl).send({ confirm: "MONITORING" }),
+      ).expect(409);
+      expect(again.body.type).toContain("domain-up-to-date");
+    });
+
+    it("AC-5: quét ngay ⇒ phán quyết mới trả về liền; triển khai không có worker ⇒ 503", async () => {
+      const w = applyWorld();
+      const { projectId } = await activeProject(w.registry);
+      const kit = createJobKit(depsWith(w.registry, fakeClusters()));
+      const { http } = appFor(w.registry, async (pid, type) => {
+        await sweepDrift(kit, { only: [pid], domainType: type });
+      });
+      w.metrics.drifted = true;
+
+      const res = await as(
+        owner,
+        request(http).post(`${domainsUrl(projectId)}/MONITORING/drift`),
+      ).expect(200);
+      expect(res.body.drift.verdict).toBe("DRIFTED");
+      expect(w.delivery.driftChecks).toEqual([]);
+
+      const bare = appFor(w.registry, null).http;
+      await as(
+        owner,
+        request(bare).post(`${domainsUrl(projectId)}/MONITORING/drift`),
+      ).expect(503);
+    });
+  },
+);

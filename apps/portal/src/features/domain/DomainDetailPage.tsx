@@ -9,6 +9,7 @@ import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { domainApi } from "./domain-api";
+import { DomainActions } from "./DomainActions";
 import { DRIFT_LABEL, STATUS_LABEL } from "./domain-labels";
 
 /**
@@ -59,6 +60,9 @@ export function DomainDetailPage() {
                   : formatDateTime(domain.data.domain.updatedAt)}
               </dd>
             </dl>
+          )}
+          {domain.data !== undefined && (
+            <DomainActions type={type} domain={domain.data.domain} />
           )}
           {domain.data?.domain.toolConfig !== null &&
             domain.data?.domain.toolConfig !== undefined && (

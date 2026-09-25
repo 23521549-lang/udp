@@ -213,18 +213,27 @@ describe("PUT /domains", () => {
     );
   });
 
-  it("project đã rời DRAFT ⇒ 409 slug domains-need-apply-job, không lưu", async () => {
+  it("project đang triển khai ⇒ 409 domains-need-apply-job; ACTIVE mà chưa triển khai xong ⇒ 409 domain-not-running; khoá không tăng", async () => {
     const { projectId: other } = await world.newProject(owner);
+    const body = {
+      lastKnownDomainSetVersion: 0,
+      domains: [DATADOG],
+      preferences: [],
+    };
+    await admin.project.update({
+      where: { id: other },
+      data: { status: "PROVISIONING" },
+    });
+    const busy = await put(owner, body, other).expect(409);
+    expect(busy.body.type).toContain(DOMAIN_ERROR_SLUGS.needsApplyJob);
+
+    // Plan #30: project ACTIVE đi nhánh job DOMAIN_APPLY — cần một lượt PROVISION đã xong
     await admin.project.update({
       where: { id: other },
       data: { status: "ACTIVE" },
     });
-    const res = await put(
-      owner,
-      { lastKnownDomainSetVersion: 0, domains: [DATADOG], preferences: [] },
-      other,
-    ).expect(409);
-    expect(res.body.type).toContain(DOMAIN_ERROR_SLUGS.needsApplyJob);
+    const orphan = await put(owner, body, other).expect(409);
+    expect(orphan.body.type).toContain(DOMAIN_ERROR_SLUGS.notRunning);
     expect(await versionOf(other)).toBe(0);
   });
 });

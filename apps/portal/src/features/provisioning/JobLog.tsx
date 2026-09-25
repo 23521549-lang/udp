@@ -50,10 +50,13 @@ export function JobLog({
   projectId,
   jobId,
   role,
+  onTerminal,
 }: {
   projectId: string;
   jobId: string;
   role: ProjectRoleWire;
+  /** Gọi MỘT lần khi job tới trạng thái cuối — màn hình chủ làm mới dữ liệu job đã đổi */
+  onTerminal?: () => void;
 }) {
   const query = useQuery({
     queryKey: qk.job(projectId, jobId),
@@ -68,6 +71,10 @@ export function JobLog({
   const live =
     query.data !== undefined && !TERMINAL_STATES.includes(query.data.job.state);
   useJobEvents(projectId, jobId, live);
+  const finished = query.data !== undefined && !live;
+  useEffect(() => {
+    if (finished) onTerminal?.();
+  }, [finished, onTerminal]);
 
   if (query.isPending) return <Loading />;
   if (query.isError) {

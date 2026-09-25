@@ -67,6 +67,11 @@ export interface AppDeps {
 export interface ProvisioningRuntime {
   egressCidrs: readonly string[];
   enqueue: EnqueueJob;
+  /**
+   * Quét drift NGAY một domain (Plan #30) — cần cluster, nên chỉ tiến trình chạy worker
+   * cung cấp; `null` ⇒ route trả 503 thay vì giả vờ đã quét.
+   */
+  scanDrift: ((projectId: string, domainType: string) => Promise<void>) | null;
 }
 
 /** Gốc cây adapter của sản phẩm: `src/modules` (hay `dist/modules` khi đã build) */
@@ -90,7 +95,11 @@ export function defaultAppDeps(): AppDeps {
     oidcIssuer,
     cloud: createCloudPlatform(env, oidcIssuer),
     domainRegistry: memoized(() => createRegistry({ root: MODULES_ROOT })),
-    provisioning: { egressCidrs: env.UDP_EGRESS_CIDRS, enqueue: null },
+    provisioning: {
+      egressCidrs: env.UDP_EGRESS_CIDRS,
+      enqueue: null,
+      scanDrift: null,
+    },
   };
 }
 

@@ -67,10 +67,24 @@ export const putDomainsBodySchema = z
   .strict();
 export type PutDomainsBody = z.infer<typeof putDomainsBodySchema>;
 
+/**
+ * Body của `POST /projects/:id/domains/:type/upgrade` (§8.6). Nâng cấp chạm cluster dùng
+ * chung cho MỌI environment, nên project có production phải gõ lại tên domain (428 nếu
+ * thiếu hay sai) — cùng cơ chế xác nhận hai bước của §8.4.
+ */
+export const domainUpgradeBodySchema = z
+  .object({ confirm: z.string().max(50).optional() })
+  .strict();
+export type DomainUpgradeBody = z.infer<typeof domainUpgradeBodySchema>;
+
 /** Slug `type` của lỗi Portal rẽ nhánh — không thêm mã vào catalog 24 mã (I36) */
 export const DOMAIN_ERROR_SLUGS = {
   /** Project đã triển khai (hay đang triển khai): áp cấu hình cần job DOMAIN_APPLY (sổ nợ `domain-day2-route`) */
   needsApplyJob: "domains-need-apply-job",
   /** Domain hay tool không có trong registry, hoặc domain đã bị gỡ khỏi catalog */
   unknownTool: "domain-tool-unknown",
+  /** Nâng cấp: domain đã ở đúng bản adapter mà máy chủ đang nạp */
+  upToDate: "domain-up-to-date",
+  /** Nâng cấp / quét ngay: domain không chạy trên cluster của project */
+  notRunning: "domain-not-running",
 } as const;

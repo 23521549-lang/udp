@@ -76,10 +76,12 @@ const ROUTES: Record<string, ZodTypeAny> = {
 
   "GET /domains/catalog": wire.domainCatalogResponseWire,
   "GET /projects/{id}/domains": wire.projectDomainsResponseWire,
-  "PUT /projects/{id}/domains": wire.projectDomainsResponseWire,
+  "PUT /projects/{id}/domains": wire.putDomainsResponseWire,
   "POST /projects/{id}/domains/validate": wire.domainValidationResponseWire,
   "GET /projects/{id}/domains/MONITORING": wire.projectDomainResponseWire,
   "GET /projects/{id}/domains/MONITORING/drift": wire.domainDriftResponseWire,
+  "POST /projects/{id}/domains/MONITORING/drift": wire.domainDriftResponseWire,
+  "POST /projects/{id}/domains/MONITORING/upgrade": wire.jobResponseWire,
 
   "GET /projects/{id}/cloud": wire.cloudResponseWire,
   "GET /projects/{id}/cloud/setup": wire.cloudSetupResponseWire,

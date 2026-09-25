@@ -1,6 +1,6 @@
 {
   "route": "PUT /projects/{id}/domains",
-  "status": 200,
+  "status": 202,
   "body": {
     "domainSetVersion": 1,
     "domains": [
@@ -34,15 +34,11 @@
       {
         "domainType": "MONITORING",
         "isEnabled": true,
-        "selectedTool": "datadog",
-        "toolConfig": {
-          "site": "datadoghq.com",
-          "maxHosts": 50,
-          "credentialRef": "dd-main"
-        },
-        "status": "PENDING",
+        "selectedTool": "fake-metrics",
+        "toolConfig": {},
+        "status": "ACTIVE",
         "adapterVersion": "1.0.0",
-        "updatedAt": "2026-09-25T06:42:35.636Z"
+        "updatedAt": "2026-09-25T19:17:41.877Z"
       },
       {
         "domainType": "LOGGING",
@@ -82,12 +78,12 @@
       },
       {
         "domainType": "PROGRESSIVE_DELIVERY",
-        "isEnabled": false,
-        "selectedTool": null,
-        "toolConfig": null,
-        "status": null,
-        "adapterVersion": null,
-        "updatedAt": null
+        "isEnabled": true,
+        "selectedTool": "fake-rollouts",
+        "toolConfig": {},
+        "status": "ACTIVE",
+        "adapterVersion": "1.0.0",
+        "updatedAt": "2026-09-25T19:17:42.293Z"
       },
       {
         "domainType": "GITOPS",
@@ -153,11 +149,17 @@
         "updatedAt": null
       }
     ],
-    "preferences": [
-      {
-        "capabilityId": "metrics.query",
-        "providerToolId": "monitoring:datadog"
-      }
-    ]
+    "preferences": [],
+    "job": {
+      "id": "dad2fe29-0f3a-4dc0-918e-eec3e954995e",
+      "jobType": "DOMAIN_APPLY",
+      "state": "QUEUED",
+      "attempt": 0,
+      "confirmedMonthlyUsd": null,
+      "lastError": null,
+      "cancellable": true,
+      "createdAt": "2026-09-25T19:17:44.649Z",
+      "updatedAt": "2026-09-25T19:17:44.649Z"
+    }
   }
 }

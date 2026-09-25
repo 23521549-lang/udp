@@ -15,9 +15,12 @@ import type {
   DomainValidationWire,
   ProjectDomainWire,
   ProjectDomainsResponseWire,
+  PutDomainsResponseWire,
 } from "@udp/shared-types/wire";
 import { auditEntry } from "../audit/audit.service.js";
 import { driftRecordOf } from "../day2/domain-config.repository.js";
+import type { EnqueueJob } from "../provisioning/provisioning.service.js";
+import { applyToRunning } from "./domain-apply.service.js";
 import type { DomainAdapterRegistry } from "./domain-adapter.registry.js";
 import * as store from "./domain-config.store.js";
 import {
@@ -28,9 +31,9 @@ import {
 } from "./domain-target.js";
 
 /**
- * Domain của một project (Plan #27): đọc, kiểm trạng thái đích, và lưu cả tập cho project
- * NHÁP (§8.1). Áp cấu hình cho project đã triển khai cần job `DOMAIN_APPLY` — chưa có hàng
- * đợi nên route nói thẳng điều đó (409 kèm slug), không lưu một trạng thái không ai áp.
+ * Domain của một project (Plan #27, Plan #30): đọc, kiểm trạng thái đích, lưu cả tập. Project
+ * nháp hay lỗi lưu thẳng vào bảng (§8.1); project ĐANG chạy nhận job `DOMAIN_APPLY` và bảng
+ * đổi theo từng thay đổi đã áp (§8.2). Project đang triển khai: 409 kèm slug.
  */
 
 const PROJECT_NOT_FOUND = "Không tìm thấy project";
@@ -107,7 +110,8 @@ export async function put(
   body: PutDomainsBody,
   request: Request,
   registry: DomainAdapterRegistry,
-): Promise<ProjectDomainsResponseWire> {
+  enqueue: EnqueueJob,
+): Promise<{ status: 200 | 202; body: PutDomainsResponseWire }> {
   const { targets, view } = await resolveAndValidate(body, registry);
   const first = view.errors[0];
   if (first !== undefined) {
@@ -119,6 +123,26 @@ export async function put(
     throw first.suggestedAction === undefined
       ? error
       : error.withSuggestedAction(first.suggestedAction);
+  }
+
+  // Project đang chạy: đích đi vào job DOMAIN_APPLY, bảng giữ thứ ĐANG chạy (Plan #30 QĐ-1)
+  const current = await store.projectDomains(projectId);
+  if (current === null) throw new NotFoundError(PROJECT_NOT_FOUND);
+  if (current.status === "ACTIVE") {
+    const job = await applyToRunning({
+      projectId,
+      body,
+      targets,
+      request,
+      enqueue,
+    });
+    if (job === "stale-version") {
+      throw new OptimisticLockError(
+        "Cấu hình domain vừa được người khác lưu",
+        await list(projectId),
+      );
+    }
+    return { status: 202, body: { ...(await list(projectId)), job } };
   }
 
   const outcome = await store.replaceDomains({
@@ -145,8 +169,8 @@ export async function put(
   }
   if (outcome === "not-draft") {
     throw new ConflictError(
-      "Project đã rời trạng thái nháp: áp cấu hình domain cần hàng đợi triển khai, chưa có",
+      "Project đang có lượt triển khai chạy: lưu cấu hình domain sau khi lượt đó xong",
     ).withTypeSlug(DOMAIN_ERROR_SLUGS.needsApplyJob);
   }
-  return list(projectId);
+  return { status: 200, body: { ...(await list(projectId)), job: null } };
 }

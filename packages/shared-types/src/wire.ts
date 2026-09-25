@@ -1212,6 +1212,20 @@ export const provisioningJobWire = z
 
 export const jobResponseWire = z.object({ job: provisioningJobWire }).strict();
 
+/**
+ * `PUT /projects/:id/domains` (Plan #30): cùng thân với `GET /domains`, cộng `job`. Project
+ * nháp lưu thẳng (`job: null`, 200); project đang chạy nhận job `DOMAIN_APPLY` (202) và
+ * `domains` vẫn là thứ ĐANG chạy — đích chỉ vào bảng khi đã áp xong.
+ */
+export const putDomainsResponseWire = z
+  .object({
+    domainSetVersion: z.number().int().nonnegative(),
+    domains: z.array(projectDomainWire),
+    preferences: z.array(capabilityPreferenceSchema),
+    job: provisioningJobWire.nullable(),
+  })
+  .strict();
+
 export const jobListResponseWire = z
   .object({ jobs: z.array(provisioningJobWire) })
   .strict();
@@ -1312,3 +1326,4 @@ export type ProvisionPreviewWire = z.infer<
 >["preview"];
 export type ProvisioningJobWire = z.infer<typeof provisioningJobWire>;
 export type JobDetailWire = z.infer<typeof jobDetailResponseWire>;
+export type PutDomainsResponseWire = z.infer<typeof putDomainsResponseWire>;

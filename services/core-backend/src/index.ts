@@ -6,7 +6,7 @@ import { defaultAppDeps } from "./core/app-deps.js";
 import { createEgressFetch } from "./core/egress/egress.js";
 import { startJobQueue, type JobQueue } from "./jobs/boss.js";
 import { sweepDrift } from "./jobs/drift-scan.job.js";
-import { createJobKit, type JobKitDeps } from "./jobs/job-kit.js";
+import { createJobKit, type JobKit, type JobKitDeps } from "./jobs/job-kit.js";
 import { createJobWorker } from "./jobs/job-worker.js";
 import { sweepOrphans } from "./jobs/orphan-scan.job.js";
 import { sweepProjectTtl } from "./jobs/project-ttl.job.js";
@@ -58,7 +58,7 @@ try {
  * đợi đi qua `DATABASE_URL_DIRECT` (ADR-02 đk 1: pooler transaction mode phá advisory lock);
  * worker ghi nghiệp vụ bằng `udp_s1` như mọi đường khác của Service 1.
  */
-async function startJobs(): Promise<JobQueue> {
+async function startJobs(): Promise<{ queue: JobQueue; kit: JobKit }> {
   const queue = await startJobQueue({
     connectionString: directDatabaseUrl,
     schema: env.PGBOSS_SCHEMA,
@@ -110,17 +110,23 @@ async function startJobs(): Promise<JobQueue> {
       "Lượt quét drift",
     );
   });
-  return queue;
+  return { queue, kit };
 }
 
-const queue = await startJobs().catch((err: unknown) => {
+const { queue, kit } = await startJobs().catch((err: unknown) => {
   logger.fatal({ err }, "Không khởi động: hàng đợi job không lên được");
   process.exit(1);
 });
 
 const app = createApp({
   ...deps,
-  provisioning: { ...deps.provisioning, enqueue: queue.enqueueJob },
+  provisioning: {
+    ...deps.provisioning,
+    enqueue: queue.enqueueJob,
+    scanDrift: async (projectId, domainType) => {
+      await sweepDrift(kit, { only: [projectId], domainType });
+    },
+  },
 });
 const server = app.listen(env.CORE_BACKEND_PORT, () => {
   logger.info(

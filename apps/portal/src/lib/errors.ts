@@ -65,7 +65,10 @@ const SLUG_COPY: Record<string, string> = {
   [CLOUD_ERROR_SLUGS.notConfigured]:
     "Project chưa cấu hình cloud. Lưu credential trước rồi kiểm tra.",
   [DOMAIN_ERROR_SLUGS.needsApplyJob]:
-    "Project đã triển khai: đổi domain cần hàng đợi triển khai, tính năng này chưa có.",
+    "Project đang có lượt triển khai chạy. Lưu cấu hình domain sau khi lượt đó xong.",
+  [DOMAIN_ERROR_SLUGS.notRunning]:
+    "Domain này không chạy trên cluster của project.",
+  [DOMAIN_ERROR_SLUGS.upToDate]: "Domain đã ở bản mới nhất máy chủ có.",
   [CLOUD_ERROR_SLUGS.methodUnavailable]:
     "Cách xác thực này chưa được bật trên máy chủ UDP. Chọn cách khác hoặc báo quản trị.",
   [PROVISION_ERROR_SLUGS.blocked]:
