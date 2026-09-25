@@ -569,6 +569,9 @@ model CloudCredential {
   projectId String         @map("project_id") @db.Uuid
   provider  CloudProvider
   mode      CredentialMode
+  /// [v4.11] Region đích (`ap-southeast-1`, `asia-southeast1`, `southeastasia`) — mỗi
+  /// Cloud Adapter phục vụ MỘT region, nên credential không có nó thì không kiểm được gì.
+  region    String         @db.VarChar(64)
 
   /// §4.3 — Envelope encryption AES-256-GCM có AAD. DEK riêng từng project,
   /// KEK ở ngoài database. Một bản dump database MỘT MÌNH là vô dụng.

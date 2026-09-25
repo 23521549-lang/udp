@@ -620,6 +620,7 @@ erDiagram
         uuid project_id FK
         enum provider "AWS GCP AZURE"
         enum mode "BYOC MANAGED"
+        string region "v4.11"
         text encrypted_payload "app-level encryption"
         boolean is_active "partial unique index"
         timestamp created_at
@@ -1048,6 +1049,7 @@ CREATE UNIQUE INDEX idx_project_name_per_owner
 | project_id        | UUID      | FK → Project ON DELETE CASCADE, NOT NULL |                                        |
 | provider          | ENUM      | NOT NULL                                 | 'AWS', 'GCP', 'AZURE'                  |
 | mode              | ENUM      | NOT NULL                                 | 'BYOC', 'MANAGED'                      |
+| region            | VARCHAR(64) | NOT NULL, CHECK `^[a-z][a-z0-9-]{1,62}$` | **[v4.11]** Region đích (`ap-southeast-1`, `asia-southeast1`, `southeastasia`). Mỗi Cloud Adapter phục vụ MỘT region, nên credential thiếu nó thì `validate`/`preflight` không gọi được adapter nào; cấu hình cloud của project là bộ (provider, region, credential), thay cả bộ trong một `PUT /cloud` |
 | encrypted_payload | TEXT      | NOT NULL                                 | Ciphertext AES-256-GCM (base64) — xem §4.3 |
 | encrypted_dek     | TEXT      | NOT NULL                                 | **[NEW]** DEK riêng của project, đã bọc bởi KEK — envelope encryption |
 | kek_version       | INTEGER   | NOT NULL, DEFAULT 1                      | **[NEW]** Phiên bản KEK dùng để bọc DEK — cho phép rotation không downtime |
@@ -6849,7 +6851,7 @@ Plan #25 dựng Portal theo §10 và theo bản mẫu đã duyệt (`docs/design
 | D-P6 | §10.10 | `onError` toàn cục cho mutation ⇒ toast | Mỗi form tự quyết: lỗi trường ở cạnh ô nhập, lỗi chung ở toast/hộp thoại | Toast toàn cục chồng lên lỗi trường mà form đã hiện — trái chính quy tắc "Inline error: never toast" của §10.10 |
 | D-P7 | §9, §10.6 | Response project không nói vai của người gọi | Mọi response project mang `myRole` do **server** tính | Suy từ `GET /members` tốn thêm một request, đòi quyền đọc danh sách thành viên, và đẩy quyết định phân quyền vào trình duyệt. Portal chỉ dùng nó để ẩn nút |
 | D-P8 | §9 | Hình response chỉ khai bằng kiểu TS | Schema dây `.strict()` ở `@udp/shared-types/wire`; server gửi **qua** chúng (`sendJson`), lệch hình ⇒ 500 `ResponseContractError` có log, không phải 400 | `res.json()` biến `Date` thành chuỗi trong khi kiểu nói `Date`; và `ZodError` thoát khỏi controller thành "dữ liệu gửi lên không hợp lệ" cho một bug của server |
-| D-P9 | §10.5 | Wizard năm bước | Chỉ bước 1 (tên, cách tạo, runtime) | Bốn bước sau cần endpoint chưa có. Sổ nợ: `portal-cloud-step`, `portal-domain-screens`, `portal-preview`, `portal-job-stream` |
+| D-P9 | §10.5 | Wizard năm bước | Bước 1 (tên, cách tạo, runtime) và bước 2 (cloud, bỏ qua được, làm lại ở Cài đặt > Cloud) | Ba bước sau cần endpoint chưa có. Sổ nợ: `portal-domain-screens`, `portal-preview`, `portal-job-stream` |
 | D-P10 | §10.8 | Kéo-thả rule bằng dnd-kit | Nút lên/xuống có nhãn | Dùng được bằng bàn phím và trình đọc màn hình; kéo bằng con trỏ cần trình duyệt thật để kiểm. Sổ nợ: `portal-e2e` |
 | D-P11 | §10.9 | Tạo rollout ba chiến lược, hai phạm vi | Chỉ FLAG_LEVEL + CANARY; kiểm trước bằng `canaryPairOf` — CÙNG hàm Service 1 dùng để từ chối | Service 3 chưa có executor cho phần còn lại (§7.2); hiện chúng ra chỉ để nhận 422 là nói sai về khả năng hệ thống. Sổ nợ: `portal-rollout-create` |
 | D-P12 | §10.12 | Tham số `envId` trên URL | Tham số `env`; id lạ (không thuộc project) bị thay bằng env mặc định | Một id dán từ project khác làm mọi query của trang trỏ sang dữ liệu không thuộc project này |
@@ -6857,6 +6859,7 @@ Plan #25 dựng Portal theo §10 và theo bản mẫu đã duyệt (`docs/design
 | D-P14 | DESIGN.md §3 | "Geist có đủ tiếng Việt" (chưa kiểm) | **Đã đo** 25/09/2026: `cmap` của Geist 400/600 và Geist Mono 400 phủ đủ 102 ký tự (U+1EA0–U+1EF9 và 12 chữ cơ sở), thiếu 0 | QĐ-2 quyết bằng phép đo, không bằng metadata npm |
 | D-P15 | §9 Deployments | DORA "5 chỉ số" | Bốn chỉ số deploy + tỉ lệ rework, mỗi chỉ số kèm cỡ mẫu; median của 0 mẫu là `null`; rollback tách `auto`/`manual`. MTTR riêng của auto-rollback C1 đo ở harness E5, không ở endpoint | "Chưa có dữ liệu" và "bằng không" là hai câu trả lời khác nhau; MTTR của C1 cần mốc bắt đầu sự cố mà Event Store không ghi |
 | D-P16 | §9 Admin | `GET /admin/orphan-resources` "quét theo tag" | Liệt kê theo SỔ (`ORPHAN_SUSPECTED`) kèm USD/giờ, và trả `cloudScanned: false` | Quét tag cần credential thật và gọi cloud; danh sách rỗng mà không nói điều đó trông như "không có gì sót" |
+| D-P17 | §8.1, §10.5 bước 2 | `PUT /cloud {provider, credentialMode, payload}` tự validate và trả 422 khi thiếu quyền | `PUT /cloud {mode, provider, region, credential}` CHỈ lưu (mã hoá); `POST /cloud/validate` và `/cloud/preflight` là hai bước riêng; `GET /cloud/setup` trả khối lệnh điền sẵn (trust policy kèm ExternalId, lệnh gcloud/az với issuer và subject) có nút sao chép; MAINTAINER xem, OWNER lưu và kiểm | Khách thường phải sửa quyền bên cloud rồi kiểm lại: tách lưu khỏi kiểm để không bắt họ nhập lại bí mật. `region` là một phần của cấu hình vì mỗi adapter phục vụ một region (Plan #26 P6). Lỗi định dạng kiểm ngay ở trang bằng CHÍNH schema của máy chủ (`@udp/shared-types/cloud-api`), nên bí mật sai định dạng không rời trình duyệt |
 
 **Cưỡng chế bằng máy, không bằng trí nhớ:** I38 (`tests/i38-query-keys.test.ts`: mọi key phạm vi env mang `envId`, không `queryKey: [` trần ngoài `query-keys.ts`), golden capture (`services/core-backend/tests/wire-golden.test.ts`: mỗi route Portal gọi có một response thật đã ghi và schema parse được nó; controller Portal tiêu thụ không gọi `res.json` trần), và lint thiết kế của Portal (không em-dash trong chữ giao diện, chỉ Lucide, màu chỉ qua token).
 

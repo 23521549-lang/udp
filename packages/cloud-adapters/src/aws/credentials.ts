@@ -5,7 +5,8 @@ import type {
   ResolvedCredential,
   SecretBuffer,
 } from "@udp/adapter-core";
-import { z } from "zod";
+import { credentialPayloadSchemas } from "@udp/shared-types/cloud-api";
+import type { z } from "zod";
 import {
   parseStoredPayload,
   resolvedCredential,
@@ -25,26 +26,10 @@ import { required } from "./resources/types.js";
  * - `MANAGED`: identity nền của chính UDP (IRSA / instance role), không đổi gì.
  */
 
-/** Hình của payload ĐÃ LƯU (mã hoá) theo `authKind` */
+/** Hình của payload ĐÃ LƯU (mã hoá) theo `authKind` — một nguồn với form và API */
 export const awsStoredPayloadSchemas = {
-  AWS_ROLE: z
-    .object({
-      roleArn: z
-        .string()
-        .regex(
-          /^arn:aws[\w-]*:iam::\d{12}:role\/[\w+=,.@/-]{1,512}$/,
-          "roleArn không hợp lệ",
-        ),
-    })
-    .strict(),
-  AWS_KEY: z
-    .object({
-      accessKeyId: z
-        .string()
-        .regex(/^(AKIA|ASIA)[A-Z0-9]{12,}$/, "accessKeyId không hợp lệ"),
-      secretAccessKey: z.string().min(20),
-    })
-    .strict(),
+  AWS_ROLE: credentialPayloadSchemas.AWS_ROLE,
+  AWS_KEY: credentialPayloadSchemas.AWS_KEY,
 } as const;
 
 export { STATIC_CREDENTIAL_TTL_MS };

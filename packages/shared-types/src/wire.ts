@@ -7,6 +7,11 @@ import {
   staleFlagsResponseSchema,
 } from "./flag-stats.js";
 import { DECISIONS, INTENT_ACTIONS } from "./rollout.js";
+import {
+  cloudAuthKindSchema,
+  cloudProviderSchema,
+  cloudRegionSchema,
+} from "./cloud-api.js";
 
 /**
  * [v4.11] Hình dạng TRÊN DÂY của những response mà Portal tiêu thụ.
@@ -753,7 +758,7 @@ export const adminUsersResponseWire = z
   .strict();
 export const adminUserResponseWire = z.object({ user: adminUserWire }).strict();
 
-const cloudProviderWire = z.enum(["AWS", "GCP", "AZURE"]);
+const cloudProviderWire = cloudProviderSchema;
 
 export const adminProjectsResponseWire = z
   .object({
@@ -850,6 +855,104 @@ export const adminSystemResponseWire = z
   })
   .strict();
 
+// ------------------------------------------------------------- cloud của project
+
+/**
+ * [v4.11] Cấu hình cloud đang dùng của project (Plan #26, §9) — CHỈ metadata. Không trường
+ * nào suy ngược được bí mật: định danh (roleArn, clientId…) vẫn nằm trong payload mã hoá
+ * (§4.3), người dùng đối chiếu bằng 12 ký tự đầu của fingerprint.
+ */
+export const cloudCredentialWire = z
+  .object({
+    provider: cloudProviderSchema,
+    mode: z.enum(["BYOC", "MANAGED"]),
+    authKind: cloudAuthKindSchema,
+    federated: z.boolean(),
+    region: cloudRegionSchema,
+    fingerprint: z.string().length(12),
+    lastValidatedAt: isoDateTime.nullable(),
+    createdAt: isoDateTime,
+    createdBy: z.object({ id: uuid, email: z.string() }).strict(),
+  })
+  .strict();
+export const cloudResponseWire = z
+  .object({ cloud: cloudCredentialWire.nullable() })
+  .strict();
+
+/** Vì sao một cơ chế chưa dùng được ở triển khai này — khoá i18n của Portal */
+export const cloudUnavailableReasonWire = z.enum([
+  "aws-federation-disabled",
+  "oidc-issuer-disabled",
+  "managed-disabled",
+]);
+
+/** Một khối khách copy vào cloud của họ (trust policy, lệnh gcloud/az) — `id` là khoá i18n */
+export const cloudSetupSnippetWire = z
+  .object({
+    id: z.string().min(1),
+    language: z.enum(["json", "shell"]),
+    content: z.string().min(1),
+  })
+  .strict();
+
+export const cloudSetupResponseWire = z
+  .object({
+    setup: z
+      .object({
+        provider: cloudProviderSchema,
+        /** Subject mà token OIDC của UDP mang cho project này */
+        subject: z.string().min(1),
+        methods: z.array(
+          z
+            .object({
+              authKind: cloudAuthKindSchema,
+              federated: z.boolean(),
+              available: z.boolean(),
+              unavailableReason: cloudUnavailableReasonWire.nullable(),
+              snippets: z.array(cloudSetupSnippetWire),
+            })
+            .strict(),
+        ),
+        managed: z
+          .object({
+            available: z.boolean(),
+            unavailableReason: cloudUnavailableReasonWire.nullable(),
+          })
+          .strict(),
+        requiredPermissions: z.array(z.string().min(1)).min(1),
+        docUrl: z.string().url(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const cloudValidationResponseWire = z
+  .object({
+    validation: z
+      .object({
+        valid: z.boolean(),
+        reason: z.string().nullable(),
+        checkedAt: isoDateTime,
+      })
+      .strict(),
+  })
+  .strict();
+
+export const cloudPreflightResponseWire = z
+  .object({
+    preflight: z
+      .object({
+        ok: z.boolean(),
+        confidence: z.enum(["exact", "heuristic"]),
+        missingPermissions: z.array(z.string()),
+        quotaWarnings: z.array(z.string()),
+        docUrl: z.string().url(),
+        checkedAt: isoDateTime,
+      })
+      .strict(),
+  })
+  .strict();
+
 // ------------------------------------------------------------- kiểu suy ra
 
 export type PlatformRoleWire = z.infer<typeof platformRoleWire>;
@@ -887,3 +990,11 @@ export type DoraWire = z.infer<typeof doraWire>;
 export type AdminUserWire = z.infer<typeof adminUserWire>;
 export type AdminOrphansResponseWire = z.infer<typeof adminOrphansResponseWire>;
 export type RolloutIntentActionWire = z.infer<typeof rolloutIntentActionWire>;
+export type CloudCredentialWire = z.infer<typeof cloudCredentialWire>;
+export type CloudSetupWire = z.infer<typeof cloudSetupResponseWire>["setup"];
+export type CloudValidationWire = z.infer<
+  typeof cloudValidationResponseWire
+>["validation"];
+export type CloudPreflightWire = z.infer<
+  typeof cloudPreflightResponseWire
+>["preflight"];

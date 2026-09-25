@@ -33,6 +33,7 @@ import {
   type ProjectEnv,
   type TestWorld,
 } from "./helpers/api.js";
+import { inertCloudPlatform } from "./helpers/cloud-platform.js";
 
 /**
  * Luồng 5 ở Service 1 qua HTTP thật (§8.5, §9 "Progressive Delivery") [v4.4].
@@ -123,6 +124,7 @@ beforeAll(async () => {
   app = createApp({
     metricsFor: () => fake,
     oidcIssuer: null,
+    cloud: inertCloudPlatform,
     flagService: createFlagServiceClient({
       baseUrl: started.baseUrl,
       secret: env.INTERNAL_SERVICE_SECRET,
@@ -371,6 +373,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
     const dead = createApp({
       metricsFor: () => fake,
       oidcIssuer: null,
+      cloud: inertCloudPlatform,
       flagService: createFlagServiceClient({
         baseUrl: `http://127.0.0.1:${String(await freePort())}`,
         secret: env.INTERNAL_SERVICE_SECRET,
@@ -393,6 +396,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
     const touched = createApp({
       metricsFor: () => fake,
       oidcIssuer: null,
+      cloud: inertCloudPlatform,
       // Client thật, chỉ `track` bị thay — mọi lời gọi khác giữ đúng hợp đồng
       flagService: {
         ...createFlagServiceClient({

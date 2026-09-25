@@ -3,7 +3,8 @@ import type {
   ResolvedCredential,
   SecretBuffer,
 } from "@udp/adapter-core";
-import { z } from "zod";
+import { credentialPayloadSchemas } from "@udp/shared-types/cloud-api";
+import type { z } from "zod";
 import {
   parseStoredPayload,
   requiredToken,
@@ -31,20 +32,14 @@ const AKS_SERVER_APP = "6dae42f8-4368-4678-94ff-3960e28e3630";
 const ARM_RESOURCE = "https://management.azure.com";
 const IMDS_TOKEN = "http://169.254.169.254/metadata/identity/oauth2/token";
 
-const target = {
-  subscriptionId: z.string().uuid(),
-  resourceGroup: z
-    .string()
-    .regex(/^[\w().-]{1,90}$/, "resource group không hợp lệ"),
-};
-const principal = { tenantId: z.string().uuid(), clientId: z.string().uuid() };
-
+/** Hình của payload ĐÃ LƯU theo `authKind` — một nguồn với form và API; MANAGED do UDP cấu hình */
 export const azureStoredPayloadSchemas = {
-  AZURE_FEDERATED: z.object({ ...principal, ...target }).strict(),
-  AZURE_SECRET: z
-    .object({ ...principal, ...target, clientSecret: z.string().min(8) })
-    .strict(),
-  MANAGED: z.object(target).strict(),
+  AZURE_FEDERATED: credentialPayloadSchemas.AZURE_FEDERATED,
+  AZURE_SECRET: credentialPayloadSchemas.AZURE_SECRET,
+  MANAGED: credentialPayloadSchemas.AZURE_FEDERATED.pick({
+    subscriptionId: true,
+    resourceGroup: true,
+  }),
 } as const;
 
 export interface AzureExchangeInput {

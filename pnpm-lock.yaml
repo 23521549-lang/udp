@@ -558,6 +558,9 @@ importers:
       '@udp/adapter-core':
         specifier: workspace:*
         version: link:../../packages/adapter-core
+      '@udp/cloud-adapters':
+        specifier: workspace:*
+        version: link:../../packages/cloud-adapters
       '@udp/config':
         specifier: workspace:*
         version: link:../../packages/config

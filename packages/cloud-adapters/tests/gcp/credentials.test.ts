@@ -107,7 +107,6 @@ describe("GCP_KEY (khoá JSON dự phòng)", () => {
     project_id: "demo-project",
     client_email: "udp@demo-project.iam.gserviceaccount.com",
     private_key: PRIVATE_PEM,
-    private_key_id: "bo-qua",
   };
 
   it("JWT RS256 ký đúng khoá, gửi grant jwt-bearer; bản trong RAM sống 15 phút", async () => {
@@ -149,6 +148,18 @@ describe("GCP_KEY (khoá JSON dự phòng)", () => {
       accessToken: "ya29.key",
       gcpProjectId: "demo-project",
     });
+  });
+
+  it("payload đã lưu có trường ngoài bốn trường cần ⇒ configuration (không lưu thừa)", async () => {
+    await expect(
+      exchangeGcpCredential({
+        mode: "BYOC",
+        authKind: "GCP_KEY",
+        stored: stored({ ...keyFile, private_key_id: "thua" }),
+        federationToken: noFederation,
+        fetch: fakeHttp({}).fetch,
+      }),
+    ).rejects.toMatchObject({ errorClass: "configuration" });
   });
 
   it("khoá không phải service account ⇒ configuration", async () => {

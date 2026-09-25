@@ -15,6 +15,7 @@ import {
   type Actor,
   type TestWorld,
 } from "./helpers/api.js";
+import { inertCloudPlatform } from "./helpers/cloud-platform.js";
 
 /**
  * [v4.11] Những route Portal gọi mà bộ tích hợp khác chưa từng đi qua đường 2xx.
@@ -43,6 +44,7 @@ beforeAll(async () => {
   app = createApp({
     metricsFor: () => new FakeMetricsProvider(),
     oidcIssuer: null,
+    cloud: inertCloudPlatform,
     flagService: createFlagServiceClient({
       baseUrl: started.baseUrl,
       secret: env.INTERNAL_SERVICE_SECRET,

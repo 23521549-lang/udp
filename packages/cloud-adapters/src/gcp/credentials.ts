@@ -4,7 +4,8 @@ import type {
   ResolvedCredential,
   SecretBuffer,
 } from "@udp/adapter-core";
-import { z } from "zod";
+import { credentialPayloadSchemas } from "@udp/shared-types/cloud-api";
+import type { z } from "zod";
 import {
   parseStoredPayload,
   requiredToken as tokenOrThrow,
@@ -34,28 +35,11 @@ const METADATA_TOKEN =
 export { STATIC_CREDENTIAL_TTL_MS };
 const SESSION_SECONDS = 3600;
 
-const gcpProjectId = z
-  .string()
-  .regex(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, "project GCP không hợp lệ");
-
+/** Hình của payload ĐÃ LƯU theo `authKind` — một nguồn với form và API; MANAGED do UDP cấu hình */
 export const gcpStoredPayloadSchemas = {
-  GCP_WIF: z
-    .object({
-      gcpProjectId,
-      projectNumber: z.string().regex(/^\d{6,20}$/),
-      poolId: z.string().regex(/^[a-z0-9-]{4,32}$/),
-      providerId: z.string().regex(/^[a-z0-9-]{4,32}$/),
-      serviceAccountEmail: z.string().email(),
-    })
-    .strict(),
-  /** Khoá JSON tải từ Console — chỉ đọc bốn trường cần, phần còn lại bỏ qua */
-  GCP_KEY: z.object({
-    type: z.literal("service_account"),
-    project_id: gcpProjectId,
-    client_email: z.string().email(),
-    private_key: z.string().includes("PRIVATE KEY"),
-  }),
-  MANAGED: z.object({ gcpProjectId }).strict(),
+  GCP_WIF: credentialPayloadSchemas.GCP_WIF,
+  GCP_KEY: credentialPayloadSchemas.GCP_KEY,
+  MANAGED: credentialPayloadSchemas.GCP_WIF.pick({ gcpProjectId: true }),
 } as const;
 
 export interface GcpExchangeInput {

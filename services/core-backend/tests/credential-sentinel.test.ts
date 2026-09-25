@@ -103,6 +103,7 @@ describe("chuỗi canh không rời khỏi vùng bí mật", () => {
         id: credentialId,
         projectId: PROJECT,
         provider: "AWS",
+        region: "ap-southeast-1",
         mode: "BYOC",
         authKind: "AWS_ROLE",
         encryptedPayload: enc.encryptedPayload,
@@ -121,7 +122,8 @@ describe("chuỗi canh không rời khỏi vùng bí mật", () => {
     try {
       decryptCredential(enc, { ...identity, credentialId: randomUUID() });
     } catch (err) {
-      decryptMessage = err instanceof Error ? `${err.name} ${err.message}` : String(err);
+      decryptMessage =
+        err instanceof Error ? `${err.name} ${err.message}` : String(err);
     }
     expect(decryptMessage).not.toBe("");
     expect(decryptMessage).not.toContain(SENTINEL);

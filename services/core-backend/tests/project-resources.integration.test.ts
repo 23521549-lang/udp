@@ -25,6 +25,7 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import { tapServiceLog, type LogTap } from "./helpers/log-tap.js";
+import { inertCloudPlatform } from "./helpers/cloud-platform.js";
 
 /**
  * Tài nguyên gắn theo project ở Service 1, với Service 2 là tiến trình THẬT
@@ -142,6 +143,7 @@ beforeAll(async () => {
   app = createApp({
     metricsFor: () => new FakeMetricsProvider(),
     oidcIssuer: null,
+    cloud: inertCloudPlatform,
     flagService: createFlagServiceClient({
       baseUrl: started.baseUrl,
       secret: env.INTERNAL_SERVICE_SECRET,

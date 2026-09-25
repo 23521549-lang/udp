@@ -11,6 +11,10 @@ import {
   oidcIssuerFromConfig,
   type OidcIssuer,
 } from "../modules/oidc/oidc.issuer.js";
+import {
+  createCloudPlatform,
+  type CloudPlatform,
+} from "../modules/cloud/cloud.platform.js";
 
 /**
  * Phụ thuộc RA NGOÀI tiến trình của Service 1 — thứ test phải thay được mà không
@@ -37,17 +41,24 @@ export interface AppDeps {
    * GCP/Azure khi ấy báo lỗi cấu hình, credential tĩnh và AWS vẫn chạy.
    */
   oidcIssuer: OidcIssuer | null;
+  /**
+   * [v4.11] Adapter theo (cloud, region) và bước đổi credential (Plan #26 QĐ-6/7) — test
+   * tiêm bản dựng trên cổng mô phỏng, không bao giờ gọi cloud thật.
+   */
+  cloud: CloudPlatform;
 }
 
 /** Bản thật, dựng từ cấu hình — `createApp()` dùng khi không được truyền deps */
 export function defaultAppDeps(): AppDeps {
+  const oidcIssuer = oidcIssuerFromConfig(env);
   return {
     metricsFor,
     flagService: createFlagServiceClient({
       baseUrl: env.FLAG_SERVICE_URL,
       secret: env.INTERNAL_SERVICE_SECRET,
     }),
-    oidcIssuer: oidcIssuerFromConfig(env),
+    oidcIssuer,
+    cloud: createCloudPlatform(env, oidcIssuer),
   };
 }
 

@@ -16,7 +16,8 @@
     "./wire": "./src/wire.ts",
     "./flag-api": "./src/flag-api.ts",
     "./condition": "./src/condition.ts",
-    "./rollout": "./src/rollout.ts"
+    "./rollout": "./src/rollout.ts",
+    "./cloud-api": "./src/cloud-api.ts"
   },
   "scripts": {
     "test": "vitest run",

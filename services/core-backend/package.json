@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@udp/adapter-core": "workspace:*",
+    "@udp/cloud-adapters": "workspace:*",
     "@udp/config": "workspace:*",
     "@udp/db": "workspace:*",
     "@udp/http": "workspace:*",
