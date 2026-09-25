@@ -29,7 +29,7 @@ Trạng thái: **v2, 25/09/2026** (v1 → v2: review tự làm, xem §7). Nguồ
 | R2  | Secret không bao giờ thành `string`: payload chỉ đọc qua `SecretBuffer.use()`; không log lỗi SDK nguyên vẹn (một số SDK nhét credential vào `error.config`) | §4.2 nguyên tắc, §4.3                  |
 | R3  | Mọi tài nguyên mang đủ tag `udp.project`/`udp.key`/`udp.owner`/`udp.managed` (+`udp.ttl` khi có hạn) — ở dạng mà cloud đó cho phép                          | §4.5, `REQUIRED_TAG_KEYS`              |
 | R4  | `lookup` ba trạng thái; quét tag lỗi là `indeterminate`/`FAILED`, KHÔNG BAO GIỜ là "cloud rỗng"                                                             | §4.2 `LookupOutcome`                   |
-| R5  | Mọi Cloud Adapter qua đủ bộ hợp đồng Cloud (`runCloudAdapterContract`, 42 phép) — không nới lỏng mới nào                                                    | §13.2, `CONTRACT_RELAXATIONS`          |
+| R5  | Mọi Cloud Adapter qua đủ bộ hợp đồng Cloud (`runCloudAdapterContract`, 38 phép) — không nới lỏng mới nào                                                    | §13.2, `CONTRACT_RELAXATIONS`          |
 | R6  | Không mã nào chưa có người dùng trong cùng đợt; không stub; lỗi luôn đi qua `AdapterResult`                                                                 | quy ước repo, yêu cầu người dùng 25/09 |
 | R7  | Không thoái cấp: mọi cổng hiện có (typecheck, lint, 2409+ test, golden, I10, I38, sổ nợ ba nơi) giữ xanh                                                    | yêu cầu người dùng 25/09               |
 
@@ -58,7 +58,7 @@ chúng trôi khỏi nhau. Nên:
   `permanent` / `permission`) ngay trong cổng, để lõi không đọc chuỗi lỗi SDK.
 - `createPlannedAdapter(plan, gatewayFor)` (một lõi): hiện thực 10 phương thức.
 
-Hệ quả kiểm chứng: lõi + kế hoạch THẬT của từng cloud chạy qua đủ 42 phép hợp đồng trên
+Hệ quả kiểm chứng: lõi + kế hoạch THẬT của từng cloud chạy qua đủ 38 phép hợp đồng trên
 một `CloudGateway` dựng trên `SimCloud` (bơm lỗi được). Hai điều kiện để phép đó không
 rỗng (rút ra từ review spec v1):
 
@@ -124,7 +124,7 @@ lộ bí mật). `PUT /cloud`, `POST /cloud/validate`, `POST /cloud/preflight`: 
 
 | Mã    | Tiêu chí                                                                                                                                                                            | Cách kiểm                                          |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| AC-1  | Mỗi adapter AWS/GCP/Azure qua đủ 42 phép hợp đồng Cloud, 0 nới lỏng mới                                                                                                             | `runCloudAdapterContract` × 3 trên cổng `SimCloud` |
+| AC-1  | Mỗi adapter AWS/GCP/Azure qua đủ 38 phép hợp đồng Cloud, 0 nới lỏng mới                                                                                                             | `runCloudAdapterContract` × 3 trên cổng `SimCloud` |
 | AC-2  | Codec tag đi-về đúng cho mọi `CreatedResourceKind`; label GCP hợp lệ theo luật GCP                                                                                                  | test thuần                                         |
 | AC-3  | `preflightPermissions`: AWS `exact` khi gọi được SimulatePrincipalPolicy, `heuristic` khi không; GCP `exact`; Azure `heuristic`; `missingPermissions` đúng tập thiếu                | test cổng giả                                      |
 | AC-4  | `estimateCost` có đủ ba mục `control-plane`, `nat-gateway`, `load-balancer` cho cả ba cloud, `pricingAsOf` khai                                                                     | test thuần                                         |

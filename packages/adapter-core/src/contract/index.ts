@@ -98,6 +98,17 @@ export {
   runFullProvision,
 } from "./grid.js";
 
+/**
+ * [v4.11] Bộ hợp đồng Cloud qua subpath công khai — Cloud Adapter thật nằm ở package khác
+ * (`@udp/cloud-adapters`, Plan #26), cùng lý do với lưới khôi phục ở trên.
+ */
+export type { CloudCheck } from "./cloud.js";
+export {
+  CLOUD_CONTRACT_CHECKS,
+  DESIGN_CHECK_IDS,
+  runCloudAdapterContract,
+} from "./cloud.js";
+
 export type { DomainCheck, DomainContractEnv } from "./domain.js";
 export {
   DOMAIN_CONTRACT_CHECKS,

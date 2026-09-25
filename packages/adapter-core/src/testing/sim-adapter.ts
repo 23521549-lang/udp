@@ -15,8 +15,15 @@ import type {
 import { expectedTagKeys } from "../cloud.js";
 import type { ResolvedCredential } from "../credential.js";
 import { quotaViolations } from "../guardrails.js";
-import type { ProvisionedResourceRow, ProvisionStep } from "../ledger.js";
+import {
+  idempotencyKeyOf,
+  parseIdempotencyKey,
+  type ProvisionedResourceRow,
+} from "../ledger.js";
 import { runTeardown } from "../teardown.js";
+
+/** Giữ đường import cũ cho bên dùng `./testing` */
+export { idempotencyKeyOf, parseIdempotencyKey };
 import { FIXTURE_STEPS } from "./fixture.js";
 import { KINDS_WITHOUT_CREATE_TAGS, SimCloud } from "./sim-cloud.js";
 
@@ -60,40 +67,6 @@ const failed = <T>(message: string): AdapterResult<T> => ({
   status: "FAILED",
   message,
 });
-
-/** `{projectId}:{step}:{kind}:{name}` — cùng hình với cột `idempotency_key` của sổ */
-export const idempotencyKeyOf = (
-  projectId: string,
-  step: ProvisionStep,
-  kind: CreatedResourceKind,
-  name: string,
-): string => `${projectId}:${step}:${kind}:${name}`;
-
-/** Phân tích ngược một `udp.key`. `null` nếu không đúng hình — KHÔNG đoán */
-export function parseIdempotencyKey(key: string): {
-  projectId: string;
-  step: ProvisionStep;
-  kind: CreatedResourceKind;
-  name: string;
-} | null {
-  const parts = key.split(":");
-  if (parts.length !== 4) return null;
-  const [projectId, step, kind, name] = parts as [
-    string,
-    string,
-    string,
-    string,
-  ];
-  if (!["NETWORK", "CLUSTER", "DOMAINS", "K8S_MANAGED"].includes(step)) {
-    return null;
-  }
-  return {
-    projectId,
-    step: step as ProvisionStep,
-    kind: kind as CreatedResourceKind,
-    name,
-  };
-}
 
 export function createSimAdapter(options: SimAdapterOptions): CloudAdapter {
   const { cloud, lookupBy } = options;
@@ -171,7 +144,11 @@ export function createSimAdapter(options: SimAdapterOptions): CloudAdapter {
        * bao giờ READY thành một job treo, thứ mà `STALE_CREATING_MINUTES` tồn tại để thấy.
        */
       waitReady: (_cred, r): Promise<void> => {
-        for (let attempt = 0; attempt < SIM_WAIT_READY_MAX_POLLS; attempt += 1) {
+        for (
+          let attempt = 0;
+          attempt < SIM_WAIT_READY_MAX_POLLS;
+          attempt += 1
+        ) {
           if (cloud.pollReady(r.id)) return Promise.resolve();
         }
         throw new Error(

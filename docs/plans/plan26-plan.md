@@ -19,7 +19,7 @@ Ràng buộc rút ra từ review plan: lõi KHÔNG tự retry trong `create`/`lo
 đếm số lời gọi cloud qua `CloudControl.calls()`; retry là việc của runner), và teardown đi
 qua `runTeardown` với cổng `TeardownCloud` — một thứ tự chín bậc, không hai.
 
-**Cổng P1:** 42/42 phép hợp đồng xanh trên lõi; quét sentinel (lỗi không mang credential) xanh;
+**Cổng P1:** 42/38 phép hợp đồng xanh trên lõi; quét sentinel (lỗi không mang credential) xanh;
 `package-boundaries` xanh (không `@udp/db`); typecheck/lint.
 
 ## P2 — AWS
@@ -33,7 +33,7 @@ qua `runTeardown` với cổng `TeardownCloud` — một thứ tự chín bậc,
 | Fixture viết tay + bộ hợp đồng trên cổng mô phỏng                                                                                                                                                                                                       | `tests/aws/*.test.ts`       |
 | Test cổng AWS: client SDK giả ở tầng command (`send`) — mỗi thao tác đúng command, đúng tham số, lỗi phân loại đúng, không rò credential                                                                                                                | `tests/aws/gateway.test.ts` |
 
-**Cổng P2:** hợp đồng 42/42; test cổng; ghi sổ nợ `cloud-aws-live`.
+**Cổng P2:** hợp đồng 38/38; test cổng; ghi sổ nợ `cloud-aws-live`.
 
 ## P3 — GCP
 

@@ -1,0 +1,27 @@
+{
+  "name": "@udp/cloud-adapters",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloud Adapter thật cho AWS, GCP, Azure (§4.2) — một lõi điều phối, ba kế hoạch, ba cổng SDK",
+  "//": "KHÔNG khai `@udp/db`: adapter không được thấy database (ma trận writer §1.2, R1 của Plan #26). SDK cloud chỉ nằm ở package này.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@udp/adapter-core": "workspace:*",
+    "@udp/shared-types": "workspace:*",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

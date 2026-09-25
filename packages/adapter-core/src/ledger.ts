@@ -191,3 +191,37 @@ export function isLedgerTransitionAllowed(
 ): boolean {
   return LEDGER_TRANSITIONS.some(([a, b]) => a === from && b === to);
 }
+
+/** `{projectId}:{step}:{kind}:{name}` — cùng hình với cột `idempotency_key` của sổ */
+export const idempotencyKeyOf = (
+  projectId: string,
+  step: ProvisionStep,
+  kind: CreatedResourceKind,
+  name: string,
+): string => `${projectId}:${step}:${kind}:${name}`;
+
+/** Phân tích ngược một `udp.key`. `null` nếu không đúng hình — KHÔNG đoán */
+export function parseIdempotencyKey(key: string): {
+  projectId: string;
+  step: ProvisionStep;
+  kind: CreatedResourceKind;
+  name: string;
+} | null {
+  const parts = key.split(":");
+  if (parts.length !== 4) return null;
+  const [projectId, step, kind, name] = parts as [
+    string,
+    string,
+    string,
+    string,
+  ];
+  if (!["NETWORK", "CLUSTER", "DOMAINS", "K8S_MANAGED"].includes(step)) {
+    return null;
+  }
+  return {
+    projectId,
+    step: step as ProvisionStep,
+    kind: kind as CreatedResourceKind,
+    name,
+  };
+}

@@ -150,6 +150,25 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)(jsdom@25.0.1)(msw@2.11.3(@types/node@22.20.1)(typescript@5.9.3))
 
+  packages/cloud-adapters:
+    dependencies:
+      '@udp/adapter-core':
+        specifier: workspace:*
+        version: link:../adapter-core
+      '@udp/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)(jsdom@25.0.1)(msw@2.11.3(@types/node@22.20.1)(typescript@5.9.3))
+
   packages/config:
     dependencies:
       dotenv:

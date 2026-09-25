@@ -94,6 +94,8 @@ export type {
 } from "./ledger.js";
 export {
   allowedSourcesOf,
+  idempotencyKeyOf,
+  parseIdempotencyKey,
   PROVISION_STEPS,
   RESOURCE_STATUSES,
   isLedgerTransitionAllowed,
