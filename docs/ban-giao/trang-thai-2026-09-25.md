@@ -83,3 +83,28 @@ tests/grid-tier2.test.ts`.
 | `navigator.locks.request`                            | Kiểu DOM trả `Promise<Promise<T>>`; lúc chạy đã phẳng                                                                            |
 | Cổng ranh giới package                               | Từng đọc `from "@udp/…"` trong CHUỖI là một import; nay chỉ đọc câu lệnh `import/export` đầu dòng (549/549 import thật vẫn khớp) |
 | Python sửa tệp                                       | `"\b"` trong chuỗi Python thường là ký tự backspace — dùng raw string                                                            |
+
+## 4. Phần tiếp theo trong cùng ngày (sau khi người dùng bảo "tiếp tục")
+
+| Commit    | Việc                                                                                        | Bằng chứng                                             |
+| --------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `bda2fbe` | Bảng lệnh Ctrl K + nút "Tìm nhanh" + phím 1..9 đổi env — trả `portal-cmdk`                  | `palette.test.tsx` 5/5                                 |
+| `69ae8b3` | Sao chép rule giữa env, diff trước khi áp, giữ `id` rule ĐÍCH — trả `portal-config-promote` | `promote.test.tsx` 5/5; đột biến "gửi id nguồn" ⇒ 3 đỏ |
+| `7261636` | Cảnh báo trần dung lượng segment trước khi lưu — trả `portal-segment-quota`                 | `segment-quota.test.tsx` 6/6                           |
+| `4bfd87f` | Lease localStorage khi thiếu Web Locks — trả `portal-refresh-lock`                          | hai "tab" thật ⇒ 1 lần refresh; đột biến bỏ lease ⇒ đỏ |
+| `ecc68db` | **Sửa lỗi**: danh sách flag chỉ đọc 100 hàng đầu (mất flag im lặng)                         | 230 flag ⇒ đủ 3 trang                                  |
+| `5bb733d` | `GET /deployments`, `GET /metrics/dora`, màn Deploy — trả `portal-deployments`              | tích hợp 7/7, `dora.test.ts` 9/9                       |
+| `a353b51` | Sáu route `/admin/*` + sáu màn hình — trả `portal-admin`                                    | tích hợp 11/11 (USER ⇒ 403 mọi route)                  |
+
+Sổ nợ: 49 → **43** mục. Portal: **90/90** test. Golden: **66/66** (thêm 9 route).
+
+**Kiểm lại phần nợ của phiên sáng:** `grid-tier2` **45/45 xanh** (515 giây).
+`pnpm test:scratch` chạy được tới hết core-backend (**650/650**, mọi package trong
+`packages/` xanh) rồi bị hệ thống dừng vì máy thiếu RAM khi đang ở flag-service; database
+scratch đã tự dọn (`scratch-drop` xác nhận không còn). flag-service, pd-controller,
+sample-app, experiments **chưa** có lượt scratch xanh sau thay đổi — chúng không bị sửa
+trong phiên này, nhưng vẫn phải chạy khi máy có ≥ 2 GiB trống.
+
+Bẫy mới: chạy Prettier từ `apps/portal` thì nó KHÔNG đọc `.prettierignore` ở gốc — đã
+định dạng lại `prototype.css`, và cổng "chép nguyên văn" bắt được ngay. Luôn chạy
+Prettier từ gốc repo.
