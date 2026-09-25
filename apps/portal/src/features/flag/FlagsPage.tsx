@@ -29,6 +29,19 @@ export function FlagsPage() {
   const navigate = useNavigate();
   const tz = browserTimeZone();
   const [creating, setCreating] = useState(false);
+  // `?new=1` (từ bảng lệnh): mở hộp tạo một lần rồi bỏ tham số, để Back không mở lại
+  useEffect(() => {
+    if (search.new !== "1") return;
+    setCreating(true);
+    void navigate({
+      to: ".",
+      replace: true,
+      search: (prev: Record<string, unknown>) => {
+        const { new: _drop, ...rest } = prev;
+        return rest;
+      },
+    });
+  }, [search.new, navigate]);
   const [q, setQ] = useState(search.q ?? "");
 
   const flags = useQuery({

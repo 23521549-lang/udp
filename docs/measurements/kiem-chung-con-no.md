@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 49.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 48.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -365,6 +365,7 @@ WHERE f.project_id = $p;` rồi `VACUUM (ANALYZE) flag_evaluation_stats;` — t�
   `segment.*`, `danglingSegmentRules` = 0; số đếm toàn bảng TRƯỚC = SAU (projects 8,
   environments 17, segments 1, config_change_log 4, audit_logs 4, feature_flags 6).
 - **Ảnh hưởng tới kết luận:** trần 4 MiB của segment: nó được cưỡng chế bằng CHECK và bằng phép kiểm, nhưng ĐƯỜNG GHI ở đúng trần đó chưa được đo cùng ngân sách transaction.
+
 ---
 
 # Plan #24 — Adapter framework
@@ -526,7 +527,7 @@ adapter.
   Kubernetes sinh ra, và cách phát hiện là quét tag `kubernetes.io/cluster/<name>`.
   Cloud mô phỏng gắn đúng tag đó vì nó được viết như vậy; AWS thật gắn tag theo phiên
   bản cloud-controller-manager, và có tài nguyên chỉ mang `kubernetes.io/cluster/x =
-  owned` còn có tài nguyên mang `shared`.
+owned` còn có tài nguyên mang `shared`.
 - **Tiền đề:** AWS thật + một cluster có Service LoadBalancer và một PVC.
 - **Lệnh:** `listTaggedResources` rồi so với `aws elbv2 describe-tags`.
 - **Đạt:** mọi ELB/ENI/EBS thuộc cluster đều được phát hiện, kể cả `shared`.
@@ -653,6 +654,7 @@ adapter.
 - **Ảnh hưởng tới kết luận:** quy tắc thứ ba của §8.6. Hai kết cục (`ROLLED_BACK` và
   `ROLLBACK_FAILED`) đã tách bạch và có test; điều chưa có là một người gọi thật hạ
   được về bản cũ.
+
 ## helm-real — Helm thật thay cho hai đối tượng mô phỏng
 
 - **Vì sao nợ:** lớp nền `HelmBasedAdapter` ghi hai đối tượng (`HelmRelease` và một
@@ -686,6 +688,7 @@ adapter.
 - **Tài nguyên:** cluster + agent (~3,5 GiB).
 - **Ảnh hưởng tới kết luận:** nửa còn lại của **ADR-06**. Phần đã làm chứng minh
   interface đủ cho `direct`; nó chưa chứng minh interface đủ cho cả hai.
+
 ## cicd-adapter — họ CI/CD mới có mặt KIỂU, chưa có hiện thực
 
 - **Vì sao nợ:** `CicdDomainAdapter` mở rộng `DomainAdapter` bằng ba phương thức
@@ -705,14 +708,20 @@ adapter.
 - **Ảnh hưởng tới kết luận:** nửa sau của AC-15. Phần "kiểu tồn tại và được đóng băng"
   đã xong và kiểm được; phần "verifySignature so theo thời gian hằng" thì chưa có mã để
   mà kiểm, và nói nó đã xong là nói sai.
+
 ---
 
 # Plan #25 — Portal
 
-Mười tám mục dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
+Mười tám mục (nay còn mười bảy) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
 còn Service 1 hôm nay chỉ có endpoint cho một phần. Làm một màn hình không có endpoint
 nghĩa là viết một cái giả rồi gọi nó là xong, nên phạm vi Plan #25 chia theo endpoint đã
 chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều kiện.
+
+> **Đã trả (25/09/2026):** `portal-cmdk` — bảng lệnh Ctrl K, nút "Tìm nhanh" và phím 1..9
+> đổi environment; bằng chứng là `apps/portal/tests/palette.test.tsx` (mọi lệnh tới được
+> bằng bàn phím, phím số không bị bắt khi đang gõ). Mục đã rời sổ; ghi ở đây để số mục
+> giảm có lý do đọc được.
 
 ## portal-cloud-step — wizard bước cấu hình cloud
 
@@ -864,18 +873,6 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 - **Tài nguyên:** không.
 - **Ảnh hưởng tới kết luận:** bản đầu buộc nhập lại tay ở production — một giới hạn phải
   nói ra, vì nó là chỗ dễ gây sự cố nhất.
-
-## portal-cmdk — bảng lệnh Ctrl+K và phím tắt đổi environment
-
-- **Vì sao nợ:** bản mẫu đã duyệt có cả hai, nhưng chúng không thuộc luồng nào của §8 và
-  làm chúng ở bản đầu sẽ kéo phạm vi. Ghi ra để AC so cấu trúc điều hướng với bản mẫu
-  **không nói dối**: nó biết hai thứ này cố ý chưa có.
-- **Tiền đề:** không cần hạ tầng; là phần việc còn lại sau P8.
-- **Lệnh:** test bàn phím: `Ctrl+K` mở bảng lệnh; `1`/`2`/`3` đổi environment.
-- **Đạt:** mọi hành động trong bảng lệnh đều tới được bằng bàn phím. **Không đạt:** bảng
-  lệnh bắt phím của trình duyệt ⇒ vi phạm a11y.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** độ trung thực của AC-P19 và AC so cấu trúc điều hướng.
 
 ## portal-sse — nhận `flag_changed` qua SSE
 

@@ -16,6 +16,7 @@ import { ErrorState, Loading } from "../../components/States";
 import { qk } from "../../lib/query-keys";
 import { resolveEnv } from "./env";
 import { useRolloutWatcher } from "../rollout/use-rollout-watcher";
+import { ProjectKeyboard } from "./CommandPalette";
 import { projectApi } from "./project-api";
 
 interface ProjectContextValue {
@@ -87,6 +88,7 @@ export function ProjectLayout() {
       >
         <Outlet />
       </div>
+      <ProjectKeyboard />
     </ProjectContext.Provider>
   );
 }

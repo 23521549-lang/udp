@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Search,
   Settings2,
   Sun,
   Users,
@@ -23,6 +24,7 @@ import { Icon } from "../components/Icon";
 import { Logo } from "../components/Logo";
 import { authApi } from "../features/auth/auth-api";
 import { useAuthStore } from "../features/auth/auth-store";
+import { usePaletteStore } from "../features/project/CommandPalette";
 import { projectApi } from "../features/project/project-api";
 import { qk } from "../lib/query-keys";
 import { useTheme } from "./theme";
@@ -113,6 +115,18 @@ function ProjectNav({ projectId }: { projectId: string }) {
       <Link to="/app/projects" className="nv">
         <NavBody icon={FolderKanban}>Mọi project</NavBody>
       </Link>
+      <button
+        type="button"
+        className="searchbtn"
+        onClick={(e) => {
+          e.stopPropagation();
+          usePaletteStore.getState().setOpen(true);
+        }}
+      >
+        <Icon of={Search} size={14} />
+        Tìm nhanh
+        <kbd>Ctrl K</kbd>
+      </button>
       <div className="grp">{project.data?.project.name ?? "Project"}</div>
       <Link
         {...NAV}

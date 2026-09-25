@@ -142,6 +142,8 @@ const overviewRoute = createRoute({
 export interface FlagsSearch {
   flag?: string;
   q?: string;
+  /** "1" = mở hộp tạo flag (từ bảng lệnh) */
+  new?: "1";
 }
 export const flagsRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -152,6 +154,7 @@ export const flagsRoute = createRoute({
     return {
       ...(flag === undefined ? {} : { flag }),
       ...(q === undefined ? {} : { q }),
+      ...(s.new === "1" ? { new: "1" as const } : {}),
     };
   },
   component: FlagsPage,
@@ -176,9 +179,15 @@ export const segmentsRoute = createRoute({
   component: SegmentsPage,
 });
 
+export interface RolloutsSearch {
+  /** "1" = mở hộp tạo rollout (từ bảng lệnh) */
+  new?: "1";
+}
 const rolloutsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "rollouts",
+  validateSearch: (s: Record<string, unknown>): RolloutsSearch =>
+    s.new === "1" ? { new: "1" } : {},
   component: RolloutsPage,
 });
 

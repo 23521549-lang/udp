@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ChartNoAxesColumnIncreasing, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { formatPercent, relativeTime } from "../../lib/format";
@@ -22,7 +22,22 @@ const STRATEGY_LABEL = {
 /** Danh sách rollout của env đang chọn (§10.9, query key có `envId`) */
 export function RolloutsPage() {
   const { project, env } = useProjectContext();
+  const search = useSearch({ from: "/app/projects/$projectId/rollouts" });
+  const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
+  // `?new=1` (từ bảng lệnh): mở hộp tạo một lần rồi bỏ tham số, để Back không mở lại
+  useEffect(() => {
+    if (search.new !== "1") return;
+    setCreating(true);
+    void navigate({
+      to: ".",
+      replace: true,
+      search: (prev: Record<string, unknown>) => {
+        const { new: _drop, ...rest } = prev;
+        return rest;
+      },
+    });
+  }, [search.new, navigate]);
   const rollouts = useQuery({
     queryKey: qk.rollouts(project.id, env.id),
     queryFn: () => rolloutApi.list(project.id, env.id),
