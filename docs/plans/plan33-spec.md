@@ -1,6 +1,6 @@
 # Plan #33 — Service Mesh (4), Ingress (2), Progressive Delivery (3) — SPEC
 
-Trạng thái: **v1, 26/09/2026**. Nguồn: §5.5 Service Mesh / Ingress / Progressive Delivery, §5.3
+Trạng thái: **v1, 26/09/2026 — XONG**. Nguồn: §5.5 Service Mesh / Ingress / Progressive Delivery, §5.3
 (`anyOf`, `exclusive`, `conflicts` tool-level, `CapabilityPreference`), §5.3 ví dụ khai báo Flagger
 và Argo Rollouts, §12.2; tiền đề: Plan #32 (`companions`, `secretKeys` của lớp nền Helm).
 

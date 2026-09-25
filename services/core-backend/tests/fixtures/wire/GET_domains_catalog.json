@@ -745,7 +745,155 @@
         "displayName": "Service Mesh",
         "defaultOrder": 70,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "consul-connect",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "mesh.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "servers",
+                  "required": false,
+                  "kind": "json"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 100
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "istio",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "mesh.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query",
+              "traces.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "accessLog",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "tracingSamplingPercent",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": false,
+                  "min": 0,
+                  "max": 100
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "kuma",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "mesh.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "linkerd",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "mesh.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "trustAnchorPem",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "issuerCertPem",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "issuerKeyPem",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "highAvailability",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "INGRESS",
@@ -753,7 +901,82 @@
         "displayName": "Ingress",
         "defaultOrder": 80,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "nginx",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "ingress.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 2,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                },
+                {
+                  "key": "ingressClass",
+                  "required": false,
+                  "default": "nginx",
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "traefik",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "ingress.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 2,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                },
+                {
+                  "key": "dashboard",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "PROGRESSIVE_DELIVERY",
@@ -761,7 +984,146 @@
         "displayName": "Progressive Delivery",
         "defaultOrder": 90,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "argo-rollouts",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traffic.control",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "id": "metrics.query",
+                "constraint": ">=1"
+              },
+              {
+                "anyOf": [
+                  {
+                    "id": "mesh.traffic-split"
+                  },
+                  {
+                    "id": "ingress.traffic-split"
+                  }
+                ]
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "mesh.traffic-split": "Argo Rollouts cần một service mesh hoặc ingress để chia traffic. Bật domain Service Mesh hoặc Ingress."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "dashboard",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "flagger",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traffic.control",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "anyOf": [
+                  {
+                    "id": "mesh.traffic-split"
+                  },
+                  {
+                    "id": "ingress.traffic-split"
+                  }
+                ]
+              },
+              {
+                "id": "metrics.query",
+                "constraint": "^2"
+              }
+            ],
+            "recommends": [
+              "traces.sink"
+            ],
+            "conflicts": [
+              "service_mesh:consul-connect"
+            ],
+            "hints": {
+              "mesh.traffic-split": "Flagger cần Istio/Linkerd/Kuma (mesh) hoặc NGINX/Traefik (ingress). Bật domain Service Mesh hoặc Ingress.",
+              "metrics.query": "Flagger cần nguồn PromQL: bật Prometheus, VictoriaMetrics hay Grafana Cloud ở Monitoring."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "slackWebhook",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "spinnaker",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traffic.control",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "id": "metrics.query",
+                "constraint": ">=1"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [
+              "monitoring:dynatrace"
+            ],
+            "hints": {
+              "metrics.query": "Spinnaker (Kayenta) cần nguồn metrics: bật một tool ở domain Monitoring."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 20,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 5,
+                  "max": 500
+                },
+                {
+                  "key": "kayenta",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "GITOPS",
