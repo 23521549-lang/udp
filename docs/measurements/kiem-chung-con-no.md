@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 45.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 43.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -713,7 +713,7 @@ owned` còn có tài nguyên mang `shared`.
 
 # Plan #25 — Portal
 
-Mười tám mục (nay còn mười bốn) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
+Mười tám mục (nay còn mười hai) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
 còn Service 1 hôm nay chỉ có endpoint cho một phần. Làm một màn hình không có endpoint
 nghĩa là viết một cái giả rồi gọi nó là xong, nên phạm vi Plan #25 chia theo endpoint đã
 chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều kiện.
@@ -743,6 +743,20 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > refresh độc lập trên cùng storage ⇒ đúng một `/auth/refresh`, cả hai `true`; đối chứng
 > không khoá ⇒ hai lần; đột biến bỏ lease ⇒ đỏ. Còn hở, nói rõ trong mã: storage bị chặn
 > hoàn toàn thì không có kênh chung giữa tab.
+>
+> **Đã trả (25/09/2026):** `portal-deployments` — `GET /deployments` (gom theo
+> `deploymentId`) và `GET /metrics/dora` (năm chỉ số §2.2, mỗi chỉ số kèm cỡ mẫu; median
+> 0 mẫu là `null`, không phải 0). Bằng chứng: `deployment.integration.test.ts` (1 ngày và
+> 7 ngày cho số khác nhau), `dora.test.ts` (định nghĩa từng chỉ số), và test Portal khẳng
+> định đổi khoảng thì hỏi lại với `days` mới. Giới hạn nói thẳng: webhook CI/CD (§8.3)
+> chưa có nên hôm nay chỉ `ROLLBACK` của Service 3 vào Event Store.
+>
+> **Đã trả (25/09/2026):** `portal-admin` — sáu route `/admin/*` và sáu màn hình.
+> Bằng chứng: `admin.integration.test.ts` — USER ⇒ 403 ở MỌI route kể cả PATCH đổi vai,
+> hạ quyền có hiệu lực ngay (vai đọc từ database), audit đổi vai với `projectId = null`;
+> luật "không hạ admin cuối cùng" test bằng hàm thuần vì seed luôn có một admin. Orphan
+> hiện USD/giờ, giá không biết là "chưa rõ giá" (không phải 0). Giới hạn: nửa quét cloud
+> theo tag chưa chạy — response mang `cloudScanned: false` và màn hình nói điều đó.
 
 ## portal-cloud-step — wizard bước cấu hình cloud
 
@@ -797,31 +811,6 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
   chi phí ⇒ người dùng thấy một con số nhỏ hơn hoá đơn thật.
 - **Tài nguyên:** không.
 - **Ảnh hưởng tới kết luận:** phần "nói trước cái giá" của §4.4 chưa tới được người dùng.
-
-## portal-deployments — Deployments và DORA
-
-- **Vì sao nợ:** `GET /projects/:id/deployments` và `GET /projects/:id/metrics/dora` chưa
-  có. Event Store đã đủ dữ liệu để tính.
-- **Tiền đề:** hai endpoint đó tồn tại.
-- **Lệnh:** test tích hợp hai màn hình.
-- **Đạt:** bốn chỉ số DORA đổi đúng khi khoảng thời gian đổi. **Không đạt:** chỉ số không
-  đổi theo khoảng ⇒ query key thiếu `range`.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** §16 đã ghi "DORA dashboard đầy đủ" là hướng phát triển; mục
-  này giữ nó ở đúng chỗ đó.
-
-## portal-admin — bốn màn hình Admin và Orphan
-
-- **Vì sao nợ:** toàn bộ nhóm `/admin/*` chưa có endpoint nào. `classifyOrphans` đã có ở
-  `@udp/adapter-core` nhưng không route nào phơi nó.
-- **Tiền đề:** nhóm endpoint đó tồn tại, và một cơ chế phân quyền `PLATFORM_ADMIN` ở tầng
-  route (đã có `platformRole` trong `PublicUser`).
-- **Lệnh:** test tích hợp bốn màn hình + ô âm: `USER` mở `/admin/*` ⇒ 403.
-- **Đạt:** orphan hiện kèm chi phí USD/giờ. **Không đạt:** một người dùng thường vào được
-  ⇒ lỗ phân quyền.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** §10.11; và `GET /admin/orphan-resources` là nơi duy nhất
-  §4.5 nói "không im lặng bỏ qua" tài nguyên mồ côi.
 
 ## portal-env-crud — tạo và xoá environment
 

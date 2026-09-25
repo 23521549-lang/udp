@@ -1,0 +1,11 @@
+{
+  "route": "GET /admin/orphan-resources",
+  "status": 200,
+  "body": {
+    "resources": [],
+    "estimatedUsdPerHour": 0,
+    "unpriced": [],
+    "pricingAsOf": "2026-09-01",
+    "cloudScanned": false
+  }
+}

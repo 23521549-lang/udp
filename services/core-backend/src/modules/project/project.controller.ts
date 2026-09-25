@@ -17,6 +17,7 @@ import {
 import { validateBody, validateQuery } from "@udp/http";
 import * as auditRepository from "../audit/audit.repository.js";
 import { auditQuerySchema, type AuditQuery } from "../audit/audit.types.js";
+import { deploymentRouter } from "../deployment/deployment.controller.js";
 import { environmentRouter } from "../environment/environment.controller.js";
 import { memberRouter } from "../member/member.controller.js";
 import { flagRouter } from "../flag/flag.controller.js";
@@ -188,3 +189,4 @@ projectRouter.use("/:id", rolloutRouter);
 projectRouter.use("/:id", segmentRouter);
 projectRouter.use("/:id", environmentRouter);
 projectRouter.use("/:id", flagRouter);
+projectRouter.use("/:id", deploymentRouter);

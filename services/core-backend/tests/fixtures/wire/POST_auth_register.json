@@ -3,8 +3,8 @@
   "status": 201,
   "body": {
     "user": {
-      "id": "b180c8ef-7606-4b80-be66-77da6812ad47",
-      "email": "res-outsider-d0669535-538c-4bf5-a224-cf370f4788fb@udp.local",
+      "id": "17e9b50e-7c30-4788-ac9e-4cd3a5fa091b",
+      "email": "deploy-outsider-8e039f07-618c-4fd2-9acd-b6fca6db5f7e@udp.local",
       "name": "Test User",
       "platformRole": "USER"
     },

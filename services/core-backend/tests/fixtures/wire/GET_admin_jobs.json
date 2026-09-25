@@ -1,0 +1,7 @@
+{
+  "route": "GET /admin/jobs",
+  "status": 200,
+  "body": {
+    "jobs": []
+  }
+}

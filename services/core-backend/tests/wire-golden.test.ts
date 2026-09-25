@@ -70,6 +70,17 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "GET /projects/{id}/rollouts/{id}/events": wire.rolloutEventsResponseWire,
   "POST /projects/{id}/rollouts/{id}/actions": wire.rolloutActionResponseWire,
   "POST /projects/{id}/rollouts/probe": wire.rolloutProbeResponseWire,
+
+  "GET /projects/{id}/deployments": wire.deploymentListResponseWire,
+  "GET /projects/{id}/metrics/dora": wire.doraResponseWire,
+
+  "GET /admin/users": wire.adminUsersResponseWire,
+  "PATCH /admin/users/{id}/platform-role": wire.adminUserResponseWire,
+  "GET /admin/projects": wire.adminProjectsResponseWire,
+  "GET /admin/credentials": wire.adminCredentialsResponseWire,
+  "GET /admin/jobs": wire.adminJobsResponseWire,
+  "GET /admin/orphan-resources": wire.adminOrphansResponseWire,
+  "GET /admin/system/health": wire.adminSystemResponseWire,
 };
 
 /**
@@ -185,6 +196,8 @@ const PORTAL_MODULES = [
   "flag",
   "segment",
   "rollout",
+  "deployment",
+  "admin",
 ];
 
 describe("cổng gọi: controller Portal tiêu thụ gửi qua sendJson", () => {

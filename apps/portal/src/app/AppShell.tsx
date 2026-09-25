@@ -14,8 +14,10 @@ import {
   LogOut,
   Menu,
   Moon,
+  Rocket,
   Search,
   Settings2,
+  Shield,
   Sun,
   Users,
 } from "lucide-react";
@@ -59,6 +61,7 @@ export function AppShell() {
         ) : (
           <ProjectNav projectId={projectId} />
         )}
+        <AdminLink />
         <UserBox />
       </aside>
       <main className="main">
@@ -166,6 +169,15 @@ function ProjectNav({ projectId }: { projectId: string }) {
       </Link>
       <Link
         {...NAV}
+        to="/app/projects/$projectId/deployments"
+        params={params}
+        search={keep}
+        activeOptions={sub}
+      >
+        <NavBody icon={Rocket}>Deploy</NavBody>
+      </Link>
+      <Link
+        {...NAV}
         to="/app/projects/$projectId/settings"
         params={params}
         search={keep}
@@ -174,6 +186,18 @@ function ProjectNav({ projectId }: { projectId: string }) {
         <NavBody icon={Settings2}>Cài đặt</NavBody>
       </Link>
     </nav>
+  );
+}
+
+function AdminLink() {
+  const isAdmin = useAuthStore(
+    (s) => s.user?.platformRole === "PLATFORM_ADMIN",
+  );
+  if (!isAdmin) return null;
+  return (
+    <Link to="/admin/users" className="nv">
+      <NavBody icon={Shield}>Quản trị</NavBody>
+    </Link>
   );
 }
 

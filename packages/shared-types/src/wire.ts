@@ -653,6 +653,203 @@ export const rolloutProbeResponseWire = z
   })
   .strict();
 
+// ------------------------------------------------------------- deployment + DORA
+
+export const deploymentEventTypeWire = z.enum([
+  "DEPLOY_PENDING",
+  "DEPLOY_START",
+  "DEPLOY_SUCCESS",
+  "DEPLOY_FAILURE",
+  "FLAG_CHANGE",
+  "ROLLBACK",
+]);
+
+export const deploymentWire = z
+  .object({
+    deploymentId: uuid,
+    status: deploymentEventTypeWire,
+    workloadName: z.string().nullable(),
+    imageTag: z.string().nullable(),
+    commitSha: z.string().nullable(),
+    triggeredBy: z.enum(["WEBHOOK", "MANUAL", "ROLLBACK", "AUTO"]),
+    rolloutSessionId: uuid.nullable(),
+    restoresDeploymentId: uuid.nullable(),
+    startedAt: isoDateTime,
+    lastEventAt: isoDateTime,
+    events: z.array(
+      z
+        .object({
+          id: uuid,
+          eventType: deploymentEventTypeWire,
+          occurredAt: isoDateTime,
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+/** `GET /projects/:id/deployments?envId=` */
+export const deploymentListResponseWire = z
+  .object({ deployments: z.array(deploymentWire) })
+  .strict();
+
+const sampled = z
+  .object({
+    median: z.number().nullable(),
+    samples: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/** `GET /projects/:id/metrics/dora` — năm chỉ số §2.2, mỗi chỉ số kèm cỡ mẫu */
+export const doraWire = z
+  .object({
+    environmentId: uuid.nullable(),
+    window: z
+      .object({ from: isoDateTime, to: isoDateTime, days: z.number().int() })
+      .strict(),
+    deployments: z.number().int().nonnegative(),
+    deploymentFrequencyPerDay: z.number().nonnegative(),
+    leadTimeSeconds: sampled,
+    changeFailureRate: z
+      .object({
+        value: z.number().min(0).max(1).nullable(),
+        failed: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+      })
+      .strict(),
+    recoveryTimeSeconds: sampled,
+    reworkRate: z
+      .object({
+        value: z.number().min(0).max(1).nullable(),
+        rework: z.number().int().nonnegative(),
+        total: z.number().int().nonnegative(),
+      })
+      .strict(),
+    rollbacks: z
+      .object({
+        auto: z.number().int().nonnegative(),
+        manual: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const doraResponseWire = z.object({ dora: doraWire }).strict();
+
+// ------------------------------------------------------------- admin (§9, §10.11)
+
+export const adminUserWire = z
+  .object({
+    id: uuid,
+    email: z.string().email(),
+    name: z.string(),
+    platformRole: platformRoleWire,
+    createdAt: isoDateTime,
+  })
+  .strict();
+
+export const adminUsersResponseWire = z
+  .object({ users: z.array(adminUserWire) })
+  .strict();
+export const adminUserResponseWire = z.object({ user: adminUserWire }).strict();
+
+const cloudProviderWire = z.enum(["AWS", "GCP", "AZURE"]);
+
+export const adminProjectsResponseWire = z
+  .object({
+    projects: z.array(
+      z
+        .object({
+          id: uuid,
+          name: z.string(),
+          status: projectStatusWire,
+          owner: z.object({ id: uuid, email: z.string() }).strict(),
+          memberCount: z.number().int().nonnegative(),
+          cloudProvider: cloudProviderWire.nullable(),
+          createdAt: isoDateTime,
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+/** Chỉ metadata + một đoạn fingerprint — KHÔNG trường mã hoá nào (§9) */
+export const adminCredentialsResponseWire = z
+  .object({
+    credentials: z.array(
+      z
+        .object({
+          id: uuid,
+          provider: cloudProviderWire,
+          mode: z.string(),
+          authKind: z.string(),
+          fingerprint: z.string().max(12),
+          isActive: z.boolean(),
+          lastValidatedAt: isoDateTime.nullable(),
+          createdAt: isoDateTime,
+          project: z.object({ id: uuid, name: z.string() }).strict(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const adminJobsResponseWire = z
+  .object({
+    jobs: z.array(
+      z
+        .object({
+          id: uuid,
+          jobType: z.string(),
+          state: z.string(),
+          attempt: z.number().int().nonnegative(),
+          lastError: z.unknown(),
+          createdAt: isoDateTime,
+          updatedAt: isoDateTime,
+          project: z.object({ id: uuid, name: z.string() }).strict(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const adminOrphansResponseWire = z
+  .object({
+    resources: z.array(
+      z
+        .object({
+          id: uuid,
+          projectId: uuid,
+          projectName: z.string(),
+          kind: z.string(),
+          provider: cloudProviderWire,
+          region: z.string(),
+          providerId: z.string().nullable(),
+          /** `null` = không định giá được, KHÁC 0 */
+          usdPerHour: z.number().nonnegative().nullable(),
+          updatedAt: isoDateTime,
+        })
+        .strict(),
+    ),
+    estimatedUsdPerHour: z.number().nonnegative(),
+    unpriced: z.array(z.string()),
+    pricingAsOf: z.string(),
+    /** Nửa quét cloud theo tag chưa chạy — màn hình phải nói điều đó */
+    cloudScanned: z.boolean(),
+  })
+  .strict();
+
+const serviceStatusWire = z.enum(["up", "down", "unknown"]);
+export const adminSystemResponseWire = z
+  .object({
+    services: z.array(
+      z.object({ name: z.string(), status: serviceStatusWire }).strict(),
+    ),
+    database: z.enum(["up", "down"]),
+    checkedAt: isoDateTime,
+  })
+  .strict();
+
 // ------------------------------------------------------------- kiểu suy ra
 
 export type PlatformRoleWire = z.infer<typeof platformRoleWire>;
@@ -685,4 +882,8 @@ export type RolloutSummaryWire = z.infer<typeof rolloutSummaryWire>;
 export type RolloutDetailWire = z.infer<typeof rolloutDetailWire>;
 export type RolloutEventWire = z.infer<typeof rolloutEventWire>;
 export type MetricSnapshotWire = z.infer<typeof metricSnapshotWire>;
+export type DeploymentWire = z.infer<typeof deploymentWire>;
+export type DoraWire = z.infer<typeof doraWire>;
+export type AdminUserWire = z.infer<typeof adminUserWire>;
+export type AdminOrphansResponseWire = z.infer<typeof adminOrphansResponseWire>;
 export type RolloutIntentActionWire = z.infer<typeof rolloutIntentActionWire>;

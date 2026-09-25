@@ -274,6 +274,11 @@ const envSchema = z
     // ---------- URL nội bộ ----------
     FLAG_SERVICE_URL: z.string().url(),
     CORE_BACKEND_URL: z.string().url(),
+    /**
+     * [v4.11] Tuỳ chọn: chỉ `GET /admin/system/health` của Service 1 hỏi Service 3, và
+     * thiếu URL thì trang admin nói "không rõ" chứ không đoán `localhost`.
+     */
+    PD_CONTROLLER_URL: z.string().url().optional(),
     PROMETHEUS_URL: z.string().url(),
 
     // ---------- CORS / Cookie ----------
@@ -440,10 +445,7 @@ const envSchema = z
      * job `rotate-kek` báo thành công — và khoá được cho là đã thay thì vẫn mở được toàn
      * bộ dữ liệu cũ lẫn mới.
      */
-    if (
-      env.UDP_KEK_V2 !== undefined &&
-      env.UDP_KEK_V2 === env.UDP_KEK_V1
-    ) {
+    if (env.UDP_KEK_V2 !== undefined && env.UDP_KEK_V2 === env.UDP_KEK_V1) {
       ctx.addIssue({
         code: "custom",
         path: ["UDP_KEK_V2"],

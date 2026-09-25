@@ -15,6 +15,7 @@ import { healthRouter } from "./modules/health/health.controller.js";
 import { metricsRouter } from "./modules/health/metrics.controller.js";
 import { authRouter } from "./modules/auth/auth.controller.js";
 import { projectRouter } from "./modules/project/project.controller.js";
+import { adminRouter } from "./modules/admin/admin.controller.js";
 import { isSegmentWriteRequest } from "./modules/segment/segment.routes.js";
 import { defaultAppDeps, setAppDeps, type AppDeps } from "./core/app-deps.js";
 import { API_PREFIX } from "./core/http/api-prefix.js";
@@ -101,6 +102,7 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
 
   app.use(`${API_PREFIX}/auth`, authRouter);
   app.use(`${API_PREFIX}/projects`, projectRouter);
+  app.use(`${API_PREFIX}/admin`, adminRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler); // PHẢI đăng ký cuối cùng

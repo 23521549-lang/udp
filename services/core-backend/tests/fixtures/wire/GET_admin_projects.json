@@ -1,0 +1,116 @@
+{
+  "route": "GET /admin/projects",
+  "status": 200,
+  "body": {
+    "projects": [
+      {
+        "id": "b6355ec7-e24b-42cd-8e0e-87de3d268294",
+        "name": "p-ba22c04a",
+        "status": "DRAFT",
+        "owner": {
+          "id": "f57c51dd-2b32-415b-96d3-e5e17ec74c15",
+          "email": "admin-plain-40d2696c-2d02-44f0-b391-d7e1160d2164@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": null,
+        "createdAt": "2026-09-25T03:16:29.201Z"
+      },
+      {
+        "id": "073e95c5-86fb-447b-9539-b2f907e03e1b",
+        "name": "ruletest-other-3feeaaba",
+        "status": "DRAFT",
+        "owner": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "email": "dev@udp.local"
+        },
+        "memberCount": 0,
+        "cloudProvider": null,
+        "createdAt": "2026-09-22T23:10:55.687Z"
+      },
+      {
+        "id": "477d3a98-1631-4aa1-8619-6db1c851bfea",
+        "name": "ruletest-own-3fbce257",
+        "status": "DRAFT",
+        "owner": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "email": "dev@udp.local"
+        },
+        "memberCount": 0,
+        "cloudProvider": null,
+        "createdAt": "2026-09-22T23:10:55.334Z"
+      },
+      {
+        "id": "8c18fa34-1e84-4ea1-ae3a-46d522c70ee0",
+        "name": "fempty-c0b044c0",
+        "status": "DRAFT",
+        "owner": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "email": "dev@udp.local"
+        },
+        "memberCount": 0,
+        "cloudProvider": null,
+        "createdAt": "2026-09-22T23:09:02.620Z"
+      },
+      {
+        "id": "8c7ed379-3628-4ace-9680-726f5cbd5fcb",
+        "name": "fstale-4b4efb32",
+        "status": "DRAFT",
+        "owner": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "email": "dev@udp.local"
+        },
+        "memberCount": 0,
+        "cloudProvider": null,
+        "createdAt": "2026-09-22T23:09:02.302Z"
+      },
+      {
+        "id": "f0b621b9-6474-4f76-a9d1-73fe60179899",
+        "name": "fstats-a4b00a44",
+        "status": "DRAFT",
+        "owner": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "email": "dev@udp.local"
+        },
+        "memberCount": 0,
+        "cloudProvider": null,
+        "createdAt": "2026-09-22T23:09:01.937Z"
+      },
+      {
+        "id": "723727e9-0c2f-4fca-aae4-5aa461c409b3",
+        "name": "flagtest-d04c11c2",
+        "status": "DRAFT",
+        "owner": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "email": "dev@udp.local"
+        },
+        "memberCount": 0,
+        "cloudProvider": null,
+        "createdAt": "2026-09-21T20:39:38.190Z"
+      },
+      {
+        "id": "1da31038-b255-4601-b8af-059276e4d1fc",
+        "name": "proj-cb7cf5f7",
+        "status": "DRAFT",
+        "owner": {
+          "id": "0a64fa63-9716-419f-810d-cec0406ac9bb",
+          "email": "test-27013709-0f06-459d-a0fe-2a4ccb3ad2bb@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": null,
+        "createdAt": "2026-09-09T10:21:09.903Z"
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000010",
+        "name": "demo-service",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "email": "dev@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": null,
+        "createdAt": "2026-09-08T04:27:30.686Z"
+      }
+    ]
+  }
+}

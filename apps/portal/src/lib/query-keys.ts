@@ -52,6 +52,20 @@ export const qk = {
     ["rollout", projectId, rolloutId] as const,
   activeRollouts: (projectId: string) =>
     ["rollouts-active", projectId] as const,
+
+  deployments: (projectId: string, envId: string) =>
+    ["deployments", projectId, envId] as const,
+  /** §10.14: `range` trong key — đổi khoảng mà số không đổi là key thiếu `range` */
+  dora: (projectId: string, envId: string, days: number) =>
+    ["dora", projectId, envId, days] as const,
+
+  adminUsers: (search: string) => ["admin", "users", search] as const,
+  adminProjects: (status: string) => ["admin", "projects", status] as const,
+  adminCredentials: () => ["admin", "credentials"] as const,
+  adminJobs: (state: string) => ["admin", "jobs", state] as const,
+  /** §10.14: `["orphans"]` — invalidate khi dọn một tài nguyên */
+  adminOrphans: () => ["admin", "orphans"] as const,
+  adminSystem: () => ["admin", "system"] as const,
 } as const;
 
 export type QueryKeyName = keyof typeof qk;
@@ -64,6 +78,8 @@ export const ENV_SCOPED = [
   "flagRules",
   "flagStats",
   "rollouts",
+  "deployments",
+  "dora",
 ] as const satisfies readonly QueryKeyName[];
 
 /**
@@ -84,6 +100,12 @@ export const NOT_ENV_SCOPED = {
   segment: "segment thuộc project (§2.2)",
   rollout: "id rollout đã gắn đúng một env",
   activeRollouts: "watcher auto-rollback của cả project (§10.9)",
+  adminUsers: "toàn hệ thống, không thuộc project nào",
+  adminProjects: "toàn hệ thống",
+  adminCredentials: "toàn hệ thống",
+  adminJobs: "toàn hệ thống",
+  adminOrphans: "toàn hệ thống",
+  adminSystem: "toàn hệ thống",
 } as const satisfies Partial<Record<QueryKeyName, string>>;
 
 /**
@@ -96,4 +118,5 @@ export const qkPrefix = {
   flagOf: (projectId: string, flagId: string) =>
     ["flag", projectId, flagId] as const,
   staleFlagsOf: (projectId: string) => ["staleFlags", projectId] as const,
+  adminUsersAll: () => ["admin", "users"] as const,
 } as const;

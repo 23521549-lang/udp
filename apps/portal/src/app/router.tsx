@@ -9,6 +9,16 @@ import {
 import { Toaster } from "../components/Toast";
 import { useAuthStore } from "../features/auth/auth-store";
 import { LoginPage, RegisterPage } from "../features/auth/AuthPages";
+import {
+  AdminCredentialsPage,
+  AdminJobsPage,
+  AdminLayout,
+  AdminOrphansPage,
+  AdminProjectsPage,
+  AdminSystemPage,
+  AdminUsersPage,
+} from "../features/admin/AdminPages";
+import { DeploymentsPage } from "../features/deployment/DeploymentsPage";
 import { CleanupPage } from "../features/flag/CleanupPage";
 import { FlagsPage } from "../features/flag/FlagsPage";
 import { NewProjectPage } from "../features/project/NewProjectPage";
@@ -197,6 +207,12 @@ export const rolloutDetailRoute = createRoute({
   component: RolloutDetailPage,
 });
 
+const deploymentsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "deployments",
+  component: DeploymentsPage,
+});
+
 export interface SettingsSearch {
   tab?: "keys" | "members" | "audit" | "project";
 }
@@ -211,10 +227,75 @@ export const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+/**
+ * Khu quản trị: guard đọc `platformRole` từ store để ẨN (§10.3); chặn thật ở Service 1.
+ * Chưa đăng nhập ⇒ /login; đăng nhập mà không phải admin ⇒ về /app/projects.
+ */
+const adminRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin",
+  beforeLoad: ({ location }) => {
+    const user = useAuthStore.getState().user;
+    if (user === null) {
+      throw redirect({ to: "/login", search: { redirectTo: location.href } });
+    }
+    if (user.platformRole !== "PLATFORM_ADMIN") {
+      throw redirect({ to: "/app/projects" });
+    }
+  },
+  component: AdminLayout,
+});
+const adminIndexRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/admin/users" });
+  },
+});
+const adminUsersRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "users",
+  component: AdminUsersPage,
+});
+const adminProjectsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "projects",
+  component: AdminProjectsPage,
+});
+const adminCredentialsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "credentials",
+  component: AdminCredentialsPage,
+});
+const adminJobsRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "jobs",
+  component: AdminJobsPage,
+});
+const adminOrphansRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "orphans",
+  component: AdminOrphansPage,
+});
+const adminSystemRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "system",
+  component: AdminSystemPage,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   registerRoute,
+  adminRoute.addChildren([
+    adminIndexRoute,
+    adminUsersRoute,
+    adminProjectsRoute,
+    adminCredentialsRoute,
+    adminJobsRoute,
+    adminOrphansRoute,
+    adminSystemRoute,
+  ]),
   appRoute.addChildren([
     appIndexRoute,
     projectsRoute,
@@ -226,6 +307,7 @@ export const routeTree = rootRoute.addChildren([
       segmentsRoute,
       rolloutsRoute,
       rolloutDetailRoute,
+      deploymentsRoute,
       settingsRoute,
     ]),
   ]),
