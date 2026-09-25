@@ -6,6 +6,7 @@ import {
   DOMAIN_ADAPTER_PROPERTIES,
 } from "@udp/adapter-core";
 import type { DomainAdapter } from "@udp/adapter-core";
+import type { PullCredentialDeclaration } from "../adapter-base/registry-pull.js";
 import {
   METRICS_QUERY_MAJOR,
   type MetricsSourceDeclaration,
@@ -116,6 +117,30 @@ export interface LoadedAdapter {
   at: string;
   /** Nguồn metrics của adapter `provides: metrics.query` (§5.4) — vắng với mọi adapter khác */
   metricsSource?: MetricsSourceDeclaration;
+  /** Cách dựng khoá kéo image của adapter registry (Plan #35 QĐ-3) — vắng nếu kéo không cần khoá */
+  pullCredential?: PullCredentialDeclaration;
+}
+
+/**
+ * Export `pullCredential` chỉ có nghĩa ở adapter `provides: registry.oci` — khai ở chỗ khác là
+ * một lời khai không ai đọc tới; khai sai hình là adapter hỏng, NÉM lúc nạp.
+ */
+export function pullCredentialOf(
+  adapter: DomainAdapter,
+  exported: unknown,
+  at: string,
+): PullCredentialDeclaration | undefined {
+  if (exported === undefined) return undefined;
+  if (!adapter.capabilities.provides.some((p) => p.id === "registry.oci")) {
+    throw new InvalidAdapterError(
+      at,
+      "xuất pullCredential mà không provides registry.oci",
+    );
+  }
+  if (typeof exported !== "function") {
+    throw new InvalidAdapterError(at, "pullCredential phải là một hàm");
+  }
+  return exported as PullCredentialDeclaration;
 }
 
 /**
@@ -203,7 +228,11 @@ export async function loadAdapters(
         );
       }
 
-      const exported = mod as { default?: unknown; metricsSource?: unknown };
+      const exported = mod as {
+        default?: unknown;
+        metricsSource?: unknown;
+        pullCredential?: unknown;
+      };
       const candidate = exported.default;
       if (candidate === undefined) {
         throw new InvalidAdapterError(at, "không có export mặc định");
@@ -219,11 +248,17 @@ export async function loadAdapters(
         exported.metricsSource,
         at,
       );
+      const pullCredential = pullCredentialOf(
+        candidate,
+        exported.pullCredential,
+        at,
+      );
       out.push({
         key,
         adapter: candidate,
         at,
         ...(metricsSource === undefined ? {} : { metricsSource }),
+        ...(pullCredential === undefined ? {} : { pullCredential }),
       });
     }
   }

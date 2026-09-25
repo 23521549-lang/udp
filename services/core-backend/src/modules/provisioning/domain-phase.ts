@@ -23,6 +23,10 @@ import {
   upsertBinding,
   type StoredBinding,
 } from "../capability/capability-binding.repository.js";
+import {
+  pullCredentialsOf,
+  syncRegistryPull,
+} from "../adapter-base/registry-pull.js";
 import { SYSTEM_NAMESPACE } from "../cluster/bootstrap.js";
 import { openSecrets } from "../domain/tool-secrets.js";
 import type { DomainAdapterRegistry } from "../domain/domain-adapter.registry.js";
@@ -492,7 +496,51 @@ export async function runDomainPhase(
       message: first.message,
     };
   }
-  return { status: "DONE", deployed };
+  const pull = await distributeRegistryPull(input, domains);
+  return pull === null ? { status: "DONE", deployed } : pull;
+}
+
+/** Adapter có `provides: registry.oci` — chỉ khi có nó mới có khoá kéo để phân phối */
+export const providesRegistry = (adapter: DomainAdapter): boolean =>
+  adapter.capabilities.provides.some((p) => p.id === "registry.oci");
+
+/**
+ * Khoá kéo image của MỌI registry đang bật vào `udp-registry-pull` của từng environment (Plan #35
+ * QĐ-3). Không registry nào ⇒ không ghi gì, TRỪ khi `reset` (registry vừa bị tắt): khi ấy về
+ * rỗng, khoá của tool đã tắt không được sống tiếp trong cluster. `null` = xong.
+ */
+export async function distributeRegistryPull(
+  input: DomainPhaseInput,
+  domains: readonly {
+    adapter: DomainAdapter;
+    config: Record<string, unknown>;
+  }[],
+  options: { reset?: boolean } = {},
+): Promise<DomainPhaseOutcome | null> {
+  const registries = domains.filter((d) => providesRegistry(d.adapter));
+  const first = registries[0];
+  if (first === undefined && options.reset !== true) return null;
+  try {
+    await syncRegistryPull(
+      input.access,
+      input.environments.map((e) => e.k8sNamespace),
+      pullCredentialsOf(
+        registries.map((d) => ({
+          pullCredential: input.registry
+            .all()
+            .find((l) => l.adapter === d.adapter)?.pullCredential,
+          config: d.config,
+        })),
+      ),
+    );
+    return null;
+  } catch (e) {
+    return {
+      status: "FAILED",
+      domainType: first?.adapter.domainType ?? "CONTAINER_REGISTRY",
+      message: `phân phối khoá kéo image: ${messageOf(e)}`,
+    };
+  }
 }
 
 /** Domain đã chạm cluster (kể cả dở dang) — thứ bù trừ phải gỡ */

@@ -2883,7 +2883,8 @@ type CapabilityId =
   | "policy.admission"
   | "pipeline.trigger"        // CI có thể được kích hoạt và gửi webhook về
   | "db.instance"
-  | "cost.query";
+  | "cost.query"
+  | "packages.store";         // [v4.11, Plan #35] npm, Maven, PyPI… — Artifact & Package Registry
 
 interface CapabilityDeclaration {
   /** Adapter này cung cấp gì. exclusive = chỉ được có MỘT provider trong cluster */

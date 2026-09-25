@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   bootstrapManifests,
   rbacProblems,
+  REGISTRY_PULL_SECRET,
   SYSTEM_NAMESPACE,
   type Manifest,
 } from "../src/modules/cluster/bootstrap.js";
@@ -58,11 +59,16 @@ describe("manifest bootstrap (§12.2)", () => {
     expect(rbacProblems(manifests)).toEqual([]);
   });
 
-  it("chỉ udp-tooling có secrets, và chỉ trong Role của udp-system (Plan #31 AC-8)", () => {
+  it("chỉ udp-tooling có secrets: trọn quyền trong udp-system, ở env CHỈ udp-registry-pull (Plan #31 AC-8, #35 AC-2)", () => {
+    type Rule = {
+      resources: string[];
+      resourceNames?: string[];
+      verbs: string[];
+    };
     const withSecrets = manifests.filter(
       (m) =>
         (m.ref.kind === "Role" || m.ref.kind === "ClusterRole") &&
-        ((m.body.rules ?? []) as { resources: string[] }[]).some((r) =>
+        ((m.body.rules ?? []) as Rule[]).some((r) =>
           r.resources.includes("secrets"),
         ),
     );
@@ -70,7 +76,38 @@ describe("manifest bootstrap (§12.2)", () => {
       withSecrets.map(
         (m) => `${m.ref.kind}:${String(m.ref.namespace)}/${String(m.ref.name)}`,
       ),
-    ).toEqual([`Role:${SYSTEM_NAMESPACE}/udp-tooling`]);
+    ).toEqual([
+      `Role:${SYSTEM_NAMESPACE}/udp-tooling`,
+      "Role:p-0f0f-dev/udp-tooling-registry-pull",
+      "Role:p-0f0f-prod/udp-tooling-registry-pull",
+    ]);
+    for (const m of withSecrets.slice(1)) {
+      expect(m.body.rules).toEqual([
+        {
+          apiGroups: [""],
+          resources: ["secrets"],
+          resourceNames: [REGISTRY_PULL_SECRET],
+          verbs: ["get", "update", "patch"],
+        },
+      ]);
+    }
+  });
+
+  it("mỗi environment có udp-registry-pull RỖNG kiểu dockerconfigjson (Plan #35 AC-2)", () => {
+    for (const env of INPUT.environments) {
+      const secret = manifests.find(
+        (m) =>
+          m.ref.kind === "Secret" &&
+          m.ref.namespace === env.k8sNamespace &&
+          m.ref.name === REGISTRY_PULL_SECRET,
+      );
+      expect(secret?.body).toMatchObject({
+        type: "kubernetes.io/dockerconfigjson",
+        data: {
+          ".dockerconfigjson": Buffer.from('{"auths":{}}').toString("base64"),
+        },
+      });
+    }
   });
 
   it("ba ServiceAccount rời nhau trong udp-system", () => {
@@ -150,6 +187,41 @@ describe("manifest bootstrap (§12.2)", () => {
       },
     ];
     expect(rbacProblems(bad)).toHaveLength(4);
+  });
+
+  it("ngoại lệ udp-registry-pull HẸP: create, list, tên khác, thiếu resourceNames hay ClusterRole ⇒ đỏ", () => {
+    const rule = (over: Record<string, unknown>) => ({
+      apiGroups: [""],
+      resources: ["secrets"],
+      resourceNames: [REGISTRY_PULL_SECRET],
+      verbs: ["get", "patch"],
+      ...over,
+    });
+    const role = (kind: string, r: Record<string, unknown>): Manifest => ({
+      ref: {
+        apiVersion: "rbac.authorization.k8s.io/v1",
+        kind,
+        name: "x",
+        namespace: "p-0f0f-dev",
+      },
+      body: { rules: [r] },
+    });
+    expect(rbacProblems([role("Role", rule({}))])).toEqual([]);
+    for (const bad of [
+      rule({ verbs: ["create"] }),
+      rule({ verbs: ["list"] }),
+      rule({ verbs: ["delete"] }),
+      rule({ resourceNames: ["khac"] }),
+      rule({ resourceNames: [REGISTRY_PULL_SECRET, "khac"] }),
+      rule({ resourceNames: undefined }),
+    ]) {
+      expect(rbacProblems([role("Role", bad)]), JSON.stringify(bad)).toEqual([
+        "x: resource secrets",
+      ]);
+    }
+    expect(rbacProblems([role("ClusterRole", rule({}))])).toEqual([
+      "x: resource secrets",
+    ]);
   });
 
   it("secrets: hợp lệ trong Role của udp-system, đỏ ở ClusterRole và ở namespace khác", () => {

@@ -14,6 +14,15 @@ import { IDENTITY_SERVICE_ACCOUNTS } from "@udp/adapter-core";
 
 export const SYSTEM_NAMESPACE = "udp-system";
 
+/**
+ * Secret kéo image của MỖI namespace environment (Plan #35 QĐ-2) — bootstrap tạo rỗng, nền tảng
+ * phân phối khoá vào đó. Tên cố định vì RBAC chỉ mở đúng tên này (`resourceNames`).
+ */
+export const REGISTRY_PULL_SECRET = "udp-registry-pull";
+const EMPTY_DOCKER_CONFIG = Buffer.from(JSON.stringify({ auths: {} })).toString(
+  "base64",
+);
+
 export interface BootstrapInput {
   projectId: string;
   environments: readonly { name: string; k8sNamespace: string }[];
@@ -29,6 +38,7 @@ interface PolicyRule {
   apiGroups: string[];
   resources: string[];
   verbs: string[];
+  resourceNames?: string[];
 }
 
 const RW = ["get", "list", "watch", "create", "update", "patch"];
@@ -82,6 +92,20 @@ const TOOLING_SYSTEM_RULES: PolicyRule[] = [
   { apiGroups: [""], resources: ["configmaps"], verbs: [...RW, "delete"] },
   /** Khoá của agent (Plan #31 QĐ-5) — chỉ trong namespace của chính SA, đúng §12.2 */
   { apiGroups: [""], resources: ["secrets"], verbs: [...RW, "delete"] },
+];
+
+/**
+ * §12.2 sửa ở D-P26 (Plan #35): ở namespace environment, `udp-tooling` chỉ đọc và sửa ĐÚNG MỘT
+ * Secret — `udp-registry-pull` — không tạo, không liệt kê, không xoá, không Secret nào khác.
+ */
+const TOOLING_REGISTRY_PULL_VERBS = ["get", "update", "patch"];
+const TOOLING_ENV_RULES: PolicyRule[] = [
+  {
+    apiGroups: [""],
+    resources: ["secrets"],
+    resourceNames: [REGISTRY_PULL_SECRET],
+    verbs: TOOLING_REGISTRY_PULL_VERBS,
+  },
 ];
 
 /** CRD là đối tượng phạm vi cluster — operator của domain cần cài chúng */
@@ -264,6 +288,21 @@ export function bootstrapManifests(input: BootstrapInput): Manifest[] {
       roleBinding(ns, workload, workload),
       role(ns, traffic, TRAFFIC_RULES),
       roleBinding(ns, traffic, traffic),
+      {
+        ref: {
+          apiVersion: "v1",
+          kind: "Secret",
+          namespace: ns,
+          name: REGISTRY_PULL_SECRET,
+        },
+        body: {
+          metadata: { name: REGISTRY_PULL_SECRET, namespace: ns, labels: meta },
+          type: "kubernetes.io/dockerconfigjson",
+          data: { ".dockerconfigjson": EMPTY_DOCKER_CONFIG },
+        },
+      },
+      role(ns, `${tooling}-registry-pull`, TOOLING_ENV_RULES),
+      roleBinding(ns, `${tooling}-registry-pull`, tooling),
     );
   }
   return out.map(withTypeMeta);
@@ -282,6 +321,12 @@ export function rbacProblems(manifests: readonly Manifest[]): string[] {
     // §12.2: "không `secrets` ngoài namespace của mình" — ba SA sống trong udp-system
     const ownNamespace =
       m.ref.kind === "Role" && m.ref.namespace === SYSTEM_NAMESPACE;
+    /** Ngoại lệ DUY NHẤT (D-P26): đúng `udp-registry-pull`, chỉ đọc/sửa, trong một Role */
+    const registryPullOnly = (r: PolicyRule): boolean =>
+      m.ref.kind === "Role" &&
+      r.resourceNames?.length === 1 &&
+      r.resourceNames[0] === REGISTRY_PULL_SECRET &&
+      r.verbs.every((v) => TOOLING_REGISTRY_PULL_VERBS.includes(v));
     for (const r of rules) {
       for (const v of r.verbs) {
         if (FORBIDDEN_VERBS.includes(v))
@@ -290,7 +335,7 @@ export function rbacProblems(manifests: readonly Manifest[]): string[] {
       for (const res of r.resources) {
         if (
           FORBIDDEN_RESOURCES.includes(res) ||
-          (res === "secrets" && !ownNamespace)
+          (res === "secrets" && !ownNamespace && !registryPullOnly(r))
         ) {
           problems.push(`${String(m.ref.name)}: resource ${res}`);
         }

@@ -37,9 +37,11 @@ import { openSecrets, sealSecrets } from "../modules/domain/tool-secrets.js";
 import {
   adapterContext,
   callOnTargets,
+  distributeRegistryPull,
   lastErrorOf,
   perEnvironment,
   persistDeployed,
+  providesRegistry,
   resolvedFor,
   teardownTarget,
   type DeployTarget,
@@ -502,6 +504,14 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
     for (const op of plan.disables) {
       await kit.fenceOf(run).assert();
       if (op.kind === "disable") await disable(ctx, op.from);
+    }
+
+    // Khoá kéo image theo tập registry SAU lượt áp; registry vừa tắt ⇒ về rỗng (Plan #35)
+    const pull = await distributeRegistryPull(phase, targetStates, {
+      reset: current.states.some((s) => providesRegistry(s.adapter)),
+    });
+    if (pull?.status === "FAILED") {
+      ctx.failures.push({ domainType: pull.domainType, message: pull.message });
     }
 
     // Preference ĐÍCH thay cả tập: hàng trỏ tới tool vừa tắt không được sống sót (§5.3)

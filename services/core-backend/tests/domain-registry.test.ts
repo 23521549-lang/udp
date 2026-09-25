@@ -14,6 +14,7 @@ import {
   InvalidAdapterError,
   loadAdapters,
   metricsSourceOf,
+  pullCredentialOf,
   registryKey,
 } from "../src/modules/domain/domain-adapter.registry.js";
 import {
@@ -146,6 +147,30 @@ describe("§5.4 — adapter metrics.query PHẢI kèm nguồn metrics, kiểm l�
   });
 });
 
+describe("pullCredential chỉ ở adapter registry.oci, và phải là hàm (Plan #35)", () => {
+  const providing = (id: string) =>
+    ({
+      capabilities: { provides: [{ id, version: "1.0.0" }], requires: [] },
+    }) as never;
+  const fn = () => null;
+
+  it("adapter registry.oci xuất hàm ⇒ nhận; không xuất ⇒ vắng", () => {
+    expect(pullCredentialOf(providing("registry.oci"), fn, "x")).toBe(fn);
+    expect(
+      pullCredentialOf(providing("registry.oci"), undefined, "x"),
+    ).toBeUndefined();
+  });
+
+  it("không provides registry.oci, hay không phải hàm ⇒ NÉM lúc nạp", () => {
+    expect(() => pullCredentialOf(providing("logs.sink"), fn, "x")).toThrow(
+      /không provides registry.oci/,
+    );
+    expect(() =>
+      pullCredentialOf(providing("registry.oci"), { server: "x" }, "x"),
+    ).toThrow(/phải là một hàm/);
+  });
+});
+
 describe("type guard 7 + 6 — hai danh sách là DỮ LIỆU, không viết lại", () => {
   it("đúng bảy phương thức và sáu thuộc tính", () => {
     expect(DOMAIN_ADAPTER_METHODS).toHaveLength(7);
@@ -235,7 +260,9 @@ describe("type guard 7 + 6 — hai danh sách là DỮ LIỆU, không viết l�
       ["capabilities", "khong phai object"],
       ["configSchema", {}],
     ]);
-    expect(() => assertIsDomainAdapter(broken, "o-day")).toThrow("capabilities");
+    expect(() => assertIsDomainAdapter(broken, "o-day")).toThrow(
+      "capabilities",
+    );
   });
 
   it("không phải object ⇒ bị bắt, không vỡ ở một chỗ khác", () => {

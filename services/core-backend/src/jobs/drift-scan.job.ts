@@ -15,8 +15,13 @@ import {
 } from "../modules/day2/drift-scan.js";
 import {
   perEnvironment,
+  providesRegistry,
   resolvedFor,
 } from "../modules/provisioning/domain-phase.js";
+import {
+  pullCredentialsOf,
+  withRegistryPullDrift,
+} from "../modules/adapter-base/registry-pull.js";
 import { openSecrets } from "../modules/domain/tool-secrets.js";
 import { tagsOf } from "../modules/provisioning/provision-plan.js";
 import { messageOf, type JobInput, type JobKit } from "./job-kit.js";
@@ -65,20 +70,30 @@ export async function sweepDrift(
   const registry = await kit.deps.domainRegistry();
 
   for (const { id: projectId } of projects) {
-    const rows = (await activeDomainsOfProject(prisma, projectId))
-      .filter(
-        (r) =>
-          options.domainType === undefined ||
-          r.domainType === options.domainType,
-      )
-      // Adapter so cấu hình mong muốn với cluster: cần bản RÕ, chỉ trong bộ nhớ
-      .map((r) => ({
+    // Adapter so cấu hình mong muốn với cluster: cần bản RÕ, chỉ trong bộ nhớ
+    const active = (await activeDomainsOfProject(prisma, projectId)).map(
+      (r) => ({
         ...r,
         toolConfig: openSecrets(
           { projectId, domainType: r.domainType },
           r.toolConfig,
         ),
-      }));
+      }),
+    );
+    const rows = active.filter(
+      (r) =>
+        options.domainType === undefined || r.domainType === options.domainType,
+    );
+    // Khoá kéo mong muốn gộp từ MỌI registry đang bật — dù lượt quét chỉ nhắm một domain
+    const pullCredentials = pullCredentialsOf(
+      active.map((r) => ({
+        pullCredential: registry
+          .all()
+          .find((l) => l.adapter === registry.get(r.domainType, r.selectedTool))
+          ?.pullCredential,
+        config: r.toolConfig,
+      })),
+    );
     const job = await prisma.provisioningJob.findFirst({
       where: { projectId, jobType: "PROVISION", state: "DONE" },
       orderBy: { createdAt: "desc" },
@@ -113,9 +128,15 @@ export async function sweepDrift(
           return scanDomainDrift(rows, {
             adapterFor: (domainType, toolId) => {
               const adapter = registry.get(domainType, toolId);
-              return adapter === undefined
-                ? undefined
-                : perEnvironment(adapter, input.environments);
+              if (adapter === undefined) return undefined;
+              const scanned = perEnvironment(adapter, input.environments);
+              return providesRegistry(adapter)
+                ? withRegistryPullDrift(
+                    scanned,
+                    input.environments.map((e) => e.k8sNamespace),
+                    pullCredentials,
+                  )
+                : scanned;
             },
             contextFor,
             writeDrift: (id, record) => writeDriftRecord(prisma, id, record),

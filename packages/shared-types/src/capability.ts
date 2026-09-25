@@ -39,9 +39,11 @@ export type CapabilityId =
   | "policy.admission"
   | "pipeline.trigger"
   | "db.instance"
-  | "cost.query";
+  | "cost.query"
+  /** [v4.11, Plan #35] Kho package ngôn ngữ (npm, Maven, PyPI…) — Artifact & Package Registry */
+  | "packages.store";
 
-/** Đúng 14 giá trị của `CapabilityId`, cho type guard và cho test đối chiếu tài liệu */
+/** Đúng 15 giá trị của `CapabilityId`, cho type guard và cho test đối chiếu tài liệu */
 export const CAPABILITY_IDS: readonly CapabilityId[] = [
   "registry.oci",
   "metrics.query",
@@ -57,6 +59,7 @@ export const CAPABILITY_IDS: readonly CapabilityId[] = [
   "pipeline.trigger",
   "db.instance",
   "cost.query",
+  "packages.store",
 ];
 
 /**

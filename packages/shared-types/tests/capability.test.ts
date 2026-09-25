@@ -19,9 +19,9 @@ import {
  */
 
 describe("CAPABILITY_IDS", () => {
-  it("đúng 14 giá trị, không trùng", () => {
-    expect(CAPABILITY_IDS).toHaveLength(14);
-    expect(new Set(CAPABILITY_IDS).size).toBe(14);
+  it("đúng 15 giá trị, không trùng", () => {
+    expect(CAPABILITY_IDS).toHaveLength(15);
+    expect(new Set(CAPABILITY_IDS).size).toBe(15);
   });
 
   /**
@@ -48,6 +48,7 @@ describe("CAPABILITY_IDS", () => {
       "pipeline.trigger": true,
       "db.instance": true,
       "cost.query": true,
+      "packages.store": true,
     };
     expect([...CAPABILITY_IDS].sort()).toEqual(Object.keys(every).sort());
   });

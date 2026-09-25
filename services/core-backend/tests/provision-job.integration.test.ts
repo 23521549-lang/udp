@@ -6,7 +6,10 @@ import {
   type ResolvedCredential,
 } from "@udp/adapter-core";
 import { SimulatedCrash, type RunnerObserver } from "@udp/adapter-core/runner";
-import { KINDS_WITHOUT_CREATE_TAGS } from "@udp/adapter-core/testing";
+import {
+  createFakeClusterAccess,
+  KINDS_WITHOUT_CREATE_TAGS,
+} from "@udp/adapter-core/testing";
 import { env } from "@udp/config";
 import type { DomainType } from "@udp/config/domains";
 import { awsPlan } from "@udp/cloud-adapters/aws";
@@ -1309,6 +1312,134 @@ describe(
       expect(seen).toContain(`configure:${SENTINEL_2}`);
       expect(await nowhere(projectId, SENTINEL_2)).toBe(true);
       expect(await nowhere(projectId, SENTINEL)).toBe(true);
+    });
+  },
+);
+
+describe(
+  "khoá kéo image vào udp-registry-pull của mọi environment (Plan #35 P2)",
+  { timeout: 180_000 },
+  () => {
+    const SENTINEL = "canhKhoaKeoP35abcdef0123";
+    const pullRef = (namespace: string) => ({
+      apiVersion: "v1",
+      kind: "Secret",
+      namespace,
+      name: "udp-registry-pull",
+    });
+
+    /** Registry giả có `pullCredential`, và MỘT cluster ghi nhớ để đọc lại Secret */
+    function registryWorld() {
+      const w = applyWorld();
+      const registryTool = fakeDomain({
+        domainType: "CONTAINER_REGISTRY",
+        toolId: "fake-registry",
+        scope: "cluster",
+        provides: [
+          {
+            id: "registry.oci",
+            version: "1.0.0",
+            providedBy: "container_registry:fake-registry",
+            endpoint: "ghcr.io/acme",
+          },
+        ],
+      });
+      const registry: DomainAdapterRegistry = {
+        get: (domainType, toolId) =>
+          domainType === "CONTAINER_REGISTRY" && toolId === "fake-registry"
+            ? registryTool.adapter
+            : w.registry.get(domainType, toolId),
+        all: () => [
+          {
+            key: "container_registry:fake-registry",
+            adapter: registryTool.adapter,
+            at: "test",
+            pullCredential: () => ({
+              server: "ghcr.io",
+              username: "acme",
+              password: SENTINEL,
+            }),
+          },
+        ],
+      };
+      const cluster = createFakeClusterAccess({ clusterId: "c-pull" });
+      const base = fakeClusters();
+      const clusters: FakeClusters = {
+        ...base,
+        runtime: { ...base.runtime, accessFor: () => cluster },
+      };
+      return { registry, cluster, clusters };
+    }
+
+    it("bật registry ⇒ khoá gộp vào MỌI env; sửa tay ⇒ drift; tắt ⇒ về rỗng", async () => {
+      const { registry, cluster, clusters } = registryWorld();
+      const { projectId, provisioned } = await activeProject(registry);
+      const namespaces = (
+        await admin.environment.findMany({
+          where: { projectId },
+          select: { k8sNamespace: true },
+        })
+      ).map((e) => e.k8sNamespace);
+      const client = await cluster.getClient("tooling");
+      const dockerConfigIn = async (namespace: string) =>
+        (
+          await client.read<{ stringData?: Record<string, string> }>(
+            "get",
+            pullRef(namespace),
+          )
+        )?.stringData?.[".dockerconfigjson"];
+      const running = [
+        { domainType: "MONITORING", toolId: "fake-metrics" },
+        { domainType: "PROGRESSIVE_DELIVERY", toolId: "fake-rollouts" },
+      ];
+
+      const enable = await seedApply(projectId, provisioned, [
+        ...running,
+        { domainType: "CONTAINER_REGISTRY", toolId: "fake-registry" },
+      ]);
+      await workerWith(registry, clusters).run(enable, { final: false });
+      expect((await snapshot(projectId, enable)).job.state).toBe("DONE");
+      for (const namespace of namespaces) {
+        const config = JSON.parse(
+          (await dockerConfigIn(namespace)) ?? "{}",
+        ) as {
+          auths: Record<string, { username: string; password: string }>;
+        };
+        expect(config.auths["ghcr.io"]).toMatchObject({
+          username: "acme",
+          password: SENTINEL,
+        });
+      }
+      // Khoá chỉ ở Secret của cluster: không bảng, payload job hay audit nào mang nó
+      const rows = await admin.provisioningJob.findMany({
+        where: { projectId },
+        select: { payload: true, lastError: true },
+      });
+      expect(JSON.stringify(rows)).not.toContain(SENTINEL);
+
+      // Sửa tay một env ⇒ lượt quét drift gắn trôi vào domain registry
+      const first = namespaces[0] ?? "";
+      await client.write("patch", pullRef(first), {
+        stringData: { ".dockerconfigjson": '{"auths":{}}' },
+      });
+      await sweepDrift(createJobKit(depsWith(registry, clusters)), {
+        only: [projectId],
+      });
+      const drifted = await admin.domainConfig.findFirstOrThrow({
+        where: { projectId, domainType: "CONTAINER_REGISTRY" },
+        select: { lastError: true },
+      });
+      expect(drifted.lastError).toMatchObject({ adapterResult: "DRIFTED" });
+      expect(JSON.stringify(drifted.lastError)).toContain(first);
+      expect(JSON.stringify(drifted.lastError)).not.toContain(SENTINEL);
+
+      // Tắt registry ⇒ khoá của tool đã tắt không sống tiếp trong cluster
+      const disable = await seedApply(projectId, provisioned, running);
+      await workerWith(registry, clusters).run(disable, { final: false });
+      expect((await snapshot(projectId, disable)).job.state).toBe("DONE");
+      for (const namespace of namespaces) {
+        expect(await dockerConfigIn(namespace)).toBe('{"auths":{}}');
+      }
     });
   },
 );
