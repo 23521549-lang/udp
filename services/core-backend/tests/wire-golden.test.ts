@@ -87,6 +87,12 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "POST /projects/{id}/cloud/validate": wire.cloudValidationResponseWire,
   "POST /projects/{id}/cloud/preflight": wire.cloudPreflightResponseWire,
 
+  "GET /projects/{id}/preview": wire.provisionPreviewResponseWire,
+  "POST /projects/{id}/provision": wire.jobResponseWire,
+  "GET /projects/{id}/jobs": wire.jobListResponseWire,
+  "GET /projects/{id}/jobs/{id}": wire.jobDetailResponseWire,
+  "POST /projects/{id}/jobs/{id}/cancel": wire.jobResponseWire,
+
   "GET /admin/users": wire.adminUsersResponseWire,
   "PATCH /admin/users/{id}/platform-role": wire.adminUserResponseWire,
   "GET /admin/projects": wire.adminProjectsResponseWire,
@@ -212,6 +218,7 @@ const PORTAL_MODULES = [
   "deployment",
   "cloud",
   "domain",
+  "provisioning",
   "admin",
 ];
 

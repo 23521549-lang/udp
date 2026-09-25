@@ -17,6 +17,7 @@ import {
   Moon,
   Rocket,
   Search,
+  Server,
   Settings2,
   Shield,
   Sun,
@@ -185,6 +186,15 @@ function ProjectNav({ projectId }: { projectId: string }) {
         activeOptions={sub}
       >
         <NavBody icon={Blocks}>Domain</NavBody>
+      </Link>
+      <Link
+        {...NAV}
+        to="/app/projects/$projectId/infra"
+        params={params}
+        search={keep}
+        activeOptions={sub}
+      >
+        <NavBody icon={Server}>Hạ tầng</NavBody>
       </Link>
       <Link
         {...NAV}

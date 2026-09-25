@@ -139,9 +139,14 @@ job cũ). Đổi credential khi có job đang chạy ⇒ 409 (§2.2, hiện chư
 
 ## 7. Nhật ký review
 
-| Vòng | Phát hiện                                                                         | Xử lý                                        |
-| ---- | --------------------------------------------------------------------------------- | -------------------------------------------- |
-| v1   | Runner không đưa tài nguyên pha trước vào `prior`; kế hoạch thật vỡ ở pha CLUSTER | QĐ-3                                         |
-| v1   | `claim()` hiện có dùng đồng hồ ứng dụng, không lọc trạng thái                     | QĐ-2                                         |
-| v1   | Bootstrap namespace + ba SA (ADR-06) chưa ai làm dù `ClusterInfo` đã khai tên SA  | QĐ-4                                         |
-| v1   | `send()` qua `udp_s1` cần GRANT trên schema do pg-boss tạo lúc chạy               | QĐ-1: outbox là `ProvisioningJob` + đối soát |
+| Vòng | Phát hiện                                                                           | Xử lý                                                   |
+| ---- | ----------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| v1   | Runner không đưa tài nguyên pha trước vào `prior`; kế hoạch thật vỡ ở pha CLUSTER   | QĐ-3                                                    |
+| v1   | `claim()` hiện có dùng đồng hồ ứng dụng, không lọc trạng thái                       | QĐ-2                                                    |
+| v1   | Bootstrap namespace + ba SA (ADR-06) chưa ai làm dù `ClusterInfo` đã khai tên SA    | QĐ-4                                                    |
+| v1   | `send()` qua `udp_s1` cần GRANT trên schema do pg-boss tạo lúc chạy                 | QĐ-1: outbox là `ProvisioningJob` + đối soát            |
+| P4   | Bù trừ của runner gặp hàng `ORPHAN_SUSPECTED` ném lỗi chuyển trạng thái ngoài `try` | Đếm là orphan, không chạm; `compensate()` công khai     |
+| P4   | `renew` đua với `transition` (version vừa tăng) ⇒ keeper tưởng mất lease            | Gia hạn và đổi state tuần tự trong một lượt             |
+| P4   | Xoá `cluster_access` bằng `{ set: null }` ghi JSON sai                              | `Prisma.DbNull`                                         |
+| P4   | Hủy khi QUEUED ghi `DEPLOY_FAILURE` không có `DEPLOY_START`                         | Chỉ khép lượt deploy đã bắt đầu                         |
+| P7   | Chạy lại từ ERROR vỡ ở step đầu: hàng `DELETED` giữ khoá tất định                   | Đóng chu kỳ sổ trong transaction tạo job; orphan ⇒ chặn |

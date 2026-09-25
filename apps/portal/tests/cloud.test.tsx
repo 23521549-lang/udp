@@ -197,7 +197,7 @@ describe("thẻ Cloud trong Cài đặt", () => {
 });
 
 describe("wizard tạo project", () => {
-  it("tạo xong ở lại bước 2 (cloud) rồi bước 3 (domain); Để sau thì mở project", async () => {
+  it("tạo xong ở lại bước 2 (cloud), bước 3 (domain), bước 4 (xem trước); Để sau thì mở project", async () => {
     const detail = projectFixture("OWNER");
     useProjectHandlers(detail);
     useCloudHandlers({ configured: false });
@@ -210,6 +210,9 @@ describe("wizard tạo project", () => {
       ),
       http.get(`${API}/projects/:id/domains`, () =>
         HttpResponse.json(golden("GET /projects/{id}/domains")),
+      ),
+      http.get(`${API}/projects/:id/preview`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/preview")),
       ),
       http.post(`${API}/projects`, () =>
         HttpResponse.json(detail, { status: 201 }),
@@ -232,6 +235,14 @@ describe("wizard tạo project", () => {
       await screen.findByRole("heading", { level: 1, name: "Chọn domain" }),
     ).toBeInTheDocument();
     await screen.findByRole("switch", { name: "Bật Monitoring" });
+    await userEvent.click(screen.getByRole("button", { name: "Để sau" }));
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Xem trước và triển khai",
+      }),
+    ).toBeInTheDocument();
+    await screen.findByRole("table", { name: "Chi phí ước tính mỗi tháng" });
     await userEvent.click(screen.getByRole("button", { name: "Để sau" }));
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(

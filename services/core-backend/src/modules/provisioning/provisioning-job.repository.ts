@@ -1,5 +1,5 @@
 import { FenceLostError, type Fence } from "@udp/adapter-core/runner";
-import type { JobState, PrismaClient } from "@udp/db";
+import type { JobState, Prisma, PrismaClient } from "@udp/db";
 
 /**
  * [v4.10] Lease + fencing trên `ProvisioningJob` (ADR-02 điều kiện 5).
@@ -116,6 +116,42 @@ export async function renew(
   return count === 1;
 }
 
+/** Trạng thái kết thúc — không ai giành lease được nữa, và không còn gì để chạy */
+export const TERMINAL_STATES: readonly JobState[] = [
+  "DONE",
+  "FAILED",
+  "COMPENSATION_FAILED",
+];
+
+/** Trạng thái đang chạy mà người dùng còn hủy được (§9 `POST .../cancel`) */
+export const CANCELLABLE_STATES: readonly JobState[] = [
+  "QUEUED",
+  "NETWORK",
+  "CLUSTER",
+  "CLUSTER_ACCESS",
+  "DOMAINS",
+];
+
+/** Người dùng đã yêu cầu hủy trong lúc worker đang chạy — nhánh bù trừ, không phải mất lease */
+export class JobCancelledError extends Error {
+  readonly code = "JOB_CANCELLED";
+  constructor(readonly jobId: string) {
+    super(`job ${jobId} đã được yêu cầu hủy`);
+    this.name = "JobCancelledError";
+  }
+}
+
+export interface Transition {
+  state: JobState;
+  lastError?: Prisma.InputJsonValue;
+  /** Tiến về phía trước: không được đè một `CANCEL_REQUESTED` vừa ghi */
+  forward?: boolean;
+  /** Trạng thái kết thúc: nhả lease trong cùng lần ghi */
+  release?: boolean;
+  /** Ghi nghiệp vụ đi kèm, CÙNG transaction — fencing sai thì không ghi gì cả */
+  effects?: (tx: Prisma.TransactionClient) => Promise<void>;
+}
+
 /**
  * Đổi `state` của job — mọi lần ghi đều `WHERE version = $expected` (ADR-02 điều kiện 5).
  *
@@ -123,23 +159,92 @@ export async function renew(
  * trị**: đó là chủ ý. Một worker đổi state xong phải dùng token mới; nếu nó tiếp tục
  * dùng token cũ thì lần `assert()` kế tiếp đỏ, và đó đúng là hành vi cần có vì token cũ
  * không còn chứng minh được gì.
+ *
+ * [v4.11] Ghi nghiệp vụ của một bước (`cluster_access`, trạng thái project, sự kiện deploy)
+ * đi cùng transaction với lần đổi state: worker mất lease giữa hai lần ghi là trạng thái
+ * nửa vời mà không ai sửa. `forward` chặn đè yêu cầu hủy: hủy không tăng `version` (để
+ * không biến thành "mất lease"), nên chính điều kiện `state` mới là thứ giữ nó lại.
  */
+export async function transition(
+  prisma: PrismaClient,
+  lease: JobLease,
+  t: Transition,
+): Promise<JobLease> {
+  return prisma.$transaction(async (tx) => {
+    const { count } = await tx.provisioningJob.updateMany({
+      where: {
+        id: lease.jobId,
+        version: lease.version,
+        ...(t.forward === true ? { state: { not: "CANCEL_REQUESTED" } } : {}),
+      },
+      data: {
+        state: t.state,
+        version: { increment: 1 },
+        ...(t.lastError === undefined ? {} : { lastError: t.lastError }),
+        ...(t.release === true ? { claimedBy: null, claimedUntil: null } : {}),
+      },
+    });
+    if (count !== 1) {
+      const row = await tx.provisioningJob.findUnique({
+        where: { id: lease.jobId },
+        select: { version: true, state: true },
+      });
+      if (row?.version === lease.version && row.state === "CANCEL_REQUESTED") {
+        throw new JobCancelledError(lease.jobId);
+      }
+      throw new FenceLostError(
+        `không đổi được job ${lease.jobId} sang ${t.state}: version ${String(lease.version)} đã cũ`,
+      );
+    }
+    await t.effects?.(tx);
+    return { ...lease, version: lease.version + 1 };
+  });
+}
+
+/** Đổi `state` không kèm ghi nào khác; `null` = fencing từ chối */
 export async function setState(
   prisma: PrismaClient,
   lease: JobLease,
   state: JobState,
-  lastError?: unknown,
+  lastError?: Prisma.InputJsonValue,
 ): Promise<JobLease | null> {
-  const { count } = await prisma.provisioningJob.updateMany({
-    where: { id: lease.jobId, version: lease.version },
-    data: {
+  try {
+    return await transition(prisma, lease, {
       state,
-      version: { increment: 1 },
-      ...(lastError === undefined ? {} : { lastError: lastError as never }),
-    },
+      ...(lastError === undefined ? {} : { lastError }),
+    });
+  } catch (e) {
+    if (e instanceof FenceLostError) return null;
+    throw e;
+  }
+}
+
+/**
+ * Yêu cầu hủy — KHÔNG tăng `version`: worker đang giữ lease vẫn là người duy nhất được ghi,
+ * nó thấy yêu cầu ở lần chuyển state kế tiếp (hay ở chốt đầu mỗi step) và tự đi nhánh bù
+ * trừ. Trả `false` khi job đã qua điểm hủy được (đang bù trừ hay đã kết thúc).
+ */
+export async function requestCancel(
+  prisma: PrismaClient,
+  jobId: string,
+): Promise<boolean> {
+  const { count } = await prisma.provisioningJob.updateMany({
+    where: { id: jobId, state: { in: [...CANCELLABLE_STATES] } },
+    data: { state: "CANCEL_REQUESTED" },
   });
-  if (count !== 1) return null;
-  return { ...lease, version: lease.version + 1 };
+  return count === 1;
+}
+
+/** Đọc `state` hiện tại — chốt hủy hợp tác của worker */
+export async function currentState(
+  prisma: PrismaClient,
+  jobId: string,
+): Promise<JobState | null> {
+  const row = await prisma.provisioningJob.findUnique({
+    where: { id: jobId },
+    select: { state: true },
+  });
+  return row?.state ?? null;
 }
 
 /** Nhả lease — job vẫn giữ `state`, chỉ không còn ai giữ nó */

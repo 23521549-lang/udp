@@ -124,7 +124,7 @@ function world(provider: CloudProvider, plan: ProviderPlan, codec: TagCodec) {
     quota: QUOTA,
     ...(inherited === undefined ? {} : { inherited }),
   });
-  return { ledger, runner, networkSteps, clusterSteps, planOf };
+  return { cloud, ledger, runner, networkSteps, clusterSteps, planOf };
 }
 
 const CLOUDS = [
@@ -165,6 +165,24 @@ describe.each(CLOUDS)("%s: hai pha tách rời", (provider, plan, codec) => {
       .runner()
       .run(w.planOf("CLUSTER", w.clusterSteps, fromLedger));
     expect(resumed.status).toBe("SUCCESS");
+  });
+
+  it("bù trừ CẢ kế hoạch sau hai pha ⇒ mọi hàng DELETED, cloud không còn tài nguyên của project", async () => {
+    const w = world(provider, plan, codec);
+    const network = await w.runner().run(w.planOf("NETWORK", w.networkSteps));
+    if (network.status !== "SUCCESS") throw new Error(network.status);
+    await w.runner().run(w.planOf("CLUSTER", w.clusterSteps, network.created));
+
+    const outcome = await w
+      .runner()
+      .compensate(
+        w.planOf("CLUSTER", [...w.networkSteps, ...w.clusterSteps]),
+        "pha sau thất bại",
+      );
+    expect(outcome.status).toBe("COMPENSATED");
+    const rows = await w.ledger.rowsOf(PROJECT);
+    expect(rows.every((r) => r.status === "DELETED")).toBe(true);
+    expect(w.cloud.listTaggedPage(PROJECT).items).toEqual([]);
   });
 
   it("pha trước chưa trọn trong sổ ⇒ kế thừa ném, không chạy pha sau trên nền thiếu", async () => {

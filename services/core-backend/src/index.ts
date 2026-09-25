@@ -1,7 +1,16 @@
-import { env } from "@udp/config";
+import { hostname } from "node:os";
+import { directDatabaseUrl, env, JOB_LEASE, JOB_QUEUE } from "@udp/config";
 import { assertServiceIdentity, prisma } from "./core/db.js";
 import { createApp } from "./app.js";
 import { defaultAppDeps } from "./core/app-deps.js";
+import { createEgressFetch } from "./core/egress/egress.js";
+import { startJobQueue, type JobQueue } from "./jobs/boss.js";
+import { createProvisionWorker } from "./jobs/provision.job.js";
+import { reconcileJobs } from "./jobs/reconcile.js";
+import {
+  createClusterRuntime,
+  egressTransport,
+} from "./modules/cluster/cluster-runtime.js";
 import { assertRegistryCoveredByCatalog } from "./modules/domain/domain-catalog.sync.js";
 import { logger } from "@udp/http";
 
@@ -40,7 +49,55 @@ try {
   process.exit(1);
 }
 
-const app = createApp(deps);
+/**
+ * [v4.11] Hàng đợi + worker provisioning trong CHÍNH tiến trình này (Plan #28 QĐ-2). Hàng
+ * đợi đi qua `DATABASE_URL_DIRECT` (ADR-02 đk 1: pooler transaction mode phá advisory lock);
+ * worker ghi nghiệp vụ bằng `udp_s1` như mọi đường khác của Service 1.
+ */
+async function startJobs(): Promise<JobQueue> {
+  const queue = await startJobQueue({
+    connectionString: directDatabaseUrl,
+    schema: env.PGBOSS_SCHEMA,
+    retryLimit: env.JOB_RETRY_LIMIT,
+    expireInSeconds: env.JOB_EXPIRE_MINUTES * 60,
+    heartbeatSeconds: JOB_LEASE.renewIntervalMs / 1_000,
+    pollingIntervalSeconds: JOB_QUEUE.pollingIntervalSeconds,
+  });
+  const worker = createProvisionWorker({
+    prisma,
+    platform: deps.cloud,
+    domainRegistry: deps.domainRegistry,
+    clusters: createClusterRuntime(egressTransport),
+    egressFetch: createEgressFetch(),
+    workerId: `${hostname()}-${String(process.pid)}`,
+    lease: {
+      leaseMs: JOB_LEASE.durationSeconds * 1_000,
+      renewIntervalMs: JOB_LEASE.renewIntervalMs,
+      errorRetryMs: JOB_LEASE.renewErrorRetryMs,
+    },
+  });
+  await queue.workProvision((jobId, attempt) =>
+    worker.provision(jobId, attempt),
+  );
+  await queue.workCompensation((jobId) => worker.compensate(jobId));
+  await queue.scheduleReconcile(JOB_QUEUE.reconcileCron, async () => {
+    const outcome = await reconcileJobs(prisma, queue);
+    if (outcome.resent.length + outcome.compensating.length > 0) {
+      logger.warn(outcome, "Đối soát job đã chữa lệch");
+    }
+  });
+  return queue;
+}
+
+const queue = await startJobs().catch((err: unknown) => {
+  logger.fatal({ err }, "Không khởi động: hàng đợi job không lên được");
+  process.exit(1);
+});
+
+const app = createApp({
+  ...deps,
+  provisioning: { ...deps.provisioning, enqueue: queue.enqueueProvision },
+});
 const server = app.listen(env.CORE_BACKEND_PORT, () => {
   logger.info(
     { port: env.CORE_BACKEND_PORT, env: env.NODE_ENV },
@@ -70,8 +127,10 @@ const shutdown = (signal: string) => {
    * đường tắt êm — vốn là đường phải im lặng nhất.
    */
   server.close(() => {
-    void prisma
-      .$disconnect()
+    // Hàng đợi trước: `stop` êm chờ job đang chạy nhả lease, rồi mới đóng database
+    void queue
+      .stop()
+      .then(() => prisma.$disconnect())
       .catch((err: unknown) => {
         logger.error({ err }, "Lỗi khi đóng kết nối database");
       })

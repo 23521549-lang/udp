@@ -1,4 +1,5 @@
 import { CLOUD_ERROR_SLUGS } from "@udp/shared-types/cloud-api";
+import { PROVISION_ERROR_SLUGS } from "@udp/shared-types/provisioning-api";
 import { DOMAIN_ERROR_SLUGS } from "@udp/shared-types/domain-api";
 import {
   CSRF_INVALID_SLUG,
@@ -67,6 +68,12 @@ const SLUG_COPY: Record<string, string> = {
     "Project đã triển khai: đổi domain cần hàng đợi triển khai, tính năng này chưa có.",
   [CLOUD_ERROR_SLUGS.methodUnavailable]:
     "Cách xác thực này chưa được bật trên máy chủ UDP. Chọn cách khác hoặc báo quản trị.",
+  [PROVISION_ERROR_SLUGS.blocked]:
+    "Chưa triển khai được. Xem lý do ở phần xem trước.",
+  [PROVISION_ERROR_SLUGS.notCancellable]:
+    "Lượt này đã qua điểm hủy được: đang dọn tài nguyên hoặc đã kết thúc.",
+  [PROVISION_ERROR_SLUGS.credentialLocked]:
+    "Đang có lượt triển khai dùng credential hiện tại. Đổi sau khi lượt đó kết thúc.",
 };
 
 /** Slug cuối của `type` (`https://.../problems/<slug>`) — để component rẽ nhánh theo lỗi */

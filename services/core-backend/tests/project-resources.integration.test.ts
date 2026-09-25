@@ -25,7 +25,11 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import { tapServiceLog, type LogTap } from "./helpers/log-tap.js";
-import { inertCloudPlatform, noDomainAdapters } from "./helpers/inert-deps.js";
+import {
+  inertCloudPlatform,
+  noDomainAdapters,
+  inertProvisioning,
+} from "./helpers/inert-deps.js";
 
 /**
  * Tài nguyên gắn theo project ở Service 1, với Service 2 là tiến trình THẬT
@@ -145,6 +149,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     domainRegistry: noDomainAdapters,
+    provisioning: inertProvisioning,
     flagService: createFlagServiceClient({
       baseUrl: started.baseUrl,
       secret: env.INTERNAL_SERVICE_SECRET,

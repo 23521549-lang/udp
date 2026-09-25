@@ -165,6 +165,18 @@ export class CloudAdapterRunner {
     return { status: "SUCCESS", created };
   }
 
+  /**
+   * [v4.11] Bù trừ CẢ kế hoạch — mọi pha đã chạy, thứ tự ngược của `plan.steps` (Plan #28).
+   *
+   * `run()` chỉ bù trừ step của CHÍNH lượt đó; pha CLUSTER thất bại để lại pha NETWORK đang
+   * tính tiền. Job gọi đường này khi một pha sau thất bại, khi bị hủy, hay khi đối soát gửi
+   * job bù trừ cho lượt cuối đã chết. Cùng RUN8/RUN9/RUN11 với bù trừ trong `run()`; step
+   * chưa có hàng sổ (chưa từng chạy) bị bỏ qua, nên truyền thừa step là vô hại.
+   */
+  async compensate(plan: RunPlan, reason: string): Promise<RunOutcome> {
+    return this.#compensate(plan, plan.steps, plan.step, reason);
+  }
+
   async #runStep(
     plan: RunPlan,
     step: ResourceStep,
@@ -356,6 +368,15 @@ export class CloudAdapterRunner {
       await this.#fence.assert(); // RUN11 (5/6)
       const row = await this.#ledger.byKey(step.idempotencyKey);
       if (row === null || row.status === "DELETED") continue;
+      /**
+       * `ORPHAN_SUSPECTED` không có cạnh ra (§4.5): một lượt bù trừ trước đã không xoá được
+       * và người vận hành phải xem. Lượt này không chạm nó, nhưng cũng không được báo
+       * `COMPENSATED` như thể đã sạch.
+       */
+      if (row.status === "ORPHAN_SUSPECTED") {
+        orphans.push(step.idempotencyKey);
+        continue;
+      }
 
       await this.#observer.onPhase("before-delete", step.name);
       await this.#ledger.markDeleting(step.idempotencyKey);

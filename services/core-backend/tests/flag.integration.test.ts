@@ -25,7 +25,11 @@ import {
   type ProjectEnv,
   type TestWorld,
 } from "./helpers/api.js";
-import { inertCloudPlatform, noDomainAdapters } from "./helpers/inert-deps.js";
+import {
+  inertCloudPlatform,
+  noDomainAdapters,
+  inertProvisioning,
+} from "./helpers/inert-deps.js";
 
 /**
  * Luồng 4 ở Service 1 qua HTTP thật, Service 2 là tiến trình thật (§8.4) [v4.5].
@@ -79,6 +83,7 @@ beforeAll(async () => {
       oidcIssuer: null,
       cloud: inertCloudPlatform,
       domainRegistry: noDomainAdapters,
+      provisioning: inertProvisioning,
       flagService: createFlagServiceClient({
         baseUrl: started.baseUrl,
         secret: env.INTERNAL_SERVICE_SECRET,
@@ -999,6 +1004,7 @@ describe("lỗi cấu hình giữa hai service KHÔNG tới Portal như lỗi c�
       oidcIssuer: null,
       cloud: inertCloudPlatform,
       domainRegistry: noDomainAdapters,
+      provisioning: inertProvisioning,
       flagService: createFlagServiceClient({
         baseUrl: s2?.baseUrl ?? "",
         secret: "x".repeat(40),

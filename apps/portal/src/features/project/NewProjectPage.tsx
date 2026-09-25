@@ -7,6 +7,8 @@ import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
 import type { PublicProjectWire } from "@udp/shared-types/wire";
 import { DomainPanel } from "../domain/DomainPanel";
+import { JobLog } from "../provisioning/JobLog";
+import { PreviewPanel } from "../provisioning/PreviewPanel";
 import { CloudPanel } from "./cloud/CloudPanel";
 import { projectApi, type CreateProjectInput } from "./project-api";
 
@@ -16,23 +18,27 @@ const RUNTIMES = [
 ] as const;
 
 /**
- * Wizard tạo project (§10.5): bước 1 tạo project, bước 2 kết nối cloud (Plan #26), bước 3
- * chọn domain (Plan #27).
+ * Wizard tạo project (§10.5), năm bước: tạo project, kết nối cloud (Plan #26), chọn domain
+ * (Plan #27), xem trước chi phí và thứ tự dựng, rồi theo dõi lượt triển khai (Plan #28).
  *
- * Hai bước sau (xem trước, provisioning) cần endpoint chưa tồn tại ở Service 1 (sổ nợ
- * `portal-preview`, `portal-job-stream`). Trang nói thật điều đó thay vì dựng màn hình giả:
- * project tạo ra đứng ở DRAFT, và flag, segment, rollout, SDK key đều dùng được ngay. Bước
- * cloud và domain bỏ qua được và làm lại ở Cài đặt > Cloud và trang Domain.
+ * Từ bước 2 mọi bước bỏ qua được: project đứng ở DRAFT, flag, segment, rollout, SDK key
+ * dùng được ngay, và cloud, domain, triển khai làm lại ở Cài đặt, trang Domain, trang Hạ
+ * tầng.
  */
 export function NewProjectPage() {
   const [created, setCreated] = useState<PublicProjectWire | null>(null);
-  const [step, setStep] = useState<"cloud" | "domains">("cloud");
+  const [step, setStep] = useState<"cloud" | "domains" | "preview">("cloud");
+  const [jobId, setJobId] = useState<string | null>(null);
   if (created === null) return <CreateStep onCreated={setCreated} />;
-  return step === "cloud" ? (
-    <CloudStep project={created} onNext={() => setStep("domains")} />
-  ) : (
-    <DomainStep project={created} />
-  );
+  if (jobId !== null) return <JobStep project={created} jobId={jobId} />;
+  switch (step) {
+    case "cloud":
+      return <CloudStep project={created} onNext={() => setStep("domains")} />;
+    case "domains":
+      return <DomainStep project={created} onNext={() => setStep("preview")} />;
+    case "preview":
+      return <PreviewStep project={created} onStarted={setJobId} />;
+  }
 }
 
 function useOpenProject(project: PublicProjectWire) {
@@ -69,7 +75,7 @@ function CloudStep({
   const [saved, setSaved] = useState(false);
   return (
     <>
-      <WizardBar step="Bước 2/3: Cloud" />
+      <WizardBar step="Bước 2/5: Cloud" />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
           <h1 className="title">Kết nối cloud</h1>
@@ -97,12 +103,17 @@ function CloudStep({
   );
 }
 
-function DomainStep({ project }: { project: PublicProjectWire }) {
-  const open = useOpenProject(project);
+function DomainStep({
+  project,
+  onNext,
+}: {
+  project: PublicProjectWire;
+  onNext: () => void;
+}) {
   const [saved, setSaved] = useState(false);
   return (
     <>
-      <WizardBar step="Bước 3/3: Domain" />
+      <WizardBar step="Bước 3/5: Domain" />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
           <h1 className="title">Chọn domain</h1>
@@ -119,9 +130,73 @@ function DomainStep({ project }: { project: PublicProjectWire }) {
             <button
               type="button"
               className={saved ? "btn pri" : "btn"}
-              onClick={open}
+              onClick={onNext}
             >
-              {saved ? "Mở project" : "Để sau"}
+              {saved ? "Tiếp tục" : "Để sau"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function PreviewStep({
+  project,
+  onStarted,
+}: {
+  project: PublicProjectWire;
+  onStarted: (jobId: string) => void;
+}) {
+  const open = useOpenProject(project);
+  return (
+    <>
+      <WizardBar step="Bước 4/5: Xem trước" />
+      <div className="scroll">
+        <div className="page" style={{ maxWidth: 760 }}>
+          <h1 className="title">Xem trước và triển khai</h1>
+          <p className="lead">
+            Chi phí ước tính và thứ tự UDP dựng hạ tầng trên tài khoản cloud của
+            bạn. Có thể triển khai sau ở trang Hạ tầng.
+          </p>
+          <PreviewPanel
+            projectId={project.id}
+            role={project.myRole}
+            onStarted={(job) => onStarted(job.id)}
+          />
+          <div className="form-actions">
+            <button type="button" className="btn" onClick={open}>
+              Để sau
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function JobStep({
+  project,
+  jobId,
+}: {
+  project: PublicProjectWire;
+  jobId: string;
+}) {
+  const open = useOpenProject(project);
+  return (
+    <>
+      <WizardBar step="Bước 5/5: Triển khai" />
+      <div className="scroll">
+        <div className="page" style={{ maxWidth: 760 }}>
+          <h1 className="title">Đang triển khai</h1>
+          <p className="lead">
+            Tiến độ cập nhật trực tiếp. Rời trang không dừng việc triển khai;
+            theo dõi tiếp ở trang Hạ tầng.
+          </p>
+          <JobLog projectId={project.id} jobId={jobId} role={project.myRole} />
+          <div className="form-actions">
+            <button type="button" className="btn pri" onClick={open}>
+              Mở project
             </button>
           </div>
         </div>
@@ -164,7 +239,7 @@ function CreateStep({
 
   return (
     <>
-      <WizardBar step="Bước 1/3: Project" />
+      <WizardBar step="Bước 1/5: Project" />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 640 }}>
           <h1 className="title">Tạo project</h1>
@@ -174,9 +249,8 @@ function CreateStep({
           <div className="lock">
             <Icon of={Info} />
             <span>
-              Bước xem trước và triển khai chưa có trên Portal. Project mới đứng
-              ở trạng thái Nháp; flag, segment, rollout và SDK key dùng được
-              ngay.
+              Project mới đứng ở trạng thái Nháp cho tới khi triển khai; flag,
+              segment, rollout và SDK key dùng được ngay.
             </span>
           </div>
           <form

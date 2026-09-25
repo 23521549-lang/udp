@@ -462,6 +462,33 @@ const envSchema = z
     MANAGED_AZURE_RESOURCE_GROUP: optionalSetting(
       z.string().regex(/^[\w().-]{1,90}$/),
     ),
+
+    // ---------- Provisioning (Plan #28, ADR-06) ----------
+    /**
+     * [v4.11] Địa chỉ egress của UDP (CIDR IPv4, phân tách bằng dấu phẩy): API endpoint
+     * public của cluster khách chỉ mở cho các dải này (`publicAccessCidrs`). Rỗng = triển
+     * khai này không provisioning được — `POST /provision` nói thẳng, không mở endpoint
+     * ra `0.0.0.0/0` thay cho người vận hành.
+     */
+    UDP_EGRESS_CIDRS: z
+      .string()
+      .default("")
+      .transform((v) =>
+        v
+          .split(",")
+          .map((x) => x.trim())
+          .filter((x) => x !== ""),
+      )
+      .pipe(
+        z.array(
+          z
+            .string()
+            .regex(
+              /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}\/([0-9]|[12]\d|3[0-2])$/,
+              "phải là CIDR IPv4, ví dụ 203.0.113.0/24",
+            ),
+        ),
+      ),
   })
   /**
    * Ràng buộc LIÊN BIẾN — thứ không kiểm được khi xét từng biến một.

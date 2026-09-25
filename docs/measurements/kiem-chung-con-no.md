@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 42.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 40.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -494,6 +494,13 @@ adapter.
 - **Ảnh hưởng tới kết luận:** **ADR-06** và bất biến **I24** (bound token 1 giờ,
   không bao giờ xuống đĩa). Cùng mã nợ `clusteraccess-direct` được nhắc trong
   `cluster-access.ts`.
+- **[v4.11, Plan #28] Mở rộng:** trên cùng cluster đó, chạy thêm ba thứ mà Plan #28 chỉ
+  kiểm được bằng transport giả tầng HTTP: (1) `egressTransport` — undici `Agent` tin CA
+  của chính cluster, qua egress guard; (2) `tokenRequestSource` — `TokenRequest` thật cho
+  từng SA, và API server TỪ CHỐI khi SA `udp-traffic` sửa `deployments` (I25); (3)
+  `bootstrapManifests` áp bằng server-side apply hai lần liên tiếp ⇒ lần hai không đổi gì,
+  NetworkPolicy chặn pod env khác gọi vào. Đạt: cả ba; không đạt: bất kỳ Role nào bị API
+  server từ chối lúc áp ⇒ bảng §12.2 thiếu quyền mà test thuần không thấy.
 
 ## E16 — ma trận drift, đối chứng Helm và Argo CD
 
@@ -669,7 +676,7 @@ owned` còn có tài nguyên mang `shared`.
   quy tắc, nhưng `POST /projects/:id/domains/:type/upgrade` và
   `POST .../drift` chưa được viết. [v4.11, Plan #27] Tiền đề cũ ("không cần hạ tầng")
   SAI: cả hai route CHẠY adapter trên cluster (`contextFor` cần `ClusterAccess` thật —
-  `I32-cluster`) qua job `DOMAIN_APPLY` (cần `pg-boss` — `portal-job-stream`). Một route
+  `I32-cluster`) qua job `DOMAIN_APPLY` (hàng đợi `pg-boss` đã có từ Plan #28; job `DOMAIN_APPLY` thì chưa). Một route
   trả 202 mà không có gì thực thi là stub, nên Plan #27 dừng ở phần ĐỌC: `GET …/drift`
   đọc kết quả lượt quét đã ghi (`project-domain.integration.test.ts`).
 - **Tiền đề:** `jobs/boss.ts` (hàng đợi) + một `KubeTransport` thật cho `ClusterAccess`.
@@ -822,31 +829,18 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > quản trị, bước 3 của wizard. Bằng chứng: `project-domain.integration.test.ts` (đua hai
 > PUT ⇒ đúng một thắng, 400 đúng trường, 422 mã catalog, 409 khi project đã rời nháp),
 > `domain.test.tsx`. Phần còn lại có mục riêng: trạng thái theo thời gian thực sau khi áp
-> (`portal-job-stream`), nâng cấp và quét ngay (`domain-day2-route`), drift trên cluster
+> (`portal-job-stream`, đã trả ở Plan #28), nâng cấp và quét ngay (`domain-day2-route`), drift trên cluster
 > thật (`E16`).
 
-## portal-job-stream — nhật ký provisioning (SSE)
-
-- **Vì sao nợ:** `GET /projects/:id/jobs/:jobId/stream` cần hạ tầng `pg-boss` (§3.1), thứ
-  chưa dựng. §16 đã ghi giới hạn này từ v4.
-- **Tiền đề:** `jobs/boss.ts` tồn tại và có một job thật để stream.
-- **Lệnh:** test tích hợp với một `EventSource` giả.
-- **Đạt:** mỗi bước của job hiện đúng một dòng, và SSE **chỉ** gọi `invalidateQueries`.
-  **Không đạt:** SSE ghi thẳng vào cache ⇒ nó đá nhau với React Query (§10.14).
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** trải nghiệm "thấy hạ tầng đang dựng" của §8.1; hôm nay người
-  dùng chỉ thấy một trạng thái tĩnh.
-
-## portal-preview — xem trước, chi phí, thứ tự deploy
-
-- **Vì sao nợ:** `GET /projects/:id/preview` chưa có. `estimateCost` (bắt buộc ba mục) và
-  `deployOrder` (topo sort) đều đã có ở tầng hàm.
-- **Tiền đề:** endpoint đó tồn tại.
-- **Lệnh:** test tích hợp màn hình xem trước.
-- **Đạt:** hiện đủ ba mục chi phí và thứ tự deploy theo bậc. **Không đạt:** thiếu một mục
-  chi phí ⇒ người dùng thấy một con số nhỏ hơn hoá đơn thật.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** phần "nói trước cái giá" của §4.4 chưa tới được người dùng.
+> **Đã trả (25/09/2026, Plan #28):** `portal-job-stream` và `portal-preview`. Hàng đợi
+> `pg-boss` (`jobs/boss.ts`) + đối soát, job PROVISION bốn pha có bù trừ xuyên pha, hủy hợp
+> tác và tiếp quản khi worker chết (`provision-job.integration.test.ts`, 8 ô trên database
+> thật); `GET /preview` (ba mục chi phí bắt buộc, thứ tự ResourceStep, thứ tự deploy theo
+> bậc, lý do chặn), `POST /provision` (Idempotency-Key, 428 khi production chưa xác nhận
+> đúng con số), danh sách/chi tiết job, SSE đọc từ database, hủy
+> (`provisioning.integration.test.ts`, `job-stream.test.ts`); Portal trang Hạ tầng và bước
+> 4–5 của wizard, SSE CHỈ gọi `invalidateQueries` và đóng ở trạng thái cuối
+> (`provisioning.test.tsx`). Phần cần cluster thật nằm ở `I32-cluster`.
 
 ## portal-env-crud — tạo và xoá environment
 
@@ -898,8 +892,8 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
   trỏ vào một cluster và một Prometheus có sẵn; nếu tiền đề đó không giữ được thì phần tạo
   rollout chỉ chứng minh được bằng `msw`.
 - **Tiền đề:** một cluster và một Prometheus có sẵn (bring-your-own), hoặc bật domain
-  Monitoring từ Portal (chọn được từ Plan #27) rồi TRIỂN KHAI nó — việc đó cần hàng đợi
-  (`portal-job-stream`) và cluster thật (`I32-cluster`).
+  Monitoring từ Portal (chọn được từ Plan #27) rồi TRIỂN KHAI nó (trang Hạ tầng, Plan #28)
+  — việc đó cần cluster thật (`I32-cluster`).
 - **Lệnh:** test tích hợp tạo rollout với Prometheus thật.
 - **Đạt:** probe hai pha qua được, rollout lên `IN_PROGRESS`. **Không đạt:** probe luôn
   rỗng ⇒ banner phải nói thật, KHÔNG link tới màn hình đã hoãn.

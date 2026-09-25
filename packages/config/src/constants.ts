@@ -458,6 +458,18 @@ export const ACTIVE_ROLLOUT_STATUSES = [
 export const JOB_LEASE = {
   durationSeconds: 300,
   renewIntervalMs: 30_000,
+  /** Gia hạn ném (DB chập chờn) ⇒ thử lại sớm; chỉ quá `durationSeconds` mới là mất lease */
+  renewErrorRetryMs: 5_000,
+} as const;
+
+/**
+ * [v4.11] Nhịp của hàng đợi job (Plan #28, ADR-02). Polling 5 giây: provisioning dài hàng
+ * chục phút nên vài giây trễ lúc nhận việc không đáng một kết nối LISTEN. Đối soát 5 phút
+ * một lần — nó chữa lệch sau khi tiến trình chết, không phải đường chính.
+ */
+export const JOB_QUEUE = {
+  pollingIntervalSeconds: 5,
+  reconcileCron: "*/5 * * * *",
 } as const;
 
 /**

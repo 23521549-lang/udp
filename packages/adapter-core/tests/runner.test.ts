@@ -324,6 +324,24 @@ describe("RUN8 + RUN9 — compensation ngược thứ tự steps, NOT_FOUND là 
     expect(out.status).toBe("COMPENSATED");
     expect((await ledger.byKey(keyOf("vpc")))?.status).toBe("DELETED");
   });
+
+  it("compensate() cả kế hoạch: hàng ORPHAN_SUSPECTED không bị chạm nhưng KHÔNG được báo sạch", async () => {
+    const steps = [
+      simStep(cloud, { name: "vpc" }),
+      simStep(cloud, { name: "subnet", kind: "subnet", dependsOn: "vpc" }),
+    ];
+    expect((await runnerWith().run(planWith(steps))).status).toBe("SUCCESS");
+    await ledger.markDeleting(keyOf("vpc"));
+    await ledger.markOrphanSuspected(keyOf("vpc"), "delete thất bại 5 lần");
+
+    const out = await runnerWith().compensate(planWith(steps), "pha sau vỡ");
+    expect(out).toMatchObject({
+      status: "COMPENSATION_FAILED",
+      orphans: [keyOf("vpc")],
+    });
+    expect((await ledger.byKey(keyOf("subnet")))?.status).toBe("DELETED");
+    expect((await ledger.byKey(keyOf("vpc")))?.status).toBe("ORPHAN_SUSPECTED");
+  });
 });
 
 describe("RUN10 — quota kiểm TRƯỚC mọi lời gọi cloud", () => {

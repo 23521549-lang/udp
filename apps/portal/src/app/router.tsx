@@ -20,6 +20,7 @@ import { LoginPage, RegisterPage } from "../features/auth/AuthPages";
 import { DeploymentsPage } from "../features/deployment/DeploymentsPage";
 import { DomainDetailPage } from "../features/domain/DomainDetailPage";
 import { DomainsPage } from "../features/domain/DomainsPage";
+import { InfraPage } from "../features/provisioning/InfraPage";
 import { CleanupPage } from "../features/flag/CleanupPage";
 import { FlagsPage } from "../features/flag/FlagsPage";
 import { NewProjectPage } from "../features/project/NewProjectPage";
@@ -226,6 +227,12 @@ export const domainDetailRoute = createRoute({
   component: DomainDetailPage,
 });
 
+const infraRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "infra",
+  component: InfraPage,
+});
+
 export interface SettingsSearch {
   tab?: "keys" | "members" | "audit" | "cloud" | "project";
 }
@@ -330,6 +337,7 @@ export const routeTree = rootRoute.addChildren([
       deploymentsRoute,
       domainsRoute,
       domainDetailRoute,
+      infraRoute,
       settingsRoute,
     ]),
   ]),

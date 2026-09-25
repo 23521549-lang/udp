@@ -20,6 +20,7 @@ import {
   createRegistry,
   type DomainAdapterRegistry,
 } from "../modules/domain/domain-adapter.registry.js";
+import type { EnqueueProvision } from "../modules/provisioning/provisioning.service.js";
 
 /**
  * Phụ thuộc RA NGOÀI tiến trình của Service 1 — thứ test phải thay được mà không
@@ -56,6 +57,16 @@ export interface AppDeps {
    * nó và kiểm registry ↔ catalog trước khi mở cổng. Test tiêm registry trên cây fixture.
    */
   domainRegistry: () => Promise<DomainAdapterRegistry>;
+  /**
+   * [v4.11] Provisioning (Plan #28): dải egress mà API endpoint cluster khách mở cho, và cổng
+   * gửi job sang hàng đợi — `null` khi tiến trình không chạy hàng đợi (đối soát gửi thay).
+   */
+  provisioning: ProvisioningRuntime;
+}
+
+export interface ProvisioningRuntime {
+  egressCidrs: readonly string[];
+  enqueue: EnqueueProvision;
 }
 
 /** Gốc cây adapter của sản phẩm: `src/modules` (hay `dist/modules` khi đã build) */
@@ -79,6 +90,7 @@ export function defaultAppDeps(): AppDeps {
     oidcIssuer,
     cloud: createCloudPlatform(env, oidcIssuer),
     domainRegistry: memoized(() => createRegistry({ root: MODULES_ROOT })),
+    provisioning: { egressCidrs: env.UDP_EGRESS_CIDRS, enqueue: null },
   };
 }
 

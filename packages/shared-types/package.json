@@ -18,7 +18,8 @@
     "./condition": "./src/condition.ts",
     "./rollout": "./src/rollout.ts",
     "./cloud-api": "./src/cloud-api.ts",
-    "./domain-api": "./src/domain-api.ts"
+    "./domain-api": "./src/domain-api.ts",
+    "./provisioning-api": "./src/provisioning-api.ts"
   },
   "scripts": {
     "test": "vitest run",

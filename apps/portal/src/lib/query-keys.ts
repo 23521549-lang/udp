@@ -72,6 +72,10 @@ export const qk = {
   cloud: (projectId: string) => ["cloud", projectId] as const,
   cloudSetup: (projectId: string, provider: string) =>
     ["cloudSetup", projectId, provider] as const,
+  provisionPreview: (projectId: string) =>
+    ["provisionPreview", projectId] as const,
+  jobs: (projectId: string) => ["jobs", projectId] as const,
+  job: (projectId: string, jobId: string) => ["job", projectId, jobId] as const,
 
   adminUsers: (search: string) => ["admin", "users", search] as const,
   adminProjects: (status: string) => ["admin", "projects", status] as const,
@@ -121,6 +125,9 @@ export const NOT_ENV_SCOPED = {
   domainValidation: "kiểm trạng thái đích của cả project",
   cloud: "credential cloud thuộc project, một bản cho mọi env (§4.3)",
   cloudSetup: "dữ liệu setup theo project và cloud, không theo env",
+  provisionPreview: "hạ tầng của cả project: một cluster cho mọi env (§8.1)",
+  jobs: "job provisioning thuộc project, không theo env",
+  job: "một job provisioning dựng hạ tầng cho mọi env",
   adminUsers: "toàn hệ thống, không thuộc project nào",
   adminProjects: "toàn hệ thống",
   adminCredentials: "toàn hệ thống",

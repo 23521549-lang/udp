@@ -69,7 +69,7 @@ export type PutDomainsBody = z.infer<typeof putDomainsBodySchema>;
 
 /** Slug `type` của lỗi Portal rẽ nhánh — không thêm mã vào catalog 24 mã (I36) */
 export const DOMAIN_ERROR_SLUGS = {
-  /** Project không ở DRAFT: áp cấu hình cần job DOMAIN_APPLY (sổ nợ `portal-job-stream`) */
+  /** Project đã triển khai (hay đang triển khai): áp cấu hình cần job DOMAIN_APPLY (sổ nợ `domain-day2-route`) */
   needsApplyJob: "domains-need-apply-job",
   /** Domain hay tool không có trong registry, hoặc domain đã bị gỡ khỏi catalog */
   unknownTool: "domain-tool-unknown",

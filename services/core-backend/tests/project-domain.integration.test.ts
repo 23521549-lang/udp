@@ -15,7 +15,7 @@ import {
   type Actor,
   type TestWorld,
 } from "./helpers/api.js";
-import { inertCloudPlatform } from "./helpers/inert-deps.js";
+import { inertCloudPlatform, inertProvisioning } from "./helpers/inert-deps.js";
 
 /**
  * Domain của project qua HTTP thật trên database thật với registry THẬT của sản phẩm
@@ -40,6 +40,7 @@ const app = createApp({
   oidcIssuer: null,
   cloud: inertCloudPlatform,
   domainRegistry: () => registry,
+  provisioning: inertProvisioning,
 });
 
 let world: TestWorld;

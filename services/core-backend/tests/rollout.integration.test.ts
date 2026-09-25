@@ -33,7 +33,11 @@ import {
   type ProjectEnv,
   type TestWorld,
 } from "./helpers/api.js";
-import { inertCloudPlatform, noDomainAdapters } from "./helpers/inert-deps.js";
+import {
+  inertCloudPlatform,
+  noDomainAdapters,
+  inertProvisioning,
+} from "./helpers/inert-deps.js";
 
 /**
  * Luồng 5 ở Service 1 qua HTTP thật (§8.5, §9 "Progressive Delivery") [v4.4].
@@ -126,6 +130,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     domainRegistry: noDomainAdapters,
+    provisioning: inertProvisioning,
     flagService: createFlagServiceClient({
       baseUrl: started.baseUrl,
       secret: env.INTERNAL_SERVICE_SECRET,
@@ -376,6 +381,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
       oidcIssuer: null,
       cloud: inertCloudPlatform,
       domainRegistry: noDomainAdapters,
+      provisioning: inertProvisioning,
       flagService: createFlagServiceClient({
         baseUrl: `http://127.0.0.1:${String(await freePort())}`,
         secret: env.INTERNAL_SERVICE_SECRET,
@@ -400,6 +406,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
       oidcIssuer: null,
       cloud: inertCloudPlatform,
       domainRegistry: noDomainAdapters,
+      provisioning: inertProvisioning,
       // Client thật, chỉ `track` bị thay — mọi lời gọi khác giữ đúng hợp đồng
       flagService: {
         ...createFlagServiceClient({

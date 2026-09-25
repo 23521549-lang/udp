@@ -1,4 +1,4 @@
-import { Prisma } from "@udp/db";
+import { Prisma, type ProjectStatus } from "@udp/db";
 import { capabilityPreferenceSchema } from "@udp/shared-types/domain-api";
 import type {
   ProjectDomainWire,
@@ -125,6 +125,12 @@ export async function catalogAvailability(): Promise<Map<string, boolean>> {
 export type ReplaceOutcome = "saved" | "stale-version" | "not-draft";
 
 /**
+ * Chưa có gì trên cluster để áp lại: nháp, hay lỗi SAU bù trừ (§8.1 — domain đã gỡ, cluster
+ * đã xoá). Lỗi vì cấu hình domain thì người dùng phải sửa được cấu hình trước khi chạy lại.
+ */
+const EDITABLE_STATUSES: readonly ProjectStatus[] = ["DRAFT", "ERROR"];
+
+/**
  * Ghi CẢ TẬP trong một transaction (§2.2 `domain_set_version`, Plan #27 QĐ-4).
  *
  * Bước đầu là UPDATE có điều kiện `version = lastKnown AND status = DRAFT`: đó là khoá —
@@ -143,7 +149,7 @@ export async function replaceDomains(args: {
       where: {
         id: args.projectId,
         domainSetVersion: args.lastKnownVersion,
-        status: "DRAFT",
+        status: { in: [...EDITABLE_STATUSES] },
       },
       data: { domainSetVersion: { increment: 1 } },
     });
@@ -152,7 +158,9 @@ export async function replaceDomains(args: {
         where: { id: args.projectId },
         select: { status: true },
       });
-      return current?.status === "DRAFT" ? "stale-version" : "not-draft";
+      return current !== null && EDITABLE_STATUSES.includes(current.status)
+        ? "stale-version"
+        : "not-draft";
     }
 
     for (const t of args.targets) {

@@ -13,6 +13,7 @@ import {
   cloudRegionSchema,
 } from "./cloud-api.js";
 import { capabilityPreferenceSchema } from "./domain-api.js";
+import { PROVISION_BLOCKERS } from "./provisioning-api.js";
 
 /**
  * [v4.11] Hình dạng TRÊN DÂY của những response mà Portal tiêu thụ.
@@ -1121,6 +1122,135 @@ export const cloudPreflightResponseWire = z
   })
   .strict();
 
+// ------------------------------------------------------------- provisioning của project
+
+/**
+ * [v4.11] Xem trước + job provisioning (Plan #28, §8.1 giai đoạn 2, §9). Tiến độ đọc từ
+ * database (QĐ-6); SSE chỉ gửi ảnh chụp để Portal `invalidateQueries` (§10.14).
+ */
+const jobStateWire = z.enum([
+  "QUEUED",
+  "NETWORK",
+  "CLUSTER",
+  "CLUSTER_ACCESS",
+  "DOMAINS",
+  "DONE",
+  "CANCEL_REQUESTED",
+  "COMPENSATING",
+  "COMPENSATION_FAILED",
+  "FAILED",
+]);
+
+const costLineWire = z
+  .object({ item: z.string().min(1), monthlyUsd: z.number().nonnegative() })
+  .strict();
+
+export const provisionPreviewResponseWire = z
+  .object({
+    preview: z
+      .object({
+        provider: cloudProviderWire,
+        region: cloudRegionSchema,
+        cluster: z
+          .object({
+            nodeSize: z.enum(["small", "medium", "large"]),
+            nodeCount: z.number().int().positive(),
+          })
+          .strict(),
+        /** `breakdown` luôn có control-plane, nat-gateway, load-balancer (§4.2) */
+        cost: z
+          .object({
+            monthlyUsd: z.number().nonnegative(),
+            breakdown: z.array(costLineWire).min(3),
+            isEstimate: z.boolean(),
+            pricingAsOf: z.string().min(1),
+          })
+          .strict(),
+        /** Tên logic các ResourceStep theo thứ tự chạy — "kế hoạch thu gọn" của §16 */
+        steps: z
+          .object({
+            network: z.array(z.string().min(1)),
+            cluster: z.array(z.string().min(1)),
+          })
+          .strict(),
+        deployOrder: z.array(z.array(z.string())),
+        estimatedMinutes: z
+          .object({
+            min: z.number().int().positive(),
+            max: z.number().int().positive(),
+          })
+          .strict(),
+        /** Có environment production ⇒ `POST /provision` đòi `confirmedMonthlyUsd` */
+        requiresConfirmation: z.boolean(),
+        blockers: z.array(z.enum(PROVISION_BLOCKERS)),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const provisioningJobWire = z
+  .object({
+    id: uuid,
+    jobType: z.enum(["PROVISION", "TEARDOWN", "DOMAIN_APPLY"]),
+    state: jobStateWire,
+    attempt: z.number().int().nonnegative(),
+    confirmedMonthlyUsd: z.number().nonnegative().nullable(),
+    lastError: z
+      .object({
+        step: z.string(),
+        message: z.string(),
+        orphans: z.array(z.string()),
+        at: isoDateTime.nullable(),
+      })
+      .strict()
+      .nullable(),
+    cancellable: z.boolean(),
+    createdAt: isoDateTime,
+    updatedAt: isoDateTime,
+  })
+  .strict();
+
+export const jobResponseWire = z.object({ job: provisioningJobWire }).strict();
+
+export const jobListResponseWire = z
+  .object({ jobs: z.array(provisioningJobWire) })
+  .strict();
+
+export const jobDetailResponseWire = z
+  .object({
+    job: provisioningJobWire,
+    resources: z.array(
+      z
+        .object({
+          step: z.enum(["NETWORK", "CLUSTER", "DOMAINS", "K8S_MANAGED"]),
+          kind: z.string().min(1),
+          /** Tên logic trong kế hoạch (`vpc`, `subnet-a`) — đuôi của khoá idempotency */
+          name: z.string().min(1),
+          status: z.enum([
+            "CREATING",
+            "CREATED",
+            "READY",
+            "DELETING",
+            "DELETED",
+            "ORPHAN_SUSPECTED",
+          ]),
+          providerId: z.string().nullable(),
+          updatedAt: isoDateTime,
+        })
+        .strict(),
+    ),
+    domains: z.array(
+      z
+        .object({
+          domainType: z.string().min(1),
+          status: domainStatusWire,
+          message: z.string().nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
 // ------------------------------------------------------------- kiểu suy ra
 
 export type PlatformRoleWire = z.infer<typeof platformRoleWire>;
@@ -1177,3 +1307,8 @@ export type DomainValidationWire = z.infer<
   typeof domainValidationResponseWire
 >["validation"];
 export type DomainDriftWire = z.infer<typeof domainDriftResponseWire>["drift"];
+export type ProvisionPreviewWire = z.infer<
+  typeof provisionPreviewResponseWire
+>["preview"];
+export type ProvisioningJobWire = z.infer<typeof provisioningJobWire>;
+export type JobDetailWire = z.infer<typeof jobDetailResponseWire>;

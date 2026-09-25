@@ -15,7 +15,11 @@ import {
   type Actor,
   type TestWorld,
 } from "./helpers/api.js";
-import { inertCloudPlatform, noDomainAdapters } from "./helpers/inert-deps.js";
+import {
+  inertCloudPlatform,
+  noDomainAdapters,
+  inertProvisioning,
+} from "./helpers/inert-deps.js";
 
 /**
  * [v4.11] Những route Portal gọi mà bộ tích hợp khác chưa từng đi qua đường 2xx.
@@ -46,6 +50,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     domainRegistry: noDomainAdapters,
+    provisioning: inertProvisioning,
     flagService: createFlagServiceClient({
       baseUrl: started.baseUrl,
       secret: env.INTERNAL_SERVICE_SECRET,

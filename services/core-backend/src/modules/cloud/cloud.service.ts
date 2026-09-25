@@ -16,6 +16,7 @@ import {
   type CloudProviderWire,
   type PutCloudBody,
 } from "@udp/shared-types/cloud-api";
+import { PROVISION_ERROR_SLUGS } from "@udp/shared-types/provisioning-api";
 import type {
   CloudCredentialWire,
   CloudPreflightWire,
@@ -30,6 +31,7 @@ import {
 } from "../credential/credential.crypto.js";
 import { resolveCredential } from "../credential/credential.resolver.js";
 import { providerFromDb } from "../provisioning/provider-codec.js";
+import { activeJobOf } from "../provisioning/provisioning.service.js";
 import type { CloudPlatform, PlatformCapabilities } from "./cloud.platform.js";
 import * as repository from "./cloud.repository.js";
 import type { CredentialEnvelope, CredentialMeta } from "./cloud.repository.js";
@@ -44,7 +46,6 @@ import {
  * nó bằng CHÍNH adapter sẽ provisioning. `PUT` không gọi cloud — lưu nhanh, kiểm riêng —
  * để khách sửa quyền bên cloud rồi bấm kiểm lại mà không phải nhập bí mật lần nữa.
  */
-
 
 /** Số ký tự fingerprint lên dây — đủ để đối chiếu, không đủ để thành định danh */
 const FINGERPRINT_SHOWN = 12;
@@ -170,6 +171,13 @@ export async function put(
   const user = requireUser(request);
   // Cloud chưa bật ở triển khai này thì credential lưu vào cũng không dùng được
   requireAdapter(platform, body.provider, body.region);
+  // §2.2: job đang chạy dựng tài nguyên bằng credential HIỆN TẠI — đổi giữa chừng là bù trừ
+  // và teardown sau đó gọi nhầm tài khoản
+  if ((await activeJobOf(projectId)) !== null) {
+    throw new ConflictError(
+      "Project đang có job chạy bằng credential hiện tại — đổi sau khi job kết thúc",
+    ).withTypeSlug(PROVISION_ERROR_SLUGS.credentialLocked);
+  }
   const toStore =
     body.mode === "BYOC"
       ? byocToStore(body.credential, platform.capabilities)

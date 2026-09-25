@@ -334,3 +334,31 @@ export function createPrismaLedger(options: PrismaLedgerOptions): Ledger {
     },
   };
 }
+
+/**
+ * Đóng chu kỳ sổ của một project TRƯỚC lượt provisioning mới (Plan #28): hàng `DELETED` của
+ * lượt đã bù trừ sạch bị xoá khỏi bảng, và người gọi ghi danh sách vào `audit_logs` trong
+ * CÙNG transaction.
+ *
+ * Vì sao không thêm cạnh `DELETED → CREATING`: `DELETED` là trạng thái cuối, và I31 lấy nó
+ * làm đáy hội tụ. Lượt mới dùng lại đúng khoá idempotency (khoá tất định theo project), nên
+ * hàng cũ phải nhường chỗ; thứ nó ghi — tài nguyên nào đã tồn tại và đã xoá — chuyển sang
+ * bảng append-only thay vì biến mất. Hàng còn sống hay `ORPHAN_SUSPECTED` KHÔNG bị chạm:
+ * chúng là tài nguyên có thể đang tính tiền, và bên gọi phải chặn trước khi tới đây.
+ */
+export async function closeFinishedCycle(
+  tx: Pick<Prisma.TransactionClient, "provisionedResource">,
+  projectId: string,
+): Promise<{ idempotencyKey: string; providerId: string | null }[]> {
+  const rows = await tx.provisionedResource.findMany({
+    where: { projectId, status: "DELETED" },
+    select: { idempotencyKey: true, providerId: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (rows.length > 0) {
+    await tx.provisionedResource.deleteMany({
+      where: { projectId, status: "DELETED" },
+    });
+  }
+  return rows;
+}
