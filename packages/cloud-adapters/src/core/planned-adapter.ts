@@ -38,7 +38,10 @@ import {
  * - lookup lỗi là `indeterminate`, KHÔNG BAO GIỜ là `absent` (§4.2: runner bị cấm `create`
  *   khi bất định — coi lỗi là "không có" là tạo trùng hạ tầng trong tài khoản của khách);
  * - quét tag lỗi là `FAILED`, không phải danh sách rỗng (§4.2 `rebuildLedgerFromCloud`);
- * - teardown đi qua `runTeardown` của adapter-core: một thứ tự chín bậc, không hai.
+ * - teardown đi qua `runTeardown` của adapter-core: một thứ tự chín bậc, không hai. TRONG
+ *   một bậc, tài nguyên được xoá theo thứ tự NGƯỢC kế hoạch: NAT trước địa chỉ IP nó giữ,
+ *   subnet trước NSG gắn vào nó — xoá theo thứ tự tạo thì cloud từ chối vì "đang dùng"
+ *   và tài nguyên thành mồ côi.
  */
 
 export interface WaitReadyOptions {
@@ -185,6 +188,18 @@ export function createPlannedAdapter(
   ): ResourceStep[] => specs.map((s) => stepOf(s, ctx, projectId, tags));
 
   const allSpecs = [...plan.networkSteps, ...plan.clusterSteps];
+  const indexByStep = new Map(allSpecs.map((s, i) => [s.name, i]));
+  const lastIndexByKind = new Map(allSpecs.map((s, i) => [s.kind, i]));
+
+  /** Vị trí trong kế hoạch: theo tên step trong `udp.key`; kind không mang tag thì theo kind */
+  const planPosition = (r: CreatedResource): number => {
+    const step = parseIdempotencyKey(r.tags["udp.key"] ?? "")?.name;
+    return (
+      (step === undefined ? undefined : indexByStep.get(step)) ??
+      lastIndexByKind.get(r.kind) ??
+      -1
+    );
+  };
 
   return {
     providerId: plan.provider,
@@ -374,7 +389,10 @@ export function createPlannedAdapter(
       const gateway = gatewayFor(credential);
       const kindOf = new Map(resources.map((r) => [r.id, r.kind]));
       const outcome = await runTeardown({
-        resources,
+        // `runTeardown` giữ thứ tự đầu vào trong mỗi bậc
+        resources: [...resources].sort(
+          (a, b) => planPosition(b) - planPosition(a),
+        ),
         cloud: {
           deleteResource: (r) => gateway.remove(r),
           describeById: (id) => {
