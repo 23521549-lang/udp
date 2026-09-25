@@ -470,6 +470,12 @@ export const JOB_LEASE = {
 export const JOB_QUEUE = {
   pollingIntervalSeconds: 5,
   reconcileCron: "*/5 * * * *",
+  /** Mỗi giờ: mốc cảnh báo nhỏ nhất của TTL là 1 giờ (§4.4 lớp 3) */
+  projectTtlCron: "0 * * * *",
+  /** Mỗi 10 phút (§2.2 quy trình ghi sổ) */
+  orphanScanCron: "*/10 * * * *",
+  /** Mỗi 6 giờ (§8.6 nhánh A) */
+  driftScanCron: "0 */6 * * *",
 } as const;
 
 /**

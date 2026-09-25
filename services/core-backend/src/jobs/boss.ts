@@ -25,8 +25,24 @@ export const QUEUES = {
   jobs: "udp-jobs",
   /** Bù trừ một job mà lượt cuối không tự bù được (worker chết) — do đối soát gửi */
   compensate: "udp-compensate",
-  reconcile: "udp-job-reconcile",
 } as const;
+
+/**
+ * Lịch biểu định kỳ — mỗi lịch một hàng riêng của pg-boss (`schedule` + `work`), không
+ * `setInterval` tự viết: nhiều bản sao Service 1 thì pg-boss cho đúng MỘT bản chạy mỗi lượt.
+ */
+export const SCHEDULES = {
+  /** Đối soát ProvisioningJob ↔ pg-boss (ADR-02 đk 4) */
+  reconcile: "udp-job-reconcile",
+  /** TTL của project (§4.4 lớp 3) */
+  projectTtl: "udp-project-ttl",
+  /** Hàng sổ CREATING treo, tài nguyên mang tag mà sổ không biết (§4.4 lớp 4) */
+  orphanScan: "udp-orphan-scan",
+  /** Quét drift domain của project ACTIVE (§8.6 nhánh A) */
+  driftScan: "udp-drift-scan",
+} as const;
+
+export type ScheduleName = keyof typeof SCHEDULES;
 
 export type BossJobState =
   "created" | "retry" | "active" | "completed" | "cancelled" | "failed";
@@ -51,8 +67,12 @@ export interface JobQueue {
   workCompensation(
     handler: (jobId: string, signal: AbortSignal) => Promise<void>,
   ): Promise<void>;
-  /** Đối soát định kỳ (ADR-02 đk 4) — lịch của pg-boss, không `setInterval` tự viết */
-  scheduleReconcile(cron: string, handler: () => Promise<void>): Promise<void>;
+  /** Một việc định kỳ theo lịch của pg-boss (cron, múi giờ UTC) */
+  schedule(
+    name: ScheduleName,
+    cron: string,
+    handler: () => Promise<void>,
+  ): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -104,7 +124,6 @@ export async function startJobQueue(
     expireInSeconds: options.expireInSeconds,
     heartbeatSeconds: options.heartbeatSeconds,
   });
-  await boss.createQueue(QUEUES.reconcile, { retryLimit: 0 });
 
   return {
     enqueueJob: async (jobId) => {
@@ -155,15 +174,18 @@ export async function startJobQueue(
       );
     },
 
-    scheduleReconcile: async (cron, handler) => {
+    schedule: async (name, cron, handler) => {
+      const queue = SCHEDULES[name];
+      // Lượt lỡ không bù: lượt sau quét lại từ đầu trên trạng thái mới nhất
+      await boss.createQueue(queue, { retryLimit: 0 });
       await boss.work(
-        QUEUES.reconcile,
+        queue,
         { pollingIntervalSeconds: options.pollingIntervalSeconds },
         async () => {
           await handler();
         },
       );
-      await boss.schedule(QUEUES.reconcile, cron);
+      await boss.schedule(queue, cron);
     },
 
     stop: () => boss.stop({ graceful: true }),

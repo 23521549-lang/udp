@@ -5,7 +5,11 @@ import { createApp } from "./app.js";
 import { defaultAppDeps } from "./core/app-deps.js";
 import { createEgressFetch } from "./core/egress/egress.js";
 import { startJobQueue, type JobQueue } from "./jobs/boss.js";
+import { sweepDrift } from "./jobs/drift-scan.job.js";
+import { createJobKit, type JobKitDeps } from "./jobs/job-kit.js";
 import { createJobWorker } from "./jobs/job-worker.js";
+import { sweepOrphans } from "./jobs/orphan-scan.job.js";
+import { sweepProjectTtl } from "./jobs/project-ttl.job.js";
 import { reconcileJobs } from "./jobs/reconcile.js";
 import {
   createClusterRuntime,
@@ -63,7 +67,7 @@ async function startJobs(): Promise<JobQueue> {
     heartbeatSeconds: JOB_LEASE.renewIntervalMs / 1_000,
     pollingIntervalSeconds: JOB_QUEUE.pollingIntervalSeconds,
   });
-  const worker = createJobWorker({
+  const workerDeps: JobKitDeps = {
     prisma,
     platform: deps.cloud,
     domainRegistry: deps.domainRegistry,
@@ -75,14 +79,36 @@ async function startJobs(): Promise<JobQueue> {
       renewIntervalMs: JOB_LEASE.renewIntervalMs,
       errorRetryMs: JOB_LEASE.renewErrorRetryMs,
     },
-  });
+  };
+  const worker = createJobWorker(workerDeps);
+  const kit = createJobKit(workerDeps);
   await queue.workJobs((jobId, attempt) => worker.run(jobId, attempt));
   await queue.workCompensation((jobId) => worker.compensate(jobId));
-  await queue.scheduleReconcile(JOB_QUEUE.reconcileCron, async () => {
+  await queue.schedule("reconcile", JOB_QUEUE.reconcileCron, async () => {
     const outcome = await reconcileJobs(prisma, queue);
     if (outcome.resent.length + outcome.compensating.length > 0) {
       logger.warn(outcome, "Đối soát job đã chữa lệch");
     }
+  });
+  await queue.schedule("projectTtl", JOB_QUEUE.projectTtlCron, async () => {
+    const outcome = await sweepProjectTtl({
+      prisma,
+      enqueue: queue.enqueueJob,
+    });
+    logger.info(outcome, "Lượt TTL project");
+  });
+  await queue.schedule("orphanScan", JOB_QUEUE.orphanScanCron, async () => {
+    const outcome = await sweepOrphans(kit);
+    if (outcome.resolved.length + outcome.unresolved.length > 0) {
+      logger.warn(outcome, "Quét hàng sổ CREATING treo");
+    }
+  });
+  await queue.schedule("driftScan", JOB_QUEUE.driftScanCron, async () => {
+    const outcome = await sweepDrift(kit);
+    logger.info(
+      { scanned: outcome.scanned.length, skipped: outcome.skipped },
+      "Lượt quét drift",
+    );
   });
   return queue;
 }

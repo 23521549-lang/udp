@@ -20,7 +20,10 @@ import { createApp } from "../src/app.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { prisma as s1 } from "../src/core/db.js";
 import type { JobKitDeps } from "../src/jobs/job-kit.js";
+import { sweepDrift } from "../src/jobs/drift-scan.job.js";
+import { createJobKit } from "../src/jobs/job-kit.js";
 import { createJobWorker } from "../src/jobs/job-worker.js";
+import { sweepOrphans } from "../src/jobs/orphan-scan.job.js";
 import type { ClusterRuntime } from "../src/modules/cluster/cluster-runtime.js";
 import type { DomainAdapterRegistry } from "../src/modules/domain/domain-adapter.registry.js";
 import { closeFinishedCycle } from "../src/modules/provisioning/prisma-ledger.js";
@@ -121,6 +124,10 @@ interface FakeDomain {
   adapter: DomainAdapter;
   deploys: { environment: string | null; resolved: unknown }[];
   teardowns: number;
+  /** Môi trường mỗi lần `detectDrift` được hỏi (`null` = phạm vi cluster) */
+  driftChecks: (string | null)[];
+  /** Đặt để lần quét sau thấy trôi */
+  drifted: boolean;
 }
 
 function fakeDomain(spec: {
@@ -134,6 +141,8 @@ function fakeDomain(spec: {
   const self: FakeDomain = {
     deploys: [],
     teardowns: 0,
+    driftChecks: [],
+    drifted: false,
     adapter: {
       domainType: spec.domainType,
       toolId: spec.toolId,
@@ -160,8 +169,15 @@ function fakeDomain(spec: {
       },
       configure: () => Promise.resolve({ status: "SUCCESS", data: [] }),
       upgrade: () => Promise.resolve({ status: "SUCCESS", data: [] }),
-      detectDrift: () =>
-        Promise.resolve({ status: "SUCCESS", data: { drifted: false } }),
+      detectDrift: (ctx) => {
+        self.driftChecks.push(ctx.environment?.name ?? null);
+        return Promise.resolve({
+          status: "SUCCESS",
+          data: self.drifted
+            ? { drifted: true, details: "replicas 3 ≠ 1" }
+            : { drifted: false },
+        });
+      },
       onDependencyChanged: () => Promise.resolve({ status: "SUCCESS" }),
       healthcheck: () =>
         Promise.resolve({ status: "SUCCESS", data: { healthy: true } }),
@@ -260,12 +276,12 @@ async function seedJob(projectId: string): Promise<string> {
   return job.id;
 }
 
-function workerWith(
+function depsWith(
   registry: DomainAdapterRegistry,
   clusters: FakeClusters,
   over: Partial<JobKitDeps> = {},
-) {
-  return createJobWorker({
+): JobKitDeps {
+  return {
     prisma: s1,
     platform,
     domainRegistry: () => Promise.resolve(registry),
@@ -275,8 +291,11 @@ function workerWith(
     lease: { leaseMs: 60_000, renewIntervalMs: 30_000, errorRetryMs: 1_000 },
     sleep: () => Promise.resolve(),
     ...over,
-  });
+  };
 }
+
+const workerWith = (...args: Parameters<typeof depsWith>) =>
+  createJobWorker(depsWith(...args));
 
 const failingAt = (phase: string, stepName: string, make: () => Error) => {
   let fired = false;
@@ -698,5 +717,96 @@ describe("job TEARDOWN", { timeout: 120_000 }, () => {
     await worker.run(teardown, { final: false });
     await worker.compensate(teardown);
     expect((await snapshot(projectId, teardown)).job.state).toBe("DONE");
+  });
+});
+
+describe("lịch orphan-scan và drift-scan", { timeout: 120_000 }, () => {
+  it("AC-6: CREATING treo — thấy trên cloud ⇒ gắn provider_id (CREATED); cloud không còn ⇒ giữ nguyên", async () => {
+    const projectId = await readyProject();
+    const jobId = await seedJob(projectId);
+    const { registry } = domainsWith();
+    const clusters = fakeClusters();
+    await workerWith(registry, clusters).run(jobId, { final: false });
+
+    const old = new Date(Date.now() - 60 * 60_000);
+    const [vpc, subnet] = await Promise.all(
+      ["vpc", "subnet-public-a"].map((name) =>
+        admin.provisionedResource.findFirstOrThrow({
+          where: { projectId, idempotencyKey: { endsWith: `:${name}` } },
+          select: { idempotencyKey: true, providerId: true },
+        }),
+      ),
+    );
+    if (vpc === undefined || subnet === undefined)
+      throw new Error("thiếu hàng");
+    // K3: cloud đã tạo, sổ chưa kịp ghi id
+    await admin.provisionedResource.update({
+      where: { idempotencyKey: vpc.idempotencyKey },
+      data: { status: "CREATING", providerId: null, updatedAt: old },
+    });
+    // Cloud không còn gì cho hàng thứ hai
+    await admin.provisionedResource.update({
+      where: { idempotencyKey: subnet.idempotencyKey },
+      data: { status: "CREATING", updatedAt: old },
+    });
+    await platform.cloud.deleteOutOfBand(subnet.providerId ?? "");
+
+    const outcome = await sweepOrphans(
+      createJobKit(depsWith(registry, clusters)),
+      { only: [projectId] },
+    );
+    expect(outcome.resolved).toEqual([vpc.idempotencyKey]);
+    expect(outcome.unresolved).toEqual([subnet.idempotencyKey]);
+    const rows = await admin.provisionedResource.findMany({
+      where: {
+        idempotencyKey: { in: [vpc.idempotencyKey, subnet.idempotencyKey] },
+      },
+      select: { idempotencyKey: true, status: true, providerId: true },
+    });
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        {
+          idempotencyKey: vpc.idempotencyKey,
+          status: "CREATED",
+          providerId: vpc.providerId,
+        },
+        expect.objectContaining({
+          idempotencyKey: subnet.idempotencyKey,
+          status: "CREATING",
+        }),
+      ]),
+    );
+  });
+
+  it("AC-7: ba lượt quét trên domain đang trôi ⇒ đúng MỘT lần ghi last_error; adapter theo namespace được hỏi ở mọi environment", async () => {
+    const projectId = await readyProject();
+    const jobId = await seedJob(projectId);
+    const { metrics, delivery, registry } = domainsWith();
+    const clusters = fakeClusters();
+    await workerWith(registry, clusters).run(jobId, { final: false });
+    const kit = createJobKit(depsWith(registry, clusters));
+
+    metrics.drifted = true;
+    const updatedAt = async () =>
+      await admin.domainConfig.findFirstOrThrow({
+        where: { projectId, domainType: "MONITORING" },
+        select: { updatedAt: true, lastError: true },
+      });
+    for (let i = 0; i < 3; i += 1) {
+      await sweepDrift(kit, { only: [projectId] });
+    }
+    const after = await updatedAt();
+    expect(after.lastError).toMatchObject({
+      step: "DRIFT_SCAN",
+      adapterResult: "DRIFTED",
+    });
+    await sweepDrift(kit, { only: [projectId] });
+    expect((await updatedAt()).updatedAt).toEqual(after.updatedAt);
+    expect(metrics.driftChecks.every((e) => e === null)).toBe(true);
+    expect(delivery.driftChecks.slice(0, 3).sort()).toEqual([
+      "dev",
+      "prod",
+      "staging",
+    ]);
   });
 });
