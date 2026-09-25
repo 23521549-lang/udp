@@ -6,6 +6,7 @@ import { Icon } from "../../components/Icon";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
 import type { PublicProjectWire } from "@udp/shared-types/wire";
+import { DomainPanel } from "../domain/DomainPanel";
 import { CloudPanel } from "./cloud/CloudPanel";
 import { projectApi, type CreateProjectInput } from "./project-api";
 
@@ -15,20 +16,33 @@ const RUNTIMES = [
 ] as const;
 
 /**
- * Wizard tạo project (§10.5): bước 1 tạo project, bước 2 kết nối cloud (Plan #26).
+ * Wizard tạo project (§10.5): bước 1 tạo project, bước 2 kết nối cloud (Plan #26), bước 3
+ * chọn domain (Plan #27).
  *
- * Ba bước sau (domain, xem trước, provisioning) cần endpoint chưa tồn tại ở Service 1
- * (sổ nợ `portal-domain-screens`, `portal-preview`, `portal-job-stream`). Trang nói thật
- * điều đó thay vì dựng màn hình giả: project tạo ra đứng ở DRAFT, và flag, segment,
- * rollout, SDK key đều dùng được ngay. Bước cloud bỏ qua được và làm lại ở Cài đặt.
+ * Hai bước sau (xem trước, provisioning) cần endpoint chưa tồn tại ở Service 1 (sổ nợ
+ * `portal-preview`, `portal-job-stream`). Trang nói thật điều đó thay vì dựng màn hình giả:
+ * project tạo ra đứng ở DRAFT, và flag, segment, rollout, SDK key đều dùng được ngay. Bước
+ * cloud và domain bỏ qua được và làm lại ở Cài đặt > Cloud và trang Domain.
  */
 export function NewProjectPage() {
   const [created, setCreated] = useState<PublicProjectWire | null>(null);
-  return created === null ? (
-    <CreateStep onCreated={setCreated} />
+  const [step, setStep] = useState<"cloud" | "domains">("cloud");
+  if (created === null) return <CreateStep onCreated={setCreated} />;
+  return step === "cloud" ? (
+    <CloudStep project={created} onNext={() => setStep("domains")} />
   ) : (
-    <CloudStep project={created} />
+    <DomainStep project={created} />
   );
+}
+
+function useOpenProject(project: PublicProjectWire) {
+  const navigate = useNavigate();
+  return () =>
+    void navigate({
+      to: "/app/projects/$projectId",
+      params: { projectId: project.id },
+      search: {},
+    });
 }
 
 function WizardBar({ step }: { step: string }) {
@@ -45,18 +59,17 @@ function WizardBar({ step }: { step: string }) {
   );
 }
 
-function CloudStep({ project }: { project: PublicProjectWire }) {
-  const navigate = useNavigate();
+function CloudStep({
+  project,
+  onNext,
+}: {
+  project: PublicProjectWire;
+  onNext: () => void;
+}) {
   const [saved, setSaved] = useState(false);
-  const open = () =>
-    void navigate({
-      to: "/app/projects/$projectId",
-      params: { projectId: project.id },
-      search: {},
-    });
   return (
     <>
-      <WizardBar step="Bước 2/2: Cloud" />
+      <WizardBar step="Bước 2/3: Cloud" />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
           <h1 className="title">Kết nối cloud</h1>
@@ -65,6 +78,39 @@ function CloudStep({ project }: { project: PublicProjectWire }) {
             sau ở Cài đặt, thẻ Cloud.
           </p>
           <CloudPanel
+            projectId={project.id}
+            role={project.myRole}
+            onSaved={() => setSaved(true)}
+          />
+          <div className="form-actions">
+            <button
+              type="button"
+              className={saved ? "btn pri" : "btn"}
+              onClick={onNext}
+            >
+              {saved ? "Tiếp tục" : "Để sau"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DomainStep({ project }: { project: PublicProjectWire }) {
+  const open = useOpenProject(project);
+  const [saved, setSaved] = useState(false);
+  return (
+    <>
+      <WizardBar step="Bước 3/3: Domain" />
+      <div className="scroll">
+        <div className="page" style={{ maxWidth: 760 }}>
+          <h1 className="title">Chọn domain</h1>
+          <p className="lead">
+            Bật những công cụ hạ tầng project cần. Cấu hình được kiểm trước khi
+            lưu; có thể đổi sau ở trang Domain.
+          </p>
+          <DomainPanel
             projectId={project.id}
             role={project.myRole}
             onSaved={() => setSaved(true)}
@@ -118,7 +164,7 @@ function CreateStep({
 
   return (
     <>
-      <WizardBar step="Bước 1/2: Project" />
+      <WizardBar step="Bước 1/3: Project" />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 640 }}>
           <h1 className="title">Tạo project</h1>
@@ -128,8 +174,9 @@ function CreateStep({
           <div className="lock">
             <Icon of={Info} />
             <span>
-              Bước cấu hình domain chưa có trên Portal. Project mới đứng ở trạng
-              thái Nháp; flag, segment, rollout và SDK key dùng được ngay.
+              Bước xem trước và triển khai chưa có trên Portal. Project mới đứng
+              ở trạng thái Nháp; flag, segment, rollout và SDK key dùng được
+              ngay.
             </span>
           </div>
           <form

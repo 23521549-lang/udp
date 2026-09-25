@@ -13,10 +13,13 @@ import { AdminJobsPage } from "../features/admin/pages/AdminJobsPage";
 import { AdminOrphansPage } from "../features/admin/pages/AdminOrphansPage";
 import { AdminProjectsPage } from "../features/admin/pages/AdminProjectsPage";
 import { AdminSystemPage } from "../features/admin/pages/AdminSystemPage";
+import { AdminCatalogPage } from "../features/admin/pages/AdminCatalogPage";
 import { AdminUsersPage } from "../features/admin/pages/AdminUsersPage";
 import { useAuthStore } from "../features/auth/auth-store";
 import { LoginPage, RegisterPage } from "../features/auth/AuthPages";
 import { DeploymentsPage } from "../features/deployment/DeploymentsPage";
+import { DomainDetailPage } from "../features/domain/DomainDetailPage";
+import { DomainsPage } from "../features/domain/DomainsPage";
 import { CleanupPage } from "../features/flag/CleanupPage";
 import { FlagsPage } from "../features/flag/FlagsPage";
 import { NewProjectPage } from "../features/project/NewProjectPage";
@@ -211,6 +214,18 @@ const deploymentsRoute = createRoute({
   component: DeploymentsPage,
 });
 
+const domainsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "domains",
+  component: DomainsPage,
+});
+
+export const domainDetailRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "domains/$type",
+  component: DomainDetailPage,
+});
+
 export interface SettingsSearch {
   tab?: "keys" | "members" | "audit" | "cloud" | "project";
 }
@@ -281,6 +296,12 @@ const adminSystemRoute = createRoute({
   component: AdminSystemPage,
 });
 
+const adminCatalogRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "catalog",
+  component: AdminCatalogPage,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -293,6 +314,7 @@ export const routeTree = rootRoute.addChildren([
     adminJobsRoute,
     adminOrphansRoute,
     adminSystemRoute,
+    adminCatalogRoute,
   ]),
   appRoute.addChildren([
     appIndexRoute,
@@ -306,6 +328,8 @@ export const routeTree = rootRoute.addChildren([
       rolloutsRoute,
       rolloutDetailRoute,
       deploymentsRoute,
+      domainsRoute,
+      domainDetailRoute,
       settingsRoute,
     ]),
   ]),

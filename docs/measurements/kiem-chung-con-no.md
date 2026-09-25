@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 44.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 42.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -649,20 +649,6 @@ owned` còn có tài nguyên mang `shared`.
   "UDP không giữ bí mật dài hạn của khách" đúng về THIẾT KẾ và về mã đã kiểm bằng cổng
   giả, nhưng chưa có bằng chứng từ một cloud thật chấp nhận token của UDP.
 
-## domains-catalog-route — `GET /domains/catalog` chưa có route
-
-- **Vì sao nợ:** registry hai tầng và `syncDomainCatalog` đã có và có test; §5.3 nói
-  UI dựng dropdown từ endpoint này, nhưng route thì chưa được viết (cùng lát cắt với
-  các route Day-2 dưới đây).
-- **Tiền đề:** không cần hạ tầng gì; đây là phần việc còn lại, không phải một phép đo.
-- **Lệnh:** `GET /api/v1/domains/catalog` sau khi viết route.
-- **Đạt:** trả đủ 16 domain của registry kèm `isAvailable`, và một adapter mới tự
-  xuất hiện mà không sửa file nào ngoài thư mục của nó (đúng phép kiểm dương tính của
-  I28). **Không đạt:** phải sửa một file ngoài ⇒ chỉ số "0 file" của C2 sai.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** phép kiểm DƯƠNG TÍNH của **I28** (thêm adapter giả và
-  thấy nó xuất hiện trên catalog) chưa chạy được đầu-cuối.
-
 ## drift-scan-cron — lịch biểu 6 giờ cho job `DRIFT_SCAN`
 
 - **Vì sao nợ:** `scanDomainDrift` là hàm thuần trên các cổng được tiêm, và nó có
@@ -680,17 +666,20 @@ owned` còn có tài nguyên mang `shared`.
 ## domain-day2-route — route nâng cấp và quét drift
 
 - **Vì sao nợ:** `upgradeDomain` cưỡng chế bốn quy tắc của §8.6 và có test cho từng
-  quy tắc, nhưng `POST /projects/:id/domains/:domainId/upgrade` và
-  `POST .../drift` chưa được viết. `requireProjectRole(MAINTAINER)` và xác nhận hai
-  bước cho environment production là việc của controller, nên chúng đi cùng route.
-- **Tiền đề:** không cần hạ tầng.
+  quy tắc, nhưng `POST /projects/:id/domains/:type/upgrade` và
+  `POST .../drift` chưa được viết. [v4.11, Plan #27] Tiền đề cũ ("không cần hạ tầng")
+  SAI: cả hai route CHẠY adapter trên cluster (`contextFor` cần `ClusterAccess` thật —
+  `I32-cluster`) qua job `DOMAIN_APPLY` (cần `pg-boss` — `portal-job-stream`). Một route
+  trả 202 mà không có gì thực thi là stub, nên Plan #27 dừng ở phần ĐỌC: `GET …/drift`
+  đọc kết quả lượt quét đã ghi (`project-domain.integration.test.ts`).
+- **Tiền đề:** `jobs/boss.ts` (hàng đợi) + một `KubeTransport` thật cho `ClusterAccess`.
 - **Lệnh:** test tích hợp như `rollout.integration.test.ts`.
 - **Đạt:** 409 khi có rollout đang chạy, 422 khi tổ hợp capability không còn hợp lệ,
-  403 khi thiếu quyền, 428 khi thiếu xác nhận hai bước ở production, 202 khi hợp lệ.
-  **Không đạt:** bất kỳ mã nào khác ⇒ luồng §8.6 chưa đúng ở tầng HTTP.
-- **Tài nguyên:** không.
+  403 khi thiếu quyền, 428 khi thiếu xác nhận hai bước ở production, 202 kèm `jobId` của
+  một job thật. **Không đạt:** bất kỳ mã nào khác ⇒ luồng §8.6 chưa đúng ở tầng HTTP.
+- **Tài nguyên:** cluster (hoặc cluster mô phỏng có transport) + database.
 - **Ảnh hưởng tới kết luận:** §8.6 nhánh B đi tới được người dùng. Quyết định đã
-  kiểm; cổng quyền thì chưa.
+  kiểm; cổng quyền và đường thực thi thì chưa.
 
 ## upgrade-rollback-that — hạ về bản cũ cần instance adapter bản cũ
 
@@ -821,22 +810,20 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > đổi token; test Portal `cloud.test.tsx` — ba vai trò, lỗi định dạng chặn ở trang không
 > gửi bí mật đi, wizard tạo xong ở lại bước cloud. Phần còn nợ là cloud THẬT, ở
 > `cred-federation` và `I31-*`.
-
-## portal-domain-screens — Domain Config, Catalog, và Detail (drift/upgrade)
-
-- **Vì sao nợ:** cần `PUT /projects/:id/domains`, `GET /domains/catalog`, và hai route
-  Day-2 (`upgrade`, `drift`) — cả bốn chưa có. Registry hai tầng, `syncDomainCatalog`,
-  `upgradeDomain` và `scanDomainDrift` đã có và có test (Plan #24), nhưng chỉ ở tầng
-  quyết định.
-- **Tiền đề:** bốn endpoint đó tồn tại (xem `domains-catalog-route`, `domain-day2-route`).
-- **Lệnh:** test tích hợp ba màn hình + phép kiểm dương tính của I28 (adapter giả
-  `dummy/noop` xuất hiện trên catalog).
-- **Đạt:** bật một domain ⇒ thấy trạng thái theo thời gian thực; drift hiện badge và diff
-  đúng chỗ đã sửa. **Không đạt:** badge "đã trôi" không nói chỗ nào trôi ⇒ người vận hành
-  bỏ qua nó.
-- **Tài nguyên:** không cho phần UI; cluster thật cho phần drift (xem `E16`).
-- **Ảnh hưởng tới kết luận:** phép kiểm **dương tính** của I28 chưa chạy được đầu-cuối, và
-  đó là nửa quan trọng của chỉ số "0 file" ở C2.
+>
+> **Đã trả (25/09/2026):** `domains-catalog-route` — `GET /domains/catalog` dựng TỪ
+> registry (Plan #27). Bằng chứng: `domain-catalog.integration.test.ts` — đủ 16 domain
+> của bảng, tool đọc từ adapter đã nạp, và phép kiểm DƯƠNG TÍNH của I28: thả MỘT thư mục
+> adapter vào cây tạm ⇒ tool hiện trên catalog kèm trường cấu hình, không sửa tệp nào khác.
+>
+> **Đã trả (25/09/2026):** `portal-domain-screens` — trang Domain (bật/tắt, chọn tool, form
+> dựng từ `configSchema` của adapter, kiểm trực tiếp có nút hành động, lưu cả tập với khoá
+> `domain_set_version`), chi tiết domain (trạng thái + CHỖ trôi mà lượt quét ghi), Catalog
+> quản trị, bước 3 của wizard. Bằng chứng: `project-domain.integration.test.ts` (đua hai
+> PUT ⇒ đúng một thắng, 400 đúng trường, 422 mã catalog, 409 khi project đã rời nháp),
+> `domain.test.tsx`. Phần còn lại có mục riêng: trạng thái theo thời gian thực sau khi áp
+> (`portal-job-stream`), nâng cấp và quét ngay (`domain-day2-route`), drift trên cluster
+> thật (`E16`).
 
 ## portal-job-stream — nhật ký provisioning (SSE)
 
@@ -910,8 +897,9 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
   cluster thì nó trả 422 `METRICS_NOT_AVAILABLE` hoặc 503. Tiền đề của Plan #25 là project
   trỏ vào một cluster và một Prometheus có sẵn; nếu tiền đề đó không giữ được thì phần tạo
   rollout chỉ chứng minh được bằng `msw`.
-- **Tiền đề:** một cluster và một Prometheus có sẵn (bring-your-own), hoặc
-  `portal-domain-screens` để bật domain Monitoring từ Portal.
+- **Tiền đề:** một cluster và một Prometheus có sẵn (bring-your-own), hoặc bật domain
+  Monitoring từ Portal (chọn được từ Plan #27) rồi TRIỂN KHAI nó — việc đó cần hàng đợi
+  (`portal-job-stream`) và cluster thật (`I32-cluster`).
 - **Lệnh:** test tích hợp tạo rollout với Prometheus thật.
 - **Đạt:** probe hai pha qua được, rollout lên `IN_PROGRESS`. **Không đạt:** probe luôn
   rỗng ⇒ banner phải nói thật, KHÔNG link tới màn hình đã hoãn.

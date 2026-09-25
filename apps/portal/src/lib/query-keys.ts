@@ -59,6 +59,16 @@ export const qk = {
   dora: (projectId: string, envId: string, days: number) =>
     ["dora", projectId, envId, days] as const,
 
+  /** §10.14: `["catalog"]`, staleTime vô hạn — registry chỉ đổi khi triển khai lại */
+  catalog: () => ["catalog"] as const,
+  domains: (projectId: string) => ["domains", projectId] as const,
+  domain: (projectId: string, type: string) =>
+    ["domain", projectId, type] as const,
+  domainDrift: (projectId: string, type: string) =>
+    ["drift", projectId, type] as const,
+  /** §10.12 kiểm trực tiếp: khoá theo nội dung trạng thái đích đã chuẩn hoá */
+  domainValidation: (projectId: string, target: string) =>
+    ["domainValidation", projectId, target] as const,
   cloud: (projectId: string) => ["cloud", projectId] as const,
   cloudSetup: (projectId: string, provider: string) =>
     ["cloudSetup", projectId, provider] as const,
@@ -104,6 +114,11 @@ export const NOT_ENV_SCOPED = {
   segment: "segment thuộc project (§2.2)",
   rollout: "id rollout đã gắn đúng một env",
   activeRollouts: "watcher auto-rollback của cả project (§10.9)",
+  catalog: "danh mục của cả hệ thống, dựng từ registry (§5.3)",
+  domains: "domain cấu hình theo project; binding theo env tới sau job (§2.2)",
+  domain: "một domain của project",
+  domainDrift: "drift của một domain, quét ở phạm vi cluster",
+  domainValidation: "kiểm trạng thái đích của cả project",
   cloud: "credential cloud thuộc project, một bản cho mọi env (§4.3)",
   cloudSetup: "dữ liệu setup theo project và cloud, không theo env",
   adminUsers: "toàn hệ thống, không thuộc project nào",

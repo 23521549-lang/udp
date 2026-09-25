@@ -1,5 +1,6 @@
 import { Link, Outlet } from "@tanstack/react-router";
 import {
+  Blocks,
   FolderKanban,
   KeyRound,
   ListX,
@@ -69,6 +70,9 @@ export function AdminLayout() {
           </Link>
           <Link {...NAV} to="/admin/system">
             <NavBody icon={Server}>Hệ thống</NavBody>
+          </Link>
+          <Link {...NAV} to="/admin/catalog">
+            <NavBody icon={Blocks}>Catalog domain</NavBody>
           </Link>
           <div className="grp">Của bạn</div>
           <Link to="/app/projects" className="nv">

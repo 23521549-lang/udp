@@ -7,6 +7,7 @@ import {
   useSearch,
 } from "@tanstack/react-router";
 import {
+  Blocks,
   ChartNoAxesColumnIncreasing,
   Flag,
   FolderKanban,
@@ -175,6 +176,15 @@ function ProjectNav({ projectId }: { projectId: string }) {
         activeOptions={sub}
       >
         <NavBody icon={Rocket}>Deploy</NavBody>
+      </Link>
+      <Link
+        {...NAV}
+        to="/app/projects/$projectId/domains"
+        params={params}
+        search={keep}
+        activeOptions={sub}
+      >
+        <NavBody icon={Blocks}>Domain</NavBody>
       </Link>
       <Link
         {...NAV}

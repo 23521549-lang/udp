@@ -197,13 +197,19 @@ describe("thẻ Cloud trong Cài đặt", () => {
 });
 
 describe("wizard tạo project", () => {
-  it("tạo xong ở lại bước 2 để kết nối cloud; Để sau thì mở project", async () => {
+  it("tạo xong ở lại bước 2 (cloud) rồi bước 3 (domain); Để sau thì mở project", async () => {
     const detail = projectFixture("OWNER");
     useProjectHandlers(detail);
     useCloudHandlers({ configured: false });
     server.use(
       http.get(`${API}/projects/:id/flags`, () =>
         HttpResponse.json(golden("GET /projects/{id}/flags")),
+      ),
+      http.get(`${API}/domains/catalog`, () =>
+        HttpResponse.json(golden("GET /domains/catalog")),
+      ),
+      http.get(`${API}/projects/:id/domains`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/domains")),
       ),
       http.post(`${API}/projects`, () =>
         HttpResponse.json(detail, { status: 201 }),
@@ -221,6 +227,11 @@ describe("wizard tạo project", () => {
     expect(
       await screen.findByText("Project chưa kết nối cloud nào."),
     ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Để sau" }));
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Chọn domain" }),
+    ).toBeInTheDocument();
+    await screen.findByRole("switch", { name: "Bật Monitoring" });
     await userEvent.click(screen.getByRole("button", { name: "Để sau" }));
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(

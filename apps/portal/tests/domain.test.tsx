@@ -1,0 +1,247 @@
+import type {
+  DomainValidationWire,
+  ProjectDetailResponseWire,
+  ProjectDomainsResponseWire,
+} from "@udp/shared-types/wire";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+import { describe, expect, it } from "vitest";
+import {
+  chooseTool,
+  draftFrom,
+  setEnabled,
+  targetOf,
+} from "../src/features/domain/domain-model";
+import { API, golden, server } from "./msw";
+import { projectFixture, useProjectHandlers } from "./project-fixtures";
+import { renderApp } from "./render";
+
+/**
+ * Trang Domain (Plan #27 P3, AC-7). Catalog, cấu hình và kết quả kiểm đều từ golden capture
+ * của Service 1 — catalog là của registry THẬT (datadog, prometheus-grafana).
+ */
+
+const savedWith = (enabled: boolean): ProjectDomainsResponseWire => {
+  const saved = golden<ProjectDomainsResponseWire>(
+    "GET /projects/{id}/domains",
+  );
+  saved.domains = saved.domains.map((d) =>
+    d.domainType === "MONITORING" ? { ...d, isEnabled: enabled } : d,
+  );
+  return saved;
+};
+
+function useDomainHandlers(options: {
+  saved: ProjectDomainsResponseWire;
+  validation?: DomainValidationWire;
+  putStatus?: number;
+}) {
+  const puts: unknown[] = [];
+  let validations = 0;
+  server.use(
+    http.get(`${API}/domains/catalog`, () =>
+      HttpResponse.json(golden("GET /domains/catalog")),
+    ),
+    http.get(`${API}/projects/:id/domains`, () =>
+      HttpResponse.json(options.saved),
+    ),
+    http.post(`${API}/projects/:id/domains/validate`, () => {
+      validations += 1;
+      return HttpResponse.json(
+        options.validation === undefined
+          ? golden("POST /projects/{id}/domains/validate")
+          : { validation: options.validation },
+      );
+    }),
+    http.put(`${API}/projects/:id/domains`, async ({ request }) => {
+      puts.push(await request.json());
+      return options.putStatus === 409
+        ? HttpResponse.json(
+            {
+              type: "https://udp.dev/problems/optimistic-lock",
+              title: "Resource was modified by someone else",
+              status: 409,
+              code: "OPTIMISTIC_LOCK",
+              traceId: "t",
+            },
+            { status: 409 },
+          )
+        : HttpResponse.json(golden("PUT /projects/{id}/domains"));
+    }),
+  );
+  return { puts, validationCount: () => validations };
+}
+
+const domainsUrl = (detail: ProjectDetailResponseWire) =>
+  `/app/projects/${detail.project.id}/domains`;
+
+describe("trang Domain", () => {
+  it("MAINTAINER: bật Monitoring ⇒ form dựng từ schema của adapter, kiểm trực tiếp, lưu cả tập", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    const saved = savedWith(false);
+    const { puts } = useDomainHandlers({ saved });
+    renderApp(domainsUrl(detail));
+
+    await userEvent.click(
+      await screen.findByRole("switch", { name: "Bật Monitoring" }),
+    );
+    // Trường của datadog: enum `site`, chuỗi `credentialRef`, số `maxHosts` mặc định 50
+    expect(screen.getByLabelText("site *")).toBeInTheDocument();
+    expect(screen.getByLabelText("maxHosts")).toHaveValue(50);
+
+    const status = await screen.findByRole("status", { name: "Kiểm cấu hình" });
+    expect(within(status).getByText(/Cấu hình hợp lệ/)).toBeInTheDocument();
+    expect(within(status).getByText(/traces.sink/)).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Lưu cấu hình domain" }),
+    );
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toMatchObject({
+      lastKnownDomainSetVersion: saved.domainSetVersion,
+      domains: [{ domainType: "MONITORING", toolId: "datadog" }],
+      preferences: saved.preferences,
+    });
+  });
+
+  it("lỗi MISSING_CAPABILITY có nút Bật đúng tool gợi ý", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    useDomainHandlers({
+      saved: savedWith(false),
+      validation: {
+        valid: false,
+        errors: [
+          {
+            code: "MISSING_CAPABILITY",
+            subject: "monitoring:prometheus-grafana",
+            detail: ["registry.oci"],
+            suggestedAction: {
+              type: "ENABLE_DOMAIN",
+              domainType: "MONITORING",
+              toolId: "datadog",
+            },
+          },
+        ],
+        warnings: [],
+        deployOrder: null,
+      },
+    });
+    renderApp(domainsUrl(detail));
+    await userEvent.click(
+      await screen.findByRole("switch", { name: "Bật Monitoring" }),
+    );
+    expect(
+      await screen.findByText(
+        /prometheus-grafana \(Monitoring\) cần registry.oci/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Bật datadog" }),
+    ).toBeInTheDocument();
+  });
+
+  it("409 khi lưu ⇒ báo người khác vừa lưu và tải lại bản mới", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    useDomainHandlers({ saved: savedWith(false), putStatus: 409 });
+    renderApp(domainsUrl(detail));
+    await userEvent.click(
+      await screen.findByRole("switch", { name: "Bật Monitoring" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Lưu cấu hình domain" }),
+    );
+    expect(await screen.findByText(/người khác sửa/)).toBeInTheDocument();
+  });
+
+  it("VIEWER: chỉ xem, không kiểm, không lưu", async () => {
+    const detail = projectFixture("VIEWER");
+    useProjectHandlers(detail);
+    const { validationCount } = useDomainHandlers({ saved: savedWith(true) });
+    renderApp(domainsUrl(detail));
+    expect(
+      await screen.findByRole("switch", { name: "Bật Monitoring" }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Lưu cấu hình domain" }),
+    ).toBeNull();
+    expect(validationCount()).toBe(0);
+  });
+
+  it("domain chưa có công cụ nói đúng điều đó", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    useDomainHandlers({ saved: savedWith(true) });
+    renderApp(domainsUrl(detail));
+    expect(
+      (await screen.findAllByText("Chưa có công cụ nào cho domain này."))
+        .length,
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe("chi tiết domain", () => {
+  it("drift: hiện CHỖ trôi mà lượt quét ghi, không chỉ huy hiệu", async () => {
+    const detail = projectFixture("VIEWER");
+    useProjectHandlers(detail);
+    server.use(
+      http.get(`${API}/projects/:id/domains/MONITORING`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/domains/MONITORING")),
+      ),
+      http.get(`${API}/projects/:id/domains/MONITORING/drift`, () =>
+        HttpResponse.json(
+          golden("GET /projects/{id}/domains/MONITORING/drift"),
+        ),
+      ),
+    );
+    renderApp(`${domainsUrl(detail)}/MONITORING`);
+    const result = await screen.findByRole("status", { name: "Kết quả drift" });
+    expect(within(result).getByText(/Đã trôi/)).toBeInTheDocument();
+    expect(within(result).getByText(/retention 15d/)).toBeInTheDocument();
+  });
+});
+
+describe("catalog quản trị", () => {
+  it("liệt kê domain và công cụ registry đã nạp", async () => {
+    server.use(
+      http.get(`${API}/domains/catalog`, () =>
+        HttpResponse.json(golden("GET /domains/catalog")),
+      ),
+    );
+    renderApp("/admin/catalog", {
+      user: {
+        id: "0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f",
+        email: "admin@udp.local",
+        name: "Admin",
+        platformRole: "PLATFORM_ADMIN",
+      },
+    });
+    const table = await screen.findByRole("table", { name: "Catalog domain" });
+    expect(within(table).getByText(/datadog 1.0.0/)).toBeInTheDocument();
+  });
+});
+
+describe("mô hình bản nháp (thuần)", () => {
+  const catalog = golden<{ domains: Parameters<typeof draftFrom>[0] }>(
+    "GET /domains/catalog",
+  ).domains;
+  const monitoring = catalog.find((c) => c.domainType === "MONITORING");
+
+  it("trạng thái đích chỉ gồm domain bật; đổi tool về cấu hình mặc định của tool mới", () => {
+    if (monitoring === undefined)
+      throw new Error("catalog mẫu thiếu MONITORING");
+    const draft = draftFrom(catalog, savedWith(true));
+    expect(targetOf(draft).domains.map((d) => d.toolId)).toEqual(["datadog"]);
+    expect(targetOf(setEnabled(draft, "MONITORING", false)).domains).toEqual(
+      [],
+    );
+    const switched = chooseTool(draft, monitoring, "prometheus-grafana");
+    expect(switched.entries.MONITORING?.config).toEqual({
+      dashboards: true,
+      storageGb: 20,
+    });
+  });
+});

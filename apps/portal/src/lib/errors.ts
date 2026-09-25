@@ -1,4 +1,5 @@
 import { CLOUD_ERROR_SLUGS } from "@udp/shared-types/cloud-api";
+import { DOMAIN_ERROR_SLUGS } from "@udp/shared-types/domain-api";
 import {
   CSRF_INVALID_SLUG,
   ERROR_CATALOG,
@@ -62,6 +63,8 @@ const SLUG_COPY: Record<string, string> = {
   [CSRF_INVALID_SLUG]: "Phiên làm việc đã đổi. Tải lại trang rồi thử lại.",
   [CLOUD_ERROR_SLUGS.notConfigured]:
     "Project chưa cấu hình cloud. Lưu credential trước rồi kiểm tra.",
+  [DOMAIN_ERROR_SLUGS.needsApplyJob]:
+    "Project đã triển khai: đổi domain cần hàng đợi triển khai, tính năng này chưa có.",
   [CLOUD_ERROR_SLUGS.methodUnavailable]:
     "Cách xác thực này chưa được bật trên máy chủ UDP. Chọn cách khác hoặc báo quản trị.",
 };

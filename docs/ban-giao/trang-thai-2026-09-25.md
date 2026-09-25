@@ -141,3 +141,23 @@ xanh, tệp cloud đỏ 3 ca vì đổi import giữa lượt, chạy lại riê
 Bẫy mới: mẫu golden giữ MỘT response mỗi route — test Portal cần cloud khác cloud của mẫu
 thì đổi nhãn trên hình dạng đã kiểm (`setupFor` trong `cloud.test.tsx`), không tự viết
 response.
+
+## 6. Plan #27 — Domain Config, Catalog, Drift (`plan27-spec.md`, `plan27-plan.md`)
+
+| Phần   | Việc                                                                                                                            | Bằng chứng                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| S1     | `GET /domains/catalog` dựng từ registry; `GET/PUT /projects/:id/domains`, `POST …/validate`, `GET …/:type`, `GET …/:type/drift` | tích hợp 14/14, thuần 10/10, golden +6 (68/68)   |
+| S1     | **Sửa lỗi**: resolver so khoá lệch chữ hoa/thường ⇒ mọi preference thật bị ném `OrphanPreferenceError`                          | test hồi quy với `MONITORING` + preference từ DB |
+| http   | `AppError.withSuggestedAction` (nút "Bật …" lên Problem Details)                                                                | test qua HTTP thật                               |
+| Portal | Trang Domain, chi tiết domain (drift), Catalog quản trị, bước 3 wizard                                                          | Portal 108/108, build xanh                       |
+
+S1 đầy đủ: **36/36 tệp** xanh. Sổ nợ **42** mục (trả `domains-catalog-route`,
+`portal-domain-screens`; viết lại tiền đề `domain-day2-route`: cần hàng đợi + cluster).
+
+Không làm và vì sao: `POST …/upgrade`, `POST …/drift`, áp cấu hình cho project đã rời nháp
+— cả ba chạy adapter trên cluster qua job `DOMAIN_APPLY`; hàng đợi và transport cluster
+chưa có, và route trả 202 không có gì thực thi là stub.
+
+Bẫy: Prettier theo thư mục định dạng luôn các tệp lệch sẵn ở HEAD (`domain-catalog.sync.ts`,
+`capability.resolver.ts`…) — chỉ đưa đúng tệp mình sửa, và với tệp lệch sẵn thì sửa tay đúng
+dòng.
