@@ -145,7 +145,7 @@ function setup() {
       HttpResponse.json({ rollouts: [] }),
     ),
     http.get(`${API}/projects/:id/flags`, () =>
-      HttpResponse.json({ flags: [summary] }),
+      HttpResponse.json({ flags: [summary], total: 1 }),
     ),
     http.get(`${API}/projects/:id/flags/:flagId`, () =>
       HttpResponse.json({ flag }),

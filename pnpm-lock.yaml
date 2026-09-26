@@ -640,6 +640,9 @@ importers:
       '@types/supertest':
         specifier: ^7.2.1
         version: 7.2.1
+      '@udp/experiments':
+        specifier: workspace:*
+        version: link:../../packages/experiments
       '@udp/test-support':
         specifier: workspace:*
         version: link:../../packages/test-support

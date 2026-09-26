@@ -17,10 +17,45 @@ import {
 import { api } from "../../lib/http";
 
 const f = (projectId: string) => `/projects/${projectId}/flags`;
-/** Trần `limit` của `GET /flags` ở Service 1 */
-const PAGE = 100;
-/** Chặn vòng lặp vô hạn nếu server lỡ trả trang đầy mãi */
-const MAX_FLAGS = 10_000;
+
+/**
+ * [Plan #41 QĐ-5] Cỡ trang của Portal — máy chủ nhận tới 100, Portal không bao giờ xin quá 50 và
+ * không bao giờ tải trọn danh sách: project vài trăm flag thì mỗi màn hình đọc đúng thứ nó hiện.
+ */
+export const FLAG_PAGE_SIZE = 50;
+
+export interface FlagPageQuery {
+  search?: string;
+  status?: "DRAFT" | "ACTIVE" | "ARCHIVED";
+  isEnabled?: boolean;
+  offset?: number;
+  limit?: number;
+  /** Kèm số lượt đánh giá 7 ngày + sparkline 14 ngày (qua Service 2) — chỉ trang Flag cần */
+  stats?: boolean;
+}
+
+/** Một trang `GET /flags` của MỘT env; `total` đếm theo cùng bộ lọc */
+const flagPage = (
+  projectId: string,
+  envId: string,
+  tz: string,
+  query: FlagPageQuery = {},
+) =>
+  api(flagListResponseWire, f(projectId), {
+    query: {
+      envId,
+      limit: Math.min(query.limit ?? FLAG_PAGE_SIZE, FLAG_PAGE_SIZE),
+      offset: query.offset ?? 0,
+      ...(query.stats === true ? { include: "stats", tz } : {}),
+      ...(query.search === undefined || query.search === ""
+        ? {}
+        : { search: query.search }),
+      ...(query.status === undefined ? {} : { status: query.status }),
+      ...(query.isEnabled === undefined
+        ? {}
+        : { isEnabled: String(query.isEnabled) }),
+    },
+  });
 
 export interface UpdateFlagInput {
   lastKnownUpdatedAt: string;
@@ -37,23 +72,13 @@ export interface UpdateEnvInput {
 }
 
 export const flagApi = {
-  /**
-   * MỌI flag của project ở env này. Server trần 100 hàng mỗi lần (`limit` ≤ 100), nên đọc
-   * theo trang tới khi một trang ngắn hơn trần — chỉ gọi một trang là project thứ 101 flag
-   * mất flag khỏi danh sách mà không ai thấy. Phân trang thật ở giao diện là sổ nợ
-   * `portal-pagination`.
-   */
-  list: async (projectId: string, envId: string, tz: string) => {
-    const flags: FlagSummaryWire[] = [];
-    for (let offset = 0; ; offset += PAGE) {
-      const page = await api(flagListResponseWire, f(projectId), {
-        query: { envId, include: "stats", tz, limit: PAGE, offset },
-      });
-      flags.push(...page.flags);
-      if (page.flags.length < PAGE || offset >= MAX_FLAGS) break;
-    }
-    return { flags };
-  },
+  page: flagPage,
+  /** Chỉ con số: một hàng (`limit=1`), đọc `total` — tổng quan và thanh số của trang Flag */
+  count: async (
+    projectId: string,
+    envId: string,
+    filter: Pick<FlagPageQuery, "status" | "isEnabled"> = {},
+  ) => (await flagPage(projectId, envId, "UTC", { ...filter, limit: 1 })).total,
   get: (projectId: string, flagId: string) =>
     api(flagResponseWire, `${f(projectId)}/${flagId}`),
   create: (projectId: string, body: CreateFlagFields) =>

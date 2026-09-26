@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import type { FlagSummaryWire } from "@udp/shared-types/wire";
 import { Brush, Flag, Plus, Search } from "lucide-react";
@@ -12,7 +12,8 @@ import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { CreateFlagDialog } from "./CreateFlagDialog";
-import { flagApi } from "./flag-api";
+import { FLAG_PAGE_SIZE, flagApi } from "./flag-api";
+import { useFlagCounts } from "./flag-counts";
 import { LIFECYCLE_LABEL, LIFECYCLE_ORDER } from "./flag-labels";
 import { FlagDetail } from "./FlagDetail";
 
@@ -20,9 +21,12 @@ import { FlagDetail } from "./FlagDetail";
  * Trang Flag (§10.8, DESIGN.md §6 "Danh sách" + "Xem nhanh").
  *
  * Danh sách thuộc MỘT env (query key có `envId`, I38); flag đang mở nằm ở search param
- * `flag` nên deep-link được mà không cần route lồng. Tìm kiếm lọc trên cache — không gọi
- * thêm lần nào mỗi phím gõ.
+ * `flag` nên deep-link được mà không cần route lồng. [v4.11, Plan #41] Theo trang ở máy chủ
+ * (`FLAG_PAGE_SIZE`): tìm kiếm gửi lên máy chủ sau khi ngừng gõ `SEARCH_DEBOUNCE_MS`, thanh số
+ * đọc ba con số `total` — project vài trăm flag không bao giờ bị tải trọn.
  */
+const SEARCH_DEBOUNCE_MS = 300;
+
 export function FlagsPage() {
   const { project, env } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/flags" });
@@ -43,12 +47,31 @@ export function FlagsPage() {
     });
   }, [search.new, navigate]);
   const [q, setQ] = useState(search.q ?? "");
+  const [term, setTerm] = useState(q.trim());
+  const [offset, setOffset] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setTerm(q.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [q]);
+  // Lần tìm mới hay env khác bắt đầu lại từ trang đầu
+  useEffect(() => {
+    setOffset(0);
+  }, [term, env.id]);
 
   const flags = useQuery({
-    queryKey: qk.flags(project.id, env.id, "stats"),
-    queryFn: () => flagApi.list(project.id, env.id, tz),
+    queryKey: qk.flags(project.id, env.id, "stats", { term, offset }),
+    queryFn: () =>
+      flagApi.page(project.id, env.id, tz, {
+        search: term,
+        offset,
+        stats: true,
+      }),
     staleTime: 10_000,
+    placeholderData: keepPreviousData,
   });
+  const counts = useFlagCounts(project.id, env.id);
 
   const open = useCallback(
     (flagId: string | undefined) => {
@@ -63,25 +86,14 @@ export function FlagsPage() {
     [navigate],
   );
 
-  const visible = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    const list = flags.data?.flags ?? [];
-    return needle === ""
-      ? list
-      : list.filter(
-          (f) =>
-            f.key.includes(needle) ||
-            (f.description ?? "").toLowerCase().includes(needle),
-        );
-  }, [flags.data, q]);
-
   const ordered = useMemo(
     () =>
       LIFECYCLE_ORDER.flatMap((status) =>
-        visible.filter((f) => f.lifecycleStatus === status),
+        (flags.data?.flags ?? []).filter((f) => f.lifecycleStatus === status),
       ),
-    [visible],
+    [flags.data],
   );
+  const matched = flags.data?.total ?? 0;
 
   const canCreate = can(project.myRole, "DEVELOPER");
 
@@ -119,10 +131,7 @@ export function FlagsPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [ordered, search.flag, open, canCreate]);
 
-  const total = flags.data?.flags.length ?? 0;
-  const enabled = flags.data?.flags.filter((f) => f.env?.isEnabled).length ?? 0;
-  const drafts =
-    flags.data?.flags.filter((f) => f.lifecycleStatus === "DRAFT").length ?? 0;
+  const total = counts.total ?? 0;
 
   return (
     <>
@@ -164,15 +173,15 @@ export function FlagsPage() {
             </div>
             <div className="minis">
               <div>
-                <b>{total}</b>
+                <b>{counts.total ?? "–"}</b>
                 <span>flag</span>
               </div>
               <div>
-                <b>{enabled}</b>
+                <b>{counts.enabled ?? "–"}</b>
                 <span>đang bật</span>
               </div>
               <div>
-                <b>{drafts}</b>
+                <b>{counts.drafts ?? "–"}</b>
                 <span>nháp</span>
               </div>
             </div>
@@ -195,7 +204,7 @@ export function FlagsPage() {
               error={flags.error}
               onRetry={() => void flags.refetch()}
             />
-          ) : total === 0 ? (
+          ) : total === 0 && term === "" ? (
             <Empty title="Chưa có flag nào">
               {canCreate && (
                 <button
@@ -210,34 +219,65 @@ export function FlagsPage() {
           ) : ordered.length === 0 ? (
             <Empty title="Không flag nào khớp">Thử từ khoá khác.</Empty>
           ) : (
-            <div role="listbox" aria-label="Danh sách flag">
-              {LIFECYCLE_ORDER.map((status) => {
-                const group = ordered.filter(
-                  (f) => f.lifecycleStatus === status,
-                );
-                if (group.length === 0) return null;
-                return (
-                  <div
-                    key={status}
-                    role="group"
-                    aria-label={LIFECYCLE_LABEL[status]}
-                  >
-                    <div className="gh">
-                      {LIFECYCLE_LABEL[status]}
-                      <span className="n">{group.length}</span>
+            <>
+              <div role="listbox" aria-label="Danh sách flag">
+                {LIFECYCLE_ORDER.map((status) => {
+                  const group = ordered.filter(
+                    (f) => f.lifecycleStatus === status,
+                  );
+                  if (group.length === 0) return null;
+                  return (
+                    <div
+                      key={status}
+                      role="group"
+                      aria-label={LIFECYCLE_LABEL[status]}
+                    >
+                      <div className="gh">
+                        {LIFECYCLE_LABEL[status]}
+                        <span className="n">{group.length}</span>
+                      </div>
+                      {group.map((f) => (
+                        <FlagRow
+                          key={f.id}
+                          flag={f}
+                          selected={f.id === search.flag}
+                          onOpen={() => open(f.id)}
+                        />
+                      ))}
                     </div>
-                    {group.map((f) => (
-                      <FlagRow
-                        key={f.id}
-                        flag={f}
-                        selected={f.id === search.flag}
-                        onOpen={() => open(f.id)}
-                      />
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+              {matched > FLAG_PAGE_SIZE && (
+                <nav
+                  className="line pager"
+                  aria-label="Trang của danh sách flag"
+                >
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={offset === 0}
+                    onClick={() =>
+                      setOffset(Math.max(0, offset - FLAG_PAGE_SIZE))
+                    }
+                  >
+                    Trang trước
+                  </button>
+                  <span className="c3 num">
+                    {offset + 1}–{Math.min(offset + FLAG_PAGE_SIZE, matched)} /{" "}
+                    {matched}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={offset + FLAG_PAGE_SIZE >= matched}
+                    onClick={() => setOffset(offset + FLAG_PAGE_SIZE)}
+                  >
+                    Trang sau
+                  </button>
+                </nav>
+              )}
+            </>
           )}
         </div>
         {search.flag !== undefined && (

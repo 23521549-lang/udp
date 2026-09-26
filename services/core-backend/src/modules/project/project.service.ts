@@ -8,6 +8,7 @@ import {
 import * as repository from "./project.repository.js";
 import type {
   CreateProjectInput,
+  ListProjectsQuery,
   PublicEnvironment,
   PublicProject,
   UpdateQuotaInput,
@@ -39,10 +40,8 @@ export const create = (
     request,
   });
 
-export const listForUser = (
-  userId: string,
-): Promise<(PublicProject & { myRole: ProjectRole })[]> =>
-  repository.listForUser(userId);
+export const listForUser = (userId: string, page: ListProjectsQuery) =>
+  repository.listForUser(userId, page);
 
 export async function getById(
   id: string,

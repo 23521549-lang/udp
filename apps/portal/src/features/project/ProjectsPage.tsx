@@ -1,12 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { PublicProjectWire } from "@udp/shared-types/wire";
 import { CircleAlert, CircleCheck, FolderKanban, Plus } from "lucide-react";
+import { useState } from "react";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { relativeTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
-import { projectApi } from "./project-api";
+import { PROJECT_PAGE_SIZE, projectApi } from "./project-api";
 import { ROLE_LABEL } from "./roles";
 
 /** Chữ cho trạng thái project — kèm icon, không chấm màu (DESIGN.md §5) */
@@ -51,10 +52,13 @@ export function ProjectStatus({
 }
 
 export function ProjectsPage() {
+  const [offset, setOffset] = useState(0);
   const projects = useQuery({
-    queryKey: qk.projects(),
-    queryFn: projectApi.list,
+    queryKey: qk.projects(offset),
+    queryFn: () => projectApi.list(offset),
+    placeholderData: keepPreviousData,
   });
+  const total = projects.data?.total ?? 0;
 
   return (
     <>
@@ -115,6 +119,35 @@ export function ProjectsPage() {
                 </Link>
               ))}
             </div>
+          )}
+          {total > PROJECT_PAGE_SIZE && (
+            <nav
+              className="line pager"
+              aria-label="Trang của danh sách project"
+            >
+              <button
+                type="button"
+                className="btn"
+                disabled={offset === 0}
+                onClick={() =>
+                  setOffset(Math.max(0, offset - PROJECT_PAGE_SIZE))
+                }
+              >
+                Trang trước
+              </button>
+              <span className="c3 num">
+                {offset + 1}–{Math.min(offset + PROJECT_PAGE_SIZE, total)} /{" "}
+                {total}
+              </span>
+              <button
+                type="button"
+                className="btn"
+                disabled={offset + PROJECT_PAGE_SIZE >= total}
+                onClick={() => setOffset(offset + PROJECT_PAGE_SIZE)}
+              >
+                Trang sau
+              </button>
+            </nav>
           )}
         </div>
       </div>

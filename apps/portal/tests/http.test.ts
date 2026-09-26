@@ -298,29 +298,28 @@ describe("lớp HTTP: hai tab, không có Web Locks", () => {
   });
 });
 
-describe("danh sách flag nhiều trang", () => {
-  it("project có 230 flag ⇒ đọc đủ 3 trang, không mất flag nào", async () => {
+describe("[Plan #41] danh sách flag theo trang", () => {
+  it("một trang: không bao giờ xin quá 50; stats chỉ khi xin; count đọc total bằng limit=1", async () => {
     const { flagApi } = await import("../src/features/flag/flag-api");
-    const tpl = golden<{ flags: Record<string, unknown>[] }>(
-      "GET /projects/{id}/flags",
-    ).flags[0]!;
-    const all = Array.from({ length: 230 }, (_, i) => ({
-      ...tpl,
-      id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
-      key: `f-${String(i)}`,
-    }));
-    const offsets: number[] = [];
+    const seen: URLSearchParams[] = [];
     server.use(
       http.get(`${API}/projects/:id/flags`, ({ request }) => {
-        const url = new URL(request.url);
-        const offset = Number(url.searchParams.get("offset"));
-        const limit = Number(url.searchParams.get("limit"));
-        offsets.push(offset);
-        return HttpResponse.json({ flags: all.slice(offset, offset + limit) });
+        seen.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ flags: [], total: 230 });
       }),
     );
-    const res = await flagApi.list("p", "e", "UTC");
-    expect(res.flags).toHaveLength(230);
-    expect(offsets).toEqual([0, 100, 200]);
+
+    await flagApi.page("p", "e", "UTC", { limit: 500, offset: 100 });
+    expect(seen[0]?.get("limit")).toBe("50");
+    expect(seen[0]?.get("offset")).toBe("100");
+    expect(seen[0]?.has("include")).toBe(false);
+
+    await flagApi.page("p", "e", "UTC", { stats: true, search: "pay" });
+    expect(seen[1]?.get("include")).toBe("stats");
+    expect(seen[1]?.get("search")).toBe("pay");
+
+    expect(await flagApi.count("p", "e", { isEnabled: true })).toBe(230);
+    expect(seen[2]?.get("limit")).toBe("1");
+    expect(seen[2]?.get("isEnabled")).toBe("true");
   });
 });

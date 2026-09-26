@@ -1,8 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { canaryPairOf } from "@udp/shared-types/rollout";
 import { CircleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog } from "../../components/Dialog";
 import { Icon } from "../../components/Icon";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
@@ -49,9 +54,26 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
   const [minErrors, setMinErrors] = useState(5);
   const [breaches, setBreaches] = useState(2);
 
+  // [Plan #41] Flag ACTIVE tìm ở máy chủ (FLAG_PAGE_SIZE hàng) — không tải trọn danh sách
+  const [flagSearch, setFlagSearch] = useState("");
+  const [flagTerm, setFlagTerm] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFlagTerm(flagSearch.trim());
+    }, 300);
+    return () => clearTimeout(t);
+  }, [flagSearch]);
   const flags = useQuery({
-    queryKey: qk.flags(project.id, env.id, "stats"),
-    queryFn: () => flagApi.list(project.id, env.id, tz),
+    queryKey: qk.flags(project.id, env.id, "none", {
+      term: flagTerm,
+      status: "ACTIVE",
+    }),
+    queryFn: () =>
+      flagApi.page(project.id, env.id, tz, {
+        search: flagTerm,
+        status: "ACTIVE",
+      }),
+    placeholderData: keepPreviousData,
   });
   const flag = useQuery({
     queryKey: qk.flag(project.id, flagId, env.id),
@@ -117,8 +139,7 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
   });
   const fields = fieldErrorsOf(create.error);
 
-  const activeFlags =
-    flags.data?.flags.filter((f) => f.lifecycleStatus === "ACTIVE") ?? [];
+  const activeFlags = flags.data?.flags ?? [];
   const workloadOk = DNS_1123.test(workloadName);
   const flagOff = envState !== undefined && !envState.isEnabled;
   const ready =
@@ -155,6 +176,13 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
     >
       <div className="f">
         <label htmlFor="ro-flag">Flag (đang dùng)</label>
+        <input
+          className="inp"
+          aria-label="Tìm flag đang dùng"
+          placeholder="Tìm theo key"
+          value={flagSearch}
+          onChange={(e) => setFlagSearch(e.target.value)}
+        />
         <select
           id="ro-flag"
           className="sel"

@@ -6,7 +6,7 @@ import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { toast } from "../../../components/Toast";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
 import { formatDateTime } from "../../../lib/format";
-import { qk } from "../../../lib/query-keys";
+import { qk, qkPrefix } from "../../../lib/query-keys";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
 import { can } from "../roles";
@@ -33,7 +33,7 @@ export function ProjectTab() {
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: qk.project(project.id) });
-    await queryClient.invalidateQueries({ queryKey: qk.projects() });
+    await queryClient.invalidateQueries({ queryKey: qkPrefix.projectsAll() });
   };
   const saveQuota = useMutation({
     mutationFn: () => projectApi.updateQuota(project.id, quota),
@@ -58,7 +58,7 @@ export function ProjectTab() {
     mutationFn: () => projectApi.remove(project.id),
     onSuccess: async () => {
       queryClient.removeQueries({ queryKey: qk.project(project.id) });
-      await queryClient.invalidateQueries({ queryKey: qk.projects() });
+      await queryClient.invalidateQueries({ queryKey: qkPrefix.projectsAll() });
       toast.info("Đã xoá project");
       await navigate({ to: "/app/projects" });
     },

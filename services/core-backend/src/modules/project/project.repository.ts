@@ -6,6 +6,7 @@ import { NotFoundError } from "@udp/http";
 import { prisma } from "../../core/db.js";
 import { auditEntry } from "../audit/audit.service.js";
 import type {
+  ListProjectsQuery,
   PublicEnvironment,
   PublicProject,
   ResourceQuota,
@@ -123,22 +124,35 @@ export async function createWithDefaults(
  */
 export async function listForUser(
   userId: string,
-): Promise<(PublicProject & { myRole: ProjectRole })[]> {
+  page: ListProjectsQuery,
+): Promise<{
+  projects: (PublicProject & { myRole: ProjectRole })[];
+  total: number;
+}> {
   /**
    * [v4.11] Vai của người gọi đọc trong CÙNG truy vấn (`take: 1` trên khoá
    * `(project_id, user_id)` — nhiều nhất một hàng). Kiểu trả về khai tường minh vì
    * gán object Prisma rộng cho kiểu hẹp là hợp lệ trong TS: `members` sẽ biến mất
    * khỏi kiểu mà vẫn còn ở runtime, và `.strict()` của schema wire đỏ lúc chạy.
    */
-  const rows = await prisma.project.findMany({
-    where: { status: { not: "DELETED" }, members: { some: { userId } } },
-    select: {
-      ...PUBLIC_FIELDS,
-      members: { where: { userId }, select: { projectRole: true }, take: 1 },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-  return rows.map(({ members, ...project }) => {
+  const where: Prisma.ProjectWhereInput = {
+    status: { not: "DELETED" },
+    members: { some: { userId } },
+  };
+  const [rows, total] = await Promise.all([
+    prisma.project.findMany({
+      where,
+      select: {
+        ...PUBLIC_FIELDS,
+        members: { where: { userId }, select: { projectRole: true }, take: 1 },
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      take: page.limit,
+      skip: page.offset,
+    }),
+    prisma.project.count({ where }),
+  ]);
+  const projects = rows.map(({ members, ...project }) => {
     const membership = members[0];
     /**
      * `where` ở trên đã đòi `members.some`, nên thiếu hàng ở đây là mâu thuẫn dữ liệu
@@ -152,6 +166,7 @@ export async function listForUser(
     }
     return { ...project, myRole: membership.projectRole };
   });
+  return { projects, total };
 }
 
 export const findById = (

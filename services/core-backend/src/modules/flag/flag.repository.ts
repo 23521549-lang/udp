@@ -43,40 +43,56 @@ const toEnvState = (row: EnvStateRow): FlagEnvState => ({
 export async function list(
   projectId: string,
   query: ListFlagsQuery,
-): Promise<FlagSummary[]> {
-  const rows = await prisma.featureFlag.findMany({
-    where: {
-      projectId,
-      ...(query.status === undefined ? {} : { lifecycleStatus: query.status }),
-      ...(query.search === undefined
-        ? {}
-        : {
-            OR: [
-              { key: { contains: query.search, mode: "insensitive" } },
-              { description: { contains: query.search, mode: "insensitive" } },
-            ],
-          }),
-    },
-    orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
-    take: query.limit,
-    skip: query.offset,
-    select: {
-      id: true,
-      key: true,
-      flagType: true,
-      description: true,
-      lifecycleStatus: true,
-      activatedAt: true,
-      updatedAt: true,
-      // Trạng thái ở MỘT env chỉ khi được hỏi; không hỏi thì không đọc hàng nào
-      envConfigs: {
-        where: query.envId === undefined ? {} : { environmentId: query.envId },
-        take: query.envId === undefined ? 0 : 1,
-        select: envStateSelect,
+): Promise<{ flags: FlagSummary[]; total: number }> {
+  /** MỘT bộ lọc cho cả trang lẫn `total` — hai bộ lọc là hai con số nói về hai tập khác nhau */
+  const where: Prisma.FeatureFlagWhereInput = {
+    projectId,
+    ...(query.status === undefined ? {} : { lifecycleStatus: query.status }),
+    ...(query.search === undefined
+      ? {}
+      : {
+          OR: [
+            { key: { contains: query.search, mode: "insensitive" } },
+            { description: { contains: query.search, mode: "insensitive" } },
+          ],
+        }),
+    ...(query.isEnabled === undefined || query.envId === undefined
+      ? {}
+      : {
+          envConfigs: {
+            some: {
+              environmentId: query.envId,
+              isEnabled: query.isEnabled === "true",
+            },
+          },
+        }),
+  };
+  const [rows, total] = await Promise.all([
+    prisma.featureFlag.findMany({
+      where,
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      take: query.limit,
+      skip: query.offset,
+      select: {
+        id: true,
+        key: true,
+        flagType: true,
+        description: true,
+        lifecycleStatus: true,
+        activatedAt: true,
+        updatedAt: true,
+        // Trạng thái ở MỘT env chỉ khi được hỏi; không hỏi thì không đọc hàng nào
+        envConfigs: {
+          where:
+            query.envId === undefined ? {} : { environmentId: query.envId },
+          take: query.envId === undefined ? 0 : 1,
+          select: envStateSelect,
+        },
       },
-    },
-  });
-  return rows.map((row) => {
+    }),
+    prisma.featureFlag.count({ where }),
+  ]);
+  const flags = rows.map((row) => {
     const env = row.envConfigs[0];
     return {
       id: row.id,
@@ -98,6 +114,7 @@ export async function list(
           }),
     };
   });
+  return { flags, total };
 }
 
 export async function detail(

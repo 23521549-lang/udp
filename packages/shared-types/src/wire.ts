@@ -143,8 +143,12 @@ export const publicProjectWire = z
   .strict();
 
 /** `GET /projects` */
+/** `GET /projects` — [v4.11, Plan #41] theo trang, `total` là mọi project của người gọi */
 export const projectListResponseWire = z
-  .object({ projects: z.array(publicProjectWire) })
+  .object({
+    projects: z.array(publicProjectWire),
+    total: z.number().int().nonnegative(),
+  })
   .strict();
 
 /** `POST /projects` (201) và `GET /projects/:id` — cùng một phong bì (§8.1) */
@@ -310,8 +314,15 @@ export const flagSummaryWire = z
   .strict();
 
 /** `GET /flags` */
+/**
+ * `GET /flags` — [v4.11, Plan #41] `total` đếm theo CÙNG bộ lọc (không theo trang): Portal điều
+ * hướng trang và đọc con số tổng bằng `limit=1` thay vì tải hết danh sách.
+ */
 export const flagListResponseWire = z
-  .object({ flags: z.array(flagSummaryWire) })
+  .object({
+    flags: z.array(flagSummaryWire),
+    total: z.number().int().nonnegative(),
+  })
   .strict();
 
 /** `POST /flags` (201), `GET /flags/:flagId`, `PATCH /flags/:flagId` */

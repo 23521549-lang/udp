@@ -5,7 +5,7 @@ import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
-import { qk } from "../../../lib/query-keys";
+import { qk, qkPrefix } from "../../../lib/query-keys";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
 import { can, PERMISSIONS, ROLE_LABEL } from "../roles";
@@ -69,7 +69,7 @@ export function MembersTab() {
       toast.info("Đã chuyển quyền sở hữu");
       await refresh();
       await queryClient.invalidateQueries({ queryKey: qk.project(project.id) });
-      await queryClient.invalidateQueries({ queryKey: qk.projects() });
+      await queryClient.invalidateQueries({ queryKey: qkPrefix.projectsAll() });
     },
   });
   const isOwner = can(project.myRole, "OWNER");

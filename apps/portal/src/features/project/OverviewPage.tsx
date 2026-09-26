@@ -15,7 +15,7 @@ import {
   formatPercent,
 } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
-import { flagApi } from "../flag/flag-api";
+import { useFlagCounts } from "../flag/flag-counts";
 import { rolloutApi } from "../rollout/rollout-api";
 import { RolloutStatusLabel } from "../rollout/rollout-status";
 import { ProjectStatus } from "./ProjectsPage";
@@ -33,11 +33,8 @@ export function OverviewPage() {
   const { project, envs, env } = useProjectContext();
   const tz = browserTimeZone();
 
-  const flags = useQuery({
-    queryKey: qk.flags(project.id, env.id, "stats"),
-    queryFn: () => flagApi.list(project.id, env.id, tz),
-    staleTime: 10_000,
-  });
+  // [Plan #41] Hai con số bằng `limit=1` — không tải danh sách flag chỉ để đếm
+  const flagCounts = useFlagCounts(project.id, env.id);
   const rollouts = useQuery({
     queryKey: qk.rollouts(project.id, env.id),
     queryFn: () => rolloutApi.list(project.id, env.id),
@@ -47,8 +44,6 @@ export function OverviewPage() {
     queryFn: () => projectApi.members(project.id),
   });
 
-  const enabled =
-    flags.data?.flags.filter((f) => f.env?.isEnabled === true).length ?? 0;
   const running =
     rollouts.data?.rollouts.filter(
       (r) => r.status === "IN_PROGRESS" || r.status === "PAUSED",
@@ -78,11 +73,15 @@ export function OverviewPage() {
             <Kpi
               icon={Flag}
               label={`Flag đang bật ở ${env.name}`}
-              value={flags.isPending ? "…" : String(enabled)}
+              value={
+                flagCounts.enabled === undefined
+                  ? "…"
+                  : String(flagCounts.enabled)
+              }
               sub={
-                flags.data === undefined
+                flagCounts.total === undefined
                   ? ""
-                  : `trên ${String(flags.data.flags.length)} flag`
+                  : `trên ${String(flagCounts.total)} flag`
               }
             />
             <Kpi

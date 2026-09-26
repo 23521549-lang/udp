@@ -72,6 +72,8 @@ export const listFlagsQuerySchema = z
     /** Tìm trong key và mô tả, không phân biệt hoa thường */
     search: z.string().trim().min(1).max(100).optional(),
     status: z.nativeEnum(FlagLifecycleStatus).optional(),
+    /** [v4.11, Plan #41] Chỉ flag đang bật (hay đang tắt) ở `envId` — tổng quan đếm bằng nó */
+    isEnabled: z.enum(["true", "false"]).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     offset: z.coerce.number().int().min(0).default(0),
     /** [v4.9] `stats` ⇒ mỗi hàng kèm `evalCount7d` và sparkline 14 ngày (§3.1) */
@@ -90,6 +92,14 @@ export const listFlagsQuerySchema = z
         code: "custom",
         path: ["envId"],
         message: "include=stats cần envId",
+      });
+    }
+    // Bật/tắt là trạng thái Ở MỘT environment — cùng lý lẽ với `include=stats`
+    if (query.isEnabled !== undefined && query.envId === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["envId"],
+        message: "isEnabled cần envId",
       });
     }
   });

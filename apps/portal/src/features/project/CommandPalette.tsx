@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChartNoAxesColumnIncreasing,
@@ -23,6 +23,10 @@ import { flagApi } from "../flag/flag-api";
 import { rolloutApi } from "../rollout/rollout-api";
 import { useProjectContext } from "./ProjectLayout";
 import { can } from "./roles";
+
+/** [Plan #41] Số flag bảng lệnh xin mỗi lần, và thời gian chờ sau phím gõ cuối */
+const PALETTE_FLAGS = 20;
+const PALETTE_SEARCH_DEBOUNCE_MS = 250;
 
 /**
  * Bảng lệnh Ctrl K (DESIGN.md §6, §7): tìm flag, rollout và lệnh; mũi tên chọn, Enter
@@ -127,10 +131,27 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
   const tz = browserTimeZone();
 
+  // [Plan #41] Flag tìm ở MÁY CHỦ theo chữ đang gõ (sau khi ngừng gõ), tối đa PALETTE_FLAGS —
+  // project vài trăm flag không bị tải trọn chỉ để mở bảng lệnh
+  const [term, setTerm] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setTerm(query.trim());
+    }, PALETTE_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [query]);
   const flags = useQuery({
-    queryKey: qk.flags(project.id, env.id, "stats"),
-    queryFn: () => flagApi.list(project.id, env.id, tz),
+    queryKey: qk.flags(project.id, env.id, "none", {
+      term,
+      limit: PALETTE_FLAGS,
+    }),
+    queryFn: () =>
+      flagApi.page(project.id, env.id, tz, {
+        search: term,
+        limit: PALETTE_FLAGS,
+      }),
     staleTime: 10_000,
+    placeholderData: keepPreviousData,
   });
   const rollouts = useQuery({
     queryKey: qk.rollouts(project.id, env.id),

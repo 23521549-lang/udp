@@ -4,9 +4,9 @@
   "body": {
     "projects": [
       {
-        "id": "1ed08d27-0f53-417b-960c-2951ec078678",
-        "name": "proj-cc56eda1",
-        "ownerId": "f989689d-12e0-4efd-a4a3-a0c2bc914202",
+        "id": "ede01624-a447-46e7-9f36-81c034e3c947",
+        "name": "proj-130f708c",
+        "ownerId": "7e4f2bc7-56fc-43e2-a193-e51dcaabd0ff",
         "creationMode": "CREATE_NEW",
         "languageRuntime": "nodejs",
         "repoUrl": null,
@@ -19,9 +19,29 @@
           "maxLoadBalancers": 3
         },
         "expiresAt": null,
-        "createdAt": "2026-09-24T19:33:32.733Z",
+        "createdAt": "2026-09-26T16:14:54.649Z",
+        "myRole": "OWNER"
+      },
+      {
+        "id": "d8cc69f2-35be-4f7b-a20e-05caff15335b",
+        "name": "proj-3136bf39",
+        "ownerId": "7e4f2bc7-56fc-43e2-a193-e51dcaabd0ff",
+        "creationMode": "CREATE_NEW",
+        "languageRuntime": "nodejs",
+        "repoUrl": null,
+        "status": "DRAFT",
+        "resourceQuota": {
+          "maxNodes": 3,
+          "maxNodeSize": "medium",
+          "maxDatabases": 2,
+          "maxStorageGb": 50,
+          "maxLoadBalancers": 3
+        },
+        "expiresAt": null,
+        "createdAt": "2026-09-26T16:14:54.228Z",
         "myRole": "OWNER"
       }
-    ]
+    ],
+    "total": 3
   }
 }

@@ -29,13 +29,16 @@ import { memberRouter } from "../member/member.controller.js";
 import { flagRouter } from "../flag/flag.controller.js";
 import { rolloutRouter } from "../rollout/rollout.controller.js";
 import { segmentRouter } from "../segment/segment.routes.js";
+import { configStreamRouter } from "./config-stream.controller.js";
 import * as projectService from "./project.service.js";
 import { auditEntryWireOf } from "../audit/audit.view.js";
 import { environmentWire, projectWire, roleOf } from "./project.view.js";
 import {
   createProjectSchema,
+  listProjectsQuerySchema,
   updateQuotaSchema,
   updateTtlSchema,
+  type ListProjectsQuery,
 } from "./project.types.js";
 
 export const projectRouter: Router = Router();
@@ -84,12 +87,17 @@ projectRouter.post(
 projectRouter.get(
   "/",
   requireAuth,
+  validateQuery(listProjectsQuerySchema),
   asyncHandler(async (req, res) => {
-    const projects = await projectService.listForUser(requireUser(req).sub);
+    const { projects, total } = await projectService.listForUser(
+      requireUser(req).sub,
+      req.query as unknown as ListProjectsQuery,
+    );
     sendJson(res, projectListResponseWire, {
       projects: projects.map(({ myRole, ...project }) =>
         projectWire(project, myRole),
       ),
+      total,
     });
   }),
 );
@@ -205,3 +213,4 @@ projectRouter.use("/:id", projectDomainRouter);
 projectRouter.use("/:id", projectCicdRouter);
 projectRouter.use("/:id", costRouter);
 projectRouter.use("/:id", provisioningRouter);
+projectRouter.use("/:id", configStreamRouter);

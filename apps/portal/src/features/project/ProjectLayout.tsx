@@ -18,6 +18,7 @@ import { resolveEnv } from "./env";
 import { useRolloutWatcher } from "../rollout/use-rollout-watcher";
 import { ProjectKeyboard } from "./CommandPalette";
 import { projectApi } from "./project-api";
+import { useProjectStream } from "./project-stream";
 
 interface ProjectContextValue {
   project: PublicProjectWire;
@@ -43,6 +44,7 @@ export function ProjectLayout() {
   const search = useSearch({ from: "/app/projects/$projectId" });
   const navigate = useNavigate();
   useRolloutWatcher(projectId);
+  useProjectStream(projectId);
 
   const query = useQuery({
     queryKey: qk.project(projectId),

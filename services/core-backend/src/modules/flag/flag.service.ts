@@ -227,17 +227,24 @@ export async function list(
   deps: AppDeps,
   projectId: string,
   query: ListFlagsQuery,
-): Promise<FlagSummary[]> {
+): Promise<{ flags: FlagSummary[]; total: number }> {
   const envId = query.envId;
-  if (
-    envId !== undefined &&
-    !(await repository.environmentBelongsTo(projectId, envId))
-  ) {
+  /**
+   * [v4.11, Plan #41] Phép kiểm sở hữu env chạy SONG SONG với truy vấn trang — một lượt đi về
+   * database ít hơn (đo: mỗi lượt ~100 ms ở hình học dev). An toàn: env của project khác không
+   * khớp `FlagEnvConfig` nào của project này, và kết quả bị bỏ trước khi trả nếu env lạ.
+   */
+  const [belongs, { flags, total }] = await Promise.all([
+    envId === undefined
+      ? Promise.resolve(true)
+      : repository.environmentBelongsTo(projectId, envId),
+    repository.list(projectId, query),
+  ]);
+  if (!belongs) {
     throw new NotFoundError("Không tìm thấy environment trong project này");
   }
-  const flags = await repository.list(projectId, query);
   if (query.include !== "stats" || envId === undefined || flags.length === 0) {
-    return flags;
+    return { flags, total };
   }
 
   /**
@@ -257,10 +264,13 @@ export async function list(
       { evalCount7d: item.evalCount7d, daily14: item.daily14 },
     ]),
   );
-  return flags.map((flag) => {
-    const stats = statsOf.get(flag.id);
-    return stats === undefined ? flag : { ...flag, stats };
-  });
+  return {
+    flags: flags.map((flag) => {
+      const stats = statsOf.get(flag.id);
+      return stats === undefined ? flag : { ...flag, stats };
+    }),
+    total,
+  };
 }
 
 /**

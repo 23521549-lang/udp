@@ -84,13 +84,15 @@ flagRouter.get(
   requireMinProjectRole("VIEWER"),
   validateQuery(listFlagsQuerySchema),
   asyncHandler(async (req, res) => {
-    sendJson(res, flagListResponseWire, {
-      flags: await flagService.list(
+    sendJson(
+      res,
+      flagListResponseWire,
+      await flagService.list(
         appDepsOf(req),
         projectIdParam(req),
         req.query as unknown as ListFlagsQuery,
       ),
-    });
+    );
   }),
 );
 

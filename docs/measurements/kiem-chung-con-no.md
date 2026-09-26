@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 41.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 40.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -860,7 +860,7 @@ plan/apply`, `pulumi preview/up`, `ansible-playbook --check` chạy trong sáu C
 
 # Plan #25 — Portal
 
-Mười tám mục (nay còn mười một) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
+Mười tám mục (nay còn mười) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
 còn Service 1 hôm nay chỉ có endpoint cho một phần. Làm một màn hình không có endpoint
 nghĩa là viết một cái giả rồi gọi nó là xong, nên phạm vi Plan #25 chia theo endpoint đã
 chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều kiện.
@@ -991,28 +991,24 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 - **Tài nguyên:** cluster + Prometheus (~2,5 GiB).
 - **Ảnh hưởng tới kết luận:** nửa "tạo" của luồng 5; nửa "canh và can thiệp" thì không nợ.
 
-## portal-sse — nhận `flag_changed` qua SSE
-
-- **Vì sao nợ:** Service 2 có stream cho SDK, nhưng không có đường cho Portal (nó cần
-  session cookie, không phải SDK key). Không có SSE thì Portal thấy thay đổi của người
-  khác chậm bằng đúng `staleTime`.
-- **Tiền đề:** một endpoint SSE của Service 1 hoặc Service 2 nhận session cookie.
-- **Lệnh:** test tích hợp với `EventSource` giả.
-- **Đạt:** sự kiện tới ⇒ `setQueryData` **không** được gọi lần nào, chỉ `invalidateQueries`
-  (§10.14). Đây nguyên văn là AC-P24 của SPEC v2, chuyển vào đây vì giữ một AC thì phải
-  giữ cả thứ nó kiểm. **Không đạt:** SSE ghi thẳng vào cache ⇒ nó đá nhau với React Query.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** độ tươi của dữ liệu khi hai người cùng sửa; không ảnh hưởng
-  tới tính đúng.
+> **Đã trả (26/09/2026, Plan #41):** `portal-sse` — `GET /projects/:id/stream` (cookie phiên,
+> VIEWER) phát `flag_changed` `{ environmentId, configVersion }` khi `config_version` của một
+> environment tiến; một hub mỗi tiến trình đọc MỌI project đang mở trong một câu mỗi giây
+> (`config-version-hub.test.ts`, `config-stream.integration.test.ts` trên server HTTP thật). Portal:
+> sự kiện ⇒ CHỈ `invalidateQueries`, `setQueryData` không được gọi lần nào; luồng đóng ⇒ mở lại sau
+> backoff (`stream-paging.test.tsx`). Qua proxy/ingress thật: `portal-e2e`.
 
 ## portal-pagination — phân trang cho danh sách project và flag
 
-- **Vì sao nợ:** `GET /projects` và `GET /flags` không có tham số `cursor`/`limit` nào.
-  Với một project có vài trăm flag thì Portal tải hết một lần.
-- **Tiền đề:** hai endpoint đó nhận `cursor`/`limit`.
-- **Lệnh:** đo thời gian tải danh sách ở 200 flag × 3 env.
-- **Đạt:** p95 tải danh sách ≤ 500 ms. **Không đạt:** vượt ⇒ phân trang là bắt buộc, không
-  phải tuỳ chọn.
+- **Vì sao VẪN nợ:** [v4.11, Plan #41] đã phân trang (`GET /flags` và `GET /projects` trả
+  `total`; Portal không bao giờ xin quá 50 hàng, số đếm bằng `limit=1`) và đã đo ở hình học
+  dev: trang Flag (50 + stats) p95 839,5 ms, `limit=1` p95 381 ms, cách tải trọn cũ p95
+  1 058,3 ms (`raw/portal-pagination-20260926-2345.json`). Trang có stats CHƯA ĐẠT ngưỡng ở hình
+  học này: mỗi lượt đi về database ~100 ms, và lượt Service 2 đọc số đếm nối tiếp sau trang.
+- **Tiền đề:** runner CI cùng vùng với database (hình học chính thức §14).
+- **Lệnh:** `pnpm --filter @udp/core-backend measure:flag-list` trên runner đó.
+- **Đạt:** p95 trang Flag ≤ 500 ms. **Không đạt:** vượt cả ở hình học chính thức ⇒ tách stats
+  khỏi trang (danh sách hiện trước, sparkline đọc sau).
 - **Tài nguyên:** không.
 - **Ảnh hưởng tới kết luận:** câu "Portal dùng được khi project lớn" — cùng họ với
   `stale-perf`, và phải đọc cùng nó.

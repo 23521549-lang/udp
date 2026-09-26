@@ -15,7 +15,8 @@
  */
 export const qk = {
   me: () => ["me"] as const,
-  projects: () => ["projects"] as const,
+  /** [Plan #41] Một trang danh sách project */
+  projects: (offset: number) => ["projects", offset] as const,
   project: (projectId: string) => ["project", projectId] as const,
   members: (projectId: string) => ["members", projectId] as const,
   audit: (projectId: string, filters: Record<string, string | undefined>) =>
@@ -23,8 +24,13 @@ export const qk = {
   sdkKeys: (projectId: string, envId: string) =>
     ["sdkKeys", projectId, envId] as const,
 
-  flags: (projectId: string, envId: string, include: "stats" | "none") =>
-    ["flags", projectId, envId, include] as const,
+  /** [Plan #41] `page` trong key: mỗi trang, mỗi lần tìm là một mục cache riêng */
+  flags: (
+    projectId: string,
+    envId: string,
+    include: "stats" | "none" | "count",
+    page: Readonly<Record<string, string | number | boolean | undefined>>,
+  ) => ["flags", projectId, envId, include, page] as const,
   flag: (projectId: string, flagId: string, envId: string) =>
     ["flag", projectId, flagId, envId] as const,
   flagRules: (projectId: string, flagId: string, envId: string) =>
@@ -151,11 +157,27 @@ export const NOT_ENV_SCOPED = {
  * trận. Tiền tố không dùng để ĐỌC, nên không thuộc I38.
  */
 export const qkPrefix = {
+  /** [Plan #41] Mọi trang danh sách project — tạo, xoá, đổi chủ làm lệch mọi trang */
+  projectsAll: () => ["projects"] as const,
   flagsOf: (projectId: string) => ["flags", projectId] as const,
   flagOf: (projectId: string, flagId: string) =>
     ["flag", projectId, flagId] as const,
   /** [Plan #40] Ma trận env của MỌI flag — thêm/xoá environment đổi số cột */
   flagEnvsOf: (projectId: string) => ["flagEnvs", projectId] as const,
   staleFlagsOf: (projectId: string) => ["staleFlags", projectId] as const,
+  /**
+   * [Plan #41] MỌI key đọc cấu hình flag/segment của project — thứ đổi khi `config_version` của
+   * một environment tiến (luồng `flag_changed`, §10.14). Không gồm số đếm telemetry.
+   */
+  configOf: (projectId: string) =>
+    [
+      ["flags", projectId],
+      ["flag", projectId],
+      ["flagRules", projectId],
+      ["flagEnvs", projectId],
+      ["staleFlags", projectId],
+      ["segments", projectId],
+      ["segment", projectId],
+    ] as const,
   adminUsersAll: () => ["admin", "users"] as const,
 } as const;

@@ -4,7 +4,7 @@ import { Info } from "lucide-react";
 import { useState } from "react";
 import { Icon } from "../../components/Icon";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
-import { qk } from "../../lib/query-keys";
+import { qk, qkPrefix } from "../../lib/query-keys";
 import type { PublicProjectWire } from "@udp/shared-types/wire";
 import { DomainPanel } from "../domain/DomainPanel";
 import { JobLog } from "../provisioning/JobLog";
@@ -231,7 +231,7 @@ function CreateStep({
     },
     onSuccess: async (data) => {
       queryClient.setQueryData(qk.project(data.project.id), data);
-      await queryClient.invalidateQueries({ queryKey: qk.projects() });
+      await queryClient.invalidateQueries({ queryKey: qkPrefix.projectsAll() });
       onCreated(data.project);
     },
   });

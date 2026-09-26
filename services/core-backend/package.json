@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/src/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "measure:flag-list": "tsx scripts/measure-flag-list.ts"
   },
   "dependencies": {
     "@udp/adapter-core": "workspace:*",
@@ -41,6 +42,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/semver": "^7.5.8",
     "@types/supertest": "^7.2.1",
+    "@udp/experiments": "workspace:*",
     "@udp/test-support": "workspace:*",
     "pino-pretty": "^11.3.0",
     "supertest": "^7.2.2",

@@ -143,7 +143,7 @@ describe("project và environment", () => {
     useProjectHandlers(detail);
     server.use(
       http.get(`${API}/projects/:id/flags`, () =>
-        HttpResponse.json({ flags: [] }),
+        HttpResponse.json({ flags: [], total: 0 }),
       ),
     );
     renderApp(`/app/projects/${detail.project.id}`);
@@ -160,7 +160,7 @@ describe("project và environment", () => {
     server.use(
       http.get(`${API}/projects/:id/flags`, ({ request }) => {
         asked = new URL(request.url).searchParams.get("envId");
-        return HttpResponse.json({ flags: [] });
+        return HttpResponse.json({ flags: [], total: 0 });
       }),
     );
     renderApp(
@@ -181,7 +181,7 @@ describe("flag", () => {
     useProjectHandlers(detail);
     server.use(
       http.get(`${API}/projects/:id/flags`, () =>
-        HttpResponse.json({ flags: [summary] }),
+        HttpResponse.json({ flags: [summary], total: 1 }),
       ),
       http.get(`${API}/projects/:id/flags/:flagId`, () =>
         HttpResponse.json({ flag }),
@@ -229,7 +229,7 @@ describe("flag", () => {
     useProjectHandlers(detail);
     server.use(
       http.get(`${API}/projects/:id/flags`, () =>
-        HttpResponse.json({ flags: [summary] }),
+        HttpResponse.json({ flags: [summary], total: 1 }),
       ),
       http.get(`${API}/projects/:id/flags/:flagId`, () =>
         HttpResponse.json({ flag }),
@@ -268,7 +268,7 @@ describe("flag", () => {
     useProjectHandlers(detail);
     server.use(
       http.get(`${API}/projects/:id/flags`, () =>
-        HttpResponse.json({ flags: [summary] }),
+        HttpResponse.json({ flags: [summary], total: 1 }),
       ),
       http.get(`${API}/projects/:id/flags/:flagId`, () =>
         HttpResponse.json({ flag }),
@@ -312,7 +312,7 @@ describe("flag", () => {
     useProjectHandlers(detail);
     server.use(
       http.get(`${API}/projects/:id/flags`, () =>
-        HttpResponse.json({ flags: [summary] }),
+        HttpResponse.json({ flags: [summary], total: 1 }),
       ),
       http.get(`${API}/projects/:id/flags/:flagId`, () =>
         HttpResponse.json({ flag }),

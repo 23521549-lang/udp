@@ -245,6 +245,38 @@ describe("tạo và đọc flag", () => {
     ]);
   });
 
+  it("[Plan #41] total đếm theo CÙNG bộ lọc, không theo trang; isEnabled chỉ flag bật ở env đó; thiếu envId ⇒ 400", async () => {
+    const fresh = await world.newProject(owner);
+    const pid = fresh.projectId;
+    const dev = envIn(fresh.envs, "dev").id;
+    const created = [
+      await newFlag(owner, pid),
+      await newFlag(owner, pid),
+      await newFlag(owner, pid),
+    ];
+    await patchEnv(
+      owner,
+      created[0]?.id ?? "",
+      dev,
+      { isEnabled: true },
+      pid,
+    ).expect(200);
+    const list = (query: Record<string, string | number>) =>
+      as(owner, request(app).get(flagsUrl(pid)).query(query));
+
+    const page = await list({ envId: dev, limit: 1 }).expect(200);
+    expect(page.body.flags).toHaveLength(1);
+    expect(page.body.total).toBe(3);
+
+    const enabled = await list({ envId: dev, isEnabled: "true" }).expect(200);
+    expect(enabled.body.total).toBe(1);
+    expect(enabled.body.flags[0].id).toBe(created[0]?.id);
+    const disabled = await list({ envId: dev, isEnabled: "false" }).expect(200);
+    expect(disabled.body.total).toBe(2);
+
+    await list({ isEnabled: "true" }).expect(400);
+  });
+
   it("PATCH không đổi trường nào ⇒ 400 — không có lần ghi rỗng nào tới S2", async () => {
     const flag = await newFlag();
     const before = s2Calls;

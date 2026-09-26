@@ -18,7 +18,7 @@ import {
   type ProjectRoleWire,
   type ResourceQuotaWire,
 } from "@udp/shared-types/wire";
-import { api } from "../../lib/http";
+import { api, API_BASE } from "../../lib/http";
 
 export interface CreateProjectInput {
   name: string;
@@ -29,8 +29,14 @@ export interface CreateProjectInput {
 
 const p = (projectId: string) => `/projects/${projectId}`;
 
+/** [Plan #41] Cỡ trang danh sách project — cùng trần với danh sách flag */
+export const PROJECT_PAGE_SIZE = 50;
+
 export const projectApi = {
-  list: () => api(projectListResponseWire, "/projects"),
+  list: (offset: number) =>
+    api(projectListResponseWire, "/projects", {
+      query: { limit: PROJECT_PAGE_SIZE, offset },
+    }),
   get: (projectId: string) => api(projectDetailResponseWire, p(projectId)),
   create: (body: CreateProjectInput) =>
     api(projectDetailResponseWire, "/projects", { method: "POST", body }),
@@ -48,6 +54,8 @@ export const projectApi = {
       body: { expiresAt },
     }),
   remove: (projectId: string) => api(null, p(projectId), { method: "DELETE" }),
+  /** [Plan #41] Luồng SSE cấu hình của project — EventSource tự gửi cookie cùng origin */
+  streamUrl: (projectId: string) => `${API_BASE}${p(projectId)}/stream`,
 
   audit: (projectId: string, query: Record<string, string | undefined>) =>
     api(auditListResponseWire, `${p(projectId)}/audit`, { query }),

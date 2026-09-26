@@ -243,8 +243,11 @@ describe("tiến độ job", () => {
     expect(
       await screen.findByText("Dựng mạng", { selector: ".chip.soft" }),
     ).toBeInTheDocument();
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    const source = FakeEventSource.instances[0];
+    // Khung project cũng mở luồng cấu hình của nó (Plan #41) — ở đây chỉ xét luồng job
+    const jobStreams = () =>
+      FakeEventSource.instances.filter((s) => s.url.includes("/jobs/"));
+    await waitFor(() => expect(jobStreams()).toHaveLength(1));
+    const source = jobStreams()[0];
     expect(source?.url).toContain(`/jobs/${running.job.id}/stream`);
     expect(
       screen.queryByRole("button", { name: "Hủy triển khai" }),

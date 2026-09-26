@@ -2,15 +2,16 @@
 
 Mọi con số dưới đây sinh từ file JSON trong `raw/` — mỗi file tự mô tả: commit, `sourceDirty`, `sourceDiffSha256` (hash phần mã chưa commit lúc đo — tái tạo được từ commit chứa file), máy, RAM trống lúc bắt đầu, hình học mạng. Phép đo chưa chạy được vì thiếu hạ tầng: [`kiem-chung-con-no.md`](kiem-chung-con-no.md). Đăng ký giả thuyết trước của E5: [`E5-preregistration.md`](E5-preregistration.md).
 
-Chạy lại: `pnpm --filter @udp/experiments <e3|e4|e14|i34>` (E5: xem sổ nợ). Tuỳ chọn `--note "…"` ghi chú vào kết quả; không sửa tay file JSON.
+Chạy lại: `pnpm --filter @udp/experiments <e3|e4|e14|i34>` (E5: xem sổ nợ); danh sách flag của Portal: `pnpm --filter @udp/core-backend measure:flag-list`. Tuỳ chọn `--note "…"` ghi chú vào kết quả; không sửa tay file JSON.
 
-| Phép đo                      | Trạng thái                                 | File                                                   | Hình học                        |
-| ---------------------------- | ------------------------------------------ | ------------------------------------------------------ | ------------------------------- |
-| E3 — độ trễ đánh giá         | đo thật (số µs chính thức: sổ nợ E3-quiet) | [`E3-20260922-1906.json`](raw/E3-20260922-1906.json)   | in-process + OFREP dev-geometry |
-| E4 — lan truyền cấu hình     | đo thật, dev-geometry (CI: sổ nợ E4-ci)    | [`E4-20260922-1702.json`](raw/E4-20260922-1702.json)   | máy dev → Supabase Singapore    |
-| E5 — MTTD/MTTR auto-rollback | chưa chạy — sổ nợ E5                       | —                                                      | —                               |
-| E14 — cardinality nhãn `ff`  | đo phía app (Prometheus: sổ nợ)            | [`E14-20260922-1542.json`](raw/E14-20260922-1542.json) | in-process                      |
-| I34 — fail-static 5 phút     | đo thật (ĐẠT)                              | [`I34-20260922-1916.json`](raw/I34-20260922-1916.json) | máy dev → Supabase Singapore    |
+| Phép đo                      | Trạng thái                                                                             | File                                                                               | Hình học                        |
+| ---------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------- |
+| E3 — độ trễ đánh giá         | đo thật (số µs chính thức: sổ nợ E3-quiet)                                             | [`E3-20260922-1906.json`](raw/E3-20260922-1906.json)                               | in-process + OFREP dev-geometry |
+| E4 — lan truyền cấu hình     | đo thật, dev-geometry (CI: sổ nợ E4-ci)                                                | [`E4-20260922-1702.json`](raw/E4-20260922-1702.json)                               | máy dev → Supabase Singapore    |
+| E5 — MTTD/MTTR auto-rollback | chưa chạy — sổ nợ E5                                                                   | —                                                                                  | —                               |
+| E14 — cardinality nhãn `ff`  | đo phía app (Prometheus: sổ nợ)                                                        | [`E14-20260922-1542.json`](raw/E14-20260922-1542.json)                             | in-process                      |
+| I34 — fail-static 5 phút     | đo thật (ĐẠT)                                                                          | [`I34-20260922-1916.json`](raw/I34-20260922-1916.json)                             | máy dev → Supabase Singapore    |
+| Danh sách flag (Plan #41)    | đo thật, dev-geometry — trang có stats CHƯA ĐẠT 500 ms (CI: sổ nợ `portal-pagination`) | [`portal-pagination-20260926-2345.json`](raw/portal-pagination-20260926-2345.json) | máy dev → Supabase Singapore    |
 
 ## E3 — độ trễ đánh giá (µs, nearest-rank trên mẫu gộp của các vòng)
 
@@ -83,3 +84,18 @@ File vẫn giữ trong `raw/` để truy vết; số liệu chính thức lấy 
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`E3-20260922-1543.json`](raw/E3-20260922-1543.json)   | throughput SDK tính cả vòng khởi động (lệch với phân vị chỉ tính sau khởi động); đã sửa harness, đo lại                                                                     |
 | [`I34-20260922-1555.json`](raw/I34-20260922-1555.json) | tiêu chí đạt sai: đòi STALE ≥ 120 s trong khi thiết kế cho phép sớm tới một nhịp tim (STALE thật ở 110,5 s và 110,1 s, không lần đánh giá nào sai); đã sửa tiêu chí, đo lại |
+
+## Danh sách flag của Portal (Plan #41, dev-geometry)
+
+200 flag × 3 environment, S1 trong tiến trình + Service 2 tiến trình con, 50 lần sau 5 lần làm
+nóng. Ngưỡng của sổ nợ: p95 ≤ 500 ms.
+
+| Lời gọi                                         | p50 (ms) | p95 (ms) | p99 (ms) |
+| ----------------------------------------------- | -------- | -------- | -------- |
+| Trang đầu 50 flag + stats (trang Flag)          | 580,9    | 839,5    | 1 327,2  |
+| `limit=1` đọc `total` (thanh số, tổng quan)     | 316,8    | 381      | 413,5    |
+| Hai trang 100 + stats (tải trọn, trước Plan 41) | 944,2    | 1 058,3  | 1 110,3  |
+
+Mỗi lời gọi là vài lượt đi về database (~100 ms mỗi lượt ở hình học này): phiên, vai trong project,
+trang + tổng (song song), rồi Service 2 đọc số đếm. Trang có stats vượt ngưỡng vì lượt sang Service 2
+nối tiếp sau trang; số ở hình học chính thức (cùng vùng với database) còn nợ.
