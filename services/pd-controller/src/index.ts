@@ -9,6 +9,7 @@ import { createFlagLevelExecutor } from "./executors/flag-level.executor.js";
 import { createKillSwitch } from "./executors/kill-switch.js";
 import { createIntentListener } from "./intent/listener.js";
 import { createMetricsProviders } from "./metrics/provider.js";
+import { createCoreMetricsClient } from "./metrics/remote.js";
 import { createReconciler } from "./reconciler/reconciler.js";
 import { createUntracker } from "./tracking/untracker.js";
 
@@ -45,7 +46,16 @@ try {
 /** `<host>:<pid>:<random>` — thấy được trong `claimed_by`, khác nhau giữa các replica */
 const workerId = `${hostname()}:${String(process.pid)}:${randomUUID().slice(0, 8)}`;
 
-const providers = createMetricsProviders({ prometheusUrl: env.PROMETHEUS_URL });
+/**
+ * [v4.11, Plan #39] Metrics theo environment của session, qua Service 1 (D-P30): S1 chọn nguồn
+ * theo binding `metrics.query`, giữ khoá SaaS và đường tới Prometheus trong cluster.
+ */
+const providers = createMetricsProviders({
+  client: createCoreMetricsClient({
+    baseUrl: env.CORE_BACKEND_URL,
+    secret: env.INTERNAL_SERVICE_SECRET,
+  }),
+});
 
 const executor = createFlagLevelExecutor({
   baseUrl: env.FLAG_SERVICE_URL,

@@ -430,6 +430,17 @@ export const METRICS_PROVIDER = {
    * Dùng làm độ trễ scrape VÀ scrape interval "assumed" — validator ép cửa sổ ≥ 4 × 60s.
    */
   saasExportIntervalSeconds: 60,
+  /**
+   * [v4.11, Plan #39] Hạn một lời đo Service 3 nhờ Service 1: S1 cần tới `queryTimeoutMs` cho
+   * truy vấn, cộng lần dựng truy cập cluster đầu tiên (credential cloud, token quản trị) — ba lần
+   * hạn truy vấn. Quá hạn là `hasData: false` (I7), bản dựng dở vẫn vào bộ nhớ cho lần sau.
+   */
+  serviceOneTimeoutMs: 15_000,
+  /**
+   * [v4.11, Plan #39] Truy cập cluster S1 nhớ để đo Prometheus trong cluster được dựng lại khi
+   * token quản trị còn ít hơn chừng này — không dùng một token hết hạn giữa chừng.
+   */
+  clusterAccessRenewMarginMs: 60_000,
 } as const;
 
 /**

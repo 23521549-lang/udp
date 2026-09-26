@@ -7,7 +7,7 @@ import {
   createFlagServiceClient,
   type FlagServiceClient,
 } from "./clients/flag-service.client.js";
-import { metricsFor } from "./metrics-source.js";
+import { createMetricsFor } from "./metrics-source.js";
 import {
   oidcIssuerFromConfig,
   type OidcIssuer,
@@ -42,10 +42,12 @@ export interface AppDeps {
    * `metricBase`: ở đây khoá đến từ request người dùng, cache là rò bộ nhớ theo
    * số chuỗi khác nhau họ gửi (QA Plan #18). `source` là nguồn của environment
    * suy từ binding `metrics.query` (Plan #31); `null` khi project chưa có binding.
+   * [v4.11, Plan #39] `scope` nói cluster của project nào khi nguồn nằm TRONG cluster.
    */
   metricsFor(
     source: MetricsSource | null,
     metricQueries: MetricQueries | undefined,
+    scope: { projectId: string },
   ): MetricsProvider;
   flagService: FlagServiceClient;
   /**
@@ -105,7 +107,8 @@ function memoized<T>(load: () => Promise<T>): () => Promise<T> {
 export function defaultAppDeps(): AppDeps {
   const oidcIssuer = oidcIssuerFromConfig(env);
   return {
-    metricsFor,
+    // Không có worker thì không có đường tới cluster — `index.ts` tiêm bản có (Plan #39)
+    metricsFor: createMetricsFor(null),
     flagService: createFlagServiceClient({
       baseUrl: env.FLAG_SERVICE_URL,
       secret: env.INTERNAL_SERVICE_SECRET,

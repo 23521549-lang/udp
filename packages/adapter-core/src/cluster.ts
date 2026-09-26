@@ -107,7 +107,8 @@ export interface ClusterAccess extends ReadOnlyClusterAccess {
 
   /**
    * Gọi một Service trong cluster mà KHÔNG phơi nó ra Internet, qua API-server service
-   * proxy. Đây là cách Service 3 truy vấn Prometheus nội bộ (ADR-06), và là cách DUY
+   * proxy. Đây là cách Prometheus nội bộ được truy vấn (ADR-06) — [v4.11, D-P30] bởi Service 1
+   * thay Service 3 — và là cách DUY
    * NHẤT — một `fetch` trực tiếp tới ClusterIP sẽ không chạy khi control plane nằm
    * ngoài VPC, và sẽ vòng qua egress guard của T11.
    */

@@ -501,6 +501,12 @@ adapter.
   `bootstrapManifests` áp bằng server-side apply hai lần liên tiếp ⇒ lần hai không đổi gì,
   NetworkPolicy chặn pod env khác gọi vào. Đạt: cả ba; không đạt: bất kỳ Role nào bị API
   server từ chối lúc áp ⇒ bảng §12.2 thiếu quyền mà test thuần không thấy.
+- **[v4.11, Plan #39] Mở rộng:** Service 1 đo Prometheus trong cluster thay Service 3 qua
+  `proxyService` (`createMetricsFor` + `ClusterAccessCache`, D-P30). Trên cluster đó: cài
+  `prometheus-grafana`, gọi `POST /internal/environments/:envId/metrics` ⇒ mẫu `hasData: true`
+  đúng series của workload; thu hồi token (xoá SA rồi tạo lại) ⇒ lời đo kế tiếp 401, bản nhớ bị
+  bỏ, lời sau nữa dựng lại truy cập và có dữ liệu. Không đạt: `services/proxy` bị RBAC từ chối
+  cho `udp-traffic` ⇒ §12.2 thiếu quyền trên service của nguồn metrics.
 
 ## E16 — ma trận drift, đối chứng Helm và Argo CD
 

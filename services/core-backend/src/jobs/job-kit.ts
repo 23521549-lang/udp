@@ -15,6 +15,7 @@ import { keepLease, type PrismaClient } from "@udp/db";
 import { logger } from "@udp/http";
 import type { CloudPlatform } from "../modules/cloud/cloud.platform.js";
 import { activeEnvelope } from "../modules/cloud/cloud.repository.js";
+import type { ResolvedAccess } from "../modules/cluster/cluster-access-cache.js";
 import type {
   AdminToken,
   ClusterRuntime,
@@ -274,14 +275,14 @@ export function createJobKit(deps: JobKitDeps) {
   }
 
   /**
-   * Cluster của project cho MỘT việc ngoài job hạ tầng (theo dõi deploy, hỏi chi phí): cluster lấy
-   * từ lượt PROVISION xong gần nhất, credential ngắn hạn huỷ ngay sau `use`. Project chưa có
-   * cluster ⇒ `PhaseFailedError` (thử lại không đổi được gì).
+   * Cluster của project cho việc ngoài job hạ tầng (theo dõi deploy, hỏi chi phí, đo metrics):
+   * cluster lấy từ lượt PROVISION xong gần nhất, credential cloud ngắn hạn huỷ ngay sau khi xin
+   * token quản trị — access chỉ dựa vào token đó, nên sống tới `expiresAt` của nó (Plan #39).
+   * Project chưa có cluster ⇒ `PhaseFailedError` (thử lại không đổi được gì).
    */
-  async function withProjectCluster<T>(
+  async function projectClusterAccess(
     projectId: string,
-    use: (access: ClusterAccess) => Promise<T>,
-  ): Promise<T> {
+  ): Promise<ResolvedAccess> {
     const job = await prisma.provisioningJob.findFirst({
       where: { projectId, jobType: "PROVISION", state: "DONE" },
       orderBy: { createdAt: "desc" },
@@ -294,8 +295,18 @@ export function createJobKit(deps: JobKitDeps) {
       if (cluster === null) {
         throw new PhaseFailedError("project chưa có cluster");
       }
-      return use(deps.clusters.accessFor(cluster.info, cluster.admin));
+      return {
+        access: deps.clusters.accessFor(cluster.info, cluster.admin),
+        expiresAt: cluster.admin.expiresAt,
+      };
     });
+  }
+
+  async function withProjectCluster<T>(
+    projectId: string,
+    use: (access: ClusterAccess) => Promise<T>,
+  ): Promise<T> {
+    return use((await projectClusterAccess(projectId)).access);
   }
 
   /** Giành lease + giữ nó sống trong suốt `body`; job đã kết thúc thì không làm gì */
@@ -355,6 +366,7 @@ export function createJobKit(deps: JobKitDeps) {
     advance,
     clusterOf,
     clusterAccessOf,
+    projectClusterAccess,
     withProjectCluster,
     domainInput,
     withLease,

@@ -66,7 +66,7 @@ async function probeWorkload(
     registry: await deps.domainRegistry(),
   });
   const outcome = await deps
-    .metricsFor(source, metricQueries)
+    .metricsFor(source, metricQueries, { projectId: where.projectId })
     .probe({ namespace: where.namespace, workloadName });
   const data = outcome.data;
   if (data?.reachable !== true) {

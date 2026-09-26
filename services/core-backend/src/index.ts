@@ -10,6 +10,7 @@ import { assertServiceIdentity, prisma } from "./core/db.js";
 import { createApp } from "./app.js";
 import { defaultAppDeps } from "./core/app-deps.js";
 import { createEgressFetch } from "./core/egress/egress.js";
+import { createMetricsFor } from "./core/metrics-source.js";
 import { startJobQueue, type JobQueue } from "./jobs/boss.js";
 import { createDeployJob } from "./jobs/deploy.job.js";
 import { sweepDrift } from "./jobs/drift-scan.job.js";
@@ -22,6 +23,7 @@ import {
   createClusterRuntime,
   egressTransport,
 } from "./modules/cluster/cluster-runtime.js";
+import { createClusterAccessCache } from "./modules/cluster/cluster-access-cache.js";
 import { assertRegistryCoveredByCatalog } from "./modules/domain/domain-catalog.sync.js";
 import { logger } from "@udp/http";
 
@@ -138,6 +140,10 @@ const { queue, kit } = await startJobs().catch((err: unknown) => {
 
 const app = createApp({
   ...deps,
+  // [v4.11, Plan #39] Prometheus trong cluster đọc qua proxy của API server, truy cập nhớ theo hạn token
+  metricsFor: createMetricsFor(
+    createClusterAccessCache({ resolve: kit.projectClusterAccess }),
+  ),
   provisioning: {
     ...deps.provisioning,
     enqueue: queue.enqueueJob,

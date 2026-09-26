@@ -243,8 +243,8 @@ export function createDirectClusterAccess(
      * `/api/v1/namespaces/{ns}/services/{scheme}:{name}:{port}/proxy/{path}`
      *
      * Identity dùng ở đây là `traffic`: §12.2 mở `services/proxy` **chỉ trên service của
-     * nguồn metrics** cho `udp-traffic`, và đó là người dùng duy nhất của hàm này (Service
-     * 3 truy vấn Prometheus nội bộ, ADR-06).
+     * nguồn metrics** cho `udp-traffic`, và đó là người dùng chính của hàm này (Prometheus
+     * nội bộ, ADR-06 — [v4.11, D-P30] Service 1 đo thay Service 3).
      */
     async proxyService(target, path, init): Promise<Response> {
       const token = await tokenFor("traffic");

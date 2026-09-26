@@ -1,17 +1,24 @@
 import { resolve } from "node:path";
+import type { ClusterAccess } from "@udp/adapter-core";
 import { env } from "@udp/config";
 import { createPrismaClient, Prisma } from "@udp/db";
+import { ServiceUnavailableError } from "@udp/http";
 import {
   DatadogMetricsProvider,
   PrometheusMetricsProvider,
   type MetricsSource,
 } from "@udp/metrics-provider";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
+import {
+  internalMetricsProbeResponseWire,
+  internalMetricsSampleResponseWire,
+} from "@udp/shared-types/wire";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
-import { metricsFor } from "../src/core/metrics-source.js";
+import { createMetricsFor } from "../src/core/metrics-source.js";
+import { createClusterAccessCache } from "../src/modules/cluster/cluster-access-cache.js";
 import { createRegistry } from "../src/modules/domain/domain-adapter.registry.js";
 import { sealSecrets } from "../src/modules/domain/tool-secrets.js";
 import { datadogConfigSchema } from "../src/modules/monitoring-adapter/datadog/index.js";
@@ -200,22 +207,116 @@ describe("probe theo binding metrics.query của environment (AC-5)", () => {
   });
 });
 
-describe("metricsFor mặc định", () => {
-  it("SaaS ⇒ provider của nhà cung cấp; Prometheus trong cluster hay chưa có nguồn ⇒ PROMETHEUS_URL", () => {
+describe("createMetricsFor [v4.11, Plan #39]", () => {
+  const scope = { projectId: "00000000-0000-4000-8000-00000000aaaa" };
+  const inCluster: MetricsSource = {
+    kind: "prometheus",
+    baseUrl: "http://udp-prometheus-prometheus.udp-system:9090",
+    inCluster: true,
+  };
+  const target = { namespace: "shop-dev", workloadName: "checkout" };
+
+  /** API server giả: ghi mọi lời proxy, trả một vector PromQL hoặc mã lỗi đang đặt */
+  function fakeCluster() {
+    const proxied: { target: unknown; path: string }[] = [];
+    let status = 200;
+    const access = {
+      proxyService: (t: unknown, path: string) => {
+        proxied.push({ target: t, path });
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              status: "success",
+              data: { resultType: "vector", result: [{ value: [0, "0.5"] }] },
+            }),
+            { status },
+          ),
+        );
+      },
+    } as unknown as ClusterAccess;
+    let resolves = 0;
+    const clusters = createClusterAccessCache({
+      resolve: () => {
+        resolves += 1;
+        return Promise.resolve({
+          access,
+          expiresAt: new Date(Date.now() + 3_600_000),
+        });
+      },
+    });
+    return {
+      clusters,
+      proxied,
+      resolves: () => resolves,
+      respond: (s: number) => {
+        status = s;
+      },
+    };
+  }
+
+  it("SaaS ⇒ provider của nhà cung cấp; chưa có nguồn ⇒ PROMETHEUS_URL của triển khai", () => {
+    const metricsFor = createMetricsFor(null);
     expect(
       metricsFor(
         { kind: "datadog", site: "datadoghq.com", apiKey: "a", appKey: "b" },
         undefined,
+        scope,
       ),
     ).toBeInstanceOf(DatadogMetricsProvider);
-    expect(metricsFor(null, undefined)).toBeInstanceOf(
+    expect(metricsFor(null, undefined, scope)).toBeInstanceOf(
       PrometheusMetricsProvider,
     );
-    expect(
-      metricsFor(
-        { kind: "prometheus", baseUrl: "http://x:9090", inCluster: true },
-        undefined,
-      ),
-    ).toBeInstanceOf(PrometheusMetricsProvider);
+  });
+
+  it("Prometheus trong cluster mà tiến trình không có đường tới cluster ⇒ 503, KHÔNG lặng lẽ đo PROMETHEUS_URL", () => {
+    expect(() => createMetricsFor(null)(inCluster, undefined, scope)).toThrow(
+      ServiceUnavailableError,
+    );
+  });
+
+  it("Prometheus trong cluster đi proxy của API server: đúng service/namespace/cổng, cùng đường và query; truy cập được nhớ", async () => {
+    const cluster = fakeCluster();
+    const provider = createMetricsFor(cluster.clusters)(
+      inCluster,
+      { metricBase: "http_server_requests" },
+      scope,
+    );
+    const sample = await provider.requestCount(target, 60);
+    await provider.errorCount(target, 60);
+
+    expect(sample).toMatchObject({ value: 0.5, hasData: true });
+    expect(cluster.proxied[0]?.target).toEqual({
+      namespace: "udp-system",
+      service: "udp-prometheus-prometheus",
+      port: 9090,
+      scheme: "http",
+    });
+    expect(cluster.proxied[0]?.path).toMatch(/^\/api\/v1\/query\?query=/);
+    expect(decodeURIComponent(cluster.proxied[0]?.path ?? "")).toContain(
+      "http_server_requests",
+    );
+    expect(cluster.resolves()).toBe(1);
+    // Provider THẬT ra đúng hình dây mà route nội bộ gửi và S3 kiểm — lệch là S1 trả 500 mãi
+    expect(() =>
+      internalMetricsSampleResponseWire.parse({ sample }),
+    ).not.toThrow();
+    const probe = await provider.probe(target);
+    expect(internalMetricsProbeResponseWire.parse({ probe }).probe.status).toBe(
+      "SUCCESS",
+    );
+  });
+
+  it("API server từ chối token (401) ⇒ mẫu không dữ liệu VÀ bỏ bản nhớ — lần đo sau dựng lại truy cập", async () => {
+    const cluster = fakeCluster();
+    const provider = createMetricsFor(cluster.clusters)(
+      inCluster,
+      undefined,
+      scope,
+    );
+    cluster.respond(401);
+    expect((await provider.errorRate(target, 60)).hasData).toBe(false);
+    cluster.respond(200);
+    await provider.requestCount(target, 60);
+    expect(cluster.resolves()).toBe(2);
   });
 });

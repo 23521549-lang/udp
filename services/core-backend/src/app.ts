@@ -25,6 +25,7 @@ import {
 } from "./modules/cicd/cicd.controller.js";
 import { defaultAppDeps, setAppDeps, type AppDeps } from "./core/app-deps.js";
 import { API_PREFIX } from "./core/http/api-prefix.js";
+import { internalMetricsRouter } from "./internal/metrics.controller.js";
 
 /**
  * Endpoint khởi tạo phiên — miễn kiểm tra CSRF.
@@ -105,6 +106,11 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
   app.use(metricsRouter);
   // [v4.11] Discovery + JWKS của OIDC issuer: cloud của khách đọc, cũng không qua API
   app.use(createOidcRouter(deps.oidcIssuer));
+  /**
+   * [v4.11, Plan #39] Route máy-tới-máy (§9 Internal): Service 3 nhờ đo metrics. Ngoài
+   * `/api/v1` — không phiên, không CSRF, không rate limiter người dùng; xác thực ở từng route.
+   */
+  app.use("/internal", internalMetricsRouter);
 
   /**
    * Hai lớp bảo vệ áp cho TOÀN BỘ API thay vì rải trong từng controller.

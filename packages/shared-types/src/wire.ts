@@ -6,7 +6,7 @@ import {
   flagStatsResponseSchema,
   staleFlagsResponseSchema,
 } from "./flag-stats.js";
-import { DECISIONS, INTENT_ACTIONS } from "./rollout.js";
+import { DECISIONS, INTENT_ACTIONS, metricQueriesSchema } from "./rollout.js";
 import {
   cloudAuthKindSchema,
   cloudProviderSchema,
@@ -1412,3 +1412,100 @@ export const costResponseWire = z
   .strict();
 
 export type CostWire = z.infer<typeof costResponseWire>["cost"];
+
+// ------------------------------------------------------------- Nội bộ S3 → S1: metrics (Plan #39)
+
+const internalTarget = z
+  .object({
+    namespace: z.string().min(1).max(63),
+    workloadName: z.string().min(1).max(253),
+    version: z.string().max(128).optional(),
+    flagKey: z.string().max(255).optional(),
+    variantKey: z.string().max(255).optional(),
+  })
+  .strict();
+
+const internalMetricQueries = metricQueriesSchema.optional();
+
+const windowSec = z.number().int().min(1).max(86_400);
+
+/**
+ * `POST /internal/environments/:envId/metrics` — MỘT phép đo mà S1 thực thi trên nguồn của
+ * environment (D-P30). S1 kiểm thân bằng schema này, S3 dựng thân theo kiểu của nó.
+ */
+export const internalMetricsBodyWire = z.discriminatedUnion("op", [
+  z
+    .object({
+      op: z.enum(["errorRate", "latencyP99", "requestCount", "errorCount"]),
+      target: internalTarget,
+      windowSec,
+      metricQueries: internalMetricQueries,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("custom"),
+      query: z.string().min(1).max(4_000),
+      target: internalTarget,
+      windowSec,
+      metricQueries: internalMetricQueries,
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("probe"),
+      target: internalTarget,
+      metricQueries: internalMetricQueries,
+    })
+    .strict(),
+]);
+
+export type InternalMetricsBody = z.infer<typeof internalMetricsBodyWire>;
+
+export const internalMetricsSampleResponseWire = z
+  .object({
+    sample: z
+      .object({
+        value: z.number(),
+        query: z.string(),
+        windowSeconds: z.number(),
+        hasData: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const internalMetricsProbeResponseWire = z
+  .object({
+    probe: z
+      .object({
+        status: z.enum(["SUCCESS", "FAILED", "IN_PROGRESS", "NOT_FOUND"]),
+        message: z.string().optional(),
+        data: z
+          .object({
+            reachable: z.boolean(),
+            hasSeries: z.boolean(),
+            queryFailed: z.boolean(),
+            scrapeIntervalSec: z.number().optional(),
+            scrapeIntervalSource: z.enum(["workload", "global", "assumed"]),
+          })
+          .strict()
+          .optional(),
+        durationMs: z.number().nonnegative().optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+/** `GET /internal/environments/:envId/metrics-source` — siêu dữ liệu, không khoá nào */
+export const internalMetricsSourceResponseWire = z
+  .object({
+    source: z
+      .object({
+        providerId: z.string(),
+        capabilityVersion: z.string(),
+        scrapeLagSeconds: z.number().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict();

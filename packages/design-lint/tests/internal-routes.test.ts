@@ -22,24 +22,60 @@ import { readDesignDoc } from "../src/design-doc.js";
  * Chiều ngược lại, tài liệu ⇒ code, được canh MỀM bằng danh sách miễn trừ dưới
  * đây, giống cách `project-route-guard` xử lý ngoại lệ của I10: một route đã đặc tả
  * mà chưa hiện thực thì phải khai ra và nói ở §16, không được lặng lẽ nằm đó.
+ *
+ * [v4.11, Plan #39] Hai service có route nội bộ, mỗi bên một khối riêng ở §9: Service 2
+ * (bên gọi S1, S3) và Service 1 (bên gọi S3 — đo metrics thay S3, D-P30). Mỗi bên chỉ so
+ * với khối CỦA NÓ: gộp là đòi một service hiện thực route của service kia.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, "../../..");
-const S2 = join(ROOT, "services", "flag-service", "src");
 const PREFIX = "/internal";
 
-/**
- * Route CÓ ở §9 mà CHƯA có trong code, kèm lý do phải đọc được.
- *
- * Mỗi mục ở đây là một lời hứa còn nợ, nên nó phải trỏ tới chỗ §16 ghi nhận nó.
- * Test cuối cùng buộc danh sách này không mọc rêu theo chiều ngược lại: một mục
- * trỏ tới route §9 đã bị xoá cũng là lỗi.
- */
-const NOT_IMPLEMENTED: Record<string, string> = {
-  "PUT /internal/flags/:param/variants":
-    "PUT variants chưa hiện thực — §16 ghi nhận trong hàng 'Luồng 4 ở Service 1 chưa đủ route §9'",
-};
+interface InternalService {
+  name: string;
+  /** Thư mục `src` của service — route nội bộ ở `src/internal/`, mount ở `src/app.ts` */
+  src: string;
+  /** Dòng mở khối Internal của service này ở §9 */
+  heading: string;
+  /** Dòng đóng khối — khối của S2 đóng bằng rào mã, khối của S1 bằng dòng trống */
+  closes: (line: string) => boolean;
+  /** Chốt chống rỗng: ít nhất chừng này mount, route trong code, dòng ở §9 */
+  floor: { mounts: number; routes: number; documented: number };
+  /**
+   * Route CÓ ở §9 mà CHƯA có trong code, kèm lý do phải đọc được.
+   *
+   * Mỗi mục ở đây là một lời hứa còn nợ, nên nó phải trỏ tới chỗ §16 ghi nhận nó.
+   * Test cuối cùng buộc danh sách này không mọc rêu theo chiều ngược lại: một mục
+   * trỏ tới route §9 đã bị xoá, hay đã hiện thực, cũng là lỗi.
+   */
+  notImplemented: Record<string, string>;
+}
+
+const SERVICES: InternalService[] = [
+  {
+    name: "Service 2",
+    src: "services/flag-service/src",
+    heading: "Internal — chỉ Core Backend và PD Controller gọi",
+    closes: (l) => l.trim() === "```",
+    floor: { mounts: 2, routes: 14, documented: 14 },
+    notImplemented: {
+      "PUT /internal/flags/:param/variants":
+        "PUT variants chưa hiện thực — §16 ghi nhận trong hàng 'Luồng 4 ở Service 1 chưa đủ route §9'",
+    },
+  },
+  {
+    name: "Service 1",
+    src: "services/core-backend/src",
+    heading: "Internal — chỉ Service 2 và Service 3 gọi",
+    closes: (l) => l.trim() === "",
+    floor: { mounts: 1, routes: 2, documented: 3 },
+    notImplemented: {
+      "POST /internal/clusters/:param/token":
+        "Service 3 chưa có executor SERVICE_LEVEL cần token cluster — §16 hàng 'Lát cắt Luồng 5: chỉ FLAG_LEVEL + CANARY'; metrics trong cluster đã đi qua S1 (D-P30)",
+    },
+  },
+];
 
 /** `:id`, `:ruleId`, `:sessionId`… là cùng một thứ với lint này */
 const normalize = (path: string): string =>
@@ -50,21 +86,24 @@ const keyOf = (method: string, path: string): string =>
 
 // ------------------------------------------------------------- phía code
 
-const appText = readFileSync(join(S2, "app.ts"), "utf8");
-
 /**
  * Router nào được gắn dưới `/internal`.
  *
- * Hai hình dạng cùng tồn tại trong `app.ts` và cả hai đều có lý do đã ghi ở đó:
- * `app.use("/internal", oneRouter)` cho router cần mount TRƯỚC parser toàn cục, và
- * một lời gọi mang nhiều router cho phần còn lại. Đọc cả hai bằng một biểu thức
+ * Hai hình dạng cùng tồn tại trong `app.ts` của S2 và cả hai đều có lý do đã ghi ở
+ * đó: `app.use("/internal", oneRouter)` cho router cần mount TRƯỚC parser toàn cục,
+ * và một lời gọi mang nhiều router cho phần còn lại. Đọc cả hai bằng một biểu thức
  * trên phần đối số, chứ không giả định số lượng.
  */
-const mountedRouters = [
-  ...appText.matchAll(/app\.use\(\s*"\/internal"\s*,([\s\S]*?)\);/g),
-].flatMap((m) =>
-  [...(m[1] as string).matchAll(/\b(\w*Router)\b/g)].map((r) => r[1] as string),
-);
+function mountedRouters(service: InternalService): string[] {
+  const appText = readFileSync(join(ROOT, service.src, "app.ts"), "utf8");
+  return [
+    ...appText.matchAll(/app\.use\(\s*"\/internal"\s*,([\s\S]*?)\);/g),
+  ].flatMap((m) =>
+    [...(m[1] as string).matchAll(/\b(\w*Router)\b/g)].map(
+      (r) => r[1] as string,
+    ),
+  );
+}
 
 interface CodeRoute {
   file: string;
@@ -73,8 +112,8 @@ interface CodeRoute {
   path: string;
 }
 
-function codeRoutes(): CodeRoute[] {
-  const dir = join(S2, "internal");
+function codeRoutes(service: InternalService): CodeRoute[] {
+  const dir = join(ROOT, service.src, "internal");
   const out: CodeRoute[] = [];
   for (const entry of readdirSync(dir)) {
     if (!entry.endsWith(".ts")) continue;
@@ -89,7 +128,7 @@ function codeRoutes(): CodeRoute[] {
       /(\w*Router)\.(get|post|put|patch|delete)\(\s*"(\/[^"]*)"/g,
     )) {
       out.push({
-        file: `services/flag-service/src/internal/${entry}`,
+        file: `${service.src}/internal/${entry}`,
         router: m[1] as string,
         method: m[2] as string,
         path: m[3] as string,
@@ -99,27 +138,22 @@ function codeRoutes(): CodeRoute[] {
   return out;
 }
 
-const routes = codeRoutes();
-
 // ------------------------------------------------------------- phía tài liệu
 
 /**
- * Chỉ khối "Internal" trong mục Service 2 của §9.
- *
- * Không grep toàn tài liệu: Service 1 cũng có một route `/internal`
- * (`POST /internal/clusters/:id/token` cho Service 3), và gộp nó vào đây sẽ làm
- * lint này đòi Service 2 hiện thực một route của Service 1.
+ * Chỉ khối "Internal" của ĐÚNG service ở §9 — không grep toàn tài liệu: mỗi service có
+ * khối riêng, gộp lại là đòi service này hiện thực route của service kia.
  */
-function documentedRoutes(): string[] {
+function documentedRoutes(service: InternalService): string[] {
   const lines = readDesignDoc();
-  const start = lines.findIndex((l) =>
-    l.startsWith("Internal — chỉ Core Backend và PD Controller gọi"),
-  );
-  if (start < 0)
-    throw new Error("§9: không tìm thấy khối Internal của Service 2");
-
-  const end = lines.findIndex((l, i) => i > start && l.trim() === "```");
-  if (end < 0) throw new Error("§9: khối Internal không đóng");
+  const start = lines.findIndex((l) => l.startsWith(service.heading));
+  if (start < 0) {
+    throw new Error(`§9: không tìm thấy khối Internal của ${service.name}`);
+  }
+  const end = lines.findIndex((l, i) => i > start && service.closes(l));
+  if (end < 0) {
+    throw new Error(`§9: khối Internal của ${service.name} không đóng`);
+  }
 
   const out: string[] = [];
   for (const line of lines.slice(start, end)) {
@@ -132,61 +166,70 @@ function documentedRoutes(): string[] {
   return out;
 }
 
-const documented = documentedRoutes();
+describe.each(SERVICES)(
+  "§9 — mọi route /internal/* của $name đều có trong tài liệu",
+  (service) => {
+    const mounted = mountedRouters(service);
+    const routes = codeRoutes(service);
+    const documented = documentedRoutes(service);
+    const inCode = new Set(routes.map((r) => keyOf(r.method, PREFIX + r.path)));
 
-describe("§9 — mọi route /internal/* của Service 2 đều có trong tài liệu", () => {
-  it("đọc được cả hai phía — nếu không, mọi test dưới rỗng", () => {
-    // Chốt chống rỗng, cả ba nguồn: mount, khai báo route, và khối §9.
-    expect(mountedRouters.length).toBeGreaterThanOrEqual(2);
-    expect(routes.length).toBeGreaterThanOrEqual(14);
-    expect(documented.length).toBeGreaterThanOrEqual(14);
-  });
+    it("đọc được cả hai phía — nếu không, mọi test dưới rỗng", () => {
+      // Chốt chống rỗng, cả ba nguồn: mount, khai báo route, và khối §9.
+      expect(mounted.length).toBeGreaterThanOrEqual(service.floor.mounts);
+      expect(routes.length).toBeGreaterThanOrEqual(service.floor.routes);
+      expect(documented.length).toBeGreaterThanOrEqual(
+        service.floor.documented,
+      );
+    });
 
-  it("mọi router có khai báo route đều được gắn dưới /internal", () => {
-    /**
-     * Nếu một controller mới ra đời mà không ai gắn nó, route của nó không tồn tại
-     * trên dây — và phép so với §9 dưới đây sẽ xanh vì cả hai phía đều không có
-     * nó. Chốt này giữ cho "phía code" là thứ chạy thật, không phải thứ được viết.
-     */
-    const orphans = [...new Set(routes.map((r) => r.router))]
-      .filter((name) => !mountedRouters.includes(name))
-      .map(
-        (name) =>
-          `${name} khai route /internal nhưng không được app.use("/internal", …) gắn`,
+    it("mọi router có khai báo route đều được gắn dưới /internal", () => {
+      /**
+       * Nếu một controller mới ra đời mà không ai gắn nó, route của nó không tồn tại
+       * trên dây — và phép so với §9 dưới đây sẽ xanh vì cả hai phía đều không có
+       * nó. Chốt này giữ cho "phía code" là thứ chạy thật, không phải thứ được viết.
+       */
+      const orphans = [...new Set(routes.map((r) => r.router))]
+        .filter((name) => !mounted.includes(name))
+        .map(
+          (name) =>
+            `${name} khai route /internal nhưng không được app.use("/internal", …) gắn`,
+        );
+
+      expect(orphans).toEqual([]);
+    });
+
+    it("route trong code đều có một dòng ở §9", () => {
+      const known = new Set(documented);
+      const missing = routes
+        .filter((r) => !known.has(keyOf(r.method, PREFIX + r.path)))
+        .map(
+          (r) =>
+            `${r.file}: ${r.method.toUpperCase()} ${PREFIX}${r.path} chưa có ở §9 ` +
+            `(khối Internal của ${service.name})`,
+        )
+        .sort();
+
+      expect(missing).toEqual([]);
+    });
+
+    it("dòng ở §9 không có trong code thì phải được khai là chưa hiện thực", () => {
+      const undeclared = documented
+        .filter((k) => !inCode.has(k))
+        .filter((k) => service.notImplemented[k] === undefined)
+        .sort();
+
+      expect(undeclared).toEqual([]);
+    });
+
+    it("danh sách chưa-hiện-thực không có mục mọc rêu", () => {
+      // Mục trỏ tới route §9 đã bị xoá — hay đã hiện thực — là lời hứa về thứ không còn nợ
+      const known = new Set(documented);
+      const stale = Object.keys(service.notImplemented).filter(
+        (k) => !known.has(k) || inCode.has(k),
       );
 
-    expect(orphans).toEqual([]);
-  });
-
-  it("route trong code đều có một dòng ở §9", () => {
-    const known = new Set(documented);
-    const missing = routes
-      .filter((r) => !known.has(keyOf(r.method, PREFIX + r.path)))
-      .map(
-        (r) =>
-          `${r.file}: ${r.method.toUpperCase()} ${PREFIX}${r.path} chưa có ở §9 ` +
-          `(khối Internal của Service 2)`,
-      )
-      .sort();
-
-    expect(missing).toEqual([]);
-  });
-
-  it("dòng ở §9 không có trong code thì phải được khai là chưa hiện thực", () => {
-    const inCode = new Set(routes.map((r) => keyOf(r.method, PREFIX + r.path)));
-    const undeclared = documented
-      .filter((k) => !inCode.has(k))
-      .filter((k) => NOT_IMPLEMENTED[k] === undefined)
-      .sort();
-
-    expect(undeclared).toEqual([]);
-  });
-
-  it("danh sách chưa-hiện-thực không có mục mọc rêu", () => {
-    // Một mục trỏ tới route §9 đã bị xoá là một lời hứa về thứ không còn được hứa.
-    const known = new Set(documented);
-    const stale = Object.keys(NOT_IMPLEMENTED).filter((k) => !known.has(k));
-
-    expect(stale).toEqual([]);
-  });
-});
+      expect(stale).toEqual([]);
+    });
+  },
+);
