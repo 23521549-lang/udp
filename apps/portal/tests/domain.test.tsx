@@ -373,6 +373,129 @@ describe("chi tiết domain", () => {
   });
 });
 
+describe("webhook CI/CD ở chi tiết domain (Plan #36)", () => {
+  /** Chi tiết domain CICD dựng từ mẫu MONITORING — cùng hình, đổi domain và tool */
+  function useCicdHandlers(secretSet: boolean) {
+    const one = golden<{ domain: ProjectDomainWire }>(
+      "GET /projects/{id}/domains/MONITORING",
+    );
+    one.domain = {
+      ...one.domain,
+      domainType: "CICD",
+      selectedTool: "github-actions",
+      isEnabled: true,
+    };
+    const status = golden<{ cicd: { secretSet: boolean } }>(
+      "GET /projects/{id}/domains/CICD/webhook",
+    );
+    status.cicd.secretSet = secretSet;
+    const rotated = golden<{ secret: string }>(
+      "POST /projects/{id}/domains/CICD/webhook-secret",
+    );
+    let posts = 0;
+    server.use(
+      http.get(`${API}/domains/catalog`, () =>
+        HttpResponse.json(golden("GET /domains/catalog")),
+      ),
+      http.get(`${API}/projects/:id/domains/CICD`, () =>
+        HttpResponse.json(one),
+      ),
+      http.get(`${API}/projects/:id/domains/CICD/drift`, () =>
+        HttpResponse.json(
+          golden("GET /projects/{id}/domains/MONITORING/drift"),
+        ),
+      ),
+      http.get(`${API}/projects/:id/domains/CICD/webhook`, () =>
+        HttpResponse.json(
+          posts > 0 ? { cicd: { ...status.cicd, secretSet: true } } : status,
+        ),
+      ),
+      http.post(`${API}/projects/:id/domains/CICD/webhook-secret`, () => {
+        posts += 1;
+        return HttpResponse.json(rotated);
+      }),
+      http.get(`${API}/projects/:id/domains/CICD/pipeline-template`, () =>
+        HttpResponse.json(
+          golden("GET /projects/{id}/domains/CICD/pipeline-template"),
+        ),
+      ),
+    );
+    return { secret: rotated.secret, posts: () => posts };
+  }
+
+  it("MAINTAINER: địa chỉ webhook đầy đủ; sinh secret ⇒ hiện MỘT lần trong hộp, đóng là mất", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    const calls = useCicdHandlers(false);
+    renderApp(`${domainsUrl(detail)}/CICD`);
+
+    const url = await screen.findByLabelText("Địa chỉ webhook");
+    expect(url.textContent).toMatch(
+      /^http:\/\/localhost(:\d+)?\/api\/v1\/webhooks\/cicd\/.+\/github-actions$/,
+    );
+    expect(screen.getByText(/Chưa sinh/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sinh secret" }));
+    const ask = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(ask).getByRole("button", { name: "Sinh secret" }),
+    );
+    const shown = await screen.findByLabelText("Giá trị secret webhook");
+    expect(shown.textContent).toBe(calls.secret);
+    expect(calls.posts()).toBe(1);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Đã lưu secret" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText(calls.secret)).not.toBeInTheDocument(),
+    );
+    expect(
+      await screen.findByText(/Đã sinh \(không xem lại được\)/),
+    ).toBeInTheDocument();
+  });
+
+  it("secret đã có ⇒ nút xoay, hộp cảnh báo CI cũ nhận 401 trước khi bấm", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    useCicdHandlers(true);
+    renderApp(`${domainsUrl(detail)}/CICD`);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Xoay secret" }),
+    );
+    const ask = await screen.findByRole("dialog");
+    expect(within(ask).getByText(/nhận 401/)).toBeInTheDocument();
+  });
+
+  it("DEVELOPER: xem được template, không sinh được secret", async () => {
+    const detail = projectFixture("DEVELOPER");
+    useProjectHandlers(detail);
+    useCicdHandlers(false);
+    renderApp(`${domainsUrl(detail)}/CICD`);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Xem template pipeline" }),
+    );
+    const template = await screen.findByLabelText(
+      "Template pipeline github-actions",
+    );
+    expect(template.textContent).toContain("X-Hub-Signature-256");
+    expect(
+      screen.queryByRole("button", { name: /Sinh secret|Xoay secret/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("VIEWER: chỉ thấy địa chỉ và trạng thái", async () => {
+    const detail = projectFixture("VIEWER");
+    useProjectHandlers(detail);
+    useCicdHandlers(false);
+    renderApp(`${domainsUrl(detail)}/CICD`);
+    await screen.findByLabelText("Địa chỉ webhook");
+    expect(
+      screen.queryByRole("button", { name: /secret|template/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("catalog quản trị", () => {
   it("liệt kê domain và công cụ registry đã nạp", async () => {
     server.use(

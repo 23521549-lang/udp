@@ -1,0 +1,8 @@
+{
+  "route": "POST /webhooks/cicd/{id}/github-actions",
+  "status": 200,
+  "body": {
+    "deploymentId": "119ec509-76c4-4287-adbf-c0f91c9bab2c",
+    "status": "failure-recorded"
+  }
+}

@@ -35,6 +35,7 @@ beforeAll(async () => {
     schema: SCHEMA,
     retryLimit: 0,
     expireInSeconds: 60,
+    deployExpireInSeconds: 60,
     heartbeatSeconds: 10,
     pollingIntervalSeconds: 0.5,
   });

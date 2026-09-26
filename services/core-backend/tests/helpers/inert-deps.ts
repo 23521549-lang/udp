@@ -29,5 +29,6 @@ export const noDomainAdapters = (): Promise<DomainAdapterRegistry> =>
 export const inertProvisioning: ProvisioningRuntime = {
   egressCidrs: [],
   enqueue: null,
+  enqueueDeploy: null,
   scanDrift: null,
 };

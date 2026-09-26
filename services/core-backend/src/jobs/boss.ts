@@ -25,6 +25,12 @@ export const QUEUES = {
   jobs: "udp-jobs",
   /** Bù trừ một job mà lượt cuối không tự bù được (worker chết) — do đối soát gửi */
   compensate: "udp-compensate",
+  /**
+   * [v4.11] Áp image + theo dõi một lần deploy (Plan #36 QĐ-5) — KHÔNG phải `ProvisioningJob`:
+   * deploy chạy mỗi lần push, là job hạ tầng thì nó ngập `/jobs` và chặn lưu cấu hình domain.
+   * Id của job = `deploymentId`; `DEPLOY_START` chưa kết luận là outbox.
+   */
+  deploy: "udp-deploy",
 } as const;
 
 /**
@@ -67,6 +73,17 @@ export interface JobQueue {
   workCompensation(
     handler: (jobId: string, signal: AbortSignal) => Promise<void>,
   ): Promise<void>;
+  /** Gửi một lần deploy — idempotent theo `deploymentId` */
+  enqueueDeploy(deploymentId: string): Promise<void>;
+  /** Trạng thái job deploy cùng id; `null` = pg-boss chưa từng nhận */
+  deployStateOf(deploymentId: string): Promise<BossJobState | null>;
+  workDeploys(
+    handler: (
+      deploymentId: string,
+      attempt: Pick<Attempt, "final">,
+    ) => Promise<void>,
+    concurrency: number,
+  ): Promise<void>;
   /** Một việc định kỳ theo lịch của pg-boss (cron, múi giờ UTC) */
   schedule(
     name: ScheduleName,
@@ -82,6 +99,8 @@ export interface JobQueueOptions {
   /** pg-boss `retryLimit` là nguồn sự thật về số lần thử (§2.2: `attempt` chỉ hiển thị) */
   retryLimit: number;
   expireInSeconds: number;
+  /** Trần một lượt của hàng `udp-deploy` — trên trần theo dõi của một lần deploy */
+  deployExpireInSeconds: number;
   heartbeatSeconds: number;
   pollingIntervalSeconds: number;
   applicationName?: string;
@@ -89,6 +108,10 @@ export interface JobQueueOptions {
 
 interface ProvisionData {
   jobId: string;
+}
+
+interface DeployData {
+  deploymentId: string;
 }
 
 export async function startJobQueue(
@@ -124,6 +147,13 @@ export async function startJobQueue(
     expireInSeconds: options.expireInSeconds,
     heartbeatSeconds: options.heartbeatSeconds,
   });
+  await boss.createQueue(QUEUES.deploy, {
+    retryLimit: options.retryLimit,
+    retryBackoff: true,
+    retryDelay: 30,
+    expireInSeconds: options.deployExpireInSeconds,
+    heartbeatSeconds: options.heartbeatSeconds,
+  });
 
   return {
     enqueueJob: async (jobId) => {
@@ -141,6 +171,35 @@ export async function startJobQueue(
     stateOf: async (jobId) => {
       const [job] = await boss.findJobs(QUEUES.jobs, { id: jobId });
       return job?.state ?? null;
+    },
+
+    enqueueDeploy: async (deploymentId) => {
+      await boss.send(QUEUES.deploy, { deploymentId } satisfies DeployData, {
+        id: deploymentId,
+      });
+    },
+
+    deployStateOf: async (deploymentId) => {
+      const [job] = await boss.findJobs(QUEUES.deploy, { id: deploymentId });
+      return job?.state ?? null;
+    },
+
+    workDeploys: async (handler, concurrency) => {
+      await boss.work(
+        QUEUES.deploy,
+        {
+          pollingIntervalSeconds: options.pollingIntervalSeconds,
+          // Mỗi lượt giữ tới 30 phút theo dõi — một worker tuần tự làm deploy sau chờ deploy trước
+          localConcurrency: concurrency,
+          includeMetadata: true,
+        },
+        async ([job]: JobWithMetadata<DeployData>[]) => {
+          if (job === undefined) return;
+          await handler(job.data.deploymentId, {
+            final: job.retryCount >= job.retryLimit,
+          });
+        },
+      );
     },
 
     workJobs: async (handler) => {

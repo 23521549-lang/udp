@@ -8,13 +8,15 @@ import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
+import { CicdPanel } from "./CicdPanel";
 import { domainApi } from "./domain-api";
 import { DomainActions } from "./DomainActions";
 import { DRIFT_LABEL, STATUS_LABEL } from "./domain-labels";
 
 /**
  * Chi tiết một domain (§10.13): trạng thái đã lưu và kết quả quét drift gần nhất — câu
- * "đã trôi" luôn đi kèm CHỖ trôi mà lượt quét ghi lại, không chỉ một huy hiệu.
+ * "đã trôi" luôn đi kèm CHỖ trôi mà lượt quét ghi lại, không chỉ một huy hiệu. Domain CI/CD
+ * thêm bảng webhook (§8.3).
  */
 export function DomainDetailPage() {
   const { project } = useProjectContext();
@@ -64,6 +66,9 @@ export function DomainDetailPage() {
           {domain.data !== undefined && (
             <DomainActions type={type} domain={domain.data.domain} />
           )}
+          {type === "CICD" &&
+            domain.data?.domain.isEnabled === true &&
+            domain.data.domain.selectedTool !== null && <CicdPanel />}
           {domain.data?.domain.toolConfig !== null &&
             domain.data?.domain.toolConfig !== undefined && (
               <>

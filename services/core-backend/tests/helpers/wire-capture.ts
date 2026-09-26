@@ -50,6 +50,8 @@ export const fixtureFileOf = (key: string): string =>
 const FAKE: Record<string, string> = {
   secretKey: "udp_sk_dev_FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE",
   csrfToken: "fake-csrf-token-for-golden-capture",
+  /** Secret webhook CI/CD (Plan #36) — mẫu giữ HÌNH hex 64 ký tự, không giữ giá trị */
+  secret: "0123456789abcdef".repeat(4),
 };
 
 function redact(value: unknown): unknown {

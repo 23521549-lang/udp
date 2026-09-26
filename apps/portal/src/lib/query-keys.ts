@@ -69,6 +69,10 @@ export const qk = {
   /** §10.12 kiểm trực tiếp: khoá theo nội dung trạng thái đích đã chuẩn hoá */
   domainValidation: (projectId: string, target: string) =>
     ["domainValidation", projectId, target] as const,
+  /** Plan #36: webhook CI/CD của project — đường, secret đã sinh chưa (không bao giờ giá trị) */
+  cicd: (projectId: string) => ["cicd", projectId] as const,
+  pipelineTemplate: (projectId: string) =>
+    ["pipelineTemplate", projectId] as const,
   cloud: (projectId: string) => ["cloud", projectId] as const,
   cloudSetup: (projectId: string, provider: string) =>
     ["cloudSetup", projectId, provider] as const,
@@ -123,6 +127,8 @@ export const NOT_ENV_SCOPED = {
   domain: "một domain của project",
   domainDrift: "drift của một domain, quét ở phạm vi cluster",
   domainValidation: "kiểm trạng thái đích của cả project",
+  cicd: "webhook CI/CD của project; environment nằm trong thân webhook (§8.3)",
+  pipelineTemplate: "một pipeline cho MỌI env của project, env chọn theo nhánh",
   cloud: "credential cloud thuộc project, một bản cho mọi env (§4.3)",
   cloudSetup: "dữ liệu setup theo project và cloud, không theo env",
   provisionPreview: "hạ tầng của cả project: một cluster cho mọi env (§8.1)",

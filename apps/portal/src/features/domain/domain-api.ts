@@ -4,17 +4,23 @@ import type {
   PutDomainsBody,
 } from "@udp/shared-types/domain-api";
 import {
+  cicdSecretResponseWire,
+  cicdStatusResponseWire,
   domainCatalogResponseWire,
   domainDriftResponseWire,
   domainValidationResponseWire,
   jobResponseWire,
+  pipelineTemplateResponseWire,
   projectDomainResponseWire,
   projectDomainsResponseWire,
   putDomainsResponseWire,
 } from "@udp/shared-types/wire";
 import { api } from "../../lib/http";
 
-/** Domain (Plan #27, #30): catalog, cấu hình của project, drift, quét ngay, nâng cấp */
+/**
+ * Domain (Plan #27, #30): catalog, cấu hình của project, drift, quét ngay, nâng cấp; riêng CI/CD
+ * (Plan #36): webhook, sinh/xoay secret, template pipeline.
+ */
 const d = (projectId: string) => `/projects/${projectId}/domains`;
 
 export const domainApi = {
@@ -41,4 +47,13 @@ export const domainApi = {
       method: "POST",
       body,
     }),
+  cicd: (projectId: string) =>
+    api(cicdStatusResponseWire, `${d(projectId)}/CICD/webhook`),
+  /** Giá trị rõ của secret CHỈ có trong response này — không vào cache query */
+  rotateWebhookSecret: (projectId: string) =>
+    api(cicdSecretResponseWire, `${d(projectId)}/CICD/webhook-secret`, {
+      method: "POST",
+    }),
+  pipelineTemplate: (projectId: string) =>
+    api(pipelineTemplateResponseWire, `${d(projectId)}/CICD/pipeline-template`),
 };

@@ -1044,6 +1044,7 @@ function appFor(
         enqueued.push(jobId);
         return Promise.resolve();
       },
+      enqueueDeploy: null,
       scanDrift,
     },
   });

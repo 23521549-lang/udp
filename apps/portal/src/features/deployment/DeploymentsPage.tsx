@@ -1,14 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { DeploymentWire, DoraWire } from "@udp/shared-types/wire";
 import { CircleAlert, CircleCheck, CircleX, Rocket } from "lucide-react";
 import { useState } from "react";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
+import { messageOf } from "../../lib/errors";
 import { formatDateTime, formatNumber, formatPercent } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
+import { can } from "../project/roles";
 import { deploymentApi } from "./deployment-api";
 
 const RANGES = [7, 30, 90] as const;
@@ -63,8 +66,9 @@ const TRIGGER: Record<DeploymentWire["triggeredBy"], string> = {
  * Deploy + DORA (§10.14, §2.2). Hai query khoá theo `envId`; DORA thêm `days` vào key —
  * không có thì đổi khoảng mà con số không đổi (tiêu chí "Không đạt" của sổ nợ cũ).
  *
- * Hôm nay chỉ Service 3 ghi Event Store (ROLLBACK của rollout theo flag); webhook CI/CD
- * (§8.3) chưa có nên bốn chỉ số deploy trống — trang nói thật điều đó thay vì hiện số 0.
+ * Event Store có hai nguồn ghi: webhook CI/CD (§8.3) và Service 3 (ROLLBACK của rollout theo
+ * flag). Chưa có sự kiện deploy thì bốn chỉ số trống — trang nói thật điều đó thay vì hiện số 0.
+ * Deploy chờ duyệt (`autoDeploy = false`) có nút duyệt cho MAINTAINER.
  */
 export function DeploymentsPage() {
   const { project, env } = useProjectContext();
@@ -129,8 +133,8 @@ export function DeploymentsPage() {
             />
           ) : list.data.deployments.length === 0 ? (
             <Empty title={`Chưa có deployment nào ở ${env.name}`}>
-              Webhook CI/CD chưa được nối; rollback của rollout theo flag sẽ
-              hiện ở đây.
+              Deploy từ webhook CI/CD và rollback của rollout theo flag sẽ hiện
+              ở đây.
             </Empty>
           ) : (
             <div className="lst" role="list" aria-label="Deployment">
@@ -204,6 +208,8 @@ function DoraCards({ dora }: { dora: DoraWire }) {
 function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
   const { project } = useProjectContext();
   const s = STATUS[d.status];
+  const approvable =
+    d.status === "DEPLOY_PENDING" && can(project.myRole, "MAINTAINER");
   return (
     <div className="it" role="listitem">
       <span className="stt">
@@ -229,6 +235,44 @@ function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
       <span className="c3" style={{ marginLeft: "auto" }}>
         {formatDateTime(d.lastEventAt)}
       </span>
+      {approvable && <ApproveButton deployment={d} />}
     </div>
+  );
+}
+
+/** Duyệt một deploy chờ (§8.3): máy chủ ghi `DEPLOY_START` rồi áp image ở hàng đợi deploy */
+function ApproveButton({ deployment: d }: { deployment: DeploymentWire }) {
+  const { project, env } = useProjectContext();
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const approve = useMutation({
+    mutationFn: () => deploymentApi.approve(project.id, d.deploymentId),
+    onSuccess: async () => {
+      setConfirming(false);
+      await queryClient.invalidateQueries({
+        queryKey: qk.deployments(project.id, env.id),
+      });
+    },
+  });
+  return (
+    <>
+      <button type="button" className="btn" onClick={() => setConfirming(true)}>
+        Duyệt deploy
+      </button>
+      {confirming && (
+        <ConfirmDialog
+          title={`Deploy ${d.imageTag ?? d.deploymentId.slice(0, 8)} vào ${env.name}?`}
+          description="UDP áp image vào workload rồi theo dõi; không lên kịp hạn thì tự hoàn tác về bản cũ. Flag vẫn tắt: deploy không phải release."
+          confirmLabel="Duyệt deploy"
+          busy={approve.isPending}
+          error={approve.isError ? messageOf(approve.error) : undefined}
+          onConfirm={() => approve.mutate()}
+          onClose={() => {
+            setConfirming(false);
+            approve.reset();
+          }}
+        />
+      )}
+    </>
   );
 }

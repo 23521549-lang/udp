@@ -73,6 +73,8 @@ const ROUTES: Record<string, ZodTypeAny> = {
 
   "GET /projects/{id}/deployments": wire.deploymentListResponseWire,
   "GET /projects/{id}/metrics/dora": wire.doraResponseWire,
+  "POST /projects/{id}/deployments/{id}/approve":
+    wire.deployAcceptedResponseWire,
 
   "GET /domains/catalog": wire.domainCatalogResponseWire,
   "GET /projects/{id}/domains": wire.projectDomainsResponseWire,
@@ -82,6 +84,13 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "GET /projects/{id}/domains/MONITORING/drift": wire.domainDriftResponseWire,
   "POST /projects/{id}/domains/MONITORING/drift": wire.domainDriftResponseWire,
   "POST /projects/{id}/domains/MONITORING/upgrade": wire.jobResponseWire,
+  "GET /projects/{id}/domains/CICD/webhook": wire.cicdStatusResponseWire,
+  "POST /projects/{id}/domains/CICD/webhook-secret":
+    wire.cicdSecretResponseWire,
+  "GET /projects/{id}/domains/CICD/pipeline-template":
+    wire.pipelineTemplateResponseWire,
+  /** CI gọi, không phải Portal — nhưng đi `sendJson` nên cũng có mẫu và schema */
+  "POST /webhooks/cicd/{id}/github-actions": wire.deployAcceptedResponseWire,
 
   "GET /projects/{id}/cloud": wire.cloudResponseWire,
   "GET /projects/{id}/cloud/setup": wire.cloudSetupResponseWire,

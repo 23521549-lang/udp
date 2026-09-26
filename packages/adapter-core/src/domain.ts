@@ -204,6 +204,13 @@ export interface WebhookDeployEvent {
   /** Image đã build, nếu payload có. Vắng nghĩa là pipeline chưa push */
   imageRef?: string;
   actor: string;
+  /** [v4.11, D-P27] Id của LƯỢT chạy — khoá chống trùng; chạy lại phải ra id khác */
+  pipelineId: string;
+  status: "success" | "failure";
+  /** Cho Lead Time của DORA — không suy được từ `commitSha` */
+  commitTimestamp?: string;
+  /** Deployment/Rollout đã có trong namespace của environment; container cùng tên */
+  workloadName: string;
 }
 
 export interface PipelineTemplateParams {

@@ -1,5 +1,6 @@
 import type { AdapterFixture, ObjectRef } from "@udp/adapter-core";
 import { CONTRACT_SYSTEM_NAMESPACE } from "@udp/adapter-core/testing";
+import { registryDescriptorName } from "./registry.js";
 
 /**
  * Mảnh `AdapterFixture` dùng chung cho `contract.test.ts` của họ Helm (Plan #31 P2) — CHỈ test
@@ -26,8 +27,8 @@ export const HELM_IGNORED_PREFIXES: AdapterFixture["ignoredLabelPrefixes"] = [
   },
 ];
 
-/** Prefix mà lớp nền `RegistryAdapter` bỏ qua — ConfigMap mô tả chỉ bị kubectl chạm */
-export const REGISTRY_IGNORED_PREFIXES: AdapterFixture["ignoredLabelPrefixes"] =
+/** Prefix mà lớp nền mô tả bỏ qua — ConfigMap mô tả chỉ bị kubectl chạm */
+export const DESCRIPTOR_IGNORED_PREFIXES: AdapterFixture["ignoredLabelPrefixes"] =
   [
     {
       prefix: "kubectl.kubernetes.io/",
@@ -36,29 +37,31 @@ export const REGISTRY_IGNORED_PREFIXES: AdapterFixture["ignoredLabelPrefixes"] =
     },
   ];
 
-/** Sửa tay ConfigMap mô tả mà lớp nền `RegistryAdapter` ghi cho `toolId` (Plan #35) */
-export function registryDriftMutations(
-  toolId: string,
+/** Sửa tay ConfigMap mô tả `name` mà lớp nền mô tả ghi (Plan #35, #36) */
+export function descriptorDriftMutations(
+  name: string,
   namespace: string = CONTRACT_SYSTEM_NAMESPACE,
 ): Mutations {
-  const described = {
-    apiVersion: "v1",
-    kind: "ConfigMap",
-    namespace,
-    name: `udp-registry-${toolId}`,
-  };
+  const described = { apiVersion: "v1", kind: "ConfigMap", namespace, name };
   return [
     {
-      name: "sửa tay địa chỉ registry trong ConfigMap mô tả",
+      name: "sửa tay nội dung ConfigMap mô tả",
       apply: (c) =>
-        c.write("patch", described, { registry: { server: "ai-do.vi-du" } }),
+        c.write("patch", described, { description: { suaTay: "ai-do" } }),
     },
     {
-      name: "xoá hẳn ConfigMap mô tả registry",
+      name: "xoá hẳn ConfigMap mô tả",
       apply: (c) => c.write("delete", described),
     },
   ];
 }
+
+/** Registry dịch vụ — ConfigMap mô tả mang tên `udp-registry-<tool>` */
+export const registryDriftMutations = (
+  toolId: string,
+  namespace?: string,
+): Mutations =>
+  descriptorDriftMutations(registryDescriptorName(toolId), namespace);
 
 const ref = (kind: string, name: string, namespace: string): ObjectRef => ({
   apiVersion: kind === "HelmRelease" ? "helm.toolkit.fluxcd.io/v2" : "v1",

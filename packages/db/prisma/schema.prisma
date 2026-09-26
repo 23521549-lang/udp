@@ -622,6 +622,11 @@ model DomainConfig {
   lastError Json?    @map("last_error")
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  /// [v4.11, Plan #36] Chỉ hàng CICD: secret HMAC ký webhook (§8.3) — UDP SINH, không phải
+  /// trường `configSchema`. `EncryptedCredential` niêm phong như §4.3 (AAD `cicd:webhook |
+  /// project`); không bao giờ lên dây ở GET.
+  webhookSecret Json? @map("webhook_secret")
+
   project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   catalog  DomainCatalog       @relation(fields: [domainType], references: [domainType])
   bindings CapabilityBinding[]

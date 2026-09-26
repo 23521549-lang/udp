@@ -19,6 +19,10 @@ import { adminRouter } from "./modules/admin/admin.controller.js";
 import { createOidcRouter } from "./modules/oidc/oidc.controller.js";
 import { domainCatalogRouter } from "./modules/domain/domain.controller.js";
 import { isSegmentWriteRequest } from "./modules/segment/segment.routes.js";
+import {
+  cicdWebhookRouter,
+  isCicdWebhookRequest,
+} from "./modules/cicd/cicd.controller.js";
 import { defaultAppDeps, setAppDeps, type AppDeps } from "./core/app-deps.js";
 import { API_PREFIX } from "./core/http/api-prefix.js";
 
@@ -82,8 +86,16 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
    *
    * Vị từ và router đọc CÙNG chuỗi đường dẫn, khai một lần ở
    * `modules/segment/segment.routes.ts`.
+   *
+   * [v4.11] Webhook CI/CD cũng được chừa: chữ ký tính trên byte GỐC của thân, parser JSON chạy
+   * trước là mất chúng (Plan #36).
    */
-  app.use(jsonBodyExcept(isSegmentWriteRequest, "1mb"));
+  app.use(
+    jsonBodyExcept(
+      (req) => isSegmentWriteRequest(req) || isCicdWebhookRequest(req),
+      "1mb",
+    ),
+  );
   app.use(cookieParser());
   app.use(requestLogger);
 
@@ -102,6 +114,11 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
    * theo kinh nghiệm thì đó thường là endpoint nguy hiểm nhất.
    */
   app.use(API_PREFIX, generalRateLimiter);
+  /**
+   * [v4.11] Webhook CI/CD TRƯỚC lớp CSRF: bên gọi là CI, không có phiên hay cookie để mà giả
+   * mạo — xác thực là chữ ký trên thân (§8.3). Vẫn sau rate limiter.
+   */
+  app.use(API_PREFIX, cicdWebhookRouter);
   app.use(API_PREFIX, createCsrfProtection(CSRF_EXEMPT_PATHS));
 
   app.use(`${API_PREFIX}/auth`, authRouter);

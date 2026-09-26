@@ -1,9 +1,10 @@
-# Plan #36 — PLAN (theo `plan36-spec.md` v1)
+# Plan #36 — PLAN (theo `plan36-spec.md` v2) — XONG 26/09/2026
 
-| Pha | Làm gì                                                                                                                           | Cổng                                      |
-| --- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| P1  | Lớp nền `CicdAdapter` (bọc ba hàm thuần + họ Helm/SaaS); cột `webhook_secret` niêm phong; sinh/xoay secret, audit                | test thuần, tích hợp (AC-5)               |
-| P2  | `POST /webhooks/cicd/:projectId/:provider`: thân thô, giới hạn cỡ, verify, parse, idempotent, 401/413                            | tích hợp (AC-3)                           |
-| P3  | Deploy: `DEPLOY_START`, patch image bằng `udp-workload`, job `DEPLOY_WATCH`, undo + FAILURE + ROLLBACK; `DEPLOY_PENDING` + duyệt | tích hợp (AC-4, AC-6)                     |
-| P4  | Sáu adapter: GitHub Actions, GitLab CI, CircleCI (SaaS); Jenkins, Tekton, Drone (Helm)                                           | bộ hợp đồng + bộ CI/CD (AC-1), AST (AC-2) |
-| P5  | Portal (secret webhook hiện một lần, duyệt deploy chờ), §8.3/§5.5, sổ nợ, bàn giao; cổng S1 + Portal                             | test Portal, design-lint, S1 đầy đủ       |
+| Pha | Làm gì                                                                                                                                                                                            | Cổng                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| P1  | Migration: cột `domain_configs.webhook_secret` (niêm phong) + unique index một phần `deployment_events(deployment_id, environment_id, event_type)`; sinh/xoay secret webhook, hiện một lần, audit | tích hợp (AC-5)                           |
+| P2  | Lớp nền mô tả (`DescriptorAdapter`, gộp `RegistryAdapter`, có `requires`) + lớp bọc `CicdAdapter`; bộ phép CI/CD dùng chung (chữ ký đúng/sai/lệch độ dài, thân mẫu, template)                     | test thuần                                |
+| P3  | `POST /webhooks/cicd/:projectId/:provider`: thân thô ≤ 1 MiB, verify, parse, idempotent, 401/413/422                                                                                              | tích hợp (AC-3)                           |
+| P4  | Deploy: `DEPLOY_START`, patch image bằng `udp-workload` (+ `imagePullSecrets`, `progressDeadlineSeconds`), hàng đợi `udp-deploy`, undo + FAILURE + ROLLBACK; `DEPLOY_PENDING` + duyệt             | tích hợp (AC-4, AC-6)                     |
+| P5  | Sáu adapter: GitHub Actions, GitLab CI, CircleCI (mô tả); Jenkins, Tekton, Drone (Helm)                                                                                                           | bộ hợp đồng + bộ CI/CD (AC-1), AST (AC-2) |
+| P6  | Portal (secret webhook hiện một lần, template pipeline, duyệt deploy chờ), §8.3/§5.5, sổ nợ, bàn giao; cổng S1 + Portal                                                                           | test Portal, design-lint, S1 đầy đủ       |

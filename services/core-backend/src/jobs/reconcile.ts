@@ -1,5 +1,7 @@
+import { DEPLOY_WATCH } from "@udp/config";
 import type { PrismaClient } from "@udp/db";
 import type { JobQueue } from "./boss.js";
+import { abandonDeploy } from "./deploy.job.js";
 
 /**
  * Đối soát `ProvisioningJob` ↔ pg-boss (ADR-02 điều kiện 4, §8.1 "Đối soát bắt buộc").
@@ -65,6 +67,55 @@ export async function reconcileJobs(
     if (state === "failed" || state === "cancelled" || state === null) {
       await queue.enqueueCompensation(id);
       outcome.compensating.push(id);
+    }
+  }
+  return outcome;
+}
+
+export interface DeployReconcileOutcome {
+  resent: string[];
+  abandoned: string[];
+}
+
+/**
+ * Đối soát `DEPLOY_START` ↔ hàng `udp-deploy` (Plan #36 QĐ-5) — cùng hai lệch với job hạ tầng, trên
+ * nguồn sự thật là Event Store:
+ *
+ *  1. **START mà pg-boss chưa từng nhận** — tiến trình chết giữa commit và `send`, hay tiến trình
+ *     nhận webhook không chạy hàng đợi. Chữa: gửi lại; id trùng là không làm gì.
+ *  2. **pg-boss đã thôi mà START chưa kết luận** — worker chết ở lượt cuối. Chữa: kết luận FAILURE
+ *     kèm lý do, để lần deploy không treo "đang deploy" mãi và DORA đếm đúng.
+ */
+export async function reconcileDeploys(
+  prisma: PrismaClient,
+  queue: Pick<JobQueue, "deployStateOf" | "enqueueDeploy">,
+): Promise<DeployReconcileOutcome> {
+  const outcome: DeployReconcileOutcome = { resent: [], abandoned: [] };
+  const open = await prisma.$queryRaw<{ deployment_id: string }[]>`
+    SELECT s.deployment_id FROM deployment_events s
+     WHERE s.event_type = 'DEPLOY_START'
+       AND s.occurred_at < now() - make_interval(secs => ${DEPLOY_WATCH.resendAfterMs / 1000})
+       AND NOT EXISTS (
+         SELECT 1 FROM deployment_events c
+          WHERE c.deployment_id = s.deployment_id
+            AND c.environment_id = s.environment_id
+            AND c.event_type IN ('DEPLOY_SUCCESS', 'DEPLOY_FAILURE'))`;
+  for (const { deployment_id: id } of open) {
+    const state = await queue.deployStateOf(id);
+    if (state === null) {
+      await queue.enqueueDeploy(id);
+      outcome.resent.push(id);
+    } else if (
+      state === "failed" ||
+      state === "cancelled" ||
+      state === "completed"
+    ) {
+      await abandonDeploy(
+        prisma,
+        id,
+        `job deploy dừng ở trạng thái ${state} mà chưa kết luận`,
+      );
+      outcome.abandoned.push(id);
     }
   }
   return outcome;

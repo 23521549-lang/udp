@@ -3,7 +3,7 @@ import type { AdapterFixture } from "@udp/adapter-core";
 import { domainContractEnv } from "@udp/adapter-core/testing";
 import { describe, it } from "vitest";
 import {
-  REGISTRY_IGNORED_PREFIXES,
+  DESCRIPTOR_IGNORED_PREFIXES,
   registryDriftMutations,
 } from "../../adapter-base/contract-fixtures.js";
 import adapter from "./index.js";
@@ -28,7 +28,7 @@ function fixture(): AdapterFixture {
     ],
     externalHosts: [],
     quotaDimensions: [],
-    ignoredLabelPrefixes: REGISTRY_IGNORED_PREFIXES,
+    ignoredLabelPrefixes: DESCRIPTOR_IGNORED_PREFIXES,
     driftMutations: registryDriftMutations("ecr"),
   };
 }

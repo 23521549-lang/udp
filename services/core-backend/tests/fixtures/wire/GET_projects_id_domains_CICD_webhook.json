@@ -1,0 +1,11 @@
+{
+  "route": "GET /projects/{id}/domains/CICD/webhook",
+  "status": 200,
+  "body": {
+    "cicd": {
+      "provider": "github-actions",
+      "webhookPath": "/api/v1/webhooks/cicd/0fd560a8-c9ee-4e71-962a-a935699f5f89/github-actions",
+      "secretSet": false
+    }
+  }
+}

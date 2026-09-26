@@ -1329,3 +1329,49 @@ export type ProvisionPreviewWire = z.infer<
 export type ProvisioningJobWire = z.infer<typeof provisioningJobWire>;
 export type JobDetailWire = z.infer<typeof jobDetailResponseWire>;
 export type PutDomainsResponseWire = z.infer<typeof putDomainsResponseWire>;
+
+// ------------------------------------------------------------- CI/CD (Plan #36, §8.3)
+
+/** `GET /projects/:id/cicd` — tool CI đang bật, đường webhook, secret đã sinh chưa (không bao giờ giá trị) */
+export const cicdStatusResponseWire = z
+  .object({
+    cicd: z
+      .object({
+        provider: z.string().nullable(),
+        webhookPath: z.string().nullable(),
+        secretSet: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
+/** `POST /projects/:id/cicd/webhook-secret` — giá trị rõ CHỈ có ở response này (hiện một lần) */
+export const cicdSecretResponseWire = z
+  .object({
+    provider: z.string(),
+    webhookPath: z.string(),
+    secret: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+
+/** `GET /projects/:id/cicd/pipeline-template` — pipeline Golden Path của tool đang bật */
+export const pipelineTemplateResponseWire = z
+  .object({ provider: z.string(), content: z.string() })
+  .strict();
+
+/**
+ * `POST /webhooks/cicd/:projectId/:provider` và `POST /projects/:id/deployments/:deploymentId/approve`
+ * — webhook nhận xong trả ngay, việc áp và theo dõi chạy ở hàng đợi `udp-deploy`.
+ */
+export const deployAcceptedResponseWire = z
+  .object({
+    deploymentId: uuid,
+    status: z.enum(["duplicate", "failure-recorded", "pending", "started"]),
+  })
+  .strict();
+
+export type CicdStatusWire = z.infer<typeof cicdStatusResponseWire>["cicd"];
+export type CicdSecretResponseWire = z.infer<typeof cicdSecretResponseWire>;
+export type DeployAcceptedResponseWire = z.infer<
+  typeof deployAcceptedResponseWire
+>;

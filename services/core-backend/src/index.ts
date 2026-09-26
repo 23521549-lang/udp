@@ -1,16 +1,23 @@
 import { hostname } from "node:os";
-import { directDatabaseUrl, env, JOB_LEASE, JOB_QUEUE } from "@udp/config";
+import {
+  DEPLOY_WATCH,
+  directDatabaseUrl,
+  env,
+  JOB_LEASE,
+  JOB_QUEUE,
+} from "@udp/config";
 import { assertServiceIdentity, prisma } from "./core/db.js";
 import { createApp } from "./app.js";
 import { defaultAppDeps } from "./core/app-deps.js";
 import { createEgressFetch } from "./core/egress/egress.js";
 import { startJobQueue, type JobQueue } from "./jobs/boss.js";
+import { createDeployJob } from "./jobs/deploy.job.js";
 import { sweepDrift } from "./jobs/drift-scan.job.js";
 import { createJobKit, type JobKit, type JobKitDeps } from "./jobs/job-kit.js";
 import { createJobWorker } from "./jobs/job-worker.js";
 import { sweepOrphans } from "./jobs/orphan-scan.job.js";
 import { sweepProjectTtl } from "./jobs/project-ttl.job.js";
-import { reconcileJobs } from "./jobs/reconcile.js";
+import { reconcileDeploys, reconcileJobs } from "./jobs/reconcile.js";
 import {
   createClusterRuntime,
   egressTransport,
@@ -64,6 +71,8 @@ async function startJobs(): Promise<{ queue: JobQueue; kit: JobKit }> {
     schema: env.PGBOSS_SCHEMA,
     retryLimit: env.JOB_RETRY_LIMIT,
     expireInSeconds: env.JOB_EXPIRE_MINUTES * 60,
+    // Trần một lượt theo dõi + năm phút cho áp, hoàn tác và ghi kết luận
+    deployExpireInSeconds: DEPLOY_WATCH.maxWatchSeconds + 300,
     heartbeatSeconds: JOB_LEASE.renewIntervalMs / 1_000,
     pollingIntervalSeconds: JOB_QUEUE.pollingIntervalSeconds,
   });
@@ -84,10 +93,19 @@ async function startJobs(): Promise<{ queue: JobQueue; kit: JobKit }> {
   const kit = createJobKit(workerDeps);
   await queue.workJobs((jobId, attempt) => worker.run(jobId, attempt));
   await queue.workCompensation((jobId) => worker.compensate(jobId));
+  const deploys = createDeployJob(kit, DEPLOY_WATCH);
+  await queue.workDeploys(
+    (deploymentId, attempt) => deploys.run(deploymentId, attempt),
+    DEPLOY_WATCH.concurrency,
+  );
   await queue.schedule("reconcile", JOB_QUEUE.reconcileCron, async () => {
     const outcome = await reconcileJobs(prisma, queue);
     if (outcome.resent.length + outcome.compensating.length > 0) {
       logger.warn(outcome, "Đối soát job đã chữa lệch");
+    }
+    const deployOutcome = await reconcileDeploys(prisma, queue);
+    if (deployOutcome.resent.length + deployOutcome.abandoned.length > 0) {
+      logger.warn(deployOutcome, "Đối soát deploy đã chữa lệch");
     }
   });
   await queue.schedule("projectTtl", JOB_QUEUE.projectTtlCron, async () => {
@@ -123,6 +141,7 @@ const app = createApp({
   provisioning: {
     ...deps.provisioning,
     enqueue: queue.enqueueJob,
+    enqueueDeploy: queue.enqueueDeploy,
     scanDrift: async (projectId, domainType) => {
       await sweepDrift(kit, { only: [projectId], domainType });
     },

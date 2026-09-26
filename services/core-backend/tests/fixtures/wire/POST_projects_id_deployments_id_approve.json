@@ -1,0 +1,8 @@
+{
+  "route": "POST /projects/{id}/deployments/{id}/approve",
+  "status": 200,
+  "body": {
+    "deploymentId": "17383235-c7eb-4d18-a031-96fc3a932bdc",
+    "status": "duplicate"
+  }
+}

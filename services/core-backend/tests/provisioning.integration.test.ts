@@ -37,6 +37,7 @@ const provisioning: ProvisioningRuntime = {
     enqueued.push(jobId);
     return Promise.resolve();
   },
+  enqueueDeploy: null,
   scanDrift: null,
 };
 

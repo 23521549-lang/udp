@@ -57,6 +57,16 @@ const toLabel = (value: string, max: number): string =>
     .replace(/-+$/g, "");
 
 /**
+ * [v4.11] Tên workload mà template pipeline Golden Path dựng cho project (§11, Plan #36): một
+ * Deployment và container CÙNG tên — thứ webhook deploy đổi image (§8.3). Cùng luật bỏ dấu với
+ * namespace; tên project không còn ký tự nào dùng được ⇒ `app`.
+ */
+const WORKLOAD_SLUG_MAX = 40;
+
+export const workloadSlugFor = (projectName: string): string =>
+  toLabel(projectName, WORKLOAD_SLUG_MAX) || "app";
+
+/**
  * Sinh namespace K8s cho một environment.
  *
  * Bản trước — `udp-{project}-{env}` rồi `slice(0, 63)` — hỏng ba cách, cả ba
@@ -482,6 +492,29 @@ export const JOB_QUEUE = {
   orphanScanCron: "*/10 * * * *",
   /** Mỗi 6 giờ (§8.6 nhánh A) */
   driftScanCron: "0 */6 * * *",
+} as const;
+
+/**
+ * [v4.11] Webhook CI/CD (§8.3, Plan #36). Thân của UDP chỉ vài trăm byte; trần 1 MiB chặn một CI
+ * bị chiếm làm đầy bộ nhớ bằng thân khổng lồ trước khi chữ ký được kiểm.
+ */
+export const CICD_WEBHOOK = {
+  bodyLimitBytes: 1_048_576,
+} as const;
+
+/**
+ * [v4.11] Theo dõi một lần deploy trên hàng đợi `udp-deploy` (Plan #36 QĐ-5). Hạn thật là
+ * `progressDeadlineSeconds` của CHÍNH workload (Kubernetes điền 600 khi vắng); trần một lượt nằm
+ * dưới `expireInSeconds` của hàng đợi, để pg-boss không coi một lượt còn sống là đã chết.
+ */
+export const DEPLOY_WATCH = {
+  pollMs: 10_000,
+  defaultProgressDeadlineSeconds: 600,
+  maxWatchSeconds: 1_800,
+  /** Số lần deploy theo dõi song song mỗi tiến trình — mỗi lần giữ một lượt tới 30 phút */
+  concurrency: 4,
+  /** START chưa kết luận trẻ hơn mốc này có thể đang giữa commit và `send` — chưa phải lệch */
+  resendAfterMs: 60_000,
 } as const;
 
 /**

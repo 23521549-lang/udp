@@ -1,4 +1,5 @@
 import type {
+  DeploymentWire,
   DoraWire,
   ProjectDetailResponseWire,
 } from "@udp/shared-types/wire";
@@ -49,6 +50,55 @@ describe("Deploy + DORA", () => {
     expect(formatDuration(45)).toBe("45 giây");
     expect(formatDuration(9000)).toBe("2 giờ 30 phút");
     expect(formatDuration(4 * 86400)).toBe("4 ngày");
+  });
+
+  it("deploy chờ duyệt: MAINTAINER duyệt ⇒ POST approve rồi tải lại danh sách; VIEWER không có nút", async () => {
+    const { detail } = setup();
+    const list = golden<{ deployments: DeploymentWire[] }>(
+      "GET /projects/{id}/deployments",
+    );
+    const first = list.deployments[0]!;
+    first.status = "DEPLOY_PENDING";
+    const approved: string[] = [];
+    let reads = 0;
+    server.use(
+      http.get(`${API}/projects/:id/deployments`, () => {
+        reads += 1;
+        return HttpResponse.json(list);
+      }),
+      http.post(
+        `${API}/projects/:id/deployments/:deploymentId/approve`,
+        ({ params }) => {
+          approved.push(String(params.deploymentId));
+          return HttpResponse.json(
+            golden("POST /projects/{id}/deployments/{id}/approve"),
+            { status: 202 },
+          );
+        },
+      ),
+    );
+
+    detail.project.myRole = "VIEWER";
+    const viewer = renderApp(`/app/projects/${detail.project.id}/deployments`);
+    await screen.findByText("Chờ duyệt");
+    expect(
+      screen.queryByRole("button", { name: "Duyệt deploy" }),
+    ).not.toBeInTheDocument();
+    viewer.unmount();
+
+    detail.project.myRole = "MAINTAINER";
+    renderApp(`/app/projects/${detail.project.id}/deployments`);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Duyệt deploy" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    const before = reads;
+    await user.click(
+      within(dialog).getByRole("button", { name: "Duyệt deploy" }),
+    );
+    await waitFor(() => expect(approved).toEqual([first.deploymentId]));
+    await waitFor(() => expect(reads).toBeGreaterThan(before));
   });
 
   it("danh sách deployment hiện trạng thái bằng CHỮ", async () => {

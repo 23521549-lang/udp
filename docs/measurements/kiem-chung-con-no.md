@@ -767,25 +767,39 @@ owned` còn có tài nguyên mang `shared`.
 - **Ảnh hưởng tới kết luận:** nửa còn lại của **ADR-06**. Phần đã làm chứng minh
   interface đủ cho `direct`; nó chưa chứng minh interface đủ cho cả hai.
 
-## cicd-adapter — họ CI/CD mới có mặt KIỂU, chưa có hiện thực
+## cicd-webhook-real — webhook từ sáu CI thật và deploy trên cluster thật
 
-- **Vì sao nợ:** `CicdDomainAdapter` mở rộng `DomainAdapter` bằng ba phương thức
-  (`verifySignature`, `parsePayload`, `renderPipelineTemplate`) và bề mặt đó đã được
-  đóng băng cùng hai interface kia (`adapter-interface-freeze.test.ts` đối chiếu tài
-  liệu với mã, từng tên). Nhưng chưa có adapter CI/CD nào hiện thực nó, nên
-  `verifySignature` — thứ PHẢI dùng `crypto.timingSafeEqual` để không rò thông tin qua
-  thời gian so chuỗi — chưa có thân để mà kiểm.
-- **Tiền đề:** không cần hạ tầng; đây là phần việc còn lại của một plan sau (adapter
-  `github-actions` hoặc `gitlab-ci`).
-- **Lệnh:** khi có adapter: bộ hợp đồng 42 phép cộng một phép kiểm CẤU TRÚC bằng AST
-  khẳng định `verifySignature` gọi `timingSafeEqual` và KHÔNG dùng `===` trên chữ ký.
-- **Đạt:** hai chữ ký khác độ dài trả `false` mà KHÔNG ném (`timingSafeEqual` ném khi
-  độ dài lệch, nên hiện thực phải kiểm độ dài trước), và AST không thấy phép so chuỗi
-  nào trên chữ ký. **Không đạt:** so bằng `===` ⇒ rò độ dài tiền tố khớp qua thời gian.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** nửa sau của AC-15. Phần "kiểu tồn tại và được đóng băng"
-  đã xong và kiểm được; phần "verifySignature so theo thời gian hằng" thì chưa có mã để
-  mà kiểm, và nói nó đã xong là nói sai.
+- **Vì sao nợ:** sáu adapter CI/CD (Plan #36) qua bộ hợp đồng và bộ phép CI/CD dùng chung —
+  chữ ký đúng/sai/lệch độ dài, thân mẫu, template — trên thân do CHÍNH test ký; luồng webhook
+  (401 đồng nhất, 413, chống trùng, chờ duyệt) chạy trên database thật; luồng deploy chạy trên
+  client Kubernetes giả trả trạng thái workload theo kịch bản. Chưa đo: template sinh ra chạy
+  thật ở GitHub Actions, GitLab CI, CircleCI, Jenkins, Tekton, Drone và gọi về UDP qua Internet
+  (biến môi trường của từng CI, `jq`/`openssl` có sẵn trên runner); merge patch và điều kiện
+  `resourceVersion` trên API server thật; `ProgressDeadlineExceeded` do controller thật ghi;
+  `phase` của Argo Rollouts; target Deployment do Flagger giữ `replicas: 0` (lời phán "xong"
+  của S1 khi đó chỉ nghĩa là ảnh đã được nhận).
+- **Tiền đề:** cluster (`I32-cluster`) có một Deployment mẫu (và một `Rollout` khi bật Argo
+  Rollouts); UDP có địa chỉ công khai (tunnel); repo thử ở sáu nhà cung cấp, secret webhook
+  dán vào biến `UDP_WEBHOOK_SECRET`.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- cicd.real` (tệp CHƯA CÓ; nó đẩy một
+  commit vào repo thử ở từng CI rồi chờ `DEPLOY_SUCCESS` cùng `commitTimestamp`, sau đó đẩy
+  một ảnh hỏng và chờ `DEPLOY_FAILURE` + `ROLLBACK`).
+- **Đạt:** mỗi CI: một `DEPLOY_START` + một `DEPLOY_SUCCESS` cùng `deploymentId`, lead time
+  tính được; ảnh hỏng ⇒ workload về ảnh cũ trong hạn + FAILURE + ROLLBACK; chạy lại pipeline
+  cho `deploymentId` mới, gửi lại cùng thân ⇒ `duplicate`. Port, env, probe của container giữ
+  nguyên sau patch. **Không đạt:** chữ ký của một CI không qua ⇒ sửa bước "báo UDP" của template
+  đó; container mất trường ⇒ patch sai hình.
+- **Tài nguyên:** cluster (~3 GiB) + tài khoản miễn phí ở năm CI dịch vụ, Jenkins/Tekton/Drone
+  cài bằng chính adapter.
+- **Ảnh hưởng tới kết luận:** AC-3 và AC-4 của Plan #36 ở hạ tầng thật, và **E10** (DORA tính từ
+  dữ liệu vận hành của chính UDP): đến khi mục này đo xong, lead time và tần suất deploy chỉ được
+  chứng minh trên sự kiện do test ghi.
+
+> **Đã trả (26/09/2026, Plan #36):** `cicd-adapter` — sáu adapter hiện thực
+> `CicdDomainAdapter`; mọi `verifySignature` đi qua `constantTimeEquals` (kiểm độ dài rồi
+> `timingSafeEqual`). Bằng chứng: bộ phép CI/CD dùng chung chạy trên cả sáu (chữ ký lệch độ dài
+> ⇒ `false`, không ném) và phép kiểm AST của `design-lint` — không `===`/`!==` trên chữ ký, mọi
+> hiện thực gọi `timingSafeEqual` qua đúng một hàm.
 
 ---
 

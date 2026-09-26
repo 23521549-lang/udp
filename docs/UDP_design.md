@@ -654,6 +654,7 @@ erDiagram
         timestamp updated_at
         string adapter_version "nullable"
         jsonb last_error "nullable"
+        jsonb webhook_secret "nullable, v4.11 chỉ hàng CICD, niêm phong"
     }
 
     FeatureFlag {
@@ -1166,6 +1167,7 @@ Danh sách domain **không** nằm trong DDL. Nó nằm ở đây, và các hàn
 | tool_config       | JSONB        | NULLABLE                                 | Validate bằng Zod theo `(domain_type, selected_tool)`; trường đánh dấu `secret` trong schema được mã hóa như §4.3 trước khi lưu |
 | last_error        | JSONB        | NULLABLE                                 | **[NEW v4]** Lỗi gần nhất của domain này — `{ step, message, adapterResult }`, đã lược bỏ credential. Tách khỏi `ProvisioningJob.last_error` vì một job đổi nhiều domain có thể hỏng từng phần (§8.6, I32): job báo lỗi chung, cột này nói domain NÀO hỏng |
 | adapter_version   | VARCHAR(20)  | NULLABLE                                 | **[NEW v4]** Phiên bản adapter/chart đã deploy — để `upgrade()` và `detectDrift()` (§5.2) |
+| webhook_secret    | JSONB        | NULLABLE                                 | **[v4.11, Plan #36]** Chỉ hàng CICD: secret HMAC ký webhook (§8.3). UDP SINH (32 byte), không phải trường `configSchema`; `EncryptedCredential` niêm phong như §4.3 (AAD `cicd:webhook \| project`), không bao giờ lên dây ở GET |
 | updated_at        | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                  |                                                                                             |
 
 ```sql
@@ -1617,6 +1619,12 @@ CREATE UNIQUE INDEX idx_deploy_pipeline_once
 ON DeploymentEvent (project_id, pipeline_id, event_type) WHERE pipeline_id IS NOT NULL;
 CREATE INDEX idx_deploy_env_time ON DeploymentEvent (project_id, environment_id, occurred_at DESC);
 CREATE INDEX idx_deploy_deployment ON DeploymentEvent (deployment_id);
+-- [v4.11, Plan #36] Mỗi (deployment, environment, loại) MỘT sự kiện cho bốn loại deploy: job deploy
+-- ghi bằng ON CONFLICT DO NOTHING, nên worker thứ hai (hết lease, khởi động lại) không ghi hai
+-- lần SUCCESS. Có environment_id vì provisioning ghi một sự kiện mỗi environment cùng deployment_id
+CREATE UNIQUE INDEX deployment_events_once_per_kind ON DeploymentEvent
+  (deployment_id, environment_id, event_type)
+  WHERE event_type IN ('DEPLOY_PENDING', 'DEPLOY_START', 'DEPLOY_SUCCESS', 'DEPLOY_FAILURE');
 ```
 
 > **Append-only:** Bảng này chỉ INSERT, không bao giờ UPDATE hoặc DELETE. Đảm bảo lịch sử toàn vẹn cho DORA metrics.
@@ -2811,6 +2819,14 @@ interface WebhookDeployEvent {
   /** Image đã build, nếu payload có. Vắng nghĩa là pipeline chưa push */
   imageRef?: string;
   actor: string;
+  /** [v4.11, D-P27] Bốn trường mà §8.3 dùng nhưng kiểu v4.10 thiếu */
+  /** Id của LƯỢT chạy — khoá chống trùng; chạy lại phải ra id khác */
+  pipelineId: string;
+  status: "success" | "failure";
+  /** Cho Lead Time của DORA — không suy được từ `commitSha` */
+  commitTimestamp?: string;
+  /** Deployment/Rollout đã có trong namespace của environment; container cùng tên */
+  workloadName: string;
 }
 
 interface PipelineTemplateParams {
@@ -2837,6 +2853,8 @@ interface CicdDomainAdapter extends DomainAdapter {
 | ---------- | -------- | ------------------------- |
 | `HelmBasedAdapter` | Hầu hết heavy adapter và light adapter self-hosted: Prometheus, Loki, Istio, Argo CD, Flux, Gatekeeper, CNPG, Harbor, Vault… | Tên chart + repo + values từ `tool_config`, danh sách CRD phải chờ, các CR cần tạo sau khi chart sẵn sàng, cách tính `CapabilityBinding`. `deploy/upgrade/detectDrift/teardown` là `helm upgrade --install` / `helm diff` / `helm uninstall` có sẵn |
 | `SaaSAdapter` | Datadog, New Relic, Snyk, GHCR, ECR, GitHub Actions…: **không deploy gì vào cluster**, chỉ cấu hình phía SaaS (API key, webhook, secret trong namespace) | `configure()` gọi API SaaS qua `ctx.fetch`, tạo `Secret`/`ConfigMap` trong namespace env, trả binding. **[v4.10]** `deploy()` của họ này **gọi thẳng** `configure()` — xem ngay dưới |
+
+> **[v4.11, D-P26, D-P27] Lớp nền thứ ba `DescriptorAdapter`** — cho tool không cài gì vào cluster VÀ không gọi API nào lúc cài: registry dịch vụ (GHCR, ECR, Docker Hub…) và CI dịch vụ (GitHub Actions, GitLab CI, CircleCI). Thứ nó để lại đúng một ConfigMap mô tả trong `udp-system` (đích của drift); mô tả được đọc binding đã resolve (CI ghi `registryRef` từ `registry.oci`) và `onDependencyChanged` ghi lại mô tả với binding mới. `SaaSAdapter` giữ cho tool có API phải gọi (Datadog, New Relic, Splunk…). CI/CD bọc thêm `verifySignature`/`parsePayload`/`renderPipelineTemplate` (`CicdAdapter`) quanh lớp nền của họ gốc — mô tả cho CI dịch vụ, Helm cho Jenkins, Tekton, Drone.
 
 > Đây cũng là "adapter không vừa khung" mà E1 cần: nếu `SaaSAdapter` viết được mà không sửa interface, khung không gò ép; nếu phải sửa, số lần sửa là số liệu.
 
@@ -3302,6 +3320,8 @@ interface MetricsProvider {
 | CircleCI       | Heavy | —        | Cloud-native, orbs reusable config                 |
 | Tekton         | Heavy | —        | K8s-native pipeline, CNCF graduated                |
 | Drone CI       | Heavy | —        | Lightweight, container-based steps                 |
+
+> **[v4.11, Plan #36, D-P27]** Sáu adapter hiện thực `CicdDomainAdapter` (§5.2), cả sáu `requires: registry.oci` (pipeline đẩy image tới ĐÚNG registry của binding, không đoán) và `provides: pipeline.trigger`. GitHub Actions, GitLab CI, CircleCI chạy ở nhà cung cấp — lớp nền mô tả, ConfigMap `udp-cicd-<tool>` (repo, registry, header chữ ký) là đích drift. Jenkins (`jenkins/jenkins`), Tekton (`tekton-pipeline`), Drone (`drone` + release đi kèm `drone-runner-kube`) đi họ Helm, cài vào `udp-system`. `renderPipelineTemplate` sinh pipeline Golden Path (§11) mà bước cuối dựng và ký thân webhook của UDP; luồng nhận webhook và áp image ở §8.3.
 
 ---
 
@@ -5029,7 +5049,7 @@ sequenceDiagram
     Dev->>CI: git push lên nhánh main
     CI->>CI: checkout → test → build image → push registry
 
-    CI->>BE: POST /webhooks/cicd/:provider
+    CI->>BE: POST /webhooks/cicd/:projectId/:provider
     BE->>VER: verify(providerId, headers, rawBody)
     VER->>ADP: adapter.verifySignature(...)
     Note over ADP: GitHub: HMAC X-Hub-Signature-256<br/>GitLab: X-Gitlab-Token so sánh hằng thời gian<br/>Jenkins: chữ ký riêng
@@ -5037,7 +5057,7 @@ sequenceDiagram
         VER-->>CI: 401 Unauthorized
         BE->>ES: Ghi nhận lần verify thất bại (phát hiện dò quét)
     else Chữ ký đúng
-        BE->>ADP: adapter.parsePayload(rawBody) → {projectId, env, status, imageTag, commitSha, pipelineId}
+        BE->>ADP: adapter.parsePayload(rawBody) → {env, status, imageRef, commitSha, commitTimestamp, workloadName, pipelineId}
         BE->>ES: Đã xử lý pipelineId này chưa?
         alt Đã xử lý
             BE-->>CI: 200 OK — bỏ qua trùng lặp
@@ -5046,7 +5066,7 @@ sequenceDiagram
             alt Pipeline thành công
                 BE->>ES: DEPLOY_START {deployment_id, commit_sha, commit_timestamp, workload_name}
                 Note over BE,K8S: ADR-06 — S1 lấy bound SA token 1h qua ClusterAccess.<br/>Không đọc kubeconfig từ đĩa, không lưu token xuống DB (I24)
-                BE->>K8S: Apply workload manifest (Deployment hoặc Rollout)<br/>vào namespace của ĐÚNG environment
+                BE->>K8S: Patch image của workload ĐÃ CÓ (Deployment hoặc Rollout)<br/>trong namespace của ĐÚNG environment
                 Note right of BE: ADR-01 — S1 CHỈ ghi image tag, replicas, env var.<br/>KHÔNG bao giờ sửa spec.strategy hay trạng thái rollout;<br/>đó là vùng của Service 3 (I25)
                 BE->>K8S: Theo dõi rollout status (có timeout)
                 alt Rollout timeout hoặc CrashLoopBackOff
@@ -5075,6 +5095,8 @@ sequenceDiagram
 | Deploy xong không xử lý trường hợp pod không lên được | Theo dõi rollout có timeout; `CrashLoopBackOff` hoặc quá hạn ⇒ `rollout undo` tự động + ghi `DEPLOY_FAILURE` |
 
 > Webhook luôn mang `environment`; deploy vào `prod` yêu cầu environment đó được đánh dấu cho phép deploy tự động, nếu không thì chỉ tạo bản ghi chờ và cần người có quyền bấm duyệt trên Portal.
+
+> **[v4.11, Plan #36, D-P27] Hiện thực.** (1) **Đường dẫn mang project** — `POST /api/v1/webhooks/cicd/:projectId/:provider`: secret được tra TRƯỚC khi đọc thân, nên không parse dữ liệu chưa xác thực; "project không có", "chưa bật CI/CD", "chưa sinh secret" và "chữ ký sai" là CÙNG một 401 (không thành oracle dò project), chữ ký sai ghi `AuditLog` `cicd.webhook.rejected` (không ghi thân hay header). Thân thô tối đa 1 MiB (413), không qua parser JSON toàn cục, không qua CSRF. (2) **Thân là JSON của UDP** `{environment, status, commitSha, commitTimestamp?, imageRef?, workloadName, pipelineId, repo, ref, actor}` — `.strict()`, do bước cuối của pipeline mà `renderPipelineTemplate` sinh dựng rồi ký ĐÚNG chuỗi byte gửi đi; kiểu header là của nhà cung cấp (GitHub `X-Hub-Signature-256: sha256=`, GitLab `X-Gitlab-Token`, CircleCI `circleci-signature: v1=`, Jenkins/Tekton/Drone `X-UDP-Signature: sha256=`), so bằng `timingSafeEqual` sau khi kiểm độ dài. (3) **Secret** 32 byte ngẫu nhiên, niêm phong envelope (AAD `cicd:webhook | project`) ở cột `domain_configs.webhook_secret` của hàng CICD; sinh/xoay bằng `POST /projects/:id/domains/CICD/webhook-secret` (MAINTAINER, audit), giá trị rõ chỉ ở response đó. (4) **Chống trùng** theo `(environment, pipelineId)` dưới advisory lock của transaction — template dùng id đổi theo lượt chạy lại (`run_id-run_attempt`, `CI_PIPELINE_ID-CI_JOB_ID`). (5) **Áp image** bằng `udp-workload`: merge patch mang NGUYÊN mảng `containers` đã đọc (merge patch thay cả mảng) chỉ đổi `image` của container cùng tên workload, thêm `imagePullSecrets: [udp-registry-pull]`, kèm `metadata.resourceVersion` (409 ⇒ đọc lại, thử lại). Workload hay container chưa có ⇒ `DEPLOY_FAILURE`, không tạo mới. (6) **Theo dõi** ở hàng đợi riêng `udp-deploy` (id job = `deploymentId`), không phải `ProvisioningJob`: hạn là `progressDeadlineSeconds` của chính workload (trần 30 phút), hỏng đọc từ `Progressing=False/ProgressDeadlineExceeded` (Deployment) hay `phase=Degraded` (Rollout) — không cần quyền đọc pod. Quá hạn ⇒ patch về image trước (từ cluster, hay từ lần SUCCESS gần nhất khi lượt thử lại đã áp) rồi FAILURE + ROLLBACK trong CÙNG transaction. Unique index một phần `(deployment_id, environment_id, event_type)` cho bốn loại sự kiện deploy + `ON CONFLICT DO NOTHING` ⇒ hai worker không ghi hai lần SUCCESS; `DEPLOY_START` chưa kết luận là outbox mà đối soát gửi lại. (7) **Duyệt** `POST /projects/:id/deployments/:deploymentId/approve` (MAINTAINER) ghi `DEPLOY_START` từ bản ghi chờ rồi gửi job; bấm đồng thời ⇒ một START, người sau nhận `duplicate`.
 
 **Vì sao `deployment_id` là bắt buộc chứ không phải trang trí [v4]:** cả năm chỉ số DORA đều tính từ `DeploymentEvent`, và bốn trong năm cần biết **những sự kiện nào thuộc cùng một lần deploy**:
 
@@ -5520,6 +5542,10 @@ Deployments
 GET    /api/v1/projects/:id/deployments?envId=
 GET    /api/v1/projects/:id/deployments/latest?envId=
 GET    /api/v1/projects/:id/deployments/:deploymentId/logs
+POST   /api/v1/projects/:id/deployments/:deploymentId/approve   [v4.11] deploy chờ duyệt ⇒ chạy
+GET    /api/v1/projects/:id/domains/CICD/webhook                [v4.11] đường webhook, secret đã sinh chưa
+POST   /api/v1/projects/:id/domains/CICD/webhook-secret         [v4.11] sinh/xoay, hiện MỘT lần
+GET    /api/v1/projects/:id/domains/CICD/pipeline-template      [v4.11] pipeline Golden Path (§11)
 GET    /api/v1/projects/:id/metrics/dora              [v4] 5 chỉ số DORA từ Event Store:
                                                       deployment frequency, lead time for changes,
                                                       change failure rate, failed deployment
@@ -5532,7 +5558,10 @@ GET    /api/v1/projects/:id/audit?action=&actor=&from=&to=&limit=
 
 Webhooks
 ────────────────────────────────────────────────────────────────
-POST   /api/v1/webhooks/cicd/:provider     [UPDATED] verify ủy quyền cho CI/CD adapter
+POST   /api/v1/webhooks/cicd/:projectId/:provider   [v4.11, D-P27] verify ủy quyền cho CI/CD
+                                                    adapter; project trong đường dẫn để tra secret
+                                                    TRƯỚC khi đọc thân (§8.3). 200 trùng / thất bại
+                                                    đã ghi, 202 đã nhận deploy / chờ duyệt
 
 Internal — chỉ Service 2 và Service 3 gọi                      [NEW v4]
        Xác thực: SA token + TokenReview (§12), KHÔNG phơi ra Internet,
@@ -6878,6 +6907,7 @@ Plan #25 dựng Portal theo §10 và theo bản mẫu đã duyệt (`docs/design
 | D-P18 | §8.1, §8.2, §9 Domain | Tham số `:domainId` (sơ đồ §8.6) lẫn `:type` (§9); `PUT /capability-preferences` riêng; `DomainValidationResponse` có `rebindPlan`; PUT cho mọi trạng thái project, 202 {jobId} | `:type` (UNIQUE với project); `preferences` đi CÙNG body `PUT /domains` (trạng thái đích cả tập, khoá `domain_set_version` có điều kiện trong transaction); không `rebindPlan`; PUT cho project DRAFT hoặc ERROR lưu thẳng (PENDING); project ACTIVE ⇒ 202 kèm job `DOMAIN_APPLY` (Plan #30, bảng giữ cấu hình ĐANG chạy tới khi áp xong); đang triển khai ⇒ 409 `domains-need-apply-job`; form cấu hình dựng từ `configSchema` của adapter (`configFields`); `GET …/drift` chỉ ĐỌC | Hai endpoint cùng sửa trạng thái đích là hai cửa sổ đua với cùng một khoá. `rebindPlan` chỉ có nghĩa khi đã có binding, tức sau job `DOMAIN_APPLY` — thứ chưa có hàng đợi; áp cho project đã triển khai và hai route Day-2 POST đến ở Plan #30 cùng hàng đợi, không bao giờ là route trả 202 mà không có gì thực thi |
 | D-P19 | §8.1, §9 Provisioning | `boss.send()` trong CÙNG transaction qua `fromPrisma(tx)`; `POST /jobs/:jobId/retry` riêng; SSE `{state, currentStep, resources[], progressLog[]}` | Hàng `ProvisioningJob` QUEUED là outbox, gửi pg-boss SAU commit với `id` = id hàng, đối soát gửi lại hàng mất job; chạy lại = `POST /provision` khi project ERROR: transaction tạo job ĐÓNG chu kỳ sổ của lượt trước (hàng `DELETED` xoá khỏi bảng, danh sách vào `audit_logs`), còn hàng `ORPHAN_SUSPECTED` thì chặn (`orphans-pending`); project sang PROVISIONING ngay trong transaction tạo job; SSE gửi ảnh chụp = CHÍNH body `GET /jobs/:jobId` (đọc DB mỗi giây, heartbeat 15 giây, đóng ở trạng thái cuối), Portal chỉ `invalidateQueries`; hủy sạch ⇒ project về DRAFT | `send()` qua `udp_s1` cần GRANT trên schema pg-boss tự tạo LÚC CHẠY, sau mọi migration (Plan #28 QĐ-1). Retry riêng lặp đúng đường provision. `DELETED` là trạng thái cuối và là đáy hội tụ của I31, nên lượt mới không mở một cạnh `DELETED → CREATING` mà nhường khoá tất định bằng cách chuyển hàng cũ sang bảng append-only. Rời DRAFT trong transaction là để domain và quota không đổi giữa lúc xác nhận chi phí và lúc worker nhận việc. Không có bảng `progressLog`: worker và request có thể ở hai tiến trình, nên nguồn duy nhất là database |
 | D-P20 | §8.1, §9 `DELETE /projects/:id`, §3.1 `jobs/` | `teardown.job.ts`, `project-ttl.job.ts` riêng; trạng thái job theo từng luồng | MỘT hàng `udp-jobs` cho mọi `ProvisioningJob`, worker rẽ theo `job_type`; TEARDOWN dùng lại `QUEUED → COMPENSATING → DONE \| COMPENSATION_FAILED`; xoá khi PROVISION còn chạy ⇒ hủy nó (bù trừ chính là teardown), không job thứ hai; worker không bao giờ ghi trạng thái cho project đã xoá mềm; ba lịch `project-ttl` (1 giờ), `orphan-scan` (10 phút), `drift-scan` (6 giờ) trên `boss.schedule` | Một hàng, một đối soát, một lease thay vì ba cơ chế. Enum trạng thái không cần migration. Hai job cùng dọn một project là tranh nhau tài nguyên. Mốc cảnh báo TTL nhớ bằng audit append-only, không thêm cột |
+| D-P27 | §5.2 `WebhookDeployEvent`, `SaaSAdapter`; §8.3; §9 Webhooks | `POST /webhooks/cicd/:provider` lấy project từ payload; kiểu thiếu `pipelineId`, `status`, `commitTimestamp`, `workloadName` mà sơ đồ §8.3 dùng; "apply workload manifest"; GitHub Actions, GitLab CI, CircleCI là `SaaSAdapter` | Project trong ĐƯỜNG DẪN, mọi từ chối trước chữ ký đúng là cùng một 401; thân là JSON của UDP do template dựng và ký, header chữ ký theo nhà cung cấp; kiểu thêm bốn trường; secret sinh/xoay bằng route riêng, hiện một lần; deploy = merge patch image của workload ĐÃ CÓ mang nguyên mảng `containers` + `resourceVersion`, theo dõi ở hàng đợi `udp-deploy`, hạn đọc từ chính workload; CI dịch vụ đi lớp nền mô tả (gộp `RegistryAdapter`) có `requires: registry.oci` | Đọc thân để biết project là parse dữ liệu chưa xác thực và biến webhook thành oracle dò project. Thiếu `pipelineId` thì không chống trùng; thiếu `commitTimestamp` thì không có lead time DORA. Merge patch thay cả mảng: gửi `[{name, image}]` là xoá port, env, probe của container. Deploy trên hàng đợi job hạ tầng ngập `/jobs` và chặn lưu cấu hình domain. CI dịch vụ không gọi API nào lúc cài — `apiHost`/header xác thực của `SaaSAdapter` vô nghĩa ở đó |
 | D-P26 | §5.5 Container Registry / Artifact Registry, §5.3, §12.2 | Kéo image riêng tư không nói bằng gì; §12.2 cấm `secrets` ngoài namespace của SA; `CapabilityId` không có kho package | Registry cloud kéo bằng định danh node; registry cần khoá khai `pullCredential`, nền tảng gộp vào `udp-registry-pull` mỗi env (bootstrap tạo rỗng, `udp-tooling` chỉ `get/update/patch` đúng tên đó); lớp nền `RegistryAdapter`; capability `packages.store` | Pull secret tĩnh cho ECR hết hạn sau 12 giờ. Adapter Helm là cluster-scoped, bộ hợp đồng cấm chạm namespace env — phân phối là việc của nền tảng. Ngoại lệ RBAC hẹp nhất có thể (một tên, không tạo/liệt kê/xoá), bộ kiểm vẫn đỏ với mọi dạng rộng hơn |
 | D-P25 | §5.5 GitOps / Policy / Secrets, §12.2 | Policy "enforce khi provision" không nói gì về chính namespace của nền tảng; `secrets.store` không nói cơ chế; Flux vừa là GitOps tool vừa là cơ chế cài của UDP | Webhook policy miễn trừ `udp-system` + `kube-system`; binding `secrets.store` mang `provider` + định danh công khai; kho cloud qua CSI + workload identity; Vault không giữ unseal key; Flux = `flux2` + `flux2-sync`, cơ chế cài của UDP là `helm upgrade --install` độc lập (HelmRelease trong mô phỏng chỉ là bản ghi); repo Git chỉ `https://` | Policy chặn chính nền tảng là lỗi chỉ lộ ở lượt nâng cấp kế. Consumer phải biết lấy bí mật bằng cơ chế nào. Giữ unseal key là giữ chìa khoá mọi bí mật của khách. `ssh://` là một cấu hình khác hẳn; `http://` gửi token qua kênh trần |
 | D-P24 | §5.3, §5.5 Service Mesh / Ingress / Progressive Delivery | Có cả mesh lẫn ingress ⇒ `AMBIGUOUS_PROVIDER` rồi người dùng chọn; controller tự biết router | Mesh thắng ingress (luật tất định); binding traffic mang `attributes.provider`; tổ hợp tool thật không chạy được khai bằng `conflicts` tool-level (Flagger ✗ Consul Connect, Spinnaker ✗ Dynatrace — Kayenta không có metric store); Argo Rollouts đi Consul/Kuma qua plugin Gateway API; chứng chỉ mTLS của Linkerd là cấu hình người dùng (issuer key là bí mật) | `anyOf` và oracle E8 đã định nghĩa "một nhánh là đủ", preference không biểu diễn được lựa chọn giữa hai capability. Không đoán router từ tên tool. Báo `CONFLICT` lúc lưu cấu hình tốt hơn deploy FAILED sau hai mươi phút. Sinh chứng chỉ trong adapter là drift giả vĩnh viễn và mTLS vỡ giữa hai lượt áp |
