@@ -367,18 +367,16 @@ export const segmentStateFor = (
 };
 
 /**
- * [v4.9] Bước 3 và 4 cho một lần ghi KHÔNG đổi nội dung cấu hình — hôm nay là
- * `sdkkey.revoked` (L1).
+ * [v4.9] Bước 3 và 4 cho một lần ghi mà delta KHÔNG rút từ snapshot được — `delta` do bên gọi
+ * đưa, hash TÍNH LẠI trên snapshot sau thay đổi (bước 3 của ADR-05 khai `config_hash` là
+ * checksum của trạng thái SAU thay đổi, và đường duy nhất bảo đảm điều đó là đọc trạng thái ấy).
  *
- * Hash vẫn được TÍNH LẠI chứ không chép lại từ `environments`: bước 3 của ADR-05
- * khai `config_hash` là checksum của trạng thái SAU thay đổi, và đường duy nhất
- * bảo đảm điều đó là đọc trạng thái ấy. Con số ra sẽ trùng con số cũ, và chính sự
- * trùng ấy là tín hiệu hub SSE dùng để gửi `flag_changed` rỗng thay cho snapshot.
- *
- * `delta` do bên gọi đưa (`{ sdkKeyId }`), vì nội dung cấu hình không đổi nên
- * không có gì rút ra từ snapshot được.
+ *  - `sdkkey.revoked` (L1): nội dung không đổi, `{ sdkKeyId }`. Hash ra trùng hash cũ, và chính
+ *    sự trùng ấy là tín hiệu hub SSE dùng để gửi `flag_changed` rỗng thay cho snapshot.
+ *  - [v4.11] `environment.backfilled`: nhiều flag một lúc, `{ addedFlagKeys }` — replica áp bằng
+ *    snapshot, hash là thứ nó đối chiếu.
  */
-export const unchangedStateOf = (
+export const recomputedStateOf = (
   delta: Prisma.InputJsonValue,
 ): ((tx: SnapshotReader, environmentId: string) => Promise<OutboxState>) => {
   const snapshotFor = fanOutSnapshotReader();

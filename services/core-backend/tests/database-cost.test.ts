@@ -89,6 +89,41 @@ describe("database theo environment (AC-2)", () => {
     expect(prodValues?.values.resources[0]?.spec.instances).toBe(3);
   });
 
+  it("[Plan #40 QĐ-7] deploy lại với tập environment nhỏ hơn ⇒ gỡ instance của env đã bỏ; teardown dọn cả kho", async () => {
+    const env = domainContractEnv(fixture, { environments: THREE });
+    const quota = { ...env.context().quota, maxDatabases: 3 };
+    const instances = () =>
+      Object.keys(env.cluster.snapshot())
+        .filter((k) => k.includes("udp-cnpg-db-"))
+        .sort();
+    expect(
+      (await cloudnativePg.deploy(env.context({ quota }), { storageGb: 5 }))
+        .status,
+    ).toBe("SUCCESS");
+    expect(instances()).toHaveLength(6);
+
+    // `staging` bị bỏ (job ENVIRONMENT_APPLY REMOVE deploy lại với tập còn lại)
+    const remaining = { quota, environments: CONTRACT_ENVIRONMENTS };
+    expect(
+      (await cloudnativePg.deploy(env.context(remaining), { storageGb: 5 }))
+        .status,
+    ).toBe("SUCCESS");
+    expect(instances()).toEqual([
+      "ConfigMap/udp-system/udp-cnpg-db-dev-values",
+      "ConfigMap/udp-system/udp-cnpg-db-prod-values",
+      "HelmRelease/udp-system/udp-cnpg-db-dev",
+      "HelmRelease/udp-system/udp-cnpg-db-prod",
+    ]);
+
+    await cloudnativePg.teardown(env.context(remaining), "disable");
+    expect(instances()).toEqual([]);
+    expect(
+      Object.keys(env.cluster.snapshot()).filter((k) =>
+        k.endsWith("-instances"),
+      ),
+    ).toEqual([]);
+  });
+
   it("ba environment mà trần database là 2 ⇒ FAILED trước khi ghi gì (QĐ-4)", async () => {
     const env = domainContractEnv(fixture, { environments: THREE });
     const res = await cloudnativePg.deploy(env.context(), { storageGb: 5 });

@@ -27,6 +27,7 @@ import type {
   PhaseEnvironment,
 } from "../modules/provisioning/domain-phase.js";
 import { domainApplyPayloadSchema } from "../modules/domain/domain-apply.payload.js";
+import { environmentApplyPayloadSchema } from "../modules/environment/environment-apply.payload.js";
 import { createPrismaLedger } from "../modules/provisioning/prisma-ledger.js";
 import {
   provisionPayloadSchema,
@@ -145,11 +146,13 @@ export function createJobKit(deps: JobKitDeps) {
         },
       },
     });
-    // DOMAIN_APPLY mang hạ tầng trong `infra`; PROVISION và TEARDOWN mang chính nó
+    // DOMAIN_APPLY, ENVIRONMENT_APPLY mang hạ tầng trong `infra`; PROVISION, TEARDOWN mang chính nó
     const payload =
       job.jobType === "DOMAIN_APPLY"
         ? domainApplyPayloadSchema.parse(job.payload).infra
-        : provisionPayloadSchema.parse(job.payload);
+        : job.jobType === "ENVIRONMENT_APPLY"
+          ? environmentApplyPayloadSchema.parse(job.payload).infra
+          : provisionPayloadSchema.parse(job.payload);
     const adapter = deps.platform.adapterFor(payload.provider, payload.region);
     if (adapter === null) {
       throw new PhaseFailedError(

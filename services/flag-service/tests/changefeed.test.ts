@@ -503,6 +503,32 @@ describe("quy tắc rơi tầng", () => {
     expect(h.breaker.isOpen(ENV)).toBe(false);
     expect(readCounters().changefeed_fallback_total).toBe(0);
   });
+
+  it("[v4.11] environment.backfilled: một dòng nhiều flag ⇒ áp bằng snapshot, breaker KHÔNG đếm (Plan #40)", async () => {
+    const after = [flag("a", false), flag("b", false)];
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 8, configHash: configHashOf(snap(after)) },
+      records: [
+        {
+          configVersion: 8,
+          changeType: "environment.backfilled",
+          payload: { addedFlagKeys: ["b"] },
+        },
+      ],
+    });
+    await h.cache.get(ENV, "SERVER");
+    const before = h.state.loads;
+    h.state.setStored(8, after);
+
+    await h.watcher.tick();
+
+    expect(h.state.loads).toBe(before + 1);
+    expect(h.cache.peek(ENV, "SERVER")?.snapshot.flags).toEqual(after);
+    expect(h.breaker.isOpen(ENV)).toBe(false);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
 });
 
 describe("chống bão snapshot", () => {

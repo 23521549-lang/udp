@@ -1,0 +1,17 @@
+{
+  "route": "DELETE /projects/{id}/environments/{id}",
+  "status": 202,
+  "body": {
+    "job": {
+      "id": "aaa2d892-161d-400f-bbdc-aa25e7a1a1f9",
+      "jobType": "ENVIRONMENT_APPLY",
+      "state": "QUEUED",
+      "attempt": 0,
+      "confirmedMonthlyUsd": null,
+      "lastError": null,
+      "cancellable": false,
+      "createdAt": "2026-09-26T15:10:08.307Z",
+      "updatedAt": "2026-09-26T15:10:08.307Z"
+    }
+  }
+}

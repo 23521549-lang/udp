@@ -38,6 +38,8 @@ export const PROVISION_ERROR_SLUGS = {
   blocked: "provision-blocked",
   /** Job đã qua điểm hủy được (đang bù trừ hay đã kết thúc) */
   notCancellable: "job-not-cancellable",
+  /** [v4.11, Plan #40] Chỉ `ENVIRONMENT_APPLY` đã FAILED thử lại được bằng route riêng */
+  notRetryable: "job-not-retryable",
   /** Đổi credential khi job đang chạy: job đang dùng credential cũ trên cloud */
   credentialLocked: "cloud-credential-locked",
 } as const;

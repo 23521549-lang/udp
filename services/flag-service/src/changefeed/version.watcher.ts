@@ -1,7 +1,12 @@
 import { CHANGE_FEED } from "@udp/config";
 import { logger } from "@udp/http";
 import { verifyHash } from "./checksum.verifier.js";
-import type { ChangeFeed, EnvironmentState } from "./change-feed.interface.js";
+import {
+  BULK_CHANGE,
+  TOO_LARGE,
+  type ChangeFeed,
+  type EnvironmentState,
+} from "./change-feed.interface.js";
 import type { ConfigChangeEvents } from "./change-events.js";
 import type { CircuitBreaker } from "./circuit-breaker.js";
 import { pollDeltas } from "./outbox.poller.js";
@@ -219,7 +224,7 @@ export function createVersionWatcher({
        * mạch 5 phút và tắt tầng delta cho MỌI thay đổi khác của environment — đúng
        * hồi quy D2 mà `changefeed_fallback_total` sinh ra để cảnh báo.
        */
-      if (outcome.reason !== "too-large") {
+      if (outcome.reason !== TOO_LARGE && outcome.reason !== BULK_CHANGE) {
         breaker.recordFallback(entry.environmentId);
       }
       await fallbackToSnapshot(entry, outcome.reason);

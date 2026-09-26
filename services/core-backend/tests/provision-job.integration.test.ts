@@ -10,17 +10,22 @@ import {
   createFakeClusterAccess,
   KINDS_WITHOUT_CREATE_TAGS,
 } from "@udp/adapter-core/testing";
-import { env } from "@udp/config";
+import { env, k8sNamespaceFor } from "@udp/config";
 import type { DomainType } from "@udp/config/domains";
 import { awsPlan } from "@udp/cloud-adapters/aws";
 import { createPrismaClient } from "@udp/db";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
 import type { CapabilityBinding } from "@udp/shared-types";
+import { ENVIRONMENT_ERROR_SLUGS } from "@udp/shared-types/environment-api";
+import { PROVISION_ERROR_SLUGS } from "@udp/shared-types/provisioning-api";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createApp } from "../src/app.js";
-import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
+import {
+  createFlagServiceClient,
+  type FlagServiceClient,
+} from "../src/core/clients/flag-service.client.js";
 import { prisma as s1 } from "../src/core/db.js";
 import type { JobKitDeps } from "../src/jobs/job-kit.js";
 import { sweepDrift } from "../src/jobs/drift-scan.job.js";
@@ -77,7 +82,14 @@ const projects: string[] = [];
 
 interface FakeClusters {
   runtime: ClusterRuntime;
-  bootstrapped: { apiEndpoint: string; adminToken: string }[];
+  bootstrapped: {
+    apiEndpoint: string;
+    adminToken: string;
+    /** Tên environment mà lần bootstrap dựng namespace cho (Plan #40) */
+    environments: string[];
+  }[];
+  /** Namespace đã bị xoá bằng token admin (Plan #40 REMOVE) */
+  removedNamespaces: string[];
   failNextBootstrap(): void;
 }
 
@@ -98,14 +110,16 @@ function fakeAccess(clusterId: string): ClusterAccess {
 
 function fakeClusters(): FakeClusters {
   const bootstrapped: FakeClusters["bootstrapped"] = [];
+  const removedNamespaces: string[] = [];
   let failNext = false;
   return {
     bootstrapped,
+    removedNamespaces,
     failNextBootstrap: () => {
       failNext = true;
     },
     runtime: {
-      bootstrap: (info, adminToken) => {
+      bootstrap: (info, adminToken, input) => {
         if (failNext) {
           failNext = false;
           return Promise.reject(new Error("API server chưa trả lời"));
@@ -113,7 +127,12 @@ function fakeClusters(): FakeClusters {
         bootstrapped.push({
           apiEndpoint: info.apiEndpoint,
           adminToken: adminToken.token,
+          environments: input.environments.map((e) => e.name),
         });
+        return Promise.resolve();
+      },
+      removeNamespace: (_info, _admin, namespace) => {
+        removedNamespaces.push(namespace);
         return Promise.resolve();
       },
       accessFor: (info) => fakeAccess(info.clusterId),
@@ -127,6 +146,8 @@ interface FakeDomain {
   adapter: DomainAdapter;
   deploys: { environment: string | null; resolved: unknown }[];
   teardowns: number;
+  /** Environment của mỗi lần gỡ (`null` = phạm vi cluster) — Plan #40 */
+  teardownEnvs: (string | null)[];
   /** Môi trường mỗi lần `detectDrift` được hỏi (`null` = phạm vi cluster) */
   driftChecks: (string | null)[];
   /** Đặt để lần quét sau thấy trôi */
@@ -143,6 +164,8 @@ function fakeDomain(spec: {
   provides?: CapabilityBinding[];
   requires?: { id: "metrics.query"; constraint: string }[];
   failDeploy?: boolean;
+  /** [Plan #40] `teardown` trả FAILED — gỡ khỏi environment không xong */
+  failTeardown?: boolean;
   unhealthy?: boolean;
 }): FakeDomain {
   const log = (verb: string) => {
@@ -151,6 +174,7 @@ function fakeDomain(spec: {
   const self: FakeDomain = {
     deploys: [],
     teardowns: 0,
+    teardownEnvs: [],
     driftChecks: [],
     drifted: false,
     adapter: {
@@ -200,17 +224,22 @@ function fakeDomain(spec: {
           data: { healthy: spec.unhealthy !== true },
         });
       },
-      teardown: (_ctx, reason) => {
+      teardown: (ctx, reason) => {
         log(`teardown:${reason}`);
         self.teardowns += 1;
-        return Promise.resolve({ status: "SUCCESS" });
+        self.teardownEnvs.push(ctx.environment?.name ?? null);
+        return Promise.resolve(
+          spec.failTeardown === true
+            ? { status: "FAILED", message: "release không gỡ được" }
+            : { status: "SUCCESS" },
+        );
       },
     },
   };
   return self;
 }
 
-function domainsWith(failDelivery = false) {
+function domainsWith(failDelivery = false, failDeliveryTeardown = false) {
   const metrics = fakeDomain({
     domainType: "MONITORING",
     toolId: "fake-metrics",
@@ -230,6 +259,7 @@ function domainsWith(failDelivery = false) {
     scope: "namespace",
     requires: [{ id: "metrics.query", constraint: "^2" }],
     failDeploy: failDelivery,
+    failTeardown: failDeliveryTeardown,
   });
   const registry: DomainAdapterRegistry = {
     get: (domainType, toolId) =>
@@ -1024,17 +1054,129 @@ describe("job DOMAIN_APPLY", { timeout: 120_000 }, () => {
 });
 
 /** App riêng cho luồng HTTP của Plan #30: registry của `applyWorld`, hàng đợi ghi id */
+// ------------------------------------------------------ ENVIRONMENT_APPLY (Plan #40)
+
+/** Hàng environment như `POST /environments` để lại (backfill là việc của S2, không chạy ở đây) */
+async function addEnvironmentRow(projectId: string, name: string) {
+  const project = await admin.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { name: true },
+  });
+  return admin.environment.create({
+    data: {
+      projectId,
+      name,
+      rank: 9,
+      k8sNamespace: k8sNamespaceFor(project.name, projectId, name),
+    },
+    select: { id: true, name: true, k8sNamespace: true, isProduction: true },
+  });
+}
+
+async function seedEnvironmentJob(
+  projectId: string,
+  provisioned: string,
+  action: "ADD" | "REMOVE",
+  environment: Awaited<ReturnType<typeof addEnvironmentRow>>,
+): Promise<string> {
+  const source = await admin.provisioningJob.findUniqueOrThrow({
+    where: { id: provisioned },
+    select: { payload: true },
+  });
+  const job = await admin.provisioningJob.create({
+    data: {
+      projectId,
+      jobType: "ENVIRONMENT_APPLY",
+      payload: { infra: source.payload ?? {}, change: { action, environment } },
+    },
+    select: { id: true },
+  });
+  return job.id;
+}
+
+describe("job ENVIRONMENT_APPLY (Plan #40)", { timeout: 120_000 }, () => {
+  it("ADD: bootstrap với MỌI environment; adapter theo namespace deploy CHỈ trên env mới, cluster-scoped deploy lại; DONE", async () => {
+    const w = domainsWith();
+    const { projectId, provisioned } = await activeProject(w.registry);
+    const qa = await addEnvironmentRow(projectId, "qa");
+    w.metrics.deploys.length = 0;
+    w.delivery.deploys.length = 0;
+    const clusters = fakeClusters();
+
+    const jobId = await seedEnvironmentJob(projectId, provisioned, "ADD", qa);
+    await workerWith(w.registry, clusters).run(jobId, { final: false });
+
+    expect((await snapshot(projectId, jobId)).job.state).toBe("DONE");
+    expect(clusters.bootstrapped.map((b) => b.environments)).toEqual([
+      ["dev", "staging", "prod", "qa"],
+    ]);
+    expect(w.delivery.deploys.map((d) => d.environment)).toEqual(["qa"]);
+    expect(w.metrics.deploys.map((d) => d.environment)).toEqual([null]);
+    expect(clusters.removedNamespaces).toEqual([]);
+  });
+
+  it("REMOVE: adapter theo namespace gỡ khỏi env đã bỏ (disable), cluster-scoped deploy lại với tập còn lại, namespace bị xoá", async () => {
+    const w = domainsWith();
+    const { projectId, provisioned } = await activeProject(w.registry);
+    const qa = await addEnvironmentRow(projectId, "qa");
+    // Như route DELETE: hàng environment đi TRƯỚC, job mang bản chụp
+    await admin.environment.delete({ where: { id: qa.id } });
+    w.metrics.deploys.length = 0;
+    events.length = 0;
+    const clusters = fakeClusters();
+
+    const jobId = await seedEnvironmentJob(
+      projectId,
+      provisioned,
+      "REMOVE",
+      qa,
+    );
+    await workerWith(w.registry, clusters).run(jobId, { final: false });
+
+    expect((await snapshot(projectId, jobId)).job.state).toBe("DONE");
+    expect(w.delivery.teardownEnvs).toEqual(["qa"]);
+    expect(events).toContain("fake-rollouts:teardown:disable");
+    expect(w.metrics.deploys.map((d) => d.environment)).toEqual([null]);
+    expect(clusters.bootstrapped).toEqual([]);
+    expect(clusters.removedNamespaces).toEqual([qa.k8sNamespace]);
+  });
+
+  it("REMOVE mà gỡ domain lỗi ⇒ FAILED kèm lý do, namespace GIỮ lại cho lần chạy lại", async () => {
+    const w = domainsWith(false, true);
+    const { projectId, provisioned } = await activeProject(w.registry);
+    const qa = await addEnvironmentRow(projectId, "qa");
+    await admin.environment.delete({ where: { id: qa.id } });
+    const clusters = fakeClusters();
+
+    const jobId = await seedEnvironmentJob(
+      projectId,
+      provisioned,
+      "REMOVE",
+      qa,
+    );
+    await workerWith(w.registry, clusters).run(jobId, { final: false });
+
+    const { job } = await snapshot(projectId, jobId);
+    expect(job.state).toBe("FAILED");
+    expect(JSON.stringify(job.lastError)).toContain(
+      "PROGRESSIVE_DELIVERY: release không gỡ được",
+    );
+    expect(clusters.removedNamespaces).toEqual([]);
+  });
+});
+
 function appFor(
   registry: DomainAdapterRegistry,
   scanDrift: ((projectId: string, domainType: string) => Promise<void>) | null,
+  flagService: FlagServiceClient = createFlagServiceClient({
+    baseUrl: "http://127.0.0.1:9",
+    secret: env.INTERNAL_SERVICE_SECRET,
+  }),
 ) {
   const enqueued: string[] = [];
   const http = createApp({
     metricsFor: () => new FakeMetricsProvider(),
-    flagService: createFlagServiceClient({
-      baseUrl: "http://127.0.0.1:9",
-      secret: env.INTERNAL_SERVICE_SECRET,
-    }),
+    flagService,
     oidcIssuer: null,
     cloud: platform,
     domainRegistry: () => Promise.resolve(registry),
@@ -1442,6 +1584,115 @@ describe(
       for (const namespace of namespaces) {
         expect(await dockerConfigIn(namespace)).toBe('{"auths":{}}');
       }
+    });
+  },
+);
+
+describe(
+  "HTTP environment cho project đang chạy (Plan #40)",
+  { timeout: 120_000 },
+  () => {
+    const envUrl = (projectId: string, suffix = "") =>
+      `${API}/projects/${projectId}/environments${suffix}`;
+    /** S2 không chạy trong tệp này: backfill giả thành công (S2 có test riêng) */
+    const backfilled = {
+      ...createFlagServiceClient({
+        baseUrl: "http://127.0.0.1:9",
+        secret: env.INTERNAL_SERVICE_SECRET,
+      }),
+      backfillEnvironment: () => Promise.resolve(0),
+    };
+
+    it("POST ⇒ 201 kèm job ENVIRONMENT_APPLY ADD đã gửi hàng đợi; job khác đang chạy ⇒ 409 environment-project-busy", async () => {
+      const w = domainsWith();
+      const { projectId } = await activeProject(w.registry);
+      const { http, enqueued } = appFor(w.registry, null, backfilled);
+
+      const res = await as(
+        owner,
+        request(http).post(envUrl(projectId)).send({ name: "qa" }),
+      ).expect(201);
+      // Không có nhánh hủy hợp tác như PROVISION ⇒ không hiện là hủy được, và route hủy từ chối
+      expect(res.body.job).toMatchObject({
+        jobType: "ENVIRONMENT_APPLY",
+        state: "QUEUED",
+        cancellable: false,
+      });
+      expect(enqueued).toEqual([res.body.job.id]);
+      const cancel = await as(
+        owner,
+        request(http).post(
+          `${API}/projects/${projectId}/jobs/${res.body.job.id as string}/cancel`,
+        ),
+      ).expect(409);
+      expect(cancel.body.type).toContain(PROVISION_ERROR_SLUGS.notCancellable);
+
+      const busy = await as(
+        owner,
+        request(http).post(envUrl(projectId)).send({ name: "uat" }),
+      ).expect(409);
+      expect(busy.body.type).toContain(ENVIRONMENT_ERROR_SLUGS.projectBusy);
+      expect(
+        await admin.environment.count({ where: { projectId, name: "uat" } }),
+      ).toBe(0);
+    });
+
+    it("DELETE environment sạch ⇒ 202; hàng environment xoá NGAY, job REMOVE mang bản chụp namespace", async () => {
+      const w = domainsWith();
+      const { projectId } = await activeProject(w.registry);
+      const qa = await addEnvironmentRow(projectId, "qa");
+      const { http, enqueued } = appFor(w.registry, null, backfilled);
+
+      const res = await as(
+        owner,
+        request(http).delete(envUrl(projectId, `/${qa.id}`)),
+      ).expect(202);
+      expect(res.body.job).toMatchObject({ jobType: "ENVIRONMENT_APPLY" });
+      expect(enqueued).toEqual([res.body.job.id]);
+      expect(await admin.environment.count({ where: { id: qa.id } })).toBe(0);
+      const job = await admin.provisioningJob.findUniqueOrThrow({
+        where: { id: res.body.job.id as string },
+        select: { payload: true },
+      });
+      expect((job.payload as { change: unknown }).change).toEqual({
+        action: "REMOVE",
+        environment: qa,
+      });
+    });
+
+    it("retry: ENVIRONMENT_APPLY FAILED ⇒ 202 job mới cùng thay đổi; loại job khác ⇒ 409 job-not-retryable", async () => {
+      const w = domainsWith();
+      const { projectId, provisioned } = await activeProject(w.registry);
+      const qa = await addEnvironmentRow(projectId, "qa");
+      const failed = await seedEnvironmentJob(
+        projectId,
+        provisioned,
+        "ADD",
+        qa,
+      );
+      await admin.provisioningJob.update({
+        where: { id: failed },
+        data: { state: "FAILED" },
+      });
+      const { http, enqueued } = appFor(w.registry, null);
+      const retryUrl = (jobId: string) =>
+        `${API}/projects/${projectId}/jobs/${jobId}/retry`;
+
+      const res = await as(owner, request(http).post(retryUrl(failed))).expect(
+        202,
+      );
+      expect(res.body.job).toMatchObject({
+        jobType: "ENVIRONMENT_APPLY",
+        state: "QUEUED",
+      });
+      expect(res.body.job.id).not.toBe(failed);
+      expect(enqueued).toEqual([res.body.job.id]);
+
+      const other = await as(
+        owner,
+        request(http).post(retryUrl(provisioned)),
+      ).expect(409);
+      expect(other.body.type).toContain(PROVISION_ERROR_SLUGS.notRetryable);
     });
   },
 );

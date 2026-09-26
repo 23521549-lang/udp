@@ -1,6 +1,6 @@
 import { SDK_KEY } from "@udp/config";
 import { dbConstraintError } from "@udp/db";
-import { unchangedStateOf } from "@udp/flag-snapshot";
+import { recomputedStateOf } from "@udp/flag-snapshot";
 import {
   ConflictError,
   NotFoundError,
@@ -251,7 +251,7 @@ export async function revoke(
        * bên gọi đưa, và poller chiếu `sdkkey.revoked` thành KHÔNG phần tử nào
        * (L1). `sdkKeyId` ở đây là thứ hub đọc để đóng đúng stream của khoá ấy.
        */
-      stateOf: unchangedStateOf({ sdkKeyId: keyId }),
+      stateOf: recomputedStateOf({ sdkKeyId: keyId }),
     });
   } catch (err: unknown) {
     if (err instanceof AlreadyRevoked) {

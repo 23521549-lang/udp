@@ -1194,7 +1194,12 @@ export const provisionPreviewResponseWire = z
 export const provisioningJobWire = z
   .object({
     id: uuid,
-    jobType: z.enum(["PROVISION", "TEARDOWN", "DOMAIN_APPLY"]),
+    jobType: z.enum([
+      "PROVISION",
+      "TEARDOWN",
+      "DOMAIN_APPLY",
+      "ENVIRONMENT_APPLY",
+    ]),
     state: jobStateWire,
     attempt: z.number().int().nonnegative(),
     confirmedMonthlyUsd: z.number().nonnegative().nullable(),
@@ -1508,4 +1513,32 @@ export const internalMetricsSourceResponseWire = z
       })
       .strict(),
   })
+  .strict();
+
+// ------------------------------------------------------------- Environment (Plan #40)
+
+/** `GET /projects/:id/environments` — theo `rank` */
+export const environmentListResponseWire = z
+  .object({ environments: z.array(publicEnvironmentWire) })
+  .strict();
+
+/**
+ * `POST /projects/:id/environments` (201) — `job` là `ENVIRONMENT_APPLY` khi project đã có cluster,
+ * `null` khi chưa: MỘT hình cho cả hai (bài học D-P21).
+ */
+export const environmentCreatedResponseWire = z
+  .object({
+    environment: publicEnvironmentWire,
+    job: provisioningJobWire.nullable(),
+  })
+  .strict();
+
+/** `PATCH /projects/:id/environments/:envId` */
+export const environmentResponseWire = z
+  .object({ environment: publicEnvironmentWire })
+  .strict();
+
+/** `DELETE /projects/:id/environments/:envId` — 202 kèm job khi có cluster, 200 `null` khi không */
+export const environmentDeletedResponseWire = z
+  .object({ job: provisioningJobWire.nullable() })
   .strict();

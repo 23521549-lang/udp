@@ -154,6 +154,8 @@ export const qkPrefix = {
   flagsOf: (projectId: string) => ["flags", projectId] as const,
   flagOf: (projectId: string, flagId: string) =>
     ["flag", projectId, flagId] as const,
+  /** [Plan #40] Ma trận env của MỌI flag — thêm/xoá environment đổi số cột */
+  flagEnvsOf: (projectId: string) => ["flagEnvs", projectId] as const,
   staleFlagsOf: (projectId: string) => ["staleFlags", projectId] as const,
   adminUsersAll: () => ["admin", "users"] as const,
 } as const;

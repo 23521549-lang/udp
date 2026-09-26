@@ -48,6 +48,9 @@ export interface ChangeRecord {
 export const TOO_LARGE = "too-large";
 export type DeltaBatch = ChangeRecord[] | typeof TOO_LARGE;
 
+/** [v4.11, Plan #40] Dòng outbox mang nhiều flag — áp bằng snapshot, KHÔNG phải lỗi */
+export const BULK_CHANGE = "bulk-change";
+
 export interface ChangeFeed {
   /**
    * TẦNG 1 — version và hash thật của nhiều environment, trong MỘT truy vấn.

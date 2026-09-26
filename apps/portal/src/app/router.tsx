@@ -234,9 +234,16 @@ const infraRoute = createRoute({
 });
 
 export interface SettingsSearch {
-  tab?: "keys" | "members" | "audit" | "cloud" | "project";
+  tab?: "keys" | "environments" | "members" | "audit" | "cloud" | "project";
 }
-const TABS = ["keys", "members", "audit", "cloud", "project"] as const;
+const TABS = [
+  "keys",
+  "environments",
+  "members",
+  "audit",
+  "cloud",
+  "project",
+] as const;
 export const settingsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "settings",

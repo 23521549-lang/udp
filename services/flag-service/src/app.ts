@@ -10,6 +10,7 @@ import {
 import { prisma } from "./core/db.js";
 import { metricsRegistry } from "./core/metrics.js";
 import { internalEnvConfigRouter } from "./internal/env-config.controller.js";
+import { internalEnvironmentRouter } from "./internal/environment.controller.js";
 import { internalFlagRouter } from "./internal/flag.controller.js";
 import { internalRolloutRouter } from "./internal/rollout.controller.js";
 import { internalRuleRouter } from "./internal/rule.controller.js";
@@ -133,6 +134,7 @@ export function createApp(): Express {
     "/internal",
     internalFlagRouter,
     internalEnvConfigRouter,
+    internalEnvironmentRouter,
     internalRuleRouter,
     internalRolloutRouter,
     internalStatsRouter,

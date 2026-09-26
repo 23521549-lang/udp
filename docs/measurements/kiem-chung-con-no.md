@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 42.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 41.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -507,6 +507,11 @@ adapter.
   đúng series của workload; thu hồi token (xoá SA rồi tạo lại) ⇒ lời đo kế tiếp 401, bản nhớ bị
   bỏ, lời sau nữa dựng lại truy cập và có dữ liệu. Không đạt: `services/proxy` bị RBAC từ chối
   cho `udp-traffic` ⇒ §12.2 thiếu quyền trên service của nguồn metrics.
+- **[v4.11, Plan #40] Mở rộng:** thêm rồi bớt một environment trên project đang chạy (job
+  `ENVIRONMENT_APPLY`). Đạt: namespace mới có NetworkPolicy, ResourceQuota, `udp-registry-pull`;
+  instance database theo env mới chạy; bớt env thì instance Helm của nó biến mất khỏi `udp-system`
+  (kho `<release>-instances`) và namespace bị xoá. Không đạt: xoá namespace bị từ chối với token
+  quản trị của cloud ⇒ đổi đường xoá.
 
 ## E16 — ma trận drift, đối chứng Helm và Argo CD
 
@@ -855,7 +860,7 @@ plan/apply`, `pulumi preview/up`, `ansible-playbook --check` chạy trong sáu C
 
 # Plan #25 — Portal
 
-Mười tám mục (nay còn mười hai) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
+Mười tám mục (nay còn mười một) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
 còn Service 1 hôm nay chỉ có endpoint cho một phần. Làm một màn hình không có endpoint
 nghĩa là viết một cái giả rồi gọi nó là xong, nên phạm vi Plan #25 chia theo endpoint đã
 chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều kiện.
@@ -933,18 +938,13 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > 4–5 của wizard, SSE CHỈ gọi `invalidateQueries` và đóng ở trạng thái cuối
 > (`provisioning.test.tsx`). Phần cần cluster thật nằm ở `I32-cluster`.
 
-## portal-env-crud — tạo và xoá environment
-
-- **Vì sao nợ:** `environmentRouter` hôm nay chỉ có ba route SDK key; không có đường tạo
-  hay xoá environment. Ba environment mặc định do `POST /projects` sinh.
-- **Tiền đề:** hai endpoint đó tồn tại, cùng một quyết định về `rank` và về việc xoá
-  environment đang có rollout.
-- **Lệnh:** test tích hợp, kèm ô âm: xoá environment đang có rollout `IN_PROGRESS` ⇒ 409.
-- **Đạt:** thêm environment thứ tư thì mọi query phạm vi env vẫn đúng. **Không đạt:** thêm
-  env làm cache của env khác lẫn ⇒ I38 vỡ.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** phạm vi "ba environment mặc định" là một giới hạn của bản
-  đầu, không phải của thiết kế.
+> **Đã trả (26/09/2026, Plan #40):** `portal-env-crud` — `GET/POST/PATCH/DELETE
+/projects/:id/environments` (tên nhãn DNS bất biến, trần 8, bốn điều kiện xoá có slug riêng —
+> ô âm "rollout `IN_PROGRESS` ⇒ 409" là `environment-rollout-active`), backfill `FlagEnvConfig` qua
+> Service 2 thật (`environment.integration.test.ts`, `environment-backfill.integration.test.ts`),
+> job `ENVIRONMENT_APPLY` dựng/dọn phần cluster (`provision-job.integration.test.ts`), tab
+> Environment của Portal (`environments.test.tsx`; ma trận flag và danh sách làm mới theo
+> `qkPrefix`, I38 xanh). Phần cần cluster thật nằm ở `I32-cluster`.
 
 ## portal-response-schema — endpoint chưa có schema response mức dây
 

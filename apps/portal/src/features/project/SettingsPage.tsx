@@ -6,6 +6,7 @@ import { ProjectBar } from "./ProjectBar";
 import { CloudPanel } from "./cloud/CloudPanel";
 import { useProjectContext } from "./ProjectLayout";
 import { AuditTab } from "./settings/AuditTab";
+import { EnvironmentsTab } from "./settings/EnvironmentsTab";
 import { MembersTab } from "./settings/MembersTab";
 import { ProjectTab } from "./settings/ProjectTab";
 import { SdkKeysTab } from "./settings/SdkKeysTab";
@@ -13,6 +14,7 @@ import { SdkKeysTab } from "./settings/SdkKeysTab";
 type Tab = NonNullable<SettingsSearch["tab"]>;
 const TAB_LABEL: Record<Tab, string> = {
   keys: "SDK key",
+  environments: "Environment",
   members: "Thành viên",
   audit: "Nhật ký",
   cloud: "Cloud",
@@ -35,7 +37,10 @@ export function SettingsPage() {
           </span>
           <div>
             <h1>Cài đặt</h1>
-            <p>SDK key, thành viên, nhật ký, cloud và trần tài nguyên.</p>
+            <p>
+              SDK key, environment, thành viên, nhật ký, cloud và trần tài
+              nguyên.
+            </p>
           </div>
         </div>
         <div className="page">
@@ -61,6 +66,7 @@ export function SettingsPage() {
             ))}
           </div>
           {tab === "keys" && <SdkKeysTab />}
+          {tab === "environments" && <EnvironmentsTab />}
           {tab === "members" && <MembersTab />}
           {tab === "audit" && <AuditTab />}
           {tab === "cloud" && (

@@ -9,6 +9,7 @@ import {
 } from "@udp/flag-evaluator";
 import { verifyHash } from "./checksum.verifier.js";
 import {
+  BULK_CHANGE,
   TOO_LARGE,
   type ChangeFeed,
   type ChangeRecord,
@@ -54,7 +55,12 @@ export type FallbackReason =
    * snapshot có trần (V21) nên ở đây nó đúng là đường rẻ hơn, và watcher không
    * đếm lý do này vào breaker.
    */
-  | typeof TOO_LARGE;
+  | typeof TOO_LARGE
+  /**
+   * [v4.11, Plan #40] Dòng mang NHIỀU flag một lúc (`environment.backfilled`). KHÔNG phải lỗi:
+   * snapshot là cách áp nó, và watcher không đếm lý do này vào breaker.
+   */
+  | typeof BULK_CHANGE;
 
 export type PollOutcome =
   | {
@@ -232,6 +238,8 @@ export function changeOf(
      */
     case "sdkkey.revoked":
       return null;
+    case "environment.backfilled":
+      return BULK_CHANGE;
     default:
       return "unknown-change-type";
   }

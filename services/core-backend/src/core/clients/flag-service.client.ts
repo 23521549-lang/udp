@@ -132,6 +132,14 @@ export interface FlagServiceClient {
     environmentId: string,
     ctx: AuditContext,
   ): Promise<void>;
+  /**
+   * [v4.11, Plan #40] `FlagEnvConfig` TẮT cho mọi flag còn thiếu ở environment vừa tạo (§4) —
+   * idempotent phía S2. Trả số hàng vừa tạo.
+   */
+  backfillEnvironment(
+    environmentId: string,
+    ctx: AuditContext,
+  ): Promise<number>;
 }
 
 /** Thứ Service 2 nhận để tạo một khoá — không có trường nào mang plaintext */
@@ -150,6 +158,8 @@ const createdFlagSchema = z.object({
 const createdSegmentSchema = z.object({
   segment: z.object({ id: z.string().uuid() }),
 });
+
+const backfillSchema = z.object({ created: z.number().int().nonnegative() });
 
 /**
  * [v4.9] Response của `POST /internal/sdk-keys` (§3.2, V4).
@@ -402,6 +412,15 @@ export function createFlagServiceClient(
         undefined,
         ctx,
       );
+    },
+    async backfillEnvironment(environmentId, ctx) {
+      const payload = await call(
+        "POST",
+        `/internal/environments/${encodeURIComponent(environmentId)}/backfill`,
+        {},
+        ctx,
+      );
+      return parsedOrThrow(backfillSchema, payload, "kết quả backfill").created;
     },
   };
 

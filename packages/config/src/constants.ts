@@ -31,6 +31,20 @@ const PROJECT_ID_SUFFIX_LENGTH = 6;
 const DNS_1123_LABEL = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
 /**
+ * [v4.11, Plan #40] Environment người dùng thêm sau (§9 Environment). Tên là nhãn DNS bắt đầu
+ * bằng chữ, dài tối đa `ENV_SLUG_MAX` — đúng độ dài mà namespace, tiền tố SDK key và tên instance
+ * Helm giữ nguyên không cắt, nên hai tên khác nhau không bao giờ ra cùng một nhãn. Trần mỗi project
+ * giữ số namespace, instance theo environment và cột của ma trận flag trong tầm.
+ */
+export const ENVIRONMENT = {
+  maxPerProject: 8,
+  nameMaxLength: ENV_SLUG_MAX,
+  namePattern: new RegExp(
+    `^[a-z](?:[a-z0-9-]{0,${String(ENV_SLUG_MAX - 2)}}[a-z0-9])?$`,
+  ),
+} as const;
+
+/**
  * Tên DNS-1123 subdomain (tối đa 253, các nhãn nối bằng dấu chấm) — dạng tên của
  * Deployment/Service Kubernetes, tức `workload_name` của rollout (cột
  * `VARCHAR(253)`, §2.2) và nhãn `service_name` mà mọi truy vấn §7.4 lọc theo.

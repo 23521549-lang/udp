@@ -37,6 +37,12 @@ export const CONFIG_CHANGE_TYPES = [
   "variant.updated",
   "segment.updated",
   "sdkkey.revoked",
+  /**
+   * [v4.11, Plan #40] Environment mới nhận một `FlagEnvConfig` TẮT cho mọi flag còn thiếu. MỘT
+   * dòng mang NHIỀU flag — không vừa khuôn `{ flag }` — nên replica áp nó bằng snapshot; payload
+   * `{ addedFlagKeys }` (đã sắp) chỉ để đọc lại được.
+   */
+  "environment.backfilled",
 ] as const;
 
 export type ConfigChangeType = (typeof CONFIG_CHANGE_TYPES)[number];

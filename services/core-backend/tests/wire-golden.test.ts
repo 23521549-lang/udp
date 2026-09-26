@@ -41,6 +41,11 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "PATCH /projects/{id}/members/{id}": wire.memberResponseWire,
   "POST /projects/{id}/transfer-ownership": wire.memberResponseWire,
 
+  "GET /projects/{id}/environments": wire.environmentListResponseWire,
+  "POST /projects/{id}/environments": wire.environmentCreatedResponseWire,
+  "PATCH /projects/{id}/environments/{id}": wire.environmentResponseWire,
+  "DELETE /projects/{id}/environments/{id}":
+    wire.environmentDeletedResponseWire,
   "GET /projects/{id}/environments/{id}/keys": wire.sdkKeyListResponseWire,
   "POST /projects/{id}/environments/{id}/keys": wire.sdkKeyCreatedResponseWire,
   "DELETE /projects/{id}/environments/{id}/keys/{id}": wire.sdkKeyResponseWire,
@@ -104,6 +109,7 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "GET /projects/{id}/jobs": wire.jobListResponseWire,
   "GET /projects/{id}/jobs/{id}": wire.jobDetailResponseWire,
   "POST /projects/{id}/jobs/{id}/cancel": wire.jobResponseWire,
+  "POST /projects/{id}/jobs/{id}/retry": wire.jobResponseWire,
 
   "GET /admin/users": wire.adminUsersResponseWire,
   "PATCH /admin/users/{id}/platform-role": wire.adminUserResponseWire,

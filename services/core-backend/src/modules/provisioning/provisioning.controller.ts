@@ -24,6 +24,7 @@ import {
   projectIdParam,
   requireMinProjectRole,
 } from "../../core/http/middlewares/project-role.middleware.js";
+import { retryEnvironmentJob } from "../environment/environment-job.js";
 import { streamJob } from "./job-stream.js";
 import * as provisioningService from "./provisioning.service.js";
 import type { ProvisioningDeps } from "./provisioning.service.js";
@@ -172,6 +173,25 @@ provisioningRouter.post(
   requireMinProjectRole("OWNER"),
   asyncHandler(async (req, res) => {
     const job = await provisioningService.cancel(
+      projectIdParam(req),
+      jobIdParam(req),
+      req,
+    );
+    sendJson(res, jobResponseWire, { job }, 202);
+  }),
+);
+
+/**
+ * [v4.11, Plan #40 QĐ-8] Thử lại một `ENVIRONMENT_APPLY` đã FAILED — job mới cùng payload. Loại
+ * job khác ⇒ 409 `job-not-retryable`: chúng có đường thử lại của riêng mình (D-P19).
+ */
+provisioningRouter.post(
+  "/jobs/:jobId/retry",
+  requireAuth,
+  requireMinProjectRole("OWNER"),
+  asyncHandler(async (req, res) => {
+    const job = await retryEnvironmentJob(
+      appDepsOf(req).provisioning.enqueue,
       projectIdParam(req),
       jobIdParam(req),
       req,

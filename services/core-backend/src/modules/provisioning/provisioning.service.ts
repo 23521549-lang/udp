@@ -275,7 +275,8 @@ export function jobView(row: JobRow): ProvisioningJobWire {
     attempt: row.attempt,
     confirmedMonthlyUsd: typeof confirmed === "number" ? confirmed : null,
     lastError: lastErrorView(row.lastError),
-    cancellable: CANCELLABLE_STATES.includes(row.state),
+    cancellable:
+      row.jobType === "PROVISION" && CANCELLABLE_STATES.includes(row.state),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

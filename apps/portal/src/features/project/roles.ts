@@ -29,5 +29,8 @@ export const PERMISSIONS: { action: string; min: ProjectRoleWire }[] = [
     action: "Sửa flag ở production, tạo và điều khiển rollout",
     min: "MAINTAINER",
   },
-  { action: "Thành viên, SDK key, quota, xoá project", min: "OWNER" },
+  {
+    action: "Thành viên, SDK key, environment, quota, xoá project",
+    min: "OWNER",
+  },
 ];

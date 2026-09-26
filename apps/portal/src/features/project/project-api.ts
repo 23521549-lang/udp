@@ -1,5 +1,12 @@
+import type {
+  CreateEnvironmentBody,
+  UpdateEnvironmentBody,
+} from "@udp/shared-types/environment-api";
 import {
   auditListResponseWire,
+  environmentCreatedResponseWire,
+  environmentDeletedResponseWire,
+  environmentResponseWire,
   memberListResponseWire,
   memberResponseWire,
   projectDetailResponseWire,
@@ -93,6 +100,33 @@ export const projectApi = {
     api(
       sdkKeyResponseWire,
       `${p(projectId)}/environments/${envId}/keys/${keyId}`,
+      { method: "DELETE" },
+    ),
+
+  /** [Plan #40] Project đang chạy ⇒ `job` ENVIRONMENT_APPLY; chưa có cluster ⇒ `null` */
+  createEnvironment: (
+    projectId: string,
+    body: CreateEnvironmentBody,
+    idempotencyKey: string,
+  ) =>
+    api(environmentCreatedResponseWire, `${p(projectId)}/environments`, {
+      method: "POST",
+      body,
+      idempotencyKey,
+    }),
+  updateEnvironment: (
+    projectId: string,
+    envId: string,
+    body: UpdateEnvironmentBody,
+  ) =>
+    api(environmentResponseWire, `${p(projectId)}/environments/${envId}`, {
+      method: "PATCH",
+      body,
+    }),
+  deleteEnvironment: (projectId: string, envId: string) =>
+    api(
+      environmentDeletedResponseWire,
+      `${p(projectId)}/environments/${envId}`,
       { method: "DELETE" },
     ),
 };

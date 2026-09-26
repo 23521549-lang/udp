@@ -278,18 +278,23 @@ type BindingCall = (
 ) => Promise<AdapterResult<CapabilityBinding[]>>;
 
 /**
- * Gọi `deploy`/`configure` của một adapter trên MỌI đích của nó; binding theo namespace mang
- * environment vừa gọi. `resolved` nạp lại TỪ BẢNG mỗi lần — không từ bộ nhớ worker.
+ * Gọi `deploy`/`configure` của một adapter trên MỌI đích của nó (hay đúng `targets` — [v4.11,
+ * Plan #40] một environment vừa thêm); binding theo namespace mang environment vừa gọi.
+ * `resolved` nạp lại TỪ BẢNG mỗi lần — không từ bộ nhớ worker.
  */
 export async function callOnTargets(
   input: DomainPhaseInput,
   target: DeployTarget,
   chosen: Readonly<Record<string, string>>,
   call: BindingCall,
+  targets: readonly (PhaseEnvironment | undefined)[] = targetsOf(
+    target.adapter,
+    input.environments,
+  ),
 ): Promise<{ bindings: CapabilityBinding[] } | { error: string }> {
   const stored = await bindingsOfProject(input.prisma, input.projectId);
   const bindings: CapabilityBinding[] = [];
-  for (const env of targetsOf(target.adapter, input.environments)) {
+  for (const env of targets) {
     const resolved = resolvedFor(stored, chosen, env?.id ?? null);
     const result = await call(
       adapterContext(input, target.adapter, env, resolved),
@@ -542,6 +547,76 @@ export async function distributeRegistryPull(
       message: `phân phối khoá kéo image: ${messageOf(e)}`,
     };
   }
+}
+
+/**
+ * [v4.11, Plan #40 QĐ-6] Đưa domain ĐANG chạy về đúng tập environment sau khi thêm (`ADD`) hay bỏ
+ * (`REMOVE`) một environment — `input.environments` đã là tập MỚI.
+ *
+ *  - Adapter theo namespace: `ADD` deploy trên env mới (binding mang env đó); `REMOVE` gỡ khỏi env
+ *    đã bỏ, ngược bậc.
+ *  - Adapter cluster-scoped: deploy lại với tập mới — instance theo environment của lớp nền Helm
+ *    được dựng cho env mới, và instance của env đã bỏ bị dọn (mồ côi theo nhãn).
+ *  - `ADD` phân phối khoá kéo image vào namespace mới.
+ *
+ * Trạng thái domain KHÔNG đổi: nó vẫn chạy ở các environment khác. Lỗi trả về danh sách để job
+ * FAILED kèm lý do; chạy lại là an toàn (mọi bước idempotent).
+ */
+export async function reconcileEnvironment(
+  input: DomainPhaseInput,
+  action: "ADD" | "REMOVE",
+  environment: PhaseEnvironment,
+): Promise<string[]> {
+  const domains = await enabledDomains(input, ["ACTIVE"]);
+  if (!Array.isArray(domains)) return [domains.message];
+  if (domains.length === 0) return [];
+  const ordered = await tiersOf(input, domains);
+  if (!("tiers" in ordered))
+    return [`${ordered.domainType}: ${ordered.message}`];
+  const tiers = action === "ADD" ? ordered.tiers : [...ordered.tiers].reverse();
+
+  const reconcileOne = async (d: EnabledDomain): Promise<string | null> => {
+    const namespaced = d.adapter.scope !== "cluster";
+    if (namespaced && action === "REMOVE") {
+      const r = await d.adapter.teardown(
+        adapterContext(input, d.adapter, environment, {}),
+        "disable",
+      );
+      return r.status === "SUCCESS" || r.status === "NOT_FOUND"
+        ? null
+        : (r.message ?? `teardown trả ${r.status}`);
+    }
+    const outcome = await callOnTargets(
+      input,
+      d,
+      ordered.chosen,
+      (ctx, config) => d.adapter.deploy(ctx, config),
+      namespaced ? [environment] : [undefined],
+    );
+    if ("error" in outcome) return outcome.error;
+    await persistDeployed(input.prisma, d, outcome.bindings, {
+      replace: false,
+    });
+    return null;
+  };
+
+  const failures: string[] = [];
+  for (const tier of tiers) {
+    await input.fence.assert();
+    await Promise.all(
+      tier.map(async (d) => {
+        const message = await reconcileOne(d).catch(messageOf);
+        if (message !== null) failures.push(`${d.domainType}: ${message}`);
+      }),
+    );
+  }
+  if (action === "ADD") {
+    const pull = await distributeRegistryPull(input, domains);
+    if (pull?.status === "FAILED") {
+      failures.push(`${pull.domainType}: ${pull.message}`);
+    }
+  }
+  return failures;
 }
 
 /** Domain đã chạm cluster (kể cả dở dang) — thứ bù trừ phải gỡ */

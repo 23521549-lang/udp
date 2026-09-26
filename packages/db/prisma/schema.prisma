@@ -117,6 +117,8 @@ enum JobType {
   PROVISION
   TEARDOWN
   DOMAIN_APPLY
+  /// [v4.11, Plan #40] Thêm hay bớt một environment trên cluster đang chạy (D-P31)
+  ENVIRONMENT_APPLY
 }
 
 enum JobState {

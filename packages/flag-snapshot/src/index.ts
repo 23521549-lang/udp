@@ -13,13 +13,13 @@
  * (`writeWithOutbox` nhận `stateOf` từ bên gọi), nên không có vòng.
  */
 export {
+  recomputedStateOf,
   segmentPayloadBytesOf,
   segmentStateFor,
   snapshotFromRow,
   snapshotOf,
   stateFor,
   trackedStateOf,
-  unchangedStateOf,
 } from "./snapshot-builder.js";
 export {
   snapshotRowOf,

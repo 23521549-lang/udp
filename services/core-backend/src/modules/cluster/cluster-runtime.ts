@@ -27,24 +27,46 @@ export interface ClusterRuntime {
   ): Promise<void>;
   /** ClusterAccess cho các pha sau: bound SA token theo identity, không bao giờ token admin */
   accessFor(info: ClusterInfo, admin: AdminToken): ClusterAccess;
+  /**
+   * [v4.11, Plan #40] Xoá namespace của một environment vừa bỏ — bằng token ADMIN như
+   * `bootstrap`: xoá namespace là quyền cấp cluster mà §12.2 không cho SA nào của UDP. Mọi thứ
+   * `bootstrap` dựng cho environment đều nằm trong namespace đó. Đã không còn ⇒ thành công.
+   */
+  removeNamespace(
+    info: ClusterInfo,
+    admin: AdminToken,
+    namespace: string,
+  ): Promise<void>;
 }
 
 export function createClusterRuntime(
   transportFor: (info: ClusterInfo) => KubeTransport,
 ): ClusterRuntime {
+  /** Client mang token ADMIN — chỉ cho hai việc cấp cluster: bootstrap và xoá namespace */
+  const adminClient = (info: ClusterInfo, admin: AdminToken) =>
+    createDirectClusterAccess({
+      clusterId: info.clusterId,
+      apiEndpoint: info.apiEndpoint,
+      transport: transportFor(info),
+      tokens: adminTokenSource(admin.token, admin.expiresAt),
+    }).getClient("tooling");
+
   return {
     async bootstrap(info, admin, input) {
-      const access = createDirectClusterAccess({
-        clusterId: info.clusterId,
-        apiEndpoint: info.apiEndpoint,
-        transport: transportFor(info),
-        tokens: adminTokenSource(admin.token, admin.expiresAt),
-      });
-      const client = await access.getClient("tooling");
+      const client = await adminClient(info, admin);
       // Tuần tự theo thứ tự của danh sách: namespace và SA trước Role, Role trước binding
       for (const manifest of bootstrapManifests(input)) {
         await client.write("apply", manifest.ref, manifest.body);
       }
+    },
+
+    async removeNamespace(info, admin, namespace) {
+      const client = await adminClient(info, admin);
+      await client.write("delete", {
+        apiVersion: "v1",
+        kind: "Namespace",
+        name: namespace,
+      });
     },
 
     accessFor(info, admin) {

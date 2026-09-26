@@ -7,17 +7,30 @@ import {
   validateQuery,
 } from "@udp/http";
 import {
+  createEnvironmentBodySchema,
+  updateEnvironmentBodySchema,
+  type CreateEnvironmentBody,
+  type UpdateEnvironmentBody,
+} from "@udp/shared-types/environment-api";
+import {
+  environmentCreatedResponseWire,
+  environmentDeletedResponseWire,
+  environmentListResponseWire,
+  environmentResponseWire,
   sdkKeyCreatedResponseWire,
   sdkKeyListResponseWire,
   sdkKeyResponseWire,
 } from "@udp/shared-types/wire";
 import { appDepsOf } from "../../core/app-deps.js";
 import { requireAuth } from "../../core/http/middlewares/auth.middleware.js";
+import { idempotent } from "../../core/http/middlewares/idempotency.middleware.js";
 import {
   projectIdParam,
   requireMinProjectRole,
 } from "../../core/http/middlewares/project-role.middleware.js";
 import { auditContextOf } from "../audit/audit.service.js";
+import { environmentWire } from "../project/project.view.js";
+import * as environmentService from "./environment.service.js";
 import * as sdkKeyService from "./sdk-key.service.js";
 import {
   createSdkKeyBodySchema,
@@ -129,6 +142,93 @@ environmentRouter.delete(
         keyIdOf(req),
         auditContextOf(req),
       ),
+    );
+  }),
+);
+
+/**
+ * [v4.11, Plan #40] Vòng đời environment (§9): đọc VIEWER; tạo, sửa cờ, xoá OWNER — cùng hạng
+ * với phát SDK key: thêm một ranh giới cô lập (namespace, khoá, cấu hình flag) là quyết định của
+ * chủ project. `POST` qua `idempotent()` như mọi POST tạo tài nguyên khác (§9) — response không
+ * mang bí mật nào.
+ */
+const environmentDepsOf = (req: Request) => {
+  const deps = appDepsOf(req);
+  return {
+    flagService: deps.flagService,
+    enqueue: deps.provisioning.enqueue,
+  };
+};
+
+environmentRouter.get(
+  "/environments",
+  requireAuth,
+  requireMinProjectRole("VIEWER"),
+  asyncHandler(async (req, res) => {
+    const environments = await environmentService.list(projectIdParam(req));
+    sendJson(res, environmentListResponseWire, {
+      environments: environments.map(environmentWire),
+    });
+  }),
+);
+
+environmentRouter.post(
+  "/environments",
+  requireAuth,
+  requireMinProjectRole("OWNER"),
+  idempotent("POST /projects/:id/environments"),
+  validateBody(createEnvironmentBodySchema),
+  asyncHandler(async (req, res) => {
+    const { environment, job } = await environmentService.create(
+      environmentDepsOf(req),
+      projectIdParam(req),
+      req.body as CreateEnvironmentBody,
+      req,
+    );
+    sendJson(
+      res,
+      environmentCreatedResponseWire,
+      { environment: environmentWire(environment), job },
+      201,
+    );
+  }),
+);
+
+environmentRouter.patch(
+  "/environments/:envId",
+  requireAuth,
+  requireMinProjectRole("OWNER"),
+  validateBody(updateEnvironmentBodySchema),
+  asyncHandler(async (req, res) => {
+    const environment = await environmentService.update(
+      projectIdParam(req),
+      environmentIdOf(req),
+      req.body as UpdateEnvironmentBody,
+      req,
+    );
+    sendJson(res, environmentResponseWire, {
+      environment: environmentWire(environment),
+    });
+  }),
+);
+
+/** Có cluster ⇒ 202 kèm job dọn phần cluster; không ⇒ 200 `job: null` — một hình response */
+environmentRouter.delete(
+  "/environments/:envId",
+  requireAuth,
+  requireMinProjectRole("OWNER"),
+  asyncHandler(async (req, res) => {
+    const job = await environmentService.remove(
+      environmentDepsOf(req),
+      projectIdParam(req),
+      environmentIdOf(req),
+      req,
+    );
+    sendJson(
+      res,
+      environmentDeletedResponseWire,
+      { job },
+      job === null ? 200 : 202,
     );
   }),
 );

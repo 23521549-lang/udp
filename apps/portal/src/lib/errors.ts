@@ -1,6 +1,7 @@
 import { CLOUD_ERROR_SLUGS } from "@udp/shared-types/cloud-api";
 import { PROVISION_ERROR_SLUGS } from "@udp/shared-types/provisioning-api";
 import { DOMAIN_ERROR_SLUGS } from "@udp/shared-types/domain-api";
+import { ENVIRONMENT_ERROR_SLUGS } from "@udp/shared-types/environment-api";
 import {
   CSRF_INVALID_SLUG,
   ERROR_CATALOG,
@@ -80,6 +81,20 @@ const SLUG_COPY: Record<string, string> = {
     "Lượt này đã qua điểm hủy được: đang dọn tài nguyên hoặc đã kết thúc.",
   [PROVISION_ERROR_SLUGS.credentialLocked]:
     "Đang có lượt triển khai dùng credential hiện tại. Đổi sau khi lượt đó kết thúc.",
+  [PROVISION_ERROR_SLUGS.notRetryable]:
+    "Chỉ thử lại được lượt thêm/bớt environment đã thất bại.",
+  [ENVIRONMENT_ERROR_SLUGS.limit]:
+    "Project đã đủ số environment tối đa. Xoá một environment không dùng trước.",
+  [ENVIRONMENT_ERROR_SLUGS.last]:
+    "Không xoá được environment cuối cùng của project.",
+  [ENVIRONMENT_ERROR_SLUGS.rolloutActive]:
+    "Environment còn rollout đang chạy. Kết thúc rollout trước khi xoá.",
+  [ENVIRONMENT_ERROR_SLUGS.flagsEnabled]:
+    "Environment còn flag đang bật. Tắt các flag đó trước khi xoá.",
+  [ENVIRONMENT_ERROR_SLUGS.hasHistory]:
+    "Environment đã có lịch sử (SDK key, deploy, bật tắt flag) nên được giữ lại: lịch sử không bị xoá theo.",
+  [ENVIRONMENT_ERROR_SLUGS.projectBusy]:
+    "Project đang có một lượt triển khai chạy. Thử lại khi lượt đó xong.",
 };
 
 /** Slug cuối của `type` (`https://.../problems/<slug>`) — để component rẽ nhánh theo lỗi */

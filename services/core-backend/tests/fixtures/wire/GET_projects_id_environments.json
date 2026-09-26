@@ -1,0 +1,40 @@
+{
+  "route": "GET /projects/{id}/environments",
+  "status": 200,
+  "body": {
+    "environments": [
+      {
+        "id": "6a3c69bd-0720-4758-b3c2-316cb3bcfd72",
+        "name": "dev",
+        "k8sNamespace": "udp-p-f7ffd52e-f49af8-dev",
+        "isProduction": false,
+        "rank": 0,
+        "autoDeploy": true
+      },
+      {
+        "id": "56e6ee6c-628c-46ea-88c7-c74eee0a385e",
+        "name": "staging",
+        "k8sNamespace": "udp-p-f7ffd52e-f49af8-staging",
+        "isProduction": false,
+        "rank": 1,
+        "autoDeploy": true
+      },
+      {
+        "id": "524e1bad-5da2-4ff1-9f83-3381aa7e756e",
+        "name": "prod",
+        "k8sNamespace": "udp-p-f7ffd52e-f49af8-prod",
+        "isProduction": true,
+        "rank": 2,
+        "autoDeploy": false
+      },
+      {
+        "id": "43a72dcb-e574-47fe-935e-96fdb2f447c6",
+        "name": "qa",
+        "k8sNamespace": "udp-p-f7ffd52e-f49af8-qa",
+        "isProduction": false,
+        "rank": 3,
+        "autoDeploy": true
+      }
+    ]
+  }
+}

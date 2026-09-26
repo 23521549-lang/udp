@@ -123,7 +123,11 @@ export const TERMINAL_STATES: readonly JobState[] = [
   "COMPENSATION_FAILED",
 ];
 
-/** Trạng thái đang chạy mà người dùng còn hủy được (§9 `POST .../cancel`) */
+/**
+ * Trạng thái đang chạy mà người dùng còn hủy được (§9 `POST .../cancel`) — CHỈ của job PROVISION:
+ * hủy là nhánh bù trừ hợp tác của nó. [v4.11, Plan #40] Job khác (TEARDOWN, DOMAIN_APPLY,
+ * ENVIRONMENT_APPLY) không đọc `CANCEL_REQUESTED`; nhận lệnh hủy rồi chạy tiếp tới cuối là nói dối.
+ */
 export const CANCELLABLE_STATES: readonly JobState[] = [
   "QUEUED",
   "NETWORK",
@@ -229,7 +233,11 @@ export async function requestCancel(
   jobId: string,
 ): Promise<boolean> {
   const { count } = await prisma.provisioningJob.updateMany({
-    where: { id: jobId, state: { in: [...CANCELLABLE_STATES] } },
+    where: {
+      id: jobId,
+      jobType: "PROVISION",
+      state: { in: [...CANCELLABLE_STATES] },
+    },
     data: { state: "CANCEL_REQUESTED" },
   });
   return count === 1;

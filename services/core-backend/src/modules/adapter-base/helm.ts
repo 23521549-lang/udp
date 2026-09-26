@@ -8,6 +8,7 @@ import type {
   DomainAdapter,
   DomainAdapterContext,
   DomainToolConfig,
+  KubernetesClient,
   ReadOnlyAdapterContext,
   ReadOnlyKubernetesClient,
 } from "@udp/adapter-core";
@@ -298,19 +299,74 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
       ? ctx.systemNamespace
       : (ctx.environment?.k8sNamespace ?? ctx.systemNamespace);
 
-  const releaseRef = (unit: HelmUnit, ctx: ReadOnlyAdapterContext) => ({
+  const releaseRefNamed = (name: string, ctx: ReadOnlyAdapterContext) => ({
     apiVersion: "helm.toolkit.fluxcd.io/v2",
     kind: RELEASE_KIND,
     namespace: nsOf(ctx),
-    name: unit.releaseName,
+    name,
   });
+  const releaseRef = (unit: HelmUnit, ctx: ReadOnlyAdapterContext) =>
+    releaseRefNamed(unit.releaseName, ctx);
 
-  const valuesRef = (unit: HelmUnit, ctx: ReadOnlyAdapterContext) => ({
+  const valuesRefNamed = (name: string, ctx: ReadOnlyAdapterContext) => ({
     apiVersion: "v1",
     kind: VALUES_KIND,
     namespace: nsOf(ctx),
-    name: `${unit.releaseName}-values`,
+    name: `${name}-values`,
   });
+  const valuesRef = (unit: HelmUnit, ctx: ReadOnlyAdapterContext) =>
+    valuesRefNamed(unit.releaseName, ctx);
+
+  /**
+   * [v4.11, Plan #40 QĐ-7] Kho instance theo environment đã dựng — ConfigMap
+   * `<release>-instances` cạnh release. Deploy với MỘT tập environment phải hội tụ về đúng tập
+   * đó: environment bị bỏ để lại instance của nó, mà không hook nào của interface adapter (đang
+   * khoá) nói env nào vừa đi. Kho ghi tên instance của lần áp trước; lần áp sau gỡ tên có trong
+   * kho mà không còn trong tập mới. Không cần verb `list` — chạy như nhau trên cluster thật và
+   * cluster giả.
+   */
+  const inventoryRef = (ctx: ReadOnlyAdapterContext) => ({
+    apiVersion: "v1",
+    kind: VALUES_KIND,
+    namespace: nsOf(ctx),
+    name: `${spec.releaseName}-instances`,
+  });
+
+  async function recordedInstances(
+    client: ReadOnlyKubernetesClient,
+    ctx: ReadOnlyAdapterContext,
+  ): Promise<string[]> {
+    const found = await client.read<{ data?: { releases?: unknown } }>(
+      "get",
+      inventoryRef(ctx),
+    );
+    const raw = found?.data?.releases;
+    return typeof raw === "string" && raw !== "" ? raw.split(",") : [];
+  }
+
+  /** Instance theo environment của tập HIỆN TẠI — thứ lần áp này dựng */
+  const currentInstances = (ctx: ReadOnlyAdapterContext): string[] => {
+    const instance = spec.perEnvironment;
+    return instance === undefined
+      ? []
+      : ctx.environments.map((e) =>
+          instanceReleaseName(instance.releasePrefix, e),
+        );
+  };
+
+  /** Gỡ instance có trong kho mà không còn trong tập hiện tại — của environment đã bỏ */
+  async function removeOrphanInstances(
+    client: KubernetesClient,
+    ctx: DomainAdapterContext,
+  ): Promise<void> {
+    const current = currentInstances(ctx);
+    for (const name of await recordedInstances(client, ctx)) {
+      if (current.includes(name)) continue;
+      ctx.progress(`gỡ ${name} của environment đã bỏ`);
+      await client.write("delete", releaseRefNamed(name, ctx));
+      await client.write("delete", valuesRefNamed(name, ctx));
+    }
+  }
 
   const secretName = `${spec.releaseName}-secrets`;
   const secretOf = (
@@ -414,6 +470,12 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
         desiredOf(unit, config, ctx),
       );
       await client.write("apply", releaseRef(unit, ctx), releaseSpec(unit));
+    }
+    if (spec.perEnvironment !== undefined) {
+      await removeOrphanInstances(client, ctx);
+      await client.write("apply", inventoryRef(ctx), {
+        data: { releases: currentInstances(ctx).join(",") },
+      });
     }
     ctx.progress(`${spec.toolId} đã sẵn sàng`);
     return spec.bindings(ctx, config);
@@ -616,6 +678,10 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     teardown: (ctx, reason) =>
       guarded(async () => {
         const client = await ctx.k8s.getClient("tooling");
+        // Instance của environment đã bỏ mà chưa kịp dọn — trước operator, như mọi instance
+        if (spec.perEnvironment !== undefined) {
+          await removeOrphanInstances(client, ctx);
+        }
         // Ngược thứ tự áp: bộ thu log và giao diện đi trước máy chủ lưu trữ; release nền giữ lại
         for (const unit of [...unitsFor(ctx)]
           .reverse()
@@ -631,6 +697,10 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
           if (reason !== "switch") {
             await client.write("delete", valuesRef(unit, ctx));
           }
+        }
+        // Kho instance đi cuối: mọi instance nó ghi đã được gỡ ở trên
+        if (spec.perEnvironment !== undefined) {
+          await client.write("delete", inventoryRef(ctx));
         }
         // Bí mật thì KHÔNG giữ kể cả khi đổi tool: khoá không sống lâu hơn tool dùng nó
         if (hasSecret) {

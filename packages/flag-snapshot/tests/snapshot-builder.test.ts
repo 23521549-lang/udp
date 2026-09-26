@@ -6,7 +6,7 @@ import {
   segmentStateFor,
   snapshotFromRow,
   stateFor,
-  unchangedStateOf,
+  recomputedStateOf,
 } from "../src/snapshot-builder.js";
 import type { SnapshotReader, SnapshotRow } from "../src/snapshot-row.js";
 
@@ -89,13 +89,13 @@ describe("segmentStateFor — payload outbox của segment.updated (§3.5)", () 
   });
 });
 
-describe("unchangedStateOf — sdkkey.revoked (L1)", () => {
+describe("recomputedStateOf — sdkkey.revoked (L1)", () => {
   it("giữ nguyên payload bên gọi đưa, và TÍNH LẠI hash của snapshot", async () => {
     const snapshotRow = row([
       { id: SEG_A, conditions: { all: [], userIds: ["u1"] } },
     ]);
     const sdkKeyId = "9d2f4c1e-0000-4000-8000-000000000001";
-    const state = await unchangedStateOf({ sdkKeyId })(
+    const state = await recomputedStateOf({ sdkKeyId })(
       readerOf(snapshotRow),
       ENV,
     );
@@ -137,7 +137,7 @@ describe("[v4.10] segments đọc MỘT lần cho cả lần ghi fan-out", () =>
     > = {
       stateFor: stateFor("khong-co-flag-nay"),
       segmentStateFor: segmentStateFor(SEG_A),
-      unchangedStateOf: unchangedStateOf({ sdkKeyId: SEG_B }),
+      recomputedStateOf: recomputedStateOf({ sdkKeyId: SEG_B }),
     };
 
     for (const [name, stateOf] of Object.entries(factories)) {
