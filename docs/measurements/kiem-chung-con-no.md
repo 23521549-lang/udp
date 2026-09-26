@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 41.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 42.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -817,6 +817,27 @@ plan/apply`, `pulumi preview/up`, `ansible-playbook --check` chạy trong sáu C
 - **Tài nguyên:** ba cluster (~3 GiB mỗi cluster, lần lượt) + tài khoản CI và SaaS dùng thử.
 - **Ảnh hưởng tới kết luận:** câu "mọi tool của §5.5 có adapter" của Plan #37 đứng ở mức hợp đồng
   và văn bản template; việc tool thật làm đúng việc của nó trên hạ tầng thật là phần chưa đo.
+
+## db-cost-real — database theo environment và chi phí thật trên cluster
+
+- **Vì sao nợ:** sáu adapter Database và hai adapter Cost (Plan #38) qua bộ hợp đồng với HAI
+  environment trên cluster mô phỏng; CR của operator viết rõ trong mã và được kiểm ở dạng giá
+  trị; route chi phí được kiểm với cổng proxy giả trả dữ liệu đúng hình `/allocation`. Chưa đo:
+  operator thật dựng instance từ CR trong namespace env (tên service và Secret mà operator thật
+  sinh — CloudNativePG `-rw`/`-app`, MongoDB `-svc`/`<resource>-<db>-<user>`, MySQL Router, OT
+  Redis, K8ssandra `-superuser`, MinIO `config.env`), chart `raw` render `templates` với
+  `secretValuesFrom`, dữ liệu `/allocation` thật của OpenCost/Kubecost khi cluster có tải và
+  giá cloud công khai theo region.
+- **Tiền đề:** `I32-cluster` + `helm-real`; Prometheus trong cluster (Monitoring); ba environment.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- db-cost.real` (tệp CHƯA CÓ; nó bật từng
+  operator, chờ instance sẵn sàng ở mỗi namespace env, kết nối bằng Secret mà binding trỏ tới, rồi
+  đọc `GET /cost` sau một giờ tải mẫu).
+- **Đạt:** mỗi env một instance nối được bằng thông tin của binding; production có số bản sao đã
+  khai; mật khẩu `dev` khác `prod`; chi phí theo env khác 0 và tổng xấp xỉ chi phí node trong cửa
+  sổ. **Không đạt:** tên service/Secret lệch ⇒ sửa `instanceBindings` của adapter đó.
+- **Tài nguyên:** cluster ~6 GiB (mọi operator lần lượt) + Prometheus.
+- **Ảnh hưởng tới kết luận:** câu "mọi tool của §5.5 có adapter" đứng ở mức hợp đồng; database
+  thật theo environment và số chi phí thật là phần chưa đo.
 
 > **Đã trả (26/09/2026, Plan #36):** `cicd-adapter` — sáu adapter hiện thực
 > `CicdDomainAdapter`; mọi `verifySignature` đi qua `constantTimeEquals` (kiểm độ dài rồi

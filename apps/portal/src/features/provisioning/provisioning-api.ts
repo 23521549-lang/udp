@@ -1,5 +1,6 @@
 import type { ProvisionBody } from "@udp/shared-types/provisioning-api";
 import {
+  costResponseWire,
   jobDetailResponseWire,
   jobListResponseWire,
   jobResponseWire,
@@ -13,6 +14,9 @@ const p = (projectId: string) => `/projects/${projectId}`;
 export const provisioningApi = {
   preview: (projectId: string) =>
     api(provisionPreviewResponseWire, `${p(projectId)}/preview`),
+  /** Chi phí THỰC từ OpenCost/Kubecost (Plan #38) — khác ước tính của `preview` */
+  cost: (projectId: string, days: number) =>
+    api(costResponseWire, `${p(projectId)}/cost`, { query: { days } }),
   provision: (projectId: string, body: ProvisionBody, idempotencyKey: string) =>
     api(jobResponseWire, `${p(projectId)}/provision`, {
       method: "POST",

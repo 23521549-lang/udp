@@ -17,6 +17,8 @@ export interface DomainContractEnvOptions {
   resolved?: DomainAdapterContext["resolved"];
   /** Environment đích cho adapter `namespace`; adapter `cluster` để vắng */
   environment?: NonNullable<DomainAdapterContext["environment"]>;
+  /** Mọi environment của project — mặc định HAI (dev, prod) để phép kiểm thấy thứ dựng theo env */
+  environments?: DomainAdapterContext["environments"];
   /** Phản hồi của host ĐÃ KHAI; mặc định `200 {}` */
   respond?: (url: string, init: RequestInit | undefined) => Response;
   /** Mọi lời gọi egress kèm `init` — để test soi header và thân request */
@@ -24,6 +26,22 @@ export interface DomainContractEnvOptions {
 }
 
 export const CONTRACT_SYSTEM_NAMESPACE = "udp-system";
+
+/** Hai environment của project hợp đồng — một thường, một production */
+export const CONTRACT_ENVIRONMENTS: DomainAdapterContext["environments"] = [
+  {
+    id: "00000000-0000-4000-8000-00000000e001",
+    name: "dev",
+    k8sNamespace: "udp-hop-dong-dev",
+    isProduction: false,
+  },
+  {
+    id: "00000000-0000-4000-8000-00000000e002",
+    name: "prod",
+    k8sNamespace: "udp-hop-dong-prod",
+    isProduction: true,
+  },
+];
 
 function hostOf(url: string): string {
   try {
@@ -49,6 +67,7 @@ export function domainContractEnv(
     ...(options.environment === undefined
       ? {}
       : { environment: options.environment }),
+    environments: options.environments ?? CONTRACT_ENVIRONMENTS,
     systemNamespace: CONTRACT_SYSTEM_NAMESPACE,
     region: "ap-southeast-1",
     quota: {

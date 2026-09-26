@@ -99,6 +99,7 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "POST /projects/{id}/cloud/preflight": wire.cloudPreflightResponseWire,
 
   "GET /projects/{id}/preview": wire.provisionPreviewResponseWire,
+  "GET /projects/{id}/cost": wire.costResponseWire,
   "POST /projects/{id}/provision": wire.jobResponseWire,
   "GET /projects/{id}/jobs": wire.jobListResponseWire,
   "GET /projects/{id}/jobs/{id}": wire.jobDetailResponseWire,

@@ -75,6 +75,7 @@ export type {
   AdapterFixture,
   CicdDomainAdapter,
   DomainAdapter,
+  AdapterEnvironment,
   DomainAdapterContext,
   DomainToolConfig,
   PipelineStep,

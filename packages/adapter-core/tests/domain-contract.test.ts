@@ -31,8 +31,11 @@ function envFor(): DomainContractEnv {
   const progressLog: string[] = [];
   const fetchLog: string[] = [];
 
-  const context = (over: Partial<DomainAdapterContext> = {}): DomainAdapterContext => ({
+  const context = (
+    over: Partial<DomainAdapterContext> = {},
+  ): DomainAdapterContext => ({
     k8s: cluster,
+    environments: [],
     systemNamespace: "udp-system",
     region: "ap-southeast-1",
     quota: {
@@ -220,9 +223,9 @@ describe("meta — số phép và bảng truy vết", () => {
      */
     expect(failed).toBe(10);
     expect(
-      DOMAIN_CONTRACT_CHECKS.map((c) => c.name).filter(
-        (n) => !survivors.includes(n),
-      ).sort(),
+      DOMAIN_CONTRACT_CHECKS.map((c) => c.name)
+        .filter((n) => !survivors.includes(n))
+        .sort(),
     ).toEqual([
       "configSchema từ chối MỌI config không hợp lệ của fixture",
       "deploy rồi healthcheck phải trả healthy",
@@ -236,6 +239,68 @@ describe("meta — số phép và bảng truy vết", () => {
       "vượt chiều quota đã khai ⇒ adapter TỪ CHỐI",
     ]);
   }, 30_000);
+});
+
+describe("d6 và binding THEO environment (D-P29)", () => {
+  const d6 = DOMAIN_CONTRACT_CHECKS.find((c) => c.designCheckId === "d6");
+  const withEnvs = (): DomainContractEnv => {
+    const env = envFor();
+    const context = env.context;
+    return {
+      ...env,
+      context: (over = {}) =>
+        context({
+          environments: [
+            {
+              id: "e1",
+              name: "dev",
+              k8sNamespace: "ns-dev",
+              isProduction: false,
+            },
+            {
+              id: "e2",
+              name: "prod",
+              k8sNamespace: "ns-prod",
+              isProduction: true,
+            },
+          ],
+          ...over,
+        }),
+    };
+  };
+  const provides = [{ id: "db.instance", version: "1.0.0" }];
+  const binding = (environmentId?: string) => ({
+    id: "db.instance",
+    version: "1.0.0",
+    providedBy: "database:thu",
+    ...(environmentId === undefined ? {} : { environmentId }),
+  });
+
+  it("mỗi environment một binding ⇒ xanh", async () => {
+    await d6!.run(
+      permissiveAdapter({
+        provides,
+        requires: [],
+        bindings: [binding("e1"), binding("e2")],
+      }),
+      withEnvs(),
+    );
+  });
+
+  it("lặp không env, lặp cùng env, hay env không thuộc project ⇒ đỏ", async () => {
+    for (const bindings of [
+      [binding(), binding()],
+      [binding("e1"), binding("e1")],
+      [binding("e1"), binding("khac")],
+    ]) {
+      await expect(
+        d6!.run(
+          permissiveAdapter({ provides, requires: [], bindings }),
+          withEnvs(),
+        ),
+      ).rejects.toThrow(/lặp/);
+    }
+  });
 });
 
 describe("nguồn ngẫu nhiên là bộ ĐẾM LÊN, không phải Math.random", () => {

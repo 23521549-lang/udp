@@ -273,6 +273,31 @@ export function createJobKit(deps: JobKitDeps) {
       : deps.clusters.accessFor(cluster.info, cluster.admin);
   }
 
+  /**
+   * Cluster của project cho MỘT việc ngoài job hạ tầng (theo dõi deploy, hỏi chi phí): cluster lấy
+   * từ lượt PROVISION xong gần nhất, credential ngắn hạn huỷ ngay sau `use`. Project chưa có
+   * cluster ⇒ `PhaseFailedError` (thử lại không đổi được gì).
+   */
+  async function withProjectCluster<T>(
+    projectId: string,
+    use: (access: ClusterAccess) => Promise<T>,
+  ): Promise<T> {
+    const job = await prisma.provisioningJob.findFirst({
+      where: { projectId, jobType: "PROVISION", state: "DONE" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (job === null) throw new PhaseFailedError("project chưa có cluster");
+    const input = await load(job.id);
+    return withCredential(projectId, async (credential) => {
+      const cluster = await clusterOf(input, credential);
+      if (cluster === null) {
+        throw new PhaseFailedError("project chưa có cluster");
+      }
+      return use(deps.clusters.accessFor(cluster.info, cluster.admin));
+    });
+  }
+
   /** Giành lease + giữ nó sống trong suốt `body`; job đã kết thúc thì không làm gì */
   async function withLease(
     jobId: string,
@@ -330,6 +355,7 @@ export function createJobKit(deps: JobKitDeps) {
     advance,
     clusterOf,
     clusterAccessOf,
+    withProjectCluster,
     domainInput,
     withLease,
   };

@@ -30,5 +30,6 @@ export const inertProvisioning: ProvisioningRuntime = {
   egressCidrs: [],
   enqueue: null,
   enqueueDeploy: null,
+  withCluster: null,
   scanDrift: null,
 };

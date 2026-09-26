@@ -101,4 +101,12 @@ export const DOMAIN_ERROR_SLUGS = {
   upToDate: "domain-up-to-date",
   /** Nâng cấp / quét ngay: domain không chạy trên cluster của project */
   notRunning: "domain-not-running",
+  /** [v4.11, Plan #38] Chi phí: project chưa bật Cost Management (không có `cost.query`) */
+  costNotEnabled: "cost-not-enabled",
 } as const;
+
+/** `GET /projects/:id/cost?days=` — cửa sổ 1–30 ngày (Plan #38 QĐ-8) */
+export const costQuerySchema = z
+  .object({ days: z.coerce.number().int().min(1).max(30).default(7) })
+  .strict();
+export type CostQuery = z.infer<typeof costQuerySchema>;

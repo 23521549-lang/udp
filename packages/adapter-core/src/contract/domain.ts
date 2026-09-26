@@ -295,8 +295,26 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     name: "binding trả về khi deploy khớp capability đã khai",
     designCheckId: "d6",
     async run(adapter, env) {
-      const res = await adapter.deploy(env.context(), env.fixture.validConfig);
-      const got = (res.data ?? []).map((b) => b.id).sort();
+      const ctx = env.context();
+      const res = await adapter.deploy(ctx, env.fixture.validConfig);
+      const bindings = res.data ?? [];
+      const got = [...new Set(bindings.map((b) => b.id))].sort();
+      /**
+       * [v4.11, D-P29] Một capability chỉ được LẶP khi đó là binding THEO environment (instance
+       * database mỗi env): mỗi bản mang một `environmentId` khác nhau, và id đó là environment
+       * của project. Lặp mà không có env là hai hàng `capability_bindings` tranh cùng một chỗ.
+       */
+      const projectEnvironments = new Set(ctx.environments.map((e) => e.id));
+      for (const id of got) {
+        const same = bindings.filter((b) => b.id === id);
+        if (same.length === 1) continue;
+        const envIds = same.map((b) => b.environmentId);
+        assert(
+          envIds.every((e) => e !== undefined && projectEnvironments.has(e)) &&
+            new Set(envIds).size === same.length,
+          `binding ${id} lặp ${String(same.length)} lần mà không mỗi bản một environment của project`,
+        );
+      }
       /**
        * `provides` là `{ id, version, exclusive? }[]`, KHÔNG phải `string[]`.
        *

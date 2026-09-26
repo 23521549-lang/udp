@@ -142,6 +142,7 @@ const app = createApp({
     ...deps.provisioning,
     enqueue: queue.enqueueJob,
     enqueueDeploy: queue.enqueueDeploy,
+    withCluster: kit.withProjectCluster,
     scanDrift: async (projectId, domainType) => {
       await sweepDrift(kit, { only: [projectId], domainType });
     },

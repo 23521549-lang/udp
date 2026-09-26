@@ -8,6 +8,8 @@ import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
+import { can } from "../project/roles";
+import { CostPanel } from "./CostPanel";
 import { JobLog } from "./JobLog";
 import { PreviewPanel } from "./PreviewPanel";
 import { provisioningApi } from "./provisioning-api";
@@ -73,6 +75,9 @@ export function InfraPage() {
           )}
           {list.length > 1 && (
             <History jobs={list} selected={shown} onPick={setPicked} />
+          )}
+          {project.status === "ACTIVE" && can(project.myRole, "MAINTAINER") && (
+            <CostPanel />
           )}
         </div>
       </div>

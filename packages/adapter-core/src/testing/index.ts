@@ -133,6 +133,7 @@ export type {
 
 /** Moi truong cua bo hop dong Domain, dung MOT cho (Plan #31 P2) */
 export {
+  CONTRACT_ENVIRONMENTS,
   CONTRACT_SYSTEM_NAMESPACE,
   domainContractEnv,
 } from "./domain-contract-env.js";

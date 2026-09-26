@@ -70,6 +70,8 @@ const SLUG_COPY: Record<string, string> = {
   [DOMAIN_ERROR_SLUGS.notRunning]:
     "Domain này không chạy trên cluster của project.",
   [DOMAIN_ERROR_SLUGS.upToDate]: "Domain đã ở bản mới nhất máy chủ có.",
+  [DOMAIN_ERROR_SLUGS.costNotEnabled]:
+    "Project chưa bật Cost Management: bật OpenCost hay Kubecost ở trang Domain.",
   [CLOUD_ERROR_SLUGS.methodUnavailable]:
     "Cách xác thực này chưa được bật trên máy chủ UDP. Chọn cách khác hoặc báo quản trị.",
   [PROVISION_ERROR_SLUGS.blocked]:

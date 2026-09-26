@@ -38,6 +38,7 @@ const provisioning: ProvisioningRuntime = {
     return Promise.resolve();
   },
   enqueueDeploy: null,
+  withCluster: null,
   scanDrift: null,
 };
 

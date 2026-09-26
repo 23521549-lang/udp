@@ -57,6 +57,13 @@ const toLabel = (value: string, max: number): string =>
     .replace(/-+$/g, "");
 
 /**
+ * [v4.11, Plan #38] Nhãn DNS của environment — CÙNG luật với phần env của namespace, nên duy nhất
+ * trong project (namespace đã UNIQUE theo nó). Release Helm dựng theo environment mang nhãn này.
+ */
+export const envLabelFor = (envName: string): string =>
+  toLabel(envName, ENV_SLUG_MAX) || "e";
+
+/**
  * [v4.11] Tên workload mà template pipeline Golden Path dựng cho project (§11, Plan #36): một
  * Deployment và container CÙNG tên — thứ webhook deploy đổi image (§8.3). Cùng luật bỏ dấu với
  * namespace; tên project không còn ký tự nào dùng được ⇒ `app`.
@@ -95,7 +102,7 @@ export function k8sNamespaceFor(
   envName: string,
 ): string {
   const project = toLabel(projectName, PROJECT_SLUG_MAX) || "p";
-  const env = toLabel(envName, ENV_SLUG_MAX) || "e";
+  const env = envLabelFor(envName);
   const suffix = projectId
     .replace(/-/g, "")
     .slice(0, PROJECT_ID_SUFFIX_LENGTH)

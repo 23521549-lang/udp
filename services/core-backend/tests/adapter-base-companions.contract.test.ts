@@ -5,6 +5,7 @@ import {
   type DomainAdapter,
 } from "@udp/adapter-core";
 import {
+  CONTRACT_ENVIRONMENTS,
   CONTRACT_SYSTEM_NAMESPACE as SYSTEM_NS,
   domainContractEnv,
 } from "@udp/adapter-core/testing";
@@ -240,6 +241,66 @@ describe("lớp nền Helm nhiều release (Plan #32 AC-2)", () => {
     env.cluster.reset();
     await withShared.teardown(env.context(), "disable");
     expect(releaseOrder(env.cluster.writes, "delete")).toEqual(["udp-may-chu"]);
+  });
+
+  it("instance theo environment: một release mỗi env, cài vào namespace env, áp sau và gỡ trước release tĩnh (Plan #38)", async () => {
+    const perEnv = createHelmBasedAdapter({
+      ...spec,
+      companions: [],
+      perEnvironment: {
+        releasePrefix: "udp-csdl",
+        chart: {
+          name: "csdl",
+          version: "1.0.0",
+          repo: "https://vi-du.test/charts",
+        },
+        values: (_config, _ctx, environment) => ({
+          replicas: environment.isProduction ? 3 : 1,
+        }),
+      },
+    });
+    const env = domainContractEnv(fixture());
+    await perEnv.deploy(env.context(), env.fixture.validConfig);
+    expect(releaseOrder(env.cluster.writes, "apply")).toEqual([
+      "udp-may-chu",
+      "udp-csdl-dev",
+      "udp-csdl-prod",
+    ]);
+    const client = await env.cluster.getClient("tooling");
+    const prod = await client.read<Record<string, unknown>>("get", {
+      apiVersion: "helm.toolkit.fluxcd.io/v2",
+      kind: "HelmRelease",
+      namespace: SYSTEM_NS,
+      name: "udp-csdl-prod",
+    });
+    expect(prod?.targetNamespace).toBe(CONTRACT_ENVIRONMENTS[1]!.k8sNamespace);
+    const values = await client.read<{ values: unknown }>("get", {
+      apiVersion: "v1",
+      kind: "ConfigMap",
+      namespace: SYSTEM_NS,
+      name: "udp-csdl-prod-values",
+    });
+    expect(values?.values).toEqual({ replicas: 3 });
+
+    env.cluster.reset();
+    await perEnv.teardown(env.context(), "disable");
+    expect(releaseOrder(env.cluster.writes, "delete")).toEqual([
+      "udp-csdl-prod",
+      "udp-csdl-dev",
+      "udp-may-chu",
+    ]);
+  });
+
+  it("nhu cầu vượt quota ⇒ FAILED trước khi ghi bất cứ gì (Plan #38 QĐ-4)", async () => {
+    const hungry = createHelmBasedAdapter({
+      ...spec,
+      demand: (_config, ctx) => ({ maxDatabases: ctx.environments.length * 2 }),
+    });
+    const env = domainContractEnv(fixture());
+    const res = await hungry.deploy(env.context(), env.fixture.validConfig);
+    expect(res.status).toBe("FAILED");
+    expect(res.message).toMatch(/maxDatabases = 4, trần là 2/);
+    expect(env.cluster.writes).toEqual([]);
   });
 
   it("hai release trùng tên, hay bí mật ở adapter namespace ⇒ từ chối lúc dựng", () => {

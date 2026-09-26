@@ -27,16 +27,24 @@ export interface DomainToolConfig {
 }
 
 /** Bối cảnh đầy đủ mà adapter cần — thay cho việc chỉ truyền `ClusterInfo` */
+/** Một environment của project như adapter thấy nó */
+export interface AdapterEnvironment {
+  id: string;
+  name: string;
+  k8sNamespace: string;
+  isProduction: boolean;
+}
+
 export interface DomainAdapterContext {
   /** Client K8s đã xác thực bằng bound SA token; adapter KHÔNG tự lấy kubeconfig */
   k8s: ClusterAccess;
   /** Với `scope = "namespace"`: environment đích. Với `scope = "cluster"`: vắng */
-  environment?: {
-    id: string;
-    name: string;
-    k8sNamespace: string;
-    isProduction: boolean;
-  };
+  environment?: AdapterEnvironment;
+  /**
+   * [v4.11, D-P29] MỌI environment của project, theo thứ tự hạng — cho adapter cluster-scoped
+   * dựng thứ THEO environment (operator một lần ở `udp-system`, CR mỗi namespace env, §5.2).
+   */
+  environments: readonly AdapterEnvironment[];
   /** Namespace hệ thống cho tooling cluster-scoped */
   systemNamespace: string;
   region: string;

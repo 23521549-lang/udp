@@ -1,4 +1,5 @@
 import type {
+  DomainCatalogEntryWire,
   DomainValidationWire,
   JobDetailWire,
   ProjectDetailResponseWire,
@@ -261,6 +262,16 @@ describe("trang Domain", () => {
     const detail = projectFixture("MAINTAINER");
     useProjectHandlers(detail);
     useDomainHandlers({ saved: savedWith(true) });
+    // Registry thật đã phủ đủ §5.5 (Plan #38) — ca này dựng catalog có một domain rỗng
+    const catalog = golden<{ domains: DomainCatalogEntryWire[] }>(
+      "GET /domains/catalog",
+    );
+    catalog.domains = catalog.domains.map((d) =>
+      d.domainType === "COST" ? { ...d, tools: [] } : d,
+    );
+    server.use(
+      http.get(`${API}/domains/catalog`, () => HttpResponse.json(catalog)),
+    );
     renderApp(domainsUrl(detail));
     expect(
       (await screen.findAllByText("Chưa có công cụ nào cho domain này."))

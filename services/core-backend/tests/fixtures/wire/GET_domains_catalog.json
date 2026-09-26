@@ -2675,7 +2675,311 @@
         "displayName": "Database Operators",
         "defaultOrder": 140,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "cloudnative-pg",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "postgresVersion",
+                  "required": false,
+                  "default": "16",
+                  "kind": "enum",
+                  "options": [
+                    "15",
+                    "16",
+                    "17"
+                  ]
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "k8ssandra",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "cassandraVersion",
+                  "required": false,
+                  "default": "4.1.6",
+                  "kind": "enum",
+                  "options": [
+                    "4.0.14",
+                    "4.1.6"
+                  ]
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "minio",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "object.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "credentialSeed",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 4,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 4,
+                  "max": 16
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "mongodb",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "mongodbVersion",
+                  "required": false,
+                  "default": "7.0.14",
+                  "kind": "enum",
+                  "options": [
+                    "6.0.18",
+                    "7.0.14"
+                  ]
+                },
+                {
+                  "key": "credentialSeed",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "mysql",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "mysqlVersion",
+                  "required": false,
+                  "default": "8.4.3",
+                  "kind": "enum",
+                  "options": [
+                    "8.0.40",
+                    "8.4.3"
+                  ]
+                },
+                {
+                  "key": "credentialSeed",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "redis",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "redisVersion",
+                  "required": false,
+                  "default": "v7.2.6",
+                  "kind": "enum",
+                  "options": [
+                    "v7.0.15",
+                    "v7.2.6"
+                  ]
+                },
+                {
+                  "key": "credentialSeed",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "COST",
@@ -2683,7 +2987,98 @@
         "displayName": "Cost Management",
         "defaultOrder": 150,
         "isAvailable": true,
-        "tools": []
+        "tools": [
+          {
+            "toolId": "kubecost",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "cost.query",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "id": "metrics.query",
+                "constraint": "^2"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "metrics.query": "Kubecost tính chi phí từ PromQL: bật Prometheus, VictoriaMetrics hay Grafana Cloud ở Monitoring."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "kubecostToken",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "opencost",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "cost.query",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "id": "metrics.query",
+                "constraint": "^2"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "metrics.query": "OpenCost tính chi phí từ PromQL: bật Prometheus, VictoriaMetrics hay Grafana Cloud ở Monitoring."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "pricing",
+                  "required": false,
+                  "default": "cloud",
+                  "kind": "enum",
+                  "options": [
+                    "cloud",
+                    "custom"
+                  ]
+                },
+                {
+                  "key": "cpuHourlyUsd",
+                  "required": false,
+                  "default": 0.031611,
+                  "kind": "number",
+                  "integer": false,
+                  "min": 0,
+                  "max": 10
+                },
+                {
+                  "key": "ramGiBHourlyUsd",
+                  "required": false,
+                  "default": 0.004237,
+                  "kind": "number",
+                  "integer": false,
+                  "min": 0,
+                  "max": 10
+                }
+              ]
+            }
+          }
+        ]
       },
       {
         "domainType": "ARTIFACT_REGISTRY",

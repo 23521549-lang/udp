@@ -329,28 +329,6 @@ export async function watchDeploy(
 export function createDeployJob(kit: JobKit, options: DeployWatchOptions) {
   const { prisma } = kit.deps;
 
-  /** Client `udp-workload` của cluster project — cluster lấy từ lượt PROVISION xong gần nhất */
-  async function withWorkloadClient<T>(
-    projectId: string,
-    use: (client: KubernetesClient) => Promise<T>,
-  ): Promise<T> {
-    const job = await prisma.provisioningJob.findFirst({
-      where: { projectId, jobType: "PROVISION", state: "DONE" },
-      orderBy: { createdAt: "desc" },
-      select: { id: true },
-    });
-    if (job === null) throw new PhaseFailedError("project chưa có cluster");
-    const input = await kit.load(job.id);
-    return kit.withCredential(projectId, async (credential) => {
-      const cluster = await kit.clusterOf(input, credential);
-      if (cluster === null) {
-        throw new PhaseFailedError("project chưa có cluster");
-      }
-      const access = kit.deps.clusters.accessFor(cluster.info, cluster.admin);
-      return use(await access.getClient("workload"));
-    });
-  }
-
   return {
     async run(
       deploymentId: string,
@@ -359,8 +337,13 @@ export function createDeployJob(kit: JobKit, options: DeployWatchOptions) {
       const start = await pendingStartOf(prisma, deploymentId);
       if (start === null) return;
       try {
-        await withWorkloadClient(start.projectId, (client) =>
-          watchDeploy(prisma, client, start, options),
+        await kit.withProjectCluster(start.projectId, async (access) =>
+          watchDeploy(
+            prisma,
+            await access.getClient("workload"),
+            start,
+            options,
+          ),
         );
       } catch (e) {
         // Lỗi tạm (mạng, 409 lặp, cluster chập chờn) ⇒ pg-boss thử lại; lượt cuối hay lỗi vĩnh viễn ⇒ kết luận

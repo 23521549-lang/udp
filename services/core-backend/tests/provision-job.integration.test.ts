@@ -1045,6 +1045,7 @@ function appFor(
         return Promise.resolve();
       },
       enqueueDeploy: null,
+      withCluster: null,
       scanDrift,
     },
   });

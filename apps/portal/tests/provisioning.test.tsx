@@ -169,6 +169,64 @@ describe("trang Hạ tầng", () => {
   });
 });
 
+describe("chi phí thực tế (Plan #38)", () => {
+  function useCostHandlers(status = 200) {
+    const asked: string[] = [];
+    server.use(
+      http.get(`${API}/projects/:id/cost`, ({ request }) => {
+        asked.push(new URL(request.url).searchParams.get("days") ?? "");
+        return status === 200
+          ? HttpResponse.json(golden("GET /projects/{id}/cost"))
+          : HttpResponse.json(
+              {
+                type: "https://udp.dev/problems/cost-not-enabled",
+                title: "CONFLICT",
+                status: 409,
+              },
+              { status: 409 },
+            );
+      }),
+    );
+    return asked;
+  }
+
+  it("project đang chạy, MAINTAINER: bảng chi phí theo environment; đổi cửa sổ ⇒ hỏi lại với days mới", async () => {
+    const detail = projectFixture("MAINTAINER");
+    detail.project.status = "ACTIVE";
+    useProjectHandlers(detail);
+    useInfraHandlers({});
+    const asked = useCostHandlers();
+    renderApp(infraUrl(detail));
+    const table = await screen.findByRole("table", {
+      name: "Chi phí theo environment",
+    });
+    expect(within(table).getByText("prod")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "30 ngày" }));
+    await waitFor(() => expect(asked).toContain("30"));
+    expect(asked).toContain("7");
+  });
+
+  it("chưa bật Cost ⇒ hướng dẫn bật, không phải lỗi; VIEWER không thấy thẻ", async () => {
+    const detail = projectFixture("MAINTAINER");
+    detail.project.status = "ACTIVE";
+    useProjectHandlers(detail);
+    useInfraHandlers({});
+    useCostHandlers(409);
+    const { unmount } = renderApp(infraUrl(detail));
+    expect(
+      await screen.findByText("Chưa bật Cost Management"),
+    ).toBeInTheDocument();
+    unmount();
+
+    const viewer = projectFixture("VIEWER");
+    viewer.project.status = "ACTIVE";
+    useProjectHandlers(viewer);
+    renderApp(infraUrl(viewer));
+    await screen.findByRole("heading", { name: "Hạ tầng" });
+    expect(screen.queryByText("Chi phí thực tế")).not.toBeInTheDocument();
+  });
+});
+
 describe("tiến độ job", () => {
   it("SSE snapshot ⇒ đọc lại job; tới trạng thái cuối ⇒ đóng luồng", async () => {
     const detail = projectFixture("VIEWER");

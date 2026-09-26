@@ -115,6 +115,7 @@ export async function sweepDrift(
               ? Promise.reject(new ClusterUnreachableError())
               : Promise.resolve({
                   k8s: access,
+                  environments: input.environments,
                   systemNamespace: SYSTEM_NAMESPACE,
                   region: input.payload.region,
                   quota: input.payload.quota,

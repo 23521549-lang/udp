@@ -259,6 +259,7 @@ export function adapterContext(
   return {
     k8s: input.access,
     ...(env === undefined ? {} : { environment: env }),
+    environments: input.environments,
     systemNamespace: SYSTEM_NAMESPACE,
     region: input.region,
     quota: input.quota,

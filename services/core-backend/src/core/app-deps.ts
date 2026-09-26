@@ -20,6 +20,7 @@ import {
   createRegistry,
   type DomainAdapterRegistry,
 } from "../modules/domain/domain-adapter.registry.js";
+import type { ClusterAccess } from "@udp/adapter-core";
 import type { EnqueueDeploy } from "../modules/cicd/deploy.service.js";
 import type { EnqueueJob } from "../modules/provisioning/provisioning.service.js";
 
@@ -69,11 +70,21 @@ export interface AppDeps {
   provisioning: ProvisioningRuntime;
 }
 
+export type WithCluster = <T>(
+  projectId: string,
+  use: (access: ClusterAccess) => Promise<T>,
+) => Promise<T>;
+
 export interface ProvisioningRuntime {
   egressCidrs: readonly string[];
   enqueue: EnqueueJob;
   /** [v4.11] Cổng sang hàng đợi `udp-deploy` (Plan #36) — `null` cùng nghĩa với `enqueue` */
   enqueueDeploy: EnqueueDeploy;
+  /**
+   * [v4.11, Plan #38] Cluster của project cho MỘT việc đọc (hỏi chi phí qua proxy) — cần
+   * credential cloud, nên chỉ tiến trình chạy worker cung cấp; `null` ⇒ route trả 503.
+   */
+  withCluster: WithCluster | null;
   /**
    * Quét drift NGAY một domain (Plan #30) — cần cluster, nên chỉ tiến trình chạy worker
    * cung cấp; `null` ⇒ route trả 503 thay vì giả vờ đã quét.
@@ -106,6 +117,7 @@ export function defaultAppDeps(): AppDeps {
       egressCidrs: env.UDP_EGRESS_CIDRS,
       enqueue: null,
       enqueueDeploy: null,
+      withCluster: null,
       scanDrift: null,
     },
   };

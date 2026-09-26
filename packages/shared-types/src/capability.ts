@@ -16,7 +16,7 @@
  */
 
 /**
- * 17 capability của §5.3.
+ * 18 capability của §5.3.
  *
  * Union viết tay, KHÔNG suy từ registry. Đây là một lựa chọn có giá và giá đó
  * được nêu tường minh: `pd-controller` dùng `"metrics.query"` ở tầng biên dịch,
@@ -45,9 +45,11 @@ export type CapabilityId =
   /** [v4.11, Plan #37] Khai tài nguyên cloud — operator trong cluster hay bước pipeline (IaC) */
   | "infra.provision"
   /** [v4.11, Plan #37] Quét bảo mật — image, IaC, runtime, DAST, phụ thuộc */
-  | "security.scan";
+  | "security.scan"
+  /** [v4.11, Plan #38] Kho đối tượng S3-compatible — MinIO; không phải database */
+  | "object.store";
 
-/** Đúng 17 giá trị của `CapabilityId`, cho type guard và cho test đối chiếu tài liệu */
+/** Đúng 18 giá trị của `CapabilityId`, cho type guard và cho test đối chiếu tài liệu */
 export const CAPABILITY_IDS: readonly CapabilityId[] = [
   "registry.oci",
   "metrics.query",
@@ -66,6 +68,7 @@ export const CAPABILITY_IDS: readonly CapabilityId[] = [
   "packages.store",
   "infra.provision",
   "security.scan",
+  "object.store",
 ];
 
 /**

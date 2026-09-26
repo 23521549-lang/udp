@@ -19,9 +19,9 @@ import {
  */
 
 describe("CAPABILITY_IDS", () => {
-  it("đúng 17 giá trị, không trùng", () => {
-    expect(CAPABILITY_IDS).toHaveLength(17);
-    expect(new Set(CAPABILITY_IDS).size).toBe(17);
+  it("đúng 18 giá trị, không trùng", () => {
+    expect(CAPABILITY_IDS).toHaveLength(18);
+    expect(new Set(CAPABILITY_IDS).size).toBe(18);
   });
 
   /**
@@ -51,6 +51,7 @@ describe("CAPABILITY_IDS", () => {
       "packages.store": true,
       "infra.provision": true,
       "security.scan": true,
+      "object.store": true,
     };
     expect([...CAPABILITY_IDS].sort()).toEqual(Object.keys(every).sort());
   });

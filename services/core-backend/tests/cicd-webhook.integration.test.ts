@@ -53,6 +53,7 @@ const app = createApp({
       enqueued.push(deploymentId);
       return Promise.resolve();
     },
+    withCluster: null,
     scanDrift: null,
   },
 });

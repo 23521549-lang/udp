@@ -149,6 +149,7 @@ function ports(
               data: { reachable: true },
             }),
         },
+        environments: [],
         systemNamespace: "udp-system",
         region: "ap-southeast-1",
         quota: {
@@ -442,6 +443,7 @@ function notifyContext(): Parameters<Dependent["adapter"]["deploy"]>[0] {
           data: { reachable: true },
         }),
     },
+    environments: [],
     systemNamespace: "udp-system",
     region: "ap-southeast-1",
     quota: {

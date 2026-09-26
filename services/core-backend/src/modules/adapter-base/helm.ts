@@ -2,7 +2,9 @@ import type {
   CapabilityDeclaration,
   CapabilityBinding,
 } from "@udp/shared-types";
+import { envLabelFor } from "@udp/config";
 import type {
+  AdapterEnvironment,
   DomainAdapter,
   DomainAdapterContext,
   DomainToolConfig,
@@ -101,7 +103,10 @@ export interface HelmAdapterSpec {
    * `secretValuesFrom`; ConfigMap giá trị chỉ mang BĂM của chúng. Adapter `namespace`
    * không được khai: §12.2 chỉ cho `tooling` chạm `secrets` trong `udp-system`.
    */
-  secretValues?: (config: DomainToolConfig) => Record<string, unknown>;
+  secretValues?: (
+    config: DomainToolConfig,
+    ctx: ReadOnlyAdapterContext,
+  ) => Record<string, unknown>;
   /**
    * Khoá PHẲNG trong cùng `Secret` (Plan #32) — thứ workload khác mount bằng `secretKeyRef`
    * (mật khẩu, HEC token, license key), không đọc được từ `values.yaml` lồng nhau. Binding
@@ -114,6 +119,34 @@ export interface HelmAdapterSpec {
    * chính trong cùng namespace (một bí mật, một chỗ niêm phong, một chỗ xoá).
    */
   companions?: readonly HelmCompanion[];
+  /**
+   * [v4.11, Plan #38 QĐ-2] Release dựng cho MỖI environment (instance database của operator): tên
+   * `<releasePrefix>-<nhãn env>`, bản ghi ở namespace của adapter, cài vào namespace của
+   * environment qua `targetNamespace` — `udp-tooling` không ghi gì ở namespace env (§12.2). Áp sau
+   * mọi release tĩnh (operator có trước instance), gỡ trước chúng.
+   */
+  perEnvironment?: HelmInstanceSpec;
+  /**
+   * [v4.11, Plan #38 QĐ-4] Nhu cầu tài nguyên THẬT theo cấu hình và số environment — lớp nền từ
+   * chối khi nhu cầu vượt quota, trước khi ghi gì. Vắng: chỉ luật "chiều khai phải > 0".
+   */
+  demand?: (
+    config: DomainToolConfig,
+    ctx: ReadOnlyAdapterContext,
+  ) => Partial<Record<keyof DomainAdapterContext["quota"], number>>;
+}
+
+export interface HelmInstanceSpec {
+  releasePrefix: string;
+  chart: HelmChartRef;
+  /** Instance nhận `secretValues` (mật khẩu theo environment) — cùng luật với release đi kèm */
+  readsSecretValues?: boolean;
+  /** Cùng luật với `values` của release chính: NÉM khi thiếu binding */
+  values: (
+    config: DomainToolConfig,
+    ctx: ReadOnlyAdapterContext,
+    environment: AdapterEnvironment,
+  ) => Record<string, unknown>;
 }
 
 export interface HelmCompanion {
@@ -188,10 +221,18 @@ export class HelmAdapterError extends Error {
   }
 }
 
-/** Một release của adapter — release chính hay một release đi kèm */
+/** Một release của adapter — release chính, release đi kèm, hay instance của một environment */
 interface HelmUnit extends HelmCompanion {
   primary: boolean;
+  /** Chỉ instance theo environment: namespace mà bộ cài đặt release vào */
+  targetNamespace?: string;
 }
+
+/** Tên release instance của một environment — bộ hợp đồng và test đọc cùng luật */
+export const instanceReleaseName = (
+  prefix: string,
+  environment: Pick<AdapterEnvironment, "name">,
+): string => `${prefix}-${envLabelFor(environment.name)}`;
 
 export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
   const hasSecret =
@@ -225,6 +266,25 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
   if (new Set(units.map((u) => u.releaseName)).size !== units.length) {
     throw new HelmAdapterError(`${spec.toolId}: hai release trùng tên`);
   }
+
+  /** Release tĩnh rồi instance của mọi environment hiện có — thứ tự áp; gỡ theo thứ tự ngược */
+  const unitsFor = (ctx: ReadOnlyAdapterContext): readonly HelmUnit[] => {
+    const instance = spec.perEnvironment;
+    if (instance === undefined) return units;
+    return [
+      ...units,
+      ...ctx.environments.map((environment): HelmUnit => ({
+        releaseName: instanceReleaseName(instance.releasePrefix, environment),
+        chart: instance.chart,
+        values: (config, c) => instance.values(config, c, environment),
+        primary: false,
+        ...(instance.readsSecretValues === true
+          ? { readsSecretValues: true }
+          : {}),
+        targetNamespace: environment.k8sNamespace,
+      })),
+    ];
+  };
 
   /**
    * Namespace đích, suy từ `scope` — adapter KHÔNG được tự chọn.
@@ -261,7 +321,9 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
       ? toolSecret(nsOf(ctx), secretName, {
           ...(spec.secretValues === undefined
             ? {}
-            : { "values.yaml": JSON.stringify(spec.secretValues(config)) }),
+            : {
+                "values.yaml": JSON.stringify(spec.secretValues(config, ctx)),
+              }),
           ...spec.secretKeys?.(config),
         })
       : null;
@@ -274,6 +336,9 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     ...(unit.chart.installer === undefined
       ? {}
       : { installer: unit.chart.installer }),
+    ...(unit.targetNamespace === undefined
+      ? {}
+      : { targetNamespace: unit.targetNamespace }),
     valuesFrom: `${unit.releaseName}-values`,
     ...((unit.primary || unit.readsSecretValues === true) &&
     spec.secretValues !== undefined
@@ -301,12 +366,24 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     };
   }
 
-  function assertQuota(ctx: DomainAdapterContext): void {
+  function assertQuota(
+    ctx: DomainAdapterContext,
+    config: DomainToolConfig,
+  ): void {
     for (const dim of spec.quotaDimensions) {
       const value = ctx.quota[dim];
       if (typeof value === "number" && value <= 0) {
         throw new HelmAdapterError(
           `vượt quota: ${String(dim)} phải lớn hơn 0 cho ${spec.toolId}`,
+        );
+      }
+    }
+    const demand = spec.demand?.(config, ctx) ?? {};
+    for (const [dim, needed] of Object.entries(demand)) {
+      const limit = ctx.quota[dim as keyof typeof ctx.quota];
+      if (typeof limit === "number" && needed > limit) {
+        throw new HelmAdapterError(
+          `vượt quota: ${spec.toolId} cần ${dim} = ${String(needed)}, trần là ${String(limit)}`,
         );
       }
     }
@@ -322,14 +399,14 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
         `config không hợp lệ theo configSchema của ${spec.toolId}`,
       );
     }
-    assertQuota(ctx);
+    assertQuota(ctx, config);
 
     /** Identity CỐ ĐỊNH là `tooling` — adapter không có đường chọn khác (§12.2) */
     const client = await ctx.k8s.getClient("tooling");
     const secret = secretOf(config, ctx);
     // Secret trước: release không bao giờ trỏ tới một Secret chưa có
     if (secret !== null) await client.write("apply", secret.ref, secret.body);
-    for (const unit of units) {
+    for (const unit of unitsFor(ctx)) {
       ctx.progress(`áp ${unit.chart.name} ${unit.chart.version}`);
       await client.write(
         "apply",
@@ -463,7 +540,7 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
          * đường nào ghi trong lúc quét.
          */
         const client = await ctx.k8s.getClient("tooling");
-        for (const unit of units) {
+        for (const unit of unitsFor(ctx)) {
           const drift = await unitDrift(client, unit, config, ctx);
           if (drift.drifted) return drift;
         }
@@ -510,7 +587,7 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
           ...ctx,
           resolved: { ...ctx.resolved, [changed.id]: changed },
         };
-        for (const unit of units) {
+        for (const unit of unitsFor(ctx)) {
           await client.write("patch", valuesRef(unit, ctx), {
             values: unit.values(config, next),
           });
@@ -522,7 +599,7 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
       guarded(async () => {
         const client = await ctx.k8s.getClient("tooling");
         const missing: string[] = [];
-        for (const unit of units) {
+        for (const unit of unitsFor(ctx)) {
           if ((await client.read("get", releaseRef(unit, ctx))) === null) {
             missing.push(unit.releaseName);
           }
@@ -540,7 +617,9 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
       guarded(async () => {
         const client = await ctx.k8s.getClient("tooling");
         // Ngược thứ tự áp: bộ thu log và giao diện đi trước máy chủ lưu trữ; release nền giữ lại
-        for (const unit of [...units].reverse().filter((u) => !u.shared)) {
+        for (const unit of [...unitsFor(ctx)]
+          .reverse()
+          .filter((u) => !u.shared)) {
           await client.write("delete", releaseRef(unit, ctx));
           /**
            * `reason = "switch"` GIỮ ConfigMap giá trị.

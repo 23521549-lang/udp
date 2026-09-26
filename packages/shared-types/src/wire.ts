@@ -1376,3 +1376,39 @@ export type CicdSecretResponseWire = z.infer<typeof cicdSecretResponseWire>;
 export type DeployAcceptedResponseWire = z.infer<
   typeof deployAcceptedResponseWire
 >;
+
+// ------------------------------------------------------------- Chi phí (Plan #38, §5.5 Cost)
+
+const usd = z.number().nonnegative();
+
+/**
+ * `GET /projects/:id/cost?days=` — chi phí THỰC từ bộ tính (OpenCost/Kubecost) gom theo
+ * environment (namespace). Khác `estimate` của preview (§4.4): đây là số đo được, không ước tính.
+ */
+export const costResponseWire = z
+  .object({
+    cost: z
+      .object({
+        provider: z.string(),
+        days: z.number().int().min(1).max(30),
+        currency: z.literal("USD"),
+        totalUsd: usd,
+        environments: z.array(
+          z
+            .object({
+              environmentId: uuid,
+              name: z.string(),
+              totalUsd: usd,
+              cpuUsd: usd,
+              ramUsd: usd,
+              storageUsd: usd,
+              networkUsd: usd,
+            })
+            .strict(),
+        ),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type CostWire = z.infer<typeof costResponseWire>["cost"];
