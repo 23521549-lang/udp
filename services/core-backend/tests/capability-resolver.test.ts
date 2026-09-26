@@ -152,6 +152,13 @@ function sampleOf(r: () => number): Sample {
     }
 
     const recommends = r() < 0.25 ? [pick(r, CAPS)] : undefined;
+    /**
+     * [Plan #42, E8] `conflicts` tool-level, khai MỘT chiều như ngoài đời: trỏ tới một adapter
+     * trong tổ hợp (có thể chính nó) hay một adapter không có mặt (chỉ số `n`). Thiếu nhánh này
+     * thì mutant "chỉ kiểm một chiều" sống qua differential — đo ở E8 đã thấy đúng như vậy.
+     */
+    const conflicts =
+      r() < 0.15 ? [`d:t${String(Math.floor(r() * (n + 1)))}`] : undefined;
 
     adapters.push({
       domainType: "d",
@@ -160,6 +167,7 @@ function sampleOf(r: () => number): Sample {
         provides,
         requires,
         ...(recommends === undefined ? {} : { recommends }),
+        ...(conflicts === undefined ? {} : { conflicts }),
       },
     });
   }
@@ -217,8 +225,12 @@ function compare(sample: Sample): string | null {
   if (JSON.stringify(mine.chosen) !== JSON.stringify(theirs.chosen)) {
     return `chosen: ${JSON.stringify(mine.chosen)} vs ${JSON.stringify(theirs.chosen)}`;
   }
-  const mineWarn = mine.warnings.map((w) => `${w.code}@${w.subject}:${w.detail.join(",")}`).sort();
-  const theirWarn = theirs.warnings.map((w) => `${w.code}@${w.subject}:${w.detail.join(",")}`).sort();
+  const mineWarn = mine.warnings
+    .map((w) => `${w.code}@${w.subject}:${w.detail.join(",")}`)
+    .sort();
+  const theirWarn = theirs.warnings
+    .map((w) => `${w.code}@${w.subject}:${w.detail.join(",")}`)
+    .sort();
   if (JSON.stringify(mineWarn) !== JSON.stringify(theirWarn)) {
     return `warning: ${JSON.stringify(mineWarn)} vs ${JSON.stringify(theirWarn)}`;
   }
@@ -357,11 +369,15 @@ describe("exclusive — ba ô", () => {
   it("hai provider exclusive ⇒ CONFLICT", () => {
     const res = validateAndOrder([
       A("flagger", {
-        provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+        provides: [
+          { id: "traffic.control", version: "1.0.0", exclusive: true },
+        ],
         requires: [],
       }),
       A("argo", {
-        provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+        provides: [
+          { id: "traffic.control", version: "1.0.0", exclusive: true },
+        ],
         requires: [],
       }),
     ]);
@@ -371,7 +387,9 @@ describe("exclusive — ba ô", () => {
   it("MỘT provider exclusive ⇒ hợp lệ", () => {
     const res = validateAndOrder([
       A("flagger", {
-        provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+        provides: [
+          { id: "traffic.control", version: "1.0.0", exclusive: true },
+        ],
         requires: [],
       }),
     ]);
@@ -389,11 +407,15 @@ describe("exclusive — ba ô", () => {
     const res = validateAndOrder(
       [
         A("flagger", {
-          provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+          provides: [
+            { id: "traffic.control", version: "1.0.0", exclusive: true },
+          ],
           requires: [],
         }),
         A("argo", {
-          provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+          provides: [
+            { id: "traffic.control", version: "1.0.0", exclusive: true },
+          ],
           requires: [],
         }),
       ],
@@ -470,7 +492,10 @@ describe("conflicts tool-level — bốn ô", () => {
 describe("anyOf — bốn ô", () => {
   it("một nhánh thoả ⇒ hợp lệ", () => {
     const res = validateAndOrder([
-      A("p", { provides: [{ id: "logs.sink", version: "1.0.0" }], requires: [] }),
+      A("p", {
+        provides: [{ id: "logs.sink", version: "1.0.0" }],
+        requires: [],
+      }),
       A("c", {
         provides: [],
         requires: [{ anyOf: [{ id: "logs.sink" }, { id: "traces.sink" }] }],
@@ -497,10 +522,20 @@ describe("anyOf — bốn ô", () => {
      * sẽ buộc UI hiện hai thông báo cho cùng một hành động sửa.
      */
     const res = validateAndOrder([
-      A("p", { provides: [{ id: "logs.sink", version: "1.0.0" }], requires: [] }),
+      A("p", {
+        provides: [{ id: "logs.sink", version: "1.0.0" }],
+        requires: [],
+      }),
       A("c", {
         provides: [],
-        requires: [{ anyOf: [{ id: "logs.sink", constraint: "^2" }, { id: "traces.sink" }] }],
+        requires: [
+          {
+            anyOf: [
+              { id: "logs.sink", constraint: "^2" },
+              { id: "traces.sink" },
+            ],
+          },
+        ],
       }),
     ]);
     expect(res.errors[0]?.code).toBe("MISSING_ANY_OF");
@@ -526,7 +561,10 @@ describe("recommends — ba ô", () => {
 
   it("có ⇒ không cảnh báo", () => {
     const res = validateAndOrder([
-      A("p", { provides: [{ id: "traces.sink", version: "1.0.0" }], requires: [] }),
+      A("p", {
+        provides: [{ id: "traces.sink", version: "1.0.0" }],
+        requires: [],
+      }),
       A("a", { provides: [], requires: [], recommends: ["traces.sink"] }),
     ]);
     expect(res.warnings).toEqual([]);
@@ -534,7 +572,10 @@ describe("recommends — ba ô", () => {
 
   it("recommends KHÔNG đổi thứ tự deploy", () => {
     const res = validateAndOrder([
-      A("p", { provides: [{ id: "traces.sink", version: "1.0.0" }], requires: [] }),
+      A("p", {
+        provides: [{ id: "traces.sink", version: "1.0.0" }],
+        requires: [],
+      }),
       A("a", { provides: [], requires: [], recommends: ["traces.sink"] }),
     ]);
     /** Không cạnh nào ⇒ cùng một bậc, deploy song song */
@@ -600,7 +641,10 @@ describe("khai báo sai ⇒ lỗi khởi động, không phải VERSION_MISMATCH
   it("version thiếu thành phần ⇒ NÉM", () => {
     expect(() =>
       assertDeclarationValid(
-        A("a", { provides: [{ id: "metrics.query", version: "2" }], requires: [] }),
+        A("a", {
+          provides: [{ id: "metrics.query", version: "2" }],
+          requires: [],
+        }),
       ),
     ).toThrow(InvalidCapabilityDeclarationError);
   });
@@ -625,7 +669,10 @@ describe("khai báo sai ⇒ lỗi khởi động, không phải VERSION_MISMATCH
   it("resolver gọi assertDeclarationValid TRƯỚC mọi bước", () => {
     expect(() =>
       validateAndOrder([
-        A("a", { provides: [{ id: "metrics.query", version: "2" }], requires: [] }),
+        A("a", {
+          provides: [{ id: "metrics.query", version: "2" }],
+          requires: [],
+        }),
       ]),
     ).toThrow(InvalidCapabilityDeclarationError);
   });
@@ -633,9 +680,15 @@ describe("khai báo sai ⇒ lỗi khởi động, không phải VERSION_MISMATCH
 
 describe("topoSort — bậc, chu trình, tự-vòng", () => {
   it("provider trước consumer", () => {
-    const p = A("p", { provides: [{ id: "metrics.query", version: "1.0.0" }], requires: [] });
+    const p = A("p", {
+      provides: [{ id: "metrics.query", version: "1.0.0" }],
+      requires: [],
+    });
     const c = A("c", { provides: [], requires: [{ id: "metrics.query" }] });
-    expect(topoSort([c, p], { "metrics.query": "d:p" })).toEqual([["d:p"], ["d:c"]]);
+    expect(topoSort([c, p], { "metrics.query": "d:p" })).toEqual([
+      ["d:p"],
+      ["d:c"],
+    ]);
   });
 
   it("chu trình hai đỉnh ⇒ null", () => {
@@ -647,7 +700,9 @@ describe("topoSort — bậc, chu trình, tự-vòng", () => {
       provides: [{ id: "logs.sink", version: "1.0.0" }],
       requires: [{ id: "metrics.query" }],
     });
-    expect(topoSort([a, b], { "metrics.query": "d:a", "logs.sink": "d:b" })).toBeNull();
+    expect(
+      topoSort([a, b], { "metrics.query": "d:a", "logs.sink": "d:b" }),
+    ).toBeNull();
   });
 
   it("tự-vòng KHÔNG phải chu trình", () => {
@@ -665,7 +720,9 @@ describe("topoSort — bậc, chu trình, tự-vòng", () => {
      * trình cho một tổ hợp không có chu trình nào.
      */
     const a = A("a", { provides: [], requires: [{ id: "metrics.query" }] });
-    expect(topoSort([a], { "metrics.query": "d:da-bi-tat" })).toEqual([["d:a"]]);
+    expect(topoSort([a], { "metrics.query": "d:da-bi-tat" })).toEqual([
+      ["d:a"],
+    ]);
   });
 });
 
@@ -744,7 +801,9 @@ describe("meta — hằng số và trần thời gian", () => {
       expect(diff).toBeNull();
     }
     const ms = Date.now() - started;
-    console.log(`[do] differential ${String(DIFFERENTIAL_SAMPLES)} mẫu: ${String(ms)} ms`);
+    console.log(
+      `[do] differential ${String(DIFFERENTIAL_SAMPLES)} mẫu: ${String(ms)} ms`,
+    );
     /**
      * Trần 10 s với số đo ~650 ms là 15 lần biên. Rộng có chủ đích: máy CI chậm hơn máy
      * phát triển, và một trần sát số đo là một trần sẽ rung ở CI rồi bị ai đó nâng lên

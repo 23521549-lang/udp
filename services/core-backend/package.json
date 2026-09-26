@@ -9,7 +9,8 @@
     "start": "node dist/src/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "measure:flag-list": "tsx scripts/measure-flag-list.ts"
+    "measure:flag-list": "tsx scripts/measure-flag-list.ts",
+    "e8": "tsx scripts/e8-mutation.ts"
   },
   "dependencies": {
     "@udp/adapter-core": "workspace:*",

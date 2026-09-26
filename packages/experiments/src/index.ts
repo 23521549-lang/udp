@@ -20,3 +20,15 @@ export {
   type PreregistrationStatus,
 } from "./e5.js";
 export { counterValue, scrape } from "./prom.js";
+export {
+  countByKind,
+  diffNames,
+  FILE_KINDS,
+  interfaceMembers,
+  kindOf,
+  listConst,
+  OUTSIDE_ADAPTERS,
+  toolDirOf,
+  type FileKind,
+  type SurfaceDiff,
+} from "./e1.js";

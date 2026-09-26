@@ -238,6 +238,8 @@ const PORTAL_MODULES = [
   "domain",
   "provisioning",
   "admin",
+  "cicd",
+  "cost",
 ];
 
 describe("cổng gọi: controller Portal tiêu thụ gửi qua sendJson", () => {
@@ -260,5 +262,86 @@ describe("cổng gọi: controller Portal tiêu thụ gửi qua sendJson", () =>
         .map(({ n }) => `${relative(MODULES, file)}:${String(n)}`),
     );
     expect(offenders).toEqual([]);
+  });
+});
+
+// ------------------------------------------------------------- đủ theo mã
+
+/**
+ * [Plan #42] Chiều ngược của "mọi mẫu thuộc một route đã khai": mọi route KHAI TRONG MÃ mà gửi qua
+ * `sendJson` phải có dòng trong `ROUTES`. Không có chiều này thì một route mới quên khai bảng lọt
+ * qua cả ba phép trên — không mẫu, không dòng, không ai đỏ (sổ nợ `portal-response-schema`).
+ *
+ * Tiền tố của từng router đọc từ CHÍNH các lệnh mount (`app.ts`, `projectRouter.use("/:id", …)`),
+ * không khai tay. Tham số (`:id`, `:type`, `:provider`) khớp MỌI đoạn cụ thể của mẫu — bảng giữ
+ * đường dẫn thật đã ghi (`/domains/MONITORING`, `/cicd/{id}/github-actions`). Route trả 204 không
+ * thân và luồng SSE không gửi qua `sendJson` nên không thuộc phép này; route giao cho hàm xử lý
+ * đặt tên ở tệp khác không được quét — phép "mọi mẫu thuộc một route đã khai" giữ nó.
+ */
+describe("đủ theo mã: mọi route gửi qua sendJson có dòng trong ROUTES", () => {
+  const SRC = join(here, "..", "src");
+  const appText = readFileSync(join(SRC, "app.ts"), "utf8");
+  const projectText = readFileSync(
+    join(MODULES, "project", "project.controller.ts"),
+    "utf8",
+  );
+  const base = new Map<string, string>();
+  for (const m of appText.matchAll(
+    /app\.use\(`\$\{API_PREFIX\}(\/[a-z]+)`,\s*(\w+Router)\)/g,
+  )) {
+    base.set(m[2] as string, m[1] as string);
+  }
+  for (const m of appText.matchAll(/app\.use\(API_PREFIX,\s*(\w+Router)\)/g)) {
+    base.set(m[1] as string, "");
+  }
+  for (const m of projectText.matchAll(
+    /projectRouter\.use\("\/:id",\s*(\w+Router)\)/g,
+  )) {
+    base.set(m[1] as string, "/projects/{id}");
+  }
+
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory()
+        ? walk(join(dir, e.name))
+        : e.name.endsWith(".ts") && !e.name.endsWith(".test.ts")
+          ? [join(dir, e.name)]
+          : [],
+    );
+  const declared = walk(MODULES).flatMap((file) =>
+    [
+      ...readFileSync(file, "utf8").matchAll(
+        /(\w+Router)\.(get|post|put|patch|delete)\(\s*"([^"]*)",([\s\S]*?)\n\);/g,
+      ),
+    ].flatMap((m) => {
+      const prefix = base.get(m[1] as string);
+      if (prefix === undefined || !(m[4] as string).includes("sendJson(")) {
+        return [];
+      }
+      const path =
+        `${prefix}${m[3] as string}`
+          .replace(/\/$/, "")
+          .replace(/:[A-Za-z]+/g, "{id}") || "/";
+      return [`${(m[2] as string).toUpperCase()} ${path}`];
+    }),
+  );
+  const keys = Object.keys(ROUTES);
+  const covered = (route: string): boolean => {
+    const pattern = new RegExp(
+      `^${route
+        .split("{id}")
+        .map((part) => part.replace(/[.*+?^$()|[\]\\]/g, "\\$&"))
+        .join("[^/]+")}$`,
+    );
+    return keys.some((k) => pattern.test(k));
+  };
+
+  it("đọc được mount và route — không phải 0", () => {
+    expect(base.size).toBeGreaterThanOrEqual(10);
+    expect(declared.length).toBeGreaterThan(50);
+  });
+
+  it("không route sendJson nào thiếu dòng trong ROUTES", () => {
+    expect(declared.filter((r) => !covered(r)).sort()).toEqual([]);
   });
 });

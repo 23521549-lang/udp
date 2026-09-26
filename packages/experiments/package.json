@@ -10,6 +10,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "e1": "tsx scripts/e1.ts",
     "e14": "tsx scripts/e14.ts",
     "e3": "node --expose-gc --import tsx scripts/e3.ts",
     "e4": "tsx scripts/e4.ts",

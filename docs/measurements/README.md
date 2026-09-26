@@ -2,10 +2,12 @@
 
 Mọi con số dưới đây sinh từ file JSON trong `raw/` — mỗi file tự mô tả: commit, `sourceDirty`, `sourceDiffSha256` (hash phần mã chưa commit lúc đo — tái tạo được từ commit chứa file), máy, RAM trống lúc bắt đầu, hình học mạng. Phép đo chưa chạy được vì thiếu hạ tầng: [`kiem-chung-con-no.md`](kiem-chung-con-no.md). Đăng ký giả thuyết trước của E5: [`E5-preregistration.md`](E5-preregistration.md).
 
-Chạy lại: `pnpm --filter @udp/experiments <e3|e4|e14|i34>` (E5: xem sổ nợ); danh sách flag của Portal: `pnpm --filter @udp/core-backend measure:flag-list`. Tuỳ chọn `--note "…"` ghi chú vào kết quả; không sửa tay file JSON.
+Chạy lại: `pnpm --filter @udp/experiments <e3|e4|e14|i34>` (E5: xem sổ nợ); danh sách flag của Portal: `pnpm --filter @udp/core-backend measure:flag-list`; E1: `pnpm --filter @udp/experiments e1`; E8: `pnpm --filter @udp/core-backend e8`. Tuỳ chọn `--note "…"` ghi chú vào kết quả; không sửa tay file JSON.
 
 | Phép đo                      | Trạng thái                                                                             | File                                                                               | Hình học                        |
 | ---------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------- |
+| E1 — effort mở rộng adapter  | đo thật từ git (0 phá vỡ, 0 nới lỏng)                                                  | [`E1-20260927-0023.json`](raw/E1-20260927-0023.json)                               | git (không mạng)                |
+| E8 — mutation validator      | đo thật (17/17 bị giết)                                                                | [`E8-20260927-0029.json`](raw/E8-20260927-0029.json)                               | in-process                      |
 | E3 — độ trễ đánh giá         | đo thật (số µs chính thức: sổ nợ E3-quiet)                                             | [`E3-20260922-1906.json`](raw/E3-20260922-1906.json)                               | in-process + OFREP dev-geometry |
 | E4 — lan truyền cấu hình     | đo thật, dev-geometry (CI: sổ nợ E4-ci)                                                | [`E4-20260922-1702.json`](raw/E4-20260922-1702.json)                               | máy dev → Supabase Singapore    |
 | E5 — MTTD/MTTR auto-rollback | chưa chạy — sổ nợ E5                                                                   | —                                                                                  | —                               |
@@ -99,3 +101,53 @@ nóng. Ngưỡng của sổ nợ: p95 ≤ 500 ms.
 Mỗi lời gọi là vài lượt đi về database (~100 ms mỗi lượt ở hình học này): phiên, vai trong project,
 trang + tổng (song song), rồi Service 2 đọc số đếm. Trang có stats vượt ngưỡng vì lượt sang Service 2
 nối tiếp sau trang; số ở hình học chính thức (cùng vùng với database) còn nợ.
+
+## E1 — effort mở rộng adapter (từ git, tag `adapter-interface-v1` → HEAD)
+
+72/72 tool có adapter đều được thêm SAU tag đóng băng bề mặt interface.
+
+| Chỉ số                                                                                          | Số                                                                                          |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Phá vỡ bề mặt (tên phương thức/thuộc tính `CloudAdapter`, `DomainAdapter`, `CicdDomainAdapter`) | **0**                                                                                       |
+| Nới lỏng bộ contract test (`E1-relaxations.json`)                                               | **0**                                                                                       |
+| Mở rộng bối cảnh `DomainAdapterContext`                                                         | 1 trường: `environments` (D-P29)                                                            |
+| Commit sau tag sửa tệp interface (kiểu, không tên)                                              | 4 — chỉ P37 (D-P28, `PipelineTemplateParams.steps`) buộc sửa adapter ĐÃ có: 6 adapter CI/CD |
+| Tệp danh mục domain (`domains.ts`) phải sửa khi thêm tool                                       | **0** trên cả 11 lô                                                                         |
+
+Tệp ngoài thư mục adapter theo lô (không tính test, tài liệu):
+
+| Lô (commit)               | Tool | Lớp nền | Lõi adapter | Schema | Mã sản phẩm |
+| ------------------------- | ---- | ------- | ----------- | ------ | ----------- |
+| Helm base (`e68a863`)     | 1    | 1       | 0           | 0      | 1           |
+| SaaS base (`067a7bd`)     | 1    | 2       | 0           | 0      | 0           |
+| P31 Monitoring            | 4    | 3       | 0           | 0      | 2           |
+| P31 Tracing               | 3    | 0       | 0           | 0      | 0           |
+| P32 Logging               | 7    | 0       | 1           | 0      | 0           |
+| P33 Mesh/Ingress/PD       | 9    | 1       | 0           | 0      | 0           |
+| P34 GitOps/Policy/Secrets | 10   | 2       | 0           | 0      | 0           |
+| P35 Registry              | 9    | 3       | 0           | 0      | 0           |
+| P36 CI/CD                 | 6    | 6       | 1           | 2      | 22          |
+| P37 IaC/Security          | 14   | 6       | 2           | 0      | 15          |
+| P38 Database/Cost         | 8    | 2       | 5           | 0      | 18          |
+
+Đọc trung thực: tool được thêm theo lô, cùng commit với phần mở rộng lớp nền (`adapter-base/`) của
+họ adapter đó — lớp nền là điểm mở rộng đã thiết kế, không phải mã sản phẩm. Ở P31–P35 (42 tool),
+ngoài lớp nền chỉ có 2 tệp sản phẩm (hai provider metrics SaaS) và 1 tệp lõi (một phép của bộ contract). Con số lớn ở P36–P38 là TÍNH NĂNG giao cùng commit (luồng webhook deploy §8.3, route chi
+phí, `CLOUD_MISMATCH`) — lịch sử git không tách tự động được phần nào adapter bắt buộc cần. Mục (b)
+của §14.1 (adapter thứ ba do người ngoài nhóm viết) chưa làm được: cần người thật.
+
+## E8 — mutation testing lên capability validator
+
+17 mutant viết tay trên `capability.resolver.ts`, mỗi mutant một nhánh của §5.3 (exclusive, conflicts,
+anyOf, semver, D-4', D-10, verifyChosen, topo sort, khai báo sai dạng). Oracle độc lập sinh đủ
+**7/7** mã kết quả.
+
+| Lần đo                                                                             | Bị giết | Giết bởi differential riêng | Sống |
+| ---------------------------------------------------------------------------------- | ------- | --------------------------- | ---- |
+| [`E8-20260927-0026`](raw/E8-20260927-0026.json) — bộ sinh chưa có `conflicts`      | 17/17   | 13                          | 0    |
+| [`E8-20260927-0029`](raw/E8-20260927-0029.json) — bộ sinh có `conflicts` một chiều | 17/17   | 14                          | 0    |
+
+Lần đo đầu tìm ra một lỗ hổng của bộ sinh differential: nó không bao giờ sinh `conflicts`, nên mutant
+"chỉ kiểm một chiều" chỉ bị test viết tay giết. Sau khi vá (cùng commit), differential giết được nó.
+Ba mutant còn lại chỉ bị test viết tay giết là kiểm KHAI BÁO sai dạng (semver hỏng, anyOf một nhánh,
+khoảng semver sai) — ngoài miền của differential theo thiết kế: bộ sinh chỉ tạo khai báo hợp lệ.

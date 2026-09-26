@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 40.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 39.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -860,7 +860,7 @@ plan/apply`, `pulumi preview/up`, `ansible-playbook --check` chạy trong sáu C
 
 # Plan #25 — Portal
 
-Mười tám mục (nay còn mười) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
+Mười tám mục (nay còn chín) dưới đây có **một** nguyên nhân chung: §10.14 của thiết kế vẽ 21 màn hình,
 còn Service 1 hôm nay chỉ có endpoint cho một phần. Làm một màn hình không có endpoint
 nghĩa là viết một cái giả rồi gọi nó là xong, nên phạm vi Plan #25 chia theo endpoint đã
 chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều kiện.
@@ -946,20 +946,11 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > Environment của Portal (`environments.test.tsx`; ma trận flag và danh sách làm mới theo
 > `qkPrefix`, I38 xanh). Phần cần cluster thật nằm ở `I32-cluster`.
 
-## portal-response-schema — endpoint chưa có schema response mức dây
-
-- **Vì sao nợ:** `@udp/shared-types` hôm nay có đúng **hai** schema response
-  (`flagStatsResponseSchema`, `staleFlagsResponseSchema`). Pha P0 của Plan #25 viết thêm
-  cho những response Portal tiêu thụ, nhưng endpoint nào chưa được Portal dùng thì chưa có
-  schema — và mục này là nơi ghi chúng, thay vì để một mock viết tay im lặng thay chỗ.
-- **Tiền đề:** không cần hạ tầng; đây là phần việc còn lại.
-- **Lệnh:** `pnpm --filter @udp/shared-types test` (phép kiểm golden capture).
-- **Đạt:** mỗi endpoint Portal gọi có một `*ResponseSchema`, và mỗi schema parse được một
-  response THẬT đã ghi lại. **Không đạt:** một mock viết tay lệch hình response ⇒ test xanh
-  mà app vỡ, đúng rủi ro R-P2.
-- **Tài nguyên:** không.
-- **Ảnh hưởng tới kết luận:** độ tin của toàn bộ bộ test Portal: nó chỉ mạnh bằng độ trung
-  thực của mock.
+> **Đã trả (27/09/2026, Plan #42):** `portal-response-schema` — mọi route JSON của Service 1 có
+> schema dây `.strict()` và một mẫu response THẬT (golden capture, 78 route); phép kiểm mới "đủ theo
+> mã" của `wire-golden.test.ts` đọc route KHAI TRONG MÃ (tiền tố lấy từ các lệnh mount) và đỏ khi một
+> route gửi qua `sendJson` thiếu dòng trong bảng — đã thử đột biến (bỏ dòng `GET /cost` ⇒ đỏ đúng
+> route đó). Bốn route còn lại trả 204 không thân; hai luồng SSE không phải JSON.
 
 ## portal-responsive — đo thật ở 375px trên trình duyệt
 
