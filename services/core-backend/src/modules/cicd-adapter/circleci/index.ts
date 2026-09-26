@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { CicdDomainAdapter } from "@udp/adapter-core";
+import type {
+  CicdDomainAdapter,
+  PipelineStep,
+  PipelineTemplateParams,
+} from "@udp/adapter-core";
 import {
   createCicdAdapter,
   registryRefOf,
@@ -7,7 +11,12 @@ import {
 } from "../../adapter-base/cicd.js";
 import { createDescriptorAdapter } from "../../adapter-base/descriptor.js";
 import {
-  environmentOfBranch,
+  dockerRunLine,
+  stepId,
+  stepsOf,
+} from "../../adapter-base/pipeline-steps.js";
+import {
+  environmentExpr,
   fillTemplate,
   notifyScript,
   templateValues,
@@ -65,30 +74,45 @@ const notifyStep = (status: "success" | "failure", when: string): string[] => [
   `            export UDP_STATUS=${status}`,
   "            export COMMIT_SHA=$CIRCLE_SHA1 COMMIT_TS= PIPELINE_ID=$CIRCLE_WORKFLOW_ID",
   "            export REPO=$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME REF=$CIRCLE_BRANCH ACTOR=$CIRCLE_USERNAME",
-  status === "success"
-    ? '            export IMAGE_REF="%IMAGE%:$CIRCLE_SHA1"'
-    : '            export IMAGE_REF=""',
-  `            ${environmentOfBranch("$CIRCLE_BRANCH")}`,
+  ...(status === "success" ? [] : ['            export IMAGE_REF=""']),
   ...notifyScript('-H "circleci-signature: v1=$SIG"').map(
     (line) => `            ${line}`,
   ),
 ];
 
-const CONFIG = [
+/** Bước của domain khác: `docker run` trên máy chạy; bí mật là biến môi trường của project */
+const stepRuns = (steps: readonly PipelineStep[]): string[] =>
+  steps.flatMap((step) => [
+    "      - run:",
+    `          name: ${stepId(step)}`,
+    "          command: |",
+    `            ${dockerRunLine(step)}`,
+  ]);
+
+/**
+ * Executor `machine`: Docker chạy ngay trên máy của job. Với `docker` + `setup_remote_docker` thì
+ * engine ở máy khác và `docker run -v` không thấy thư mục làm việc — bước của domain khác hỏng.
+ */
+const config = (params: PipelineTemplateParams): string[] => [
   "# .circleci/config.yml — sinh bởi UDP (Golden Path, §11)",
   "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
   "version: 2.1",
   "jobs:",
   "  build-and-deploy:",
-  "    docker:",
-  "      - image: cimg/node:20.17",
+  "    machine:",
+  "      image: ubuntu-2204:current",
   "    environment:",
   '      UDP_TRACKED_FLAGS: "%FLAGS%"',
   "    steps:",
+  // Bước ĐẦU: `BASH_ENV` đưa hai biến vào mọi bước sau, kể cả bước báo UDP
+  "      - run: |",
+  `          echo "export UDP_ENVIRONMENT=${environmentExpr("$CIRCLE_BRANCH")}" >> "$BASH_ENV"`,
+  '          echo "export IMAGE_REF=%IMAGE%:$CIRCLE_SHA1" >> "$BASH_ENV"',
   "      - checkout",
-  "      - setup_remote_docker",
   "      - run: npm ci && npm test",
-  '      - run: docker build -t "%IMAGE%:$CIRCLE_SHA1" . && docker push "%IMAGE%:$CIRCLE_SHA1"',
+  ...stepRuns(stepsOf(params, "before-build")),
+  '      - run: docker build -t "$IMAGE_REF" . && docker push "$IMAGE_REF"',
+  ...stepRuns(stepsOf(params, "after-build")),
   ...notifyStep("success", "on_success"),
   ...notifyStep("failure", "on_fail"),
   "workflows:",
@@ -105,7 +129,7 @@ const adapter: CicdDomainAdapter = createCicdAdapter({
   verifySignature: (headers, rawBody, secret) =>
     verifyHmacHeader(headers, rawBody, secret, "circleci-signature", "v1="),
   renderPipelineTemplate: (params) =>
-    fillTemplate(CONFIG, templateValues(params)),
+    fillTemplate(config(params), templateValues(params)),
 });
 
 export default adapter;

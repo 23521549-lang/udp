@@ -213,6 +213,26 @@ export interface WebhookDeployEvent {
   workloadName: string;
 }
 
+/**
+ * [v4.11, D-P28] Một bước mà domain KHÁC góp vào pipeline Golden Path — IaC chạy trong CI
+ * (Terraform, Pulumi, Ansible) và máy quét chạy trong CI (Checkov, Grype, ZAP). CI/CD adapter chỉ
+ * biết hình này; nó dựng bước theo cú pháp của mình.
+ */
+export interface PipelineStep {
+  /** `toolId` của adapter góp bước */
+  tool: string;
+  name: string;
+  /** Trước khi dựng image (IaC, quét IaC) hay sau (quét image, DAST) */
+  phase: "before-build" | "after-build";
+  /** Image chạy bước — bước không cài công cụ lên máy chạy của CI */
+  image: string;
+  commands: string[];
+  /** Giá trị CÔNG KHAI */
+  env: Record<string, string>;
+  /** TÊN biến bí mật mà CI phải cung cấp — UDP không bao giờ đặt giá trị bí mật vào template */
+  secretEnv: string[];
+}
+
 export interface PipelineTemplateParams {
   projectSlug: string;
   environments: { name: string; isProduction: boolean }[];
@@ -221,6 +241,8 @@ export interface PipelineTemplateParams {
   /** Flag mà template gắn sẵn nhãn `ff` cho (§6.8) */
   flagKeys: string[];
   rolloutStrategy: "udp-driven" | "tool-driven";
+  /** [v4.11, D-P28] Bước của mọi tool đang bật khai `pipelineSteps`; rỗng khi không có */
+  steps: PipelineStep[];
 }
 
 /** CI/CD adapter mở rộng thêm phần webhook — §8.3 nhắc nhưng v3 không có trong interface */

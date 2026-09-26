@@ -194,6 +194,41 @@ describe("trang Domain", () => {
     ).toBeInTheDocument();
   });
 
+  it("lỗi CLOUD_MISMATCH nói cloud nào và có nút Đổi sang tool đúng cloud (Plan #37)", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    useDomainHandlers({
+      saved: savedWith(false),
+      validation: {
+        valid: false,
+        errors: [
+          {
+            code: "CLOUD_MISMATCH",
+            subject: "monitoring:prometheus-grafana",
+            detail: ["AWS", "GCP"],
+            suggestedAction: {
+              type: "SWITCH_TOOL",
+              domainType: "MONITORING",
+              toolId: "datadog",
+            },
+          },
+        ],
+        warnings: [],
+        deployOrder: null,
+      },
+    });
+    renderApp(domainsUrl(detail));
+    await userEvent.click(
+      await screen.findByRole("switch", { name: "Bật Monitoring" }),
+    );
+    expect(
+      await screen.findByText(/chỉ chạy trên AWS, còn project dùng GCP/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Đổi sang datadog" }),
+    ).toBeInTheDocument();
+  });
+
   it("409 khi lưu ⇒ báo người khác vừa lưu và tải lại bản mới", async () => {
     const detail = projectFixture("MAINTAINER");
     useProjectHandlers(detail);

@@ -1,4 +1,5 @@
 import { workloadSlugFor } from "@udp/config";
+import type { DomainToolConfig, PipelineStep } from "@udp/adapter-core";
 import type { Prisma } from "@udp/db";
 import { ConflictError, NotFoundError } from "@udp/http";
 import type {
@@ -103,7 +104,7 @@ export async function pipelineTemplate(
   if (!isCicdAdapter(adapter)) {
     throw new NotFoundError(`Không có adapter CI/CD ${row.provider}`);
   }
-  const [project, bindings, tracked] = await Promise.all([
+  const [project, bindings, tracked, enabled] = await Promise.all([
     prisma.project.findUniqueOrThrow({
       where: { id: projectId },
       select: {
@@ -120,6 +121,10 @@ export async function pipelineTemplate(
       select: { flag: { select: { key: true } } },
       distinct: ["flagId"],
     }),
+    prisma.domainConfig.findMany({
+      where: { projectId, isEnabled: true, selectedTool: { not: null } },
+      select: { domainType: true, selectedTool: true, toolConfig: true },
+    }),
   ]);
   const registryRef = bindings.find(
     (b) => b.capabilityId === "registry.oci",
@@ -129,10 +134,12 @@ export async function pipelineTemplate(
       "Chưa có registry.oci — bật một Container Registry trước khi sinh pipeline",
     );
   }
+  const projectSlug = workloadSlugFor(project.name);
   return {
     provider: row.provider,
     content: adapter.renderPipelineTemplate({
-      projectSlug: workloadSlugFor(project.name),
+      projectSlug,
+      steps: stepsOfEnabled(registry, enabled, projectSlug),
       environments: project.environments,
       registryRef,
       flagKeys: tracked.map((t) => t.flag.key).sort(),
@@ -143,4 +150,31 @@ export async function pipelineTemplate(
         : "udp-driven",
     }),
   };
+}
+
+/**
+ * Bước mà các tool đang bật góp vào pipeline (Plan #37 QĐ-2). Không cần mở bí mật: registry đã
+ * cấm trường bí mật ở mọi adapter xuất `pipelineSteps`.
+ */
+function stepsOfEnabled(
+  registry: DomainAdapterRegistry,
+  rows: {
+    domainType: string;
+    selectedTool: string | null;
+    toolConfig: unknown;
+  }[],
+  projectSlug: string,
+): PipelineStep[] {
+  return rows.flatMap((row) => {
+    const adapter = registry.get(row.domainType, row.selectedTool ?? "");
+    const declared = registry
+      .all()
+      .find((l) => l.adapter === adapter)?.pipelineSteps;
+    if (declared === undefined) return [];
+    const config =
+      typeof row.toolConfig === "object" && row.toolConfig !== null
+        ? (row.toolConfig as DomainToolConfig)
+        : {};
+    return declared(config, { slug: projectSlug });
+  });
 }

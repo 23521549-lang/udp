@@ -6,7 +6,14 @@ import {
   DOMAIN_ADAPTER_PROPERTIES,
 } from "@udp/adapter-core";
 import type { DomainAdapter } from "@udp/adapter-core";
+import {
+  CLOUD_PROVIDERS_WIRE,
+  type CloudProviderWire,
+} from "@udp/shared-types/cloud-api";
+import type { ZodTypeAny } from "zod";
+import type { PipelineStepsDeclaration } from "../adapter-base/pipeline-steps.js";
 import type { PullCredentialDeclaration } from "../adapter-base/registry-pull.js";
+import { secretFieldsOf } from "./tool-secrets.js";
 import {
   METRICS_QUERY_MAJOR,
   type MetricsSourceDeclaration,
@@ -119,6 +126,58 @@ export interface LoadedAdapter {
   metricsSource?: MetricsSourceDeclaration;
   /** Cách dựng khoá kéo image của adapter registry (Plan #35 QĐ-3) — vắng nếu kéo không cần khoá */
   pullCredential?: PullCredentialDeclaration;
+  /** Bước góp vào pipeline Golden Path (Plan #37 QĐ-2) — vắng với tool không chạy trong CI */
+  pipelineSteps?: PipelineStepsDeclaration;
+  /** Cloud DUY NHẤT mà tool chạy được (Plan #37 QĐ-5) — vắng: mọi cloud */
+  cloud?: CloudProviderWire;
+}
+
+/**
+ * Export `pipelineSteps` (Plan #37 QĐ-2): bước chạy trong CI nên adapter PHẢI `requires:
+ * pipeline.trigger`, và cấu hình của nó KHÔNG được có trường bí mật — bước đi thẳng vào một
+ * template mà người dùng dán vào repo, nên mọi giá trị trong đó là công khai.
+ */
+export function pipelineStepsOf(
+  adapter: DomainAdapter,
+  exported: unknown,
+  at: string,
+): PipelineStepsDeclaration | undefined {
+  if (exported === undefined) return undefined;
+  if (typeof exported !== "function") {
+    throw new InvalidAdapterError(at, "pipelineSteps phải là một hàm");
+  }
+  const needsCi = adapter.capabilities.requires.some(
+    (r) => "id" in r && r.id === "pipeline.trigger",
+  );
+  if (!needsCi) {
+    throw new InvalidAdapterError(
+      at,
+      "xuất pipelineSteps mà không requires pipeline.trigger",
+    );
+  }
+  const secrets = secretFieldsOf(adapter.configSchema as ZodTypeAny);
+  if (secrets.length > 0) {
+    throw new InvalidAdapterError(
+      at,
+      `xuất pipelineSteps mà configSchema có trường bí mật: ${secrets.join(", ")}`,
+    );
+  }
+  return exported as PipelineStepsDeclaration;
+}
+
+/** Export `cloud` (Plan #37 QĐ-5): đúng một trong ba cloud mà UDP dựng được */
+export function cloudOf(
+  exported: unknown,
+  at: string,
+): CloudProviderWire | undefined {
+  if (exported === undefined) return undefined;
+  if (!(CLOUD_PROVIDERS_WIRE as readonly unknown[]).includes(exported)) {
+    throw new InvalidAdapterError(
+      at,
+      `cloud phải là một trong ${CLOUD_PROVIDERS_WIRE.join(", ")}`,
+    );
+  }
+  return exported as CloudProviderWire;
 }
 
 /**
@@ -232,6 +291,8 @@ export async function loadAdapters(
         default?: unknown;
         metricsSource?: unknown;
         pullCredential?: unknown;
+        pipelineSteps?: unknown;
+        cloud?: unknown;
       };
       const candidate = exported.default;
       if (candidate === undefined) {
@@ -253,12 +314,20 @@ export async function loadAdapters(
         exported.pullCredential,
         at,
       );
+      const pipelineSteps = pipelineStepsOf(
+        candidate,
+        exported.pipelineSteps,
+        at,
+      );
+      const cloud = cloudOf(exported.cloud, at);
       out.push({
         key,
         adapter: candidate,
         at,
         ...(metricsSource === undefined ? {} : { metricsSource }),
         ...(pullCredential === undefined ? {} : { pullCredential }),
+        ...(pipelineSteps === undefined ? {} : { pipelineSteps }),
+        ...(cloud === undefined ? {} : { cloud }),
       });
     }
   }

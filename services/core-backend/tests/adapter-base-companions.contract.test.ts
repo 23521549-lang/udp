@@ -190,6 +190,58 @@ describe("lớp nền Helm nhiều release (Plan #32 AC-2)", () => {
     });
   });
 
+  it("release đi kèm `before` áp TRƯỚC release chính và gỡ SAU nó; nguồn bundle ghi rõ bộ cài (Plan #37)", async () => {
+    const ordered = createHelmBasedAdapter({
+      ...spec,
+      chart: { ...spec.chart, installer: "manifest-bundle" },
+      companions: [
+        { ...spec.companions![0]!, before: true },
+        spec.companions![1]!,
+      ],
+    });
+    const env = domainContractEnv(fixture());
+    await ordered.deploy(env.context(), env.fixture.validConfig);
+    expect(releaseOrder(env.cluster.writes, "apply")).toEqual([
+      "udp-giao-dien",
+      "udp-may-chu",
+      "udp-bo-thu",
+    ]);
+    const client = await env.cluster.getClient("tooling");
+    const release = (name: string) =>
+      client.read<Record<string, unknown>>("get", {
+        apiVersion: "helm.toolkit.fluxcd.io/v2",
+        kind: "HelmRelease",
+        namespace: SYSTEM_NS,
+        name,
+      });
+    expect((await release("udp-may-chu"))?.installer).toBe("manifest-bundle");
+    expect((await release("udp-giao-dien"))?.installer).toBeUndefined();
+
+    env.cluster.reset();
+    await ordered.teardown(env.context(), "disable");
+    expect(releaseOrder(env.cluster.writes, "delete")).toEqual([
+      "udp-bo-thu",
+      "udp-may-chu",
+      "udp-giao-dien",
+    ]);
+  });
+
+  it("release nền dùng chung (`shared`) được áp và soát drift nhưng KHÔNG bị gỡ khi tắt domain", async () => {
+    const withShared = createHelmBasedAdapter({
+      ...spec,
+      companions: [{ ...spec.companions![0]!, before: true, shared: true }],
+    });
+    const env = domainContractEnv(fixture());
+    await withShared.deploy(env.context(), env.fixture.validConfig);
+    expect(releaseOrder(env.cluster.writes, "apply")).toEqual([
+      "udp-giao-dien",
+      "udp-may-chu",
+    ]);
+    env.cluster.reset();
+    await withShared.teardown(env.context(), "disable");
+    expect(releaseOrder(env.cluster.writes, "delete")).toEqual(["udp-may-chu"]);
+  });
+
   it("hai release trùng tên, hay bí mật ở adapter namespace ⇒ từ chối lúc dựng", () => {
     expect(() =>
       createHelmBasedAdapter({

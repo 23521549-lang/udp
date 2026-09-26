@@ -1,5 +1,6 @@
 import type { DomainAdapter } from "@udp/adapter-core";
 import { UnprocessableError } from "@udp/http";
+import type { CloudProviderWire } from "@udp/shared-types/cloud-api";
 import {
   DOMAIN_ERROR_SLUGS,
   type DomainTargetState,
@@ -135,40 +136,85 @@ function enableSuggestion(
       };
 }
 
+/**
+ * Plan #37 QĐ-5: tool khai `cloud` (ACK, Config Connector, ASO) chỉ chạy trên cloud đó. Cloud của
+ * project chưa biết (chưa lưu credential) ⇒ chưa kiểm được — lượt lưu credential và lượt
+ * provisioning kiểm lại. Gợi ý: tool CÙNG domain chạy đúng cloud của project.
+ */
+export function cloudIssues(
+  targets: readonly ResolvedTarget[],
+  registry: DomainAdapterRegistry,
+  cloud: CloudProviderWire | null,
+): Issue[] {
+  if (cloud === null) return [];
+  const loaded = registry.all();
+  return targets.flatMap((t): Issue[] => {
+    const own = loaded.find((l) => l.adapter === t.adapter)?.cloud;
+    if (own === undefined || own === cloud) return [];
+    const sibling = loaded.find(
+      (l) => l.adapter.domainType === t.adapter.domainType && l.cloud === cloud,
+    );
+    return [
+      {
+        code: "CLOUD_MISMATCH",
+        subject: adapterKey(t.adapter),
+        detail: [own, cloud],
+        ...(sibling === undefined
+          ? {}
+          : {
+              suggestedAction: {
+                type: "SWITCH_TOOL",
+                domainType: t.domainType,
+                toolId: sibling.adapter.toolId,
+              },
+            }),
+      },
+    ];
+  });
+}
+
 export function validationView(
   result: ValidationResult,
   targets: readonly ResolvedTarget[],
   registry: DomainAdapterRegistry,
+  extra: readonly Issue[] = [],
 ): DomainValidationWire {
   return {
-    valid: result.valid,
-    errors: result.errors.map((e): Issue => {
-      const base = { code: e.code, subject: e.subject, detail: [...e.detail] };
-      const cap = e.detail[0];
-      if (e.code === "MISSING_CAPABILITY" && cap !== undefined) {
-        const action = enableSuggestion(e.subject, cap, targets, registry);
-        return action === undefined
-          ? base
-          : { ...base, suggestedAction: action };
-      }
-      if (e.code === "AMBIGUOUS_PROVIDER") {
-        const [domainType] = (e.detail[0] ?? "").split(":");
-        return {
-          ...base,
-          suggestedAction: {
-            type: "CHOOSE_PROVIDER",
-            domainType: (domainType ?? "").toUpperCase(),
-            capabilityId: e.subject,
-          },
+    valid: result.valid && extra.length === 0,
+    errors: [
+      ...result.errors.map((e): Issue => {
+        const base = {
+          code: e.code,
+          subject: e.subject,
+          detail: [...e.detail],
         };
-      }
-      return base;
-    }),
+        const cap = e.detail[0];
+        if (e.code === "MISSING_CAPABILITY" && cap !== undefined) {
+          const action = enableSuggestion(e.subject, cap, targets, registry);
+          return action === undefined
+            ? base
+            : { ...base, suggestedAction: action };
+        }
+        if (e.code === "AMBIGUOUS_PROVIDER") {
+          const [domainType] = (e.detail[0] ?? "").split(":");
+          return {
+            ...base,
+            suggestedAction: {
+              type: "CHOOSE_PROVIDER",
+              domainType: (domainType ?? "").toUpperCase(),
+              capabilityId: e.subject,
+            },
+          };
+        }
+        return base;
+      }),
+      ...extra,
+    ],
     warnings: result.warnings.map((w) => ({
       code: w.code,
       subject: w.subject,
       detail: [...w.detail],
     })),
-    deployOrder: result.order,
+    deployOrder: extra.length === 0 ? result.order : null,
   };
 }

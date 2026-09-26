@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
@@ -14,6 +15,8 @@ import {
   InvalidAdapterError,
   loadAdapters,
   metricsSourceOf,
+  cloudOf,
+  pipelineStepsOf,
   pullCredentialOf,
   registryKey,
 } from "../src/modules/domain/domain-adapter.registry.js";
@@ -168,6 +171,47 @@ describe("pullCredential chỉ ở adapter registry.oci, và phải là hàm (Pl
     expect(() =>
       pullCredentialOf(providing("registry.oci"), { server: "x" }, "x"),
     ).toThrow(/phải là một hàm/);
+  });
+});
+
+describe("pipelineSteps và cloud (Plan #37 QĐ-2, QĐ-5)", () => {
+  const requiring = (ids: string[], schema: unknown = z.object({})) =>
+    ({
+      capabilities: { provides: [], requires: ids.map((id) => ({ id })) },
+      configSchema: schema,
+    }) as never;
+  const fn = () => [];
+
+  it("requires pipeline.trigger, cấu hình không bí mật, là hàm ⇒ nhận", () => {
+    expect(pipelineStepsOf(requiring(["pipeline.trigger"]), fn, "x")).toBe(fn);
+    expect(
+      pipelineStepsOf(requiring(["pipeline.trigger"]), undefined, "x"),
+    ).toBeUndefined();
+  });
+
+  it("không requires CI, không phải hàm, hay cấu hình có trường bí mật ⇒ NÉM lúc nạp", () => {
+    expect(() => pipelineStepsOf(requiring([]), fn, "x")).toThrow(
+      /không requires pipeline.trigger/,
+    );
+    expect(() =>
+      pipelineStepsOf(requiring(["pipeline.trigger"]), [], "x"),
+    ).toThrow(/phải là một hàm/);
+    expect(() =>
+      pipelineStepsOf(
+        requiring(
+          ["pipeline.trigger"],
+          z.object({ token: z.string().describe("secret") }),
+        ),
+        fn,
+        "x",
+      ),
+    ).toThrow(/trường bí mật: token/);
+  });
+
+  it("cloud: một trong ba cloud; vắng là mọi cloud; giá trị lạ ⇒ NÉM", () => {
+    expect(cloudOf("AWS", "x")).toBe("AWS");
+    expect(cloudOf(undefined, "x")).toBeUndefined();
+    expect(() => cloudOf("aws", "x")).toThrow(/cloud phải là/);
   });
 });
 

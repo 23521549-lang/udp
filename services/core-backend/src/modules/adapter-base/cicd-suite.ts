@@ -1,9 +1,11 @@
 import { createHmac } from "node:crypto";
 import type {
   CicdDomainAdapter,
+  PipelineStep,
   PipelineTemplateParams,
 } from "@udp/adapter-core";
 import { deployBodySchema, WebhookPayloadError } from "./cicd.js";
+import { stepId } from "./pipeline-steps.js";
 
 /**
  * Bộ phép CI/CD dùng chung (Plan #36 AC-1) — chạy trên MỌI adapter họ CI/CD cạnh 42 phép của bộ
@@ -44,7 +46,42 @@ const BODY = Buffer.from(
   }),
 );
 
+/**
+ * Bước mẫu của domain khác (Plan #37): khai LỘN thứ tự — template phải tự xếp theo pha rồi tool.
+ * Có một biến bí mật để kiểm nó chỉ đi bằng TÊN.
+ */
+const STEPS: PipelineStep[] = [
+  {
+    tool: "grype",
+    name: "quet-image",
+    phase: "after-build",
+    image: "anchore/grype:v0.80.0",
+    commands: ['grype "$IMAGE_REF" --fail-on high'],
+    env: {},
+    secretEnv: [],
+  },
+  {
+    tool: "terraform",
+    name: "plan",
+    phase: "before-build",
+    image: "hashicorp/terraform:1.9.8",
+    commands: ["terraform -chdir=infra init -input=false"],
+    env: { TF_IN_AUTOMATION: "1" },
+    secretEnv: ["AWS_ACCESS_KEY_ID"],
+  },
+  {
+    tool: "checkov",
+    name: "quet-iac",
+    phase: "before-build",
+    image: "bridgecrew/checkov:3.2.255",
+    commands: ["checkov -d infra --quiet"],
+    env: {},
+    secretEnv: [],
+  },
+];
+
 const PARAMS: PipelineTemplateParams = {
+  steps: STEPS,
   projectSlug: "web",
   environments: [
     { name: "dev", isProduction: false },
@@ -187,6 +224,47 @@ export function runCicdSuite(
           );
         }
         assert(!/%[A-Z_]+%/.test(text), "template còn chỗ trống chưa điền");
+      },
+    );
+
+    api.it(
+      "bước của domain khác: đủ, theo pha rồi tool, trước lúc báo UDP; bí mật chỉ bằng TÊN",
+      () => {
+        const text = adapter.renderPipelineTemplate(PARAMS);
+        const at = (needle: string): number => {
+          const i = text.indexOf(needle);
+          assert(i >= 0, `template thiếu "${needle}"`);
+          return i;
+        };
+        for (const step of STEPS) {
+          at(step.image);
+          for (const c of step.commands) at(c);
+        }
+        const [checkov, terraform, grype] = [
+          "udp-checkov-quet-iac",
+          "udp-terraform-plan",
+          "udp-grype-quet-image",
+        ].map(at) as [number, number, number];
+        assert(
+          checkov < terraform && terraform < grype,
+          "bước không theo pha rồi tool",
+        );
+        assert(
+          grype < text.lastIndexOf("UDP_WEBHOOK_URL"),
+          "bước sau build nằm sau lúc báo UDP",
+        );
+        at("AWS_ACCESS_KEY_ID");
+        // Dòng lệnh kết thúc bằng nháy đơn dính vào ba nháy của Groovy: chuỗi đóng sớm
+        assert(!text.includes("''''"), "bốn nháy đơn liền nhau trong template");
+        assert(at("TF_IN_AUTOMATION") > 0, "thiếu biến công khai của bước");
+
+        const bare = adapter.renderPipelineTemplate({ ...PARAMS, steps: [] });
+        for (const step of STEPS) {
+          assert(
+            !bare.includes(stepId(step)),
+            `không có bước mà template vẫn có ${stepId(step)}`,
+          );
+        }
       },
     );
   });

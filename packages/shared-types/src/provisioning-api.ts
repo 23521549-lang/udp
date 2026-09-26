@@ -33,7 +33,7 @@ export const PROVISION_BLOCKERS = [
 ] as const;
 export type ProvisionBlocker = (typeof PROVISION_BLOCKERS)[number];
 
-/** Slug `type` của lỗi Portal rẽ nhánh — không thêm mã vào catalog 24 mã (I36) */
+/** Slug `type` của lỗi Portal rẽ nhánh — không thêm mã vào catalog mã lỗi (I36) */
 export const PROVISION_ERROR_SLUGS = {
   blocked: "provision-blocked",
   /** Job đã qua điểm hủy được (đang bù trừ hay đã kết thúc) */

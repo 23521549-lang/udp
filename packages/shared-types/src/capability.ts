@@ -16,7 +16,7 @@
  */
 
 /**
- * 14 capability của §5.3.
+ * 17 capability của §5.3.
  *
  * Union viết tay, KHÔNG suy từ registry. Đây là một lựa chọn có giá và giá đó
  * được nêu tường minh: `pd-controller` dùng `"metrics.query"` ở tầng biên dịch,
@@ -41,9 +41,13 @@ export type CapabilityId =
   | "db.instance"
   | "cost.query"
   /** [v4.11, Plan #35] Kho package ngôn ngữ (npm, Maven, PyPI…) — Artifact & Package Registry */
-  | "packages.store";
+  | "packages.store"
+  /** [v4.11, Plan #37] Khai tài nguyên cloud — operator trong cluster hay bước pipeline (IaC) */
+  | "infra.provision"
+  /** [v4.11, Plan #37] Quét bảo mật — image, IaC, runtime, DAST, phụ thuộc */
+  | "security.scan";
 
-/** Đúng 15 giá trị của `CapabilityId`, cho type guard và cho test đối chiếu tài liệu */
+/** Đúng 17 giá trị của `CapabilityId`, cho type guard và cho test đối chiếu tài liệu */
 export const CAPABILITY_IDS: readonly CapabilityId[] = [
   "registry.oci",
   "metrics.query",
@@ -60,6 +64,8 @@ export const CAPABILITY_IDS: readonly CapabilityId[] = [
   "db.instance",
   "cost.query",
   "packages.store",
+  "infra.provision",
+  "security.scan",
 ];
 
 /**

@@ -38,6 +38,12 @@ export interface HelmChartRef {
   /** Version của chart, semver đầy đủ — `detectDrift` so với giá trị thật */
   version: string;
   repo: string;
+  /**
+   * [v4.11, Plan #37 QĐ-6] Nguồn KHÔNG phải Helm chart: nhà phát hành chỉ có bundle manifest
+   * (Config Connector). Bản ghi release nói thẳng bộ cài áp bundle bằng `kubectl apply` thay vì
+   * giả làm một chart. Vắng = Helm chart.
+   */
+  installer?: "manifest-bundle";
 }
 
 export interface HelmAdapterSpec {
@@ -124,6 +130,17 @@ export interface HelmCompanion {
    * chính) — cho chart chỉ nhận bí mật dưới dạng giá trị Helm (issuer key của Linkerd).
    */
   readsSecretValues?: boolean;
+  /**
+   * [v4.11, Plan #37 QĐ-7] Áp TRƯỚC release chính (và gỡ SAU nó) — thứ release chính cần có sẵn
+   * lúc cài (cert-manager cho webhook của Azure Service Operator).
+   */
+  before?: boolean;
+  /**
+   * [v4.11, Plan #37] Thành phần NỀN mà nhiều domain cùng cần (cert-manager): cùng tên release,
+   * cùng chart ở mọi adapter dùng nó (khai một lần ở `cert-manager.ts`), nên áp lần hai là không
+   * đổi gì. Tắt một domain KHÔNG gỡ nó — domain khác còn cần; nó đi cùng cluster.
+   */
+  shared?: boolean;
 }
 
 /**
@@ -186,15 +203,24 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     );
   }
 
-  /** Release chính rồi các release đi kèm — ĐÚNG thứ tự áp; gỡ theo thứ tự ngược */
+  /**
+   * ĐÚNG thứ tự áp — release đi kèm `before`, release chính, rồi các release đi kèm còn lại; gỡ
+   * theo thứ tự ngược
+   */
+  const companions = spec.companions ?? [];
   const units: readonly HelmUnit[] = [
+    ...companions
+      .filter((c) => c.before === true)
+      .map((c) => ({ ...c, primary: false })),
     {
       releaseName: spec.releaseName,
       chart: spec.chart,
       values: spec.values,
       primary: true,
     },
-    ...(spec.companions ?? []).map((c) => ({ ...c, primary: false })),
+    ...companions
+      .filter((c) => c.before !== true)
+      .map((c) => ({ ...c, primary: false })),
   ];
   if (new Set(units.map((u) => u.releaseName)).size !== units.length) {
     throw new HelmAdapterError(`${spec.toolId}: hai release trùng tên`);
@@ -245,6 +271,9 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     chart: unit.chart.name,
     version: unit.chart.version,
     repo: unit.chart.repo,
+    ...(unit.chart.installer === undefined
+      ? {}
+      : { installer: unit.chart.installer }),
     valuesFrom: `${unit.releaseName}-values`,
     ...((unit.primary || unit.readsSecretValues === true) &&
     spec.secretValues !== undefined
@@ -510,8 +539,8 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     teardown: (ctx, reason) =>
       guarded(async () => {
         const client = await ctx.k8s.getClient("tooling");
-        // Ngược thứ tự áp: bộ thu log và giao diện đi trước máy chủ lưu trữ
-        for (const unit of [...units].reverse()) {
+        // Ngược thứ tự áp: bộ thu log và giao diện đi trước máy chủ lưu trữ; release nền giữ lại
+        for (const unit of [...units].reverse().filter((u) => !u.shared)) {
           await client.write("delete", releaseRef(unit, ctx));
           /**
            * `reason = "switch"` GIỮ ConfigMap giá trị.

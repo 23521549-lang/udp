@@ -77,6 +77,7 @@ export type {
   DomainAdapter,
   DomainAdapterContext,
   DomainToolConfig,
+  PipelineStep,
   PipelineTemplateParams,
   ReadOnlyAdapterContext,
   WebhookDeployEvent,

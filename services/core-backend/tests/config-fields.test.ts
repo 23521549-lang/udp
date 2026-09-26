@@ -65,6 +65,25 @@ describe("describeConfigSchema", () => {
     });
   });
 
+  it("refine giữ kiểu ô và giá trị mặc định; transform thì không bóc (đổi kiểu đầu vào)", () => {
+    const d = describeConfigSchema(
+      z.object({
+        dir: z
+          .string()
+          .refine((p) => !p.includes(".."))
+          .default("infra"),
+        size: z.string().transform((v) => Number(v)),
+      }),
+    );
+    expect(d).toEqual({
+      kind: "object",
+      fields: [
+        { key: "dir", kind: "string", required: false, default: "infra" },
+        { key: "size", kind: "json", required: true },
+      ],
+    });
+  });
+
   it("schema không phải object ⇒ cả cấu hình là một ô JSON", () => {
     expect(describeConfigSchema(z.record(z.string()))).toEqual({
       kind: "json",

@@ -69,6 +69,10 @@ export function notifyScript(signatureHeader: string): string[] {
   ];
 }
 
-/** Shell chọn environment theo nhánh: `main` ⇒ production, khác ⇒ cùng tên */
+/** Biểu thức shell ra environment của nhánh: `main` ⇒ production, khác ⇒ cùng tên */
+export const environmentExpr = (branchVar: string): string =>
+  `$([ "${branchVar}" = "main" ] && echo "%PROD%" || echo "${branchVar}")`;
+
+/** Lệnh shell đặt `UDP_ENVIRONMENT` theo nhánh */
 export const environmentOfBranch = (branchVar: string): string =>
-  `UDP_ENVIRONMENT=$([ "${branchVar}" = "main" ] && echo "%PROD%" || echo "${branchVar}")`;
+  `UDP_ENVIRONMENT=${environmentExpr(branchVar)}`;

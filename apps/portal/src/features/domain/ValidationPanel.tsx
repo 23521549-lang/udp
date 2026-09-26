@@ -6,8 +6,8 @@ import { issueText } from "./domain-labels";
 
 /**
  * Kết quả kiểm trạng thái đích (§5.3 bảng thông báo, §10.12): mỗi lỗi là một câu có hành
- * động — nút "Bật …" cho MISSING_CAPABILITY, danh sách chọn cho AMBIGUOUS_PROVIDER — và
- * thứ tự triển khai khi hợp lệ.
+ * động — nút "Bật …" cho MISSING_CAPABILITY, "Đổi sang …" cho CLOUD_MISMATCH, danh sách chọn
+ * cho AMBIGUOUS_PROVIDER — và thứ tự triển khai khi hợp lệ.
  */
 export function ValidationPanel({
   validation,
@@ -41,7 +41,8 @@ export function ValidationPanel({
                 <Icon of={CircleAlert} /> {issueText(issue, nameOf)}
               </span>{" "}
               {canEdit &&
-                action?.type === "ENABLE_DOMAIN" &&
+                (action?.type === "ENABLE_DOMAIN" ||
+                  action?.type === "SWITCH_TOOL") &&
                 action.toolId !== undefined && (
                   <button
                     type="button"
@@ -50,7 +51,8 @@ export function ValidationPanel({
                       onEnable(action.domainType, action.toolId ?? "")
                     }
                   >
-                    Bật {action.toolId}
+                    {action.type === "SWITCH_TOOL" ? "Đổi sang" : "Bật"}{" "}
+                    {action.toolId}
                   </button>
                 )}
               {canEdit && ambiguousCap !== undefined && (

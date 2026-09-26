@@ -48,7 +48,8 @@ const targetShape = {
     ),
   preferences: z
     .array(capabilityPreferenceSchema)
-    .max(14)
+    // Một lựa chọn mỗi capability — trần suy từ danh sách, không ghi tay (từng là 14)
+    .max(CAPABILITY_IDS.length)
     .refine(
       (ps) => new Set(ps.map((p) => p.capabilityId)).size === ps.length,
       "mỗi capability chỉ một lựa chọn",
@@ -90,7 +91,7 @@ export const domainUpgradeBodySchema = z
   .strict();
 export type DomainUpgradeBody = z.infer<typeof domainUpgradeBodySchema>;
 
-/** Slug `type` của lỗi Portal rẽ nhánh — không thêm mã vào catalog 24 mã (I36) */
+/** Slug `type` của lỗi Portal rẽ nhánh — không thêm mã vào catalog mã lỗi (I36) */
 export const DOMAIN_ERROR_SLUGS = {
   /** Project đang có lượt triển khai chạy: lưu cấu hình domain sau khi lượt đó xong */
   needsApplyJob: "domains-need-apply-job",

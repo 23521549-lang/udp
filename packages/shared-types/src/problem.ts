@@ -60,7 +60,7 @@ export interface ErrorCodeSpec {
 export const CSRF_INVALID_SLUG = "csrf-invalid";
 
 /**
- * Danh mục 24 mã lỗi (§9).
+ * Danh mục 25 mã lỗi (§9).
  *
  * CẢNH BÁO CHO NGƯỜI SỬA FILE NÀY — hai chữ `as const satisfies` là bắt buộc.
  *
@@ -129,6 +129,14 @@ export const ERROR_CATALOG = {
     fixableBy: "nobody",
     title: "Cyclic capability dependency",
     docSection: "§5.3",
+  },
+  /** [v4.11, Plan #37] Tool chỉ chạy trên một cloud (ACK, Config Connector, ASO) ≠ cloud của project */
+  CLOUD_MISMATCH: {
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Tool requires a different cloud",
+    docSection: "§5.5",
   },
 
   // ---- Feature flag (§6) ----
@@ -306,13 +314,13 @@ export const ERROR_CATALOG = {
 } as const satisfies Record<string, ErrorCodeSpec>;
 
 /**
- * Union 24 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
+ * Union 25 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
  * `ProblemDetails.code` sẽ KHÔNG BIÊN DỊCH ĐƯỢC, không cần test nào.
  */
 export type ErrorCode = keyof typeof ERROR_CATALOG;
 
 /** Kiểm lúc nạp module — thà sập lúc khởi động còn hơn thiếu mã mà không ai biết */
-const EXPECTED_ERROR_CODES = 24;
+const EXPECTED_ERROR_CODES = 25;
 if (Object.keys(ERROR_CATALOG).length !== EXPECTED_ERROR_CODES) {
   throw new Error(
     `ERROR_CATALOG có ${Object.keys(ERROR_CATALOG).length} mã, §9 nói ${EXPECTED_ERROR_CODES}.`,
@@ -357,7 +365,7 @@ export interface ProblemDetails {
   /** URI của chính request gây lỗi */
   instance?: string | undefined;
   /**
-   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong 24 mã
+   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong catalog
    * phủ được — bắt buộc `code` sẽ làm những trường hợp đó không biểu diễn nổi.
    */
   code?: ErrorCode | undefined;

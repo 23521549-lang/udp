@@ -196,7 +196,7 @@ export const cloudSetupQuerySchema = z
 export type CloudSetupQuery = z.infer<typeof cloudSetupQuerySchema>;
 
 /**
- * Slug `type` của ba lỗi mà Portal rẽ nhánh ở bước cloud — không thêm mã vào catalog 24 mã
+ * Slug `type` của ba lỗi mà Portal rẽ nhánh ở bước cloud — không thêm mã vào catalog mã lỗi
  * (I36): các lỗi này không có mã nghiệp vụ riêng, chỉ cần phân biệt được ở client.
  */
 export const CLOUD_ERROR_SLUGS = {

@@ -120,7 +120,7 @@ describe("thân webhook", () => {
 describe("lớp nền mô tả có requires (GitHub Actions)", () => {
   const config = { repository: "acme/web" };
   const registry = (endpoint: string) => ({
-    id: "registry.oci",
+    id: "registry.oci" as const,
     version: "1.0.0",
     providedBy: "container_registry:ghcr",
     endpoint,
@@ -154,7 +154,7 @@ describe("lớp nền mô tả có requires (GitHub Actions)", () => {
     await githubActions.onDependencyChanged(
       env.context(),
       config,
-      registry("registry.acme.dev/web") as never,
+      registry("registry.acme.dev/web"),
     );
     const client = await env.cluster.getClient("tooling");
     expect(JSON.stringify(await client.read("get", ref))).toContain(

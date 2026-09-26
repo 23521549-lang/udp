@@ -1,11 +1,20 @@
 import { z } from "zod";
-import type { CicdDomainAdapter } from "@udp/adapter-core";
+import type {
+  CicdDomainAdapter,
+  PipelineStep,
+  PipelineTemplateParams,
+} from "@udp/adapter-core";
 import {
   createCicdAdapter,
   registryRefOf,
   verifyTokenHeader,
 } from "../../adapter-base/cicd.js";
 import { createDescriptorAdapter } from "../../adapter-base/descriptor.js";
+import {
+  publicEnvOf,
+  stepId,
+  stepsOf,
+} from "../../adapter-base/pipeline-steps.js";
 import {
   environmentOfBranch,
   fillTemplate,
@@ -74,39 +83,78 @@ const notifyJob = (status: "success" | "failure", when: string): string[] => [
   "    - apk add --no-cache jq curl openssl",
   "    - export COMMIT_SHA=$CI_COMMIT_SHA COMMIT_TS=$CI_COMMIT_TIMESTAMP PIPELINE_ID=$CI_PIPELINE_ID-$CI_JOB_ID",
   "    - export REPO=$CI_PROJECT_PATH REF=$CI_COMMIT_REF_NAME ACTOR=$GITLAB_USER_LOGIN",
-  status === "success"
-    ? '    - export IMAGE_REF="%IMAGE%:$CI_COMMIT_SHA"'
-    : '    - export IMAGE_REF=""',
+  ...(status === "success" ? [] : ['    - export IMAGE_REF=""']),
   "    - |",
-  `      ${environmentOfBranch("$CI_COMMIT_REF_NAME")}`,
   ...notifyScript('-H "X-Gitlab-Token: $UDP_WEBHOOK_SECRET"').map(
     (line) => `      ${line}`,
   ),
 ];
 
-const PIPELINE = [
-  "# .gitlab-ci.yml — sinh bởi UDP (Golden Path, §11)",
-  "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
-  "stages: [test, build, notify]",
-  "variables:",
-  '  UDP_TRACKED_FLAGS: "%FLAGS%"',
-  "workflow:",
-  "  rules:",
-  "    - if: '$CI_COMMIT_BRANCH =~ /^(%BRANCH_REGEX%)$/'",
-  "test:",
-  "  stage: test",
-  "  image: node:20-alpine",
-  "  script: [npm ci, npm test]",
-  "build:",
-  "  stage: build",
-  "  image: docker:27",
-  "  services: [docker:27-dind]",
-  "  script:",
-  '    - docker build -t "%IMAGE%:$CI_COMMIT_SHA" .',
-  '    - docker push "%IMAGE%:$CI_COMMIT_SHA"',
-  ...notifyJob("success", "on_success"),
-  ...notifyJob("failure", "on_failure"),
-];
+/**
+ * Bước của domain khác là một job trong image của nó. Image công cụ thường có entrypoint riêng —
+ * GitLab đòi xoá nó để chạy `script`. Biến bí mật là biến CI/CD của project (GitLab đưa vào môi
+ * trường mọi job), nên template chỉ ghi TÊN cần khai.
+ */
+const stepJobs = (steps: readonly PipelineStep[], stage: string): string[] =>
+  steps.flatMap((step) => [
+    `${stepId(step)}:`,
+    `  stage: ${stage}`,
+    `  image: { name: "${step.image}", entrypoint: [""] }`,
+    ...(step.secretEnv.length === 0
+      ? []
+      : [`  # cần biến CI/CD (masked): ${step.secretEnv.join(", ")}`]),
+    ...(Object.keys(step.env).length === 0
+      ? []
+      : [
+          "  variables:",
+          ...publicEnvOf(step).map(([k, v]) => `    ${k}: "${v}"`),
+        ]),
+    "  script:",
+    "    - |",
+    ...step.commands.map((c) => `      ${c}`),
+  ]);
+
+const pipeline = (params: PipelineTemplateParams): string[] => {
+  const before = stepsOf(params, "before-build");
+  const after = stepsOf(params, "after-build");
+  const stages = [
+    "test",
+    ...(before.length === 0 ? [] : ["before-build"]),
+    "build",
+    ...(after.length === 0 ? [] : ["after-build"]),
+    "notify",
+  ];
+  return [
+    "# .gitlab-ci.yml — sinh bởi UDP (Golden Path, §11)",
+    "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
+    `stages: [${stages.join(", ")}]`,
+    "variables:",
+    '  UDP_TRACKED_FLAGS: "%FLAGS%"',
+    '  IMAGE_REF: "%IMAGE%:$CI_COMMIT_SHA"',
+    // Mọi job (bước của domain khác, job báo UDP) đọc cùng environment của nhánh
+    "default:",
+    "  before_script:",
+    `    - export ${environmentOfBranch("$CI_COMMIT_REF_NAME")}`,
+    "workflow:",
+    "  rules:",
+    "    - if: '$CI_COMMIT_BRANCH =~ /^(%BRANCH_REGEX%)$/'",
+    "test:",
+    "  stage: test",
+    "  image: node:20-alpine",
+    "  script: [npm ci, npm test]",
+    ...stepJobs(before, "before-build"),
+    "build:",
+    "  stage: build",
+    "  image: docker:27",
+    "  services: [docker:27-dind]",
+    "  script:",
+    '    - docker build -t "$IMAGE_REF" .',
+    '    - docker push "$IMAGE_REF"',
+    ...stepJobs(after, "after-build"),
+    ...notifyJob("success", "on_success"),
+    ...notifyJob("failure", "on_failure"),
+  ];
+};
 
 const adapter: CicdDomainAdapter = createCicdAdapter({
   base,
@@ -114,7 +162,7 @@ const adapter: CicdDomainAdapter = createCicdAdapter({
     verifyTokenHeader(headers, secret, "X-Gitlab-Token"),
   renderPipelineTemplate: (params) => {
     const values = templateValues(params);
-    return fillTemplate(PIPELINE, {
+    return fillTemplate(pipeline(params), {
       ...values,
       BRANCH_REGEX: (values.BRANCH_LIST ?? "main").split(" ").join("|"),
     });

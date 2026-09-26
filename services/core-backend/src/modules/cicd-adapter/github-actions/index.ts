@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { CicdDomainAdapter } from "@udp/adapter-core";
+import type {
+  CicdDomainAdapter,
+  PipelineStep,
+  PipelineTemplateParams,
+} from "@udp/adapter-core";
 import {
   createCicdAdapter,
   registryRefOf,
@@ -7,7 +11,12 @@ import {
 } from "../../adapter-base/cicd.js";
 import { createDescriptorAdapter } from "../../adapter-base/descriptor.js";
 import {
-  environmentOfBranch,
+  dockerRunLine,
+  stepId,
+  stepsOf,
+} from "../../adapter-base/pipeline-steps.js";
+import {
+  environmentExpr,
   fillTemplate,
   notifyScript,
   templateValues,
@@ -60,7 +69,23 @@ const base = createDescriptorAdapter({
   ],
 });
 
-const WORKFLOW = [
+/** Bước của domain khác chạy trong image của nó; bí mật lấy từ `secrets` của repo theo TÊN */
+const stepLines = (steps: readonly PipelineStep[]): string[] =>
+  steps.flatMap((step) => [
+    `      - name: ${stepId(step)}`,
+    ...(step.secretEnv.length === 0
+      ? []
+      : [
+          "        env:",
+          ...step.secretEnv.map(
+            (name) => `          ${name}: \${{ secrets.${name} }}`,
+          ),
+        ]),
+    "        run: |",
+    `          ${dockerRunLine(step)}`,
+  ]);
+
+const workflow = (params: PipelineTemplateParams): string[] => [
   "# .github/workflows/udp.yml — sinh bởi UDP (Golden Path, §11)",
   "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
   "name: UDP CI/CD",
@@ -74,11 +99,17 @@ const WORKFLOW = [
   "      IMAGE_REF: %IMAGE%:${{ github.sha }}",
   '      UDP_TRACKED_FLAGS: "%FLAGS%"',
   "    steps:",
+  // Bước ĐẦU: mọi bước sau (kể cả bước của domain khác và bước báo UDP) đọc cùng giá trị
+  "      - name: Chọn environment theo nhánh",
+  "        run: |",
+  `          echo "UDP_ENVIRONMENT=${environmentExpr("$GITHUB_REF_NAME")}" >> "$GITHUB_ENV"`,
   "      - uses: actions/checkout@v4",
   "      - name: Test",
   "        run: npm test",
+  ...stepLines(stepsOf(params, "before-build")),
   "      - name: Build và đẩy image",
   '        run: docker build -t "$IMAGE_REF" . && docker push "$IMAGE_REF"',
+  ...stepLines(stepsOf(params, "after-build")),
   "      - name: Báo UDP",
   "        if: always()",
   "        env:",
@@ -92,7 +123,6 @@ const WORKFLOW = [
   "          REF: ${{ github.ref }}",
   "          ACTOR: ${{ github.actor }}",
   "        run: |",
-  `          ${environmentOfBranch("$GITHUB_REF_NAME")}`,
   '          [ "$UDP_STATUS" = "success" ] || IMAGE_REF=""',
   ...notifyScript('-H "X-Hub-Signature-256: sha256=$SIG"').map(
     (line) => `          ${line}`,
@@ -110,7 +140,7 @@ const adapter: CicdDomainAdapter = createCicdAdapter({
       "sha256=",
     ),
   renderPipelineTemplate: (params) =>
-    fillTemplate(WORKFLOW, templateValues(params)),
+    fillTemplate(workflow(params), templateValues(params)),
 });
 
 export default adapter;

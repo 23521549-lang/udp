@@ -63,6 +63,8 @@ export function issueText(
       return `Nhiều tool cùng cung cấp ${issue.subject}: ${d.map(nameOf).join(", ")}. Chọn một.`;
     case "CYCLIC_DEPENDENCY":
       return "Khai báo capability của các tool tạo thành vòng phụ thuộc.";
+    case "CLOUD_MISMATCH":
+      return `${nameOf(issue.subject)} chỉ chạy trên ${d[0] ?? "?"}, còn project dùng ${d[1] ?? "?"}.`;
     case "RECOMMENDED_MISSING":
       return `${nameOf(issue.subject)} hoạt động tốt hơn khi có ${d[0] ?? "?"}. Không bắt buộc.`;
   }

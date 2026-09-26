@@ -2829,6 +2829,26 @@ interface WebhookDeployEvent {
   workloadName: string;
 }
 
+/**
+ * [v4.11, D-P28] Một bước mà domain KHÁC góp vào pipeline Golden Path — IaC chạy trong CI
+ * (Terraform, Pulumi, Ansible) và máy quét chạy trong CI (Checkov, Grype, ZAP). CI/CD adapter chỉ
+ * biết hình này; nó dựng bước theo cú pháp của mình.
+ */
+interface PipelineStep {
+  /** `toolId` của adapter góp bước */
+  tool: string;
+  name: string;
+  /** Trước khi dựng image (IaC, quét IaC) hay sau (quét image, DAST) */
+  phase: "before-build" | "after-build";
+  /** Image chạy bước — bước không cài công cụ lên máy chạy của CI */
+  image: string;
+  commands: string[];
+  /** Giá trị CÔNG KHAI */
+  env: Record<string, string>;
+  /** TÊN biến bí mật mà CI phải cung cấp — UDP không bao giờ đặt giá trị bí mật vào template */
+  secretEnv: string[];
+}
+
 interface PipelineTemplateParams {
   projectSlug: string;
   environments: { name: string; isProduction: boolean }[];
@@ -2837,6 +2857,8 @@ interface PipelineTemplateParams {
   /** Flag mà template gắn sẵn nhãn `ff` cho (§6.8) */
   flagKeys: string[];
   rolloutStrategy: "udp-driven" | "tool-driven";
+  /** [v4.11, D-P28] Bước của mọi tool đang bật khai `pipelineSteps`; rỗng khi không có */
+  steps: PipelineStep[];
 }
 
 interface CicdDomainAdapter extends DomainAdapter {
@@ -2902,7 +2924,9 @@ type CapabilityId =
   | "pipeline.trigger"        // CI có thể được kích hoạt và gửi webhook về
   | "db.instance"
   | "cost.query"
-  | "packages.store";         // [v4.11, Plan #35] npm, Maven, PyPI… — Artifact & Package Registry
+  | "packages.store"          // [v4.11, Plan #35] npm, Maven, PyPI… — Artifact & Package Registry
+  | "infra.provision"         // [v4.11, Plan #37] operator trong cluster hay bước pipeline (IaC)
+  | "security.scan";          // [v4.11, Plan #37] image, IaC, runtime, DAST, phụ thuộc
 
 interface CapabilityDeclaration {
   /** Adapter này cung cấp gì. exclusive = chỉ được có MỘT provider trong cluster */
@@ -3353,6 +3377,8 @@ interface MetricsProvider {
 | AWS ACK / GCP Config Connector / Azure Service Operator | Heavy | — | [v4] Operator cloud-native trong cluster, tương tự Crossplane nhưng theo từng cloud |
 
 > **Lưu ý thiết kế (v4):** domain này gồm hai họ adapter khác bản chất. **Operator trong cluster** (Crossplane, ACK, Config Connector, ASO) là `HelmBasedAdapter` scope `cluster`, cung cấp capability `infra.provision` cho app tự khai báo tài nguyên cloud bằng CR. **Terraform / Pulumi / Ansible** không phải thứ "bật" trong cluster: adapter của chúng là `SaaSAdapter`-kiểu, sinh **bước pipeline** (`terraform plan/apply` với state backend do UDP cấu hình) cho CI/CD adapter đang bật, và cung cấp `infra.provision` theo cách khác. Helm không phải IaC — nó là cơ chế nội bộ của `HelmBasedAdapter`, bỏ khỏi danh mục.
+>
+> **[v4.11, Plan #37, D-P28] Hiện thực.** Bảy adapter, `provides: infra.provision@1` (mới) với `attributes.provider` và `mode` (`operator` | `pipeline`), không exclusive. **Operator:** Crossplane (provider "family" của Upbound cài qua `provider.packages` của chính chart), AWS ACK (ba controller S3 + RDS + DynamoDB, IRSA), GCP Config Connector (Google không phát hành Helm chart — bản ghi release khai `installer: "manifest-bundle"`, chế độ `cluster`, Workload Identity), Azure Service Operator v2 (Workload Identity, `crdPattern` theo nhóm dịch vụ đã chọn; cert-manager là release NỀN dùng chung — một định nghĩa cho mọi operator cần nó, áp trước, không gỡ khi tắt một domain). Ba operator của cloud xuất `cloud` — project dùng cloud khác ⇒ `CLOUD_MISMATCH` lúc kiểm/lưu domain và là lý do chặn provisioning. **Bước pipeline:** Terraform, Pulumi, Ansible xuất `pipelineSteps` (lớp nền bước pipeline trên lớp nền mô tả, `requires: pipeline.trigger`); CI/CD adapter đặt bước vào template theo pha. State do UDP cấu hình trên bucket của khách, khoá `udp/<project>/<environment>`, khoá ghi đồng thời của chính backend; mặc định chỉ `plan`/`preview`/`--check`.
 
 ---
 
@@ -3463,6 +3489,8 @@ interface MetricsProvider {
 | Checkov       | Heavy | —        | IaC security scanning (Terraform, Helm, K8s)   |
 | OWASP ZAP     | Heavy | —        | DAST — dynamic application security testing    |
 | Grype         | Heavy | —        | Open-source vulnerability scanner (Anchore)    |
+
+> **[v4.11, Plan #37, D-P28]** Bảy adapter, `provides: security.scan@1` (mới) với `attributes.kinds` (`image`, `iac`, `runtime`, `dast`, `dependencies`…), không exclusive. Trong cluster (họ Helm): Trivy (`trivy-operator`, bỏ qua `udp-system`/`kube-system`), Snyk (`snyk-monitor`, integration ID là bí mật), Aqua (`kube-enforcer`, token là bí mật), Falco (driver `modern_ebpf`, cảnh báo JSON ra stdout cho forwarder log). Trong CI (bước pipeline): Checkov quét IaC TRƯỚC khi dựng image, Grype quét đúng `$IMAGE_REF` SAU khi dựng (lỗ hổng ⇒ pipeline hỏng ⇒ không deploy), ZAP baseline trên URL của environment đích — quét bản ĐANG phục vụ vì deploy là bất đồng bộ.
 
 ---
 
@@ -5777,6 +5805,7 @@ interface ErrorCodeSpec {
 | `AMBIGUOUS_PROVIDER` | 422 | — | `user` | Nhiều provider, cần chọn — kèm `candidates` | §5.3 |
 | `RECOMMENDED_MISSING` | 200 | — | `user` | Cảnh báo, **không chặn lưu** | §5.3 |
 | `CYCLIC_DEPENDENCY` | 500 | — | `nobody` | Khai báo adapter sai — lỗi lập trình, I13 lẽ ra đã chặn ở CI | §5.3 |
+| `CLOUD_MISMATCH` | 422 | — | `user` | **[v4.11, Plan #37]** Tool chỉ chạy trên một cloud (AWS ACK, GCP Config Connector, Azure Service Operator) mà project dùng cloud khác — chặn lúc kiểm/lưu domain và là lý do chặn provisioning; kèm gợi ý `SWITCH_TOOL` sang tool cùng domain của đúng cloud | §5.5 |
 | `ORPHAN_RULE` | 422 | — | `user` | Rule hoặc default trỏ tới variant không tồn tại hoặc thuộc flag khác. **[v4]** Trước đây §6.7 dùng mã này để chặn lưu nhưng nó không có trong danh mục, trái I36 | §6.7 |
 | `VARIANT_IN_USE` | 409 | ✓ | `user` | Xoá variant còn được rule tham chiếu. **[v4]** Tách khỏi `ORPHAN_RULE`: khác `retryable`, nên khác `suggestedAction` mà Portal hiển thị. Trigger ném SQLSTATE `UDP02` | §6.7 |
 | `INSUFFICIENT_PERMISSIONS` | 422 | — | `user` | Preflight thấy thiếu quyền IAM — kèm policy mẫu | §4.2 |
@@ -6907,6 +6936,7 @@ Plan #25 dựng Portal theo §10 và theo bản mẫu đã duyệt (`docs/design
 | D-P18 | §8.1, §8.2, §9 Domain | Tham số `:domainId` (sơ đồ §8.6) lẫn `:type` (§9); `PUT /capability-preferences` riêng; `DomainValidationResponse` có `rebindPlan`; PUT cho mọi trạng thái project, 202 {jobId} | `:type` (UNIQUE với project); `preferences` đi CÙNG body `PUT /domains` (trạng thái đích cả tập, khoá `domain_set_version` có điều kiện trong transaction); không `rebindPlan`; PUT cho project DRAFT hoặc ERROR lưu thẳng (PENDING); project ACTIVE ⇒ 202 kèm job `DOMAIN_APPLY` (Plan #30, bảng giữ cấu hình ĐANG chạy tới khi áp xong); đang triển khai ⇒ 409 `domains-need-apply-job`; form cấu hình dựng từ `configSchema` của adapter (`configFields`); `GET …/drift` chỉ ĐỌC | Hai endpoint cùng sửa trạng thái đích là hai cửa sổ đua với cùng một khoá. `rebindPlan` chỉ có nghĩa khi đã có binding, tức sau job `DOMAIN_APPLY` — thứ chưa có hàng đợi; áp cho project đã triển khai và hai route Day-2 POST đến ở Plan #30 cùng hàng đợi, không bao giờ là route trả 202 mà không có gì thực thi |
 | D-P19 | §8.1, §9 Provisioning | `boss.send()` trong CÙNG transaction qua `fromPrisma(tx)`; `POST /jobs/:jobId/retry` riêng; SSE `{state, currentStep, resources[], progressLog[]}` | Hàng `ProvisioningJob` QUEUED là outbox, gửi pg-boss SAU commit với `id` = id hàng, đối soát gửi lại hàng mất job; chạy lại = `POST /provision` khi project ERROR: transaction tạo job ĐÓNG chu kỳ sổ của lượt trước (hàng `DELETED` xoá khỏi bảng, danh sách vào `audit_logs`), còn hàng `ORPHAN_SUSPECTED` thì chặn (`orphans-pending`); project sang PROVISIONING ngay trong transaction tạo job; SSE gửi ảnh chụp = CHÍNH body `GET /jobs/:jobId` (đọc DB mỗi giây, heartbeat 15 giây, đóng ở trạng thái cuối), Portal chỉ `invalidateQueries`; hủy sạch ⇒ project về DRAFT | `send()` qua `udp_s1` cần GRANT trên schema pg-boss tự tạo LÚC CHẠY, sau mọi migration (Plan #28 QĐ-1). Retry riêng lặp đúng đường provision. `DELETED` là trạng thái cuối và là đáy hội tụ của I31, nên lượt mới không mở một cạnh `DELETED → CREATING` mà nhường khoá tất định bằng cách chuyển hàng cũ sang bảng append-only. Rời DRAFT trong transaction là để domain và quota không đổi giữa lúc xác nhận chi phí và lúc worker nhận việc. Không có bảng `progressLog`: worker và request có thể ở hai tiến trình, nên nguồn duy nhất là database |
 | D-P20 | §8.1, §9 `DELETE /projects/:id`, §3.1 `jobs/` | `teardown.job.ts`, `project-ttl.job.ts` riêng; trạng thái job theo từng luồng | MỘT hàng `udp-jobs` cho mọi `ProvisioningJob`, worker rẽ theo `job_type`; TEARDOWN dùng lại `QUEUED → COMPENSATING → DONE \| COMPENSATION_FAILED`; xoá khi PROVISION còn chạy ⇒ hủy nó (bù trừ chính là teardown), không job thứ hai; worker không bao giờ ghi trạng thái cho project đã xoá mềm; ba lịch `project-ttl` (1 giờ), `orphan-scan` (10 phút), `drift-scan` (6 giờ) trên `boss.schedule` | Một hàng, một đối soát, một lease thay vì ba cơ chế. Enum trạng thái không cần migration. Hai job cùng dọn một project là tranh nhau tài nguyên. Mốc cảnh báo TTL nhớ bằng audit append-only, không thêm cột |
+| D-P28 | §5.2 `PipelineTemplateParams`, §5.3 `CapabilityId`, §5.5 IaC / Security, §9 danh mục mã | IaC "sinh bước pipeline cho CI/CD adapter" mà `PipelineTemplateParams` không có chỗ cho bước; không capability nào cho IaC và quét bảo mật; operator của cloud không nói cloud khác thì sao; Config Connector coi như Helm chart | `PipelineStep` + `PipelineTemplateParams.steps`; adapter chạy trong CI xuất `pipelineSteps` (registry kiểm: `requires: pipeline.trigger`, không trường bí mật), bước cấm `'` `\` `%` xuống dòng và tên phải là nhãn kebab; `infra.provision`, `security.scan` (17 capability); export `cloud` + mã `CLOUD_MISMATCH` (25 mã) chặn lúc lưu và lúc provisioning; `HelmChartRef.installer = "manifest-bundle"`; release đi kèm `before`, release nền `shared` (cert-manager) | Không có chỗ cho bước thì lưu ý v4 là lời hứa không có địa chỉ. Bước đi vào sáu cú pháp (YAML, chuỗi ba nháy của Groovy, `sh -c`, chỗ trống của template) — cấm ký tự nguy hiểm thì không phải thoát ở đâu. Cấu hình có bí mật mà lọt vào template là bí mật nằm trong repo của khách. ACK trên GKE không bao giờ chạy — báo lúc lưu tốt hơn một lượt deploy FAILED. Giả Helm cho một bundle là bản ghi nói dối bộ cài |
 | D-P27 | §5.2 `WebhookDeployEvent`, `SaaSAdapter`; §8.3; §9 Webhooks | `POST /webhooks/cicd/:provider` lấy project từ payload; kiểu thiếu `pipelineId`, `status`, `commitTimestamp`, `workloadName` mà sơ đồ §8.3 dùng; "apply workload manifest"; GitHub Actions, GitLab CI, CircleCI là `SaaSAdapter` | Project trong ĐƯỜNG DẪN, mọi từ chối trước chữ ký đúng là cùng một 401; thân là JSON của UDP do template dựng và ký, header chữ ký theo nhà cung cấp; kiểu thêm bốn trường; secret sinh/xoay bằng route riêng, hiện một lần; deploy = merge patch image của workload ĐÃ CÓ mang nguyên mảng `containers` + `resourceVersion`, theo dõi ở hàng đợi `udp-deploy`, hạn đọc từ chính workload; CI dịch vụ đi lớp nền mô tả (gộp `RegistryAdapter`) có `requires: registry.oci` | Đọc thân để biết project là parse dữ liệu chưa xác thực và biến webhook thành oracle dò project. Thiếu `pipelineId` thì không chống trùng; thiếu `commitTimestamp` thì không có lead time DORA. Merge patch thay cả mảng: gửi `[{name, image}]` là xoá port, env, probe của container. Deploy trên hàng đợi job hạ tầng ngập `/jobs` và chặn lưu cấu hình domain. CI dịch vụ không gọi API nào lúc cài — `apiHost`/header xác thực của `SaaSAdapter` vô nghĩa ở đó |
 | D-P26 | §5.5 Container Registry / Artifact Registry, §5.3, §12.2 | Kéo image riêng tư không nói bằng gì; §12.2 cấm `secrets` ngoài namespace của SA; `CapabilityId` không có kho package | Registry cloud kéo bằng định danh node; registry cần khoá khai `pullCredential`, nền tảng gộp vào `udp-registry-pull` mỗi env (bootstrap tạo rỗng, `udp-tooling` chỉ `get/update/patch` đúng tên đó); lớp nền `RegistryAdapter`; capability `packages.store` | Pull secret tĩnh cho ECR hết hạn sau 12 giờ. Adapter Helm là cluster-scoped, bộ hợp đồng cấm chạm namespace env — phân phối là việc của nền tảng. Ngoại lệ RBAC hẹp nhất có thể (một tên, không tạo/liệt kê/xoá), bộ kiểm vẫn đỏ với mọi dạng rộng hơn |
 | D-P25 | §5.5 GitOps / Policy / Secrets, §12.2 | Policy "enforce khi provision" không nói gì về chính namespace của nền tảng; `secrets.store` không nói cơ chế; Flux vừa là GitOps tool vừa là cơ chế cài của UDP | Webhook policy miễn trừ `udp-system` + `kube-system`; binding `secrets.store` mang `provider` + định danh công khai; kho cloud qua CSI + workload identity; Vault không giữ unseal key; Flux = `flux2` + `flux2-sync`, cơ chế cài của UDP là `helm upgrade --install` độc lập (HelmRelease trong mô phỏng chỉ là bản ghi); repo Git chỉ `https://` | Policy chặn chính nền tảng là lỗi chỉ lộ ở lượt nâng cấp kế. Consumer phải biết lấy bí mật bằng cơ chế nào. Giữ unseal key là giữ chìa khoá mọi bí mật của khách. `ssh://` là một cấu hình khác hẳn; `http://` gửi token qua kênh trần |
@@ -7800,7 +7830,7 @@ _UDP Technical Design Document v4.0_
 | -- | ----- |
 | Lập luận *"sổ của chúng tôi khác state file"* | Một mệnh đề **bác bỏ được** (xóa sạch sổ, hệ thống vẫn hội tụ), một hàm chạy được `rebuildLedgerFromCloud()`, và một ô **K10** trong bảng kết quả E15 |
 | Cụm từ *"oracle độc lập"* của E8 | **Năm quy tắc**, trong đó ranh giới import được cưỡng chế bằng build (**I35**) và thứ tự commit kiểm được bằng `git log` |
-| Mã lỗi rải rác ở §5.3, §9, §12 | **Danh mục 24 mã** ([v4.5] thêm `CONFIRMATION_REQUIRED`; [v4.9] thêm `FLAG_RECENTLY_EVALUATED`, `SEGMENT_IN_USE`) trong `@udp/shared-types` sinh ra type, khóa i18n và tài liệu; trường `fixableBy` điều khiển hành vi UI (**I36**, **I37**) |
+| Mã lỗi rải rác ở §5.3, §9, §12 | **Danh mục 25 mã** ([v4.5] thêm `CONFIRMATION_REQUIRED`; [v4.9] thêm `FLAG_RECENTLY_EVALUATED`, `SEGMENT_IN_USE`; [v4.11] thêm `CLOUD_MISMATCH`) trong `@udp/shared-types` sinh ra type, khóa i18n và tài liệu; trường `fixableBy` điều khiển hành vi UI (**I36**, **I37**) |
 | Một dòng cảnh báo về cache lẫn giữa environment | **Bảng 18 màn hình** có query key và quy tắc invalidate, kiểm bằng test (**I38**) |
 
 Cùng đợt này bổ sung **§6.8** (`@udp/openfeature-provider` — package mang C1 vào ứng dụng của khách, trước đó chỉ tồn tại dưới dạng `import` trong code mẫu), **§4.6** (`ClusterAccess` — đường duy nhất chạm cluster tenant, trước đó chỉ có một dòng phác trong cây thư mục §3.1), và **bộ contract test thứ hai dành riêng cho Cloud Adapter** (bộ cũ hoàn toàn mang hình dạng Domain Adapter, trong khi C3 tuyên bố chính hợp đồng của Cloud Adapter). Tổng cuối: **42 bất biến** (thêm I39 — ORPHAN_RULE cưỡng chế ở tầng database; [v4.5] I40 — audit cùng transaction với thay đổi), 16 phép đo, 8 ADR.

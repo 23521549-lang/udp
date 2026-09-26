@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { CicdDomainAdapter } from "@udp/adapter-core";
+import type {
+  CicdDomainAdapter,
+  PipelineStep,
+  PipelineTemplateParams,
+} from "@udp/adapter-core";
 import {
   createCicdAdapter,
   registryRefOf,
@@ -7,6 +11,12 @@ import {
 } from "../../adapter-base/cicd.js";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
 import {
+  publicEnvOf,
+  stepId,
+  stepsOf,
+} from "../../adapter-base/pipeline-steps.js";
+import {
+  environmentOfBranch,
   fillTemplate,
   notifyScript,
   templateValues,
@@ -67,67 +77,123 @@ const base = createHelmBasedAdapter({
   ],
 });
 
-const PIPELINE = [
-  "# tekton/udp-pipeline.yaml — sinh bởi UDP (Golden Path, §11)",
-  "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
-  "apiVersion: tekton.dev/v1",
-  "kind: Pipeline",
-  "metadata:",
-  "  name: udp-%PROJECT%",
-  "spec:",
-  "  params:",
-  "    - name: revision",
-  "    - name: branch",
-  "    - name: image",
-  "      default: %IMAGE%",
-  "    - name: environment",
-  '      description: "nhánh main ⇒ %PROD%, nhánh khác ⇒ cùng tên"',
-  "  workspaces:",
-  "    - name: source",
-  "  tasks:",
-  "    - name: build-and-push",
-  "      taskRef: { name: kaniko }",
-  "      params:",
-  "        - name: IMAGE",
-  "          value: $(params.image):$(params.revision)",
-  "      workspaces:",
-  "        - name: source",
-  "          workspace: source",
-  "  finally:",
-  "    - name: notify-udp",
-  "      params:",
-  "        - name: status",
-  "          value: $(tasks.build-and-push.status)",
-  "      taskSpec:",
-  "        params: [{ name: status }]",
-  "        steps:",
-  "          - name: notify",
-  "            image: alpine:3.20",
-  "            env:",
-  "              - name: UDP_WEBHOOK_URL",
-  "                valueFrom: { secretKeyRef: { name: udp-webhook, key: url } }",
-  "              - name: UDP_WEBHOOK_SECRET",
-  "                valueFrom: { secretKeyRef: { name: udp-webhook, key: secret } }",
-  "              - name: UDP_TRACKED_FLAGS",
-  '                value: "%FLAGS%"',
-  "            script: |",
-  "              apk add --no-cache jq curl openssl",
-  '              UDP_STATUS=$([ "$(params.status)" = "Succeeded" ] && echo success || echo failure)',
-  "              COMMIT_SHA=$(params.revision) COMMIT_TS= PIPELINE_ID=$(context.pipelineRun.name)",
-  "              REPO=%PROJECT% REF=$(params.branch) ACTOR=tekton",
-  '              IMAGE_REF=$([ "$UDP_STATUS" = success ] && echo "$(params.image):$(params.revision)" || echo "")',
-  '              UDP_ENVIRONMENT=$([ "$(params.branch)" = main ] && echo "%PROD%" || echo "$(params.branch)")',
-  ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
-    (line) => `              ${line}`,
-  ),
-];
+/** Secret Kubernetes mà bước đọc biến bí mật — khoá trùng TÊN biến */
+const CI_SECRETS = "udp-ci-secrets";
+
+/**
+ * Bước của domain khác là một task nhúng: chạy trong image của nó, trên workspace mã nguồn. Bí mật
+ * lấy từ Secret `udp-ci-secrets` theo TÊN; environment và ảnh tính từ tham số của PipelineRun.
+ */
+const stepTasks = (
+  steps: readonly PipelineStep[],
+  runAfter: readonly string[],
+): string[] =>
+  steps.flatMap((step) => [
+    `    - name: ${stepId(step)}`,
+    ...(runAfter.length === 0
+      ? []
+      : [`      runAfter: [${runAfter.join(", ")}]`]),
+    "      workspaces:",
+    "        - name: source",
+    "          workspace: source",
+    "      taskSpec:",
+    "        workspaces: [{ name: source }]",
+    "        steps:",
+    "          - name: run",
+    `            image: ${step.image}`,
+    "            workingDir: $(workspaces.source.path)",
+    ...(step.secretEnv.length + Object.keys(step.env).length === 0
+      ? []
+      : [
+          "            env:",
+          ...publicEnvOf(step).flatMap(([k, v]) => [
+            `              - name: ${k}`,
+            `                value: "${v}"`,
+          ]),
+          ...step.secretEnv.flatMap((name) => [
+            `              - name: ${name}`,
+            `                valueFrom: { secretKeyRef: { name: ${CI_SECRETS}, key: ${name} } }`,
+          ]),
+        ]),
+    "            script: |",
+    "              #!/bin/sh",
+    "              set -e",
+    `              export ${environmentOfBranch("$(params.branch)")}`,
+    '              export IMAGE_REF="$(params.image):$(params.revision)"',
+    ...step.commands.map((c) => `              ${c}`),
+  ]);
+
+const pipeline = (params: PipelineTemplateParams): string[] => {
+  const before = stepsOf(params, "before-build");
+  const after = stepsOf(params, "after-build");
+  return [
+    "# tekton/udp-pipeline.yaml — sinh bởi UDP (Golden Path, §11)",
+    "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
+    "apiVersion: tekton.dev/v1",
+    "kind: Pipeline",
+    "metadata:",
+    "  name: udp-%PROJECT%",
+    "spec:",
+    "  params:",
+    "    - name: revision",
+    "    - name: branch",
+    "    - name: image",
+    "      default: %IMAGE%",
+    "    - name: environment",
+    '      description: "nhánh main ⇒ %PROD%, nhánh khác ⇒ cùng tên"',
+    "  workspaces:",
+    "    - name: source",
+    "  tasks:",
+    ...stepTasks(before, []),
+    "    - name: build-and-push",
+    ...(before.length === 0
+      ? []
+      : [`      runAfter: [${before.map(stepId).join(", ")}]`]),
+    "      taskRef: { name: kaniko }",
+    "      params:",
+    "        - name: IMAGE",
+    "          value: $(params.image):$(params.revision)",
+    "      workspaces:",
+    "        - name: source",
+    "          workspace: source",
+    ...stepTasks(after, ["build-and-push"]),
+    "  finally:",
+    "    - name: notify-udp",
+    // Trạng thái GỘP của mọi task — bước của domain khác hỏng cũng là pipeline hỏng
+    "      params:",
+    "        - name: status",
+    "          value: $(tasks.status)",
+    "      taskSpec:",
+    "        params: [{ name: status }]",
+    "        steps:",
+    "          - name: notify",
+    "            image: alpine:3.20",
+    "            env:",
+    "              - name: UDP_WEBHOOK_URL",
+    "                valueFrom: { secretKeyRef: { name: udp-webhook, key: url } }",
+    "              - name: UDP_WEBHOOK_SECRET",
+    "                valueFrom: { secretKeyRef: { name: udp-webhook, key: secret } }",
+    "              - name: UDP_TRACKED_FLAGS",
+    '                value: "%FLAGS%"',
+    "            script: |",
+    "              apk add --no-cache jq curl openssl",
+    '              UDP_STATUS=$(case "$(params.status)" in Succeeded|Completed) echo success;; *) echo failure;; esac)',
+    "              COMMIT_SHA=$(params.revision) COMMIT_TS= PIPELINE_ID=$(context.pipelineRun.name)",
+    "              REPO=%PROJECT% REF=$(params.branch) ACTOR=tekton",
+    '              IMAGE_REF=$([ "$UDP_STATUS" = success ] && echo "$(params.image):$(params.revision)" || echo "")',
+    `              ${environmentOfBranch("$(params.branch)")}`,
+    ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
+      (line) => `              ${line}`,
+    ),
+  ];
+};
 
 const adapter: CicdDomainAdapter = createCicdAdapter({
   base,
   verifySignature: (headers, rawBody, secret) =>
     verifyHmacHeader(headers, rawBody, secret, "X-UDP-Signature", "sha256="),
   renderPipelineTemplate: (params) =>
-    fillTemplate(PIPELINE, templateValues(params)),
+    fillTemplate(pipeline(params), templateValues(params)),
 });
 
 export default adapter;

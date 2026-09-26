@@ -31,7 +31,11 @@ import {
   storedToolConfigs,
 } from "../domain/domain-config.store.js";
 import { openSecrets } from "../domain/tool-secrets.js";
-import { resolveTarget, validateTarget } from "../domain/domain-target.js";
+import {
+  cloudIssues,
+  resolveTarget,
+  validateTarget,
+} from "../domain/domain-target.js";
 import { resourceQuotaSchema } from "../project/project.types.js";
 import { closeFinishedCycle } from "./prisma-ledger.js";
 import { providerFromDb } from "./provider-codec.js";
@@ -117,7 +121,11 @@ async function deployOrderOf(
       await catalogAvailability(),
     );
     const result = validateTarget(targets, target);
-    return result.valid ? (result.order ?? []) : null;
+    // Plan #37 QĐ-5: tool của cloud khác (credential đổi cloud sau khi lưu domain) cũng chặn
+    const cloud = (await activeMeta(projectId))?.provider ?? null;
+    return result.valid && cloudIssues(targets, registry, cloud).length === 0
+      ? (result.order ?? [])
+      : null;
   } catch (e) {
     // Tool đã gỡ khỏi registry hay config không còn khớp schema: lý do chặn, không phải 500
     if (e instanceof UnprocessableError || e instanceof ZodError) return null;

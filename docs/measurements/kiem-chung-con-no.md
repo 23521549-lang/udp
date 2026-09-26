@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 40.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 41.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -794,6 +794,29 @@ owned` còn có tài nguyên mang `shared`.
 - **Ảnh hưởng tới kết luận:** AC-3 và AC-4 của Plan #36 ở hạ tầng thật, và **E10** (DORA tính từ
   dữ liệu vận hành của chính UDP): đến khi mục này đo xong, lead time và tần suất deploy chỉ được
   chứng minh trên sự kiện do test ghi.
+
+## iac-security-real — IaC và máy quét trên cloud và CI thật
+
+- **Vì sao nợ:** mười bốn adapter của Plan #37 qua bộ hợp đồng trên cluster mô phỏng, và bước
+  pipeline của sáu tool chạy trong CI được kiểm ở dạng văn bản template (đúng pha, đúng thứ tự,
+  bí mật chỉ bằng TÊN, backend khoá theo environment). Chưa đo: operator thật (Crossplane với
+  provider family, ACK qua IRSA trên EKS, Config Connector qua Workload Identity trên GKE — cài
+  bằng bundle, ASO cùng cert-manager trên AKS) tạo được tài nguyên cloud từ CR; `terraform
+plan/apply`, `pulumi preview/up`, `ansible-playbook --check` chạy trong sáu CI với backend thật
+  và khoá ghi đồng thời; Trivy/Snyk/Aqua/Falco sinh báo cáo thật; Grype chặn một image có lỗ hổng;
+  ZAP quét một URL thật; và tên giá trị Helm của các chart thương mại (Aqua `kube-enforcer`).
+- **Tiền đề:** `I32-cluster` + `helm-real` trên đủ ba cloud; tài khoản dùng thử Snyk và Aqua; repo
+  thử có mã Terraform/Pulumi/Ansible tối thiểu; bucket state ở mỗi cloud.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- iac-security.real` (tệp CHƯA CÓ; nó bật từng
+  tool trên cluster thật, áp một CR mẫu hay đẩy một commit, rồi đọc kết quả ở cloud/nhà cung cấp).
+- **Đạt:** mỗi operator tạo và xoá được một tài nguyên mẫu; hai pipeline đồng thời trên cùng
+  environment thì một bên chờ khoá state; state của `dev` và `prod` nằm ở hai khoá khác nhau; mỗi
+  máy quét cho ít nhất một phát hiện trên mẫu có lỗi cài sẵn và pipeline hỏng đúng lúc. **Không
+  đạt:** tên giá trị Helm sai ⇒ sửa `values` của adapter đó; bước không chạy được trên một CI ⇒ sửa
+  cách CI đó dựng bước.
+- **Tài nguyên:** ba cluster (~3 GiB mỗi cluster, lần lượt) + tài khoản CI và SaaS dùng thử.
+- **Ảnh hưởng tới kết luận:** câu "mọi tool của §5.5 có adapter" của Plan #37 đứng ở mức hợp đồng
+  và văn bản template; việc tool thật làm đúng việc của nó trên hạ tầng thật là phần chưa đo.
 
 > **Đã trả (26/09/2026, Plan #36):** `cicd-adapter` — sáu adapter hiện thực
 > `CicdDomainAdapter`; mọi `verifySignature` đi qua `constantTimeEquals` (kiểm độ dài rồi

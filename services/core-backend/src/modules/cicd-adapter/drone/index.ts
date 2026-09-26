@@ -1,11 +1,20 @@
 import { z } from "zod";
-import type { CicdDomainAdapter } from "@udp/adapter-core";
+import type {
+  CicdDomainAdapter,
+  PipelineStep,
+  PipelineTemplateParams,
+} from "@udp/adapter-core";
 import {
   createCicdAdapter,
   registryRefOf,
   verifyHmacHeader,
 } from "../../adapter-base/cicd.js";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
+import {
+  publicEnvOf,
+  stepId,
+  stepsOf,
+} from "../../adapter-base/pipeline-steps.js";
 import {
   environmentOfBranch,
   fillTemplate,
@@ -125,7 +134,31 @@ const notifyStep = (status: "success" | "failure"): string[] => [
   `      status: [${status}]`,
 ];
 
-const PIPELINE = [
+/**
+ * Bước của domain khác là một step trong image của nó (Drone thay entrypoint bằng `commands`).
+ * Bí mật lấy từ secret của repo cùng tên viết thường; environment và ảnh tính ngay trong step.
+ */
+const stepSteps = (steps: readonly PipelineStep[]): string[] =>
+  steps.flatMap((step) => [
+    `  - name: ${stepId(step)}`,
+    `    image: ${step.image}`,
+    ...(step.secretEnv.length + Object.keys(step.env).length === 0
+      ? []
+      : [
+          "    environment:",
+          ...publicEnvOf(step).map(([k, v]) => `      ${k}: "${v}"`),
+          ...step.secretEnv.map(
+            (name) => `      ${name}: { from_secret: ${name.toLowerCase()} }`,
+          ),
+        ]),
+    "    commands:",
+    "      - |",
+    `        export ${environmentOfBranch("$DRONE_BRANCH")}`,
+    '        export IMAGE_REF="%IMAGE%:$DRONE_COMMIT_SHA"',
+    ...step.commands.map((c) => `        ${c}`),
+  ]);
+
+const pipeline = (params: PipelineTemplateParams): string[] => [
   "# .drone.yml — sinh bởi UDP (Golden Path, §11)",
   "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
   "kind: pipeline",
@@ -139,11 +172,13 @@ const PIPELINE = [
   "  - name: test",
   "    image: node:20-alpine",
   "    commands: [npm ci, npm test]",
+  ...stepSteps(stepsOf(params, "before-build")),
   "  - name: build-and-push",
   "    image: plugins/kaniko",
   "    settings:",
   "      repo: %IMAGE%",
   "      tags: [${DRONE_COMMIT_SHA}]",
+  ...stepSteps(stepsOf(params, "after-build")),
   ...notifyStep("success"),
   ...notifyStep("failure"),
 ];
@@ -153,7 +188,7 @@ const adapter: CicdDomainAdapter = createCicdAdapter({
   verifySignature: (headers, rawBody, secret) =>
     verifyHmacHeader(headers, rawBody, secret, "X-UDP-Signature", "sha256="),
   renderPipelineTemplate: (params) =>
-    fillTemplate(PIPELINE, templateValues(params)),
+    fillTemplate(pipeline(params), templateValues(params)),
 });
 
 export default adapter;

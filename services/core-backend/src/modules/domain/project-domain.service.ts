@@ -17,7 +17,9 @@ import type {
   ProjectDomainsResponseWire,
   PutDomainsResponseWire,
 } from "@udp/shared-types/wire";
+import type { CloudProviderWire } from "@udp/shared-types/cloud-api";
 import { auditEntry } from "../audit/audit.service.js";
+import { activeMeta } from "../cloud/cloud.repository.js";
 import { driftRecordOf } from "../day2/domain-config.repository.js";
 import type { EnqueueJob } from "../provisioning/provisioning.service.js";
 import { applyToRunning } from "./domain-apply.service.js";
@@ -25,6 +27,7 @@ import type { DomainAdapterRegistry } from "./domain-adapter.registry.js";
 import * as store from "./domain-config.store.js";
 import { resolveKept, sealSecrets } from "./tool-secrets.js";
 import {
+  cloudIssues,
   resolveTarget,
   validateTarget,
   validationView,
@@ -133,7 +136,15 @@ const sealed = (
     ),
   }));
 
+/** Cloud của credential đang dùng — `null` khi project chưa lưu credential */
+async function projectCloud(
+  projectId: string,
+): Promise<CloudProviderWire | null> {
+  return (await activeMeta(projectId))?.provider ?? null;
+}
+
 async function resolveAndValidate(
+  projectId: string,
   state: DomainTargetState,
   registry: DomainAdapterRegistry,
 ): Promise<{ targets: ResolvedTarget[]; view: DomainValidationWire }> {
@@ -148,7 +159,15 @@ async function resolveAndValidate(
     // Chỉ xảy ra khi adapter khai báo sai (§5.3) — lỗi của mã, không của người dùng
     throw new Error(`đồ thị capability có vòng: ${cyclic.detail.join(" → ")}`);
   }
-  return { targets, view: validationView(result, targets, registry) };
+  const mismatched = cloudIssues(
+    targets,
+    registry,
+    await projectCloud(projectId),
+  );
+  return {
+    targets,
+    view: validationView(result, targets, registry, mismatched),
+  };
 }
 
 export async function validate(
@@ -158,6 +177,7 @@ export async function validate(
 ): Promise<DomainValidationWire> {
   return (
     await resolveAndValidate(
+      projectId,
       await withKeptSecrets(projectId, state, registry),
       registry,
     )
@@ -172,6 +192,7 @@ export async function put(
   enqueue: EnqueueJob,
 ): Promise<{ status: 200 | 202; body: PutDomainsResponseWire }> {
   const resolved = await resolveAndValidate(
+    projectId,
     await withKeptSecrets(projectId, body, registry),
     registry,
   );

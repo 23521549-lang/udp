@@ -20,7 +20,13 @@ interface Unwrapped {
   defaultValue: unknown;
 }
 
-/** Bóc `optional` / `nullable` / `default` (theo bất kỳ thứ tự nào) để thấy kiểu lõi */
+/**
+ * Bóc `optional` / `nullable` / `default` / `refine` (theo bất kỳ thứ tự nào) để thấy kiểu lõi.
+ *
+ * `refine` (hiệu ứng loại `refinement`) không đổi kiểu ĐẦU VÀO — ô nhập vẫn là chuỗi, luật thêm
+ * vẫn do `configSchema` kiểm lúc lưu. `transform`/`preprocess` thì đổi kiểu, nên không bóc: vẽ
+ * theo kiểu lõi của chúng là vẽ sai ô.
+ */
 function unwrap(schema: ZodTypeAny): Unwrapped {
   let inner = schema;
   let required = true;
@@ -35,6 +41,11 @@ function unwrap(schema: ZodTypeAny): Unwrapped {
         inner._def as { defaultValue: () => unknown }
       ).defaultValue();
       inner = inner.removeDefault() as ZodTypeAny;
+    } else if (
+      inner instanceof z.ZodEffects &&
+      (inner._def as { effect: { type: string } }).effect.type === "refinement"
+    ) {
+      inner = inner.innerType() as ZodTypeAny;
     } else {
       return { inner, required, defaultValue };
     }

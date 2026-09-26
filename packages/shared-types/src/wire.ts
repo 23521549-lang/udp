@@ -977,6 +977,7 @@ const validationIssueWire = z
       "VERSION_MISMATCH",
       "AMBIGUOUS_PROVIDER",
       "CYCLIC_DEPENDENCY",
+      "CLOUD_MISMATCH",
     ]),
     subject: z.string(),
     detail: z.array(z.string()),

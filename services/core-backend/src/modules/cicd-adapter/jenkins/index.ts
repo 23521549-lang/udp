@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { CicdDomainAdapter } from "@udp/adapter-core";
+import type {
+  CicdDomainAdapter,
+  PipelineStep,
+  PipelineTemplateParams,
+} from "@udp/adapter-core";
 import {
   createCicdAdapter,
   registryRefOf,
@@ -7,7 +11,11 @@ import {
 } from "../../adapter-base/cicd.js";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
 import {
-  environmentOfBranch,
+  dockerRunLine,
+  stepId,
+  stepsOf,
+} from "../../adapter-base/pipeline-steps.js";
+import {
   fillTemplate,
   notifyScript,
   templateValues,
@@ -104,31 +112,69 @@ const notify = (status: "success" | "failure"): string[] => [
   `        export UDP_STATUS=${status}`,
   "        export COMMIT_SHA=$GIT_COMMIT COMMIT_TS= PIPELINE_ID=$BUILD_TAG",
   "        export REPO=$JOB_NAME REF=$BRANCH_NAME ACTOR=jenkins",
-  status === "success"
-    ? '        export IMAGE_REF="%IMAGE%:$GIT_COMMIT"'
-    : '        export IMAGE_REF=""',
-  `        ${environmentOfBranch("$BRANCH_NAME")}`,
+  ...(status === "success" ? [] : ['        export IMAGE_REF=""']),
   ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
     (line) => `        ${line}`,
   ),
   "      '''",
 ];
 
-const JENKINSFILE = [
+/** Credential Jenkins mang tên kebab của biến: `AWS_ACCESS_KEY_ID` ⇒ `aws-access-key-id` */
+const credentialId = (name: string): string =>
+  name.toLowerCase().replaceAll("_", "-");
+
+/**
+ * Bước của domain khác là một stage chạy `docker run` trên agent. Bí mật đi qua
+ * `withCredentials` (credential kiểu "secret text" cùng tên kebab) — không bao giờ nằm trong
+ * Jenkinsfile.
+ */
+const stepStages = (steps: readonly PipelineStep[]): string[] =>
+  steps.flatMap((step) => {
+    // Nhiều dòng: dòng lệnh kết thúc bằng nháy đơn, dính vào `'''` là Groovy đóng chuỗi sớm
+    const run = (indent: string) => [
+      `${indent}sh '''`,
+      `${indent}  ${dockerRunLine(step)}`,
+      `${indent}'''`,
+    ];
+    return [
+      `    stage('${stepId(step)}') {`,
+      "      steps {",
+      ...(step.secretEnv.length === 0
+        ? run("        ")
+        : [
+            `        withCredentials([${step.secretEnv
+              .map(
+                (name) =>
+                  `string(credentialsId: '${credentialId(name)}', variable: '${name}')`,
+              )
+              .join(", ")}]) {`,
+            ...run("          "),
+            "        }",
+          ]),
+      "      }",
+      "    }",
+    ];
+  });
+
+const jenkinsfile = (params: PipelineTemplateParams): string[] => [
   "// Jenkinsfile — sinh bởi UDP (Golden Path, §11)",
   "// Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
   "pipeline {",
   "  agent any",
   "  environment {",
   "    UDP_TRACKED_FLAGS = '%FLAGS%'",
+  '    IMAGE_REF = "%IMAGE%:${env.GIT_COMMIT}"',
+  "    UDP_ENVIRONMENT = \"${env.BRANCH_NAME == 'main' ? '%PROD%' : env.BRANCH_NAME}\"",
   "    UDP_WEBHOOK_URL = credentials('udp-webhook-url')",
   "    UDP_WEBHOOK_SECRET = credentials('udp-webhook-secret')",
   "  }",
   "  stages {",
   "    stage('Test') { steps { sh 'npm ci && npm test' } }",
+  ...stepStages(stepsOf(params, "before-build")),
   "    stage('Build và đẩy image') {",
-  '      steps { sh \'docker build -t "%IMAGE%:$GIT_COMMIT" . && docker push "%IMAGE%:$GIT_COMMIT"\' }',
+  '      steps { sh \'docker build -t "$IMAGE_REF" . && docker push "$IMAGE_REF"\' }',
   "    }",
+  ...stepStages(stepsOf(params, "after-build")),
   "  }",
   "  post {",
   "    success {",
@@ -146,7 +192,7 @@ const adapter: CicdDomainAdapter = createCicdAdapter({
   verifySignature: (headers, rawBody, secret) =>
     verifyHmacHeader(headers, rawBody, secret, "X-UDP-Signature", "sha256="),
   renderPipelineTemplate: (params) =>
-    fillTemplate(JENKINSFILE, templateValues(params)),
+    fillTemplate(jenkinsfile(params), templateValues(params)),
 });
 
 export default adapter;

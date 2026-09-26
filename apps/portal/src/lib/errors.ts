@@ -9,7 +9,7 @@ import {
 import { isApiError } from "./http";
 
 /**
- * Chữ tiếng Việt cho 24 mã lỗi của §9 — bất biến I37: `title` của catalog là KHOÁ, chuỗi
+ * Chữ tiếng Việt cho 25 mã lỗi của §9 — bất biến I37: `title` của catalog là KHOÁ, chuỗi
  * hiển thị thuộc về frontend.
  *
  * `Record<ErrorCode, string>` chứ không phải object tự do: thêm mã thứ 25 vào catalog mà
@@ -24,6 +24,7 @@ export const ERROR_COPY: Record<ErrorCode, string> = {
     "Có nhiều nguồn cùng cung cấp năng lực này, hãy chọn một.",
   RECOMMENDED_MISSING: "Nên bật thêm một năng lực được khuyến nghị.",
   CYCLIC_DEPENDENCY: "Cấu hình domain có vòng phụ thuộc.",
+  CLOUD_MISMATCH: "Công cụ này chỉ chạy trên một cloud khác cloud của project.",
   ORPHAN_RULE: "Có rule trỏ tới một variant không còn tồn tại.",
   VARIANT_IN_USE: "Variant này vẫn đang được một rule dùng.",
   METRICS_NOT_AVAILABLE: "Nguồn metrics chưa có dữ liệu cho workload này.",
