@@ -109,6 +109,8 @@ export interface RollbackDeployment {
   workloadName: string | null;
   triggeredBy: "AUTO" | "MANUAL";
   metadata: Prisma.InputJsonObject;
+  /** [Plan #51] SERVICE_LEVEL: lần deploy bị coi là thất bại — `deployment_id` của session (Change Failure Rate) */
+  restoresDeploymentId?: string;
 }
 
 /**
@@ -134,8 +136,46 @@ export async function recordRollbackDeployment(
         ? {}
         : { workloadName: rollback.workloadName }),
       rolloutSessionId: rollback.sessionId,
+      ...(rollback.restoresDeploymentId === undefined
+        ? {}
+        : { restoresDeploymentId: rollback.restoresDeploymentId }),
       triggeredBy: rollback.triggeredBy,
       metadata: rollback.metadata,
+    },
+    select: { id: true },
+  });
+}
+
+/**
+ * [Plan #51] Kết luận lần deploy mà một session SERVICE_LEVEL thực hiện — CÙNG `deployment_id` với DEPLOY_START do
+ * Service 1 ghi lúc tạo (id session), để DORA (E10) đếm START + SUCCESS/FAILURE thành MỘT lần deploy.
+ */
+export async function recordServiceDeployOutcome(
+  db: DbClient,
+  outcome: {
+    projectId: string;
+    environmentId: string;
+    sessionId: string;
+    workloadName: string | null;
+    eventType: "DEPLOY_SUCCESS" | "DEPLOY_FAILURE";
+    imageTag: string | null;
+    triggeredBy: "AUTO" | "MANUAL";
+    metadata: Prisma.InputJsonObject;
+  },
+): Promise<void> {
+  await db.deploymentEvent.create({
+    data: {
+      projectId: outcome.projectId,
+      environmentId: outcome.environmentId,
+      deploymentId: outcome.sessionId,
+      eventType: outcome.eventType,
+      ...(outcome.workloadName === null
+        ? {}
+        : { workloadName: outcome.workloadName }),
+      ...(outcome.imageTag === null ? {} : { imageTag: outcome.imageTag }),
+      rolloutSessionId: outcome.sessionId,
+      triggeredBy: outcome.triggeredBy,
+      metadata: outcome.metadata,
     },
     select: { id: true },
   });

@@ -173,6 +173,62 @@ export async function newSession(
 }
 
 /** Intent do "Service 1" ghi — bằng owner, đúng hình dạng §7.6 */
+export interface ServiceSessionOptions {
+  strategy?: "CANARY" | "ATTRIBUTE_SPLIT" | "BLUE_GREEN";
+  controlMode?: "UDP_DRIVEN" | "TOOL_DRIVEN";
+  status?: "PENDING" | "IN_PROGRESS" | "PAUSED";
+  currentPercent?: number;
+  stepPercent?: number;
+  stepIntervalSeconds?: number;
+  maxDurationSeconds?: number;
+  thresholds?: Prisma.InputJsonObject;
+  trafficMatch?: { header: string; value: string };
+  lastStepAt?: Date | null;
+  createdAt?: Date;
+}
+
+/**
+ * [Plan #51] Session SERVICE_LEVEL như Service 1 ghi lúc tạo: workload `web`, phiên bản `v1` → `v2`, traffic 0
+ * (phiên bản mới chưa nhận request nào).
+ */
+export async function newServiceSession(
+  project: { projectId: string; environmentId: string; ownerId: string },
+  options: ServiceSessionOptions = {},
+): Promise<string> {
+  const session = await admin.rolloutSession.create({
+    data: {
+      projectId: project.projectId,
+      environmentId: project.environmentId,
+      workloadName: "web",
+      rolloutScope: "SERVICE_LEVEL",
+      strategy: options.strategy ?? "CANARY",
+      controlMode: options.controlMode ?? "UDP_DRIVEN",
+      status: options.status ?? "PENDING",
+      currentTrafficPercentage: options.currentPercent ?? 0,
+      baselinePercentage: 0,
+      versionOld: "v1",
+      versionNew: "v2",
+      ...(options.trafficMatch === undefined
+        ? {}
+        : { trafficMatch: options.trafficMatch }),
+      thresholds: options.thresholds ?? {},
+      stepPercent: options.stepPercent ?? 20,
+      stepIntervalSeconds: options.stepIntervalSeconds ?? 300,
+      analysisIntervalSeconds: 30,
+      metricWindowSeconds: 60,
+      warmUpRequests: 100,
+      maxDurationSeconds: options.maxDurationSeconds ?? 86_400,
+      lastStepAt: options.lastStepAt ?? null,
+      createdById: project.ownerId,
+      ...(options.createdAt === undefined
+        ? {}
+        : { createdAt: options.createdAt }),
+    },
+    select: { id: true },
+  });
+  return session.id;
+}
+
 export async function newIntent(
   sessionId: string,
   action: "PAUSE" | "RESUME" | "PROMOTE" | "ROLLBACK",

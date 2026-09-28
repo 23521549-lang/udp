@@ -13,6 +13,7 @@ import type {
   KillSwitch,
   KillSwitchOutcome,
 } from "../executors/kill-switch.js";
+import type { ClusterAccessProvider } from "../cluster-access/provider.js";
 import type { MetricsProviderFor } from "../metrics/provider.js";
 import {
   findUnprocessedIntent,
@@ -43,6 +44,7 @@ import { decide, settleGate } from "./decision.js";
 import { Fence, FenceAbortedError } from "./fence.js";
 import { applyStatusIntent, planIntent } from "./intent-processor.js";
 import { keepLease } from "./lease.js";
+import { createServiceLevelBranch } from "./service-level.js";
 
 /**
  * Vòng reconciliation của Service 3 (§7.1) — state-based, idempotent, nhiều
@@ -77,6 +79,11 @@ export interface ReconcilerDeps {
   maxInFlight?: number;
   /** §7.6 — ghi thẳng `serve` khi S2 chết; vắng thì DEPENDENCY_DOWN giữ traffic nguyên */
   killSwitch?: KillSwitch;
+  /**
+   * [Plan #51] Đường vào cluster của project (token `udp-traffic` từ Service 1) cho SERVICE_LEVEL; vắng thì mọi
+   * session SERVICE_LEVEL HOLD kèm lý do.
+   */
+  clusters?: ClusterAccessProvider;
   /**
    * [v4.3] Gọi với env-config của session khi một lượt đóng session FLAG_LEVEL
    * (DONE/FAILED) — nơi gỡ nhãn `ff` (§6.6). Chạy SAU khi lượt đã xong và lease
@@ -130,7 +137,13 @@ export type Outcome =
   | "version-drift"
   | "invalid-session"
   | "fence-aborted"
-  | "error";
+  | "error"
+  /** [Plan #51] SERVICE_LEVEL: công cụ chưa nhận phiên bản mới */
+  | "waiting"
+  /** [Plan #51] SERVICE_LEVEL: session vừa đồng bộ trọng số từ công cụ */
+  | "mirrored"
+  /** [Plan #51] SERVICE_LEVEL + Flagger udp-driven: PROMOTE ghi cho gate đọc */
+  | "gate-open";
 
 export const SHUTDOWN_REASON = "shutdown";
 
@@ -1052,19 +1065,41 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     return outcome === "rolled-back" ? "expired" : outcome;
   };
 
+  // ------------------------------------------------------------- SERVICE_LEVEL
+
+  /** [Plan #51] Cùng khung vòng, khác bên chạm traffic — xem `service-level.ts` */
+  const serviceLevel = createServiceLevelBranch({
+    db,
+    now,
+    providerFor,
+    clusters: deps.clusters,
+    record,
+    holdWith,
+    holdDecision,
+    commitFenced,
+    rejectIntent,
+  });
+
   // ------------------------------------------------------------- vòng chính
 
   const run = async (session: SessionRow, fence: Fence): Promise<Outcome> => {
+    const service = session.rolloutScope === "SERVICE_LEVEL";
     // 1. Ý định của người dùng luôn được xử lý TRƯỚC phân tích — kể cả khi PAUSED
     const intent = await findUnprocessedIntent(db, session.id);
-    if (intent !== undefined) return applyIntent(session, fence, intent);
+    if (intent !== undefined) {
+      return service
+        ? serviceLevel.applyIntent(session, fence, intent)
+        : applyIntent(session, fence, intent);
+    }
 
     // 2. Hết hạn tổng thể — không để rollout treo vô thời hạn, dù PAUSED hay chưa bắt đầu
     if (
       now() - session.createdAt.getTime() >
       session.maxDurationSeconds * 1000
     ) {
-      return expire(session, fence);
+      return service
+        ? serviceLevel.expire(session, fence)
+        : expire(session, fence);
     }
     if (session.status === "PAUSED") return "paused";
 
@@ -1078,6 +1113,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     ) {
       return "idle";
     }
+    if (service) return serviceLevel.run(session, fence);
     if (session.status === "PENDING") return start(session, fence);
 
     // 4-5. Đo, quyết, và promote khi đã ở bậc đủ lâu

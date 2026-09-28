@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import { env, ROLLOUT_POOL_HEADROOM } from "@udp/config";
+import { env, INTERNAL_CALL, ROLLOUT_POOL_HEADROOM } from "@udp/config";
 import { createSessionConnector } from "@udp/db";
 import { logger } from "@udp/http";
 import { createApp } from "./app.js";
+import { createClusterAccessProvider } from "./cluster-access/provider.js";
+import { createClusterTokenClient } from "./cluster-access/token-client.js";
 import { assertServiceIdentity, prisma, SERVICE_ROLE } from "./core/db.js";
 import { createFlagLevelExecutor } from "./executors/flag-level.executor.js";
 import { createKillSwitch } from "./executors/kill-switch.js";
@@ -64,11 +66,24 @@ const executor = createFlagLevelExecutor({
 
 const untracker = createUntracker({ db: prisma, executor });
 
+/**
+ * [v4.11, Plan #51] Đường vào cluster của project cho SERVICE_LEVEL (ADR-06): token `udp-traffic` xin từ Service 1,
+ * không bao giờ credential cloud.
+ */
+const clusters = createClusterAccessProvider({
+  issue: createClusterTokenClient({
+    baseUrl: env.CORE_BACKEND_URL,
+    secret: env.INTERNAL_SERVICE_SECRET,
+    timeoutMs: INTERNAL_CALL.clusterTokenTimeoutMs,
+  }),
+});
+
 const reconciler = createReconciler({
   db: prisma,
   workerId,
   executor,
   providerFor: providers.forSession,
+  clusters,
   onTerminal: (configId) => {
     untracker.afterTerminal(configId);
   },

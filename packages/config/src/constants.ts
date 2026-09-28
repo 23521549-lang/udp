@@ -727,6 +727,11 @@ export const INTERNAL_CALL = {
    * chờ commit, nên hạn chờ ngắn — người dùng đang đứng trước Portal.
    */
   readTimeoutMs: 10_000,
+  /**
+   * [v4.11, Plan #51] Service 3 xin token cluster từ Service 1: S1 hỏi cloud (trạng thái cluster, token quản trị)
+   * rồi gọi TokenRequest — dài hơn một lời đọc. Hết hạn ⇒ S3 HOLD session kèm lý do, thử lại ở vòng sau.
+   */
+  clusterTokenTimeoutMs: 30_000,
 } as const;
 
 /**

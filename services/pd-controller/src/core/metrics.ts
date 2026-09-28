@@ -67,6 +67,12 @@ export const metrics = {
     name: "udp_pd_fencing_violation_total",
     help: "updateIfVersion trả 0 hàng SAU khi side effect đã áp — cluster/S2 và DB lệch (§7.1)",
   }),
+  /** [v4.11, Plan #51] Webhook gate của Flagger: `open`/`closed` theo gate; token sai hay session lạ đếm riêng */
+  flaggerGate: new Counter({
+    name: "udp_pd_flagger_gate_total",
+    help: "Lời gọi webhook gate của Flagger (SERVICE_LEVEL) theo gate và phán quyết",
+    labelNames: ["gate", "verdict"] as const,
+  }),
 };
 
 export { register as metricsRegistry };

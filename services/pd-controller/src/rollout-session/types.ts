@@ -4,6 +4,7 @@ import {
   INTENT_ACTIONS as SHARED_INTENT_ACTIONS,
   metricQueriesSchema,
   rolloutThresholdsSchema,
+  trafficMatchSchema,
   type IntentAction,
 } from "@udp/shared-types";
 import { z } from "zod";
@@ -39,6 +40,11 @@ export const sessionRowSchema = z.object({
   targetingRuleId: z.string().uuid().nullable(),
   targetVariantId: z.string().uuid().nullable(),
   workloadName: z.string().nullable(),
+  /** [Plan #51] SERVICE_LEVEL: hai phía của phép so theo `service_version` (§7.4) */
+  versionNew: z.string().nullable(),
+  versionOld: z.string().nullable(),
+  /** [Plan #51] ATTRIBUTE_SPLIT ở SERVICE_LEVEL: header đưa người dùng tới phiên bản mới */
+  trafficMatch: trafficMatchSchema.nullable(),
   rolloutScope: z.enum(["FLAG_LEVEL", "SERVICE_LEVEL"]),
   strategy: z.enum(["CANARY", "ATTRIBUTE_SPLIT", "BLUE_GREEN"]),
   controlMode: z.enum(["UDP_DRIVEN", "TOOL_DRIVEN"]),

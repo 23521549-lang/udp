@@ -8,6 +8,7 @@ import {
 } from "@udp/http";
 import { prisma } from "./core/db.js";
 import { metricsRegistry } from "./core/metrics.js";
+import { createFlaggerGateRouter } from "./delivery/gate.js";
 
 /**
  * Bề mặt HTTP của Service 3 — hai endpoint vận hành §9 khai (`/healthz`,
@@ -57,6 +58,9 @@ export function createApp(options: AppOptions = {}): Express {
       res.end(await metricsRegistry.metrics());
     }),
   );
+
+  // [Plan #51] Webhook gate của Flagger — Flagger trong cluster tenant hỏi trước mỗi bậc (§7.3)
+  app.use(createFlaggerGateRouter({ db: prisma }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);
