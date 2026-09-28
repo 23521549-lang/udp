@@ -108,6 +108,9 @@ importers:
       prom-client:
         specifier: ^15.1.3
         version: 15.1.3
+      tsx:
+        specifier: ^4.19.1
+        version: 4.23.12
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -121,15 +124,34 @@ importers:
       supertest:
         specifier: ^7.0.0
         version: 7.2.2
-      tsx:
-        specifier: ^4.19.1
-        version: 4.23.12
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)(jsdom@25.0.1)(msw@2.11.3(@types/node@22.20.1)(typescript@5.9.3))
+
+  deploy:
+    dependencies:
+      '@udp/config':
+        specifier: workspace:*
+        version: link:../packages/config
+      '@udp/db':
+        specifier: workspace:*
+        version: link:../packages/db
+      tsx:
+        specifier: ^4.19.1
+        version: 4.23.12
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)(jsdom@25.0.1)(msw@2.11.3(@types/node@22.20.1)(typescript@5.9.3))
+      yaml:
+        specifier: ^2.6.1
+        version: 2.9.1
 
   packages/adapter-core:
     dependencies:
@@ -657,6 +679,9 @@ importers:
       semver:
         specifier: ^7.6.3
         version: 7.8.5
+      tsx:
+        specifier: ^4.19.1
+        version: 4.23.12
       undici:
         specifier: 7.30.0
         version: 7.30.0
@@ -697,9 +722,6 @@ importers:
       supertest:
         specifier: ^7.2.2
         version: 7.2.2
-      tsx:
-        specifier: ^4.19.1
-        version: 4.23.12
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -742,6 +764,9 @@ importers:
       recheck:
         specifier: ^4.5.0
         version: 4.5.0
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.12
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -764,9 +789,6 @@ importers:
       supertest:
         specifier: ^7.0.0
         version: 7.2.2
-      tsx:
-        specifier: ^4.19.2
-        version: 4.23.12
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -803,6 +825,9 @@ importers:
       prom-client:
         specifier: ^15.1.3
         version: 15.1.3
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.12
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -825,9 +850,6 @@ importers:
       supertest:
         specifier: ^7.0.0
         version: 7.2.2
-      tsx:
-        specifier: ^4.19.2
-        version: 4.23.12
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
@@ -4098,6 +4120,11 @@ packages:
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
+
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
 
   yargs-parser@21.1.1:
     resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}
@@ -7522,6 +7549,8 @@ snapshots:
   y18n@5.0.8: {}
 
   yallist@3.1.1: {}
+
+  yaml@2.9.1: {}
 
   yargs-parser@21.1.1: {}
 

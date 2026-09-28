@@ -1,0 +1,86 @@
+# sample-app (apps/sample-app, §13.4) trong namespace env dev của project seed: Prometheus gắn nhãn
+# `namespace` từ namespace của pod, và mọi truy vấn của S1/S3 lọc theo `k8s_namespace` của env — hai giá
+# trị phải trùng (test canh). Hai bản sao như harness E5; chaos BẬT vì cụm kind là phòng thí nghiệm.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: udp-demo-service-000000-dev
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample-app
+  namespace: udp-demo-service-000000-dev
+spec:
+  selector:
+    app.kubernetes.io/name: sample-app
+  ports:
+    - name: http
+      port: 3010
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-app
+  namespace: udp-demo-service-000000-dev
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sample-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sample-app
+        app.kubernetes.io/version: local
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3010"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: sample-app
+          image: udp/sample-app
+          ports:
+            - name: http
+              containerPort: 3010
+          env:
+            - name: UDP_FLAG_HOST
+              value: http://flag-service.udp.svc.cluster.local:3002
+            # SERVER key cố định của seed (packages/db/prisma/seed.ts) — chỉ tồn tại trong dữ liệu demo
+            - name: UDP_SDK_KEY
+              value: udp_sk_dev_0000000000000000000000000000
+            - name: PORT
+              value: "3010"
+            - name: OTEL_SERVICE_NAME
+              value: sample-app
+            - name: SERVICE_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app.kubernetes.io/version']
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.version=$(SERVICE_VERSION)
+            - name: CHAOS_ENABLED
+              value: "true"
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+          securityContext:
+            allowPrivilegeEscalation: false

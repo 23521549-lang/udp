@@ -1,0 +1,66 @@
+# Service 1 — API của Portal, provisioning, rollout (Plan #49). Chạy mã nguồn bằng tsx (deploy/docker/service.Dockerfile, QĐ-1): startupProbe
+# cho tsx thời gian biên dịch lúc khởi động; /readyz chỉ xanh khi database và danh tính role đã khẳng định.
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-backend
+spec:
+  selector:
+    app.kubernetes.io/name: core-backend
+  ports:
+    - name: http
+      port: 3001
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: core-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: core-backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: core-backend
+          image: udp/core-backend
+          ports:
+            - name: http
+              containerPort: 3001
+          envFrom:
+            - configMapRef:
+                name: udp-config
+            - secretRef:
+                name: udp-secrets
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false

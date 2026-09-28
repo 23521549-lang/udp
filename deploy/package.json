@@ -1,0 +1,23 @@
+{
+  "name": "@udp/deploy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hạ tầng triển khai UDP chi phí 0 (Plan #49): Dockerfile, Kustomize, dựng/huỷ cụm kind",
+  "scripts": {
+    "up": "tsx src/up.ts",
+    "down": "tsx src/down.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@udp/config": "workspace:*",
+    "@udp/db": "workspace:*",
+    "tsx": "^4.19.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8",
+    "yaml": "^2.6.1"
+  }
+}
