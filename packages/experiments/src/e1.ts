@@ -39,8 +39,6 @@ export const OUTSIDE_ADAPTERS: readonly FileKind[] = [
 ];
 
 const ADAPTER_DIR = /^services\/core-backend\/src\/modules\/[a-z-]+-adapter\//;
-const TOOL_DIR =
-  /^(services\/core-backend\/src\/modules\/[a-z-]+-adapter\/[a-z0-9-]+)\/index\.ts$/;
 
 export function kindOf(path: string): FileKind {
   if (path.startsWith("docs/") || path.endsWith(".md")) return "docs";
@@ -61,10 +59,11 @@ export function kindOf(path: string): FileKind {
   return "product";
 }
 
-/** Thư mục tool từ đường dẫn `index.ts` của nó, hoặc `null` */
-export function toolDirOf(indexPath: string): string | null {
-  return TOOL_DIR.exec(indexPath)?.[1] ?? null;
-}
+/**
+ * [Plan #50] Định nghĩa "thư mục tool" là của cổng I28 — E1 đo đúng chỉ số mà cổng cưỡng chế, nên hai bên
+ * không được hiểu nó theo hai cách.
+ */
+export { toolDirOf } from "@udp/design-lint/adapter-commit";
 
 /** Đếm theo nhóm — mọi nhóm có mặt, kể cả 0, để tổng cộng đủ số tệp */
 export function countByKind(

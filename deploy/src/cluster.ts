@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { k8sNamespaceFor } from "@udp/config/constants";
+import { SEED_IDS, SEED_PROJECT_NAME } from "@udp/db/seed-constants";
 
 /**
  * Hằng của bản triển khai UDP trong cluster (Plan #49) — MỘT nơi cho script dựng cụm, manifest (qua
@@ -9,6 +11,21 @@ export const NAMESPACE = "udp";
 /** Secret không commit: script sinh lần đầu, giữ nguyên các lần sau (dữ liệu PostgreSQL sống trên PVC) */
 export const SECRET_NAME = "udp-secrets";
 export const KIND_CLUSTER = "udp";
+/**
+ * Context kubeconfig mà `kind create cluster` tạo. MỌI lệnh kubectl của UDP ghim nó: context HIỆN TẠI của máy có
+ * thể là một cụm cloud thật, và áp manifest demo (seed, mật khẩu sinh tại chỗ) vào đó là lỗi không lấy lại được.
+ */
+export const KUBE_CONTEXT = `kind-${KIND_CLUSTER}`;
+
+/** Cổng trên máy của hai NodePort (`extraPortMappings` của kind) — banner của `up`, E2E và E9 đọc cùng chỗ */
+export const HOST_PORTS = { portal: 8080, flagService: 3002 } as const;
+
+/** Namespace env dev của project seed — sample-app chạy ở đó để nhãn `namespace` khớp dữ liệu (§7.4) */
+export const SAMPLE_NAMESPACE = k8sNamespaceFor(
+  SEED_PROJECT_NAME,
+  SEED_IDS.project,
+  "dev",
+);
 
 const POSTGRES_HOST = "postgres";
 const DATABASE = "udp";

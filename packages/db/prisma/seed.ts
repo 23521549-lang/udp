@@ -7,7 +7,6 @@ import {
   DOMAIN_CATALOG_SEED,
   env,
   k8sNamespaceFor,
-  SDK_KEY,
   TOTAL_BUCKETS,
 } from "@udp/config";
 import {
@@ -19,8 +18,12 @@ import { createPgAdapter } from "../src/adapter.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { sdkKeyMaterialOf } from "../src/sdk-key.js";
 import {
+  SEED_ADMIN_EMAIL,
   SEED_CHECKOUT_FLAG_KEY,
+  SEED_DEV_PASSWORD,
+  SEED_DEV_SERVER_KEY,
   SEED_IDS,
+  SEED_OWNER_EMAIL,
   SEED_PROJECT_NAME,
 } from "../src/seed-constants.js";
 
@@ -55,14 +58,8 @@ const prisma = new PrismaClient({
 // hình ngoài database (Prometheus, sample-app) đọc CÙNG giá trị mà không chạy seed
 const ID = SEED_IDS;
 
-/** Mật khẩu dev — chỉ dùng ở máy cá nhân */
-const DEV_PASSWORD = "udp12345678";
-
-/**
- * SDK key cố định để test SDK ngay mà không phải vào Portal tạo.
- * Database chỉ lưu HASH — đúng như §2.2, plaintext không nằm trong DB.
- */
-const DEV_SERVER_KEY = `${SDK_KEY.serverPrefix}dev_0000000000000000000000000000`;
+/** Mật khẩu dev — chỉ dùng ở máy cá nhân và cụm demo */
+const DEV_PASSWORD = SEED_DEV_PASSWORD;
 
 // ============================================================
 // Danh mục domain
@@ -107,7 +104,7 @@ async function seedUsersAndProject() {
     update: { passwordHash, platformRole: "USER" },
     create: {
       id: ID.userOwner,
-      email: "dev@udp.local",
+      email: SEED_OWNER_EMAIL,
       name: "Dev User",
       passwordHash,
       platformRole: "USER",
@@ -119,7 +116,7 @@ async function seedUsersAndProject() {
     update: { passwordHash, platformRole: "PLATFORM_ADMIN" },
     create: {
       id: ID.userAdmin,
-      email: "admin@udp.local",
+      email: SEED_ADMIN_EMAIL,
       name: "Platform Admin",
       passwordHash,
       platformRole: "PLATFORM_ADMIN",
@@ -489,7 +486,7 @@ async function seedSdkKey(
   environmentId: string,
   createdById: string,
 ): Promise<void> {
-  const { keyHash, keySuffix } = sdkKeyMaterialOf(DEV_SERVER_KEY);
+  const { keyHash, keySuffix } = sdkKeyMaterialOf(SEED_DEV_SERVER_KEY);
   await prisma.sdkKey.upsert({
     where: { keyHash },
     // keySuffix nằm ở CẢ update lẫn create. Hàng đã tồn tại từ trước lần đổi cột
@@ -527,14 +524,14 @@ async function main(): Promise<void> {
   console.log(`
 Seed hoàn tất.
 
-  Đăng nhập     dev@udp.local   / ${DEV_PASSWORD}
-                admin@udp.local / ${DEV_PASSWORD}   (PLATFORM_ADMIN)
+  Đăng nhập     ${SEED_OWNER_EMAIL}   / ${DEV_PASSWORD}
+                ${SEED_ADMIN_EMAIL} / ${DEV_PASSWORD}   (PLATFORM_ADMIN)
 
   Domain        ${DOMAIN_CATALOG_SEED.length} domain trong DomainCatalog
   Project       ${project.name} (${project.id})
   Environment   ${DEFAULT_ENVIRONMENTS.map((e) => e.name).join(", ")}
 
-  SDK key (dev) ${DEV_SERVER_KEY}
+  SDK key (dev) ${SEED_DEV_SERVER_KEY}
                 Database chỉ lưu hash — chuỗi này không đọc lại được từ DB.
 
   Flags         dark-mode           ACTIVE, bật ở dev

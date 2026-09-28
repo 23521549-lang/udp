@@ -2,16 +2,17 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { k8sNamespaceFor } from "@udp/config/constants";
 import { envSchema } from "@udp/config/env-schema";
-import { SEED_IDS, SEED_PROJECT_NAME } from "@udp/db/seed-constants";
+import { SEED_DEV_SERVER_KEY } from "@udp/db/seed-constants";
 import { beforeAll, describe, expect, it } from "vitest";
 import { parse, parseAllDocuments } from "yaml";
 import {
   generateSecrets,
+  HOST_PORTS,
   IMAGES,
   imageRef,
   NAMESPACE,
+  SAMPLE_NAMESPACE,
   SECRET_NAME,
 } from "../src/cluster.js";
 
@@ -38,6 +39,7 @@ interface Container {
   envFrom?: { configMapRef?: { name: string }; secretRef?: { name: string } }[];
   env?: {
     name: string;
+    value?: string;
     valueFrom?: { secretKeyRef?: { name: string; key: string } };
   }[];
   readinessProbe?: { httpGet?: { path: string } };
@@ -206,19 +208,26 @@ describe("overlay kind (Plan #49)", () => {
       "flag-service",
       "portal",
     ]);
-    for (const [name, port] of nodePorts) {
-      expect(mapped.has(port), name).toBe(true);
-    }
-    expect(mapped.get(30080)).toBe(8080);
+    // E2E và E9 gọi đúng cổng máy này — lệch là "connection refused" ở CI, không phải test đỏ ở đây
+    expect(
+      Object.fromEntries(nodePorts.map(([name, p]) => [name, mapped.get(p)])),
+    ).toEqual({
+      portal: HOST_PORTS.portal,
+      "flag-service": HOST_PORTS.flagService,
+    });
   });
 
   it("sample-app ở ĐÚNG namespace env dev của seed, và Prometheus gắn nhãn namespace từ pod", () => {
     const sample = byKind("Deployment").find(
       (d) => d.metadata.name === "sample-app",
     );
-    expect(sample?.metadata.namespace).toBe(
-      k8sNamespaceFor(SEED_PROJECT_NAME, SEED_IDS.project, "dev"),
-    );
+    expect(sample?.metadata.namespace).toBe(SAMPLE_NAMESPACE);
+    // Key lệch seed ⇒ sample-app nhận 401 và không bao giờ có nhãn `ff` — E2E và E5 cùng đổ
+    expect(
+      containersOf(sample as Resource)[0]?.env?.find(
+        (e) => e.name === "UDP_SDK_KEY",
+      )?.value,
+    ).toBe(SEED_DEV_SERVER_KEY);
     const promConfig = byKind("ConfigMap").find(
       (c) => c.metadata.name === "prometheus-config",
     );

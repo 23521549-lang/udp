@@ -1,5 +1,7 @@
+import { SDK_KEY } from "@udp/config/constants";
+
 /**
- * Hằng của seed dev (`prisma/seed.ts`) — THUẦN, không import gì [v4.8].
+ * Hằng của seed dev (`prisma/seed.ts`) — THUẦN: chỉ import hằng thuần của `@udp/config/constants` [v4.8].
  *
  * Cấu hình nằm ngoài database phải khớp dữ liệu seed: job `sample-app` của
  * Prometheus gắn `namespace` = `k8sNamespaceFor(SEED_PROJECT_NAME, SEED_IDS.project,
@@ -10,6 +12,16 @@
  * UUID cố định để seed idempotent — KHÔNG dùng ngoài môi trường dev.
  */
 export const SEED_PROJECT_NAME = "demo-service";
+
+/**
+ * [Plan #50] Tài khoản và SDK key của seed — MỘT nguồn cho seed, E2E của cụm (`deploy/e2e`) và E9. Chỉ tồn
+ * tại trong dữ liệu demo; database chỉ lưu HASH của key (§2.2).
+ */
+export const SEED_OWNER_EMAIL = "dev@udp.local";
+export const SEED_ADMIN_EMAIL = "admin@udp.local";
+export const SEED_DEV_PASSWORD = "udp12345678";
+/** SERVER key cố định của env dev — test SDK ngay mà không phải vào Portal tạo */
+export const SEED_DEV_SERVER_KEY = `${SDK_KEY.serverPrefix}dev_0000000000000000000000000000`;
 
 /** Flag BOOLEAN on/off, ACTIVE, bật ở dev — flag canary của sample-app */
 export const SEED_CHECKOUT_FLAG_KEY = "checkout-v2";

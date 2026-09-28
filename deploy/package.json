@@ -4,9 +4,14 @@
   "private": true,
   "type": "module",
   "description": "Hạ tầng triển khai UDP chi phí 0 (Plan #49): Dockerfile, Kustomize, dựng/huỷ cụm kind",
+  "exports": {
+    "./cluster": "./src/cluster.ts"
+  },
   "scripts": {
     "up": "tsx src/up.ts",
     "down": "tsx src/down.ts",
+    "diagnose": "tsx src/diagnose.ts",
+    "e2e": "vitest run --config vitest.e2e.config.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

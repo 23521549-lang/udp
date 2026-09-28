@@ -15,13 +15,32 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 39.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 41.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
 có địa chỉ.
 
 ---
+
+## E2 — provisioning time theo từng cloud
+
+- **Vì sao nợ:** [Plan #50] E2 đo thời gian dựng network / cluster / domain trên BA cloud thật (§14.1), mà
+  yêu cầu cứng của dự án là chi phí hạ tầng đúng 0 (D-P37): EKS, GKE và AKS đều tính tiền theo giờ, và
+  không bản giả lập nào (LocalStack, kind) có thời gian dựng của control plane thật. Harness chưa viết: số
+  đo phụ thuộc hoàn toàn vào nhà cung cấp, nên viết nó trước khi có tài khoản là viết mò.
+- **Tiền đề:** ba tài khoản cloud có ngân sách (hoặc credit), quyền dựng VPC + cluster; chấp nhận chi phí
+  — tức một quyết định của người dùng thay đổi yêu cầu chi phí 0.
+- **Runbook:** (1) viết `packages/experiments/scripts/e2.ts` gọi Luồng 2 qua API thật của Service 1 cho một
+  project mới trên mỗi cloud, ghi mốc bắt đầu/kết thúc của từng `ProvisionStep` (network / cluster /
+  domain) từ event store; (2) 3 lần mỗi cloud, cùng cấu hình; (3) teardown sau mỗi lần và xác nhận
+  `provisioned_resources` rỗng (I31) trước lần sau.
+- **Đạt:** 9 lần hoàn tất; báo trung vị và khoảng biến thiên từng pha, tách riêng chi phí `lookup()`
+  (§4.5). **Không đạt:** lần nào không hội tụ ⇒ báo cáo như kết quả, không chạy lại cho tới khi xanh.
+- **Tài nguyên:** ba cluster nhỏ nhất của từng cloud, mỗi lần ~20–40 phút; tiền thật.
+- **Ảnh hưởng tới kết luận:** số nền "dựng hạ tầng mất bao lâu" và phần so sánh ba Cloud Adapter. Không
+  đóng góp nào (C1–C3) dựa vào E2 (§14.1 "Bản đồ phép đo theo đóng góp"), nên luận văn trình bày Luồng 2
+  bằng test tích hợp và lưới crash (I31-localstack), không bằng số thời gian.
 
 ## E3-quiet — độ trễ đánh giá trên máy rảnh
 
@@ -153,6 +172,28 @@ có địa chỉ.
 - **Đạt:** `maxConsecutiveBreaches = 2` ⇒ KHÔNG rollback. **Không đạt:** rollback ở 2.
 - **Tài nguyên:** như E5.
 - **Ảnh hưởng tới kết luận:** câu "auto-rollback không nhạy quá mức" — tức đối chứng ÂM của C1. Thiếu nó thì E5 chỉ chứng minh hệ thống biết rollback, không chứng minh nó biết KHÔNG rollback.
+
+## E9 — tài nguyên tiêu thụ của UDP
+
+- **Vì sao nợ:** [Plan #50] harness đã có (`pnpm --filter @udp/experiments e9`: Summary API của kubelet,
+  pha rỗi và pha 1 000 SDK nối SSE bằng SERVER key seed) và chạy mỗi đêm ở job `kind` của CI, nhưng một
+  phép đo chỉ XONG khi kết quả nằm trong `raw/` — artifact của runner chưa được commit lần nào (máy dev
+  không có Docker để chạy tại chỗ). Nhánh **100 rollout đồng thời** chưa có harness: trần
+  `MAX_TRACKED_FLAGS_PER_ENV = 3` (§6.6) buộc ≥ 34 environment, mỗi cái một workload có lưu lượng để qua
+  probe pha 1 — hơn 34 pod ứng dụng mẫu cộng tải, quá sức runner miễn phí 7 GiB. Hai điểm ADR-05 hẹn "đo
+  ở E9" (nhược điểm 7: CPU của `config_hash` ở env hàng nghìn flag; nhược điểm 10: khoá toàn cục của
+  `NOTIFY` dưới tải ghi) cũng chưa có pha: cần một env lớn và một luồng ghi đều mà seed không có.
+- **Tiền đề:** một lượt `schedule` hoặc `workflow_dispatch` của CI xanh ở bước E9; với nhánh rollout và hai
+  pha ADR-05, một máy ≥ 16 GiB có Docker (runner lớn hơn là trả tiền — trái D-P37).
+- **Lệnh:** CI chạy `pnpm --filter @udp/experiments e9` sau `pnpm deploy:up`; tải artifact `E9-<run_id>`
+  (`gh run download <run_id> -n E9-<run_id> -D docs/measurements/raw`) rồi commit nó.
+- **Đạt:** `streams.snapshots` = 1 000 và `aliveAtEnd` = 1 000; mọi container của ba service có
+  `cpuMillicoresMean` khác `null` ở cả hai pha (không restart giữa pha). **Không đạt:** harness thoát mã
+  1 khi không mở đủ 1 000 stream — không ghi số; `aliveAtEnd` < 1 000 ⇒ điều tra trước khi dùng số.
+- **Tài nguyên:** cụm kind của `deploy:up` (~2,5 GiB) + 1 tiến trình Node giữ 1 000 socket; ~8 phút.
+- **Ảnh hưởng tới kết luận:** câu "UDP vận hành được trên một máy nhỏ" (§14.1 "tính khả thi vận hành") và
+  hai giảm thiểu của ADR-05 (nhược điểm 7 và 10) đang được nêu mà chưa có số. Thiếu số, luận văn chỉ nêu
+  được `requests`/`limits` đã khai trong manifest — một con số về cấu hình, không về hệ thống.
 
 ## E14-prometheus — dung lượng TSDB và scrape duration
 

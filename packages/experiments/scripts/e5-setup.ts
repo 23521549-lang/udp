@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
 import { env } from "@udp/config";
 import { createPrismaClient } from "@udp/db";
-import { SEED_CHECKOUT_FLAG_KEY, SEED_IDS } from "@udp/db/seed-constants";
+import {
+  SEED_CHECKOUT_FLAG_KEY,
+  SEED_IDS,
+  SEED_OWNER_EMAIL,
+} from "@udp/db/seed-constants";
 
 /**
  * Dựng MỘT rollout FLAG_LEVEL cho E5 đúng tham số của
@@ -19,7 +23,7 @@ import { SEED_CHECKOUT_FLAG_KEY, SEED_IDS } from "@udp/db/seed-constants";
 
 const { values } = parseArgs({
   options: {
-    email: { type: "string", default: "dev@udp.local" },
+    email: { type: "string", default: SEED_OWNER_EMAIL },
     password: { type: "string" },
     core: { type: "string", default: env.CORE_BACKEND_URL },
     workload: { type: "string", default: "sample-app" },

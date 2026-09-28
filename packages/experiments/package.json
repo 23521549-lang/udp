@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Phép đo §14 (E3, E4, E5, E14) và I34 — kết quả ghi vào docs/measurements",
+  "description": "Phép đo §14 (E1, E3, E4, E5, E9, E14) và I34 — kết quả ghi vào docs/measurements",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
@@ -16,6 +16,7 @@
     "e4": "tsx scripts/e4.ts",
     "e5": "tsx scripts/e5.ts",
     "e5-setup": "tsx scripts/e5-setup.ts",
+    "e9": "tsx scripts/e9.ts",
     "i34": "tsx scripts/i34.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -27,6 +28,8 @@
     "@types/supertest": "^6.0.2",
     "@udp/config": "workspace:*",
     "@udp/db": "workspace:*",
+    "@udp/deploy": "workspace:*",
+    "@udp/design-lint": "workspace:*",
     "@udp/flag-evaluator": "workspace:*",
     "@udp/openfeature-provider": "workspace:*",
     "@udp/shared-types": "workspace:*",

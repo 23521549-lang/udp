@@ -5,10 +5,10 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Làn hằng đêm của §13.5 (mới chỉ là lượt chạy lại bộ test đầy đủ, chưa có
-  # contract test hay E2E). Nó còn một việc thực dụng: project Supabase của CI
-  # là gói free, bị tạm dừng sau một tuần không hoạt động; lượt chạy hằng đêm
-  # giữ nó sống. 18:00 UTC là 01:00 giờ Việt Nam.
+  # Làn hằng đêm của §13.5: bộ test đầy đủ, cụm kind + E2E rút gọn, và benchmark
+  # E9 (chỉ ở làn này và khi chạy tay — xem job `kind`). Nó còn một việc thực
+  # dụng: project Supabase của CI là gói free, bị tạm dừng sau một tuần không hoạt
+  # động; lượt chạy hằng đêm giữ nó sống. 18:00 UTC là 01:00 giờ Việt Nam.
   schedule:
     - cron: "0 18 * * *"
   workflow_dispatch:
@@ -177,3 +177,77 @@ jobs:
         if: always() && env.DATABASE_URL_DIRECT != '' && steps.suite.outcome != 'skipped'
         timeout-minutes: 3
         run: pnpm --filter @udp/db scratch-drop
+
+  i28:
+    # [Plan #50] I28 (§13.3): commit THÊM một adapter (`modules/<x>-adapter/<tool>/index.ts`
+    # mới) không được đổi tệp nào ngoài thư mục tool mới — "0 tệp ngoài adapter" của C2
+    # là một bảo đảm, không phải một lần đo. Nửa dương tính (adapter giả tự hiện trên
+    # catalog) chạy trong job `test`. Commit mà cây chưa có module cổng là commit trước
+    # cổng — được liệt kê, không chặn (E1 đo chúng từ git).
+    name: I28 — thêm adapter không chạm tệp ngoài thư mục của nó
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Cần cả khoảng commit của lượt push/PR, không chỉ commit đầu
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: cổng I28 trên khoảng commit của lượt này
+        # Qua biến môi trường, không nội suy vào lệnh: SHA đến từ sự kiện
+        env:
+          I28_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          I28_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: pnpm --filter @udp/design-lint i28 --base "$I28_BASE" --head "$I28_HEAD"
+
+  kind:
+    # [Plan #50] §13.5 "build image → dựng kind → E2E rút gọn" và làn đêm "benchmark".
+    # Chạy ĐÚNG `pnpm deploy:up` mà README hứa với developer (Plan #49, D-P37): build 6
+    # image tại chỗ, `kind load` (không registry), Secret sinh ngay trong runner cho lượt
+    # này, migrate + seed, chờ sẵn sàng. Chi phí 0: không đẩy image, không cloud.
+    name: kind — build image, dựng cụm, E2E rút gọn (E9 ở làn đêm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      # 6 image (mỗi image mang cây phụ thuộc của package) + image node của kind + bản nạp
+      # vào node: dọn các SDK cài sẵn không dùng tới để không cạn đĩa giữa chừng
+      - name: dọn đĩa runner
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: helm/kind-action@v1
+        with:
+          # Chỉ cài `kind`: dựng cụm là việc của `pnpm deploy:up`, theo `deploy/kind/cluster.yaml`
+          install_only: true
+      - name: pnpm deploy:up
+        timeout-minutes: 50
+        run: pnpm deploy:up
+      - name: E2E rút gọn
+        timeout-minutes: 10
+        run: pnpm --filter @udp/deploy e2e
+      - name: E9 — tài nguyên khi rỗi và khi 1 000 SDK nối SSE
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        timeout-minutes: 20
+        run: pnpm --filter @udp/experiments e9 --note "CI run ${{ github.run_id }}"
+      # Số chỉ XONG khi tệp này được commit vào `docs/measurements/raw/` (luật của sổ nợ, mục E9)
+      - name: kết quả E9
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: E9-${{ github.run_id }}
+          path: docs/measurements/raw/E9-*.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: chẩn đoán cụm
+        if: failure()
+        run: pnpm --filter @udp/deploy diagnose
