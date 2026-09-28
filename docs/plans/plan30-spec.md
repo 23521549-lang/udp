@@ -62,11 +62,10 @@ Trả `domain-day2-route`. Giữ `upgrade-rollback-that`, `helm-real`, `I32-clus
 
 ## 5. Nhật ký review
 
-| Vòng | Phát hiện | Xử lý |
-| --- | --- | --- |
-| P2 | `rebindProvider` đổi mọi binding cùng capability của project — ghi đè provider thứ hai (§5.3 cho phép) | Lọc theo `domain_config_id`; ô âm trong `capability-persist.test.ts` |
-| P2 | `upgradeDomain` gọi `upgrade`/`healthcheck` một lần — adapter theo namespace chỉ nâng một env | `perEnvironment` bọc cả hai hook |
-| P3 | Hai hình response cho `PUT /domains` (200 view, 202 job) phá quy tắc một route một schema của golden | Một hình, thêm `job` |
-| P4 | Trình sửa domain dựng lại theo `domain_set_version` ⇒ mất tiến độ job ngay khi lưu | Job giữ ở `DomainPanel`, ngoài `key` |
-| P4 | Chi tiết domain tải catalog cả khi không có nút nào (VIEWER) | Chỉ tải khi thao tác được hiện |
-
+| Vòng | Phát hiện                                                                                              | Xử lý                                                                |
+| ---- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| P2   | `rebindProvider` đổi mọi binding cùng capability của project — ghi đè provider thứ hai (§5.3 cho phép) | Lọc theo `domain_config_id`; ô âm trong `capability-persist.test.ts` |
+| P2   | `upgradeDomain` gọi `upgrade`/`healthcheck` một lần — adapter theo namespace chỉ nâng một env          | `perEnvironment` bọc cả hai hook                                     |
+| P3   | Hai hình response cho `PUT /domains` (200 view, 202 job) phá quy tắc một route một schema của golden   | Một hình, thêm `job`                                                 |
+| P4   | Trình sửa domain dựng lại theo `domain_set_version` ⇒ mất tiến độ job ngay khi lưu                     | Job giữ ở `DomainPanel`, ngoài `key`                                 |
+| P4   | Chi tiết domain tải catalog cả khi không có nút nào (VIEWER)                                           | Chỉ tải khi thao tác được hiện                                       |

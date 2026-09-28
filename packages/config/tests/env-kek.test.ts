@@ -22,13 +22,18 @@ function key32(): string {
   return randomBytes(32).toString("base64");
 }
 
-async function loadEnv(): Promise<{ ok: true } | { ok: false; message: string }> {
+async function loadEnv(): Promise<
+  { ok: true } | { ok: false; message: string }
+> {
   vi.resetModules();
   try {
     await import("../src/env.js");
     return { ok: true };
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 

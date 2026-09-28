@@ -50,7 +50,8 @@ function importsOf(file: string): string[] {
     m = re.exec(source);
   }
   /** `import "x"` không có `from`, và `await import("x")` động */
-  const bare = /(?:^|\n)\s*import\s+["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g;
+  const bare =
+    /(?:^|\n)\s*import\s+["']([^"']+)["']|\bimport\(\s*["']([^"']+)["']\s*\)/g;
   let b: RegExpExecArray | null = bare.exec(source);
   while (b !== null) {
     const spec = b[1] ?? b[2];
@@ -106,14 +107,7 @@ describe("oracle độc lập ở tầng mã", () => {
 function firstCommitOf(pathspec: string): { hash: string; at: number } | null {
   const out = execFileSync(
     "git",
-    [
-      "log",
-      "--diff-filter=A",
-      "--reverse",
-      "--format=%H %ct",
-      "--",
-      pathspec,
-    ],
+    ["log", "--diff-filter=A", "--reverse", "--format=%H %ct", "--", pathspec],
     { cwd: REPO, encoding: "utf8" },
   ).trim();
   if (out === "") return null;

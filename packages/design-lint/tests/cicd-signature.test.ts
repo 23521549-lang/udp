@@ -105,7 +105,9 @@ function verifySignatureOf(file: ts.SourceFile): ts.Node {
     }
   });
   if (found === undefined) {
-    throw new Error(`${file.fileName}: không gọi createCicdAdapter({ verifySignature })`);
+    throw new Error(
+      `${file.fileName}: không gọi createCicdAdapter({ verifySignature })`,
+    );
   }
   return found;
 }

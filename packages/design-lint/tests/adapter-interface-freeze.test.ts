@@ -78,7 +78,9 @@ function codeInterface(
   const end = source.indexOf("\n}", start);
   const body = source.slice(start, end);
 
-  const methods = [...body.matchAll(/^ {2}(\w+)\(/gm)].map((m) => m[1] as string);
+  const methods = [...body.matchAll(/^ {2}(\w+)\(/gm)].map(
+    (m) => m[1] as string,
+  );
   const props = [...body.matchAll(/^ {2}readonly (\w+)/gm)].map(
     (m) => m[1] as string,
   );
@@ -131,7 +133,9 @@ describe("DomainAdapter — 7 + 6", () => {
     expect([...DOMAIN_ADAPTER_METHODS].sort()).toEqual(
       [...code.methods].sort(),
     );
-    expect([...DOMAIN_ADAPTER_PROPERTIES].sort()).toEqual([...code.props].sort());
+    expect([...DOMAIN_ADAPTER_PROPERTIES].sort()).toEqual(
+      [...code.props].sort(),
+    );
   });
 });
 

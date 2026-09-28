@@ -47,7 +47,9 @@ export function providerFromDb(provider: DbCloudProvider): CloudProvider {
      * đọc một hàng nó không hiểu; trả về một giá trị mặc định ở đây là ghi tag sai lên
      * tài nguyên thật ở bước sau.
      */
-    throw new Error(`enum CloudProvider của database có giá trị lạ: ${provider}`);
+    throw new Error(
+      `enum CloudProvider của database có giá trị lạ: ${provider}`,
+    );
   }
   return mapped;
 }

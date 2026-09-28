@@ -116,7 +116,11 @@ export function createFakeClusterAccess(
          */
         if ((verb === "patch" || verb === "apply") && body !== null) {
           const prev = store.get(key);
-          if (typeof prev === "object" && prev !== null && typeof body === "object") {
+          if (
+            typeof prev === "object" &&
+            prev !== null &&
+            typeof body === "object"
+          ) {
             store.set(key, { ...prev, ...body });
             return Promise.resolve();
           }

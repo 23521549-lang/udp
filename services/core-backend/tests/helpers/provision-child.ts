@@ -1,9 +1,6 @@
 import { runFullProvision } from "@udp/adapter-core/contract";
 import type { RunnerPhase } from "@udp/adapter-core/runner";
-import {
-  createSimAdapter,
-  SimCloud,
-} from "@udp/adapter-core/testing";
+import { createSimAdapter, SimCloud } from "@udp/adapter-core/testing";
 import { env } from "@udp/config";
 import { writeSync } from "node:fs";
 import { createPrismaClient } from "@udp/db";
@@ -48,8 +45,11 @@ function connectionWithAppName(name: string): string {
  * bộ không kịp flush, nên mốc sẽ mất và phép khẳng định lại không phân biệt được gì.
  */
 process.on("exit", () => {
-  writeSync(1, `${CHILD_GRACEFUL_EXIT}
-`);
+  writeSync(
+    1,
+    `${CHILD_GRACEFUL_EXIT}
+`,
+  );
 });
 
 async function main(): Promise<void> {

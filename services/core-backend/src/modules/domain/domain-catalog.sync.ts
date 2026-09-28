@@ -78,7 +78,9 @@ export async function syncDomainCatalog(
   const existing = await prisma.domainCatalog.findMany({
     select: { domainType: true, isAvailable: true },
   });
-  const existingMap = new Map(existing.map((r) => [r.domainType, r.isAvailable]));
+  const existingMap = new Map(
+    existing.map((r) => [r.domainType, r.isAvailable]),
+  );
   const declaredTypes = new Set(declared.map((d) => d.domainType));
 
   const reEnabled: string[] = [];

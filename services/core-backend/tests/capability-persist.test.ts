@@ -45,7 +45,9 @@ beforeAll(async () => {
   await admin.capabilityBinding.deleteMany({
     where: { domainConfig: { projectId: PROJECT } },
   });
-  await admin.capabilityPreference.deleteMany({ where: { projectId: PROJECT } });
+  await admin.capabilityPreference.deleteMany({
+    where: { projectId: PROJECT },
+  });
   await admin.domainConfig.deleteMany({ where: { projectId: PROJECT } });
   await admin.environment.deleteMany({ where: { projectId: PROJECT } });
   await admin.project.deleteMany({ where: { id: PROJECT } });
@@ -96,7 +98,9 @@ afterAll(async () => {
   await admin.capabilityBinding.deleteMany({
     where: { domainConfig: { projectId: PROJECT } },
   });
-  await admin.capabilityPreference.deleteMany({ where: { projectId: PROJECT } });
+  await admin.capabilityPreference.deleteMany({
+    where: { projectId: PROJECT },
+  });
   await admin.domainConfig.deleteMany({ where: { projectId: PROJECT } });
   await admin.environment.deleteMany({ where: { projectId: PROJECT } });
   await admin.project.deleteMany({ where: { id: PROJECT } });
@@ -107,7 +111,9 @@ beforeEach(async () => {
   await admin.capabilityBinding.deleteMany({
     where: { domainConfig: { projectId: PROJECT } },
   });
-  await admin.capabilityPreference.deleteMany({ where: { projectId: PROJECT } });
+  await admin.capabilityPreference.deleteMany({
+    where: { projectId: PROJECT },
+  });
   await admin.domainConfig.update({
     where: { id: monitoringConfigId },
     data: { isEnabled: true, selectedTool: "prometheus-grafana" },
@@ -222,7 +228,9 @@ describe("rebind — MỌI environment, không chỉ environment đang xem (AC-1
     expect(new Set(rows.map((r) => r.providedBy))).toEqual(
       new Set(["monitoring:victoriametrics"]),
     );
-    expect(new Set(rows.map((r) => r.schemaVersion))).toEqual(new Set(["2.1.0"]));
+    expect(new Set(rows.map((r) => r.schemaVersion))).toEqual(
+      new Set(["2.1.0"]),
+    );
   });
 
   it("rebind KHÔNG chạm capability khác", async () => {
@@ -288,9 +296,9 @@ describe("rebind — MỌI environment, không chỉ environment đang xem (AC-1
     });
     expect(changed).toBe(1);
     const rows = await bindingsOfProject(s1, PROJECT);
-    expect(
-      rows.find((r) => r.domainConfigId === logging.id)?.providedBy,
-    ).toBe("logging:victoria");
+    expect(rows.find((r) => r.domainConfigId === logging.id)?.providedBy).toBe(
+      "logging:victoria",
+    );
     await admin.capabilityBinding.deleteMany({
       where: { domainConfigId: logging.id },
     });
@@ -457,7 +465,10 @@ describe("applyDomainChange — dọn trong CÙNG transaction", () => {
     const prefs = await s1.capabilityPreference.findMany({
       where: { projectId: PROJECT },
     });
-    expect(prefs, "preference phải còn vì transaction đã cuộn lại").toHaveLength(1);
+    expect(
+      prefs,
+      "preference phải còn vì transaction đã cuộn lại",
+    ).toHaveLength(1);
   });
 });
 

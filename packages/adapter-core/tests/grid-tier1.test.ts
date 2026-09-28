@@ -41,7 +41,11 @@ const DELAYED = CONSISTENCY_VARIANTS.find((v) => v.name === "delayed");
  */
 const DELAYED_CRASH_IDS = ["K2"];
 
-function envFor(): { env: CloudContractEnv; adapter: CloudAdapter; cleanup: () => void } {
+function envFor(): {
+  env: CloudContractEnv;
+  adapter: CloudAdapter;
+  cleanup: () => void;
+} {
   const dir = mkdtempSync(join(tmpdir(), "grid1-"));
   const cloud = new SimCloud({ statePath: join(dir, "cloud.json") });
   const adapter = createSimAdapter({ cloud, lookupBy: "tag" });
@@ -124,7 +128,11 @@ describe("ô indeterminate (K2b)", () => {
 
       /** Cửa sổ rộng hơn tổng backoff: mọi lần tra trong lượt này đều bất định */
       await env.control.setTagPropagationDelay(3_600_000);
-      const first = await runFullProvision({ adapter, ledger, observer: silent });
+      const first = await runFullProvision({
+        adapter,
+        ledger,
+        observer: silent,
+      });
       /**
        * Lượt đầu tạo `vpc` (chưa có gì nên `lookup` ra `absent`, không `indeterminate`),
        * rồi `subnet-a` tra không thấy `vpc`... nên điều cần khẳng định là: KHÔNG bao giờ có
@@ -133,12 +141,14 @@ describe("ô indeterminate (K2b)", () => {
       void first;
 
       await env.control.setTagPropagationDelay(0);
-      const second = await runFullProvision({ adapter, ledger, observer: silent });
+      const second = await runFullProvision({
+        adapter,
+        ledger,
+        observer: silent,
+      });
       expect(second.every((o) => o.status === "SUCCESS")).toBe(true);
 
-      const rows = await ledger.rowsOf(
-        "11111111-1111-4111-8111-111111111111",
-      );
+      const rows = await ledger.rowsOf("11111111-1111-4111-8111-111111111111");
       expect(rows).toHaveLength(CLOUD_FIXTURE.expectedResourceCount);
 
       /** Không khoá nào có hai tài nguyên — tức không tạo trùng */
@@ -192,7 +202,9 @@ describe("meta — lưới tầng 1", () => {
 
   it("biến thể delayed chỉ áp cho K2, và nó có nghĩa ở đúng đó", () => {
     const delayedIds = [
-      ...new Set(CELLS.filter((c) => c.variant === "delayed").map((c) => c.crashId)),
+      ...new Set(
+        CELLS.filter((c) => c.variant === "delayed").map((c) => c.crashId),
+      ),
     ];
     expect(delayedIds).toEqual(DELAYED_CRASH_IDS);
   });

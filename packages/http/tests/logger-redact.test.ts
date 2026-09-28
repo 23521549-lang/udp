@@ -156,7 +156,10 @@ describe("redact — độ sâu và lỗi lồng nhau (AC-20)", () => {
   function errorWithSecret(): Error {
     const inner = new Error("SDK vỡ");
     (inner as unknown as { config: unknown }).config = {
-      headers: { Authorization: "Bearer BI-MAT-THAT", "x-amz-date": "20260924" },
+      headers: {
+        Authorization: "Bearer BI-MAT-THAT",
+        "x-amz-date": "20260924",
+      },
     };
     (inner as unknown as { code: string }).code = "AccessDenied";
     return new Error("provision thất bại", { cause: inner });

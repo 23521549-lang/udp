@@ -22,7 +22,10 @@ import { describe, expect, it } from "vitest";
  * nhật lần cuối.
  */
 
-const REPORT = resolve(import.meta.dirname, "../../../docs/E1-relaxations.json");
+const REPORT = resolve(
+  import.meta.dirname,
+  "../../../docs/E1-relaxations.json",
+);
 
 interface E1Report {
   measuredAt: string;

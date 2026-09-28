@@ -46,7 +46,11 @@ function noopHelmAdapter(): DomainAdapter {
       requires: [],
     },
     configSchema: noopSchema,
-    chart: { name: "noop", version: "0.1.0", repo: "https://vi-du.test/charts" },
+    chart: {
+      name: "noop",
+      version: "0.1.0",
+      repo: "https://vi-du.test/charts",
+    },
     releaseName: "udp-noop-helm",
     /** RỖNG ⇒ bộ hợp đồng đòi nó chạy được với quota toàn 0 */
     quotaDimensions: [],

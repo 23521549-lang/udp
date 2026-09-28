@@ -133,7 +133,9 @@ export const adapterKey = (a: ResolvableAdapter): string =>
   `${a.domainType}:${a.toolId}`.toLowerCase();
 
 /** Mọi `CapabilityRequirement` của một adapter, phẳng hoá cả nhánh `anyOf` */
-export function flatRequirements(a: ResolvableAdapter): CapabilityRequirement[] {
+export function flatRequirements(
+  a: ResolvableAdapter,
+): CapabilityRequirement[] {
   return a.capabilities.requires.flatMap((r) => (isAnyOf(r) ? r.anyOf : [r]));
 }
 
@@ -241,7 +243,11 @@ export function validateAndOrder(
     for (const p of a.capabilities.provides) {
       provided.set(p.id, [
         ...(provided.get(p.id) ?? []),
-        { by: adapterKey(a), version: p.version, exclusive: p.exclusive === true },
+        {
+          by: adapterKey(a),
+          version: p.version,
+          exclusive: p.exclusive === true,
+        },
       ]);
     }
   }
@@ -259,11 +265,7 @@ export function validateAndOrder(
   for (const cap of capsInOrder) {
     const ps = provided.get(cap) ?? [];
     if (ps.length > 1 && ps.some((p) => p.exclusive)) {
-      return failure(
-        "CONFLICT",
-        cap,
-        ps.map((p) => p.by).sort(),
-      );
+      return failure("CONFLICT", cap, ps.map((p) => p.by).sort());
     }
   }
 
@@ -342,11 +344,7 @@ export function validateAndOrder(
     }
 
     if (satisfying.length === 0) {
-      return failure(
-        "VERSION_MISMATCH",
-        cap,
-        ps.map((p) => p.by).sort(),
-      );
+      return failure("VERSION_MISMATCH", cap, ps.map((p) => p.by).sort());
     }
     const single = satisfying[0];
     if (satisfying.length === 1 && single !== undefined) {

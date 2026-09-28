@@ -38,11 +38,15 @@ describe("oracle sinh đủ bảy mã kết quả", () => {
   it("CONFLICT — hai provider của một capability exclusive", () => {
     const res = oracleValidate([
       adapterOf("flagger", {
-        provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+        provides: [
+          { id: "traffic.control", version: "1.0.0", exclusive: true },
+        ],
         requires: [],
       }),
       adapterOf("argo-rollouts", {
-        provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+        provides: [
+          { id: "traffic.control", version: "1.0.0", exclusive: true },
+        ],
         requires: [],
       }),
     ]);
@@ -52,7 +56,11 @@ describe("oracle sinh đủ bảy mã kết quả", () => {
 
   it("CONFLICT — ngoại lệ tool-level, kiểm cả hai chiều", () => {
     const res = oracleValidate([
-      adapterOf("a", { provides: [], requires: [], conflicts: ["monitoring:b"] }),
+      adapterOf("a", {
+        provides: [],
+        requires: [],
+        conflicts: ["monitoring:b"],
+      }),
       adapterOf("b", { provides: [], requires: [] }),
     ]);
     expect(res.errors[0]?.code).toBe("CONFLICT");
@@ -155,11 +163,15 @@ describe("oracle sinh đủ bảy mã kết quả", () => {
     record(
       oracleValidate([
         adapterOf("flagger", {
-          provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+          provides: [
+            { id: "traffic.control", version: "1.0.0", exclusive: true },
+          ],
           requires: [],
         }),
         adapterOf("argo", {
-          provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+          provides: [
+            { id: "traffic.control", version: "1.0.0", exclusive: true },
+          ],
           requires: [],
         }),
       ]),
@@ -219,7 +231,11 @@ describe("oracle sinh đủ bảy mã kết quả", () => {
     );
     record(
       oracleValidate([
-        adapterOf("r", { provides: [], requires: [], recommends: ["traces.sink"] }),
+        adapterOf("r", {
+          provides: [],
+          requires: [],
+          recommends: ["traces.sink"],
+        }),
       ]),
     );
 
@@ -281,11 +297,15 @@ describe("oracle — ba nhánh của §2.8 mà pseudo-code cũ làm sai", () => 
     const res = oracleValidate(
       [
         adapterOf("flagger", {
-          provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+          provides: [
+            { id: "traffic.control", version: "1.0.0", exclusive: true },
+          ],
           requires: [],
         }),
         adapterOf("argo-rollouts", {
-          provides: [{ id: "traffic.control", version: "1.0.0", exclusive: true }],
+          provides: [
+            { id: "traffic.control", version: "1.0.0", exclusive: true },
+          ],
           requires: [],
         }),
       ],
@@ -381,10 +401,7 @@ describe("oracleTopoSort — thuật toán, trên đồ thị dựng TAY (D-11)"
   });
 
   it("hai adapter độc lập ⇒ CÙNG một bậc, deploy song song được", () => {
-    const order = oracleTopoSort(
-      [node("a", [], []), node("b", [], [])],
-      {},
-    );
+    const order = oracleTopoSort([node("a", [], []), node("b", [], [])], {});
     expect(order).toEqual([["d:a", "d:b"]]);
   });
 

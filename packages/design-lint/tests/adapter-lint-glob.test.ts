@@ -107,9 +107,7 @@ describe("khối lint adapter áp cho tệp THẬT", () => {
     );
     const missing = [...dirs].filter(
       (d) =>
-        !files.some(
-          (f) => dirname(f) === d && f.endsWith("contract.test.ts"),
-        ),
+        !files.some((f) => dirname(f) === d && f.endsWith("contract.test.ts")),
     );
     expect(missing).toEqual([]);
   });

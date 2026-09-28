@@ -49,4 +49,3 @@ export const CHILD_GRACEFUL_EXIT = "UDP_CHILD_GRACEFUL_EXIT";
 
 /** Dòng con in ra khi bị fence chặn — kết cục mong đợi của ô K9 */
 export const CHILD_FENCED = "UDP_CHILD_FENCED";
-

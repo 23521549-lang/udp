@@ -93,7 +93,11 @@ export function spawnChild(
 
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
-      if (!notified && stdout.includes(CHILD_PAUSED) && onPaused !== undefined) {
+      if (
+        !notified &&
+        stdout.includes(CHILD_PAUSED) &&
+        onPaused !== undefined
+      ) {
         notified = true;
         onPaused((line) => child.stdin.write(`${line}\n`));
       }
@@ -127,7 +131,9 @@ export function assertDiedAbruptly(child: ChildOutcome, label: string): void {
     throw new Error(`${label}: con chạy XONG, không chết như ô này cần`);
   }
   if (child.code === 0) {
-    throw new Error(`${label}: con thoát 0, tức nó thoát tử tế chứ không bị hạ`);
+    throw new Error(
+      `${label}: con thoát 0, tức nó thoát tử tế chứ không bị hạ`,
+    );
   }
   /**
    * Mốc quyết định: tiến trình thoát tử tế thì `process.on("exit")` chạy và in mốc đó.
@@ -233,7 +239,11 @@ export interface Tier2Result {
 }
 
 /** Một thư mục tạm cho state của cloud mô phỏng; mỗi ô một thư mục */
-export function freshCloud(): { cloud: SimCloud; path: string; dispose: () => void } {
+export function freshCloud(): {
+  cloud: SimCloud;
+  path: string;
+  dispose: () => void;
+} {
   const dir = mkdtempSync(join(tmpdir(), "grid2-"));
   const path = join(dir, "cloud.json");
   return {
@@ -243,7 +253,11 @@ export function freshCloud(): { cloud: SimCloud; path: string; dispose: () => vo
   };
 }
 
-export function envFor(cloud: SimCloud, s1: PrismaClient, jobId: string): CloudContractEnv {
+export function envFor(
+  cloud: SimCloud,
+  s1: PrismaClient,
+  jobId: string,
+): CloudContractEnv {
   return {
     driver: "child-process",
     ledger: () => createPrismaLedger({ prisma: s1, jobId }),
@@ -322,7 +336,10 @@ export async function runPerturbCell(args: {
   label: string;
 }): Promise<{ elapsedMs: number; attempts: number }> {
   const started = Date.now();
-  const first = await resumeUntilConverged({ ctx: args.ctx, cloud: args.cloud });
+  const first = await resumeUntilConverged({
+    ctx: args.ctx,
+    cloud: args.cloud,
+  });
   if (!(first.statuses.at(-1) ?? []).every((s) => s === "SUCCESS")) {
     throw new Error(
       `${args.label}: lượt đầu chưa xong: ${JSON.stringify(first.statuses)}`,
@@ -523,7 +540,10 @@ export async function resumeUntilConverged(args: {
   const statuses: string[][] = [];
 
   for (let attempt = 1; attempt <= max; attempt += 1) {
-    const lease = await claimOrThrow(ctx, `${WORKER_PARENT}-${String(attempt)}`);
+    const lease = await claimOrThrow(
+      ctx,
+      `${WORKER_PARENT}-${String(attempt)}`,
+    );
     const outcomes = await runFullProvision({
       adapter,
       ledger: createPrismaLedger({ prisma: ctx.s1, jobId: ctx.jobId }),

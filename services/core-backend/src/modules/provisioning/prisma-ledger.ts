@@ -51,11 +51,12 @@ import { providerFromDb, providerToDb } from "./provider-codec.js";
 export const LEDGER_AUDIT_TARGET_TYPE = "provisioned_resource";
 
 /** `action` của hàng audit mang lý do, một mã cho mỗi trạng thái cần giải thích */
-export const LEDGER_AUDIT_ACTIONS: Readonly<Partial<Record<ResourceStatus, string>>> =
-  {
-    ORPHAN_SUSPECTED: "RESOURCE_ORPHAN_SUSPECTED",
-    CREATING: "RESOURCE_RECREATING",
-  };
+export const LEDGER_AUDIT_ACTIONS: Readonly<
+  Partial<Record<ResourceStatus, string>>
+> = {
+  ORPHAN_SUSPECTED: "RESOURCE_ORPHAN_SUSPECTED",
+  CREATING: "RESOURCE_RECREATING",
+};
 
 export interface PrismaLedgerOptions {
   prisma: PrismaClient;

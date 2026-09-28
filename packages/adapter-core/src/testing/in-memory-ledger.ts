@@ -33,7 +33,10 @@ export class InMemoryLedger implements Ledger {
    * "bản trong bộ nhớ xoá được, bản bền thì không" là đúng loại lệch làm 91 ô của
    * tầng 1 mất giá trị chứng minh mà không ô nào đỏ.
    */
-  readonly #reasons = new Map<string, { status: ResourceStatus; reason: string }>();
+  readonly #reasons = new Map<
+    string,
+    { status: ResourceStatus; reason: string }
+  >();
 
   /**
    * `ABSENT → CREATING`, và **idempotent khi hàng đã ở `CREATING`**.

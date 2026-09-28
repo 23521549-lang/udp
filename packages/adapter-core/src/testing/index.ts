@@ -78,9 +78,7 @@ export interface CloudFixture {
   expectedStepCount: number;
 }
 
-export {
-  InMemoryLedger,
-} from "./in-memory-ledger.js";
+export { InMemoryLedger } from "./in-memory-ledger.js";
 
 export {
   KINDS_WITH_IDEMPOTENCY_TOKEN,

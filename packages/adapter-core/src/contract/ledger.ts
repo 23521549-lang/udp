@@ -407,7 +407,10 @@ export const LEDGER_CONTRACT_CHECKS: readonly LedgerCheck[] = [
       await ledger.markReady(intent.idempotencyKey);
 
       /** Khách xoá ngoài luồng ⇒ tạo lại, kèm lý do */
-      await ledger.markRecreating(intent.idempotencyKey, "khách xoá ngoài luồng");
+      await ledger.markRecreating(
+        intent.idempotencyKey,
+        "khách xoá ngoài luồng",
+      );
       const during = await ledger.reasonOf(intent.idempotencyKey);
       assert(
         during === "khách xoá ngoài luồng",

@@ -254,7 +254,9 @@ export async function measureConvergence(args: {
 
   return {
     taggedCount: tagged.length,
-    stuck: rows.filter((r) => r.status === "CREATING" || r.status === "CREATED"),
+    stuck: rows.filter(
+      (r) => r.status === "CREATING" || r.status === "CREATED",
+    ),
     orphanOnCloud: ours.filter((r) => !knownIds.has(r.id)).map((r) => r.id),
     danglingRows: dangling.map((r) => `${r.kind}=${String(r.providerId)}`),
     rows,
@@ -328,14 +330,20 @@ export function gridCell(args: {
             "nên ô này chưa kiểm gì. Một ô không có chỗ để giết là một ô rỗng nghĩa",
         );
       } else {
-        const first = await runFullProvision({ adapter, ledger, observer: silent });
+        const first = await runFullProvision({
+          adapter,
+          ledger,
+          observer: silent,
+        });
         assert(
           first.every((o) => o.status === "SUCCESS"),
           `${label}: lượt đầu phải thành công, thấy ${first.map((o) => o.status).join(",")}`,
         );
 
         const rows = await ledger.rowsOf(PROJECT);
-        const row = rows.find((r) => r.idempotencyKey.endsWith(`:${args.stepName}`));
+        const row = rows.find((r) =>
+          r.idempotencyKey.endsWith(`:${args.stepName}`),
+        );
         assert(row?.providerId != null, `${label}: không thấy hàng của step`);
         const id = row?.providerId as string;
 
@@ -351,7 +359,11 @@ export function gridCell(args: {
       /** Cửa sổ lan truyền tag, nếu ô này chạy biến thể `delayed` */
       await env.control.setTagPropagationDelay(args.tagPropagationDelayMs);
 
-      const again = await runFullProvision({ adapter, ledger, observer: silent });
+      const again = await runFullProvision({
+        adapter,
+        ledger,
+        observer: silent,
+      });
       await env.control.setTagPropagationDelay(0);
 
       const last = again.at(-1);
@@ -363,7 +375,11 @@ export function gridCell(args: {
 
       /** Một lượt RETRYABLE (cửa sổ lan truyền tag) thì chạy thêm một lượt nữa */
       if (last?.status === "RETRYABLE") {
-        const third = await runFullProvision({ adapter, ledger, observer: silent });
+        const third = await runFullProvision({
+          adapter,
+          ledger,
+          observer: silent,
+        });
         assert(
           third.every((o) => o.status === "SUCCESS"),
           `${label}: lượt thứ ba phải hội tụ, thấy ${third.map((o) => o.status).join(",")}`,

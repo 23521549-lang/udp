@@ -34,9 +34,10 @@ import {
 
 const ENDPOINT = "https://cluster.vi-du.test";
 
-function transportOf(
-  handler: (url: string, init: RequestInit) => Response,
-): { transport: KubeTransport; seen: { url: string; init: RequestInit }[] } {
+function transportOf(handler: (url: string, init: RequestInit) => Response): {
+  transport: KubeTransport;
+  seen: { url: string; init: RequestInit }[];
+} {
   const seen: { url: string; init: RequestInit }[] = [];
   return {
     seen,
@@ -49,9 +50,10 @@ function transportOf(
   };
 }
 
-function tokensOf(
-  ttlMs = 3_600_000,
-): { source: { requestBoundToken: (sa: string) => Promise<BoundToken> }; asked: string[] } {
+function tokensOf(ttlMs = 3_600_000): {
+  source: { requestBoundToken: (sa: string) => Promise<BoundToken> };
+  asked: string[];
+} {
   const asked: string[] = [];
   return {
     asked,
@@ -70,7 +72,12 @@ function tokensOf(
 describe("objectPath — hình path theo quy ước Kubernetes", () => {
   it("nhóm core dùng /api/v1, nhóm khác dùng /apis/{group}/{version}", () => {
     expect(
-      objectPath({ apiVersion: "v1", kind: "Service", namespace: "ns", name: "s" }),
+      objectPath({
+        apiVersion: "v1",
+        kind: "Service",
+        namespace: "ns",
+        name: "s",
+      }),
     ).toBe("/api/v1/namespaces/ns/services/s");
     expect(
       objectPath({
@@ -111,7 +118,9 @@ describe("[v4.11] số nhiều của kind và server-side apply (Plan #28 P3)", 
   });
 
   it("apply là server-side apply: content-type apply-patch, fieldManager, force", async () => {
-    const { transport, seen } = transportOf(() => new Response("{}", { status: 200 }));
+    const { transport, seen } = transportOf(
+      () => new Response("{}", { status: 200 }),
+    );
     const access = createDirectClusterAccess({
       clusterId: "c",
       apiEndpoint: ENDPOINT,
@@ -121,7 +130,12 @@ describe("[v4.11] số nhiều của kind và server-side apply (Plan #28 P3)", 
     const client = await access.getClient("tooling");
     await client.write(
       "apply",
-      { apiVersion: "networking.k8s.io/v1", kind: "NetworkPolicy", namespace: "ns", name: "deny" },
+      {
+        apiVersion: "networking.k8s.io/v1",
+        kind: "NetworkPolicy",
+        namespace: "ns",
+        name: "deny",
+      },
       { kind: "NetworkPolicy" },
     );
     const call = seen[0];
@@ -137,7 +151,9 @@ describe("[v4.11] số nhiều của kind và server-side apply (Plan #28 P3)", 
 
 describe("getClient(as) — identity quyết định ServiceAccount (§12.2)", () => {
   it("mỗi identity xin token của ĐÚNG SA của nó", async () => {
-    const { transport } = transportOf(() => new Response("{}", { status: 200 }));
+    const { transport } = transportOf(
+      () => new Response("{}", { status: 200 }),
+    );
     const { source, asked } = tokensOf();
     const access = createDirectClusterAccess({
       clusterId: "c1",
@@ -172,7 +188,9 @@ describe("getClient(as) — identity quyết định ServiceAccount (§12.2)", (
    * token xuống đĩa, tức vi phạm I24.
    */
   it("token được dùng lại trong khi còn hạn, và xin lại trước hạn", async () => {
-    const { transport } = transportOf(() => new Response("{}", { status: 200 }));
+    const { transport } = transportOf(
+      () => new Response("{}", { status: 200 }),
+    );
     const { source, asked } = tokensOf(DEFAULT_REFRESH_SKEW_MS + 60_000);
     let clock = Date.now();
     const access = createDirectClusterAccess({
@@ -204,7 +222,9 @@ describe("getClient(as) — identity quyết định ServiceAccount (§12.2)", (
    * tượng. Nên token bị đóng trong closure, và phép này khẳng định điều đó thay vì tin.
    */
   it("token KHÔNG xuất hiện khi serialize đối tượng ClusterAccess", async () => {
-    const { transport } = transportOf(() => new Response("{}", { status: 200 }));
+    const { transport } = transportOf(
+      () => new Response("{}", { status: 200 }),
+    );
     const { source } = tokensOf();
     const access = createDirectClusterAccess({
       clusterId: "c1",
@@ -342,7 +362,12 @@ describe("proxyService — đường duy nhất gọi service trong cluster", ()
       tokens: source,
     });
     await access.proxyService(
-      { namespace: "monitoring", service: "prometheus", port: 9090, scheme: "http" },
+      {
+        namespace: "monitoring",
+        service: "prometheus",
+        port: 9090,
+        scheme: "http",
+      },
       "/api/v1/query?query=up",
     );
     expect(seen[0]?.url).toBe(
@@ -357,7 +382,10 @@ describe("proxyService — đường duy nhất gọi service trong cluster", ()
 describe("probe — hỏi hai câu trong một lượt", () => {
   it("endpoint tới được và token cấp được ⇒ SUCCESS kèm serverVersion", async () => {
     const { transport } = transportOf(
-      () => new Response(JSON.stringify({ gitVersion: "v1.31.2" }), { status: 200 }),
+      () =>
+        new Response(JSON.stringify({ gitVersion: "v1.31.2" }), {
+          status: 200,
+        }),
     );
     const { source } = tokensOf();
     const access = createDirectClusterAccess({
@@ -379,7 +407,9 @@ describe("probe — hỏi hai câu trong một lượt", () => {
    * hàm mà Portal hiển thị kết quả cho người dùng. Chỉ tên lỗi đi ra.
    */
   it("xin token thất bại ⇒ FAILED, và thông điệp KHÔNG mang lỗi gốc", async () => {
-    const { transport } = transportOf(() => new Response("{}", { status: 200 }));
+    const { transport } = transportOf(
+      () => new Response("{}", { status: 200 }),
+    );
     const access = createDirectClusterAccess({
       clusterId: "c1",
       apiEndpoint: ENDPOINT,

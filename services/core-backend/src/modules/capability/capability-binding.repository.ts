@@ -88,9 +88,11 @@ export async function upsertBinding(tx: Tx, row: BindingRow): Promise<void> {
       (gen_random_uuid(), ${row.domainConfigId}::uuid,
        ${row.environmentId ?? null}::uuid, ${row.capabilityId},
        ${row.providedBy}, ${row.schemaVersion}, ${row.endpoint ?? null},
-       ${row.attributes === null || row.attributes === undefined
-         ? null
-         : JSON.stringify(row.attributes)}::jsonb,
+       ${
+         row.attributes === null || row.attributes === undefined
+           ? null
+           : JSON.stringify(row.attributes)
+       }::jsonb,
        now())
     ON CONFLICT (domain_config_id, capability_id, COALESCE(environment_id::text, ''))
     DO UPDATE SET

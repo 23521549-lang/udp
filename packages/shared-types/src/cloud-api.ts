@@ -109,11 +109,9 @@ export const credentialPayloadSchemas = {
       }),
       project_id: gcpProjectId,
       client_email: z.string().email("client_email không hợp lệ"),
-      private_key: z
-        .string()
-        .includes("PRIVATE KEY", {
-          message: "private_key không phải khoá PEM",
-        }),
+      private_key: z.string().includes("PRIVATE KEY", {
+        message: "private_key không phải khoá PEM",
+      }),
     })
     .strict(),
   AZURE_FEDERATED: z.object({ ...azurePrincipal, ...azureTarget }).strict(),

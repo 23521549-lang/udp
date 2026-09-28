@@ -199,10 +199,14 @@ export function oracleSatisfies(version: string, constraint: string): boolean {
     return v[0] === c[0] && v[1] === c[1] && cmp(v, c) >= 0;
   }
 
-  if (t.startsWith(">=")) return cmp(v, parseConstraintTriple(t.slice(2)).triple) >= 0;
-  if (t.startsWith("<=")) return cmp(v, parseConstraintTriple(t.slice(2)).triple) <= 0;
-  if (t.startsWith(">")) return cmp(v, parseConstraintTriple(t.slice(1)).triple) > 0;
-  if (t.startsWith("<")) return cmp(v, parseConstraintTriple(t.slice(1)).triple) < 0;
+  if (t.startsWith(">="))
+    return cmp(v, parseConstraintTriple(t.slice(2)).triple) >= 0;
+  if (t.startsWith("<="))
+    return cmp(v, parseConstraintTriple(t.slice(2)).triple) <= 0;
+  if (t.startsWith(">"))
+    return cmp(v, parseConstraintTriple(t.slice(1)).triple) > 0;
+  if (t.startsWith("<"))
+    return cmp(v, parseConstraintTriple(t.slice(1)).triple) < 0;
 
   if (/^\d/.test(t)) {
     const { triple: c, given } = parseConstraintTriple(t);
@@ -216,9 +220,7 @@ export function oracleSatisfies(version: string, constraint: string): boolean {
 }
 
 /** Mọi `CapabilityRequirement` của một adapter, phẳng hoá cả nhánh `anyOf` */
-export function flatRequirements(
-  a: OracleAdapter,
-): CapabilityRequirement[] {
+export function flatRequirements(a: OracleAdapter): CapabilityRequirement[] {
   return a.capabilities.requires.flatMap((r) => (isAnyOf(r) ? r.anyOf : [r]));
 }
 
@@ -264,7 +266,9 @@ export function oracleValidate(
    * tool — nên không sắp thì lỗi báo về phụ thuộc thứ tự bật. Xem §5.3, phần "thứ tự
    * duyệt là chính tắc".
    */
-  const inOrder = [...adapters].sort((x, y) => keyOf(x).localeCompare(keyOf(y)));
+  const inOrder = [...adapters].sort((x, y) =>
+    keyOf(x).localeCompare(keyOf(y)),
+  );
 
   // ---- 1. Bản đồ provider
   const provided = new Map<CapabilityId, ProviderEntry[]>();
@@ -278,13 +282,11 @@ export function oracleValidate(
   }
 
   // ---- 2. exclusive: tối đa MỘT provider trong CLUSTER (D-5), độc lập preference
-  for (const [cap, ps] of [...provided].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [cap, ps] of [...provided].sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
     if (ps.length > 1 && ps.some((p) => p.exclusive)) {
-      return err(
-        "CONFLICT",
-        cap,
-        ps.map((p) => p.by).sort(),
-      );
+      return err("CONFLICT", cap, ps.map((p) => p.by).sort());
     }
   }
 
@@ -327,14 +329,20 @@ export function oracleValidate(
   for (const a of inOrder) {
     for (const c of a.capabilities.recommends ?? []) {
       if (!provided.has(c)) {
-        warnings.push({ code: "RECOMMENDED_MISSING", subject: keyOf(a), detail: [c] });
+        warnings.push({
+          code: "RECOMMENDED_MISSING",
+          subject: keyOf(a),
+          detail: [c],
+        });
       }
     }
   }
 
   // ---- 5. chọn provider
   const chosen: Record<string, string> = {};
-  for (const [cap, ps] of [...provided].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [cap, ps] of [...provided].sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
     const consumers = inOrder.filter((a) => consumes(a, cap));
     /** D-10 — không ai tiêu thụ thì không chọn, và KHÔNG báo nhập nhằng */
     if (consumers.length === 0) continue;
@@ -361,22 +369,14 @@ export function oracleValidate(
     }
 
     if (satisfying.length === 0) {
-      return err(
-        "VERSION_MISMATCH",
-        cap,
-        ps.map((p) => p.by).sort(),
-      );
+      return err("VERSION_MISMATCH", cap, ps.map((p) => p.by).sort());
     }
     if (satisfying.length === 1) {
       chosen[cap] = (satisfying[0] as ProviderEntry).by;
       continue;
     }
     /** Liệt kê CHỈ provider thoả — xem §5.3 */
-    return err(
-      "AMBIGUOUS_PROVIDER",
-      cap,
-      satisfying.map((p) => p.by).sort(),
-    );
+    return err("AMBIGUOUS_PROVIDER", cap, satisfying.map((p) => p.by).sort());
   }
 
   // ---- 6. verifyChosen

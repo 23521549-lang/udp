@@ -26,7 +26,8 @@ const adapter: DomainAdapter = {
   detectDrift: () =>
     Promise.resolve({ status: "SUCCESS", data: { drifted: false } }),
   onDependencyChanged: () => Promise.resolve({ status: "SUCCESS" }),
-  healthcheck: () => Promise.resolve({ status: "SUCCESS", data: { healthy: true } }),
+  healthcheck: () =>
+    Promise.resolve({ status: "SUCCESS", data: { healthy: true } }),
   teardown: () => Promise.resolve({ status: "SUCCESS" }),
 };
 

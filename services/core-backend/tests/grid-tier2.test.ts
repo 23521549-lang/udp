@@ -120,7 +120,9 @@ const REPRESENTATIVE_STEP = "subnet-a";
  * §4.5 xếp nó cùng chỗ.
  */
 describe("tầng 2 — mỗi điểm crash một lượt kill -9", () => {
-  for (const point of KILL_POINTS.filter((p) => p.id !== "K9" && p.id !== "K6")) {
+  for (const point of KILL_POINTS.filter(
+    (p) => p.id !== "K9" && p.id !== "K6",
+  )) {
     const label = `${point.id}@${REPRESENTATIVE_STEP}`;
     it(`${label}: ${point.why}`, async () => {
       const { cloud, path, dispose } = freshCloud();
@@ -226,78 +228,86 @@ describe("tầng 2 — K6 chết giữa compensation", () => {
 describe("tầng 2 — K3 trên mọi step", () => {
   for (const spec of FIXTURE_STEPS) {
     const label = `K3@${spec.name}`;
-    it(label, async () => {
-      const { cloud, path, dispose } = freshCloud();
-      try {
-        await wipeRows(admin);
-        await ensureJob();
-        const result = await runKillCell({
-          ctx,
-          cell: {
-            name: label,
-            crashId: "K3",
-            stepName: spec.name,
-            phase: phaseOf("K3"),
-            mode: "kill",
-          },
-          cloudPath: path,
-          cloud,
-        });
-        assertDiedAbruptly(result.child, label);
-        expect(result.sessions.leftAfter, "N10").toBe(0);
+    it(
+      label,
+      async () => {
+        const { cloud, path, dispose } = freshCloud();
+        try {
+          await wipeRows(admin);
+          await ensureJob();
+          const result = await runKillCell({
+            ctx,
+            cell: {
+              name: label,
+              crashId: "K3",
+              stepName: spec.name,
+              phase: phaseOf("K3"),
+              mode: "kill",
+            },
+            cloudPath: path,
+            cloud,
+          });
+          assertDiedAbruptly(result.child, label);
+          expect(result.sessions.leftAfter, "N10").toBe(0);
 
-        const resumed = await resumeUntilConverged({ ctx, cloud });
-        expect(
-          resumed.statuses.at(-1)?.every((s) => s === "SUCCESS"),
-          JSON.stringify(resumed.statuses),
-        ).toBe(true);
-        await assertConverged({ ctx, cloud, label });
-        note(label, result.elapsedMs);
-      } finally {
-        dispose();
-      }
-    }, 120_000);
+          const resumed = await resumeUntilConverged({ ctx, cloud });
+          expect(
+            resumed.statuses.at(-1)?.every((s) => s === "SUCCESS"),
+            JSON.stringify(resumed.statuses),
+          ).toBe(true);
+          await assertConverged({ ctx, cloud, label });
+          note(label, result.elapsedMs);
+        } finally {
+          dispose();
+        }
+      },
+      120_000,
+    );
   }
 });
 
 describe("tầng 2 — K10a trên mọi step", () => {
   for (const spec of FIXTURE_STEPS) {
     const label = `K10a@${spec.name}`;
-    it(label, async () => {
-      const { cloud, path, dispose } = freshCloud();
-      try {
-        await wipeRows(admin);
-        await ensureJob();
-        const result = await runRebuildCell({
-          ctx,
-          cloud,
-          cloudPath: path,
-          phase: phaseOf("K10"),
-          stepName: spec.name,
-          variant: "a",
-        });
-        assertDiedAbruptly(result.child, label);
-        expect(result.sessions.leftAfter, "N10").toBe(0);
+    it(
+      label,
+      async () => {
+        const { cloud, path, dispose } = freshCloud();
+        try {
+          await wipeRows(admin);
+          await ensureJob();
+          const result = await runRebuildCell({
+            ctx,
+            cloud,
+            cloudPath: path,
+            phase: phaseOf("K10"),
+            stepName: spec.name,
+            variant: "a",
+          });
+          assertDiedAbruptly(result.child, label);
+          expect(result.sessions.leftAfter, "N10").toBe(0);
 
-        /** Job cũ còn, nên sổ dựng lại nối vào chính nó — lịch sử nguyên vẹn */
-        expect(result.rebuild.synthetic).toBe(false);
-        expect(result.jobId).toBe(ctx.jobId);
-        /** Mọi hàng dựng lại phải có `provider_id`: sổ là cache của cloud */
-        expect(
-          result.rebuild.rows.filter((r) => r.providerId === null),
-        ).toEqual([]);
+          /** Job cũ còn, nên sổ dựng lại nối vào chính nó — lịch sử nguyên vẹn */
+          expect(result.rebuild.synthetic).toBe(false);
+          expect(result.jobId).toBe(ctx.jobId);
+          /** Mọi hàng dựng lại phải có `provider_id`: sổ là cache của cloud */
+          expect(
+            result.rebuild.rows.filter((r) => r.providerId === null),
+          ).toEqual([]);
 
-        const resumed = await resumeUntilConverged({ ctx, cloud });
-        expect(
-          resumed.statuses.at(-1)?.every((s) => s === "SUCCESS"),
-          JSON.stringify(resumed.statuses),
-        ).toBe(true);
-        await assertConverged({ ctx, cloud, label });
-        note(label, result.elapsedMs);
-      } finally {
-        dispose();
-      }
-    }, 120_000);
+          const resumed = await resumeUntilConverged({ ctx, cloud });
+          expect(
+            resumed.statuses.at(-1)?.every((s) => s === "SUCCESS"),
+            JSON.stringify(resumed.statuses),
+          ).toBe(true);
+          await assertConverged({ ctx, cloud, label });
+          note(label, result.elapsedMs);
+        } finally {
+          dispose();
+        }
+      },
+      120_000,
+    );
   }
 });
 
@@ -317,7 +327,8 @@ describe("tầng 2 — khách sửa ngoài luồng", () => {
           perturb: async (c) => {
             const all = await c.listAll();
             const target = all.find(
-              (r) => r.tags["udp.key"]?.endsWith(`:${REPRESENTATIVE_STEP}`) === true,
+              (r) =>
+                r.tags["udp.key"]?.endsWith(`:${REPRESENTATIVE_STEP}`) === true,
             );
             if (target === undefined) {
               throw new Error(`${label}: không tìm thấy tài nguyên để sửa`);
@@ -458,9 +469,8 @@ describe("tầng 2 — O-3: dựng lại sổ không đọc database", () => {
       const stop2 = observeQueries(s1, () => {
         duringWrite += 1;
       });
-      const { rebuildLedger } = await import(
-        "../src/modules/provisioning/ledger-rebuild.js"
-      );
+      const { rebuildLedger } =
+        await import("../src/modules/provisioning/ledger-rebuild.js");
       await wipeRows(admin);
       await rebuildLedger({
         prisma: s1,

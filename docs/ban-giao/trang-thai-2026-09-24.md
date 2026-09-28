@@ -9,14 +9,14 @@ bước kế tiếp là gì, và những cái bẫy đã tìm ra để lần sau
 
 Bằng chứng, không phải lời hứa:
 
-| Phép nghiệm thu | Kết quả |
-| --- | --- |
-| `pnpm -r test` (database dev) | **2409 test xanh, 0 skip**, 16 package |
+| Phép nghiệm thu                                                                               | Kết quả                                                 |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `pnpm -r test` (database dev)                                                                 | **2409 test xanh, 0 skip**, 16 package                  |
 | `pnpm test:scratch` (đúng lệnh CI: database dựng mới từ chuỗi migration, seed, chạy hết, xoá) | **Xanh** — `Bộ test đầy đủ xanh trên database scratch.` |
-| `pnpm typecheck`, `eslint .` | 0 lỗi, 0 cảnh báo |
-| `pnpm db:verify-chain` | Xanh; **0 migration mới** trong cả plan (N7) |
-| Đột biến P23 | **56/56 đỏ** |
-| Quét bí mật | 0 khoá thật trong tệp được theo dõi |
+| `pnpm typecheck`, `eslint .`                                                                  | 0 lỗi, 0 cảnh báo                                       |
+| `pnpm db:verify-chain`                                                                        | Xanh; **0 migration mới** trong cả plan (N7)            |
+| Đột biến P23                                                                                  | **56/56 đỏ**                                            |
+| Quét bí mật                                                                                   | 0 khoá thật trong tệp được theo dõi                     |
 
 Commit của phiên này (mới nhất trước, tất cả đều **local**, chưa push — theo quy ước
 `user-pushes-git-himself`):
@@ -43,16 +43,16 @@ nằm trong git** (chúng là bản nháp quy trình, không phải nguồn sự
 mục này là bản chắt lọc của chúng. Nếu cần nguyên văn, đọc lại transcript phiên đó; còn để
 làm tiếp thì hai tệp ở đây là đủ.
 
-| Tệp | Nội dung |
-| --- | --- |
-| `plan25-spec-v2.md` | SPEC đã qua QA vòng 1. **43 AC**, 14 mục sửa thiết kế (D-P), 18 mã sổ nợ, 25 quyết định |
-| `plan25-plan.md` | PLAN theo R1..R11, mười pha P0..P9, mỗi hàng có làm-gì/ở-đâu/hệ-quả/lan-sang-đâu/ai-dùng |
-| `plan25-qa1.md` | QA vòng 1: bốn reviewer (BA/QA/Tester/SysDesign), **50 phát hiện, 11 BLOCKER**, có bảng xử lý từng cái |
-| `plan25-qa2.md` | QA vòng 2 (lead tự làm vì ba agent treo do máy bận): **5 phát hiện, 3 BLOCKER** |
-| `plan25-qa3.md` | QA vòng 3: ba agent độc lập, **24 phát hiện, 5 BLOCKER** |
-| `p25_ledger.py` | Script đã chạy — 18 mục nợ Portal (đã vào repo) |
-| `p25_p0_wire.py`, `p25_p0_step1.py`, `p25_p0_step1b.py` | Script P0 đã chạy |
-| `scratch-full2.log` | Log đầy đủ của lượt CI xanh, để đối chiếu về sau |
+| Tệp                                                     | Nội dung                                                                                               |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `plan25-spec-v2.md`                                     | SPEC đã qua QA vòng 1. **43 AC**, 14 mục sửa thiết kế (D-P), 18 mã sổ nợ, 25 quyết định                |
+| `plan25-plan.md`                                        | PLAN theo R1..R11, mười pha P0..P9, mỗi hàng có làm-gì/ở-đâu/hệ-quả/lan-sang-đâu/ai-dùng               |
+| `plan25-qa1.md`                                         | QA vòng 1: bốn reviewer (BA/QA/Tester/SysDesign), **50 phát hiện, 11 BLOCKER**, có bảng xử lý từng cái |
+| `plan25-qa2.md`                                         | QA vòng 2 (lead tự làm vì ba agent treo do máy bận): **5 phát hiện, 3 BLOCKER**                        |
+| `plan25-qa3.md`                                         | QA vòng 3: ba agent độc lập, **24 phát hiện, 5 BLOCKER**                                               |
+| `p25_ledger.py`                                         | Script đã chạy — 18 mục nợ Portal (đã vào repo)                                                        |
+| `p25_p0_wire.py`, `p25_p0_step1.py`, `p25_p0_step1b.py` | Script P0 đã chạy                                                                                      |
+| `scratch-full2.log`                                     | Log đầy đủ của lượt CI xanh, để đối chiếu về sau                                                       |
 
 **Tổng cộng ba vòng QA: 8 reviewer, 79 phát hiện.**
 
@@ -111,7 +111,7 @@ sửa đúng hai dòng trong `exports`, giữ nguyên thứ tự và định d�
      tường minh (repository tạo hàng OWNER trong cùng lệnh). Thiếu bước này thì tạo project
      commit xong rồi mới ném ⇒ người dùng bấm lại ⇒ **project thứ hai**.
    - `GET /projects`: thêm `members: { where: { userId }, select: { projectRole: true },
-     take: 1 }` vào `select`, và **khai kiểu trả về tường minh** — gán object Prisma rộng
+take: 1 }` vào `select`, và **khai kiểu trả về tường minh** — gán object Prisma rộng
      hơn cho kiểu hẹp hơn là hợp lệ trong TS, nên `members` sẽ biến mất khỏi kiểu mà vẫn
      còn ở runtime. `members[0]` là `| undefined` ⇒ **ném**, tuyệt đối không `?? "VIEWER"`.
    - **KHÔNG** thêm `myRole` vào `PublicProject`: kiểu đó là phép chiếu database, 7 chỗ
@@ -127,21 +127,21 @@ sửa đúng hai dòng trong `exports`, giữ nguyên thứ tự và định d�
 
 ## 3. Những cái bẫy đã tìm ra — đừng tìm lại
 
-| Bẫy | Sự thật đã đo |
-| --- | --- |
-| `pnpm -r test --workspace-concurrency=1` | **Sai**: pnpm chuyển mọi đối số sau tên script cho chính script. Cờ phải đứng **trước**: `pnpm -r --no-bail --if-present --workspace-concurrency=1 test` |
-| Chạy các package song song | Vượt trần 60 kết nối Supabase ⇒ `wipeRows` hỏng ⇒ 18 ô lưới tầng 2 đỏ vì trùng khoá, và 19 ô `rollout.integration` **skip im lặng** (hook 90s quá hạn) |
-| Một cổng quét `git ls-files` | Nó **không thấy chính mình** khi tệp còn chưa được theo dõi. `type-debt.test.ts` xanh 5 ô ở lần đầu rồi đỏ ngay sau commit |
-| `".tsx".endsWith(".ts")` | **false** — `package-boundaries` và `debt-ledger` từng mù hoàn toàn với mã React. Đã sửa ở `b1a861d`, **trước** khi có tệp `.tsx` đầu tiên |
-| `z.object` mặc định | **strip** khoá lạ ⇒ trường thừa lọt lên dây mà không nơi nào đỏ. Mọi schema wire phải `.strict()` |
-| `ZodError` thoát ra từ response | `errorHandler` bắt nó **trước** mọi nhánh ⇒ **400 "dữ liệu gửi lên không hợp lệ"** cho một bug của server, và **không log gì** |
-| `refresh()` của Service 1 | Có **phát hiện dùng lại token**: trình token cũ ⇒ `revokeFamily` ⇒ đăng xuất **mọi tab**. Nên single-flight phải kèm khoá giữa các tab (Web Locks) |
-| `Idempotency-Key` | Ràng vào `bodyHash`: cùng khoá + khác body ⇒ 422. Khoá phải sinh **tại lúc bấm gửi**, không phải lúc dựng hook |
-| vitest 2.1.9 | **Không có** `test.projects` (đó là Vitest 3). Phải dùng `vitest.workspace.ts` + `defineWorkspace` |
-| `@tanstack/router-cli` 1.167.38 vs `router-plugin` 1.168.40 | **Không peer nào ràng chúng** ⇒ hai generator có thể sinh hai `routeTree.gen.ts` khác nhau. Phải ghim chính xác cả ba bản |
-| `Intl.Segmenter` | Có sẵn trên Node v22.20.0 ⇒ đếm grapheme không cần thư viện |
-| `sendJson` parse | Đã đo: 0,36 ms (20 item), 1,72 ms (200), 5,70 ms (1000) — khoảng 1-3% thời gian một response thật |
-| `.gitattributes` | `* text=auto eol=lf` ⇒ tài liệu trong git là **LF**, bản làm việc là CRLF. Bất biến "chỉ CRLF" của `doc_integrity.py` là bất biến của **máy này**, không phải của kho |
+| Bẫy                                                         | Sự thật đã đo                                                                                                                                                         |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm -r test --workspace-concurrency=1`                    | **Sai**: pnpm chuyển mọi đối số sau tên script cho chính script. Cờ phải đứng **trước**: `pnpm -r --no-bail --if-present --workspace-concurrency=1 test`              |
+| Chạy các package song song                                  | Vượt trần 60 kết nối Supabase ⇒ `wipeRows` hỏng ⇒ 18 ô lưới tầng 2 đỏ vì trùng khoá, và 19 ô `rollout.integration` **skip im lặng** (hook 90s quá hạn)                |
+| Một cổng quét `git ls-files`                                | Nó **không thấy chính mình** khi tệp còn chưa được theo dõi. `type-debt.test.ts` xanh 5 ô ở lần đầu rồi đỏ ngay sau commit                                            |
+| `".tsx".endsWith(".ts")`                                    | **false** — `package-boundaries` và `debt-ledger` từng mù hoàn toàn với mã React. Đã sửa ở `b1a861d`, **trước** khi có tệp `.tsx` đầu tiên                            |
+| `z.object` mặc định                                         | **strip** khoá lạ ⇒ trường thừa lọt lên dây mà không nơi nào đỏ. Mọi schema wire phải `.strict()`                                                                     |
+| `ZodError` thoát ra từ response                             | `errorHandler` bắt nó **trước** mọi nhánh ⇒ **400 "dữ liệu gửi lên không hợp lệ"** cho một bug của server, và **không log gì**                                        |
+| `refresh()` của Service 1                                   | Có **phát hiện dùng lại token**: trình token cũ ⇒ `revokeFamily` ⇒ đăng xuất **mọi tab**. Nên single-flight phải kèm khoá giữa các tab (Web Locks)                    |
+| `Idempotency-Key`                                           | Ràng vào `bodyHash`: cùng khoá + khác body ⇒ 422. Khoá phải sinh **tại lúc bấm gửi**, không phải lúc dựng hook                                                        |
+| vitest 2.1.9                                                | **Không có** `test.projects` (đó là Vitest 3). Phải dùng `vitest.workspace.ts` + `defineWorkspace`                                                                    |
+| `@tanstack/router-cli` 1.167.38 vs `router-plugin` 1.168.40 | **Không peer nào ràng chúng** ⇒ hai generator có thể sinh hai `routeTree.gen.ts` khác nhau. Phải ghim chính xác cả ba bản                                             |
+| `Intl.Segmenter`                                            | Có sẵn trên Node v22.20.0 ⇒ đếm grapheme không cần thư viện                                                                                                           |
+| `sendJson` parse                                            | Đã đo: 0,36 ms (20 item), 1,72 ms (200), 5,70 ms (1000) — khoảng 1-3% thời gian một response thật                                                                     |
+| `.gitattributes`                                            | `* text=auto eol=lf` ⇒ tài liệu trong git là **LF**, bản làm việc là CRLF. Bất biến "chỉ CRLF" của `doc_integrity.py` là bất biến của **máy này**, không phải của kho |
 
 ---
 
