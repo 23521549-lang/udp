@@ -55,6 +55,18 @@ export async function recentEvents(
   });
 }
 
+/** [v4.11, Plan #45] Mọi sự kiện của MỘT lần deploy, theo thời gian — `idx` trên `deployment_id` */
+export async function eventsOfDeployment(
+  projectId: string,
+  deploymentId: string,
+) {
+  return prisma.deploymentEvent.findMany({
+    where: { projectId, deploymentId },
+    orderBy: [{ occurredAt: "asc" }, { id: "asc" }],
+    select: { ...EVENT_FIELDS, pipelineId: true },
+  });
+}
+
 export async function eventsBetween(
   projectId: string,
   environmentId: string,

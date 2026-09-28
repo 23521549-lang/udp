@@ -21,5 +21,9 @@ export function useProjectHandlers(detail: ProjectDetailResponseWire): void {
     http.get(`${API}/projects/:id/members`, () =>
       HttpResponse.json(golden("GET /projects/{id}/members")),
     ),
+    // [Plan #45] Thẻ "Deploy gần nhất" của Tổng quan
+    http.get(`${API}/projects/:id/deployments/latest`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/deployments/latest")),
+    ),
   );
 }

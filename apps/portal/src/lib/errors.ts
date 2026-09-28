@@ -71,6 +71,10 @@ const SLUG_COPY: Record<string, string> = {
   [DOMAIN_ERROR_SLUGS.notRunning]:
     "Domain này không chạy trên cluster của project.",
   [DOMAIN_ERROR_SLUGS.upToDate]: "Domain đã ở bản mới nhất máy chủ có.",
+  [DOMAIN_ERROR_SLUGS.notRetryable]:
+    "Domain này chưa áp lại được: đang có lượt triển khai, chưa từng triển khai, hoặc cần nâng cấp trước.",
+  [DOMAIN_ERROR_SLUGS.versionUnavailable]:
+    "Máy chủ vừa đổi bản adapter. Mở lại hộp nâng cấp để xem bản mới.",
   [DOMAIN_ERROR_SLUGS.costNotEnabled]:
     "Project chưa bật Cost Management: bật OpenCost hay Kubecost ở trang Domain.",
   [CLOUD_ERROR_SLUGS.methodUnavailable]:

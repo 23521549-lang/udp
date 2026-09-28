@@ -10,6 +10,8 @@ import { provisionPayloadSchema } from "../provisioning/provision-plan.js";
  * - `change`: việc phải làm. `apply` mang TRẠNG THÁI ĐÍCH đầy đủ (không phải phần thay đổi):
  *   bảng `domain_configs` là thứ ĐANG chạy trên cluster, đích chỉ vào bảng khi đã áp xong.
  *   `upgrade` nâng một domain lên bản adapter mà registry đang nạp (§8.6).
+ *   `reapply` [v4.11, Plan #45] áp lại MỘT domain về chính cấu hình đang lưu — không mang cấu
+ *   hình: hàng `domain_configs` là mục tiêu của nó (§9 `POST …/retry`).
  */
 export const domainApplyPayloadSchema = z
   .object({
@@ -21,6 +23,12 @@ export const domainApplyPayloadSchema = z
       z
         .object({
           kind: z.literal("upgrade"),
+          domainType: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("reapply"),
           domainType: z.string().min(1),
         })
         .strict(),

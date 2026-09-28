@@ -31,6 +31,10 @@ function setup() {
     http.get(`${API}/projects/:id/members`, () =>
       HttpResponse.json(golden("GET /projects/{id}/members")),
     ),
+    // [Plan #45] Thẻ "Deploy gần nhất" của Tổng quan
+    http.get(`${API}/projects/:id/deployments/latest`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/deployments/latest")),
+    ),
     // Mở flag từ bảng lệnh nạp panel xem nhanh — trả 404 là đủ, test chỉ xét URL
     http.get(`${API}/projects/:id/flags/:flagId`, () =>
       HttpResponse.json(

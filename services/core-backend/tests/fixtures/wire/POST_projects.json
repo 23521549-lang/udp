@@ -3,9 +3,9 @@
   "status": 201,
   "body": {
     "project": {
-      "id": "2d7866c7-c147-4db0-82d5-b185f79166a4",
-      "name": "Dự án quản lý bán hàng trực tuyến cho doanh nghiệp vừa và nhỏ",
-      "ownerId": "d954b8aa-8a11-4114-9147-a722b709b56f",
+      "id": "02b1dc84-79ff-4201-a588-8be45a065048",
+      "name": "p-e7a4d5e4",
+      "ownerId": "10c7017a-cec1-49ae-9886-919ca6c2e7e6",
       "creationMode": "CREATE_NEW",
       "languageRuntime": "nodejs",
       "repoUrl": null,
@@ -18,34 +18,35 @@
         "maxLoadBalancers": 3
       },
       "expiresAt": null,
-      "createdAt": "2026-09-24T19:33:24.593Z",
+      "createdAt": "2026-09-28T14:36:54.253Z",
       "myRole": "OWNER"
     },
     "environments": [
       {
-        "id": "d0862963-9270-42d8-a4c2-c5115a1084c1",
+        "id": "cc123a19-51ee-43e1-9b7b-69e4b9c92c2a",
         "name": "dev",
-        "k8sNamespace": "udp-du-an-quan-ly-ban-ha-2d7866-dev",
+        "k8sNamespace": "udp-p-e7a4d5e4-02b1dc-dev",
         "isProduction": false,
         "rank": 0,
         "autoDeploy": true
       },
       {
-        "id": "4220a448-7dc6-4299-8667-c3d896d171bd",
+        "id": "05a7b1ba-e3f2-4ff3-a433-672295d641e3",
         "name": "staging",
-        "k8sNamespace": "udp-du-an-quan-ly-ban-ha-2d7866-staging",
+        "k8sNamespace": "udp-p-e7a4d5e4-02b1dc-staging",
         "isProduction": false,
         "rank": 1,
         "autoDeploy": true
       },
       {
-        "id": "dbc1992d-98de-48fa-8c70-b6dc9f7cdded",
+        "id": "de61d430-34c6-480f-ba00-a8a9db08c201",
         "name": "prod",
-        "k8sNamespace": "udp-du-an-quan-ly-ban-ha-2d7866-prod",
+        "k8sNamespace": "udp-p-e7a4d5e4-02b1dc-prod",
         "isProduction": true,
         "rank": 2,
         "autoDeploy": false
       }
-    ]
+    ],
+    "cluster": null
   }
 }

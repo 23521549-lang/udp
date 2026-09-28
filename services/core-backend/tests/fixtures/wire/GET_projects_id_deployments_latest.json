@@ -1,0 +1,25 @@
+{
+  "route": "GET /projects/{id}/deployments/latest",
+  "status": 200,
+  "body": {
+    "deployment": {
+      "deploymentId": "feaf46e3-9e6f-4631-9c30-2c397f2cb200",
+      "status": "DEPLOY_START",
+      "workloadName": null,
+      "imageTag": "v9",
+      "commitSha": null,
+      "triggeredBy": "WEBHOOK",
+      "rolloutSessionId": null,
+      "restoresDeploymentId": null,
+      "startedAt": "2026-09-28T13:36:31.931Z",
+      "lastEventAt": "2026-09-28T13:36:31.931Z",
+      "events": [
+        {
+          "id": "01a0e872-2d44-76aa-a5f6-f8113abc8b4d",
+          "eventType": "DEPLOY_START",
+          "occurredAt": "2026-09-28T13:36:31.931Z"
+        }
+      ]
+    }
+  }
+}

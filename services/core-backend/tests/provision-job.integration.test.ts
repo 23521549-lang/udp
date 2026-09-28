@@ -935,6 +935,30 @@ async function seedApply(
   return job.id;
 }
 
+/** [Plan #45] Job áp lại MỘT domain về cấu hình đang lưu — như `POST …/retry` ghi */
+async function seedReapply(
+  projectId: string,
+  provisioned: string,
+  domainType: string,
+): Promise<string> {
+  const source = await admin.provisioningJob.findUniqueOrThrow({
+    where: { id: provisioned },
+    select: { payload: true },
+  });
+  const job = await admin.provisioningJob.create({
+    data: {
+      projectId,
+      jobType: "DOMAIN_APPLY",
+      payload: {
+        infra: source.payload ?? {},
+        change: { kind: "reapply", domainType },
+      },
+    },
+    select: { id: true },
+  });
+  return job.id;
+}
+
 const domainRows = (projectId: string) =>
   admin.domainConfig.findMany({
     where: { projectId },
@@ -1050,6 +1074,73 @@ describe("job DOMAIN_APPLY", { timeout: 120_000 }, () => {
         },
       ]),
     );
+  });
+
+  it("[Plan #45] reapply: domain ERROR áp lại đúng cấu hình đang lưu ⇒ ACTIVE, last_error xoá, không đụng domain khác", async () => {
+    const w = applyWorld();
+    const { projectId, provisioned } = await activeProject(w.registry);
+    await admin.domainConfig.updateMany({
+      where: { projectId, domainType: "MONITORING" },
+      data: {
+        domainStatus: "ERROR",
+        lastError: { step: "DEPLOY", message: "lượt trước hỏng" },
+      },
+    });
+    const jobId = await seedReapply(projectId, provisioned, "MONITORING");
+    events.length = 0;
+
+    await workerWith(w.registry, fakeClusters()).run(jobId, { final: false });
+
+    expect((await snapshot(projectId, jobId)).job.state).toBe("DONE");
+    expect(events).toContain("fake-metrics:deploy");
+    expect(events.indexOf("fake-metrics:healthcheck")).toBeGreaterThan(
+      events.indexOf("fake-metrics:deploy"),
+    );
+    expect(events.some((e) => e.startsWith("fake-rollouts:deploy"))).toBe(
+      false,
+    );
+    const row = await admin.domainConfig.findFirstOrThrow({
+      where: { projectId, domainType: "MONITORING" },
+      select: { domainStatus: true, lastError: true },
+    });
+    expect(row).toEqual({ domainStatus: "ACTIVE", lastError: null });
+  });
+
+  it("[Plan #45] reapply nhánh hỏng: adapter không khoẻ ⇒ domain ERROR có bước, job FAILED", async () => {
+    const w = applyWorld();
+    const { projectId, provisioned } = await activeProject(w.registry);
+    const sick = fakeDomain({
+      domainType: "MONITORING",
+      toolId: "fake-metrics",
+      scope: "cluster",
+      unhealthy: true,
+      provides: [
+        {
+          id: "metrics.query",
+          version: "2.0.0",
+          providedBy: "monitoring:fake-metrics",
+          endpoint: PROM_ENDPOINT,
+        },
+      ],
+    });
+    const registry: DomainAdapterRegistry = {
+      get: (domainType, toolId) =>
+        domainType === "MONITORING" && toolId === "fake-metrics"
+          ? sick.adapter
+          : w.registry.get(domainType, toolId),
+      all: () => [],
+    };
+    const jobId = await seedReapply(projectId, provisioned, "MONITORING");
+
+    await workerWith(registry, fakeClusters()).run(jobId, { final: false });
+
+    expect((await snapshot(projectId, jobId)).job.state).toBe("FAILED");
+    const row = await admin.domainConfig.findFirstOrThrow({
+      where: { projectId, domainType: "MONITORING" },
+      select: { domainStatus: true, lastError: true },
+    });
+    expect(row.domainStatus).toBe("ERROR");
+    expect(row.lastError).toMatchObject({ step: "HEALTHCHECK" });
   });
 });
 
@@ -1321,6 +1412,118 @@ describe(
         owner,
         request(bare).post(`${domainsUrl(projectId)}/MONITORING/drift`),
       ).expect(503);
+    });
+
+    it("[Plan #45] retry: production đòi gõ tên (428); đúng ⇒ 202 job reapply; job sống ⇒ 409; bản lệch hay PENDING ⇒ 409", async () => {
+      const w = applyWorld();
+      const { projectId } = await activeProject(w.registry);
+      const { http, enqueued } = appFor(w.registry, null);
+      const retryUrl = `${domainsUrl(projectId)}/MONITORING/retry`;
+
+      await as(owner, request(http).post(retryUrl).send({})).expect(428);
+      const res = await as(
+        owner,
+        request(http).post(retryUrl).send({ confirm: "MONITORING" }),
+      ).expect(202);
+      expect(res.body.job).toMatchObject({
+        jobType: "DOMAIN_APPLY",
+        state: "QUEUED",
+      });
+      expect(enqueued).toEqual([res.body.job.id]);
+      const payload = await admin.provisioningJob.findUniqueOrThrow({
+        where: { id: res.body.job.id as string },
+        select: { payload: true },
+      });
+      expect(payload.payload).toMatchObject({
+        change: { kind: "reapply", domainType: "MONITORING" },
+      });
+      await as(
+        owner,
+        request(http).post(retryUrl).send({ confirm: "MONITORING" }),
+      ).expect(409);
+      await workerWith(w.registry, fakeClusters()).run(
+        res.body.job.id as string,
+        { final: false },
+      );
+
+      await admin.domainConfig.updateMany({
+        where: { projectId, domainType: "MONITORING" },
+        data: { adapterVersion: "0.9.0" },
+      });
+      const stale = await as(
+        owner,
+        request(http).post(retryUrl).send({ confirm: "MONITORING" }),
+      ).expect(409);
+      expect(stale.body.type).toContain("domain-not-retryable");
+
+      await admin.domainConfig.updateMany({
+        where: { projectId, domainType: "MONITORING" },
+        data: { adapterVersion: "1.0.0", domainStatus: "PENDING" },
+      });
+      const pending = await as(
+        owner,
+        request(http).post(retryUrl).send({ confirm: "MONITORING" }),
+      ).expect(409);
+      expect(pending.body.type).toContain("domain-not-retryable");
+    });
+
+    it("[Plan #45] versions: bản cũ ⇒ một bản nâng được kèm validator; toVersion lạ ⇒ 409; đã mới nhất ⇒ rỗng", async () => {
+      const w = applyWorld();
+      const { projectId } = await activeProject(w.registry);
+      const { http } = appFor(w.registry, null);
+      await admin.domainConfig.updateMany({
+        where: { projectId, domainType: "MONITORING" },
+        data: { adapterVersion: "0.9.0" },
+      });
+      const versionsUrl = `${domainsUrl(projectId)}/MONITORING/versions`;
+
+      const res = await as(owner, request(http).get(versionsUrl)).expect(200);
+      expect(res.body.versions).toMatchObject({
+        domainType: "MONITORING",
+        toolId: "fake-metrics",
+        current: "0.9.0",
+        available: [
+          {
+            version: "1.0.0",
+            provides: [{ id: "metrics.query", version: "2.0.0" }],
+            changes: [],
+            validation: { valid: true },
+          },
+        ],
+      });
+
+      const upgradeUrl = `${domainsUrl(projectId)}/MONITORING/upgrade`;
+      const wrong = await as(
+        owner,
+        request(http)
+          .post(upgradeUrl)
+          .send({ confirm: "MONITORING", toVersion: "2.0.0" }),
+      ).expect(409);
+      expect(wrong.body.type).toContain("domain-version-unavailable");
+
+      await admin.domainConfig.updateMany({
+        where: { projectId, domainType: "MONITORING" },
+        data: { adapterVersion: "1.0.0" },
+      });
+      const fresh = await as(owner, request(http).get(versionsUrl)).expect(200);
+      expect(fresh.body.versions.available).toEqual([]);
+    });
+
+    it("[Plan #45] chi tiết project mang địa chỉ cluster sau PROVISION — không caData", async () => {
+      const w = applyWorld();
+      const { projectId } = await activeProject(w.registry);
+      const { http } = appFor(w.registry, null);
+      const res = await as(
+        owner,
+        request(http).get(`${API}/projects/${projectId}`),
+      ).expect(200);
+      expect(res.body.cluster).toMatchObject({
+        provider: "AWS",
+        region: REGION,
+      });
+      expect(typeof res.body.cluster.clusterId).toBe("string");
+      expect(typeof res.body.cluster.apiEndpoint).toBe("string");
+      expect(JSON.stringify(res.body)).not.toContain("caData");
     });
   },
 );

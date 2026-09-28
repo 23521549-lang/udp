@@ -7,9 +7,11 @@ import {
   validateBody,
 } from "@udp/http";
 import {
+  domainRetryBodySchema,
   domainTargetStateSchema,
   domainUpgradeBodySchema,
   putDomainsBodySchema,
+  type DomainRetryBody,
   type DomainTargetState,
   type DomainUpgradeBody,
   type PutDomainsBody,
@@ -17,6 +19,7 @@ import {
 import {
   domainDriftResponseWire,
   domainValidationResponseWire,
+  domainVersionsResponseWire,
   jobResponseWire,
   projectDomainResponseWire,
   projectDomainsResponseWire,
@@ -28,12 +31,12 @@ import {
   projectIdParam,
   requireMinProjectRole,
 } from "../../core/http/middlewares/project-role.middleware.js";
-import { requestUpgrade } from "./domain-apply.service.js";
+import { requestReapply, requestUpgrade } from "./domain-apply.service.js";
 import * as domains from "./project-domain.service.js";
 
 /**
- * Domain của project (§9 "Domain", Plan #27 QĐ-1, QĐ-7, Plan #30). Đọc — VIEWER; kiểm thử
- * trạng thái đích — DEVELOPER (không ghi); lưu, quét ngay, nâng cấp — MAINTAINER (§8.6).
+ * Domain của project (§9 "Domain", Plan #27 QĐ-1, QĐ-7, Plan #30, Plan #45). Đọc — VIEWER; kiểm
+ * thử trạng thái đích — DEVELOPER (không ghi); lưu, quét ngay, nâng cấp, áp lại — MAINTAINER (§8.6).
  */
 export const projectDomainRouter: Router = Router({ mergeParams: true });
 
@@ -152,6 +155,49 @@ projectDomainRouter.post(
       projectId: projectIdParam(req),
       domainType: domainTypeOf(req),
       body: req.body as DomainUpgradeBody,
+      request: req,
+      registry: await deps.domainRegistry(),
+      enqueue: deps.provisioning.enqueue,
+    });
+    sendJson(res, jobResponseWire, { job }, 202);
+  }),
+);
+
+/**
+ * [v4.11, Plan #45] Bản đang chạy, bản máy chủ đang nạp và kết quả validator với khai báo mới —
+ * hộp nâng cấp đọc nó trước khi cho bấm (§10.13). Không chạm cluster.
+ */
+projectDomainRouter.get(
+  "/domains/:type/versions",
+  requireAuth,
+  requireMinProjectRole("VIEWER"),
+  asyncHandler(async (req, res) => {
+    sendJson(res, domainVersionsResponseWire, {
+      versions: await domains.versions(
+        projectIdParam(req),
+        domainTypeOf(req),
+        await appDepsOf(req).domainRegistry(),
+      ),
+    });
+  }),
+);
+
+/**
+ * [v4.11, Plan #45] Áp lại một domain về cấu hình đang lưu (§9 `POST …/retry`) — job
+ * `DOMAIN_APPLY` loại `reapply`. Nút "Thử lại" của domain lỗi và "Áp lại cấu hình mong muốn" của
+ * domain đã trôi (§10.13) cùng đi đường này.
+ */
+projectDomainRouter.post(
+  "/domains/:type/retry",
+  requireAuth,
+  requireMinProjectRole("MAINTAINER"),
+  validateBody(domainRetryBodySchema),
+  asyncHandler(async (req, res) => {
+    const deps = appDepsOf(req);
+    const job = await requestReapply({
+      projectId: projectIdParam(req),
+      domainType: domainTypeOf(req),
+      body: req.body as DomainRetryBody,
       request: req,
       registry: await deps.domainRegistry(),
       enqueue: deps.provisioning.enqueue,

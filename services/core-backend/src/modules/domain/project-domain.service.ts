@@ -13,12 +13,15 @@ import {
 import type {
   DomainDriftWire,
   DomainValidationWire,
+  DomainVersionsWire,
   ProjectDomainWire,
   ProjectDomainsResponseWire,
   PutDomainsResponseWire,
 } from "@udp/shared-types/wire";
 import type { CloudProviderWire } from "@udp/shared-types/cloud-api";
+import { prisma } from "../../core/db.js";
 import { auditEntry } from "../audit/audit.service.js";
+import { bindingsOfProject } from "../capability/capability-binding.repository.js";
 import { activeMeta } from "../cloud/cloud.repository.js";
 import { driftRecordOf } from "../day2/domain-config.repository.js";
 import type { EnqueueJob } from "../provisioning/provisioning.service.js";
@@ -81,6 +84,83 @@ export async function drift(
     verdict: record.adapterResult === "DRIFTED" ? "DRIFTED" : "SCAN_FAILED",
     message: record.message,
     at: record.at === "" ? null : record.at,
+  };
+}
+
+/**
+ * [v4.11, Plan #45] Bản đang chạy và bản máy chủ đang nạp (§9 `GET …/versions`, §8.6, §10.13) —
+ * không chạm cluster. Registry nạp MỘT bản mỗi tool, nên có tối đa một bản nâng được; kèm
+ * capability đổi gì so với binding ĐANG lưu, và `validate` trên trạng thái đang lưu với adapter
+ * của registry — đúng phép `declarationsAfterUpgrade` mà worker chạy trước khi chạm cluster.
+ */
+export async function versions(
+  projectId: string,
+  domainType: string,
+  registry: DomainAdapterRegistry,
+): Promise<DomainVersionsWire> {
+  const { view } = await rowOrNotFound(projectId, domainType);
+  const adapter =
+    view.selectedTool === null
+      ? undefined
+      : registry.get(domainType, view.selectedTool);
+  if (!view.isEnabled || adapter === undefined) {
+    throw new ConflictError(
+      `Domain ${domainType} không chạy trên cluster của project`,
+    ).withTypeSlug(DOMAIN_ERROR_SLUGS.notRunning);
+  }
+  const base = {
+    domainType,
+    toolId: adapter.toolId,
+    current: view.adapterVersion,
+  };
+  if (view.adapterVersion === adapter.version) {
+    return { ...base, available: [] };
+  }
+
+  const row = await prisma.domainConfig.findUniqueOrThrow({
+    where: { projectId_domainType: { projectId, domainType } },
+    select: { id: true },
+  });
+  const running = new Map(
+    (await bindingsOfProject(prisma, projectId))
+      .filter((b) => b.domainConfigId === row.id)
+      .map((b) => [b.capabilityId, b.schemaVersion]),
+  );
+  const provides = adapter.capabilities.provides.map((p) => ({
+    id: p.id,
+    version: p.version,
+  }));
+  const next = new Map(provides.map((p) => [p.id as string, p.version]));
+  const changes = [...new Set([...running.keys(), ...next.keys()])]
+    .sort()
+    .map((capabilityId) => ({
+      capabilityId,
+      from: running.get(capabilityId) ?? null,
+      to: next.get(capabilityId) ?? null,
+    }))
+    .filter((c) => c.from !== c.to);
+
+  const { domains, preferences } = await list(projectId);
+  const stored: DomainTargetState = {
+    domains: domains
+      .filter((d) => d.isEnabled && d.selectedTool !== null)
+      .map((d) => ({
+        domainType: d.domainType,
+        toolId: d.selectedTool ?? "",
+        config: d.toolConfig ?? {},
+      })),
+    preferences,
+  };
+  return {
+    ...base,
+    available: [
+      {
+        version: adapter.version,
+        provides,
+        changes,
+        validation: await validate(projectId, stored, registry),
+      },
+    ],
   };
 }
 

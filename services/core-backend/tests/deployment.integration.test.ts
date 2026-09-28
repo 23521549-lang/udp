@@ -204,3 +204,116 @@ describe("GET /metrics/dora", () => {
     ).expect(400);
   });
 });
+
+describe("[Plan #45] GET /deployments/latest và /deployments/:deploymentId/logs", () => {
+  it("latest: null khi env chưa deploy; sau đó là lần MỚI nhất; env của project khác ⇒ 404", async () => {
+    const staging = envNamed("staging").id;
+    const url = `${API}/projects/${projectId}/deployments/latest`;
+    const empty = await as(
+      owner,
+      request(app).get(url).query({ envId: staging }),
+    ).expect(200);
+    expect(empty.body).toEqual({ deployment: null });
+
+    const older = randomUUID();
+    const newer = randomUUID();
+    await admin.deploymentEvent.createMany({
+      data: [
+        {
+          projectId,
+          environmentId: staging,
+          deploymentId: older,
+          eventType: "DEPLOY_SUCCESS",
+          triggeredBy: "WEBHOOK",
+          occurredAt: ago(5),
+        },
+        {
+          projectId,
+          environmentId: staging,
+          deploymentId: newer,
+          eventType: "DEPLOY_START",
+          triggeredBy: "WEBHOOK",
+          occurredAt: ago(1),
+          imageTag: "v9",
+        },
+      ],
+    });
+    const res = await as(
+      owner,
+      request(app).get(url).query({ envId: staging }),
+    ).expect(200);
+    expect(res.body.deployment).toMatchObject({
+      deploymentId: newer,
+      status: "DEPLOY_START",
+      imageTag: "v9",
+    });
+
+    const foreign = await world.newProject(outsider);
+    await as(
+      owner,
+      request(app)
+        .get(url)
+        .query({ envId: foreign.envs["dev"]?.id ?? "" }),
+    ).expect(404);
+  });
+
+  it("logs: mọi sự kiện theo thời gian, metadata qua redact(); id lạ hay của project khác ⇒ 404", async () => {
+    const dev = envNamed("dev").id;
+    const deploymentId = randomUUID();
+    await admin.deploymentEvent.createMany({
+      data: [
+        {
+          projectId,
+          environmentId: dev,
+          deploymentId,
+          eventType: "DEPLOY_START",
+          triggeredBy: "WEBHOOK",
+          occurredAt: ago(3),
+          pipelineId: "run-42",
+          metadata: { repo: "org/app", ref: "main", token: "ghp_should_hide" },
+        },
+        {
+          projectId,
+          environmentId: dev,
+          deploymentId,
+          eventType: "DEPLOY_FAILURE",
+          triggeredBy: "WEBHOOK",
+          occurredAt: ago(2),
+          metadata: { reason: "image không kéo được" },
+        },
+      ],
+    });
+    const res = await as(
+      owner,
+      request(app).get(
+        `${API}/projects/${projectId}/deployments/${deploymentId}/logs`,
+      ),
+    ).expect(200);
+    const events = res.body.events as {
+      eventType: string;
+      pipelineId: string | null;
+      detail: Record<string, unknown> | null;
+    }[];
+    expect(events.map((e) => e.eventType)).toEqual([
+      "DEPLOY_START",
+      "DEPLOY_FAILURE",
+    ]);
+    expect(events[0]?.pipelineId).toBe("run-42");
+    expect(events[0]?.detail).toMatchObject({ repo: "org/app" });
+    expect(JSON.stringify(res.body)).not.toContain("ghp_should_hide");
+    expect(events[1]?.detail).toEqual({ reason: "image không kéo được" });
+
+    await as(
+      owner,
+      request(app).get(
+        `${API}/projects/${projectId}/deployments/${randomUUID()}/logs`,
+      ),
+    ).expect(404);
+    await as(
+      outsider,
+      request(app).get(
+        `${API}/projects/${projectId}/deployments/${deploymentId}/logs`,
+      ),
+    ).expect(404);
+  });
+});

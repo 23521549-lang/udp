@@ -5454,7 +5454,9 @@ Project — General
 ────────────────────────────────────────────────────────────────
 GET    /api/v1/projects?limit=&offset=          [v4.11, Plan #41] theo trang (limit ≤ 100, mặc
                                                định 50); trả {projects, total}
-GET    /api/v1/projects/:id
+GET    /api/v1/projects/:id                   [v4.11, Plan #45, D-P33] phong bì chi tiết mang thêm
+                                               cluster {clusterId, apiEndpoint, provider, region} | null
+                                               — địa chỉ, không caData, không token
 GET    /api/v1/projects/:id/stream             [v4.11, Plan #41, D-P32] VIEWER, SSE cho Portal:
                                                `flag_changed` {environmentId, configVersion} khi
                                                config_version của một env tiến; `ready` khi mở;
@@ -5507,7 +5509,13 @@ Domain
 ────────────────────────────────────────────────────────────────
 GET    /api/v1/projects/:id/domains
 GET    /api/v1/projects/:id/domains/:type
-POST   /api/v1/projects/:id/domains/:type/retry
+POST   /api/v1/projects/:id/domains/:type/retry   [v4.11, Plan #45, D-P33] MAINTAINER, {confirm?} (production
+                                               ⇒ gõ tên domain, 428). Áp lại domain về cấu hình ĐANG
+                                               lưu: job DOMAIN_APPLY `reapply` ⇒ 202 {job}. PENDING/
+                                               DEPLOYING hay bản adapter lệch registry ⇒ 409
+                                               domain-not-retryable (lệch bản là việc của upgrade);
+                                               rollout sống ⇒ 409. "Thử lại" (ERROR/BLOCKED) và "Áp
+                                               lại cấu hình mong muốn" (DRIFTED) cùng đi route này
 
 Domain — Catalog                                              [v4: bỏ scope project]
 ────────────────────────────────────────────────────────────────
@@ -5522,9 +5530,15 @@ Domain — Day-2 (§8.6)                                         [NEW v4]
 ────────────────────────────────────────────────────────────────
 GET    /api/v1/projects/:id/domains/:type/drift        kết quả quét gần nhất + diff
 POST   /api/v1/projects/:id/domains/:type/drift        chạy detectDrift() ngay, không chờ cron
-GET    /api/v1/projects/:id/domains/:type/versions     các bản adapter/chart nâng được
+GET    /api/v1/projects/:id/domains/:type/versions     các bản adapter/chart nâng được. [v4.11, Plan #45]
+                                                       {current, available[≤1]}: registry nạp MỘT bản mỗi
+                                                       tool; mỗi bản kèm `changes` (capability so với
+                                                       binding đang lưu) và `validation` (validator chạy
+                                                       trên trạng thái đang lưu với khai báo mới)
 POST   /api/v1/projects/:id/domains/:type/upgrade      → 202 {jobId}; chạy lại validator TRƯỚC;
-                                                       409 nếu project đang có rollout IN_PROGRESS
+                                                       409 nếu project đang có rollout IN_PROGRESS.
+                                                       [v4.11, Plan #45] {confirm?, toVersion?}: toVersion
+                                                       khác bản đang nạp ⇒ 409 domain-version-unavailable
 
 Capability preference (§5.3)                                  [NEW v4]
 ────────────────────────────────────────────────────────────────
@@ -5616,8 +5630,10 @@ POST   /api/v1/projects/:id/rollouts/:rolloutId/actions  → 202, ghi intent —
 Deployments
 ────────────────────────────────────────────────────────────────
 GET    /api/v1/projects/:id/deployments?envId=
-GET    /api/v1/projects/:id/deployments/latest?envId=
-GET    /api/v1/projects/:id/deployments/:deploymentId/logs
+GET    /api/v1/projects/:id/deployments/latest?envId=   [v4.11, Plan #45] {deployment | null} — cùng bộ gom
+                                                         với danh sách; thẻ Tổng quan (§10.6)
+GET    /api/v1/projects/:id/deployments/:deploymentId/logs [v4.11, Plan #45] mọi sự kiện của một lần
+                                                         deploy; `detail` = metadata đã qua redact()
 POST   /api/v1/projects/:id/deployments/:deploymentId/approve   [v4.11] deploy chờ duyệt ⇒ chạy
 GET    /api/v1/projects/:id/domains/CICD/webhook                [v4.11] đường webhook, secret đã sinh chưa
 POST   /api/v1/projects/:id/domains/CICD/webhook-secret         [v4.11] sinh/xoay, hiện MỘT lần
@@ -7003,6 +7019,7 @@ Plan #25 dựng Portal theo §10 và theo bản mẫu đã duyệt (`docs/design
 | D-P19 | §8.1, §9 Provisioning | `boss.send()` trong CÙNG transaction qua `fromPrisma(tx)`; `POST /jobs/:jobId/retry` riêng; SSE `{state, currentStep, resources[], progressLog[]}` | Hàng `ProvisioningJob` QUEUED là outbox, gửi pg-boss SAU commit với `id` = id hàng, đối soát gửi lại hàng mất job; chạy lại = `POST /provision` khi project ERROR: transaction tạo job ĐÓNG chu kỳ sổ của lượt trước (hàng `DELETED` xoá khỏi bảng, danh sách vào `audit_logs`), còn hàng `ORPHAN_SUSPECTED` thì chặn (`orphans-pending`); project sang PROVISIONING ngay trong transaction tạo job; SSE gửi ảnh chụp = CHÍNH body `GET /jobs/:jobId` (đọc DB mỗi giây, heartbeat 15 giây, đóng ở trạng thái cuối), Portal chỉ `invalidateQueries`; hủy sạch ⇒ project về DRAFT | `send()` qua `udp_s1` cần GRANT trên schema pg-boss tự tạo LÚC CHẠY, sau mọi migration (Plan #28 QĐ-1). Retry riêng lặp đúng đường provision. `DELETED` là trạng thái cuối và là đáy hội tụ của I31, nên lượt mới không mở một cạnh `DELETED → CREATING` mà nhường khoá tất định bằng cách chuyển hàng cũ sang bảng append-only. Rời DRAFT trong transaction là để domain và quota không đổi giữa lúc xác nhận chi phí và lúc worker nhận việc. Không có bảng `progressLog`: worker và request có thể ở hai tiến trình, nên nguồn duy nhất là database |
 | D-P20 | §8.1, §9 `DELETE /projects/:id`, §3.1 `jobs/` | `teardown.job.ts`, `project-ttl.job.ts` riêng; trạng thái job theo từng luồng | MỘT hàng `udp-jobs` cho mọi `ProvisioningJob`, worker rẽ theo `job_type`; TEARDOWN dùng lại `QUEUED → COMPENSATING → DONE \| COMPENSATION_FAILED`; xoá khi PROVISION còn chạy ⇒ hủy nó (bù trừ chính là teardown), không job thứ hai; worker không bao giờ ghi trạng thái cho project đã xoá mềm; ba lịch `project-ttl` (1 giờ), `orphan-scan` (10 phút), `drift-scan` (6 giờ) trên `boss.schedule` | Một hàng, một đối soát, một lease thay vì ba cơ chế. Enum trạng thái không cần migration. Hai job cùng dọn một project là tranh nhau tài nguyên. Mốc cảnh báo TTL nhớ bằng audit append-only, không thêm cột |
 | D-P32 | §9 Project, §10.14 | "SSE `flag_changed`" làm mới Flag List/Detail mà không nói luồng nào mang nó tới Portal (luồng SDK của S2 cần SDK key); `GET /flags` có `limit/offset` nhưng không nói Portal biết tổng bằng cách nào; `GET /projects` không phân trang | `GET /projects/:id/stream` của S1 (cookie phiên): một hub mỗi tiến trình đọc `config_version` của MỌI project đang có luồng mở trong một câu mỗi giây (như SSE job của D-P19), phát `flag_changed` cho env tiến version; `total` theo cùng bộ lọc cho `GET /flags` và `GET /projects`, `isEnabled` để đếm; Portal không xin quá 50 hàng | LISTEN cần một kết nối session riêng bằng `udp_s1` — thêm một biến môi trường bắt buộc cho mọi triển khai, trong khi một giây là đủ với người nhìn Portal. Một câu cho mọi project giữ chi phí không tăng theo số luồng. Thiếu tổng thì Portal hoặc tải hết để đếm, hoặc không vẽ được điều hướng trang |
+| D-P33 | §9 Domain/Day-2/Deployments, §10.6, §10.13 | `POST …/retry` không nói áp lại bằng cấu hình nào; `GET …/versions` "các bản nâng được"; Upgrade dialog "chọn phiên bản đích, changelog"; ClusterInfoCard "từ Project.metadata" | [v4.11, Plan #45] `retry` = job `DOMAIN_APPLY` loại `reapply` trên cấu hình ĐANG lưu (deploy → healthcheck → binding → báo consumer), từ chối khi bản adapter lệch registry; `versions` có tối đa MỘT bản (registry nạp một bản mỗi tool) kèm thay đổi capability và kết quả validator, không có changelog; `upgrade` nhận `toVersion`; `cluster` nằm ở phong bì CHI TIẾT project (từ `cluster_access` + credential), không ở hàng danh sách | Áp lại bằng bản mới hơn là nâng cấp lách validator (§8.6). Registry giữ một bản nên "danh sách bản" là lời hứa không có dữ liệu; adapter không mang changelog — thứ kiểm được là capability đổi gì và validator nói gì. Danh sách 50 project không cần 50 endpoint; `cluster_access` không có `region` nên ghép với credential |
 | D-P31 | §4 Environment, §9 Environment/Provisioning/Internal S2, §2.2 `job_type`, §5.2 lớp nền Helm | Tạo environment gọi backfill của S2 — không nói gì về cluster của project đang chạy; `DELETE` "chặn nếu còn flag đang bật" trong khi `audit_logs`/`deployment_events` giữ environment bằng `Restrict`; `POST /jobs/:jobId/retry` cho mọi job | Job `ENVIRONMENT_APPLY` (JobType thứ tư) cho project có cluster: ADD bootstrap MỌI env rồi dựng phần theo env, REMOVE gỡ rồi xoá namespace; hàng environment bị xoá CÙNG transaction tạo job REMOVE (payload mang bản chụp). Xoá cứng với bốn điều kiện 409 (cuối cùng, rollout sống, flag bật, có lịch sử); audit của vòng đời environment KHÔNG mang `environment_id`. Tên ≤ 12 ký tự, bất biến; trần 8. S2 backfill qua ADR-05 (`environment.backfilled`, replica áp bằng snapshot). Lớp nền Helm ghi kho instance (`<release>-instances`) và gỡ instance mồ côi khi deploy. Retry CHỈ cho `ENVIRONMENT_APPLY`; hủy CHỈ cho PROVISION | Environment là ranh giới cô lập có namespace thật: thêm một hàng mà không dựng namespace là environment không deploy được. Xoá hàng trong transaction tạo job đóng khe để lịch sử mới xuất hiện giữa lúc kiểm và lúc xoá. Lịch sử append-only không bị xoá theo (SetNull là UPDATE trên bảng append-only). Tên bị cắt khi thành hậu tố thì hai env có thể ra cùng namespace. Interface adapter đang khoá — kho instance cho adapter biết env nào vừa đi mà không thêm hook. Job không đọc `CANCEL_REQUESTED` mà hiện "hủy được" là nói dối |
 | D-P30 | ADR-06, §7.4, §9 Internal, §16 | Service 3 tự truy vấn Prometheus trong cluster qua `proxyService` (với token xin từ `/internal/clusters/:id/token`); nguồn SaaS của S3 không nói lấy khoá ở đâu | S1 THỰC THI phép đo thay S3: `POST /internal/environments/:envId/metrics` (một phép đo), `GET …/metrics-source` (siêu dữ liệu); S3 dùng `RemoteMetricsProvider` cùng chữ ký, lời gọi hỏng là `hasData: false` (I7); S1 đi `proxyService` cho nguồn trong cluster với truy cập cluster nhớ theo hạn token quản trị; `/internal/clusters/:id/token` giữ cho đường traffic của S3 | Khoá SaaS niêm phong bằng KEK chỉ S1 có — đưa cho S3 là thêm một nơi giữ bí mật, hay chia KEK. Cùng một đường tới cluster (`proxyService`), bớt một nơi giữ token. Đổi lại S3 phụ thuộc thêm S1: S1 chết ⇒ không dữ liệu ⇒ HOLD, đúng luật khi nguồn metrics chết |
 | D-P29 | §5.2 `DomainAdapterContext`, `scope`; §5.3 `CapabilityId`; §5.5 Database / Cost; §13.2 d6 | "Operator cluster-scoped, chỉ CR theo namespace env" mà bối cảnh của adapter cluster-scoped không biết environment nào tồn tại; không capability cho kho đối tượng; d6 so ĐA-tập id binding với `provides` | `DomainAdapterContext.environments` (mọi environment, bộ hợp đồng chạy với hai); lớp nền Helm `perEnvironment` (release mỗi env ở `udp-system`, `targetNamespace` là namespace env) và `demand` (quota theo nhu cầu thật); `object.store` (18 capability); d6 so TẬP id và chỉ cho lặp khi mỗi bản mang `environmentId` riêng của project; route `GET /cost` qua `proxyService` | Không có danh sách env thì database hoặc bị cài operator ba lần (namespace-scoped) hoặc dùng chung giữa `dev` và `prod`. `udp-tooling` không ghi gì ở namespace env ngoài `udp-registry-pull` (§12.2), nên bản ghi ở `udp-system` và bộ cài đặt vào env. MinIO gọi là database thì consumer đòi PostgreSQL có thể nhận một bucket. Binding theo env là hình §2.2 đã có (`environmentId`); d6 cũ chỉ không biết tới nó |

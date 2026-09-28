@@ -15,9 +15,11 @@ export function ConfirmDialog({
   danger = false,
   typeToConfirm,
   busy = false,
+  disabled = false,
   error,
   onConfirm,
   onClose,
+  children,
 }: {
   title: string;
   description: React.ReactNode;
@@ -25,9 +27,13 @@ export function ConfirmDialog({
   danger?: boolean;
   typeToConfirm?: string;
   busy?: boolean;
+  /** [Plan #45] Chặn xác nhận vì lý do ngoài ô gõ — vd validator báo lỗi */
+  disabled?: boolean;
   error?: string | undefined;
   onConfirm: (typed: string | undefined) => void;
   onClose: () => void;
+  /** Nội dung thêm giữa mô tả và ô gõ xác nhận */
+  children?: React.ReactNode;
 }) {
   const [typed, setTyped] = useState("");
   const norm = (s: string) => s.trim().normalize("NFC");
@@ -46,7 +52,7 @@ export function ConfirmDialog({
           <button
             type="button"
             className={danger ? "btn danger-fill" : "btn pri"}
-            disabled={!ok || busy}
+            disabled={!ok || busy || disabled}
             onClick={() =>
               onConfirm(typeToConfirm === undefined ? undefined : typed.trim())
             }
@@ -56,6 +62,7 @@ export function ConfirmDialog({
         </>
       }
     >
+      {children}
       {typeToConfirm !== undefined && (
         <div className="f">
           <label htmlFor="confirm-typed">

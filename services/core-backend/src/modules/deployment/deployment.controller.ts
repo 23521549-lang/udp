@@ -2,7 +2,9 @@ import { Router } from "express";
 import { asyncHandler, sendJson, uuidParam, validateQuery } from "@udp/http";
 import {
   deployAcceptedResponseWire,
+  deploymentLatestResponseWire,
   deploymentListResponseWire,
+  deploymentLogsResponseWire,
   doraResponseWire,
 } from "@udp/shared-types/wire";
 import { appDepsOf } from "../../core/app-deps.js";
@@ -15,8 +17,10 @@ import { approve } from "../cicd/deploy.service.js";
 import * as deploymentService from "./deployment.service.js";
 import {
   doraQuerySchema,
+  latestDeploymentQuerySchema,
   listDeploymentsQuerySchema,
   type DoraQuery,
+  type LatestDeploymentQuery,
   type ListDeploymentsQuery,
 } from "./deployment.types.js";
 
@@ -41,6 +45,38 @@ deploymentRouter.get(
         req.query as unknown as ListDeploymentsQuery,
       ),
     });
+  }),
+);
+
+/** [v4.11, Plan #45] TĨNH, nên đứng TRƯỚC `/deployments/:deploymentId/…` (§3.1) */
+deploymentRouter.get(
+  "/deployments/latest",
+  requireAuth,
+  requireMinProjectRole("VIEWER"),
+  validateQuery(latestDeploymentQuerySchema),
+  asyncHandler(async (req, res) => {
+    sendJson(res, deploymentLatestResponseWire, {
+      deployment: await deploymentService.latest(
+        projectIdParam(req),
+        req.query as unknown as LatestDeploymentQuery,
+      ),
+    });
+  }),
+);
+
+deploymentRouter.get(
+  "/deployments/:deploymentId/logs",
+  requireAuth,
+  requireMinProjectRole("VIEWER"),
+  asyncHandler(async (req, res) => {
+    sendJson(
+      res,
+      deploymentLogsResponseWire,
+      await deploymentService.logs(
+        projectIdParam(req),
+        uuidParam(req, "deploymentId", "Mã deployment không hợp lệ"),
+      ),
+    );
   }),
 );
 

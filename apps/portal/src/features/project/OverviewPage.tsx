@@ -5,6 +5,8 @@ import {
   Flag,
   LayoutDashboard,
   Lock,
+  Rocket,
+  Server,
   Users,
 } from "lucide-react";
 import { Icon } from "../../components/Icon";
@@ -15,6 +17,7 @@ import {
   formatPercent,
 } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
+import { deploymentApi } from "../deployment/deployment-api";
 import { useFlagCounts } from "../flag/flag-counts";
 import { rolloutApi } from "../rollout/rollout-api";
 import { RolloutStatusLabel } from "../rollout/rollout-status";
@@ -25,12 +28,13 @@ import { projectApi } from "./project-api";
 import { ROLE_LABEL } from "./roles";
 
 /**
- * Tổng quan (§10.6) — phần có dữ liệu thật hôm nay: trạng thái project, ba chỉ số nhanh
- * (flag đang bật ở env đang chọn, rollout đang chạy, thành viên), environment, và rollout
- * gần nhất. ClusterInfo và Deployment cần endpoint chưa có (`portal-deployments`).
+ * Tổng quan (§10.6): trạng thái project, ba chỉ số nhanh (flag đang bật ở env đang chọn, rollout
+ * đang chạy, thành viên), [Plan #45] thẻ Cluster (địa chỉ từ phong bì chi tiết project) và thẻ
+ * Deploy gần nhất của env đang chọn (`staleTime` 30 giây, làm mới khi quay lại tab — §10.6),
+ * environment, và rollout gần nhất.
  */
 export function OverviewPage() {
-  const { project, envs, env } = useProjectContext();
+  const { project, envs, env, cluster } = useProjectContext();
   const tz = browserTimeZone();
 
   // [Plan #41] Hai con số bằng `limit=1` — không tải danh sách flag chỉ để đếm
@@ -38,6 +42,12 @@ export function OverviewPage() {
   const rollouts = useQuery({
     queryKey: qk.rollouts(project.id, env.id),
     queryFn: () => rolloutApi.list(project.id, env.id),
+  });
+  const latest = useQuery({
+    queryKey: qk.deploymentLatest(project.id, env.id),
+    queryFn: () => deploymentApi.latest(project.id, env.id),
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
   const members = useQuery({
     queryKey: qk.members(project.id),
@@ -100,6 +110,66 @@ export function OverviewPage() {
               }
               sub=""
             />
+          </div>
+
+          <div className="kpis">
+            <div className="kpi" aria-label="Cluster">
+              <div className="l">
+                <span className="tile">
+                  <Icon of={Server} />
+                </span>
+                Cluster
+              </div>
+              {cluster === null ? (
+                <div className="c3">
+                  Chưa có cluster: project chưa triển khai hạ tầng.
+                </div>
+              ) : (
+                <>
+                  <div className="mono">{cluster.clusterId}</div>
+                  <div className="c3 mono">{cluster.apiEndpoint}</div>
+                  <div className="c3">
+                    {cluster.provider} · {cluster.region}
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="kpi" aria-label="Deploy gần nhất">
+              <div className="l">
+                <span className="tile">
+                  <Icon of={Rocket} />
+                </span>
+                Deploy gần nhất ở {env.name}
+              </div>
+              {latest.isPending ? (
+                <div className="c3">…</div>
+              ) : latest.isError ? (
+                <ErrorState error={latest.error} />
+              ) : latest.data.deployment === null ? (
+                <div className="c3">Chưa có lần deploy nào.</div>
+              ) : (
+                <>
+                  <div className="mono">
+                    {latest.data.deployment.imageTag ??
+                      latest.data.deployment.deploymentId.slice(0, 8)}
+                  </div>
+                  <div className="c3">
+                    {latest.data.deployment.commitSha === null
+                      ? ""
+                      : `${latest.data.deployment.commitSha.slice(0, 7)} · `}
+                    {formatDateTime(latest.data.deployment.lastEventAt)}
+                  </div>
+                  <Link
+                    to="/app/projects/$projectId/deployments"
+                    params={{ projectId: project.id }}
+                    search={{ env: env.id }}
+                    className="c3"
+                  >
+                    xem lịch sử deploy
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
 
           <h2 className="h2">Environment</h2>

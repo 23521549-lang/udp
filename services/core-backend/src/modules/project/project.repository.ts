@@ -181,6 +181,15 @@ export const findById = (
   });
 
 /** Chỉ để dựng ảnh `before` của audit — không trả ra API */
+/** [v4.11, Plan #45] `cluster_access` thô của project — `clusterOf` ở service lọc lấy địa chỉ */
+export const clusterAccessOf = async (id: string): Promise<unknown> =>
+  (
+    await prisma.project.findUnique({
+      where: { id },
+      select: { clusterAccess: true },
+    })
+  )?.clusterAccess ?? null;
+
 export const findQuotaAndTtl = (
   id: string,
 ): Promise<{

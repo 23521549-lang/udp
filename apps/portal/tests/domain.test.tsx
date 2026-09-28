@@ -1,6 +1,7 @@
 import type {
   DomainCatalogEntryWire,
   DomainValidationWire,
+  DomainVersionsWire,
   JobDetailWire,
   ProjectDetailResponseWire,
   ProjectDomainWire,
@@ -306,9 +307,39 @@ describe("project đang chạy (Plan #30)", () => {
   });
 });
 
-function useDetailHandlers(adapterVersion: string) {
+function useDetailHandlers(
+  adapterVersion: string,
+  options: {
+    status?: ProjectDomainWire["status"];
+    drifted?: boolean;
+    invalid?: boolean;
+  } = {},
+) {
   const upgrades: unknown[] = [];
+  const retries: unknown[] = [];
   let scans = 0;
+  const versions = golden<{ versions: DomainVersionsWire }>(
+    "GET /projects/{id}/domains/MONITORING/versions",
+  );
+  versions.versions.current = adapterVersion;
+  if (adapterVersion === versions.versions.available[0]?.version) {
+    versions.versions.available = [];
+  }
+  if (options.invalid === true) {
+    for (const a of versions.versions.available) {
+      a.validation = {
+        ...a.validation,
+        valid: false,
+        errors: [
+          {
+            code: "VERSION_MISMATCH",
+            subject: "progressive_delivery:fake-rollouts",
+            detail: ["metrics.query", "^2", "3.0.0"],
+          },
+        ],
+      };
+    }
+  }
   server.use(
     http.get(`${API}/domains/catalog`, () =>
       HttpResponse.json(golden("GET /domains/catalog")),
@@ -317,13 +348,33 @@ function useDetailHandlers(adapterVersion: string) {
       const d = golden<{ domain: ProjectDomainWire }>(
         "GET /projects/{id}/domains/MONITORING",
       );
-      d.domain = { ...d.domain, isEnabled: true, adapterVersion };
+      d.domain = {
+        ...d.domain,
+        isEnabled: true,
+        adapterVersion,
+        status: options.status ?? "ACTIVE",
+      };
       return HttpResponse.json(d);
     }),
     http.get(`${API}/projects/:id/domains/MONITORING/drift`, () =>
-      HttpResponse.json({
-        drift: { verdict: "CLEAN", message: null, at: null },
-      }),
+      HttpResponse.json(
+        options.drifted === true
+          ? golden("GET /projects/{id}/domains/MONITORING/drift")
+          : { drift: { verdict: "CLEAN", message: null, at: null } },
+      ),
+    ),
+    http.get(`${API}/projects/:id/domains/MONITORING/versions`, () =>
+      HttpResponse.json(versions),
+    ),
+    http.post(
+      `${API}/projects/:id/domains/MONITORING/retry`,
+      async ({ request }) => {
+        retries.push(await request.json());
+        return HttpResponse.json(
+          golden("POST /projects/{id}/domains/MONITORING/retry"),
+          { status: 202 },
+        );
+      },
     ),
     http.post(`${API}/projects/:id/domains/MONITORING/drift`, () => {
       scans += 1;
@@ -345,7 +396,7 @@ function useDetailHandlers(adapterVersion: string) {
       HttpResponse.json(golden("GET /projects/{id}/jobs/{id}")),
     ),
   );
-  return { upgrades, scanCount: () => scans };
+  return { upgrades, retries, scanCount: () => scans };
 }
 
 describe("thao tác Day-2 ở chi tiết domain", () => {
@@ -379,7 +430,9 @@ describe("thao tác Day-2 ở chi tiết domain", () => {
     await userEvent.click(confirm);
 
     await waitFor(() =>
-      expect(calls.upgrades).toEqual([{ confirm: "MONITORING" }]),
+      expect(calls.upgrades).toEqual([
+        { toVersion: "1.0.0", confirm: "MONITORING" },
+      ]),
     );
     expect(
       await screen.findByRole("region", { name: "Tiến độ triển khai" }),
@@ -395,6 +448,62 @@ describe("thao tác Day-2 ở chi tiết domain", () => {
     expect(
       screen.queryByRole("button", { name: /Nâng cấp/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("[Plan #45] validator đỏ với bản mới ⇒ hộp nâng cấp nói lý do và KHÔNG cho bấm", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    useDetailHandlers("0.9.0", { invalid: true });
+    renderApp(`${domainsUrl(detail)}/MONITORING`);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /Nâng cấp lên 1.0.0/ }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "VERSION_MISMATCH",
+    );
+    await userEvent.type(within(dialog).getByRole("textbox"), "MONITORING");
+    expect(
+      within(dialog).getByRole("button", { name: "Nâng cấp" }),
+    ).toBeDisabled();
+  });
+
+  it("[Plan #45] domain lỗi ⇒ Thử lại; production đòi gõ tên ⇒ POST retry rồi hiện tiến độ", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    const calls = useDetailHandlers("1.0.0", { status: "ERROR" });
+    renderApp(`${domainsUrl(detail)}/MONITORING`);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Thử lại" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByRole("textbox"), "MONITORING");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Thử lại" }),
+    );
+    await waitFor(() =>
+      expect(calls.retries).toEqual([{ confirm: "MONITORING" }]),
+    );
+    expect(
+      await screen.findByRole("region", { name: "Tiến độ triển khai" }),
+    ).toBeInTheDocument();
+  });
+
+  it("[Plan #45] domain đã trôi ⇒ nút Áp lại cấu hình mong muốn, cảnh báo ghi đè", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    useDetailHandlers("1.0.0", { drifted: true });
+    renderApp(`${domainsUrl(detail)}/MONITORING`);
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Áp lại cấu hình mong muốn",
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("ghi đè");
   });
 });
 
@@ -450,6 +559,16 @@ describe("webhook CI/CD ở chi tiết domain (Plan #36)", () => {
         HttpResponse.json(
           golden("GET /projects/{id}/domains/MONITORING/drift"),
         ),
+      ),
+      http.get(`${API}/projects/:id/domains/CICD/versions`, () =>
+        HttpResponse.json({
+          versions: {
+            domainType: "CICD",
+            toolId: "github-actions",
+            current: one.domain.adapterVersion,
+            available: [],
+          },
+        }),
       ),
       http.get(`${API}/projects/:id/domains/CICD/webhook`, () =>
         HttpResponse.json(

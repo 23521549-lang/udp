@@ -72,6 +72,8 @@ projectRouter.post(
       {
         project: projectWire(project, "OWNER"),
         environments: environments.map(environmentWire),
+        // Project vừa tạo chưa có cluster (§8.1: cluster chỉ có sau PROVISION)
+        cluster: null,
       },
       201,
     );
@@ -107,12 +109,14 @@ projectRouter.get(
   requireAuth,
   requireMinProjectRole("VIEWER"),
   asyncHandler(async (req, res) => {
-    const { environments, ...project } = await projectService.getById(
-      projectIdParam(req),
-    );
+    const [{ environments, ...project }, cluster] = await Promise.all([
+      projectService.getById(projectIdParam(req)),
+      projectService.clusterOf(projectIdParam(req)),
+    ]);
     sendJson(res, projectDetailResponseWire, {
       project: projectWire(project, roleOf(req.projectRole)),
       environments: environments.map(environmentWire),
+      cluster,
     });
   }),
 );

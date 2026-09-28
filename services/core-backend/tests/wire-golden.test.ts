@@ -79,6 +79,8 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "POST /projects/{id}/rollouts/probe": wire.rolloutProbeResponseWire,
 
   "GET /projects/{id}/deployments": wire.deploymentListResponseWire,
+  "GET /projects/{id}/deployments/latest": wire.deploymentLatestResponseWire,
+  "GET /projects/{id}/deployments/{id}/logs": wire.deploymentLogsResponseWire,
   "GET /projects/{id}/metrics/dora": wire.doraResponseWire,
   "POST /projects/{id}/deployments/{id}/approve":
     wire.deployAcceptedResponseWire,
@@ -91,6 +93,9 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "GET /projects/{id}/domains/MONITORING/drift": wire.domainDriftResponseWire,
   "POST /projects/{id}/domains/MONITORING/drift": wire.domainDriftResponseWire,
   "POST /projects/{id}/domains/MONITORING/upgrade": wire.jobResponseWire,
+  "POST /projects/{id}/domains/MONITORING/retry": wire.jobResponseWire,
+  "GET /projects/{id}/domains/MONITORING/versions":
+    wire.domainVersionsResponseWire,
   "GET /projects/{id}/domains/CICD/webhook": wire.cicdStatusResponseWire,
   "POST /projects/{id}/domains/CICD/webhook-secret":
     wire.cicdSecretResponseWire,

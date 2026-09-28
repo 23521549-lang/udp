@@ -1,0 +1,37 @@
+{
+  "route": "GET /projects/{id}/deployments/{id}/logs",
+  "status": 200,
+  "body": {
+    "deploymentId": "6fbe9fd9-f369-45a1-a931-0d21dc208e9a",
+    "events": [
+      {
+        "id": "01a0e872-31d5-7286-a6ea-0e97ed370f50",
+        "eventType": "DEPLOY_START",
+        "occurredAt": "2026-09-28T11:36:33.100Z",
+        "triggeredBy": "WEBHOOK",
+        "workloadName": null,
+        "imageTag": null,
+        "commitSha": null,
+        "pipelineId": "run-42",
+        "detail": {
+          "ref": "main",
+          "repo": "org/app",
+          "token": "[REDACTED]"
+        }
+      },
+      {
+        "id": "01a0e872-31d6-7419-a9b7-be27f9e9d489",
+        "eventType": "DEPLOY_FAILURE",
+        "occurredAt": "2026-09-28T12:36:33.100Z",
+        "triggeredBy": "WEBHOOK",
+        "workloadName": null,
+        "imageTag": null,
+        "commitSha": null,
+        "pipelineId": null,
+        "detail": {
+          "reason": "image không kéo được"
+        }
+      }
+    ]
+  }
+}

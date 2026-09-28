@@ -151,11 +151,26 @@ export const projectListResponseWire = z
   })
   .strict();
 
+/**
+ * [v4.11, Plan #45] Cluster của project (§10.6 ClusterInfoCard) — ĐỊA CHỈ, không quyền vào: không
+ * `caData`, không token (ADR-06 không lưu token nào). `null` khi project chưa có cluster.
+ */
+export const projectClusterWire = z
+  .object({
+    clusterId: z.string(),
+    apiEndpoint: z.string(),
+    provider: z.string(),
+    region: z.string(),
+  })
+  .strict();
+
 /** `POST /projects` (201) và `GET /projects/:id` — cùng một phong bì (§8.1) */
 export const projectDetailResponseWire = z
   .object({
     project: publicProjectWire,
     environments: z.array(publicEnvironmentWire),
+    /** [v4.11, Plan #45] Ở phong bì CHI TIẾT, không ở hàng danh sách (D-P33) */
+    cluster: projectClusterWire.nullable(),
   })
   .strict();
 
@@ -734,6 +749,37 @@ export const deploymentListResponseWire = z
   .object({ deployments: z.array(deploymentWire) })
   .strict();
 
+/** [v4.11, Plan #45] `GET /projects/:id/deployments/latest?envId=` — `null` khi env chưa deploy lần nào */
+export const deploymentLatestResponseWire = z
+  .object({ deployment: deploymentWire.nullable() })
+  .strict();
+
+/**
+ * [v4.11, Plan #45] `GET /projects/:id/deployments/:deploymentId/logs` — mọi sự kiện của MỘT lần
+ * deploy theo thời gian. `detail` là `metadata` đã qua `redact()`: lý do lỗi, image khôi phục,
+ * repo, ref.
+ */
+export const deploymentLogsResponseWire = z
+  .object({
+    deploymentId: uuid,
+    events: z.array(
+      z
+        .object({
+          id: uuid,
+          eventType: deploymentEventTypeWire,
+          occurredAt: isoDateTime,
+          triggeredBy: z.enum(["WEBHOOK", "MANUAL", "ROLLBACK", "AUTO"]),
+          workloadName: z.string().nullable(),
+          imageTag: z.string().nullable(),
+          commitSha: z.string().nullable(),
+          pipelineId: z.string().nullable(),
+          detail: z.record(z.unknown()).nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
 const sampled = z
   .object({
     median: z.number().nullable(),
@@ -1061,6 +1107,44 @@ export const domainDriftResponseWire = z
   })
   .strict();
 
+/**
+ * [v4.11, Plan #45] `GET /projects/:id/domains/:type/versions` (§8.6, §10.13 "Upgrade dialog").
+ * Registry nạp MỘT bản mỗi tool, nên `available` có tối đa một phần tử — bản máy chủ đang nạp khi
+ * nó khác bản đang chạy — kèm capability đổi gì so với binding đang lưu và kết quả chạy lại
+ * validator với khai báo mới: Portal thấy TRƯỚC khi bấm điều worker kiểm trước khi chạm cluster.
+ */
+export const domainVersionsResponseWire = z
+  .object({
+    versions: z
+      .object({
+        domainType: z.string().min(1),
+        toolId: z.string(),
+        current: z.string().nullable(),
+        available: z.array(
+          z
+            .object({
+              version: z.string(),
+              provides: z.array(
+                z.object({ id: z.string(), version: z.string() }).strict(),
+              ),
+              changes: z.array(
+                z
+                  .object({
+                    capabilityId: z.string(),
+                    from: z.string().nullable(),
+                    to: z.string().nullable(),
+                  })
+                  .strict(),
+              ),
+              validation: domainValidationResponseWire.shape.validation,
+            })
+            .strict(),
+        ),
+      })
+      .strict(),
+  })
+  .strict();
+
 // ------------------------------------------------------------- cloud của project
 
 /**
@@ -1341,6 +1425,7 @@ export type RolloutDetailWire = z.infer<typeof rolloutDetailWire>;
 export type RolloutEventWire = z.infer<typeof rolloutEventWire>;
 export type MetricSnapshotWire = z.infer<typeof metricSnapshotWire>;
 export type DeploymentWire = z.infer<typeof deploymentWire>;
+export type DeploymentLogsWire = z.infer<typeof deploymentLogsResponseWire>;
 export type DoraWire = z.infer<typeof doraWire>;
 export type AdminUserWire = z.infer<typeof adminUserWire>;
 export type AdminOrphansResponseWire = z.infer<typeof adminOrphansResponseWire>;
@@ -1364,6 +1449,10 @@ export type DomainValidationWire = z.infer<
   typeof domainValidationResponseWire
 >["validation"];
 export type DomainDriftWire = z.infer<typeof domainDriftResponseWire>["drift"];
+export type DomainVersionsWire = z.infer<
+  typeof domainVersionsResponseWire
+>["versions"];
+export type ProjectClusterWire = z.infer<typeof projectClusterWire>;
 export type ProvisionPreviewWire = z.infer<
   typeof provisionPreviewResponseWire
 >["preview"];

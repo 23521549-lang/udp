@@ -6,6 +6,7 @@ import {
   useSearch,
 } from "@tanstack/react-router";
 import type {
+  ProjectClusterWire,
   PublicEnvironmentWire,
   PublicProjectWire,
 } from "@udp/shared-types/wire";
@@ -26,6 +27,8 @@ interface ProjectContextValue {
   /** Env đang chọn — luôn thuộc project này (xem `resolveEnv`) */
   env: PublicEnvironmentWire;
   setEnv: (envId: string) => void;
+  /** [Plan #45] Địa chỉ cluster (§10.6) — `null` khi project chưa có cluster */
+  cluster: ProjectClusterWire | null;
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
@@ -63,7 +66,7 @@ export function ProjectLayout() {
     );
   }
 
-  const { project, environments } = query.data;
+  const { project, environments, cluster } = query.data;
   const env = resolveEnv(environments, search.env);
   if (env === undefined) {
     return (
@@ -82,7 +85,7 @@ export function ProjectLayout() {
 
   return (
     <ProjectContext.Provider
-      value={{ project, envs: environments, env, setEnv }}
+      value={{ project, envs: environments, env, setEnv, cluster }}
     >
       <div
         className="project-frame"

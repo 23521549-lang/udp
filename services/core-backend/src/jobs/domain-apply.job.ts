@@ -59,7 +59,8 @@ import {
 
 /**
  * Job `DOMAIN_APPLY` (§8.2, §8.6, Plan #30 P2): đưa domain của một project ĐANG chạy về
- * trạng thái đích, hoặc nâng một domain lên bản adapter mới.
+ * trạng thái đích, nâng một domain lên bản adapter mới, hoặc [Plan #45] áp lại một domain về
+ * cấu hình đang lưu.
  *
  * Kế hoạch là hàm thuần `planDomainApply`; tệp này THI HÀNH nó, và thứ tự thi hành là nội
  * dung của §8.2:
@@ -677,6 +678,82 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
     return failures;
   }
 
+  /**
+   * [v4.11, Plan #45] Áp lại MỘT domain về chính cấu hình đang lưu (§9 `POST …/retry`): domain
+   * ERROR/BLOCKED sau một lượt hỏng, hay domain đã trôi mà người vận hành CHỌN ghi đè (§10.13). Cùng
+   * đường với CASE 1 — `deploy` trên mọi đích (adapter idempotent theo bộ hợp đồng) — cộng
+   * `healthcheck` và báo consumer khi binding đổi, như nâng cấp. Route đã chặn bản adapter lệch:
+   * áp lại bằng bản mới hơn là nâng cấp lách validator (§8.6).
+   */
+  async function reapply(
+    run: Run,
+    input: JobInput,
+    phase: DomainPhaseInput,
+    domainType: string,
+  ): Promise<Failure[]> {
+    const current = await currentStates(input.projectId, phase.registry);
+    const state = current.states.find((s) => s.domainType === domainType);
+    const id = current.rowOf.get(domainType);
+    if (state === undefined || id === undefined) {
+      throw new PhaseFailedError(`domain ${domainType} không bật trên project`);
+    }
+    const prefs = (
+      await prisma.capabilityPreference.findMany({
+        where: { projectId: input.projectId },
+        select: { capabilityId: true, providerToolId: true },
+      })
+    ).map((p) => ({
+      capabilityId: p.capabilityId as CapabilityId,
+      providerToolId: p.providerToolId,
+    }));
+    const plan = planDomainApply({
+      current: current.states,
+      currentPreferences: prefs,
+      target: current.states,
+      targetPreferences: prefs,
+    });
+    const ctx: ApplyContext = {
+      input: phase,
+      plan,
+      registry: phase.registry,
+      rowOf: current.rowOf,
+      target: new Map(current.states.map((s) => [s.domainType, s])),
+      brokenCapabilities: new Set(),
+      failures: [],
+    };
+
+    await prisma.domainConfig.update({
+      where: { id },
+      data: { domainStatus: "DEPLOYING" },
+    });
+    const t = targetOf(ctx, id, state);
+    const before = (await bindingsOfProject(prisma, input.projectId))
+      .filter((b) => b.domainConfigId === id)
+      .map(bindingOf);
+    await kit.fenceOf(run).assert();
+    const deployed = await callOnTargets(phase, t, plan.chosen, (c, config) =>
+      t.adapter.deploy(c, config),
+    );
+    const problem =
+      "error" in deployed
+        ? { step: "DEPLOY" as const, message: deployed.error }
+        : await healthy(ctx, t).then((m) =>
+            m === null ? null : { step: "HEALTHCHECK" as const, message: m },
+          );
+    if (problem !== null || "error" in deployed) {
+      await fail(
+        ctx,
+        t,
+        problem?.step ?? "DEPLOY",
+        problem?.message ?? "deploy thất bại",
+      );
+      return ctx.failures;
+    }
+    await persistDeployed(prisma, t, deployed.bindings, { replace: true });
+    await notify(ctx, changedBindings(before, deployed.bindings), domainType);
+    return ctx.failures;
+  }
+
   return {
     run: (jobId) =>
       kit.withLease(jobId, async (run) => {
@@ -702,9 +779,14 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
                 );
               }
               const phase = await kit.domainInput(run, input, access);
-              return change.kind === "apply"
-                ? apply(run, input, phase, change.target)
-                : upgrade(input, phase, change.domainType);
+              switch (change.kind) {
+                case "apply":
+                  return apply(run, input, phase, change.target);
+                case "upgrade":
+                  return upgrade(input, phase, change.domainType);
+                case "reapply":
+                  return reapply(run, input, phase, change.domainType);
+              }
             },
           );
         } catch (e) {

@@ -1,4 +1,5 @@
 import type {
+  DomainRetryBody,
   DomainTargetState,
   DomainUpgradeBody,
   PutDomainsBody,
@@ -9,6 +10,7 @@ import {
   domainCatalogResponseWire,
   domainDriftResponseWire,
   domainValidationResponseWire,
+  domainVersionsResponseWire,
   jobResponseWire,
   pipelineTemplateResponseWire,
   projectDomainResponseWire,
@@ -44,6 +46,15 @@ export const domainApi = {
     }),
   upgrade: (projectId: string, type: string, body: DomainUpgradeBody) =>
     api(jobResponseWire, `${d(projectId)}/${type}/upgrade`, {
+      method: "POST",
+      body,
+    }),
+  /** [Plan #45] Bản nâng được kèm capability đổi gì và validator nói gì (§10.13) */
+  versions: (projectId: string, type: string) =>
+    api(domainVersionsResponseWire, `${d(projectId)}/${type}/versions`),
+  /** [Plan #45] Áp lại domain về cấu hình đang lưu — job DOMAIN_APPLY loại reapply */
+  retry: (projectId: string, type: string, body: DomainRetryBody) =>
+    api(jobResponseWire, `${d(projectId)}/${type}/retry`, {
       method: "POST",
       body,
     }),

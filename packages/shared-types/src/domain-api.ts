@@ -87,9 +87,25 @@ export const isKeptSecret = (v: unknown): boolean =>
  * thiếu hay sai) — cùng cơ chế xác nhận hai bước của §8.4.
  */
 export const domainUpgradeBodySchema = z
-  .object({ confirm: z.string().max(50).optional() })
+  .object({
+    confirm: z.string().max(50).optional(),
+    /**
+     * [v4.11, Plan #45] Bản người dùng đã thấy ở `GET …/versions` — khác bản máy chủ đang nạp
+     * (máy chủ vừa đổi sau khi họ mở hộp) ⇒ 409 `domain-version-unavailable`.
+     */
+    toVersion: z.string().min(1).max(50).optional(),
+  })
   .strict();
 export type DomainUpgradeBody = z.infer<typeof domainUpgradeBodySchema>;
+
+/**
+ * [v4.11, Plan #45] Body của `POST /projects/:id/domains/:type/retry` — áp lại domain về cấu
+ * hình đang lưu. Cùng xác nhận của nâng cấp: chạm cluster dùng chung mọi environment.
+ */
+export const domainRetryBodySchema = z
+  .object({ confirm: z.string().max(50).optional() })
+  .strict();
+export type DomainRetryBody = z.infer<typeof domainRetryBodySchema>;
 
 /** Slug `type` của lỗi Portal rẽ nhánh — không thêm mã vào catalog mã lỗi (I36) */
 export const DOMAIN_ERROR_SLUGS = {
@@ -101,6 +117,10 @@ export const DOMAIN_ERROR_SLUGS = {
   upToDate: "domain-up-to-date",
   /** Nâng cấp / quét ngay: domain không chạy trên cluster của project */
   notRunning: "domain-not-running",
+  /** [v4.11, Plan #45] Áp lại: domain đang có việc chạy trên nó, hoặc chưa từng triển khai */
+  notRetryable: "domain-not-retryable",
+  /** [v4.11, Plan #45] Nâng cấp: `toVersion` không phải bản máy chủ đang nạp */
+  versionUnavailable: "domain-version-unavailable",
   /** [v4.11, Plan #38] Chi phí: project chưa bật Cost Management (không có `cost.query`) */
   costNotEnabled: "cost-not-enabled",
 } as const;

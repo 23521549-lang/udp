@@ -9,6 +9,7 @@ import {
 } from "@udp/http";
 import {
   DOMAIN_ERROR_SLUGS,
+  type DomainRetryBody,
   type DomainUpgradeBody,
   type PutDomainsBody,
 } from "@udp/shared-types/domain-api";
@@ -143,19 +144,12 @@ export async function applyToRunning(args: {
   return jobView(job);
 }
 
-/**
- * Nâng một domain đang chạy lên bản adapter mà máy chủ đang nạp (§8.6 nhánh B). Kiểm ở
- * đây những gì trả lời được mà không chạm cluster; validator và healthcheck chạy ở worker.
- */
-export async function requestUpgrade(args: {
-  projectId: string;
-  domainType: string;
-  body: DomainUpgradeBody;
-  request: Request;
-  registry: DomainAdapterRegistry;
-  enqueue: EnqueueJob;
-}): Promise<ProvisioningJobWire> {
-  const { projectId, domainType } = args;
+/** Thứ mọi thao tác Day-2 trên MỘT domain cần đọc — một lượt đi về, ba câu song song */
+async function day2Of(
+  projectId: string,
+  domainType: string,
+  registry: DomainAdapterRegistry,
+) {
   const [project, row, rollouts] = await Promise.all([
     prisma.project.findUnique({
       where: { id: projectId },
@@ -181,14 +175,64 @@ export async function requestUpgrade(args: {
   const adapter =
     row?.selectedTool == null
       ? undefined
-      : args.registry.get(domainType, row.selectedTool);
+      : registry.get(domainType, row.selectedTool);
   if (
     project.status !== "ACTIVE" ||
     row === null ||
     !row.isEnabled ||
-    row.domainStatus !== "ACTIVE" ||
     adapter === undefined
   ) {
+    throw new ConflictError(
+      `Domain ${domainType} không chạy trên cluster của project`,
+    ).withTypeSlug(DOMAIN_ERROR_SLUGS.notRunning);
+  }
+  return { project, row, adapter, rollouts };
+}
+
+/** §8.6: đổi nguồn metric hay đường traffic giữa lúc canary đang so hai cửa sổ là mất hệ quy chiếu */
+function assertNoLiveRollout(liveRollouts: number, what: string): void {
+  if (liveRollouts > 0) {
+    throw new ConflictError(
+      `Project có rollout đang chạy — ${what} sau khi rollout kết thúc`,
+      undefined,
+      "ROLLOUT_IN_PROGRESS",
+    );
+  }
+}
+
+/** Chạm cluster dùng chung MỌI environment: có production thì gõ lại tên domain (428, §8.4) */
+function requireProductionConfirm(
+  environments: readonly { isProduction: boolean }[],
+  confirm: string | undefined,
+  domainType: string,
+  what: string,
+): void {
+  if (environments.some((e) => e.isProduction) && confirm !== domainType) {
+    throw new ConfirmationRequiredError(
+      `${what} chạm environment production: gõ ${domainType} để xác nhận`,
+    );
+  }
+}
+
+/**
+ * Nâng một domain đang chạy lên bản adapter mà máy chủ đang nạp (§8.6 nhánh B). Kiểm ở
+ * đây những gì trả lời được mà không chạm cluster; validator và healthcheck chạy ở worker.
+ */
+export async function requestUpgrade(args: {
+  projectId: string;
+  domainType: string;
+  body: DomainUpgradeBody;
+  request: Request;
+  registry: DomainAdapterRegistry;
+  enqueue: EnqueueJob;
+}): Promise<ProvisioningJobWire> {
+  const { projectId, domainType } = args;
+  const { project, row, adapter, rollouts } = await day2Of(
+    projectId,
+    domainType,
+    args.registry,
+  );
+  if (row.domainStatus !== "ACTIVE") {
     throw new ConflictError(
       `Domain ${domainType} không chạy trên cluster của project`,
     ).withTypeSlug(DOMAIN_ERROR_SLUGS.notRunning);
@@ -198,22 +242,22 @@ export async function requestUpgrade(args: {
       `Domain ${domainType} đã ở bản ${adapter.version}`,
     ).withTypeSlug(DOMAIN_ERROR_SLUGS.upToDate);
   }
-  // §8.6: đổi nguồn metric giữa lúc canary đang so hai cửa sổ là mất hệ quy chiếu
-  if (rollouts > 0) {
-    throw new ConflictError(
-      "Project có rollout đang chạy — nâng cấp sau khi rollout kết thúc",
-      undefined,
-      "ROLLOUT_IN_PROGRESS",
-    );
-  }
+  // [Plan #45] Người dùng nâng lên bản họ đã thấy, không phải bản máy chủ vừa đổi sau đó
   if (
-    project.environments.some((e) => e.isProduction) &&
-    args.body.confirm !== domainType
+    args.body.toVersion !== undefined &&
+    args.body.toVersion !== adapter.version
   ) {
-    throw new ConfirmationRequiredError(
-      `Nâng cấp chạm environment production: gõ ${domainType} để xác nhận`,
-    );
+    throw new ConflictError(
+      `Máy chủ đang nạp bản ${adapter.version} của ${domainType}, không phải ${args.body.toVersion} — mở lại hộp nâng cấp`,
+    ).withTypeSlug(DOMAIN_ERROR_SLUGS.versionUnavailable);
   }
+  assertNoLiveRollout(rollouts, "nâng cấp");
+  requireProductionConfirm(
+    project.environments,
+    args.body.confirm,
+    domainType,
+    "Nâng cấp",
+  );
 
   const job = await prisma.$transaction((tx) =>
     createApplyJob(
@@ -227,6 +271,62 @@ export async function requestUpgrade(args: {
           from: row.adapterVersion,
           to: adapter.version,
         },
+        request: args.request,
+      },
+    ),
+  );
+  await send(args.enqueue, job.id);
+  return jobView(job);
+}
+
+/**
+ * [v4.11, Plan #45] Áp lại MỘT domain về cấu hình đang lưu (§9 `POST …/retry`, QĐ-1 của
+ * `plan45-spec.md`): domain ERROR/BLOCKED sau một lượt hỏng, hay domain đã trôi mà người vận
+ * hành chọn ghi đè (§10.13). Không tự sửa drift (§8.6) — đây là lựa chọn có xác nhận.
+ */
+export async function requestReapply(args: {
+  projectId: string;
+  domainType: string;
+  body: DomainRetryBody;
+  request: Request;
+  registry: DomainAdapterRegistry;
+  enqueue: EnqueueJob;
+}): Promise<ProvisioningJobWire> {
+  const { projectId, domainType } = args;
+  const { project, row, adapter, rollouts } = await day2Of(
+    projectId,
+    domainType,
+    args.registry,
+  );
+  if (row.domainStatus === "PENDING" || row.domainStatus === "DEPLOYING") {
+    throw new ConflictError(
+      row.domainStatus === "PENDING"
+        ? `Domain ${domainType} chưa từng được triển khai — triển khai project trước`
+        : `Domain ${domainType} đang được triển khai — đợi lượt đó xong`,
+    ).withTypeSlug(DOMAIN_ERROR_SLUGS.notRetryable);
+  }
+  // Áp lại bằng bản adapter MỚI HƠN bản đang chạy là nâng cấp lách validator (§8.6)
+  if (row.adapterVersion !== null && row.adapterVersion !== adapter.version) {
+    throw new ConflictError(
+      `Domain ${domainType} chạy bản ${row.adapterVersion}, máy chủ nạp bản ${adapter.version} — nâng cấp (có kiểm validator) thay vì áp lại`,
+    ).withTypeSlug(DOMAIN_ERROR_SLUGS.notRetryable);
+  }
+  assertNoLiveRollout(rollouts, "áp lại domain");
+  requireProductionConfirm(
+    project.environments,
+    args.body.confirm,
+    domainType,
+    "Áp lại",
+  );
+
+  const job = await prisma.$transaction((tx) =>
+    createApplyJob(
+      tx,
+      projectId,
+      { kind: "reapply", domainType },
+      {
+        action: "domain.reapply",
+        after: { domainType, from: row.domainStatus },
         request: args.request,
       },
     ),

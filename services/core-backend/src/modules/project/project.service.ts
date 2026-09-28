@@ -1,6 +1,9 @@
 import type { Request } from "express";
 import type { ProjectRole } from "@udp/db";
 import { logger, NotFoundError } from "@udp/http";
+import type { ProjectClusterWire } from "@udp/shared-types/wire";
+import { z } from "zod";
+import { activeMeta } from "../cloud/cloud.repository.js";
 import {
   retireInfrastructure,
   type EnqueueJob,
@@ -51,6 +54,34 @@ export async function getById(
     throw new NotFoundError("Không tìm thấy project");
   }
   return project;
+}
+
+/** Phần địa chỉ của `cluster_access` (ADR-06) — `caData` và tài khoản dịch vụ không ra dây */
+const clusterAddressSchema = z.object({
+  clusterId: z.string().min(1),
+  apiEndpoint: z.string().min(1),
+});
+
+/**
+ * [v4.11, Plan #45] Cluster của project cho thẻ Tổng quan (§10.6): địa chỉ từ `cluster_access`,
+ * cloud và region từ credential đang dùng. `null` khi project chưa có cluster — hay khi credential
+ * đã bị gỡ: thẻ không đoán nửa phần còn lại.
+ */
+export async function clusterOf(
+  projectId: string,
+): Promise<ProjectClusterWire | null> {
+  const [access, meta] = await Promise.all([
+    repository.clusterAccessOf(projectId),
+    activeMeta(projectId),
+  ]);
+  const address = clusterAddressSchema.safeParse(access);
+  if (!address.success || meta === null) return null;
+  return {
+    clusterId: address.data.clusterId,
+    apiEndpoint: address.data.apiEndpoint,
+    provider: meta.provider,
+    region: meta.region,
+  };
 }
 
 /**

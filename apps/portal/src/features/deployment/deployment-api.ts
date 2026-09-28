@@ -1,6 +1,8 @@
 import {
   deployAcceptedResponseWire,
+  deploymentLatestResponseWire,
   deploymentListResponseWire,
+  deploymentLogsResponseWire,
   doraResponseWire,
 } from "@udp/shared-types/wire";
 import { api } from "../../lib/http";
@@ -12,6 +14,17 @@ export const deploymentApi = {
     api(deploymentListResponseWire, `${p(projectId)}/deployments`, {
       query: { envId, limit: 50 },
     }),
+  /** [Plan #45] Lần deploy gần nhất của một env — thẻ Tổng quan (§10.6) */
+  latest: (projectId: string, envId: string) =>
+    api(deploymentLatestResponseWire, `${p(projectId)}/deployments/latest`, {
+      query: { envId },
+    }),
+  /** [Plan #45] Mọi sự kiện của một lần deploy */
+  logs: (projectId: string, deploymentId: string) =>
+    api(
+      deploymentLogsResponseWire,
+      `${p(projectId)}/deployments/${deploymentId}/logs`,
+    ),
   dora: (projectId: string, envId: string, days: number) =>
     api(doraResponseWire, `${p(projectId)}/metrics/dora`, {
       query: { envId, days },

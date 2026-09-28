@@ -61,6 +61,12 @@ export const qk = {
 
   deployments: (projectId: string, envId: string) =>
     ["deployments", projectId, envId] as const,
+  /** [Plan #45] Thẻ "Deploy gần nhất" của Tổng quan — deploy thuộc MỘT env */
+  deploymentLatest: (projectId: string, envId: string) =>
+    ["deploymentLatest", projectId, envId] as const,
+  /** [Plan #45] Nhật ký một lần deploy — id đã gắn đúng một env */
+  deploymentLogs: (projectId: string, deploymentId: string) =>
+    ["deploymentLogs", projectId, deploymentId] as const,
   /** §10.14: `range` trong key — đổi khoảng mà số không đổi là key thiếu `range` */
   dora: (projectId: string, envId: string, days: number) =>
     ["dora", projectId, envId, days] as const,
@@ -72,6 +78,9 @@ export const qk = {
     ["domain", projectId, type] as const,
   domainDrift: (projectId: string, type: string) =>
     ["drift", projectId, type] as const,
+  /** [Plan #45] Bản đang chạy, bản nâng được, kết quả validator — hộp nâng cấp (§10.13) */
+  domainVersions: (projectId: string, type: string) =>
+    ["domainVersions", projectId, type] as const,
   /** §10.12 kiểm trực tiếp: khoá theo nội dung trạng thái đích đã chuẩn hoá */
   domainValidation: (projectId: string, target: string) =>
     ["domainValidation", projectId, target] as const,
@@ -109,6 +118,7 @@ export const ENV_SCOPED = [
   "flagStats",
   "rollouts",
   "deployments",
+  "deploymentLatest",
   "dora",
 ] as const satisfies readonly QueryKeyName[];
 
@@ -134,6 +144,8 @@ export const NOT_ENV_SCOPED = {
   domains: "domain cấu hình theo project; binding theo env tới sau job (§2.2)",
   domain: "một domain của project",
   domainDrift: "drift của một domain, quét ở phạm vi cluster",
+  domainVersions: "bản adapter của một domain, một cluster cho mọi env",
+  deploymentLogs: "id deployment đã gắn đúng một env",
   domainValidation: "kiểm trạng thái đích của cả project",
   cicd: "webhook CI/CD của project; environment nằm trong thân webhook (§8.3)",
   pipelineTemplate: "một pipeline cho MỌI env của project, env chọn theo nhánh",

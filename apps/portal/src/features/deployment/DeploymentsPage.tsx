@@ -207,36 +207,88 @@ function DoraCards({ dora }: { dora: DoraWire }) {
 
 function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
   const { project } = useProjectContext();
+  const [open, setOpen] = useState(false);
   const s = STATUS[d.status];
   const approvable =
     d.status === "DEPLOY_PENDING" && can(project.myRole, "MAINTAINER");
   return (
-    <div className="it" role="listitem">
-      <span className="stt">
-        <Icon of={s.icon} style={{ color: s.tone }} />
-        {s.label}
-      </span>
-      <span className="mono">
-        {d.imageTag ?? d.workloadName ?? d.deploymentId.slice(0, 8)}
-      </span>
-      {d.commitSha !== null && (
-        <span className="mono c3">{d.commitSha.slice(0, 7)}</span>
-      )}
-      <span className="c3">{TRIGGER[d.triggeredBy]}</span>
-      {d.rolloutSessionId !== null && (
-        <Link
-          to="/app/projects/$projectId/rollouts/$rolloutId"
-          params={{ projectId: project.id, rolloutId: d.rolloutSessionId }}
-          className="c3"
+    <>
+      <div className="it" role="listitem">
+        <span className="stt">
+          <Icon of={s.icon} style={{ color: s.tone }} />
+          {s.label}
+        </span>
+        <span className="mono">
+          {d.imageTag ?? d.workloadName ?? d.deploymentId.slice(0, 8)}
+        </span>
+        {d.commitSha !== null && (
+          <span className="mono c3">{d.commitSha.slice(0, 7)}</span>
+        )}
+        <span className="c3">{TRIGGER[d.triggeredBy]}</span>
+        {d.rolloutSessionId !== null && (
+          <Link
+            to="/app/projects/$projectId/rollouts/$rolloutId"
+            params={{ projectId: project.id, rolloutId: d.rolloutSessionId }}
+            className="c3"
+          >
+            xem rollout
+          </Link>
+        )}
+        <span className="c3" style={{ marginLeft: "auto" }}>
+          {formatDateTime(d.lastEventAt)}
+        </span>
+        {approvable && <ApproveButton deployment={d} />}
+        <button
+          type="button"
+          className="btn"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
         >
-          xem rollout
-        </Link>
-      )}
-      <span className="c3" style={{ marginLeft: "auto" }}>
-        {formatDateTime(d.lastEventAt)}
-      </span>
-      {approvable && <ApproveButton deployment={d} />}
-    </div>
+          Nhật ký
+        </button>
+      </div>
+      {open && <DeploymentLog deploymentId={d.deploymentId} />}
+    </>
+  );
+}
+
+/**
+ * [Plan #45] Mọi sự kiện của một lần deploy (§9 `GET …/deployments/:deploymentId/logs`) — `detail`
+ * là metadata máy chủ đã che bí mật: lý do lỗi, image khôi phục, repo, ref.
+ */
+function DeploymentLog({ deploymentId }: { deploymentId: string }) {
+  const { project } = useProjectContext();
+  const logs = useQuery({
+    queryKey: qk.deploymentLogs(project.id, deploymentId),
+    queryFn: () => deploymentApi.logs(project.id, deploymentId),
+  });
+  if (logs.isPending) return <Loading />;
+  if (logs.isError) return <ErrorState error={logs.error} />;
+  return (
+    <ol
+      className="lst"
+      aria-label={`Nhật ký deploy ${deploymentId.slice(0, 8)}`}
+    >
+      {logs.data.events.map((e) => (
+        <li key={e.id} className="it">
+          <span className="stt">{STATUS[e.eventType].label}</span>
+          <span className="c3">{TRIGGER[e.triggeredBy]}</span>
+          {e.pipelineId !== null && (
+            <span className="mono c3">{e.pipelineId}</span>
+          )}
+          {e.detail !== null && (
+            <span className="mono c3">
+              {Object.entries(e.detail)
+                .map(([k, v]) => `${k}: ${String(v)}`)
+                .join(" · ")}
+            </span>
+          )}
+          <span className="c3" style={{ marginLeft: "auto" }}>
+            {formatDateTime(e.occurredAt)}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
