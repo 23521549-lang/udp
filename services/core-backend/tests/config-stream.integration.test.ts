@@ -8,6 +8,7 @@ import { createApp } from "../src/app.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { API, testWorld, type Actor, type TestWorld } from "./helpers/api.js";
 import {
+  noRepoSource,
   inertCloudPlatform,
   inertProvisioning,
   noDomainAdapters,
@@ -32,6 +33,7 @@ const app = createApp({
   }),
   oidcIssuer: null,
   cloud: inertCloudPlatform,
+  repoSource: noRepoSource,
   domainRegistry: noDomainAdapters,
   provisioning: inertProvisioning,
 });

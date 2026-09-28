@@ -300,6 +300,28 @@ describe("ranh giới package", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("[v4.11, Plan #48] mã template Golden Path là mã của KHÁCH: chỉ entry công khai của provider", () => {
+    // Developer chép nguyên cây này vào repo của họ — một import nội bộ (`@udp/config`, `./testing`,
+    // lõi đánh giá) là mã không chạy được ngoài monorepo
+    const golden = byName.get("@udp/golden-path") as Pkg;
+    const allowed = new Set([
+      "@udp/openfeature-provider",
+      "@udp/openfeature-provider/metrics",
+    ]);
+    const offenders: string[] = [];
+    for (const dir of ["templates/node/src", "templates/node/tests"]) {
+      for (const file of sourceFiles(join(golden.dir, dir))) {
+        for (const m of readFileSync(file, "utf8").matchAll(
+          /from\s+"(@udp\/[^"]*)"/g,
+        )) {
+          if (!allowed.has(m[1] as string))
+            offenders.push(`${file.replace(ROOT, "")}: ${String(m[1])}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("mỗi package khai đúng những @udp/* mà nó thật sự import", () => {
     const problems: string[] = [];
     for (const p of packages) {

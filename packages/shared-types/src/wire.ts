@@ -1489,6 +1489,77 @@ export const pipelineTemplateResponseWire = z
   .object({ provider: z.string(), content: z.string() })
   .strict();
 
+// ------------------------------------------------------------- Golden Path (§11, Plan #48)
+
+export const goldenPathFileWire = z
+  .object({ path: z.string().min(1), content: z.string() })
+  .strict();
+
+/**
+ * `GET /projects/:id/golden-path` — cây §11.1 của runtime project, kèm pipeline của tool CI/CD đang
+ * bật khi sinh được. `notes` nói vì sao thiếu gì (chưa bật CI/CD, chưa có registry ⇒ `REGISTRY_REF`
+ * còn nguyên) — trang không phải tự đoán.
+ */
+export const goldenPathResponseWire = z
+  .object({
+    runtime: z.enum(["nodejs", "python"]),
+    slug: z.string(),
+    files: z.array(goldenPathFileWire),
+    pipeline: z
+      .object({ provider: z.string(), path: z.string(), content: z.string() })
+      .strict()
+      .nullable(),
+    notes: z.array(z.string()),
+  })
+  .strict();
+
+export type GoldenPathResponseWire = z.infer<typeof goldenPathResponseWire>;
+
+export const REPO_SCAN_FINDING_IDS = [
+  "runtime",
+  "dockerfile",
+  "metrics-endpoint",
+  "openfeature",
+  "udp-provider",
+  "udp-middleware",
+  "service-version",
+  "pipeline",
+] as const;
+
+export const repoScanFindingWire = z
+  .object({
+    id: z.enum(REPO_SCAN_FINDING_IDS),
+    status: z.enum(["ok", "missing", "unknown"]),
+    detail: z.string(),
+    evidence: z.array(z.string()),
+    suggestion: z
+      .object({ text: z.string(), file: goldenPathFileWire.optional() })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+/** Kết quả quét repo (§11.2) — cũng là hình được lưu ở `projects.repo_scan` */
+export const repoScanWire = z
+  .object({
+    scannedAt: z.string().datetime(),
+    repoUrl: z.string(),
+    host: z.enum(["github", "gitlab"]),
+    runtime: z.string().nullable(),
+    framework: z.string().nullable(),
+    cicdTool: z.string().nullable(),
+    findings: z.array(repoScanFindingWire),
+    flagLevelReady: z.boolean(),
+    truncated: z.boolean(),
+  })
+  .strict();
+export type RepoScanWire = z.infer<typeof repoScanWire>;
+
+/** `GET` và `POST /projects/:id/repo-scan` — `scan: null` khi chưa quét lần nào */
+export const repoScanResponseWire = z
+  .object({ scan: repoScanWire.nullable() })
+  .strict();
+
 /**
  * `POST /webhooks/cicd/:projectId/:provider` và `POST /projects/:id/deployments/:deploymentId/approve`
  * — webhook nhận xong trả ngay, việc áp và theo dõi chạy ở hàng đợi `udp-deploy`.

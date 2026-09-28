@@ -23,6 +23,7 @@ import { rolloutApi } from "../rollout/rollout-api";
 import { RolloutStatusLabel } from "../rollout/rollout-status";
 import { ProjectStatus } from "./ProjectsPage";
 import { ProjectBar } from "./ProjectBar";
+import { RepoReadinessCard } from "../code/RepoReadinessCard";
 import { useProjectContext } from "./ProjectLayout";
 import { projectApi } from "./project-api";
 import { ROLE_LABEL } from "./roles";
@@ -170,6 +171,9 @@ export function OverviewPage() {
                 </>
               )}
             </div>
+            {project.creationMode === "IMPORT_EXISTING" && (
+              <RepoReadinessCard />
+            )}
           </div>
 
           <h2 className="h2">Environment</h2>

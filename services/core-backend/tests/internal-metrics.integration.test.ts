@@ -19,7 +19,11 @@ import { createRegistry } from "../src/modules/domain/domain-adapter.registry.js
 import { sealSecrets } from "../src/modules/domain/tool-secrets.js";
 import { datadogConfigSchema } from "../src/modules/monitoring-adapter/datadog/index.js";
 import { testWorld, type Actor, type TestWorld } from "./helpers/api.js";
-import { inertCloudPlatform, inertProvisioning } from "./helpers/inert-deps.js";
+import {
+  noRepoSource,
+  inertCloudPlatform,
+  inertProvisioning,
+} from "./helpers/inert-deps.js";
 
 /**
  * Plan #39 (D-P30) — Service 1 đo metrics THAY Service 3 qua `/internal/environments/:envId/…`:
@@ -59,6 +63,7 @@ const app = createApp({
   }),
   oidcIssuer: null,
   cloud: inertCloudPlatform,
+  repoSource: noRepoSource,
   domainRegistry: () => registry,
   provisioning: inertProvisioning,
 });

@@ -535,6 +535,19 @@ export const CICD_WEBHOOK = {
 } as const;
 
 /**
+ * [v4.11] Quét repo của Import Existing (§11.2, Plan #48 QĐ-5) qua API công khai của GitHub/GitLab.
+ * Trần giữ một lượt quét trong vài giây với repo thường và có đáy với repo khổng lồ: cây 20 000 mục
+ * (GitLab: 200 trang × 100), mỗi tệp 256 KiB, mỗi lời gọi 15 giây. Token chỉ dùng trong lượt quét.
+ */
+export const REPO_SCAN = {
+  maxTreeEntries: 20_000,
+  maxFileBytes: 262_144,
+  requestTimeoutMs: 15_000,
+  gitlabPageSize: 100,
+  tokenMaxLength: 500,
+} as const;
+
+/**
  * [v4.11] Theo dõi một lần deploy trên hàng đợi `udp-deploy` (Plan #36 QĐ-5). Hạn thật là
  * `progressDeadlineSeconds` của CHÍNH workload (Kubernetes điền 600 khi vắng); trần một lượt nằm
  * dưới `expireInSeconds` của hàng đợi, để pg-boss không coi một lượt còn sống là đã chết.

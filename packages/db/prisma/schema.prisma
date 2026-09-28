@@ -463,6 +463,9 @@ model Project {
   /// đều qua validator (mỗi cái hợp lệ so với trạng thái cũ) rồi đánh nhau ở job.
   domainSetVersion Int @default(0) @map("domain_set_version")
 
+  /// [v4.11, Plan #48] Kết quả quét repo mới nhất của Import Existing (§11.2) — không bao giờ chứa token.
+  repoScan Json? @map("repo_scan")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 

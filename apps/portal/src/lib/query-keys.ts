@@ -88,6 +88,9 @@ export const qk = {
   cicd: (projectId: string) => ["cicd", projectId] as const,
   pipelineTemplate: (projectId: string) =>
     ["pipelineTemplate", projectId] as const,
+  /** [Plan #48] Cây Golden Path và lần quét repo mới nhất (§11) */
+  goldenPath: (projectId: string) => ["goldenPath", projectId] as const,
+  repoScan: (projectId: string) => ["repoScan", projectId] as const,
   /** Plan #38: chi phí THỰC của project; `days` trong key — đổi cửa sổ mà số không đổi là thiếu nó */
   cost: (projectId: string, days: number) => ["cost", projectId, days] as const,
   cloud: (projectId: string) => ["cloud", projectId] as const,
@@ -149,6 +152,8 @@ export const NOT_ENV_SCOPED = {
   domainValidation: "kiểm trạng thái đích của cả project",
   cicd: "webhook CI/CD của project; environment nằm trong thân webhook (§8.3)",
   pipelineTemplate: "một pipeline cho MỌI env của project, env chọn theo nhánh",
+  goldenPath: "mã nguồn của project, một repo cho mọi env",
+  repoScan: "repo của project, một lần quét cho mọi env",
   cost: "chi phí cả project, chia theo environment ngay trong response",
   cloud: "credential cloud thuộc project, một bản cho mọi env (§4.3)",
   cloudSetup: "dữ liệu setup theo project và cloud, không theo env",

@@ -251,6 +251,11 @@ export interface PipelineTemplateParams {
   rolloutStrategy: "udp-driven" | "tool-driven";
   /** [v4.11, D-P28] Bước của mọi tool đang bật khai `pipelineSteps`; rỗng khi không có */
   steps: PipelineStep[];
+  /**
+   * [v4.11, Plan #48] `Project.languageRuntime` — bước test chạy lệnh và image của runtime đó
+   * (`nodejs`, `python`); runtime khác ⇒ bước test báo thiếu lệnh rồi dừng pipeline
+   */
+  languageRuntime: string;
 }
 
 /** CI/CD adapter mở rộng thêm phần webhook — §8.3 nhắc nhưng v3 không có trong interface */

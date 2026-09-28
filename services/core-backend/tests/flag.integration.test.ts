@@ -26,6 +26,7 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import {
+  noRepoSource,
   inertCloudPlatform,
   noDomainAdapters,
   inertProvisioning,
@@ -82,6 +83,7 @@ beforeAll(async () => {
       metricsFor: () => new FakeMetricsProvider(),
       oidcIssuer: null,
       cloud: inertCloudPlatform,
+      repoSource: noRepoSource,
       domainRegistry: noDomainAdapters,
       provisioning: inertProvisioning,
       flagService: createFlagServiceClient({
@@ -1035,6 +1037,7 @@ describe("lỗi cấu hình giữa hai service KHÔNG tới Portal như lỗi c�
       metricsFor: () => new FakeMetricsProvider(),
       oidcIssuer: null,
       cloud: inertCloudPlatform,
+      repoSource: noRepoSource,
       domainRegistry: noDomainAdapters,
       provisioning: inertProvisioning,
       flagService: createFlagServiceClient({

@@ -16,6 +16,7 @@ import { createApp } from "../src/app.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { API, as, testWorld } from "../tests/helpers/api.js";
 import {
+  noRepoSource,
   inertCloudPlatform,
   inertProvisioning,
   noDomainAdapters,
@@ -68,6 +69,7 @@ async function main(): Promise<void> {
     cloud: inertCloudPlatform,
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
+    repoSource: noRepoSource,
   });
   const world = testWorld(app, admin);
   try {

@@ -19,6 +19,7 @@ import {
   fillTemplate,
   notifyScript,
   templateValues,
+  TEST_IN_CONTAINER,
 } from "../../adapter-base/pipeline-template.js";
 
 /**
@@ -169,7 +170,7 @@ const jenkinsfile = (params: PipelineTemplateParams): string[] => [
   "    UDP_WEBHOOK_SECRET = credentials('udp-webhook-secret')",
   "  }",
   "  stages {",
-  "    stage('Test') { steps { sh 'npm ci && npm test' } }",
+  `    stage('Test') { steps { sh '${TEST_IN_CONTAINER}' } }`,
   ...stepStages(stepsOf(params, "before-build")),
   "    stage('Build và đẩy image') {",
   '      steps { sh \'docker build -t "$IMAGE_REF" . && docker push "$IMAGE_REF"\' }',

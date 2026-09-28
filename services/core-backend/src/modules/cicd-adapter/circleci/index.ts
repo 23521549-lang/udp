@@ -20,6 +20,7 @@ import {
   fillTemplate,
   notifyScript,
   templateValues,
+  TEST_IN_CONTAINER,
 } from "../../adapter-base/pipeline-template.js";
 
 /**
@@ -109,7 +110,7 @@ const config = (params: PipelineTemplateParams): string[] => [
   `          echo "export UDP_ENVIRONMENT=${environmentExpr("$CIRCLE_BRANCH")}" >> "$BASH_ENV"`,
   '          echo "export IMAGE_REF=%IMAGE%:$CIRCLE_SHA1" >> "$BASH_ENV"',
   "      - checkout",
-  "      - run: npm ci && npm test",
+  `      - run: ${TEST_IN_CONTAINER}`,
   ...stepRuns(stepsOf(params, "before-build")),
   '      - run: docker build -t "$IMAGE_REF" . && docker push "$IMAGE_REF"',
   ...stepRuns(stepsOf(params, "after-build")),

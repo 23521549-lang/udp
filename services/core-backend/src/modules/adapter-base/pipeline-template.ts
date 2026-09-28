@@ -22,10 +22,41 @@ export function fillTemplate(
     .replace(/%([A-Z_]+)%/g, (whole, key: string) => values[key] ?? whole)}\n`;
 }
 
+/**
+ * [Plan #48 QĐ-4] Lệnh và image của bước test theo runtime — trước đó sáu template ghim `npm test`, sai
+ * với mọi project Python. Lệnh tuân luật ký tự của D-P28 và không có `"`/`:` (được đặt trong
+ * `sh -c "…"` và trong chuỗi YAML nháy kép). Runtime lạ ⇒ bước test DỪNG pipeline với lời nhắn: một
+ * pipeline xanh mà không test gì tệ hơn một pipeline đỏ nói rõ thiếu gì.
+ */
+const TEST_BY_RUNTIME: Record<string, { command: string; image: string }> = {
+  nodejs: { command: "npm ci && npm test", image: "node:22-alpine" },
+  python: {
+    command: "pip install -r requirements-dev.txt && pytest -q",
+    image: "python:3.12-slim",
+  },
+};
+const UNKNOWN_RUNTIME_TEST = {
+  command:
+    "echo Chua co lenh test cho runtime cua project - them vao pipeline && exit 1",
+  image: "alpine:3.20",
+};
+
+export function testOf(languageRuntime: string): {
+  command: string;
+  image: string;
+} {
+  return TEST_BY_RUNTIME[languageRuntime] ?? UNKNOWN_RUNTIME_TEST;
+}
+
+/** Bước test chạy trong container của runtime — cho CI có Docker trên máy chạy (GitHub, CircleCI, Jenkins) */
+export const TEST_IN_CONTAINER =
+  'docker run --rm -v "$PWD:/w" -w /w %TEST_IMAGE% sh -c "%TEST%"';
+
 /** Giá trị chung mà mọi template điền vào */
 export function templateValues(
   params: PipelineTemplateParams,
 ): Record<string, string> {
+  const test = testOf(params.languageRuntime);
   const production =
     params.environments.find((e) => e.isProduction)?.name ?? "production";
   const branches = [
@@ -40,6 +71,8 @@ export function templateValues(
     BRANCH_LIST: branches.join(" "),
     FLAGS: params.flagKeys.join(","),
     ROLLOUT: params.rolloutStrategy,
+    TEST: test.command,
+    TEST_IMAGE: test.image,
   };
 }
 

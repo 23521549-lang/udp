@@ -99,6 +99,9 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "GET /projects/{id}/domains/CICD/webhook": wire.cicdStatusResponseWire,
   "POST /projects/{id}/domains/CICD/webhook-secret":
     wire.cicdSecretResponseWire,
+  "GET /projects/{id}/golden-path": wire.goldenPathResponseWire,
+  "GET /projects/{id}/repo-scan": wire.repoScanResponseWire,
+  "POST /projects/{id}/repo-scan": wire.repoScanResponseWire,
   "GET /projects/{id}/domains/CICD/pipeline-template":
     wire.pipelineTemplateResponseWire,
   /** CI gọi, không phải Portal — nhưng đi `sendJson` nên cũng có mẫu và schema */

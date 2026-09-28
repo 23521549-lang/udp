@@ -34,6 +34,7 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import {
+  noRepoSource,
   inertCloudPlatform,
   noDomainAdapters,
   inertProvisioning,
@@ -129,6 +130,7 @@ beforeAll(async () => {
     metricsFor: () => fake,
     oidcIssuer: null,
     cloud: inertCloudPlatform,
+    repoSource: noRepoSource,
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
     flagService: createFlagServiceClient({
@@ -407,6 +409,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
       metricsFor: () => fake,
       oidcIssuer: null,
       cloud: inertCloudPlatform,
+      repoSource: noRepoSource,
       domainRegistry: noDomainAdapters,
       provisioning: inertProvisioning,
       flagService: createFlagServiceClient({
@@ -432,6 +435,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
       metricsFor: () => fake,
       oidcIssuer: null,
       cloud: inertCloudPlatform,
+      repoSource: noRepoSource,
       domainRegistry: noDomainAdapters,
       provisioning: inertProvisioning,
       // Client thật, chỉ `track` bị thay — mọi lời gọi khác giữ đúng hợp đồng

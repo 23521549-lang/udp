@@ -369,3 +369,45 @@ details.cardc .q {
   font-weight: 600;
   color: var(--ink);
 }
+
+/* [Plan #48] Trang Mã nguồn: danh sách tệp chọn được, form quét, hàng phát hiện nhiều dòng */
+.lst.files button.it {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lst.files button.it:hover {
+  background: var(--hover);
+}
+.lst.files button.it[aria-pressed="true"] {
+  background: var(--active);
+}
+.scanform {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 6px;
+}
+.scanform .inp {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+}
+.lst div.it.finding {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.lst div.it.finding .head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}

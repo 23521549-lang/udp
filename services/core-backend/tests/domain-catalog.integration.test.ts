@@ -20,7 +20,11 @@ import {
   type Actor,
   type TestWorld,
 } from "./helpers/api.js";
-import { inertCloudPlatform, inertProvisioning } from "./helpers/inert-deps.js";
+import {
+  noRepoSource,
+  inertCloudPlatform,
+  inertProvisioning,
+} from "./helpers/inert-deps.js";
 
 /**
  * `GET /domains/catalog` (Plan #27 AC-1) — dựng TỪ registry, và phép kiểm DƯƠNG TÍNH của
@@ -42,6 +46,7 @@ const appWith = (registry: DomainAdapterRegistry) =>
     }),
     oidcIssuer: null,
     cloud: inertCloudPlatform,
+    repoSource: noRepoSource,
     domainRegistry: () => Promise.resolve(registry),
     provisioning: inertProvisioning,
   });

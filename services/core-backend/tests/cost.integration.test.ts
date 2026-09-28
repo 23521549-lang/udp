@@ -17,6 +17,7 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import {
+  noRepoSource,
   inertCloudPlatform,
   inertProvisioning,
   noDomainAdapters,
@@ -54,6 +55,7 @@ const appWith = (cluster: WithCluster | null) =>
     }),
     oidcIssuer: null,
     cloud: inertCloudPlatform,
+    repoSource: noRepoSource,
     domainRegistry: noDomainAdapters,
     provisioning: { ...inertProvisioning, withCluster: cluster },
   });

@@ -17,7 +17,11 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import { simCloudPlatform } from "./helpers/cloud-platform.js";
-import { inertProvisioning, noDomainAdapters } from "./helpers/inert-deps.js";
+import {
+  noRepoSource,
+  inertProvisioning,
+  noDomainAdapters,
+} from "./helpers/inert-deps.js";
 
 /**
  * Provisioning qua HTTP (Plan #28 P5: AC-7, AC-8) trên database thật; cloud là kế hoạch AWS
@@ -51,6 +55,7 @@ const appWith = (runtime: ProvisioningRuntime) =>
     }),
     oidcIssuer: null,
     cloud: simCloudPlatform(),
+    repoSource: noRepoSource,
     domainRegistry: noDomainAdapters,
     provisioning: runtime,
   });

@@ -123,6 +123,24 @@ const stepTasks = (
     ...step.commands.map((c) => `              ${c}`),
   ]);
 
+/** [Plan #48 QĐ-4] Test trong image của runtime, trên workspace mã nguồn — trước build và mọi bước khác */
+const TEST_TASK = [
+  "    - name: test",
+  "      workspaces:",
+  "        - name: source",
+  "          workspace: source",
+  "      taskSpec:",
+  "        workspaces: [{ name: source }]",
+  "        steps:",
+  "          - name: run",
+  "            image: %TEST_IMAGE%",
+  "            workingDir: $(workspaces.source.path)",
+  "            script: |",
+  "              #!/bin/sh",
+  "              set -e",
+  "              %TEST%",
+];
+
 const pipeline = (params: PipelineTemplateParams): string[] => {
   const before = stepsOf(params, "before-build");
   const after = stepsOf(params, "after-build");
@@ -144,11 +162,10 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     "  workspaces:",
     "    - name: source",
     "  tasks:",
-    ...stepTasks(before, []),
+    ...TEST_TASK,
+    ...stepTasks(before, ["test"]),
     "    - name: build-and-push",
-    ...(before.length === 0
-      ? []
-      : [`      runAfter: [${before.map(stepId).join(", ")}]`]),
+    `      runAfter: [${["test", ...before.map(stepId)].join(", ")}]`,
     "      taskRef: { name: kaniko }",
     "      params:",
     "        - name: IMAGE",

@@ -21,7 +21,11 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import { simCloudPlatform } from "./helpers/cloud-platform.js";
-import { inertCloudPlatform, inertProvisioning } from "./helpers/inert-deps.js";
+import {
+  noRepoSource,
+  inertCloudPlatform,
+  inertProvisioning,
+} from "./helpers/inert-deps.js";
 
 /**
  * Plan #37 AC-2..AC-5 trên registry THẬT của sản phẩm: export có tên của mười bốn adapter, bước
@@ -222,6 +226,7 @@ beforeAll(async () => {
     }),
     oidcIssuer: null,
     cloud: inertCloudPlatform,
+    repoSource: noRepoSource,
     domainRegistry: () => product,
     provisioning: inertProvisioning,
   });
@@ -312,6 +317,7 @@ describe("CLOUD_MISMATCH là lý do chặn provisioning (credential đổi cloud
       }),
       oidcIssuer: null,
       cloud: simCloudPlatform(),
+      repoSource: noRepoSource,
       domainRegistry: () => product,
       provisioning: { ...inertProvisioning, egressCidrs: ["203.0.113.0/24"] },
     });

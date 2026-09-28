@@ -30,7 +30,11 @@ import {
   type ProjectEnv,
   type TestWorld,
 } from "./helpers/api.js";
-import { inertCloudPlatform, inertProvisioning } from "./helpers/inert-deps.js";
+import {
+  noRepoSource,
+  inertCloudPlatform,
+  inertProvisioning,
+} from "./helpers/inert-deps.js";
 
 /**
  * Plan #31 AC-5 — `probe()` của Service 1 dùng nguồn metrics theo binding `metrics.query` CỦA
@@ -60,6 +64,7 @@ const app = createApp({
   }),
   oidcIssuer: null,
   cloud: inertCloudPlatform,
+  repoSource: noRepoSource,
   domainRegistry: () => registry,
   provisioning: inertProvisioning,
 });

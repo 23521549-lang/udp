@@ -90,6 +90,7 @@ const PARAMS: PipelineTemplateParams = {
   registryRef: "ghcr.io/acme",
   flagKeys: ["checkout_v2", "search"],
   rolloutStrategy: "udp-driven",
+  languageRuntime: "nodejs",
 };
 
 /** HMAC-SHA256 hex — bộ ký mẫu cho nhà cung cấp dùng tiền tố + hex */
@@ -224,6 +225,26 @@ export function runCicdSuite(
           );
         }
         assert(!/%[A-Z_]+%/.test(text), "template còn chỗ trống chưa điền");
+      },
+    );
+
+    api.it(
+      "[Plan #48] bước test theo runtime: lệnh và image của runtime, runtime lạ dừng pipeline",
+      () => {
+        const node = adapter.renderPipelineTemplate(PARAMS);
+        assert(node.includes("npm ci && npm test"), "nodejs thiếu lệnh npm");
+        const python = adapter.renderPipelineTemplate({
+          ...PARAMS,
+          languageRuntime: "python",
+        });
+        assert(python.includes("pytest -q"), "python thiếu pytest");
+        assert(python.includes("python:3.12-slim"), "python thiếu image");
+        assert(!python.includes("npm"), "python vẫn chạy npm");
+        const other = adapter.renderPipelineTemplate({
+          ...PARAMS,
+          languageRuntime: "java",
+        });
+        assert(other.includes("exit 1"), "runtime lạ không dừng pipeline");
       },
     );
 

@@ -12,6 +12,8 @@ import {
 import { tagOf } from "../src/modules/cicd/cicd-webhook.service.js";
 import {
   imagePatch,
+  VERSION_LABEL,
+  versionLabelOf,
   WORKLOAD_KINDS,
   type WorkloadState,
 } from "../src/modules/cicd/workload.js";
@@ -226,6 +228,26 @@ describe("patch workload (QĐ-4)", () => {
     ) as { spec: { template: { spec: { imagePullSecrets: unknown[] } } } };
     expect(withPull.spec.template.spec.imagePullSecrets).toHaveLength(2);
     expect(imagePatch(state, "api", "x:1")).toBeNull();
+  });
+
+  it("[Plan #48] nhãn pod app.kubernetes.io/version đi cùng image (áp lẫn rollback); nhãn không hợp lệ ⇒ bỏ qua", () => {
+    const labelsOf = (image: string): unknown =>
+      (
+        imagePatch(state, "web", image) as {
+          spec: { template: { metadata?: { labels: unknown } } };
+        }
+      ).spec.template.metadata?.labels;
+    expect(labelsOf("ghcr.io/acme/web:0123456")).toEqual({
+      [VERSION_LABEL]: "0123456",
+    });
+    expect(labelsOf("localhost:5000/web")).toEqual({
+      [VERSION_LABEL]: "latest",
+    });
+    expect(versionLabelOf(`web@sha256:${"ab".repeat(32)}`)).toBe(
+      "abababababab",
+    );
+    expect(versionLabelOf(`web:${"x".repeat(64)}`)).toBeNull();
+    expect(labelsOf(`web:${"x".repeat(64)}`)).toBeUndefined();
   });
 
   it("phán quyết Deployment: chưa quan sát generation mới ⇒ rolling; quá hạn ⇒ stuck", () => {

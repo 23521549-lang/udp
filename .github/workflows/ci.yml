@@ -76,6 +76,16 @@ jobs:
       - run: ruff format --check .
       - run: mypy
       - run: pytest -q
+      # [Plan #48] Template Python của Golden Path là mã developer chép nguyên văn: cùng cổng với SDK.
+      # `udp-openfeature` trong requirements đã thoả bởi bản cài từ sdks/python ở trên.
+      - name: template Python của Golden Path
+        working-directory: packages/golden-path/templates/python
+        run: |
+          python -m pip install -r requirements-dev.txt
+          ruff check --config ../../../../sdks/python/pyproject.toml .
+          ruff format --config ../../../../sdks/python/pyproject.toml --check .
+          mypy --config-file ../../../../sdks/python/pyproject.toml app tests
+          pytest -q -p no:cacheprovider
 
   test:
     name: full test suite on a scratch database

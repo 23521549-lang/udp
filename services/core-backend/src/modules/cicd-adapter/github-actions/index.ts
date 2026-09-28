@@ -20,6 +20,7 @@ import {
   fillTemplate,
   notifyScript,
   templateValues,
+  TEST_IN_CONTAINER,
 } from "../../adapter-base/pipeline-template.js";
 import { githubOwner } from "../../adapter-base/github.js";
 
@@ -105,7 +106,7 @@ const workflow = (params: PipelineTemplateParams): string[] => [
   `          echo "UDP_ENVIRONMENT=${environmentExpr("$GITHUB_REF_NAME")}" >> "$GITHUB_ENV"`,
   "      - uses: actions/checkout@v4",
   "      - name: Test",
-  "        run: npm test",
+  `        run: ${TEST_IN_CONTAINER}`,
   ...stepLines(stepsOf(params, "before-build")),
   "      - name: Build và đẩy image",
   '        run: docker build -t "$IMAGE_REF" . && docker push "$IMAGE_REF"',

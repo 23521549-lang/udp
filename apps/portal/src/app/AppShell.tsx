@@ -16,6 +16,7 @@ import {
   Menu,
   Moon,
   Rocket,
+  FileCode2,
   Search,
   Server,
   Settings2,
@@ -177,6 +178,15 @@ function ProjectNav({ projectId }: { projectId: string }) {
         activeOptions={sub}
       >
         <NavBody icon={Rocket}>Deploy</NavBody>
+      </Link>
+      <Link
+        {...NAV}
+        to="/app/projects/$projectId/code"
+        params={params}
+        search={keep}
+        activeOptions={sub}
+      >
+        <NavBody icon={FileCode2}>Mã nguồn</NavBody>
       </Link>
       <Link
         {...NAV}

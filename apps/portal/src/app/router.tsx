@@ -18,6 +18,7 @@ import { AdminUsersPage } from "../features/admin/pages/AdminUsersPage";
 import { useAuthStore } from "../features/auth/auth-store";
 import { LoginPage, RegisterPage } from "../features/auth/AuthPages";
 import { DeploymentsPage } from "../features/deployment/DeploymentsPage";
+import { CodePage } from "../features/code/CodePage";
 import { DomainDetailPage } from "../features/domain/DomainDetailPage";
 import { DomainsPage } from "../features/domain/DomainsPage";
 import { InfraPage } from "../features/provisioning/InfraPage";
@@ -215,6 +216,13 @@ const deploymentsRoute = createRoute({
   component: DeploymentsPage,
 });
 
+/** [Plan #48] Mã nguồn: Golden Path (Create New) hoặc kết quả quét repo (Import Existing) — §11 */
+const codeRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "code",
+  component: CodePage,
+});
+
 const domainsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "domains",
@@ -342,6 +350,7 @@ export const routeTree = rootRoute.addChildren([
       rolloutsRoute,
       rolloutDetailRoute,
       deploymentsRoute,
+      codeRoute,
       domainsRoute,
       domainDetailRoute,
       infraRoute,

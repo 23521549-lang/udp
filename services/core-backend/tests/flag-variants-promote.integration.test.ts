@@ -16,6 +16,7 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import {
+  noRepoSource,
   inertCloudPlatform,
   inertProvisioning,
   noDomainAdapters,
@@ -47,6 +48,7 @@ beforeAll(async () => {
     metricsFor: () => new FakeMetricsProvider(),
     oidcIssuer: null,
     cloud: inertCloudPlatform,
+    repoSource: noRepoSource,
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
     flagService: createFlagServiceClient({

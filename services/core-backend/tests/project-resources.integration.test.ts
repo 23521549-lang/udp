@@ -26,6 +26,7 @@ import {
 } from "./helpers/api.js";
 import { tapServiceLog, type LogTap } from "./helpers/log-tap.js";
 import {
+  noRepoSource,
   inertCloudPlatform,
   noDomainAdapters,
   inertProvisioning,
@@ -148,6 +149,7 @@ beforeAll(async () => {
     metricsFor: () => new FakeMetricsProvider(),
     oidcIssuer: null,
     cloud: inertCloudPlatform,
+    repoSource: noRepoSource,
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
     flagService: createFlagServiceClient({

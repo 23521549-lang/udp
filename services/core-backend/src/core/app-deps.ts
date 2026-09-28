@@ -23,6 +23,10 @@ import {
 import type { ClusterAccess } from "@udp/adapter-core";
 import type { EnqueueDeploy } from "../modules/cicd/deploy.service.js";
 import type { EnqueueJob } from "../modules/provisioning/provisioning.service.js";
+import {
+  createRepoSourceFactory,
+  type RepoSourceFactory,
+} from "../modules/golden-path/repo-source.js";
 
 /**
  * Phụ thuộc RA NGOÀI tiến trình của Service 1 — thứ test phải thay được mà không
@@ -70,6 +74,11 @@ export interface AppDeps {
    * gửi job sang hàng đợi — `null` khi tiến trình không chạy hàng đợi (đối soát gửi thay).
    */
   provisioning: ProvisioningRuntime;
+  /**
+   * [v4.11] Nguồn repo cho quét Import Existing (Plan #48 QĐ-5) — GitHub/GitLab qua `fetch`; test
+   * tiêm nguồn trong bộ nhớ, không bao giờ gọi mạng thật.
+   */
+  repoSource: RepoSourceFactory;
 }
 
 export type WithCluster = <T>(
@@ -123,6 +132,7 @@ export function defaultAppDeps(): AppDeps {
       withCluster: null,
       scanDrift: null,
     },
+    repoSource: createRepoSourceFactory(),
   };
 }
 

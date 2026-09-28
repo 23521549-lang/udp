@@ -106,11 +106,42 @@ export const imageOf = (
   state.spec?.template?.spec?.containers?.find((c) => c.name === container)
     ?.image;
 
+/** Nhãn pod mang phiên bản đang chạy — manifest Golden Path đọc nó vào `service.version` (§6.6) */
+export const VERSION_LABEL = "app.kubernetes.io/version";
+
+const LABEL_VALUE = /^([A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?)?$/;
+
+/**
+ * [Plan #48 QĐ-3] Phiên bản của một image thành giá trị nhãn Kubernetes: tag (`…/web:0123456` ⇒
+ * `0123456`), digest ⇒ 12 chữ số hex đầu, không tag ⇒ `latest`. `null` khi không thành nhãn hợp lệ
+ * (dài quá 63 ký tự, ký tự lạ) — patch khi đó không đụng nhãn, thay vì bị API server từ chối cả lần áp.
+ */
+export function versionLabelOf(image: string): string | null {
+  const at = image.indexOf("@");
+  const name = image.slice(image.lastIndexOf("/") + 1);
+  const colon = name.lastIndexOf(":");
+  const version =
+    at >= 0
+      ? image
+          .slice(at + 1)
+          .replace(/^sha256:/, "")
+          .slice(0, 12)
+      : colon >= 0
+        ? name.slice(colon + 1)
+        : "latest";
+  return version.length <= 63 && LABEL_VALUE.test(version) ? version : null;
+}
+
 /**
  * Patch đổi image của MỘT container và thêm `udp-registry-pull` vào `imagePullSecrets` nếu chưa có
  * (Plan #35) — không gì khác: không `spec.strategy`, không trạng thái rollout (I25). `null` khi
  * workload không có container mang tên đó: thêm một container mới vào pod là việc của Golden
  * Path, không phải của webhook.
+ *
+ * [Plan #48 QĐ-3] Kèm nhãn pod `app.kubernetes.io/version` = phiên bản của image: `service.version`
+ * trên metric (qua Downward API trong manifest) đi CÙNG image, cả lúc áp lẫn lúc rollback — không có
+ * nó thì canary SERVICE_LEVEL so hai phiên bản mang cùng một nhãn. Merge patch GỘP `labels`, nhãn
+ * khác của pod giữ nguyên.
  */
 export function imagePatch(
   state: WorkloadState,
@@ -120,10 +151,14 @@ export function imagePatch(
   const containers = state.spec?.template?.spec?.containers ?? [];
   if (!containers.some((c) => c.name === container)) return null;
   const pullSecrets = state.spec?.template?.spec?.imagePullSecrets ?? [];
+  const version = versionLabelOf(image);
   return {
     metadata: { resourceVersion: state.metadata?.resourceVersion },
     spec: {
       template: {
+        ...(version === null
+          ? {}
+          : { metadata: { labels: { [VERSION_LABEL]: version } } }),
         spec: {
           containers: containers.map((c) =>
             c.name === container ? { ...c, image } : c,

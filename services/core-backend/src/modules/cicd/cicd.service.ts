@@ -109,6 +109,7 @@ export async function pipelineTemplate(
       where: { id: projectId },
       select: {
         name: true,
+        languageRuntime: true,
         environments: {
           select: { name: true, isProduction: true },
           orderBy: { rank: "asc" },
@@ -142,6 +143,7 @@ export async function pipelineTemplate(
       steps: stepsOfEnabled(registry, enabled, projectSlug),
       environments: project.environments,
       registryRef,
+      languageRuntime: project.languageRuntime,
       flagKeys: tracked.map((t) => t.flag.key).sort(),
       rolloutStrategy: bindings.some(
         (b) => b.capabilityId === "traffic.control",

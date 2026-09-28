@@ -24,6 +24,7 @@ import {
   type SimCloudPlatform,
 } from "./helpers/cloud-platform.js";
 import {
+  noRepoSource,
   inertCloudPlatform,
   noDomainAdapters,
   inertProvisioning,
@@ -60,6 +61,7 @@ const appOn = (cloud: CloudPlatform) =>
     }),
     oidcIssuer: null,
     cloud,
+    repoSource: noRepoSource,
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
   });

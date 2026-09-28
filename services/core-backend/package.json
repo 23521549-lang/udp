@@ -17,6 +17,7 @@
     "@udp/cloud-adapters": "workspace:*",
     "@udp/config": "workspace:*",
     "@udp/db": "workspace:*",
+    "@udp/golden-path": "workspace:*",
     "@udp/http": "workspace:*",
     "@udp/metrics-provider": "workspace:*",
     "@udp/shared-types": "workspace:*",

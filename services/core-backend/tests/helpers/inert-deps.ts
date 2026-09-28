@@ -4,6 +4,8 @@ import {
 } from "../../src/modules/cloud/cloud.platform.js";
 import type { ProvisioningRuntime } from "../../src/core/app-deps.js";
 import type { DomainAdapterRegistry } from "../../src/modules/domain/domain-adapter.registry.js";
+import type { RepoSourceFactory } from "../../src/modules/golden-path/repo-source.js";
+import { UnprocessableError } from "@udp/http";
 
 /**
  * Phụ thuộc "trơ" cho test không đụng tới phần đó của `AppDeps` — mọi lời gọi tới chúng
@@ -32,4 +34,9 @@ export const inertProvisioning: ProvisioningRuntime = {
   enqueueDeploy: null,
   withCluster: null,
   scanDrift: null,
+};
+
+/** Không nguồn repo: route quét trả 422 rõ ràng thay vì gọi mạng thật (Plan #48) */
+export const noRepoSource: RepoSourceFactory = () => {
+  throw new UnprocessableError("test: không có nguồn repo");
 };
