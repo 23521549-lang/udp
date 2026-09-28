@@ -29,7 +29,7 @@ import {
 import { prisma as s1 } from "../src/core/db.js";
 import type { JobKitDeps } from "../src/jobs/job-kit.js";
 import { sweepDrift } from "../src/jobs/drift-scan.job.js";
-import { createJobKit } from "../src/jobs/job-kit.js";
+import { createJobKit, PhaseFailedError } from "../src/jobs/job-kit.js";
 import { createJobWorker } from "../src/jobs/job-worker.js";
 import { sweepOrphans } from "../src/jobs/orphan-scan.job.js";
 import type { ClusterRuntime } from "../src/modules/cluster/cluster-runtime.js";
@@ -136,6 +136,11 @@ function fakeClusters(): FakeClusters {
         return Promise.resolve();
       },
       accessFor: (info) => fakeAccess(info.clusterId),
+      boundToken: (_info, adminToken, identity) =>
+        Promise.resolve({
+          token: `bound-${identity}-${adminToken.token}`,
+          expiresAt: adminToken.expiresAt,
+        }),
     },
   };
 }
@@ -860,6 +865,32 @@ describe("lịch orphan-scan và drift-scan", { timeout: 120_000 }, () => {
       "staging",
     ]);
   });
+
+  it("[Plan #51] token cho Service 3: bound token của ĐÚNG identity, cùng địa chỉ và CA của cluster đã dựng", async () => {
+    const projectId = await readyProject();
+    const jobId = await seedJob(projectId);
+    const { registry } = domainsWith();
+    const clusters = fakeClusters();
+    await workerWith(registry, clusters).run(jobId, { final: false });
+    const issued = await createJobKit(
+      depsWith(registry, clusters),
+    ).projectClusterToken(projectId, "traffic");
+    const [built] = clusters.bootstrapped;
+    expect(issued.apiEndpoint).toBe(built?.apiEndpoint);
+    expect(issued.caData.length).toBeGreaterThan(0);
+    expect(issued.token).toBe(`bound-traffic-${String(built?.adminToken)}`);
+  });
+
+  it("[Plan #51] project chưa có cluster ⇒ lỗi vĩnh viễn, không token nào", async () => {
+    const projectId = await readyProject();
+    const { registry } = domainsWith();
+    await expect(
+      createJobKit(depsWith(registry, fakeClusters())).projectClusterToken(
+        projectId,
+        "traffic",
+      ),
+    ).rejects.toBeInstanceOf(PhaseFailedError);
+  });
 });
 
 /** Registry cho luồng áp domain: tool Monitoring thứ hai + một domain Tracing độc lập */
@@ -1282,6 +1313,7 @@ function appFor(
       enqueueDeploy: null,
       withCluster: null,
       scanDrift,
+      clusterToken: null,
     },
   });
   return { http, enqueued };

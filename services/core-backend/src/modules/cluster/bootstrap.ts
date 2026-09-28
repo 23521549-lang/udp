@@ -48,14 +48,28 @@ const READ = ["get", "list", "watch"];
 const saName = (identity: keyof typeof IDENTITY_SERVICE_ACCOUNTS): string =>
   IDENTITY_SERVICE_ACCOUNTS[identity].split("/")[1] ?? identity;
 
-/** §12.2 — trong namespace của environment */
+/**
+ * §12.2 — trong namespace của environment. [v4.11, Plan #51, D-P39] S1 là bên ghi SPEC của mọi đối tượng giao
+ * hàng: `Rollout` (strategy + template), `AnalysisTemplate` (tool-driven), `Canary` của Flagger.
+ */
 const WORKLOAD_RULES: PolicyRule[] = [
   { apiGroups: ["apps"], resources: ["deployments"], verbs: RW },
   { apiGroups: [""], resources: ["services", "configmaps"], verbs: RW },
-  { apiGroups: ["argoproj.io"], resources: ["rollouts"], verbs: RW },
+  {
+    apiGroups: ["argoproj.io"],
+    resources: ["rollouts", "analysistemplates"],
+    verbs: RW,
+  },
+  { apiGroups: ["flagger.app"], resources: ["canaries"], verbs: RW },
 ];
 
-/** §12.2 — đường traffic; rollout chỉ ĐỌC và qua subresource, không bao giờ `spec.template` */
+/**
+ * §12.2 — đường traffic; rollout chỉ ĐỌC và ghi qua subresource `status`, không bao giờ `spec.template`.
+ *
+ * [v4.11, Plan #51, D-P39] Bản trước cấp `rollouts/promote|abort|retry` — CRD của Argo Rollouts KHÔNG có các
+ * subresource đó: `kubectl argo rollouts promote|abort|retry` đều là patch lên `rollouts/status`. Với RBAC cũ,
+ * Service 3 không promote được trên cụm thật nào.
+ */
 const TRAFFIC_RULES: PolicyRule[] = [
   {
     apiGroups: ["networking.istio.io"],
@@ -67,9 +81,10 @@ const TRAFFIC_RULES: PolicyRule[] = [
   { apiGroups: ["argoproj.io"], resources: ["rollouts"], verbs: READ },
   {
     apiGroups: ["argoproj.io"],
-    resources: ["rollouts/promote", "rollouts/abort", "rollouts/retry"],
-    verbs: ["update", "patch"],
+    resources: ["rollouts/status"],
+    verbs: ["patch"],
   },
+  { apiGroups: ["flagger.app"], resources: ["canaries"], verbs: READ },
 ];
 
 /** Nguồn metrics sống trong `udp-system`: S3 chỉ được proxy tới service ở ĐÓ */

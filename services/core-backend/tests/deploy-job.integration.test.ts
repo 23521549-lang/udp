@@ -15,7 +15,7 @@ import {
 } from "../src/jobs/deploy.job.js";
 import { createJobKit } from "../src/jobs/job-kit.js";
 import { reconcileDeploys } from "../src/jobs/reconcile.js";
-import { ClusterCallFailedError } from "../src/modules/cluster/cluster-access.js";
+import { ClusterCallFailedError } from "@udp/cluster-access";
 import type { WorkloadState } from "../src/modules/cicd/workload.js";
 import { testWorld, type Actor, type TestWorld } from "./helpers/api.js";
 import { inertCloudPlatform, noDomainAdapters } from "./helpers/inert-deps.js";

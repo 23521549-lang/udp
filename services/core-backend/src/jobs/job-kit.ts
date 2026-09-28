@@ -2,6 +2,7 @@ import type {
   CloudAdapter,
   ClusterAccess,
   ClusterInfo,
+  ControlPlaneIdentity,
   ResolvedCredential,
 } from "@udp/adapter-core";
 import {
@@ -20,6 +21,7 @@ import type {
   AdminToken,
   ClusterRuntime,
 } from "../modules/cluster/cluster-runtime.js";
+import type { IssuedClusterToken } from "../modules/cluster/cluster-token.js";
 import { resolveCredential } from "../modules/credential/credential.resolver.js";
 import type { DomainAdapterRegistry } from "../modules/domain/domain-adapter.registry.js";
 import type {
@@ -278,14 +280,14 @@ export function createJobKit(deps: JobKitDeps) {
   }
 
   /**
-   * Cluster của project cho việc ngoài job hạ tầng (theo dõi deploy, hỏi chi phí, đo metrics):
-   * cluster lấy từ lượt PROVISION xong gần nhất, credential cloud ngắn hạn huỷ ngay sau khi xin
-   * token quản trị — access chỉ dựa vào token đó, nên sống tới `expiresAt` của nó (Plan #39).
+   * Cluster của project cho việc ngoài job hạ tầng (theo dõi deploy, hỏi chi phí, đo metrics, cấp token cho
+   * Service 3): cluster lấy từ lượt PROVISION xong gần nhất, credential cloud ngắn hạn huỷ ngay sau khi xin
+   * token quản trị — mọi thứ dựng từ đây chỉ dựa vào token đó, nên sống tới `expiresAt` của nó (Plan #39).
    * Project chưa có cluster ⇒ `PhaseFailedError` (thử lại không đổi được gì).
    */
-  async function projectClusterAccess(
+  async function projectCluster(
     projectId: string,
-  ): Promise<ResolvedAccess> {
+  ): Promise<{ info: ClusterInfo; admin: AdminToken }> {
     const job = await prisma.provisioningJob.findFirst({
       where: { projectId, jobType: "PROVISION", state: "DONE" },
       orderBy: { createdAt: "desc" },
@@ -298,11 +300,36 @@ export function createJobKit(deps: JobKitDeps) {
       if (cluster === null) {
         throw new PhaseFailedError("project chưa có cluster");
       }
-      return {
-        access: deps.clusters.accessFor(cluster.info, cluster.admin),
-        expiresAt: cluster.admin.expiresAt,
-      };
+      return cluster;
     });
+  }
+
+  async function projectClusterAccess(
+    projectId: string,
+  ): Promise<ResolvedAccess> {
+    const { info, admin } = await projectCluster(projectId);
+    return {
+      access: deps.clusters.accessFor(info, admin),
+      expiresAt: admin.expiresAt,
+    };
+  }
+
+  /**
+   * [v4.11, Plan #51] Bound token của MỘT identity trên cluster của project, cùng địa chỉ và CA của API
+   * server — thứ Service 3 cần để tự dựng `ClusterAccess` mà không bao giờ chạm credential cloud (ADR-06).
+   */
+  async function projectClusterToken(
+    projectId: string,
+    identity: ControlPlaneIdentity,
+  ): Promise<IssuedClusterToken> {
+    const { info, admin } = await projectCluster(projectId);
+    const bound = await deps.clusters.boundToken(info, admin, identity);
+    return {
+      apiEndpoint: info.apiEndpoint,
+      caData: info.caData,
+      token: bound.token,
+      expiresAt: bound.expiresAt,
+    };
   }
 
   async function withProjectCluster<T>(
@@ -370,6 +397,7 @@ export function createJobKit(deps: JobKitDeps) {
     clusterOf,
     clusterAccessOf,
     projectClusterAccess,
+    projectClusterToken,
     withProjectCluster,
     domainInput,
     withLease,

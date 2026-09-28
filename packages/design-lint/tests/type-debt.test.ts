@@ -59,7 +59,7 @@ const SELF = "packages/design-lint/tests/type-debt.test.ts";
 /**
  * Baseline ĐÃ ĐO (P23, 24/09/2026) — đổi nó là một quyết định, không phải một lần sửa test.
  *
- * Sáu chỉ thị: TSX-01..03 ở `cluster-access.test.ts` (ba SA của §12.2, và
+ * Sáu chỉ thị: TSX-01..03 ở `@udp/cluster-access` `tests/direct.test.ts` (ba SA của §12.2, và
  * `ReadOnlyKubernetesClient` không có `write`), TSX-04 ở `day2-drift.test.ts` (tầng kiểu
  * của I32 chiều c), TSX-05/06 ở `openfeature-provider` (kiểu của host và của constructor).
  */

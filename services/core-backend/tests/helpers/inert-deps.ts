@@ -34,6 +34,7 @@ export const inertProvisioning: ProvisioningRuntime = {
   enqueueDeploy: null,
   withCluster: null,
   scanDrift: null,
+  clusterToken: null,
 };
 
 /** Không nguồn repo: route quét trả 422 rõ ràng thay vì gọi mạng thật (Plan #48) */

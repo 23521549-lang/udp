@@ -1,7 +1,7 @@
 import type { KubernetesClient, ObjectRef } from "@udp/adapter-core";
 import type { DeploymentEventType, Prisma, PrismaClient } from "@udp/db";
 import { z } from "zod";
-import { ClusterCallFailedError } from "../modules/cluster/cluster-access.js";
+import { ClusterCallFailedError } from "@udp/cluster-access";
 import {
   imageOf,
   imagePatch,

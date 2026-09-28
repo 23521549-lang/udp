@@ -1,11 +1,18 @@
-import type { ClusterAccess, ClusterInfo } from "@udp/adapter-core";
+import {
+  IDENTITY_SERVICE_ACCOUNTS,
+  type ClusterAccess,
+  type ClusterInfo,
+  type ControlPlaneIdentity,
+} from "@udp/adapter-core";
+import {
+  adminTokenSource,
+  createDirectClusterAccess,
+  tokenRequestSource,
+  type BoundToken,
+  type KubeTransport,
+} from "@udp/cluster-access";
 import { createEgressFetch } from "../../core/egress/egress.js";
 import { bootstrapManifests, type BootstrapInput } from "./bootstrap.js";
-import {
-  createDirectClusterAccess,
-  type KubeTransport,
-} from "./cluster-access.js";
-import { adminTokenSource, tokenRequestSource } from "./token-source.js";
 
 /**
  * Truy cập cluster của tenant cho worker (Plan #28 QĐ-4) — cổng tiêm được: bản thật nói
@@ -28,6 +35,15 @@ export interface ClusterRuntime {
   /** ClusterAccess cho các pha sau: bound SA token theo identity, không bao giờ token admin */
   accessFor(info: ClusterInfo, admin: AdminToken): ClusterAccess;
   /**
+   * [v4.11, Plan #51] Bound SA token 1 giờ của MỘT identity, xin bằng token quản trị — cho route
+   * `POST /internal/clusters/:id/token` (Service 3 tự nói với cluster, ADR-06). Không lưu ở đâu cả (I24).
+   */
+  boundToken(
+    info: ClusterInfo,
+    admin: AdminToken,
+    identity: ControlPlaneIdentity,
+  ): Promise<BoundToken>;
+  /**
    * [v4.11, Plan #40] Xoá namespace của một environment vừa bỏ — bằng token ADMIN như
    * `bootstrap`: xoá namespace là quyền cấp cluster mà §12.2 không cho SA nào của UDP. Mọi thứ
    * `bootstrap` dựng cho environment đều nằm trong namespace đó. Đã không còn ⇒ thành công.
@@ -38,6 +54,18 @@ export interface ClusterRuntime {
     namespace: string,
   ): Promise<void>;
 }
+
+/** `TokenRequest` bằng token quản trị — nguồn token của mọi identity sau bootstrap */
+const boundTokens = (
+  info: ClusterInfo,
+  admin: AdminToken,
+  transport: KubeTransport,
+) =>
+  tokenRequestSource({
+    apiEndpoint: info.apiEndpoint,
+    transport,
+    authority: () => Promise.resolve(admin.token),
+  });
 
 export function createClusterRuntime(
   transportFor: (info: ClusterInfo) => KubeTransport,
@@ -75,12 +103,13 @@ export function createClusterRuntime(
         clusterId: info.clusterId,
         apiEndpoint: info.apiEndpoint,
         transport,
-        tokens: tokenRequestSource({
-          apiEndpoint: info.apiEndpoint,
-          transport,
-          authority: () => Promise.resolve(admin.token),
-        }),
+        tokens: boundTokens(info, admin, transport),
       });
+    },
+    boundToken(info, admin, identity) {
+      return boundTokens(info, admin, transportFor(info)).requestBoundToken(
+        IDENTITY_SERVICE_ACCOUNTS[identity],
+      );
     },
   };
 }

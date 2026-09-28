@@ -149,6 +149,7 @@ const app = createApp({
     enqueue: queue.enqueueJob,
     enqueueDeploy: queue.enqueueDeploy,
     withCluster: kit.withProjectCluster,
+    clusterToken: kit.projectClusterToken,
     scanDrift: async (projectId, domainType) => {
       await sweepDrift(kit, { only: [projectId], domainType });
     },

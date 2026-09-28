@@ -44,6 +44,7 @@ const provisioning: ProvisioningRuntime = {
   enqueueDeploy: null,
   withCluster: null,
   scanDrift: null,
+  clusterToken: null,
 };
 
 const appWith = (runtime: ProvisioningRuntime) =>

@@ -7,7 +7,7 @@ import {
   SYSTEM_NAMESPACE,
   type Manifest,
 } from "../src/modules/cluster/bootstrap.js";
-import type { KubeTransport } from "../src/modules/cluster/cluster-access.js";
+import type { KubeTransport } from "@udp/cluster-access";
 import { createClusterRuntime } from "../src/modules/cluster/cluster-runtime.js";
 
 /**
@@ -130,6 +130,25 @@ describe("manifest bootstrap (§12.2)", () => {
     );
     const rollouts = traffic.find((r) => r.resources.includes("rollouts"));
     expect(rollouts?.verbs).toEqual(["get", "list", "watch"]);
+    // [Plan #51, D-P39] promote/abort/retry là patch lên `rollouts/status` — subresource DUY NHẤT có thật
+    expect(
+      traffic
+        .flatMap((r) => r.resources)
+        .filter((x) => x.startsWith("rollouts/")),
+    ).toEqual(["rollouts/status"]);
+    expect(
+      traffic.find((r) => r.resources.includes("rollouts/status"))?.verbs,
+    ).toEqual(["patch"]);
+    expect(
+      traffic.find((r) => r.resources.includes("canaries"))?.verbs,
+    ).toEqual(["get", "list", "watch"]);
+    // S1 là bên ghi spec của mọi đối tượng giao hàng
+    for (const resource of ["rollouts", "analysistemplates", "canaries"]) {
+      expect(
+        workload.find((r) => r.resources.includes(resource))?.verbs,
+        resource,
+      ).toContain("patch");
+    }
     expect(
       workload.some((r) =>
         r.resources.some((x) =>

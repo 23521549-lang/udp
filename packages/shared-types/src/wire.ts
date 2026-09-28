@@ -1710,6 +1710,35 @@ export const internalMetricsSourceResponseWire = z
   })
   .strict();
 
+// ------------------------------------------------------------- Nội bộ S3 → S1: token cluster (Plan #51)
+
+/**
+ * `POST /internal/clusters/:id/token` (ADR-06, §9) — bound SA token để Service 3 tự nói với cluster của project.
+ * Tên identity theo §12.2; route chỉ cấp `traffic` (Plan #51 QĐ-2), nhưng schema nhận đủ ba để bên xin sai
+ * nhận 403 có nghĩa thay vì 400 "giá trị lạ".
+ */
+export const internalClusterTokenBodyWire = z
+  .object({ serviceAccount: z.enum(["workload", "traffic", "tooling"]) })
+  .strict();
+
+export type InternalClusterTokenBody = z.infer<
+  typeof internalClusterTokenBodyWire
+>;
+
+export const internalClusterTokenResponseWire = z
+  .object({
+    apiEndpoint: z.string().url(),
+    caData: z.string().min(1),
+    token: z.string().min(1),
+    /** ≤ 1 giờ kể từ lúc cấp (I24c) */
+    expiresAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+export type InternalClusterTokenResponse = z.infer<
+  typeof internalClusterTokenResponseWire
+>;
+
 // ------------------------------------------------------------- Environment (Plan #40)
 
 /** `GET /projects/:id/environments` — theo `rank` */

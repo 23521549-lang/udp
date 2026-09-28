@@ -13,7 +13,7 @@ import {
   pluralOf,
   type BoundToken,
   type KubeTransport,
-} from "../src/modules/cluster/cluster-access.js";
+} from "../src/direct.js";
 
 /**
  * [v4.10] `ClusterAccess` chế độ `direct` (§4.6) — AC-7 và AC-18.
@@ -101,6 +101,26 @@ describe("objectPath — hình path theo quy ước Kubernetes", () => {
         labelSelector: "app=web",
       }),
     ).toBe("/api/v1/namespaces/ns/pods?labelSelector=app%3Dweb");
+  });
+
+  it("[Plan #51] subresource `status` nối sau tên — đường ghi duy nhất của udp-traffic lên Rollout", () => {
+    expect(
+      objectPath({
+        apiVersion: "argoproj.io/v1alpha1",
+        kind: "Rollout",
+        namespace: "ns",
+        name: "r",
+        subresource: "status",
+      }),
+    ).toBe("/apis/argoproj.io/v1alpha1/namespaces/ns/rollouts/r/status");
+    expect(
+      objectPath({
+        apiVersion: "flagger.app/v1beta1",
+        kind: "Canary",
+        namespace: "ns",
+        name: "web",
+      }),
+    ).toBe("/apis/flagger.app/v1beta1/namespaces/ns/canaries/web");
   });
 });
 

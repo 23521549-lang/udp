@@ -56,6 +56,12 @@ export interface ObjectRef {
   namespace?: string;
   name?: string;
   labelSelector?: string;
+  /**
+   * [v4.11, Plan #51] Subresource của đối tượng. `status` là đường duy nhất mà `udp-traffic` được ghi lên một
+   * `Rollout` của Argo (§12.2, D-P39): promote, promote-full, abort, retry đều là patch lên `status` — đúng các
+   * patch mà `kubectl argo rollouts` gửi. Ghi `spec` của cùng đối tượng thì API server từ chối (I25).
+   */
+  subresource?: "status";
 }
 
 /**

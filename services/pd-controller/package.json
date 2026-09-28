@@ -11,6 +11,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@udp/adapter-core": "workspace:*",
+    "@udp/cluster-access": "workspace:*",
     "@udp/config": "workspace:*",
     "@udp/db": "workspace:*",
     "@udp/flag-snapshot": "workspace:*",

@@ -27,6 +27,7 @@ import {
   createRepoSourceFactory,
   type RepoSourceFactory,
 } from "../modules/golden-path/repo-source.js";
+import type { ClusterTokenIssuer } from "../modules/cluster/cluster-token.js";
 
 /**
  * Phụ thuộc RA NGOÀI tiến trình của Service 1 — thứ test phải thay được mà không
@@ -101,6 +102,11 @@ export interface ProvisioningRuntime {
    * cung cấp; `null` ⇒ route trả 503 thay vì giả vờ đã quét.
    */
   scanDrift: ((projectId: string, domainType: string) => Promise<void>) | null;
+  /**
+   * [v4.11, Plan #51] Bound SA token cho Service 3 (`POST /internal/clusters/:id/token`) — cần credential cloud,
+   * nên chỉ tiến trình chạy worker cung cấp; `null` ⇒ route trả 503.
+   */
+  clusterToken: ClusterTokenIssuer | null;
 }
 
 /** Gốc cây adapter của sản phẩm: `src/modules` (hay `dist/modules` khi đã build) */
@@ -131,6 +137,7 @@ export function defaultAppDeps(): AppDeps {
       enqueueDeploy: null,
       withCluster: null,
       scanDrift: null,
+      clusterToken: null,
     },
     repoSource: createRepoSourceFactory(),
   };

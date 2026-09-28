@@ -66,11 +66,8 @@ const SERVICES: InternalService[] = [
     src: "services/core-backend/src",
     heading: "Internal — chỉ Service 2 và Service 3 gọi",
     closes: (l) => l.trim() === "",
-    floor: { mounts: 1, routes: 2, documented: 3 },
-    notImplemented: {
-      "POST /internal/clusters/:param/token":
-        "Service 3 chưa có executor SERVICE_LEVEL cần token cluster — §16 hàng 'Lát cắt Luồng 5: chỉ FLAG_LEVEL + CANARY'; metrics trong cluster đã đi qua S1 (D-P30)",
-    },
+    floor: { mounts: 2, routes: 3, documented: 3 },
+    notImplemented: {},
   },
 ];
 

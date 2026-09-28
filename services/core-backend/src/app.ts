@@ -25,6 +25,7 @@ import {
 } from "./modules/cicd/cicd.controller.js";
 import { defaultAppDeps, setAppDeps, type AppDeps } from "./core/app-deps.js";
 import { API_PREFIX } from "./core/http/api-prefix.js";
+import { internalClusterTokenRouter } from "./internal/cluster-token.controller.js";
 import { internalMetricsRouter } from "./internal/metrics.controller.js";
 
 /**
@@ -111,6 +112,7 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
    * `/api/v1` — không phiên, không CSRF, không rate limiter người dùng; xác thực ở từng route.
    */
   app.use("/internal", internalMetricsRouter);
+  app.use("/internal", internalClusterTokenRouter);
 
   /**
    * Hai lớp bảo vệ áp cho TOÀN BỘ API thay vì rải trong từng controller.

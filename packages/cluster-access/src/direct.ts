@@ -96,11 +96,15 @@ export function objectPath(ref: ObjectRef): string {
     ref.namespace === undefined ? "" : `/namespaces/${ref.namespace}`;
   const plural = pluralOf(ref.kind);
   const name = ref.name === undefined ? "" : `/${ref.name}`;
+  const sub =
+    ref.subresource === undefined || ref.name === undefined
+      ? ""
+      : `/${ref.subresource}`;
   const query =
     ref.labelSelector === undefined
       ? ""
       : `?labelSelector=${encodeURIComponent(ref.labelSelector)}`;
-  return `${base}${scope}/${plural}${name}${query}`;
+  return `${base}${scope}/${plural}${name}${sub}${query}`;
 }
 
 /** HTTP method của từng verb — `watch` là `GET` có `?watch=1`, không phải verb riêng */

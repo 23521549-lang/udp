@@ -3,7 +3,7 @@ import {
   type BoundToken,
   type KubeTransport,
   type TokenSource,
-} from "./cluster-access.js";
+} from "./direct.js";
 
 /**
  * Nguồn token của ClusterAccess (ADR-06, §4.6).
@@ -28,7 +28,7 @@ export function adminTokenSource(token: string, expiresAt: Date): TokenSource {
 }
 
 /** Một giờ — giới hạn trên của §4.6; cloud có thể cấp ngắn hơn và đó là hạn thật */
-const BOUND_TOKEN_SECONDS = 3_600;
+export const BOUND_TOKEN_SECONDS = 3_600;
 
 interface TokenRequestStatus {
   status?: { token?: string; expirationTimestamp?: string };
