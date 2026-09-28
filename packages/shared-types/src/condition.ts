@@ -125,6 +125,9 @@ export function compareSemver(a: Semver, b: Semver): number {
 
 const LOOKAROUND = ["=", "!", "<=", "<!"] as const;
 
+/** Tên nhóm khả chuyển: định danh ASCII — tên không mang nghĩa khi đã cấm backreference */
+const GROUP_NAME = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
 /**
  * Lỗi CÚ PHÁP của một pattern `regex`, hoặc `undefined`.
  *
@@ -133,6 +136,12 @@ const LOOKAROUND = ["=", "!", "<=", "<!"] as const;
  * lớp ngôn ngữ chính quy, và là nguồn của những ca backtracking tệ nhất. Phân
  * tích ReDoS thật (lượng từ lồng, alternation chồng lấn) do Service 2 làm ở
  * đường GHI (§6.5, §12); lúc đánh giá, trần `regexInputMax` chặn phần còn lại.
+ *
+ * [v4.11, Plan #47] Ngữ pháp KHẢ CHUYỂN giữa các SDK (I26 chéo ngôn ngữ, D-P35): thêm
+ * ba luật để provider Python cho CÙNG kết quả với lõi này trên mọi pattern được nhận.
+ * `\p{…}` bị cấm — tập ký tự theo thuộc tính Unicode đổi theo phiên bản Unicode của
+ * từng runtime; cờ nội tuyến `(?i:…)` bị cấm — V8 mới nhận, V8 cũ và `re` hiểu khác;
+ * tên nhóm phải là định danh ASCII không trùng — quy tắc trùng tên đổi theo bản V8.
  */
 export function regexSyntaxIssue(pattern: string): string | undefined {
   /**
@@ -146,12 +155,16 @@ export function regexSyntaxIssue(pattern: string): string | undefined {
     return "pattern phải ở dạng Unicode NFC";
   }
   let inClass = false;
+  const groupNames = new Set<string>();
   for (let i = 0; i < pattern.length; i += 1) {
     const ch = pattern[i];
     if (ch === "\\") {
       const next = pattern[i + 1] ?? "";
       if (!inClass && (/[1-9]/.test(next) || next === "k")) {
         return "không hỗ trợ backreference";
+      }
+      if (next === "p" || next === "P") {
+        return "không hỗ trợ \\p{…}: thuộc tính Unicode đổi theo phiên bản của từng runtime";
       }
       i += 1;
       continue;
@@ -168,6 +181,15 @@ export function regexSyntaxIssue(pattern: string): string | undefined {
       const tail = pattern.slice(i + 2);
       if (LOOKAROUND.some((l) => tail.startsWith(l))) {
         return "không hỗ trợ lookahead/lookbehind";
+      }
+      if (tail.startsWith("<")) {
+        const end = tail.indexOf(">");
+        const name = end === -1 ? "" : tail.slice(1, end);
+        if (!GROUP_NAME.test(name)) return "tên nhóm phải là định danh ASCII";
+        if (groupNames.has(name)) return "tên nhóm trùng";
+        groupNames.add(name);
+      } else if (!tail.startsWith(":")) {
+        return "không hỗ trợ cờ nội tuyến — chỉ (?:…) và (?<tên>…)";
       }
     }
   }

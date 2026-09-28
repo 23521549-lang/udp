@@ -54,3 +54,12 @@ test-results/
 
 # Cây adapter tạm của test I28 dương tính (domain-catalog.integration.test.ts)
 services/core-backend/tests/.registry-*/
+
+# Python SDK (sdks/python)
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/

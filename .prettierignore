@@ -28,3 +28,6 @@ apps/portal/src/styles/prototype.css
 # Mẫu golden capture: DỮ LIỆU do `tests/helpers/wire-capture.ts` ghi, không phải mã —
 # định dạng lại tay là lệch với lần ghi kế tiếp
 services/core-backend/tests/fixtures/wire/
+
+# Sinh bởi `pnpm --filter @udp/flag-evaluator conformance` — so bằng JSON đã parse, không theo byte
+packages/flag-evaluator/conformance/vectors.json

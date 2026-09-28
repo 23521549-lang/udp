@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "e7": "tsx scripts/e7-distribution.ts",
-    "bench": "tsx scripts/bench-evaluate.ts"
+    "bench": "tsx scripts/bench-evaluate.ts",
+    "conformance": "tsx scripts/conformance.ts --write"
   },
   "dependencies": {
     "@udp/config": "workspace:^",

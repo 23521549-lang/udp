@@ -54,6 +54,29 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
 
+  python:
+    # [Plan #47] Provider Python (§6.8): lint, kiểu, và bộ test đơn vị — gồm phép so với
+    # vector do lõi Node sinh (`packages/flag-evaluator/conformance/vectors.json`) và hợp
+    # đồng nhãn với `packages/openfeature-provider/src/metrics.ts`. Không chạm database.
+    # Ghim bản sàn của `requires-python`: cú pháp hay thư viện chuẩn mới hơn là đỏ ở đây.
+    name: python provider (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: sdks/python/pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: pytest -q
+
   test:
     name: full test suite on a scratch database
     runs-on: ubuntu-latest
@@ -118,6 +141,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
+
+      # `python-parity.test.ts` chạy provider Python ở tiến trình con với Service 2 thật
+      # (I15c, I26 chéo ngôn ngữ); nó tìm `sdks/python/.venv` — không có thì bỏ qua.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: môi trường ảo của provider Python
+        run: python -m venv sdks/python/.venv && sdks/python/.venv/bin/pip install ./sdks/python
 
       - name: pnpm test:scratch
         id: suite

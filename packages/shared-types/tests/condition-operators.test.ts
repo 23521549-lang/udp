@@ -109,6 +109,16 @@ describe("regex — cú pháp an toàn (tầng dùng chung, chạy cả trong SD
     expect(regexSyntaxIssue("(")).toMatch(/biên dịch/);
     expect(regexSyntaxIssue(String.raw`\q`)).toMatch(/biên dịch/);
   });
+
+  it("[Plan #47] ngữ pháp khả chuyển giữa các SDK: không \\p, không cờ nội tuyến, tên nhóm ASCII không trùng", () => {
+    expect(regexSyntaxIssue(String.raw`^\p{L}+$`)).toMatch(/\\p/);
+    expect(regexSyntaxIssue(String.raw`[\P{Lu}]`)).toMatch(/\\p/);
+    expect(regexSyntaxIssue("(?i:abc)")).toMatch(/cờ nội tuyến/);
+    expect(regexSyntaxIssue("(?<tên>a)")).toMatch(/định danh ASCII/);
+    expect(regexSyntaxIssue("(?<a>x)|(?<a>y)")).toMatch(/trùng/);
+    expect(regexSyntaxIssue("(?<a_1$>x)(?<b>y)")).toBeUndefined();
+    expect(regexSyntaxIssue(String.raw`[\s\S]\cJ\u{1F600}[^]`)).toBeUndefined();
+  });
 });
 
 describe("SemVer 2.0 — thứ tự ưu tiên §11", () => {

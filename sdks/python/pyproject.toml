@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "udp-openfeature"
+version = "0.1.0"
+description = "OpenFeature provider của UDP cho Python — đánh giá tại chỗ, stream SSE, nhãn ff (§6.8)"
+requires-python = ">=3.11"
+dependencies = ["openfeature-sdk>=0.10,<1"]
+
+[project.optional-dependencies]
+# Middleware đo lường (`udp_openfeature.metrics`) — như prom-client là peer TUỲ CHỌN của bản Node
+metrics = ["prometheus-client>=0.20,<1"]
+dev = [
+    "prometheus-client>=0.20,<1",
+    "pytest>=8,<10",
+    "hypothesis>=6.100,<7",
+    "ruff>=0.6,<1",
+    "mypy>=1.11,<2",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+udp_openfeature = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "BLE", "SLF", "PL", "C4", "PIE", "RET"]
+ignore = [
+    # Tên test và chú thích bằng tiếng Việt: chữ có dấu là chủ ý, không phải ký tự nhầm
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    # Hàm của máy trạng thái cố ý giữ trọn một luật trong một chỗ (như bản Node)
+    "PLR0911",
+    "PLR0912",
+    "PLR0913",
+    "PLR0915",
+    "PLR2004",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["SLF001", "PLC0415"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+mypy_path = ["src", "tests"]
+files = ["src", "tests"]
