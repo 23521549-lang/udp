@@ -17,6 +17,7 @@ import { RulesSection } from "./detail/RulesSection";
 import { SdkSnippet } from "./detail/SdkSnippet";
 import { StatsSection } from "./detail/StatsSection";
 import { Tester } from "./detail/Tester";
+import { VariantsSection } from "./detail/VariantsSection";
 import { flagApi } from "./flag-api";
 import { LIFECYCLE_LABEL } from "./flag-labels";
 
@@ -118,6 +119,7 @@ function FlagBody({
       </dl>
 
       <LifecycleActions flag={flag} />
+      <VariantsSection flag={flag} />
 
       <div className="envtabs" role="tablist" aria-label="Environment">
         {[...flag.envs]

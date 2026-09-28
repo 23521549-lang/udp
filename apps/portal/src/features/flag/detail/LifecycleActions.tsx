@@ -16,13 +16,20 @@ export function LifecycleActions({ flag }: { flag: FlagDetailWire }) {
   const queryClient = useQueryClient();
   const [confirm, setConfirm] = useState<"ACTIVE" | "ARCHIVED" | null>(null);
 
+  /**
+   * [Plan #44] Đổi vòng đời là thay đổi TOÀN CỤC: máy chủ đòi gõ lại key (428
+   * `CONFIRMATION_REQUIRED`, §8.4). Bản trước không gửi key nên hai nút luôn nhận 428.
+   */
   const update = useMutation({
-    mutationFn: (lifecycleStatus: "ACTIVE" | "ARCHIVED") =>
+    mutationFn: (v: {
+      lifecycleStatus: "ACTIVE" | "ARCHIVED";
+      confirmFlagKey: string;
+    }) =>
       flagApi.update(project.id, flag.id, {
         lastKnownUpdatedAt: flag.updatedAt,
-        lifecycleStatus,
+        ...v,
       }),
-    onSuccess: async (_d, status) => {
+    onSuccess: async (_d, { lifecycleStatus: status }) => {
       setConfirm(null);
       toast.info(status === "ACTIVE" ? "Đã kích hoạt flag" : "Đã lưu trữ flag");
       await queryClient.invalidateQueries({
@@ -71,9 +78,15 @@ export function LifecycleActions({ flag }: { flag: FlagDetailWire }) {
           }
           confirmLabel={confirm === "ACTIVE" ? "Kích hoạt" : "Lưu trữ"}
           danger={confirm === "ARCHIVED"}
+          typeToConfirm={flag.key}
           busy={update.isPending}
           error={update.isError ? messageOf(update.error) : undefined}
-          onConfirm={() => update.mutate(confirm)}
+          onConfirm={(typed) =>
+            update.mutate({
+              lifecycleStatus: confirm,
+              confirmFlagKey: typed ?? "",
+            })
+          }
           onClose={() => {
             setConfirm(null);
             update.reset();

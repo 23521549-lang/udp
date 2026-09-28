@@ -15,6 +15,7 @@
     "./capability": "./src/capability.ts",
     "./wire": "./src/wire.ts",
     "./flag-api": "./src/flag-api.ts",
+    "./promote": "./src/promote.ts",
     "./condition": "./src/condition.ts",
     "./rollout": "./src/rollout.ts",
     "./cloud-api": "./src/cloud-api.ts",

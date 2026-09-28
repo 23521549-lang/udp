@@ -9,6 +9,8 @@ import {
   flagStatsQueryRefine,
   replaceRulesFields,
   replaceRulesRefine,
+  replaceVariantsFields,
+  replaceVariantsRefine,
   staleFlagsQuerySchema,
   tzSchema,
   updateEnvConfigFields,
@@ -20,6 +22,7 @@ import {
   type FlagStatsResponse,
   type FlagStatsSummary,
 } from "@udp/shared-types";
+import type { PromotionDiffLine } from "@udp/shared-types/promote";
 import { z } from "zod";
 
 /**
@@ -55,6 +58,38 @@ export const replaceRulesBodySchema = replaceRulesFields
   .strict()
   .superRefine(replaceRulesRefine);
 export type ReplaceRulesBody = z.infer<typeof replaceRulesBodySchema>;
+
+/** [v4.11, Plan #44] `PUT /flags/:flagId/variants` — flag không còn DRAFT cần gõ lại key */
+export const replaceVariantsBodySchema = replaceVariantsFields
+  .extend({ confirmFlagKey })
+  .strict()
+  .superRefine(replaceVariantsRefine);
+export type ReplaceVariantsBody = z.infer<typeof replaceVariantsBodySchema>;
+
+/**
+ * [v4.11, Plan #44] `POST /flags/:flagId/promote` — sao chép rule env nguồn → env đích. Hai mốc:
+ * `sourceUpdatedAt` là bộ rule nguồn người dùng ĐÃ XEM diff, `lastKnownUpdatedAt` là mốc của đích
+ * (đi xuống S2 như mọi lần thay rule).
+ */
+export const promoteBodySchema = z
+  .object({
+    fromEnvId: z.string().uuid(),
+    toEnvId: z.string().uuid(),
+    sourceUpdatedAt: z.string().datetime({ offset: true }),
+    lastKnownUpdatedAt: z.string().datetime({ offset: true }),
+    confirmFlagKey,
+  })
+  .strict()
+  .superRefine((body, ctx) => {
+    if (body.fromEnvId === body.toEnvId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["toEnvId"],
+        message: "Environment đích phải khác environment nguồn",
+      });
+    }
+  });
+export type PromoteBody = z.infer<typeof promoteBodySchema>;
 
 /**
  * [v4.6] Flag Evaluation Tester (§10.12). Validate ở S1 bằng CÙNG schema với S2:
@@ -261,4 +296,10 @@ export interface RuleView {
 export interface RulesView {
   updatedAt: string;
   rules: RuleView[];
+}
+
+/** [v4.11, Plan #44] Rule của env ĐÍCH sau khi áp, kèm diff đã áp */
+export interface PromoteView extends RulesView {
+  diff: PromotionDiffLine[];
+  changes: number;
 }

@@ -3,6 +3,8 @@ import {
   createFlagFields,
   createFlagRefine,
   evaluationContextSchema,
+  replaceVariantsFields,
+  replaceVariantsRefine,
   updateFlagFields,
   updateFlagRefine,
 } from "@udp/shared-types";
@@ -26,6 +28,11 @@ export const updateFlagSchema = updateFlagFields
   .strict()
   .superRefine(updateFlagRefine);
 
+/** [v4.11, Plan #44] `PUT /internal/flags/:id/variants` — S1 đã bóc `confirmFlagKey` */
+export const replaceVariantsSchema = replaceVariantsFields
+  .strict()
+  .superRefine(replaceVariantsRefine);
+
 /** [v4.6] Flag Evaluation Tester — context cùng trần với OFREP */
 export const evaluateFlagSchema = z
   .object({
@@ -36,6 +43,7 @@ export const evaluateFlagSchema = z
 
 export type CreateFlagInput = z.infer<typeof createFlagSchema>;
 export type EvaluateFlagInput = z.infer<typeof evaluateFlagSchema>;
+export type ReplaceVariantsInput = z.infer<typeof replaceVariantsSchema>;
 export type UpdateFlagInput = z.infer<typeof updateFlagSchema>;
 
 export interface PublicFlag {

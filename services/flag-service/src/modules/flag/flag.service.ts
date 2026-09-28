@@ -1,8 +1,4 @@
-import {
-  ACTIVE_ROLLOUT_STATUS_SQL,
-  type FlagLifecycleStatus,
-  type Prisma,
-} from "@udp/db";
+import type { FlagLifecycleStatus, Prisma } from "@udp/db";
 import { stateFor } from "@udp/flag-snapshot";
 import {
   ConflictError,
@@ -181,7 +177,7 @@ export async function update(
 }
 
 /** `actorUserId` cho outbox — cùng người với hàng audit */
-const actorOf = (audit: AuditContext): { actorUserId?: string } =>
+export const actorOf = (audit: AuditContext): { actorUserId?: string } =>
   audit.actorUserId === undefined ? {} : { actorUserId: audit.actorUserId };
 
 /**
@@ -270,14 +266,7 @@ async function assertNoLiveRolloutChange(
     input.stickinessAttribute !== fresh.stickinessAttribute;
   if (!changesLifecycle && !reshuffles) return;
 
-  const rows = await tx.$queryRaw<{ id: string }[]>`
-    SELECT s.id::text AS id
-      FROM rollout_sessions s
-      JOIN flag_env_configs c ON c.id = s.flag_env_config_id
-     WHERE c.flag_id = ${fresh.id}::uuid
-       AND s.status IN (${ACTIVE_ROLLOUT_STATUS_SQL})
-     LIMIT 1`;
-  const live = rows[0];
+  const live = await repository.liveRolloutIdOf(tx, fresh.id);
   if (live === undefined) return;
   throw new ConflictError(
     changesLifecycle
@@ -285,7 +274,7 @@ async function assertNoLiveRolloutChange(
       : "Flag đang có rollout chạy — đổi stickinessAttribute sẽ xáo lại nhóm canary và đối chứng",
     undefined,
     "ROLLOUT_IN_PROGRESS",
-  ).withResource(live.id);
+  ).withResource(live);
 }
 
 /**

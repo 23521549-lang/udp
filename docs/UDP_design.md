@@ -5554,7 +5554,12 @@ PATCH  /api/v1/projects/:id/flags/:flagId                  sửa định nghĩa,
                                                     (§6.7): ARCHIVED là bia mộ, và lịch sử cùng audit phải
                                                     còn chỗ để trỏ tới
 GET    /api/v1/projects/:id/flags/:flagId/variants         [NEW]
-PUT    /api/v1/projects/:id/flags/:flagId/variants         [NEW] bulk replace
+PUT    /api/v1/projects/:id/flags/:flagId/variants         [NEW] bulk replace. [v4.11, Plan #44] {lastKnownUpdatedAt,
+                                                    variants[{id?, key, value}], defaultVariantKey?}; có id = sửa
+                                                    TẠI CHỖ (rule và mặc định không mồ côi, I39); flag DRAFT =
+                                                    DEVELOPER, đã phục vụ = MAINTAINER + confirmFlagKey (428);
+                                                    BOOLEAN ⇒ 422; xoá variant còn được dùng ⇒ 409
+                                                    VARIANT_IN_USE; rollout sống ⇒ 409; response {flag}
 GET    /api/v1/projects/:id/flags/:flagId/envs             [NEW] trạng thái ở mọi env
 PATCH  /api/v1/projects/:id/flags/:flagId/envs/:envId      [NEW] bật/tắt, default variant. [v4.5] production =
                                                     MAINTAINER; mọi thay đổi trừ TẮT cần confirmFlagKey (428)
@@ -5573,7 +5578,13 @@ GET    /api/v1/projects/:id/flags/stale                    [NEW] danh sách flag
 POST   /api/v1/projects/:id/flags/bulk-archive             [v4.9] MAINTAINER; ≤ 20 flag mỗi lô,
                                                     confirmProjectName (428 CONFIRMATION_REQUIRED); trả
                                                     { results: [{ flagId, ok, problem? }] }
-POST   /api/v1/projects/:id/flags/:flagId/promote          [NEW] sao chép cấu hình dev → staging
+POST   /api/v1/projects/:id/flags/:flagId/promote          [NEW] sao chép cấu hình dev → staging. [v4.11, Plan #44]
+                                                    {fromEnvId, toEnvId, sourceUpdatedAt, lastKnownUpdatedAt,
+                                                    confirmFlagKey?}: chép RULE bằng `planPromotion` của
+                                                    `@udp/shared-types/promote` — CÙNG hàm Portal dựng diff;
+                                                    rule khớp giữ id và salt đích (I1). Nguồn đổi ⇒ 409; đích
+                                                    production = MAINTAINER + 428; 0 thay đổi ⇒ 200 không ghi;
+                                                    trả {updatedAt, rules, diff, changes}
 
 Segments                                                      [NEW]
 ────────────────────────────────────────────────────────────────
@@ -5702,7 +5713,9 @@ Internal — chỉ Core Backend và PD Controller gọi (mTLS hoặc shared secr
 ────────────────────────────────────────────────────────────────
 POST   /internal/flags
 PATCH  /internal/flags/:id
-PUT    /internal/flags/:id/variants                [NEW]
+PUT    /internal/flags/:id/variants                [NEW] [v4.11, Plan #44] ADR-05 trên mọi env (`flag.updated`),
+                                                   audit `flag.variants.update` cùng transaction, BẮT BUỘC
+                                                   X-Udp-Actor-Id như bốn route ghi flag dưới đây
 PATCH  /internal/flag-envs/:id                     [NEW] bật/tắt theo env
 PUT    /internal/flag-envs/:id/rules               [NEW] bulk + optimistic lock
                                                    [v4.5] Bốn route ghi flag ở trên (trừ variants) BẮT BUỘC
@@ -7530,7 +7543,7 @@ export function runCloudAdapterContract(
 | **I37** | **Mọi mã lỗi đều có thông điệp tiếng Việt** [v4] | Test duyệt toàn bộ `ERROR_CATALOG`, khẳng định mỗi mã có một khóa i18n tương ứng ở frontend và khóa đó không rỗng. Thêm mã mới mà quên dịch là **fail build**, thay vì hiện chuỗi mã trần cho người dùng cuối. Kiểm thêm chiều ngược: khóa i18n thừa (mã đã bị xóa) cũng fail, để catalog không phình theo thời gian |
 | **I38** | **Query key của dữ liệu theo environment luôn chứa `envId`** [v4] | Test duyệt mọi hook trong `api/`, đối chiếu với danh sách hook env-scoped khai **tường minh**; hook nào trong danh sách mà query key thiếu `envId` là fail. Bug mà bất biến này chặn: cấu hình flag của `dev` bị cache lẫn sang `prod` — §10.12 gọi đúng tên nó là "loại lỗi rất khó phát hiện bằng mắt". Ngoại lệ (Flag Env Matrix, **[v4.9]** `segments` và `segment` — segment thuộc project chứ không thuộc environment) phải khai vào danh sách miễn trừ, giống cách I10 miễn trừ route |
 | **I39** | **ORPHAN_RULE được cưỡng chế ở tầng database, cả hai chiều** [v4 — §6.7] | SQL chạy thẳng, không qua ORM — vì đường ghi của Service 3 (§1.2) không đi qua Zod nên trigger là hàng rào duy nhất. (a) Lưu rule có `serve` trỏ variant của flag khác — bị chặn. (b) Xóa variant còn được `serve` tham chiếu — bị chặn lúc COMMIT. (c) Đặt `default_variant_id` của flag A bằng variant của flag B — bị chặn; FK chỉ cưỡng chế *tồn tại*, không cưỡng chế *quyền sở hữu*. (d) `serve` sai hình dạng — `kind` lạ, JSON null, thiếu `weights`, `variantId` rỗng hoặc không phải uuid — **đều phải bị chặn**: trả mảng rỗng cho hình dạng không hiểu là im lặng cho qua. (e) Xóa cả FeatureFlag vẫn phải CHẠY TRÓT — constraint trigger hoãn tới COMMIT chính là để không chặn nhầm ca này. Chiều lưu ra `UDP01` → 422 `ORPHAN_RULE`; chiều xoá ra `UDP02` → 409 `VARIANT_IN_USE`. **Hai mã phải KHÁC nhau** — dùng chung một mã là mất `retryable`, và test phải khẳng định đúng mã chứ không chỉ khẳng định "có lỗi". **[v4.3]** (f) `serve.weights` phải tăng dần nghiêm ngặt theo `variantId` (`UDP04`, lỗi của writer ⇒ 500, không vào `ERROR_CATALOG` — cùng tiền lệ `UDP03`); serve vừa trỏ variant lạ vừa sai thứ tự báo `UDP01`; hàng cũ chưa sắp vẫn sửa được cột khác |
-| **I40** | **Audit ghi cùng transaction với thay đổi nó mô tả** [v4.5 — §8.4] | (a) Một bước SAU hàng audit hỏng (tính `config_hash`) ⇒ hàng audit biến mất cùng thay đổi, `config_version` đứng yên — phép thử duy nhất phân biệt "cùng transaction" với "ghi riêng", vì mọi lỗi nghiệp vụ (409, 422) ném TRƯỚC hàng audit. Qua HTTP, dưới role `udp_s2` thật: (b) mỗi lời gọi ghi flag để lại đúng MỘT hàng mang người làm, IP, UA của người dùng — kể cả khi Portal tự gửi header nội bộ, S1 bỏ qua chúng; (c) thay đổi bị từ chối (409, 428, 403) không để lại hàng nào; (d) IP sai dạng — kể cả IPv6 kèm zone mà `INET` không nhận — bị bỏ chứ không làm lùi thay đổi; (e) thiếu người làm ⇒ 400, không ghi ẩn danh; (f) `before`/`after` của `flag.rule.update` không có `bucket_salt`. Bug mà bất biến chặn: dual-write — S1 ghi audit sau khi S2 commit thì mất dấu khi S1 hỏng giữa chừng, ghi trước thì audit kể về một thay đổi không xảy ra. **[v4.9]** Cùng phép thử áp cho `segment.create`/`update`/`delete`, `sdkkey.create`/`sdkkey.revoke` và `flag.activate`/`flag.archive`/`flag.restore` |
+| **I40** | **Audit ghi cùng transaction với thay đổi nó mô tả** [v4.5 — §8.4] | (a) Một bước SAU hàng audit hỏng (tính `config_hash`) ⇒ hàng audit biến mất cùng thay đổi, `config_version` đứng yên — phép thử duy nhất phân biệt "cùng transaction" với "ghi riêng", vì mọi lỗi nghiệp vụ (409, 422) ném TRƯỚC hàng audit. Qua HTTP, dưới role `udp_s2` thật: (b) mỗi lời gọi ghi flag để lại đúng MỘT hàng mang người làm, IP, UA của người dùng — kể cả khi Portal tự gửi header nội bộ, S1 bỏ qua chúng; (c) thay đổi bị từ chối (409, 428, 403) không để lại hàng nào; (d) IP sai dạng — kể cả IPv6 kèm zone mà `INET` không nhận — bị bỏ chứ không làm lùi thay đổi; (e) thiếu người làm ⇒ 400, không ghi ẩn danh; (f) `before`/`after` của `flag.rule.update` không có `bucket_salt`. Bug mà bất biến chặn: dual-write — S1 ghi audit sau khi S2 commit thì mất dấu khi S1 hỏng giữa chừng, ghi trước thì audit kể về một thay đổi không xảy ra. **[v4.9]** Cùng phép thử áp cho `segment.create`/`update`/`delete`, `sdkkey.create`/`sdkkey.revoke` và `flag.activate`/`flag.archive`/`flag.restore` **[v4.11, Plan #44]** và `flag.variants.update` (`flag-variants.integration.test.ts`: một hàng mang người làm; mọi ca từ chối không để hàng nào) |
 
 ### 13.4 Kiểm thử bơm lỗi (fault injection)
 
@@ -7773,7 +7786,7 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | **[v4.6] OFREP lộ tập key flag và là oracle thành viên** | Khoá CLIENT công khai theo thiết kế: bulk trả mọi flag không-DRAFT của project (kể cả flag chỉ dùng ở backend, và bia mộ); gửi `targetingKey` tuỳ ý rồi đọc kết quả là dò được danh sách USER_BASED/segment. Giảm nhẹ bằng hai lớp rate limit, không `ruleId` | Cờ "chỉ server" theo flag; tách khoá CLIENT theo nhóm flag |
 | **[v4.6] Đổi định dạng snapshot buộc dừng cả Service 2 lẫn Service 3** | Hai writer cùng tính `config_hash` bằng `@udp/flag-snapshot`; một bản cũ còn sống ghi hash định dạng cũ và replica mới đo ra lệch. Ngoại lệ có chủ đích của "replica trước, writer sau"; quy trình: dừng hai service → migrate → `rehash` → khởi động | Phiên bản định dạng trong hash để hai bản sống song song |
 | **[v4.6] Phân tích ReDoS có thể từ chối pattern an toàn** | `recheck` trả `unknown` khi hết 1 giây phân tích — bị từ chối như `vulnerable`. Pattern đó phải viết lại | Trần phân tích theo cấu hình |
-| **[v4.5→v4.9] Luồng 4 ở Service 1 chưa đủ route §9** | Có: tạo, liệt kê, xem, sửa flag, bật/tắt theo env, đọc và thay rule, evaluate, stats, stale, bulk-archive. **[v4.9]** Chưa: PUT variants, promote. `DELETE …/flags/:flagId` đã BỎ khỏi §9 — flag không bao giờ bị xoá (§6.7) | Đợt kế tiếp của Luồng 4 |
+| **[v4.5→v4.11] Luồng 4 ở Service 1 đủ route §9** | **[v4.11, Plan #44] Đã đủ:** PUT variants và promote là hai route cuối. `DELETE …/flags/:flagId` đã BỎ khỏi §9 — flag không bao giờ bị xoá (§6.7). Còn lại một giới hạn: đổi `flagType` không có route (chỉ có nghĩa khi DRAFT, §6.7) | Route đổi kiểu cho flag DRAFT, khi có nhu cầu thật |
 | **Chỉ Node.js và Python có middleware + store** | Java/Go/.NET cần port `AsyncLocalStorage`/`contextvars` sang cơ chế tương ứng. Đây là phần duy nhất của C1 phụ thuộc ngôn ngữ | SDK và middleware cho Java, Go, .NET (§17) |
 | **[v4.7] Provider Python chưa có** | #21 làm bản Node; câu "Golden Path phủ Node.js và Python" chỉ đúng khi bản Python xong | Plan riêng sau #26, cùng máy trạng thái (§6.8), dùng lại vector test hash/delta dạng JSON |
 | **[v4.7] Không có `anonymousFallback: "sticky-session"`** | Provider phía server không có nguồn session ổn định cho khách vô danh; tự sinh id trong tiến trình là sticky giả (mỗi replica một id). Khách vô danh bị bỏ qua ở rule distribution (§6.4) | Ứng dụng tự đặt `targetingKey` = id phiên của nó |

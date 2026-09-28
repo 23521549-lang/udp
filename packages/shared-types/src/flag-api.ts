@@ -168,6 +168,69 @@ export const updateFlagRefine: Refine<z.infer<typeof updateFlagFields>> = (
   }
 };
 
+// ------------------------------------------------------------- variant
+
+/**
+ * [v4.11, Plan #44] `PUT /flags/:flagId/variants` — TOÀN BỘ danh sách variant, cùng khuôn
+ * `PUT …/rules`: có `id` là variant ĐANG CÓ (sửa `key`/`value` tại chỗ — id giữ nên
+ * `serve.variantId` của rule và `default_variant_id` không mồ côi, I39), không `id` là variant
+ * mới, variant đang có mà vắng mặt thì bị xoá. Kiểu của `value` chỉ biết sau khi đọc flag, nên
+ * Service 2 kiểm nó bằng `FLAG_VALUE_SCHEMAS` trong transaction.
+ */
+export const replaceVariantsFields = z.object({
+  /** Optimistic lock theo `FeatureFlag.updated_at` — cùng mốc với `PATCH /flags/:flagId` */
+  lastKnownUpdatedAt: z.string().datetime({ offset: true }),
+  variants: z
+    .array(
+      z
+        .object({
+          id: z.string().uuid().optional(),
+          key: variantKey,
+          value: z.unknown(),
+        })
+        .strict(),
+    )
+    .min(2, "Flag phải có ít nhất hai variant"),
+  /**
+   * Variant mặc định MỚI của flag, theo key trong danh sách trên. Không có thì giữ mặc định cũ —
+   * và khi đó xoá chính variant mặc định là 409 `VARIANT_IN_USE`. Đi cùng PUT này vì đổi mặc định
+   * rồi xoá variant cũ là MỘT thao tác: tách làm hai lời gọi thì giữa chúng flag trỏ một variant
+   * người dùng đã định bỏ.
+   */
+  defaultVariantKey: variantKey.optional(),
+});
+
+export const replaceVariantsRefine: Refine<
+  z.infer<typeof replaceVariantsFields>
+> = (data, ctx) => {
+  const keys = data.variants.map((v) => v.key);
+  if (new Set(keys).size !== keys.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["variants"],
+      message: "Key variant bị trùng",
+    });
+  }
+  const ids = data.variants.flatMap((v) => (v.id === undefined ? [] : [v.id]));
+  if (new Set(ids).size !== ids.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["variants"],
+      message: "Một variant xuất hiện hai lần trong danh sách",
+    });
+  }
+  if (
+    data.defaultVariantKey !== undefined &&
+    !keys.includes(data.defaultVariantKey)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["defaultVariantKey"],
+      message: "defaultVariantKey không nằm trong danh sách variant",
+    });
+  }
+};
+
 // ------------------------------------------------------------- flag theo environment
 
 export const updateEnvConfigFields = z.object({
@@ -257,6 +320,7 @@ export const replaceRulesRefine: Refine<z.infer<typeof replaceRulesFields>> = (
 /** Body ghi đã qua schema — kiểu của lời gọi S1 → S2 (S1 thêm `projectId` khi tạo) */
 export type CreateFlagFields = z.infer<typeof createFlagFields>;
 export type UpdateFlagFields = z.infer<typeof updateFlagFields>;
+export type ReplaceVariantsFields = z.infer<typeof replaceVariantsFields>;
 export type UpdateEnvConfigFields = z.infer<typeof updateEnvConfigFields>;
 export type ReplaceRulesFields = z.infer<typeof replaceRulesFields>;
 

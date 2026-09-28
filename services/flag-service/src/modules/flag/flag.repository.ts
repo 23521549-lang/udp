@@ -1,4 +1,8 @@
-import type { FlagLifecycleStatus, Prisma } from "@udp/db";
+import {
+  ACTIVE_ROLLOUT_STATUS_SQL,
+  type FlagLifecycleStatus,
+  type Prisma,
+} from "@udp/db";
 import { BOOLEAN_VARIANTS } from "@udp/config";
 import type { CreateFlagInput, PublicFlag } from "./flag.types.js";
 
@@ -111,6 +115,25 @@ export const findById = (
   id: string,
 ): Promise<PublicFlag | null> =>
   tx.featureFlag.findUnique({ where: { id }, select: PUBLIC_FIELDS });
+
+/**
+ * Id một rollout còn sống trên flag ở BẤT KỲ environment nào, hoặc `undefined`. Người gọi chạy nó
+ * trong khoá environment của `writeConfigChange`, nên `track` của một rollout mới — cũng chạy
+ * dưới khoá env — không chen vào giữa phép kiểm và lần ghi.
+ */
+export async function liveRolloutIdOf(
+  tx: Prisma.TransactionClient,
+  flagId: string,
+): Promise<string | undefined> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    SELECT s.id::text AS id
+      FROM rollout_sessions s
+      JOIN flag_env_configs c ON c.id = s.flag_env_config_id
+     WHERE c.flag_id = ${flagId}::uuid
+       AND s.status IN (${ACTIVE_ROLLOUT_STATUS_SQL})
+     LIMIT 1`;
+  return rows[0]?.id;
+}
 
 /**
  * [v4.9] Environment có thuộc project này không — phòng thủ nhiều lớp cho tham số

@@ -58,6 +58,8 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "PATCH /projects/{id}/flags/{id}": wire.flagResponseWire,
   "GET /projects/{id}/flags/{id}/stats": wire.flagStatsViewResponseWire,
   "GET /projects/{id}/flags/{id}/variants": wire.flagVariantsResponseWire,
+  "PUT /projects/{id}/flags/{id}/variants": wire.flagResponseWire,
+  "POST /projects/{id}/flags/{id}/promote": wire.promoteResponseWire,
   "GET /projects/{id}/flags/{id}/envs": wire.flagEnvsResponseWire,
   "PATCH /projects/{id}/flags/{id}/envs/{id}": wire.flagEnvResponseWire,
   "GET /projects/{id}/flags/{id}/envs/{id}/rules": wire.rulesResponseWire,

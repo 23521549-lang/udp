@@ -14,6 +14,7 @@ import {
   flagResponseWire,
   flagStatsViewResponseWire,
   flagVariantsResponseWire,
+  promoteResponseWire,
   rulesResponseWire,
   staleFlagsResponseWire,
 } from "@udp/shared-types/wire";
@@ -32,7 +33,9 @@ import {
   evaluateBodySchema,
   flagStatsQuerySchema,
   listFlagsQuerySchema,
+  promoteBodySchema,
   replaceRulesBodySchema,
+  replaceVariantsBodySchema,
   staleFlagsQueryBodySchema,
   updateEnvBodySchema,
   updateFlagBodySchema,
@@ -41,7 +44,9 @@ import {
   type EvaluateBody,
   type FlagStatsQueryBody,
   type ListFlagsQuery,
+  type PromoteBody,
   type ReplaceRulesBody,
+  type ReplaceVariantsBody,
   type StaleFlagsQueryBody,
   type UpdateEnvBody,
   type UpdateFlagBody,
@@ -180,6 +185,25 @@ flagRouter.get(
   }),
 );
 
+flagRouter.put(
+  "/flags/:flagId/variants",
+  requireAuth,
+  requireMinProjectRole("DEVELOPER"),
+  validateBody(replaceVariantsBodySchema),
+  asyncHandler(async (req, res) => {
+    sendJson(res, flagResponseWire, {
+      flag: await flagService.replaceVariants(
+        appDepsOf(req),
+        projectIdParam(req),
+        flagIdOf(req),
+        req.body as ReplaceVariantsBody,
+        req.projectRole,
+        auditContextOf(req),
+      ),
+    });
+  }),
+);
+
 flagRouter.get(
   "/flags/:flagId/envs",
   requireAuth,
@@ -278,6 +302,27 @@ flagRouter.post(
         projectIdParam(req),
         flagIdOf(req),
         req.body as EvaluateBody,
+      ),
+    );
+  }),
+);
+
+flagRouter.post(
+  "/flags/:flagId/promote",
+  requireAuth,
+  requireMinProjectRole("DEVELOPER"),
+  validateBody(promoteBodySchema),
+  asyncHandler(async (req, res) => {
+    sendJson(
+      res,
+      promoteResponseWire,
+      await flagService.promote(
+        appDepsOf(req),
+        projectIdParam(req),
+        flagIdOf(req),
+        req.body as PromoteBody,
+        req.projectRole,
+        auditContextOf(req),
       ),
     );
   }),

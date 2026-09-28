@@ -1,4 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  planPromotion,
+  type PromotionDiffKind,
+} from "@udp/shared-types/promote";
 import type {
   FlagDetailWire,
   PublicEnvironmentWire,
@@ -13,9 +17,8 @@ import { qk, qkPrefix } from "../../lib/query-keys";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { flagApi } from "./flag-api";
-import { planPromotion, type DiffKind } from "./promote-model";
 
-const KIND_LABEL: Record<DiffKind, string> = {
+const KIND_LABEL: Record<PromotionDiffKind, string> = {
   same: "Giữ nguyên",
   changed: "Đổi",
   added: "Thêm",
@@ -30,9 +33,10 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 /**
- * Sao chép rule của env đang xem sang một env khác (§10.12). Diff hiện TRƯỚC khi áp; áp
- * gửi `lastKnownUpdatedAt` của env ĐÍCH đọc lúc mở hộp, nên ai đó sửa đích trong lúc
- * này thì server trả 409 và không gì bị ghi đè.
+ * Sao chép rule của env đang xem sang một env khác (§10.12). Diff hiện TRƯỚC khi áp, dựng bằng
+ * `planPromotion` — CÙNG hàm Service 1 chạy khi nhận `POST …/promote` [Plan #44]. Lời gọi mang mốc
+ * của rule NGUỒN đã xem và mốc của env ĐÍCH đọc lúc mở hộp: ai sửa một trong hai trong lúc này thì
+ * server trả 409 và không gì bị ghi đè.
  */
 export function PromoteDialog({
   flag,
@@ -58,6 +62,7 @@ export function PromoteDialog({
   );
   const [typed, setTyped] = useState("");
   const target = targets.find((e) => e.id === targetId);
+  const needsKey = target?.isProduction === true;
 
   const targetRules = useQuery({
     queryKey: qk.flagRules(project.id, flag.id, targetId),
@@ -76,14 +81,20 @@ export function PromoteDialog({
 
   const apply = useMutation({
     mutationFn: () => {
-      if (plan === undefined) throw new Error("chưa có kế hoạch");
-      return flagApi.replaceRules(project.id, flag.id, targetId, plan.body);
+      if (targetRules.data === undefined) throw new Error("chưa có kế hoạch");
+      return flagApi.promote(project.id, flag.id, {
+        fromEnvId: source.id,
+        toEnvId: targetId,
+        sourceUpdatedAt: sourceRules.updatedAt,
+        lastKnownUpdatedAt: targetRules.data.updatedAt,
+        ...(needsKey ? { confirmFlagKey: typed.trim() } : {}),
+      });
     },
-    onSuccess: async (data) => {
-      queryClient.setQueryData(
-        qk.flagRules(project.id, flag.id, targetId),
-        data,
-      );
+    onSuccess: async ({ updatedAt, rules }) => {
+      queryClient.setQueryData(qk.flagRules(project.id, flag.id, targetId), {
+        updatedAt,
+        rules,
+      });
       await queryClient.invalidateQueries({
         queryKey: qkPrefix.flagOf(project.id, flag.id),
       });
@@ -94,14 +105,15 @@ export function PromoteDialog({
       onClose();
     },
     onError: async (e) => {
-      // Env đích đã đổi từ lúc đọc: nạp lại để diff nói đúng hiện trạng
+      // Nguồn hoặc đích đã đổi từ lúc đọc: nạp lại cả hai để diff nói đúng hiện trạng
       if (isApiError(e) && e.status === 409) {
+        await queryClient.invalidateQueries({
+          queryKey: qk.flagRules(project.id, flag.id, source.id),
+        });
         await targetRules.refetch();
       }
     },
   });
-
-  const needsKey = target?.isProduction === true;
   const ready =
     plan !== undefined &&
     plan.changes > 0 &&
@@ -212,7 +224,7 @@ export function PromoteDialog({
       {apply.isError && (
         <p role="alert" className="field-error">
           {isApiError(apply.error) && apply.error.status === 409
-            ? `Rule ở ${target?.name ?? "env đích"} vừa được người khác sửa. Đã tải lại, hãy xem lại diff rồi áp.`
+            ? `Rule ở ${source.name} hoặc ${target?.name ?? "env đích"} vừa được người khác sửa. Đã tải lại, hãy xem lại diff rồi áp.`
             : messageOf(apply.error)}
         </p>
       )}

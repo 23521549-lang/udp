@@ -1,6 +1,7 @@
 import type {
   CreateFlagFields,
   ReplaceRulesFields,
+  ReplaceVariantsFields,
 } from "@udp/shared-types/flag-api";
 import { testerResultSchema } from "@udp/shared-types/flag-api";
 import {
@@ -10,6 +11,7 @@ import {
   flagListResponseWire,
   flagResponseWire,
   flagStatsViewResponseWire,
+  promoteResponseWire,
   rulesResponseWire,
   staleFlagsResponseWire,
   type FlagSummaryWire,
@@ -71,6 +73,15 @@ export interface UpdateEnvInput {
   confirmFlagKey?: string;
 }
 
+/** [Plan #44] Sao chép rule env nguồn → env đích — hai mốc: nguồn đã xem diff, đích như PUT rule */
+export interface PromoteInput {
+  fromEnvId: string;
+  toEnvId: string;
+  sourceUpdatedAt: string;
+  lastKnownUpdatedAt: string;
+  confirmFlagKey?: string;
+}
+
 export const flagApi = {
   page: flagPage,
   /** Chỉ con số: một hàng (`limit=1`), đọc `total` — tổng quan và thanh số của trang Flag */
@@ -110,6 +121,20 @@ export const flagApi = {
   ) =>
     api(rulesResponseWire, `${f(projectId)}/${flagId}/envs/${envId}/rules`, {
       method: "PUT",
+      body,
+    }),
+  replaceVariants: (
+    projectId: string,
+    flagId: string,
+    body: ReplaceVariantsFields & { confirmFlagKey?: string },
+  ) =>
+    api(flagResponseWire, `${f(projectId)}/${flagId}/variants`, {
+      method: "PUT",
+      body,
+    }),
+  promote: (projectId: string, flagId: string, body: PromoteInput) =>
+    api(promoteResponseWire, `${f(projectId)}/${flagId}/promote`, {
+      method: "POST",
       body,
     }),
   evaluate: (

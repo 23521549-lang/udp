@@ -4,11 +4,13 @@ import {
   ForbiddenError,
   logger,
   NotFoundError,
+  OptimisticLockError,
   RelayedProblemError,
   ServiceUnavailableError,
   ValidationError,
   type AuditContext,
 } from "@udp/http";
+import { planPromotion } from "@udp/shared-types/promote";
 import type { AppDeps } from "../../core/app-deps.js";
 import { prisma } from "../../core/db.js";
 import { hasMinProjectRole } from "../../core/http/middlewares/project-role.middleware.js";
@@ -25,7 +27,10 @@ import type {
   FlagStatsView,
   FlagSummary,
   ListFlagsQuery,
+  PromoteBody,
+  PromoteView,
   ReplaceRulesBody,
+  ReplaceVariantsBody,
   RulesView,
   StaleFlagsQueryBody,
   UpdateEnvBody,
@@ -200,6 +205,95 @@ export async function replaceRules(
   }
   await deps.flagService.replaceRules(target.configId, body, ctx);
   return rulesOrNotFound(target.configId);
+}
+
+/**
+ * [v4.11, Plan #44] Thay toàn bộ variant của flag. Variant dùng ở MỌI environment: flag DRAFT (SDK
+ * chưa thấy) là DEVELOPER; flag đã phục vụ (ACTIVE, ARCHIVED) là MAINTAINER và gõ lại key — đổi giá
+ * trị một variant là đổi thứ người dùng production nhận, cùng luật thay đổi toàn cục của `update()`.
+ */
+export async function replaceVariants(
+  deps: AppDeps,
+  projectId: string,
+  flagId: string,
+  body: ReplaceVariantsBody,
+  role: ProjectRole | undefined,
+  ctx: AuditContext,
+): Promise<FlagDetail> {
+  const flag = await repository.flagOf(projectId, flagId);
+  if (flag === undefined) throw new NotFoundError(FLAG_NOT_FOUND);
+
+  const { confirmFlagKey, ...change } = body;
+  if (flag.lifecycleStatus !== "DRAFT") {
+    requireRole(
+      role,
+      "MAINTAINER",
+      "sửa variant của flag đang phục vụ tác động mọi environment",
+    );
+    requireConfirmation(
+      confirmFlagKey,
+      flag.key,
+      "Sửa variant của flag đang phục vụ tác động mọi environment, kể cả production",
+    );
+  }
+  await deps.flagService.replaceVariants(flagId, change, ctx);
+  return detailOf(projectId, flagId);
+}
+
+/**
+ * [v4.11, Plan #44] Sao chép rule env nguồn → env đích (§10.12) bằng CÙNG `planPromotion` mà Portal
+ * dùng để hiện diff, trên dữ liệu đọc ngay trong lời gọi. Hai mốc làm "diff đã xem" và "thứ được
+ * ghi" không lệch được: nguồn so ở đây (`sourceUpdatedAt`), đích so ở Service 2 trong khoá env
+ * (`lastKnownUpdatedAt` của thân `PUT …/rules`). Quyền của đích như `replaceRules`, cộng gõ lại key
+ * khi đích là production: một lần chép là thay cả bộ rule, Portal đã hỏi ở trình duyệt — nay máy chủ
+ * giữ luật đó.
+ */
+export async function promote(
+  deps: AppDeps,
+  projectId: string,
+  flagId: string,
+  body: PromoteBody,
+  role: ProjectRole | undefined,
+  ctx: AuditContext,
+): Promise<PromoteView> {
+  const [source, target] = await Promise.all([
+    repository.envTargetOf(projectId, flagId, body.fromEnvId),
+    repository.envTargetOf(projectId, flagId, body.toEnvId),
+  ]);
+  if (source === undefined || target === undefined) {
+    throw new NotFoundError(ENV_NOT_FOUND);
+  }
+  if (target.isProduction) {
+    requireRole(role, "MAINTAINER", "sửa rule ở environment production (§2.2)");
+    requireConfirmation(
+      body.confirmFlagKey,
+      target.flagKey,
+      "Sao chép rule sang production",
+    );
+  }
+
+  const [from, to] = await Promise.all([
+    rulesOrNotFound(source.configId),
+    rulesOrNotFound(target.configId),
+  ]);
+  if (
+    new Date(from.updatedAt).getTime() !==
+    new Date(body.sourceUpdatedAt).getTime()
+  ) {
+    throw new OptimisticLockError(
+      "Rule ở environment nguồn đã đổi từ lúc bạn xem diff",
+      from,
+    );
+  }
+
+  const plan = planPromotion(from.rules, to.rules, body.lastKnownUpdatedAt);
+  if (plan.changes === 0) return { ...to, diff: plan.diff, changes: 0 };
+  await deps.flagService.replaceRules(target.configId, plan.body, ctx);
+  return {
+    ...(await rulesOrNotFound(target.configId)),
+    diff: plan.diff,
+    changes: plan.changes,
+  };
 }
 
 // ------------------------------------------------------------- đọc

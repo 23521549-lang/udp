@@ -153,6 +153,8 @@ export {
   flagKeySchema,
   replaceRulesFields,
   replaceRulesRefine,
+  replaceVariantsFields,
+  replaceVariantsRefine,
   ruleInputSchema,
   updateEnvConfigFields,
   updateEnvConfigRefine,
@@ -164,6 +166,7 @@ export type {
   TesterResult,
   CreateFlagFields,
   ReplaceRulesFields,
+  ReplaceVariantsFields,
   UpdateEnvConfigFields,
   UpdateFlagFields,
 } from "./flag-api.js";

@@ -8,6 +8,7 @@ import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { useProjectContext } from "../project/ProjectLayout";
 import { qkPrefix } from "../../lib/query-keys";
 import { flagApi } from "./flag-api";
+import { parseVariantValue } from "./variant-value";
 
 type FlagType = CreateFlagFields["flagType"];
 
@@ -26,18 +27,6 @@ export const formatFlagKey = (raw: string): string =>
 interface VariantRow {
   key: string;
   value: string;
-}
-
-function parseValue(type: FlagType, text: string): unknown {
-  if (type === "NUMBER") return text.trim() === "" ? text : Number(text);
-  if (type === "JSON") {
-    try {
-      return JSON.parse(text) as unknown;
-    } catch {
-      return text;
-    }
-  }
-  return text;
 }
 
 const SDK_CALL: Record<FlagType, string> = {
@@ -88,7 +77,7 @@ export function CreateFlagDialog({
           : {
               variants: variants.map((v) => ({
                 key: v.key.trim(),
-                value: parseValue(flagType, v.value),
+                value: parseVariantValue(flagType, v.value),
               })),
             }),
       };

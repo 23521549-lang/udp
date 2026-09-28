@@ -9,9 +9,12 @@ import * as flagService from "../modules/flag/flag.service.js";
 import {
   createFlagSchema,
   evaluateFlagSchema,
+  replaceVariantsSchema,
   updateFlagSchema,
   type EvaluateFlagInput,
+  type ReplaceVariantsInput,
 } from "../modules/flag/flag.types.js";
+import { replaceVariants } from "../modules/flag/variant.service.js";
 
 /**
  * Endpoint nội bộ cho flag (§9).
@@ -45,6 +48,24 @@ internalFlagRouter.patch(
     const flag = await flagService.update(
       flagIdOf(req),
       req.body,
+      auditContextOf(req),
+    );
+    res.json({ flag });
+  }),
+);
+
+/**
+ * [v4.11, Plan #44] Thay toàn bộ danh sách variant — đòi người làm như bốn route ghi flag: S2 ghi
+ * hàng audit `flag.variants.update` trong transaction của thay đổi (I40).
+ */
+internalFlagRouter.put(
+  "/flags/:id/variants",
+  requireInternalCaller,
+  validateBody(replaceVariantsSchema),
+  asyncHandler(async (req, res) => {
+    const flag = await replaceVariants(
+      flagIdOf(req),
+      req.body as ReplaceVariantsInput,
       auditContextOf(req),
     );
     res.json({ flag });

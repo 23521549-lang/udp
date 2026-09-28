@@ -364,6 +364,29 @@ export const rulesResponseWire = z
   .strict();
 
 /**
+ * [v4.11, Plan #44] `POST /flags/:flagId/promote` — rule của env ĐÍCH sau khi áp (cùng hình
+ * `GET …/rules`) và diff đã áp, dựng bằng `planPromotion` của `./promote`.
+ */
+export const promoteResponseWire = z
+  .object({
+    updatedAt: isoDateTime,
+    rules: z.array(ruleWire),
+    diff: z.array(
+      z
+        .object({
+          kind: z.enum(["same", "changed", "added", "removed"]),
+          index: z.number().int().nonnegative(),
+          ruleType: z.enum(RULE_TYPES),
+          description: z.string().nullable(),
+          keptId: uuid.optional(),
+        })
+        .strict(),
+    ),
+    changes: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/**
  * `GET /flags/:flagId/stats` — hình của S2, nhưng mỗi env mang tên (S1 ghép). Dựng từ
  * `flagStatsResponseSchema` để hai bên không trôi khỏi nhau.
  */
@@ -1305,6 +1328,7 @@ export type FlagDetailWire = z.infer<typeof flagDetailWire>;
 export type FlagSummaryWire = z.infer<typeof flagSummaryWire>;
 export type RuleWire = z.infer<typeof ruleWire>;
 export type RulesResponseWire = z.infer<typeof rulesResponseWire>;
+export type PromoteResponseWire = z.infer<typeof promoteResponseWire>;
 export type FlagStatsViewWire = z.infer<typeof flagStatsViewResponseWire>;
 export type StaleFlagsResponseWire = z.infer<typeof staleFlagsResponseWire>;
 export type BulkArchiveResponseWire = z.infer<typeof bulkArchiveResponseWire>;

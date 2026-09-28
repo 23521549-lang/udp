@@ -8,15 +8,15 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { planPromotion, stableJson } from "../src/features/flag/promote-model";
 import { API, golden, server } from "./msw";
 import { renderApp } from "./render";
 
 /**
- * Trả mục nợ `portal-config-promote`. Tiêu chí Đạt: diff hiện TRƯỚC khi áp, và
- * `bucket_salt` của env đích không đổi — Portal giữ salt bằng cách gửi lại `id` của rule
- * ĐÍCH (server giữ salt theo `id`, đã chứng minh ở `rule-replace.integration.test.ts`).
- * Ô âm: env đích đổi từ lúc đọc ⇒ 409, không gì bị ghi đè.
+ * Trả mục nợ `portal-config-promote`. Tiêu chí Đạt: diff hiện TRƯỚC khi áp. [Plan #44] Việc áp
+ * nay là `POST …/promote` của Service 1, chạy CÙNG `planPromotion` (bộ test của hàm ở
+ * `packages/shared-types/tests/promote.test.ts`; salt đích giữ nguyên ở
+ * `flag-variants-promote.integration.test.ts`). Ở đây: Portal gửi đúng hai mốc (nguồn đã xem, đích
+ * lúc mở hộp) và key xác nhận cho đích production; ô âm 409 ⇒ báo rõ, không đóng hộp.
  */
 
 const VAR_ON = "11111111-1111-4111-8111-111111111111";
@@ -37,62 +37,7 @@ const rule = (
 });
 
 const SRC_A = "a0000000-0000-4000-8000-000000000001";
-const SRC_B = "a0000000-0000-4000-8000-000000000002";
 const DST_A = "d0000000-0000-4000-8000-000000000001";
-const DST_X = "d0000000-0000-4000-8000-000000000009";
-
-describe("mô hình sao chép rule", () => {
-  it("rule khớp (cùng loại + điều kiện) mang id của rule ĐÍCH, không bao giờ id nguồn", () => {
-    const source = [
-      rule(SRC_A, 10, {
-        serve: {
-          kind: "distribution",
-          weights: [
-            { variantId: VAR_OFF, weight: 50_000 },
-            { variantId: VAR_ON, weight: 50_000 },
-          ],
-        },
-      }),
-      rule(SRC_B, 20, { ruleType: "ALL", condition: {} }),
-    ];
-    const target = [
-      // cùng điều kiện nhưng khoá theo thứ tự khác — vẫn là một điều kiện
-      rule(DST_A, 10, {
-        condition: {
-          all: [{ value: "VN", operator: "eq", attribute: "country" }],
-        },
-      }),
-      rule(DST_X, 20, {
-        ruleType: "USER_BASED",
-        condition: { userIds: ["u1"] },
-      }),
-    ];
-    const plan = planPromotion(source, target, "2026-09-25T01:00:00.000Z");
-    const ids = plan.body.rules.map((r) => r.id);
-    expect(ids).toEqual([DST_A, undefined]);
-    expect(JSON.stringify(plan.body)).not.toContain(SRC_A);
-    expect(JSON.stringify(plan.body)).not.toContain(SRC_B);
-    expect(plan.body.lastKnownUpdatedAt).toBe("2026-09-25T01:00:00.000Z");
-    expect(plan.diff.map((d) => d.kind)).toEqual([
-      "changed",
-      "added",
-      "removed",
-    ]);
-    expect(plan.changes).toBe(3);
-  });
-
-  it("đích đã giống hệt ⇒ 0 thay đổi", () => {
-    const plan = planPromotion([rule(SRC_A, 10)], [rule(DST_A, 10)], "x");
-    expect(plan.changes).toBe(0);
-    expect(plan.body.rules[0]?.id).toBe(DST_A);
-  });
-
-  it("stableJson không phụ thuộc thứ tự khoá", () => {
-    expect(stableJson({ b: 1, a: [{ d: 2, c: 3 }] })).toBe(
-      stableJson({ a: [{ c: 3, d: 2 }], b: 1 }),
-    );
-  });
-});
 
 function setup() {
   const detail = golden<ProjectDetailResponseWire>("GET /projects/{id}");
@@ -134,9 +79,12 @@ function setup() {
       ],
     },
   };
-  const puts: {
-    envId: string;
-    body: { lastKnownUpdatedAt: string; rules: { id?: string }[] };
+  const promotes: {
+    fromEnvId: string;
+    toEnvId: string;
+    sourceUpdatedAt: string;
+    lastKnownUpdatedAt: string;
+    confirmFlagKey?: string;
   }[] = [];
   let conflict = false;
   server.use(
@@ -163,11 +111,10 @@ function setup() {
           },
         ),
     ),
-    http.put(
-      `${API}/projects/:id/flags/:flagId/envs/:envId/rules`,
-      async ({ params, request }) => {
-        const body = (await request.json()) as (typeof puts)[number]["body"];
-        puts.push({ envId: params.envId as string, body });
+    http.post(
+      `${API}/projects/:id/flags/:flagId/promote`,
+      async ({ request }) => {
+        promotes.push((await request.json()) as (typeof promotes)[number]);
         if (conflict) {
           return HttpResponse.json(
             {
@@ -182,6 +129,16 @@ function setup() {
         return HttpResponse.json({
           updatedAt: new Date().toISOString(),
           rules: rulesByEnv[prod.id]!.rules,
+          diff: [
+            {
+              kind: "changed",
+              index: 0,
+              ruleType: "ATTRIBUTE_BASED",
+              description: null,
+              keptId: DST_A,
+            },
+          ],
+          changes: 1,
         });
       },
     ),
@@ -191,14 +148,14 @@ function setup() {
     flag,
     dev,
     prod,
-    puts,
+    promotes,
     setConflict: (v: boolean) => (conflict = v),
   };
 }
 
 describe("sao chép rule: dev → production qua Portal", () => {
-  it("diff hiện trước; production đòi gõ key; PUT mang id ĐÍCH và mốc của ĐÍCH", async () => {
-    const { detail, flag, dev, prod, puts } = setup();
+  it("diff hiện trước; production đòi gõ key; POST mang hai mốc và key xác nhận", async () => {
+    const { detail, flag, dev, prod, promotes } = setup();
     renderApp(
       `/app/projects/${detail.project.id}/flags?env=${dev.id}&flag=${flag.id}`,
     );
@@ -217,7 +174,7 @@ describe("sao chép rule: dev → production qua Portal", () => {
     });
     expect(within(table).getByText("Đổi")).toBeInTheDocument();
     expect(within(table).getByText("giữ nguyên")).toBeInTheDocument();
-    expect(puts).toHaveLength(0);
+    expect(promotes).toHaveLength(0);
 
     const apply = within(dialog).getByRole("button", { name: "Áp dụng" });
     expect(apply).toBeDisabled();
@@ -226,14 +183,18 @@ describe("sao chép rule: dev → production qua Portal", () => {
       flag.key,
     );
     await user.click(apply);
-    await waitFor(() => expect(puts).toHaveLength(1));
-    expect(puts[0]!.envId).toBe(prod.id);
-    expect(puts[0]!.body.lastKnownUpdatedAt).toBe("2026-09-25T00:30:00.000Z");
-    expect(puts[0]!.body.rules.map((r) => r.id)).toEqual([DST_A]);
+    await waitFor(() => expect(promotes).toHaveLength(1));
+    expect(promotes[0]).toEqual({
+      fromEnvId: dev.id,
+      toEnvId: prod.id,
+      sourceUpdatedAt: "2026-09-25T00:00:00.000Z",
+      lastKnownUpdatedAt: "2026-09-25T00:30:00.000Z",
+      confirmFlagKey: flag.key,
+    });
   });
 
-  it("ô âm: env đích đổi từ lúc đọc ⇒ 409, báo rõ, không đóng hộp", async () => {
-    const { detail, flag, dev, prod, puts, setConflict } = setup();
+  it("ô âm: nguồn hoặc đích đổi từ lúc đọc ⇒ 409, báo rõ, không đóng hộp", async () => {
+    const { detail, flag, dev, prod, promotes, setConflict } = setup();
     setConflict(true);
     renderApp(
       `/app/projects/${detail.project.id}/flags?env=${dev.id}&flag=${flag.id}`,
@@ -256,7 +217,7 @@ describe("sao chép rule: dev → production qua Portal", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
       "vừa được người khác sửa",
     );
-    expect(puts).toHaveLength(1);
+    expect(promotes).toHaveLength(1);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });

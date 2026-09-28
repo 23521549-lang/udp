@@ -23,6 +23,7 @@ import {
   type FlagStatsResponse,
   type FlagStatsSummary,
   type ReplaceRulesFields,
+  type ReplaceVariantsFields,
   type StaleFlagsQuery,
   type StaleFlagsResponse,
   testerResultSchema,
@@ -72,6 +73,12 @@ export interface FlagServiceClient {
   replaceRules(
     configId: string,
     body: ReplaceRulesFields,
+    ctx: AuditContext,
+  ): Promise<void>;
+  /** [v4.11, Plan #44] Thay toàn bộ danh sách variant của flag */
+  replaceVariants(
+    flagId: string,
+    body: ReplaceVariantsFields,
     ctx: AuditContext,
   ): Promise<void>;
   /** [v4.6] Flag Evaluation Tester — chỉ đọc, không ngữ cảnh audit */
@@ -314,6 +321,14 @@ export function createFlagServiceClient(
       await call(
         "PUT",
         `/internal/flag-envs/${encodeURIComponent(configId)}/rules`,
+        body,
+        ctx,
+      );
+    },
+    async replaceVariants(flagId, body, ctx) {
+      await call(
+        "PUT",
+        `/internal/flags/${encodeURIComponent(flagId)}/variants`,
         body,
         ctx,
       );

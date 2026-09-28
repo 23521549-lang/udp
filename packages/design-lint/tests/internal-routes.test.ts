@@ -59,10 +59,7 @@ const SERVICES: InternalService[] = [
     heading: "Internal — chỉ Core Backend và PD Controller gọi",
     closes: (l) => l.trim() === "```",
     floor: { mounts: 2, routes: 14, documented: 14 },
-    notImplemented: {
-      "PUT /internal/flags/:param/variants":
-        "PUT variants chưa hiện thực — §16 ghi nhận trong hàng 'Luồng 4 ở Service 1 chưa đủ route §9'",
-    },
+    notImplemented: {},
   },
   {
     name: "Service 1",
