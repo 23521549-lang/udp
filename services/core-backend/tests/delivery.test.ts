@@ -1,5 +1,6 @@
 import { DEFAULT_ROLLOUT_THRESHOLDS } from "@udp/config";
 import { flaggerGateToken } from "@udp/http";
+import { serviceLevelIssue } from "@udp/shared-types";
 import { describe, expect, it } from "vitest";
 import {
   argoAnalysisTemplate,
@@ -17,7 +18,6 @@ import { flaggerCanary } from "../src/modules/rollout/delivery/flagger.js";
 import { patchToward } from "../src/modules/rollout/delivery/merge.js";
 import { restoreAfterSession } from "../src/modules/rollout/delivery/restore.js";
 import { imageWithTag } from "../src/modules/cicd/workload.js";
-import { supportIssue } from "../src/modules/rollout/delivery/matrix.js";
 
 /**
  * Đối tượng giao hàng SERVICE_LEVEL (§7.2, §7.3) [Plan #51 AC-4]. Kể cả **I4** (§13.3): udp-driven không sinh khối
@@ -209,37 +209,52 @@ describe("Argo Rollouts", () => {
   });
 });
 
-describe("ma trận §7.2 (supportIssue)", () => {
+describe("ma trận §7.2 (serviceLevelIssue, dùng chung S1 và Portal)", () => {
   it("các ô làm được", () => {
     for (const mode of ["udp-driven", "tool-driven"] as const) {
       for (const strategy of ["CANARY", "BLUE_GREEN"] as const) {
         expect(
-          supportIssue("argo-rollouts", mode, strategy, "nginx"),
+          serviceLevelIssue("argo-rollouts", mode, strategy, "nginx"),
         ).toBeUndefined();
       }
       for (const strategy of ["CANARY", "ATTRIBUTE_SPLIT"] as const) {
         expect(
-          supportIssue("flagger", mode, strategy, "linkerd"),
+          serviceLevelIssue("flagger", mode, strategy, "linkerd"),
         ).toBeUndefined();
       }
     }
     expect(
-      supportIssue("argo-rollouts", "udp-driven", "ATTRIBUTE_SPLIT", "istio"),
+      serviceLevelIssue(
+        "argo-rollouts",
+        "udp-driven",
+        "ATTRIBUTE_SPLIT",
+        "istio",
+      ),
     ).toBeUndefined();
   });
 
   it("các ô không làm được nói đúng lý do", () => {
-    expect(supportIssue("spinnaker", "udp-driven", "CANARY", "istio")).toMatch(
-      /chưa có executor/,
-    );
     expect(
-      supportIssue("flagger", "udp-driven", "BLUE_GREEN", "istio"),
+      serviceLevelIssue("spinnaker", "udp-driven", "CANARY", "istio"),
+    ).toMatch(/chưa có executor/);
+    expect(
+      serviceLevelIssue("flagger", "udp-driven", "BLUE_GREEN", "istio"),
     ).toMatch(/Argo Rollouts/);
     expect(
-      supportIssue("argo-rollouts", "tool-driven", "ATTRIBUTE_SPLIT", "istio"),
+      serviceLevelIssue(
+        "argo-rollouts",
+        "tool-driven",
+        "ATTRIBUTE_SPLIT",
+        "istio",
+      ),
     ).toMatch(/Flagger/);
     expect(
-      supportIssue("argo-rollouts", "udp-driven", "ATTRIBUTE_SPLIT", "nginx"),
+      serviceLevelIssue(
+        "argo-rollouts",
+        "udp-driven",
+        "ATTRIBUTE_SPLIT",
+        "nginx",
+      ),
     ).toMatch(/Istio/);
   });
 });

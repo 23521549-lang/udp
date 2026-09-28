@@ -53,27 +53,45 @@ function labelOf(
   action: RolloutIntentActionWire,
   rollout: RolloutDetailWire,
 ): string {
-  if (action === "PROMOTE" && rollout.strategy === "ATTRIBUTE_SPLIT") {
+  if (
+    action === "PROMOTE" &&
+    rollout.scope === "FLAG_LEVEL" &&
+    rollout.strategy === "ATTRIBUTE_SPLIT"
+  ) {
     return `Đổi mặc định sang ${rollout.flag?.targetVariant ?? "variant mới"}`;
   }
   return ACTION_LABEL[action];
 }
 
-/** Hành động hợp lệ theo trạng thái — ẩn nút vô nghĩa thay vì để backend trả 409 */
+/**
+ * Hành động hợp lệ theo trạng thái — ẩn nút vô nghĩa thay vì để backend trả 409. [Plan #51] tool-driven: công
+ * cụ tự chạy, dừng nó cần sửa spec mà Service 3 không có quyền (§12.2) — không có Tạm dừng/Tiếp tục.
+ */
 export function actionsFor(
   status: RolloutDetailWire["status"],
+  controlMode: RolloutDetailWire["controlMode"] = "udp-driven",
 ): RolloutIntentActionWire[] {
-  switch (status) {
-    case "IN_PROGRESS":
-      return ["PAUSE", "PROMOTE", "ROLLBACK"];
-    case "PAUSED":
-      return ["RESUME", "PROMOTE", "ROLLBACK"];
-    case "PENDING":
-      return ["ROLLBACK"];
-    default:
-      return [];
-  }
+  const actions = ((): RolloutIntentActionWire[] => {
+    switch (status) {
+      case "IN_PROGRESS":
+        return ["PAUSE", "PROMOTE", "ROLLBACK"];
+      case "PAUSED":
+        return ["RESUME", "PROMOTE", "ROLLBACK"];
+      case "PENDING":
+        return ["ROLLBACK"];
+      default:
+        return [];
+    }
+  })();
+  return controlMode === "tool-driven"
+    ? actions.filter((a) => a !== "PAUSE" && a !== "RESUME")
+    : actions;
 }
+
+const MODE_LABEL: Record<RolloutDetailWire["controlMode"], string> = {
+  "udp-driven": "UDP quyết",
+  "tool-driven": "công cụ tự quyết",
+};
 
 export function RolloutDetailPage() {
   const { project, env } = useProjectContext();
@@ -103,7 +121,9 @@ export function RolloutDetailPage() {
               Rollout
             </Link>
             <span className="sep"> / </span>
-            {rollout.data?.rollout.flag?.key ?? rolloutId.slice(0, 8)}
+            {rollout.data?.rollout.flag?.key ??
+              rollout.data?.rollout.workloadName ??
+              rolloutId.slice(0, 8)}
           </>
         }
         envScoped={false}
@@ -131,6 +151,8 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
   const snap = rollout.latestMetricSnapshot;
   // [Plan #46] §10.9 AttributeSplitDetail: số KỸ THUẬT của hai nhánh, không tự quyết, không z-score
   const split = rollout.strategy === "ATTRIBUTE_SPLIT";
+  // [Plan #51] SERVICE_LEVEL: hai nhánh là hai PHIÊN BẢN, không phải hai variant của một flag
+  const service = rollout.scope === "SERVICE_LEVEL";
   const decision = rollout.lastDecision;
   const maxBreaches = Number(rollout.thresholds.maxConsecutiveBreaches ?? 2);
   const errorLimit = Number(rollout.thresholds.errorRate ?? 0.05);
@@ -147,6 +169,16 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
               <>
                 Tăng variant{" "}
                 <span className="mono">{rollout.flag.targetVariant}</span>
+                {" · "}
+              </>
+            )}
+            {service && (
+              <>
+                Phiên bản{" "}
+                <span className="mono">{rollout.versionOld ?? "?"}</span> →{" "}
+                <span className="mono">{rollout.versionNew ?? "?"}</span>
+                {" · "}
+                {MODE_LABEL[rollout.controlMode]}
                 {" · "}
               </>
             )}
@@ -179,15 +211,41 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         <div className="alert" role="alert">
           <Icon of={CircleAlert} />
           <div>
-            <b>Không rollback được vì Flag Service không phản hồi</b>
+            <b>
+              {service
+                ? "Không abort được vì không vào được cluster của project"
+                : "Không rollback được vì Flag Service không phản hồi"}
+            </b>
             <div>
-              Cơ chế an toàn thất bại: kiểm tra ngay trạng thái của flag.
+              {service
+                ? "Kiểm tra ngay Rollout/Canary của workload trong cluster."
+                : "Cơ chế an toàn thất bại: kiểm tra ngay trạng thái của flag."}
             </div>
           </div>
         </div>
       )}
 
-      {split && (
+      {service && rollout.trafficMatch !== undefined && (
+        <p className="c2">
+          Nhóm đi phiên bản mới: request có header{" "}
+          <span className="mono">
+            {rollout.trafficMatch.header}: {rollout.trafficMatch.value}
+          </span>
+        </p>
+      )}
+      {service && rollout.controlMode === "tool-driven" && (
+        <div className="alert" role="note">
+          <Icon of={CircleAlert} />
+          <div>
+            <b>Công cụ giao hàng tự phân tích và tự quyết</b>
+            <div>
+              UDP soi gương tiến độ của nó; bạn vẫn promote hay rollback tay
+              được.
+            </div>
+          </div>
+        </div>
+      )}
+      {split && !service && (
         <div className="alert" role="note">
           <Icon of={CircleAlert} />
           <div>
@@ -205,7 +263,11 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
       <div className="stat">
         <div>
           <div className="l">
-            {split ? "Nhóm khớp nhận variant mới" : "Lưu lượng variant mới"}
+            {service
+              ? "Lưu lượng phiên bản mới"
+              : split
+                ? "Nhóm khớp nhận variant mới"
+                : "Lưu lượng variant mới"}
           </div>
           <div className="v num">
             {formatPercent(rollout.currentTrafficPercentage)}
@@ -221,9 +283,11 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         </div>
         <div>
           <div className="l">
-            {split
-              ? "Tỉ lệ lỗi nhánh mới / nhánh cũ"
-              : "Tỉ lệ lỗi canary / đối chứng"}
+            {service
+              ? "Tỉ lệ lỗi phiên bản mới / cũ"
+              : split
+                ? "Tỉ lệ lỗi nhánh mới / nhánh cũ"
+                : "Tỉ lệ lỗi canary / đối chứng"}
           </div>
           <div className="v num">
             {snap === undefined
@@ -397,7 +461,8 @@ function Actions({ rollout }: { rollout: RolloutDetailWire }) {
   });
 
   const pending = rollout.pendingIntent !== undefined || act.isPending;
-  const actions = actionsFor(rollout.status);
+  const actions = actionsFor(rollout.status, rollout.controlMode);
+  const service = rollout.scope === "SERVICE_LEVEL";
   if (actions.length === 0) return null;
 
   const icon: Record<RolloutIntentActionWire, typeof Pause> = {
@@ -432,16 +497,20 @@ function Actions({ rollout }: { rollout: RolloutDetailWire }) {
           title={
             confirm === "ROLLBACK"
               ? "Rollback rollout này?"
-              : rollout.strategy === "ATTRIBUTE_SPLIT"
+              : !service && rollout.strategy === "ATTRIBUTE_SPLIT"
                 ? "Đổi variant mặc định?"
                 : "Đưa lên 100%?"
           }
           description={
-            confirm === "ROLLBACK"
-              ? `Lưu lượng về lại mốc ${rollout.baselinePercentage === null ? "ban đầu" : formatPercent(rollout.baselinePercentage)}.`
-              : rollout.strategy === "ATTRIBUTE_SPLIT"
-                ? "Mọi người dùng của environment, không riêng nhóm khớp, sẽ nhận variant mới làm mặc định. Rollout kết thúc."
-                : "Mọi người dùng khớp rule sẽ nhận variant mới."
+            service
+              ? confirm === "ROLLBACK"
+                ? `Công cụ giao hàng đưa toàn bộ traffic về phiên bản ${rollout.versionOld ?? "cũ"}.`
+                : `Phiên bản ${rollout.versionNew ?? "mới"} nhận 100% traffic.`
+              : confirm === "ROLLBACK"
+                ? `Lưu lượng về lại mốc ${rollout.baselinePercentage === null ? "ban đầu" : formatPercent(rollout.baselinePercentage)}.`
+                : rollout.strategy === "ATTRIBUTE_SPLIT"
+                  ? "Mọi người dùng của environment, không riêng nhóm khớp, sẽ nhận variant mới làm mặc định. Rollout kết thúc."
+                  : "Mọi người dùng khớp rule sẽ nhận variant mới."
           }
           confirmLabel={labelOf(confirm, rollout)}
           danger={confirm === "ROLLBACK"}

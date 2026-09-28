@@ -1,4 +1,10 @@
-import type { RolloutThresholds, TrafficMatch } from "@udp/shared-types";
+import type {
+  ControlModeWire,
+  DeliveryTool,
+  RolloutThresholds,
+  ServiceStrategy,
+  TrafficMatch,
+} from "@udp/shared-types";
 import type { TrafficRouter } from "../../adapter-base/traffic-router.js";
 
 /**
@@ -6,18 +12,6 @@ import type { TrafficRouter } from "../../adapter-base/traffic-router.js";
  * Rollouts hay Flagger chạy canary theo image. Hàm dựng là THUẦN (không gọi cluster), để I4 kiểm được trên chính
  * đầu ra của chúng.
  */
-
-/** Tool có executor SERVICE_LEVEL — đúng hai công cụ §7.2 vẽ */
-export const DELIVERY_TOOLS = ["argo-rollouts", "flagger"] as const;
-export type DeliveryTool = (typeof DELIVERY_TOOLS)[number];
-
-export const isDeliveryTool = (toolId: string): toolId is DeliveryTool =>
-  (DELIVERY_TOOLS as readonly string[]).includes(toolId);
-
-/** Tên của §9 / ADR-01 trên dây; cột database là enum `UDP_DRIVEN | TOOL_DRIVEN` */
-export type ControlModeWire = "udp-driven" | "tool-driven";
-
-export type ServiceStrategy = "CANARY" | "BLUE_GREEN" | "ATTRIBUTE_SPLIT";
 
 export interface DeliverySpec {
   sessionId: string;

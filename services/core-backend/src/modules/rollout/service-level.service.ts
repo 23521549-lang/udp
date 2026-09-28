@@ -9,6 +9,7 @@ import {
   ServiceUnavailableError,
   UnprocessableError,
 } from "@udp/http";
+import { serviceLevelIssue, type DeliveryTool } from "@udp/shared-types";
 import type { Request } from "express";
 import type { AppDeps } from "../../core/app-deps.js";
 import { PhaseFailedError } from "../../jobs/job-kit.js";
@@ -37,11 +38,9 @@ import {
 import {
   DELIVERY_ANNOTATIONS,
   type DeliverySpec,
-  type DeliveryTool,
   type Manifest,
 } from "./delivery/delivery.types.js";
 import { flaggerCanary } from "./delivery/flagger.js";
-import { supportIssue } from "./delivery/matrix.js";
 import { mergePatches } from "./delivery/merge.js";
 import * as repository from "./rollout.repository.js";
 import type { CreateServiceRolloutInput } from "./rollout.types.js";
@@ -385,7 +384,7 @@ export async function createServiceLevel(
     projectId,
     environmentId: input.envId,
   });
-  const issue = supportIssue(
+  const issue = serviceLevelIssue(
     delivery.toolId,
     input.controlMode,
     input.strategy,

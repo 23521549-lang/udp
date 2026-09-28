@@ -37,6 +37,8 @@ import type { Outcome } from "./reconciler.js";
  * - **udp-driven**: phân tích phiên bản mới vs cũ (`service_version`); Argo ⇒ promote đúng một bậc khi Rollout
  *   đứng ở bậc session đang chờ; Flagger ⇒ không ghi gì, quyết định nằm ở `last_decision` cho gate đọc.
  * - **tool-driven**: không lời ghi nào ngoài ý định của người dùng (I5).
+ *
+ * Test chạy trên cụm giả; chạy với controller Argo/Flagger thật trên cluster. Sổ nợ: `service-level-cluster`
  */
 
 type Close = {

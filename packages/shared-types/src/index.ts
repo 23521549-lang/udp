@@ -84,6 +84,9 @@ export {
   trackOutcomeOf,
   trackResultSchema,
   trafficMatchSchema,
+  DELIVERY_TOOLS,
+  isDeliveryTool,
+  serviceLevelIssue,
 } from "./rollout.js";
 export type {
   CanaryPair,
@@ -96,6 +99,9 @@ export type {
   TrackOutcome,
   TrackResult,
   TrafficMatch,
+  ControlModeWire,
+  DeliveryTool,
+  ServiceStrategy,
 } from "./rollout.js";
 export type { ConfigChangeNotice, ConfigChangeType } from "./change-feed.js";
 

@@ -69,6 +69,48 @@ export const trafficMatchSchema = z
 
 export type TrafficMatch = z.infer<typeof trafficMatchSchema>;
 
+// ------------------------------------------------------------- SERVICE_LEVEL (Plan #51)
+
+/** Tool có executor SERVICE_LEVEL — đúng hai công cụ §7.2 vẽ */
+export const DELIVERY_TOOLS = ["argo-rollouts", "flagger"] as const;
+export type DeliveryTool = (typeof DELIVERY_TOOLS)[number];
+
+export const isDeliveryTool = (toolId: string): toolId is DeliveryTool =>
+  (DELIVERY_TOOLS as readonly string[]).includes(toolId);
+
+/** Tên của §9 / ADR-01 trên dây; cột database là enum `UDP_DRIVEN | TOOL_DRIVEN` */
+export type ControlModeWire = "udp-driven" | "tool-driven";
+
+export type ServiceStrategy = "CANARY" | "BLUE_GREEN" | "ATTRIBUTE_SPLIT";
+
+/**
+ * Ô nào của ma trận §7.2 chạy được với tool của environment (Plan #51 QĐ-5) — MỘT định nghĩa cho Service 1 (chốt
+ * 422) và Portal (chỉ mời chọn ô làm được). `undefined` = được; chuỗi = lý do, đúng câu người dùng cần đọc để đổi
+ * lựa chọn. `router` vắng (Portal chưa biết bộ định tuyến) ⇒ bỏ qua phép kiểm chỉ router quyết.
+ */
+export function serviceLevelIssue(
+  toolId: string,
+  mode: ControlModeWire,
+  strategy: ServiceStrategy,
+  router?: string,
+): string | undefined {
+  if (!isDeliveryTool(toolId)) {
+    return `${toolId} chưa có executor SERVICE_LEVEL — §7.2 vẽ Argo Rollouts và Flagger`;
+  }
+  if (toolId === "flagger" && strategy === "BLUE_GREEN") {
+    return "BLUE_GREEN ở SERVICE_LEVEL là Rollout blueGreen của Argo Rollouts (§7.2) — environment này dùng Flagger";
+  }
+  if (toolId === "argo-rollouts" && strategy === "ATTRIBUTE_SPLIT") {
+    if (mode === "tool-driven") {
+      return "ATTRIBUTE_SPLIT tool-driven là A/B của Flagger (§7.2) — với Argo Rollouts chọn udp-driven";
+    }
+    if (router !== undefined && router !== "istio") {
+      return `ATTRIBUTE_SPLIT udp-driven định tuyến bằng VirtualService của Istio (§7.2) — router của environment là ${router}`;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Tên metric hợp lệ của Prometheus (`[a-zA-Z_:][a-zA-Z0-9_:]*`). Chốt ở biên
  * ghi (S1) VÀ ở nơi ghép PromQL (`@udp/metrics-provider`): `metric_queries` là dữ

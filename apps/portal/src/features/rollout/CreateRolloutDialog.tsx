@@ -6,10 +6,8 @@ import {
 } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { canaryPairOf } from "@udp/shared-types/rollout";
-import { CircleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Dialog } from "../../components/Dialog";
-import { Icon } from "../../components/Icon";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { browserTimeZone } from "../../lib/format";
 import { isApiError } from "../../lib/http";
@@ -17,6 +15,8 @@ import { qk } from "../../lib/query-keys";
 import { flagApi } from "../flag/flag-api";
 import { useProjectContext } from "../project/ProjectLayout";
 import { rolloutApi, type CreateFlagRolloutInput } from "./rollout-api";
+import { MetricsSetupGuide, NumberField } from "./rollout-form";
+import { ServiceRolloutDialog } from "./ServiceRolloutDialog";
 
 const DNS_1123 =
   /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
@@ -34,13 +34,64 @@ const DNS_1123 =
  *
  * [Plan #46] Hai chiến lược ở mức flag (§7.2): CANARY tăng dần một rule phân phối; ATTRIBUTE_SPLIT
  * đưa nhóm khớp một rule theo thuộc tính/segment sang variant mới trong MỘT bậc, không tự quyết —
- * nên form ẩn nhịp bậc và ngưỡng rollback của nó. BLUE_GREEN "không áp dụng" ở mức flag; SERVICE_LEVEL
- * là Plan #47 — không có trong form cho tới khi Service 3 chạy được chúng.
+ * nên form ẩn nhịp bậc và ngưỡng rollback của nó. BLUE_GREEN "không áp dụng" ở mức flag.
+ *
+ * [Plan #51] Bước SCOPE của §10.9: "Theo flag" (hộp này) hay "Theo phiên bản" (`ServiceRolloutDialog`,
+ * SERVICE_LEVEL qua Argo Rollouts/Flagger).
  */
 type FlagStrategy = "CANARY" | "ATTRIBUTE_SPLIT";
+type Scope = "FLAG_LEVEL" | "SERVICE_LEVEL";
+
+export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
+  const [scope, setScope] = useState<Scope>("FLAG_LEVEL");
+  const picker = <ScopePicker value={scope} onChange={setScope} />;
+  return scope === "FLAG_LEVEL" ? (
+    <FlagRolloutDialog onClose={onClose} scopePicker={picker} />
+  ) : (
+    <ServiceRolloutDialog onClose={onClose} scopePicker={picker} />
+  );
+}
+
+function ScopePicker({
+  value,
+  onChange,
+}: {
+  value: Scope;
+  onChange: (scope: Scope) => void;
+}) {
+  return (
+    <div className="f">
+      <span className="lbl">Phạm vi</span>
+      <div className="seg" role="group" aria-label="Phạm vi">
+        {(
+          [
+            ["FLAG_LEVEL", "Theo flag"],
+            ["SERVICE_LEVEL", "Theo phiên bản"],
+          ] as const
+        ).map(([scope, label]) => (
+          <button
+            key={scope}
+            type="button"
+            aria-pressed={value === scope}
+            onClick={() => onChange(scope)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const SPLIT_RULE_TYPES = new Set(["ATTRIBUTE_BASED", "SEGMENT"]);
-export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
+
+function FlagRolloutDialog({
+  onClose,
+  scopePicker,
+}: {
+  onClose: () => void;
+  scopePicker: ReactNode;
+}) {
   const { project, env } = useProjectContext();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -186,6 +237,7 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
         </>
       }
     >
+      {scopePicker}
       <div className="f">
         <span className="lbl">Chiến lược</span>
         <div className="seg" role="group" aria-label="Chiến lược">
@@ -431,88 +483,5 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
         </p>
       )}
     </Dialog>
-  );
-}
-
-function NumberField({
-  id,
-  label,
-  hint,
-  value,
-  onChange,
-  min,
-  max,
-  step = 1,
-}: {
-  id: string;
-  label: string;
-  hint?: string;
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-}) {
-  return (
-    <div className="f">
-      <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        className="inp num"
-        type="number"
-        value={value}
-        min={min}
-        max={max}
-        step={step}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-      {hint !== undefined && <span className="help">{hint}</span>}
-    </div>
-  );
-}
-
-/**
- * Màn 422 của §10.13: workload chưa xuất metric (probe pha 1). Nói đúng đoạn mã cần thêm
- * theo ngôn ngữ của project, có nút kiểm tra lại, và KHÔNG cho tạo rollout chạy mù.
- */
-export function MetricsSetupGuide({
-  runtime,
-  workload,
-  onRetry,
-}: {
-  runtime: string;
-  workload: string;
-  onRetry: () => void;
-}) {
-  /**
-   * Bản Python của provider là plan riêng sau #26 (§6.8 "Bản Python") — chưa có gói nào
-   * để cài. Nói thật điều đó thay vì in một dòng import không tồn tại.
-   */
-  const python = runtime.toLowerCase().startsWith("python");
-  const code = python
-    ? "# Middleware Python chưa phát hành (§6.8). Tạm thời: xuất histogram\n# http_server_request_duration_seconds kèm nhãn ff theo §6.6."
-    : 'import { udpMetricsMiddleware } from "@udp/openfeature-provider/metrics";\n\napp.use(udpMetricsMiddleware());';
-  return (
-    <div className="alert amber" role="alert">
-      <Icon of={CircleAlert} />
-      <div>
-        <b>Workload {workload} chưa xuất metric HTTP</b>
-        <p className="c2" style={{ margin: "4px 0 8px" }}>
-          Rollout cần so tỉ lệ lỗi giữa hai nhánh flag. Thêm middleware sau vào
-          ứng dụng, deploy lại, rồi kiểm tra lại.
-        </p>
-        <div className="code">
-          <pre>{code}</pre>
-        </div>
-        <button
-          type="button"
-          className="btn"
-          style={{ marginTop: 8 }}
-          onClick={onRetry}
-        >
-          Kiểm tra lại
-        </button>
-      </div>
-    </div>
   );
 }

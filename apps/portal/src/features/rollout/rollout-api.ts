@@ -5,6 +5,11 @@ import {
   rolloutResponseWire,
   type RolloutIntentActionWire,
 } from "@udp/shared-types/wire";
+import type {
+  ControlModeWire,
+  ServiceStrategy,
+  TrafficMatch,
+} from "@udp/shared-types/rollout";
 import { api } from "../../lib/http";
 
 const r = (projectId: string) => `/projects/${projectId}/rollouts`;
@@ -28,6 +33,25 @@ export interface CreateFlagRolloutInput {
     minErrors: number;
     maxConsecutiveBreaches: number;
   };
+}
+
+/**
+ * [Plan #51] SERVICE_LEVEL (§7.2, §9): canary theo image — chọn workload và TAG mới; tool (Argo Rollouts/Flagger)
+ * là của environment, không khai ở đây.
+ */
+export interface CreateServiceRolloutInput {
+  scope: "SERVICE_LEVEL";
+  envId: string;
+  strategy: ServiceStrategy;
+  controlMode: ControlModeWire;
+  workloadName: string;
+  imageTag: string;
+  trafficMatch?: TrafficMatch;
+  stepPercent: number;
+  stepIntervalSeconds: number;
+  analysisIntervalSeconds: number;
+  warmUpRequests: number;
+  thresholds: CreateFlagRolloutInput["thresholds"];
 }
 
 export const rolloutApi = {
@@ -57,7 +81,7 @@ export const rolloutApi = {
     }),
   create: (
     projectId: string,
-    body: CreateFlagRolloutInput,
+    body: CreateFlagRolloutInput | CreateServiceRolloutInput,
     idempotencyKey: string,
   ) =>
     api(rolloutResponseWire, r(projectId), {

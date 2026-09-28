@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 41.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 42.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -135,8 +135,10 @@ có địa chỉ.
 ## E5 — MTTD/MTTR của auto-rollback (ba nhánh)
 
 - **Vì sao nợ:** cần Prometheus + S1 + S2 + S3 + hai instance sample-app + tải 50 rps,
-  ≥ 10 lần mỗi ô (4 ô × 3 nhánh); nhánh service-level còn chặn bởi CODE (Service 3
-  chưa có executor SERVICE_LEVEL).
+  ≥ 10 lần mỗi ô (4 ô × 3 nhánh). [Plan #51] Executor SERVICE_LEVEL đã có (Argo Rollouts và
+  Flagger, udp-driven và tool-driven); hai nhánh service-level còn cần một cluster có công cụ đó
+  (mục `service-level-cluster`). Câu "chặn bởi code" trong `E5-preregistration.md` là trạng
+  thái LÚC ĐĂNG KÝ — tệp đó không sửa (sửa là một amendment).
 - **Tiền đề:** `docs/measurements/E5-preregistration.md` đã commit và không sửa (harness
   tự kiểm); `pnpm dev:infra` (Prometheus); `pnpm db:seed` rồi
   `pnpm --filter @udp/flag-service rehash`; ≥ 2,5 GiB RAM trống.
@@ -161,6 +163,33 @@ có địa chỉ.
   session không ROLLBACK trong 20 phút — giữ file, ghi lý do loại ở `README.md`.
 - **Tài nguyên:** ~2,5 GiB RAM (Prometheus, 3 service, 2 app, tải).
 - **Ảnh hưởng tới kết luận:** đóng góp **C1** ở phần số liệu: MTTD/MTTR và blast radius so với Flagger/Argo Rollouts. Cơ chế đã chạy và có test tích hợp, nhưng **so sánh** ba nhánh là phần chưa có số.
+
+## service-level-cluster — rollout SERVICE_LEVEL trên cluster có Argo Rollouts / Flagger thật
+
+- **Vì sao nợ:** [Plan #51] Service 1 ghi `Rollout`/`Canary` và Service 3 promote/abort qua
+  `rollouts/status` (hay trả lời gate của Flagger) đều đã có test — trên cụm GIẢ (`FakeCluster`:
+  merge patch, 409 theo `resourceVersion`, subresource status). Chưa có lần chạy nào với controller
+  thật: hình CR đúng tài liệu của Argo Rollouts/Flagger nhưng chưa được chính chúng chấp nhận; RBAC
+  `rollouts/status: patch` của `udp-traffic` chưa được API server thật xác nhận là ĐỦ cho promote.
+  Cụm kind của CI không giúp được: route token của S1 cần một cluster do Cloud Adapter dựng.
+- **Tiền đề:** một cluster mà `ClusterAccess` chế độ `direct` vào được (cùng tiền đề với
+  `I32-cluster`), đã bootstrap ba SA (§12.2); Istio + Argo Rollouts (hoặc một mesh + Flagger)
+  bật qua domain; Prometheus scrape workload mang `service_version`; `PD_CONTROLLER_WEBHOOK_URL`
+  trỏ Service 3 mà cluster gọi tới được (Flagger).
+- **Runbook:** (1) deploy workload qua Luồng 3 (Argo: workload là `Rollout` có
+  `trafficRouting.istio`; Flagger: `Deployment` + `Canary` đã `Initialized`); (2) tạo rollout
+  SERVICE_LEVEL ở Portal cho mỗi ô làm được của ma trận §7.2 (6 ô Argo, 4 ô Flagger); (3) theo dõi
+  tới DONE; lặp lại với tải lỗi (`CHAOS_ENABLED`) để thấy ROLLBACK; (4) bật audit log của API server
+  và lọc theo `udp-traffic`.
+- **Đạt:** mọi ô làm được tới DONE không can thiệp tay; một lần promote udp-driven = đúng MỘT bậc
+  của Rollout; ROLLBACK đưa traffic về phiên bản cũ; audit log chỉ có `patch rollouts/status` và
+  `virtualservices` từ `udp-traffic` (I25). **Không đạt:** API server trả 403 cho patch status
+  (RBAC thiếu), Rollout kẹt `pause: {}` sau promote, Flagger không gọi gate.
+- **Tài nguyên:** một cluster ≥ 3 node nhỏ + Istio (~2 GiB) + Argo Rollouts/Flagger; tiền thật nếu
+  là cloud (trái D-P37) — hoặc một cluster tự dựng có API endpoint cho S1.
+- **Ảnh hưởng tới kết luận:** hai nhánh service-level của **E5** (so C1 với Flagger/Argo) và câu
+  "UDP điều khiển được Argo Rollouts/Flagger mà không tranh control loop" (ADR-01, I4, I5) — hôm
+  nay là bảo đảm của mã và test trên cụm giả, chưa phải của một lần chạy.
 
 ## E6 — gai lỗi thoáng qua không gây rollback
 
