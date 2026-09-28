@@ -132,6 +132,7 @@ class FakeWorkload implements KubernetesClient {
     private readonly interfere: (attempt: number) => boolean = () => false,
   ) {
     this.state.metadata = {
+      ...this.state.metadata,
       generation: 1,
       resourceVersion: String(this.version),
     };
@@ -154,8 +155,15 @@ class FakeWorkload implements KubernetesClient {
       return Promise.reject(new ClusterCallFailedError(409, "patch", "/x"));
     }
     this.patches.push(body as Json);
-    const { metadata: _ignored, ...rest } = body as Json;
-    this.state = mergePatch(this.state, rest) as WorkloadState;
+    // `resourceVersion` là điều kiện; `annotations` thì API server áp như mọi trường khác
+    const { metadata, ...rest } = body as Json;
+    const annotations = isObject(metadata)
+      ? metadata["annotations"]
+      : undefined;
+    this.state = mergePatch(
+      this.state,
+      annotations === undefined ? rest : { ...rest, metadata: { annotations } },
+    ) as WorkloadState;
     this.bump();
     return Promise.resolve();
   }
@@ -163,6 +171,7 @@ class FakeWorkload implements KubernetesClient {
   private bump(): void {
     this.version += 1;
     this.state.metadata = {
+      ...this.state.metadata,
       generation: (this.state.metadata?.generation ?? 0) + 1,
       resourceVersion: String(this.version),
     };
@@ -418,6 +427,83 @@ describe("job deploy (AC-4)", () => {
       "DEPLOY_FAILURE",
     ]);
     expect(JSON.stringify(events[1]?.metadata)).toContain("chưa có cluster");
+  });
+
+  it("[Plan #51 QĐ-10] workload đang có rollout SERVICE_LEVEL ⇒ FAILURE kèm lý do, KHÔNG patch — deploy thường không cướp canary", async () => {
+    const session = await admin.rolloutSession.create({
+      data: {
+        projectId,
+        environmentId: devId,
+        workloadName: "web",
+        rolloutScope: "SERVICE_LEVEL",
+        strategy: "CANARY",
+        controlMode: "UDP_DRIVEN",
+        status: "IN_PROGRESS",
+        thresholds: {},
+        stepPercent: 20,
+        createdById: owner.userId,
+      },
+      select: { id: true },
+    });
+    try {
+      const id = await started();
+      const cluster = new FakeWorkload("Deployment", deployment(), healthy);
+      expect(
+        await watchDeploy(prisma, cluster, await startOf(id), OPTIONS),
+      ).toBe("failure");
+      expect(cluster.patches).toEqual([]);
+      const events = await eventsOf(id);
+      expect(JSON.stringify(events[1]?.metadata)).toContain(session.id);
+    } finally {
+      await admin.rolloutSession.update({
+        where: { id: session.id },
+        data: { status: "DONE" },
+      });
+    }
+  });
+
+  it("[Plan #51 QĐ-10] Rollout sau session UDP: lần ghi image trả strategy về bản gốc và bỏ chú thích của session", async () => {
+    const base = {
+      canary: {
+        stableService: "web",
+        trafficRouting: { istio: { virtualService: { name: "web" } } },
+        steps: [{ setWeight: 50 }],
+      },
+    };
+    const id = await started();
+    const rollout: WorkloadState = {
+      ...deployment(),
+      metadata: {
+        annotations: {
+          "udp.io/session-id": randomUUID(),
+          "udp.io/control-mode": "udp-driven",
+          "udp.io/strategy": "BLUE_GREEN",
+          "udp.io/previous-strategy": JSON.stringify(base),
+        },
+      },
+    };
+    rollout.spec = {
+      ...rollout.spec,
+      strategy: {
+        blueGreen: { activeService: "web", previewService: "web-preview" },
+      },
+    };
+    const cluster = new FakeWorkload("Rollout", rollout, (s) => ({
+      ...s,
+      status: {
+        observedGeneration: s.metadata?.generation ?? 0,
+        phase: "Healthy",
+      },
+    }));
+    expect(await watchDeploy(prisma, cluster, await startOf(id), OPTIONS)).toBe(
+      "success",
+    );
+    expect(cluster.patches).toHaveLength(1);
+    expect(cluster.state.spec?.strategy).toEqual(base);
+    expect(cluster.state.metadata?.annotations).toEqual({
+      "udp.io/previous-strategy": JSON.stringify(base),
+    });
+    expect(cluster.image()).toBe("ghcr.io/acme/web:new");
   });
 });
 

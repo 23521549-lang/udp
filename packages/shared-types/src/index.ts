@@ -83,6 +83,7 @@ export {
   rolloutThresholdsSchema,
   trackOutcomeOf,
   trackResultSchema,
+  trafficMatchSchema,
 } from "./rollout.js";
 export type {
   CanaryPair,
@@ -94,6 +95,7 @@ export type {
   RolloutThresholds,
   TrackOutcome,
   TrackResult,
+  TrafficMatch,
 } from "./rollout.js";
 export type { ConfigChangeNotice, ConfigChangeType } from "./change-feed.js";
 

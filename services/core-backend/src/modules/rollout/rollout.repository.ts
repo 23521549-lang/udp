@@ -17,6 +17,7 @@ import { prisma } from "../../core/db.js";
 import { auditEntry } from "../audit/audit.service.js";
 import type {
   CreateFlagRolloutInput,
+  CreateServiceRolloutInput,
   IntentAction,
   ListRolloutsQuery,
   RolloutEventsQuery,
@@ -221,6 +222,150 @@ async function activeRolloutOn(
   return rows[0]?.id;
 }
 
+// --------------------------------------------------------------- SERVICE_LEVEL (Plan #51)
+
+interface InsertServiceSessionInput {
+  projectId: string;
+  environmentId: string;
+  target: CreateServiceRolloutInput;
+  versionOld: string;
+  versionNew: string;
+  metricWindowSeconds: number;
+  actorUserId: string;
+  request: Request;
+}
+
+/**
+ * INSERT session SERVICE_LEVEL PENDING kèm audit — cùng lease khai sinh với FLAG_LEVEL: S1 còn phải ghi đối
+ * tượng giao hàng vào cluster SAU khi có id (chú thích, URL gate của Flagger mang id session), và nếu bước đó hỏng
+ * thì S1 xoá chắc chắn một hàng S3 chưa chạm (`deleteUnclaimed`).
+ *
+ * Traffic bắt đầu ở 0: phiên bản mới chưa nhận request nào — `baseline = 0` là mốc ROLLBACK (§7.6: "đưa traffic
+ * về 0 (SERVICE_LEVEL)").
+ */
+export async function insertServiceSession(
+  input: InsertServiceSessionInput,
+): Promise<NewSession> {
+  const id = randomUUID();
+  const birthToken = `s1-create:${randomUUID()}`;
+  const { target } = input;
+  try {
+    await prisma.$transaction([
+      prisma.rolloutSession.create({
+        data: {
+          id,
+          projectId: input.projectId,
+          environmentId: input.environmentId,
+          workloadName: target.workloadName,
+          rolloutScope: "SERVICE_LEVEL",
+          strategy: target.strategy,
+          controlMode:
+            target.controlMode === "udp-driven" ? "UDP_DRIVEN" : "TOOL_DRIVEN",
+          currentTrafficPercentage: 0,
+          baselinePercentage: 0,
+          versionOld: input.versionOld,
+          versionNew: input.versionNew,
+          ...(target.trafficMatch === undefined
+            ? {}
+            : { trafficMatch: target.trafficMatch }),
+          thresholds: target.thresholds,
+          ...(target.metricQueries === undefined
+            ? {}
+            : { metricQueries: target.metricQueries }),
+          stepPercent: target.stepPercent,
+          stepIntervalSeconds: target.stepIntervalSeconds,
+          analysisIntervalSeconds: target.analysisIntervalSeconds,
+          metricWindowSeconds: input.metricWindowSeconds,
+          warmUpRequests: target.warmUpRequests,
+          maxDurationSeconds: target.maxDurationSeconds,
+          claimedBy: birthToken,
+          claimedUntil: new Date(
+            Date.now() + ROLLOUT_CREATE.birthLeaseSeconds * 1000,
+          ),
+          createdById: input.actorUserId,
+        },
+        select: { id: true },
+      }),
+      prisma.auditLog.create({
+        data: {
+          projectId: input.projectId,
+          ...auditEntry({
+            action: "rollout.create",
+            targetType: "rollout_session",
+            targetId: id,
+            environmentId: input.environmentId,
+            after: {
+              scope: "SERVICE_LEVEL",
+              workloadName: target.workloadName,
+              strategy: target.strategy,
+              controlMode: target.controlMode,
+              versionOld: input.versionOld,
+              versionNew: input.versionNew,
+              stepPercent: target.stepPercent,
+            },
+            request: input.request,
+          }),
+        },
+        select: { id: true },
+      }),
+    ]);
+  } catch (err: unknown) {
+    const index = uniqueViolationIndexOf(err);
+    if (index !== undefined && ACTIVE_ROLLOUT_INDEXES.has(index)) {
+      throw new ActiveRolloutExists(
+        await activeServiceRolloutOn(input.environmentId, target.workloadName),
+      );
+    }
+    throw err;
+  }
+  return { id, birthToken };
+}
+
+/** Rollout SERVICE_LEVEL đang giữ chỗ trên workload — cùng khoá với `idx_one_active_rollout_per_target` */
+export async function activeServiceRolloutOn(
+  environmentId: string,
+  workloadName: string,
+): Promise<string | undefined> {
+  const rows = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id::text AS id
+      FROM rollout_sessions
+     WHERE status IN (${ACTIVE_ROLLOUT_STATUS_SQL})
+       AND environment_id = ${environmentId}::uuid
+       AND workload_name = ${workloadName}
+       AND flag_env_config_id IS NULL
+     ORDER BY created_at
+     LIMIT 1`;
+  return rows[0]?.id;
+}
+
+/**
+ * DEPLOY_START của lần đổi image mà session SERVICE_LEVEL thực hiện — `deployment_id` = id session, để DORA
+ * (E10) đếm nó như MỘT lần deploy; Service 3 ghi SUCCESS/ROLLBACK cùng `deployment_id` khi session đóng.
+ */
+export async function recordServiceDeployStart(args: {
+  projectId: string;
+  environmentId: string;
+  sessionId: string;
+  workloadName: string;
+  imageTag: string;
+  metadata: Prisma.InputJsonObject;
+}): Promise<void> {
+  await prisma.deploymentEvent.create({
+    data: {
+      projectId: args.projectId,
+      environmentId: args.environmentId,
+      deploymentId: args.sessionId,
+      eventType: "DEPLOY_START",
+      workloadName: args.workloadName,
+      imageTag: args.imageTag,
+      rolloutSessionId: args.sessionId,
+      triggeredBy: "MANUAL",
+      metadata: args.metadata,
+    },
+    select: { id: true },
+  });
+}
+
 /**
  * Bù trừ khi `track` thất bại: xoá ĐÚNG hàng vừa tạo, chỉ khi lease khai sinh vẫn
  * là của mình và S3 chưa chạm (`version = 0`). `true` = đã xoá (kèm audit).
@@ -372,6 +517,7 @@ const sessionDetailSelect = {
   workloadName: true,
   versionNew: true,
   versionOld: true,
+  trafficMatch: true,
   thresholds: true,
   stepPercent: true,
   stepIntervalSeconds: true,

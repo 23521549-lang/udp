@@ -3,6 +3,7 @@ import { logger } from "@udp/http";
 import {
   decisionSchema,
   metricSnapshotSchema,
+  trafficMatchSchema,
   type MetricSnapshot,
 } from "@udp/shared-types";
 import type { DetailRows, EventRow, SummaryRow } from "./rollout.repository.js";
@@ -112,6 +113,10 @@ export function detailView({
       ? snapshotView(decision.data.metricSnapshot)
       : undefined;
   const flag = session.flagEnvConfig?.flag;
+  const match =
+    session.trafficMatch === null
+      ? undefined
+      : trafficMatchSchema.safeParse(session.trafficMatch);
 
   return {
     id: session.id,
@@ -142,6 +147,7 @@ export function detailView({
     workloadName: session.workloadName,
     ...(session.versionNew === null ? {} : { versionNew: session.versionNew }),
     ...(session.versionOld === null ? {} : { versionOld: session.versionOld }),
+    ...(match?.success === true ? { trafficMatch: match.data } : {}),
     thresholds: session.thresholds as Record<string, unknown>,
     stepPercent: num(session.stepPercent),
     stepIntervalSeconds: session.stepIntervalSeconds,

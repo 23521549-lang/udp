@@ -57,6 +57,7 @@ const app = createApp({
     withCluster: null,
     scanDrift: null,
     clusterToken: null,
+    flaggerGateBaseUrl: null,
   },
 });
 

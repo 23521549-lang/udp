@@ -765,6 +765,7 @@ erDiagram
         numeric current_traffic_percentage "updated on each promote"
         string version_new "Docker image tag — nullable for FLAG_LEVEL"
         string version_old "Docker image tag for rollback"
+        jsonb traffic_match "v4.11 — ATTRIBUTE_SPLIT service-level: header, value; nullable"
         jsonb thresholds "errorRate latencyP99Ms relativeErrorRate minErrors maxConsecutiveBreaches"
         jsonb metric_queries "NEW — override default queries"
         numeric step_percent "percent increase per promote"
@@ -1439,6 +1440,7 @@ CREATE INDEX idx_changelog_prune  ON ConfigChangeLog (created_at);
 | current_traffic_percentage | NUMERIC(5,2) | NOT NULL, DEFAULT 0                          | **[CHANGED]** dùng NUMERIC để biểu diễn được 0.5%                          |
 | version_new                | VARCHAR(255) | NULLABLE                                     | **[CHANGED]** NULL với `FLAG_LEVEL` (cùng một image)                       |
 | version_old                | VARCHAR(255) | NULLABLE                                     |                                                                            |
+| traffic_match              | JSONB        | NULLABLE                                     | **[v4.11, Plan #51]** `{ header, value }` — ATTRIBUTE_SPLIT ở `SERVICE_LEVEL`: request khớp đi phiên bản mới; NULL với `FLAG_LEVEL` (nhóm lấy từ điều kiện rule) |
 | thresholds                 | JSONB        | NOT NULL                                     | `{ errorRate, latencyP99Ms, relativeErrorRate?, minErrors?, maxConsecutiveBreaches }` — `relativeErrorRate` = hệ số so với baseline (vd 1.5), `minErrors` = số lỗi tối thiểu trước khi coi là breach (chống độ phân giải kém ở traffic thấp). v3 có `minRequests` trùng với `warm_up_requests` — bỏ |
 | metric_queries             | JSONB        | NULLABLE                                     | **[vá B10]** Override truy vấn mặc định khi app dùng tên metric riêng      |
 | step_percent               | NUMERIC(5,2) | NOT NULL                                     | % tăng mỗi lần promote                                                     |

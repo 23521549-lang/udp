@@ -1314,6 +1314,7 @@ function appFor(
       withCluster: null,
       scanDrift,
       clusterToken: null,
+      flaggerGateBaseUrl: null,
     },
   });
   return { http, enqueued };

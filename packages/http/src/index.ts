@@ -14,6 +14,7 @@
  */
 
 export * from "./errors.js";
+export * from "./flagger-gate.js";
 export * from "./ip-key.js";
 export * from "./rate-limit-problem.js";
 export * from "./logger.js";

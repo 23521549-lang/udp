@@ -6,7 +6,12 @@ import {
   flagStatsResponseSchema,
   staleFlagsResponseSchema,
 } from "./flag-stats.js";
-import { DECISIONS, INTENT_ACTIONS, metricQueriesSchema } from "./rollout.js";
+import {
+  DECISIONS,
+  INTENT_ACTIONS,
+  metricQueriesSchema,
+  trafficMatchSchema,
+} from "./rollout.js";
 import {
   cloudAuthKindSchema,
   cloudProviderSchema,
@@ -632,6 +637,8 @@ export const rolloutDetailWire = z
     workloadName: z.string().nullable(),
     versionNew: z.string().optional(),
     versionOld: z.string().optional(),
+    /** [v4.11, Plan #51] ATTRIBUTE_SPLIT ở SERVICE_LEVEL */
+    trafficMatch: trafficMatchSchema.optional(),
     /**
      * Cột JSONB đã qua `rolloutThresholdsSchema` lúc ghi; hàng cũ có thể thiếu trường
      * (mặc định áp lúc đọc ở S3). Portal hiển thị từng khoá có mặt, nên `record`.

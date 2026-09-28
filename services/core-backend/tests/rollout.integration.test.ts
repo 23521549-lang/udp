@@ -279,13 +279,12 @@ describe("tạo rollout FLAG_LEVEL (§8.5)", () => {
     expect(blueGreen.body.detail).toMatch(/không áp dụng ở FLAG_LEVEL/);
   });
 
-  it("422 cho mọi thứ S3 không chạy được: SERVICE_LEVEL, BLUE_GREEN, flag tắt, variant đã 100%", async () => {
+  it("422 cho mọi thứ S3 không chạy được: BLUE_GREEN, flag tắt, variant đã 100%", async () => {
     const target = await newFlagTarget(
       admin,
       { projectId, environmentId: dev.id },
       0,
     );
-    await create({ scope: "SERVICE_LEVEL", envId: dev.id }).expect(422);
     await create(bodyFor(dev, target, { strategy: "BLUE_GREEN" })).expect(422);
 
     const off = await newFlagTarget(

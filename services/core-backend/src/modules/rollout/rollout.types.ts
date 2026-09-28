@@ -10,9 +10,11 @@ import {
   INTENT_ACTIONS,
   metricQueriesSchema,
   rolloutThresholdsSchema,
+  trafficMatchSchema,
   type Decision,
   type IntentAction,
   type MetricSnapshot,
+  type TrafficMatch,
 } from "@udp/shared-types";
 import { z } from "zod";
 
@@ -70,13 +72,38 @@ const flagLevelSchema = z
   })
   .strict();
 
+/** Tag của image theo ngữ pháp Docker — cũng là giá trị nhãn `app.kubernetes.io/version` (§8.3) */
+const IMAGE_TAG = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,62}$/;
+
 /**
- * SERVICE_LEVEL được NHẬN ở biên để service trả 422 "chưa hỗ trợ" kèm lý do,
- * thay vì 400 liệt kê các trường FLAG_LEVEL mà người dùng không định gửi.
+ * [v4.11, Plan #51] SERVICE_LEVEL (§7.2, §8.5): canary theo image. Người dùng chọn workload và TAG mới —
+ * repository của image giữ nguyên, không đổi được registry qua đường này. Tool (Argo Rollouts/Flagger) suy từ
+ * binding `traffic.control` của environment, không khai ở đây. `controlMode` mặc định `tool-driven` (ADR-01).
  */
 const serviceLevelSchema = z
-  .object({ scope: z.literal("SERVICE_LEVEL"), envId: uuid })
-  .passthrough();
+  .object({
+    scope: z.literal("SERVICE_LEVEL"),
+    envId: uuid,
+    strategy: z.nativeEnum(RolloutStrategy).default(RolloutStrategy.CANARY),
+    controlMode: z.enum(["udp-driven", "tool-driven"]).default("tool-driven"),
+    workloadName: z.string().regex(DNS_1123_SUBDOMAIN),
+    imageTag: z.string().regex(IMAGE_TAG, "tag image không hợp lệ"),
+    /** Chỉ ATTRIBUTE_SPLIT: request khớp header đi phiên bản mới */
+    trafficMatch: trafficMatchSchema.optional(),
+    thresholds: rolloutThresholdsSchema.default({}),
+    metricQueries: metricQueriesSchema.optional(),
+    stepPercent: percent,
+    stepIntervalSeconds: positiveInt.default(
+      ROLLOUT_TIMING.stepIntervalSeconds,
+    ),
+    analysisIntervalSeconds: positiveInt.default(
+      ROLLOUT_TIMING.analysisIntervalSeconds,
+    ),
+    metricWindowSeconds: positiveInt.optional(),
+    warmUpRequests: positiveInt.default(ROLLOUT_TIMING.warmUpRequests),
+    maxDurationSeconds: positiveInt.default(ROLLOUT_TIMING.maxDurationSeconds),
+  })
+  .strict();
 
 export const createRolloutSchema = z.discriminatedUnion("scope", [
   flagLevelSchema,
@@ -84,6 +111,7 @@ export const createRolloutSchema = z.discriminatedUnion("scope", [
 ]);
 export type CreateRolloutInput = z.infer<typeof createRolloutSchema>;
 export type CreateFlagRolloutInput = z.infer<typeof flagLevelSchema>;
+export type CreateServiceRolloutInput = z.infer<typeof serviceLevelSchema>;
 
 export type { IntentAction };
 
@@ -184,6 +212,8 @@ export interface RolloutDetail {
   workloadName: string | null;
   versionNew?: string;
   versionOld?: string;
+  /** [v4.11, Plan #51] ATTRIBUTE_SPLIT ở SERVICE_LEVEL */
+  trafficMatch?: TrafficMatch;
   /** [v4.11] Object JSONB — `sendJson` kiểm nó là object trước khi lên dây */
   thresholds: Record<string, unknown>;
   stepPercent: number;

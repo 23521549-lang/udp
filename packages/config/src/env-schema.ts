@@ -311,6 +311,12 @@ export const envSchema = z
      * thiếu URL thì trang admin nói "không rõ" chứ không đoán `localhost`.
      */
     PD_CONTROLLER_URL: z.string().url().optional(),
+    /**
+     * [v4.11, Plan #51 QĐ-9] URL gốc của Service 3 nhìn từ cluster TENANT — Service 1 ghi nó vào webhook gate của
+     * `Canary` (Flagger gọi về S3 trước mỗi bậc). Khác `PD_CONTROLLER_URL` (địa chỉ trong mạng của control
+     * plane). Thiếu ⇒ rollout SERVICE_LEVEL với Flagger trả 422, Argo Rollouts không cần nó.
+     */
+    PD_CONTROLLER_WEBHOOK_URL: z.string().url().optional(),
     PROMETHEUS_URL: z.string().url(),
 
     // ---------- CORS / Cookie ----------

@@ -52,6 +52,23 @@ export const rolloutThresholdsSchema = z
 
 export type RolloutThresholds = z.infer<typeof rolloutThresholdsSchema>;
 
+/** Tên header HTTP (token của RFC 9110) */
+const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$/;
+
+/**
+ * [v4.11, Plan #51] ATTRIBUTE_SPLIT ở SERVICE_LEVEL (§7.2): request mang header này đi phiên bản mới — route của
+ * Service 3 trong VirtualService (Argo Rollouts) hay `analysis.match` của Flagger. MỘT schema cho request của S1,
+ * cột `rollout_sessions.traffic_match`, dây chi tiết rollout và Portal.
+ */
+export const trafficMatchSchema = z
+  .object({
+    header: z.string().regex(HEADER_NAME, "tên header không hợp lệ"),
+    value: z.string().min(1).max(256),
+  })
+  .strict();
+
+export type TrafficMatch = z.infer<typeof trafficMatchSchema>;
+
 /**
  * Tên metric hợp lệ của Prometheus (`[a-zA-Z_:][a-zA-Z0-9_:]*`). Chốt ở biên
  * ghi (S1) VÀ ở nơi ghép PromQL (`@udp/metrics-provider`): `metric_queries` là dữ

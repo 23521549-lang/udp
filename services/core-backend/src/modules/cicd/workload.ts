@@ -20,10 +20,17 @@ export type Verdict = "rolling" | "done" | "stuck";
 type Container = Record<string, unknown> & { name: string; image?: string };
 
 export interface WorkloadState {
-  metadata?: { generation?: number; resourceVersion?: string };
+  metadata?: {
+    generation?: number;
+    resourceVersion?: string;
+    /** [Plan #51] Chú thích của session giao hàng UDP (`udp.io/*`) */
+    annotations?: Record<string, string>;
+  };
   spec?: {
     replicas?: number;
     progressDeadlineSeconds?: number;
+    /** [Plan #51] Rollout: canary/blueGreen; Deployment: RollingUpdate — đọc để trả về bản gốc sau session */
+    strategy?: Record<string, unknown>;
     template?: {
       spec?: {
         containers?: Container[];
@@ -130,6 +137,19 @@ export function versionLabelOf(image: string): string | null {
         ? name.slice(colon + 1)
         : "latest";
   return version.length <= 63 && LABEL_VALUE.test(version) ? version : null;
+}
+
+/**
+ * [Plan #51] Cùng repository, tag mới: `ghcr.io/o/web:1.2@sha256:…` + `1.3` ⇒ `ghcr.io/o/web:1.3`. Rollout
+ * SERVICE_LEVEL chỉ đổi TAG — không đổi được registry hay repository qua đường này (đổi image là việc của pipeline).
+ */
+export function imageWithTag(image: string, tag: string): string {
+  const at = image.indexOf("@");
+  const bare = at >= 0 ? image.slice(0, at) : image;
+  const slash = bare.lastIndexOf("/");
+  const colon = bare.lastIndexOf(":");
+  const repository = colon > slash ? bare.slice(0, colon) : bare;
+  return `${repository}:${tag}`;
 }
 
 /**

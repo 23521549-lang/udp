@@ -1029,6 +1029,8 @@ model RolloutSession {
 
   versionNew String? @map("version_new") @db.VarChar(255)
   versionOld String? @map("version_old") @db.VarChar(255)
+  /// [v4.11, Plan #51] ATTRIBUTE_SPLIT ở SERVICE_LEVEL: { header, value } — request khớp đi phiên bản mới
+  trafficMatch Json? @map("traffic_match")
 
   /// { errorRate, relativeErrorRate, latencyP99Ms, minErrors, maxConsecutiveBreaches }
   thresholds    Json

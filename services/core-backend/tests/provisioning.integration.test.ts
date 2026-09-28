@@ -45,6 +45,7 @@ const provisioning: ProvisioningRuntime = {
   withCluster: null,
   scanDrift: null,
   clusterToken: null,
+  flaggerGateBaseUrl: null,
 };
 
 const appWith = (runtime: ProvisioningRuntime) =>

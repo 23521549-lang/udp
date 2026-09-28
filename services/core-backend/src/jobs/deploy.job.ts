@@ -1,4 +1,5 @@
 import type { KubernetesClient, ObjectRef } from "@udp/adapter-core";
+import { ACTIVE_ROLLOUT_STATUSES } from "@udp/config";
 import type { DeploymentEventType, Prisma, PrismaClient } from "@udp/db";
 import { z } from "zod";
 import { ClusterCallFailedError } from "@udp/cluster-access";
@@ -10,6 +11,8 @@ import {
   type WorkloadKind,
   type WorkloadState,
 } from "../modules/cicd/workload.js";
+import { mergePatches } from "../modules/rollout/delivery/merge.js";
+import { restoreAfterSession } from "../modules/rollout/delivery/restore.js";
 import type { Attempt } from "./boss.js";
 import { messageOf, PhaseFailedError, type JobKit } from "./job-kit.js";
 
@@ -237,8 +240,14 @@ async function setImage(
     if (patch === null) {
       throw new PhaseFailedError(`workload không có container "${container}"`);
     }
+    // [Plan #51 QĐ-10] Session UDP trước đã xong: strategy về bản gốc trong CÙNG lần ghi có điều kiện
+    const restore = restoreAfterSession(state);
     try {
-      await client.write("patch", ref, patch);
+      await client.write(
+        "patch",
+        ref,
+        restore === null ? patch : mergePatches(patch, restore),
+      );
       return;
     } catch (e) {
       const conflict = e instanceof ClusterCallFailedError && e.status === 409;
@@ -293,6 +302,26 @@ export async function watchDeploy(
     running !== start.imageRef
       ? running
       : await lastSuccessfulImage(prisma, start);
+
+  // [Plan #51 QĐ-10] Deploy thường giữa lúc Argo/Flagger đang chạy canary của UDP là cướp canary đó
+  const serviceRollout = await prisma.rolloutSession.findFirst({
+    where: {
+      environmentId: start.environmentId,
+      workloadName: start.workloadName,
+      rolloutScope: "SERVICE_LEVEL",
+      status: { in: [...ACTIVE_ROLLOUT_STATUSES] },
+    },
+    select: { id: true },
+  });
+  if (serviceRollout !== null) {
+    await concludeFailure(
+      prisma,
+      start,
+      `workload đang có rollout SERVICE_LEVEL ${serviceRollout.id} — chờ nó xong hoặc rollback nó rồi deploy lại`,
+      null,
+    );
+    return "failure";
+  }
 
   await setImage(client, found.ref, start.workloadName, start.imageRef);
   const deadlineSeconds = Math.min(

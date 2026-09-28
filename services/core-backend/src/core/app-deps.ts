@@ -107,6 +107,11 @@ export interface ProvisioningRuntime {
    * nên chỉ tiến trình chạy worker cung cấp; `null` ⇒ route trả 503.
    */
   clusterToken: ClusterTokenIssuer | null;
+  /**
+   * [v4.11, Plan #51 QĐ-9] URL gốc của Service 3 nhìn từ cluster tenant — webhook gate của `Canary` (Flagger)
+   * trỏ về đây (`PD_CONTROLLER_WEBHOOK_URL`); `null` ⇒ rollout SERVICE_LEVEL với Flagger trả 422.
+   */
+  flaggerGateBaseUrl: string | null;
 }
 
 /** Gốc cây adapter của sản phẩm: `src/modules` (hay `dist/modules` khi đã build) */
@@ -138,6 +143,7 @@ export function defaultAppDeps(): AppDeps {
       withCluster: null,
       scanDrift: null,
       clusterToken: null,
+      flaggerGateBaseUrl: env.PD_CONTROLLER_WEBHOOK_URL ?? null,
     },
     repoSource: createRepoSourceFactory(),
   };
