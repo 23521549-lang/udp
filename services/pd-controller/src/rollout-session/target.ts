@@ -28,6 +28,8 @@ export interface FlagTarget {
   kind: "ready";
   flagKey: string;
   ruleId: string;
+  /** [v4.11, Plan #46] Loại "ai khớp" của rule — `ATTRIBUTE_SPLIT` chỉ nhận thuộc tính/segment */
+  ruleType: string;
   targetVariant: { id: string; key: string };
   currentWeights: Weight[];
   /** Phần trăm hiện tại của variant mục tiêu theo trọng số THẬT của rule — so với DB để thấy rule bị sửa ngoài luồng */
@@ -49,6 +51,7 @@ type Db = DbClient;
 
 interface TargetRow {
   flagKey: string;
+  ruleType: string;
   namespace: string;
   serve: unknown;
   isTracked: boolean;
@@ -63,6 +66,8 @@ interface VariantRow {
 export async function loadFlagTarget(
   db: Db,
   session: SessionRow,
+  /** [Plan #46] Variant mục tiêu ở 100% là trạng thái đang chạy hợp lệ — xem `canaryPairOf` */
+  allowFull = false,
 ): Promise<FlagTarget | HoldTarget> {
   if (session.rolloutScope !== "FLAG_LEVEL") {
     return hold("SERVICE_LEVEL chưa được Service 3 hỗ trợ ở lát cắt này");
@@ -80,7 +85,8 @@ export async function loadFlagTarget(
   }
 
   const rows = await db.$queryRaw<TargetRow[]>`
-    SELECT f.key AS "flagKey", e.k8s_namespace AS "namespace", r.serve AS "serve",
+    SELECT f.key AS "flagKey", r.rule_type::text AS "ruleType",
+           e.k8s_namespace AS "namespace", r.serve AS "serve",
            c.is_tracked AS "isTracked", c.is_enabled AS "isEnabled"
       FROM flag_targeting_rules r
       JOIN flag_env_configs c ON c.id = r.flag_env_config_id
@@ -101,7 +107,7 @@ export async function loadFlagTarget(
     );
   }
   // Cùng định nghĩa "rule ramp được" với validator tạo rollout của Service 1
-  const pair = canaryPairOf(parsed.data, session.targetVariantId);
+  const pair = canaryPairOf(parsed.data, session.targetVariantId, allowFull);
   if (pair.kind === "invalid") return hold(pair.reason);
   const targetWeight = pair.target;
   const otherWeight = pair.other;
@@ -121,6 +127,7 @@ export async function loadFlagTarget(
     kind: "ready",
     flagKey: row.flagKey,
     ruleId: session.targetingRuleId,
+    ruleType: row.ruleType,
     targetVariant: target,
     currentWeights: pair.weights,
     // Số THẬT, không làm tròn như `canaryPairOf.targetPercent`: cái đó là giá trị

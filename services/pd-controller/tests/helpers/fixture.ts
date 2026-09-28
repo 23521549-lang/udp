@@ -82,9 +82,11 @@ export async function newProject(): Promise<{
 export async function newTarget(
   project: { projectId: string; environmentId: string; ownerId: string },
   onPercent: number,
+  ruleType: "ALL" | "ATTRIBUTE_BASED" = "ALL",
 ): Promise<Target> {
   const flag = await newFlagTarget(admin, project, onPercent, {
     keyPrefix: "pd",
+    ruleType,
   });
   return {
     projectId: project.projectId,
@@ -95,6 +97,8 @@ export async function newTarget(
 }
 
 export interface SessionOptions {
+  /** [Plan #46] Mặc định CANARY */
+  strategy?: "CANARY" | "ATTRIBUTE_SPLIT";
   status?: "PENDING" | "IN_PROGRESS" | "PAUSED";
   currentPercent?: number;
   baselinePercent?: number | null;
@@ -138,7 +142,7 @@ export async function newSession(
       workloadName:
         options.workloadName === undefined ? "checkout" : options.workloadName,
       rolloutScope: "FLAG_LEVEL",
-      strategy: "CANARY",
+      strategy: options.strategy ?? "CANARY",
       controlMode: "UDP_DRIVEN",
       status: options.status ?? "PENDING",
       currentTrafficPercentage: options.currentPercent ?? 0,
@@ -267,5 +271,7 @@ export async function dropProject(projectId: string): Promise<void> {
   await admin.configChangeLog.deleteMany({
     where: { environment: { projectId } },
   });
+  // [Plan #46] ATTRIBUTE_SPLIT đổi mặc định qua S2 — S2 ghi audit (I40), `Restrict` giữ project
+  await admin.auditLog.deleteMany({ where: { projectId } });
   await admin.project.deleteMany({ where: { id: projectId } });
 }

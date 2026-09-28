@@ -25,9 +25,10 @@ export async function findUnprocessedIntent(
   sessionId: string,
 ): Promise<IntentRow | undefined> {
   const rows = await db.$queryRaw<IntentRow[]>`
-    SELECT id::text     AS "id",
-           action::text AS "action",
-           created_at   AS "createdAt"
+    SELECT id::text            AS "id",
+           action::text        AS "action",
+           actor_user_id::text AS "actorUserId",
+           created_at          AS "createdAt"
       FROM rollout_events
      WHERE session_id = ${sessionId}::uuid
        AND is_intent

@@ -26,6 +26,11 @@ export interface FlagTargetOptions {
   /** Mặc định true — flag tắt thì hook không gắn nhãn (§6.6) */
   isEnabled?: boolean;
   keyPrefix?: string;
+  /**
+   * [Plan #46] "Ai khớp" của rule — mặc định `ALL`. `ATTRIBUTE_BASED` khớp `country = VN`, đủ cho
+   * ATTRIBUTE_SPLIT (§7.2) mà không cần segment.
+   */
+  ruleType?: "ALL" | "ATTRIBUTE_BASED";
 }
 
 export async function newFlagTarget(
@@ -68,10 +73,17 @@ export async function newFlagTarget(
       rules: {
         create: [
           {
-            ruleType: "ALL",
+            ruleType: options.ruleType ?? "ALL",
             priority: 0,
             bucketSalt: randomUUID(),
-            condition: {},
+            condition:
+              options.ruleType === "ATTRIBUTE_BASED"
+                ? {
+                    all: [
+                      { attribute: "country", operator: "eq", value: "VN" },
+                    ],
+                  }
+                : {},
             serve: canonicalizeServe({
               kind: "distribution",
               weights: [

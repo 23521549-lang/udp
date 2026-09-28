@@ -133,6 +133,7 @@ describe("wake — một khe, không chạy trùng", () => {
       },
       untrack: () => Promise.resolve({ status: "SUCCESS", changed: false }),
       track: () => Promise.resolve({ status: "SUCCESS", changed: false }),
+      setDefaultVariant: () => Promise.resolve({ status: "SUCCESS" }),
     };
     const c = testController(DEAD, { executor: slow, maxInFlight: 2 });
     seedLabel(c.provider, target.flagKey);

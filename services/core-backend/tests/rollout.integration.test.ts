@@ -250,7 +250,34 @@ describe("tạo rollout FLAG_LEVEL (§8.5)", () => {
     expect(await sessionsOn(target)).toBe(0);
   });
 
-  it("422 cho mọi thứ S3 không chạy được: SERVICE_LEVEL, chiến lược khác CANARY, flag tắt, variant đã 100%", async () => {
+  it("[Plan #46] ATTRIBUTE_SPLIT: rule theo thuộc tính ⇒ 201 lưu đúng chiến lược; rule ALL ⇒ 422; BLUE_GREEN ⇒ 422 lý do §7.2", async () => {
+    const attr = await newFlagTarget(
+      admin,
+      { projectId, environmentId: dev.id },
+      0,
+      { ruleType: "ATTRIBUTE_BASED" },
+    );
+    const res = await create(
+      bodyFor(dev, attr, { strategy: "ATTRIBUTE_SPLIT", stepPercent: 100 }),
+    ).expect(201);
+    expect(res.body.rollout.strategy).toBe("ATTRIBUTE_SPLIT");
+
+    const all = await newFlagTarget(
+      admin,
+      { projectId, environmentId: dev.id },
+      0,
+    );
+    const wrongRule = await create(
+      bodyFor(dev, all, { strategy: "ATTRIBUTE_SPLIT" }),
+    ).expect(422);
+    expect(wrongRule.body.detail).toMatch(/ATTRIBUTE_BASED hoặc SEGMENT/);
+    const blueGreen = await create(
+      bodyFor(dev, all, { strategy: "BLUE_GREEN" }),
+    ).expect(422);
+    expect(blueGreen.body.detail).toMatch(/không áp dụng ở FLAG_LEVEL/);
+  });
+
+  it("422 cho mọi thứ S3 không chạy được: SERVICE_LEVEL, BLUE_GREEN, flag tắt, variant đã 100%", async () => {
     const target = await newFlagTarget(
       admin,
       { projectId, environmentId: dev.id },

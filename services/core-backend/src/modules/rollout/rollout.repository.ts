@@ -35,6 +35,8 @@ interface FlagTargetRow {
   flagKey: string;
   lifecycleStatus: FlagLifecycleStatus;
   isEnabled: boolean;
+  /** [Plan #46] "Ai khớp" của rule — ATTRIBUTE_SPLIT chỉ nhận thuộc tính/segment (§7.2) */
+  ruleType: string;
   serve: unknown;
 }
 
@@ -57,6 +59,7 @@ export async function flagTargetOf(
            f.key               AS "flagKey",
            f.lifecycle_status  AS "lifecycleStatus",
            c.is_enabled        AS "isEnabled",
+           r.rule_type::text   AS "ruleType",
            r.serve             AS "serve"
       FROM environments e
       JOIN flag_env_configs c     ON c.environment_id = e.id

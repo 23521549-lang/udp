@@ -1,4 +1,5 @@
 import {
+  ACTOR_HEADER,
   INTERNAL_SECRET_HEADER,
   ROLLOUT_EVENT,
   ROLLOUT_RETRY,
@@ -73,6 +74,19 @@ export interface FlagLevelExecutor {
    * vô hại.
    */
   track(sessionId: string): Promise<TrackOutcome>;
+  /**
+   * [v4.11, Plan #46] Đổi variant mặc định của một env-config — ý định PROMOTE của
+   * ATTRIBUTE_SPLIT (§7.2 "promote = đổi default variant"). Đi `PATCH /internal/flag-envs/:id`
+   * như Service 1, MANG người đã bấm: S2 ghi audit trong transaction của thay đổi (I40), không
+   * ẩn danh. Idempotent (đặt cùng một giá trị), nên không cần `If-Match`: worker tỉnh muộn gọi lại
+   * vô hại, và DB đóng session bằng `updateIfVersion` như mọi đường khác.
+   */
+  setDefaultVariant(
+    fence: Fence,
+    configId: string,
+    variantId: string,
+    actorUserId: string,
+  ): Promise<ApplyOutcome>;
 }
 
 export interface FlagLevelExecutorOptions {
@@ -182,6 +196,33 @@ export function createFlagLevelExecutor(
         // Mạng, hết giờ, hay body không đúng hợp đồng — lưới quét thử lại
         return { status: "FAILED", message: errorMessage(err) };
       }
+    },
+
+    async setDefaultVariant(fence, configId, variantId, actorUserId) {
+      fence.assert();
+      let res: Response;
+      try {
+        res = await fetchImpl(
+          `${baseUrl}/internal/flag-envs/${encodeURIComponent(configId)}`,
+          {
+            method: "PATCH",
+            headers: {
+              "content-type": "application/json",
+              [INTERNAL_SECRET_HEADER]: options.secret,
+              [ACTOR_HEADER]: actorUserId,
+            },
+            body: JSON.stringify({ defaultVariantId: variantId }),
+            signal: AbortSignal.timeout(timeoutMs),
+          },
+        );
+      } catch (err: unknown) {
+        return { status: "FAILED", message: errorMessage(err) };
+      }
+      if (res.ok) return { status: "SUCCESS" };
+      const message = `HTTP ${String(res.status)}: ${await safeText(res)}`;
+      return res.status < 500
+        ? { status: "REJECTED", message }
+        : { status: "FAILED", message };
     },
 
     async track(sessionId) {

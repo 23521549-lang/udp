@@ -12,7 +12,8 @@ const r = (projectId: string) => `/projects/${projectId}/rollouts`;
 export interface CreateFlagRolloutInput {
   scope: "FLAG_LEVEL";
   envId: string;
-  strategy: "CANARY";
+  /** [Plan #46] BLUE_GREEN "không áp dụng" ở mức flag (§7.2) */
+  strategy: "CANARY" | "ATTRIBUTE_SPLIT";
   flagEnvConfigId: string;
   targetingRuleId: string;
   targetVariantId: string;

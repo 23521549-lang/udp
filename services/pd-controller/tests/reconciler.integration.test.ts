@@ -297,14 +297,14 @@ describe("Luồng 5 — vòng đời tự động", () => {
     expect(await onPercentOf(target.ruleId, target.on)).toBe(0);
   });
 
-  it("chiến lược chưa có executor (BLUE_GREEN) ⇒ HOLD với lý do §7.2", async () => {
+  it('chiến lược không có executor ở FLAG_LEVEL (BLUE_GREEN, §7.2 "không áp dụng") ⇒ HOLD với lý do', async () => {
     const target = await newTarget(project, 0);
     const id = await newSession(target);
     await admin.$executeRaw`UPDATE rollout_sessions SET strategy = 'BLUE_GREEN' WHERE id = ${id}::uuid`;
     const c = testController(s2.baseUrl);
     await c.reconciler.reconcileOne(id);
     expect((await sessionState(id)).lastDecision?.reason).toMatch(
-      /BLUE_GREEN .* thủ công/,
+      /BLUE_GREEN không có executor ở FLAG_LEVEL/,
     );
   });
 });

@@ -11,4 +11,7 @@ export const canaryStrategy: RolloutStrategy = {
   nextPercent: (current, stepPercent) =>
     Math.min(round2(current + stepPercent), FULL_PERCENT),
   isComplete: (percent) => percent >= FULL_PERCENT,
+  autoDecide: true,
+  finish: "ramp",
+  ruleIssue: () => undefined,
 };

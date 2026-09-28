@@ -34,6 +34,7 @@ import type { Decision, TrackOutcome } from "@udp/shared-types";
 import type { IntentRow, SessionRow } from "../rollout-session/types.js";
 import type { FailReason } from "@udp/db";
 import {
+  FULL_PERCENT,
   strategyFor as defaultStrategyFor,
   type RolloutStrategy,
   type StrategyFor,
@@ -653,11 +654,18 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     if (strategy === undefined) {
       return {
         kind: "hold",
-        reason: `${session.strategy} ở FLAG_LEVEL chỉ promote/rollback thủ công (§7.2) — chưa có executor`,
+        reason: `${session.strategy} không có executor ở ${session.rolloutScope} (§7.2)`,
       };
     }
-    const target = await loadFlagTarget(db, session);
+    // Chiến lược mà 100% chưa phải xong (ATTRIBUTE_SPLIT) đứng ở 100% là bình thường
+    const target = await loadFlagTarget(
+      db,
+      session,
+      !strategy.isComplete(FULL_PERCENT),
+    );
     if (target.kind === "hold") return target;
+    const issue = strategy.ruleIssue(target.ruleType);
+    if (issue !== undefined) return { kind: "hold", reason: issue };
     warnDrift(session, target);
     return { kind: "ready", target, strategy };
   };
@@ -706,6 +714,9 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       return rejectIntent(session, fence, intent, resolved.reason);
     }
     if (plan.kind === "promote-full") {
+      if (resolved.strategy.finish === "default-variant") {
+        return finishDefault(session, fence, resolved.target, intent);
+      }
       return stepUp(session, fence, resolved.target, resolved.strategy, 100, {
         triggeredBy: "MANUAL",
         causedByEventId: intent.id,
@@ -728,6 +739,75 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       snapshot: null,
       causedByEventId: intent.id,
     });
+  };
+
+  /**
+   * [v4.11, Plan #46] PROMOTE của chiến lược `finish: "default-variant"` (ATTRIBUTE_SPLIT, §7.2): đổi
+   * variant mặc định của environment sang variant mới qua S2, rồi đóng DONE — event COMPLETE trỏ ý
+   * định. S2 không phản hồi ⇒ HOLD và ý định CHỜ vòng sau (nó chưa được thi hành); S2 sống mà từ
+   * chối ⇒ ý định bị từ chối kèm lý do.
+   */
+  const finishDefault = async (
+    session: SessionRow,
+    fence: Fence,
+    target: FlagTarget,
+    intent: IntentRow,
+  ): Promise<Outcome> => {
+    if (session.flagEnvConfigId === null) {
+      return rejectIntent(
+        session,
+        fence,
+        intent,
+        "session thiếu flag_env_config_id",
+      );
+    }
+    if (intent.actorUserId === null) {
+      return rejectIntent(
+        session,
+        fence,
+        intent,
+        "ý định không mang người làm — Service 2 không ghi thay đổi cấu hình ẩn danh (I40)",
+      );
+    }
+    const applied = await executor.setDefaultVariant(
+      fence,
+      session.flagEnvConfigId,
+      target.targetVariant.id,
+      intent.actorUserId,
+    );
+    if (applied.status === "FAILED") {
+      return holdWith(
+        session,
+        fence,
+        `Chưa đổi được variant mặc định — Service 2 không phản hồi (${applied.message}); thử lại ở vòng sau`,
+      );
+    }
+    if (applied.status !== "SUCCESS") {
+      return rejectIntent(
+        session,
+        fence,
+        intent,
+        `Service 2 từ chối đổi variant mặc định: ${applied.message}`,
+      );
+    }
+    const ok = await commitFenced(session, fence, async (tx) => {
+      const updated = await updateIfVersion(tx, session.id, fence.version, {
+        status: "DONE",
+      });
+      if (!updated) return false;
+      await recordExecution(tx, {
+        sessionId: session.id,
+        action: "COMPLETE",
+        trafficPercentage: session.currentTrafficPercentage,
+        triggeredBy: "MANUAL",
+        reason: `Variant mặc định của environment đổi sang "${target.targetVariant.key}"`,
+        metricSnapshot: null,
+        causedByEventId: intent.id,
+      });
+      await markProcessedOrThrow(tx, intent.id);
+      return true;
+    });
+    return ok ? "completed" : "version-drift";
   };
 
   /** PENDING → áp bậc đầu. Baseline do Service 1 ghi lúc tạo; S3 chỉ đọc (§1.2) */
@@ -892,6 +972,18 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       baselineRequests,
       baselineErrors,
     });
+    // [Plan #46] Không tự quyết (§7.2 ATTRIBUTE_SPLIT): số đo vẫn ghi cho người đọc, không hành động
+    if (!strategy.autoDecide) {
+      await record(
+        session,
+        fence,
+        holdDecision(
+          `${strategy.name} không tự quyết (§7.2): hai nhóm khác nhau về bản chất nên chênh lệch không quy được cho nhánh flag — promote (đổi variant mặc định) hay rollback bằng tay`,
+          decision.metricSnapshot,
+        ),
+      );
+      return "hold";
+    }
     await record(session, fence, decision);
 
     if (decision.decision === "ROLLBACK") {

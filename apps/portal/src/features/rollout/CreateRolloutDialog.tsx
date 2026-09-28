@@ -32,15 +32,22 @@ const DNS_1123 =
  * 3. `Idempotency-Key` sinh LÚC BẤM GỬI: sinh lúc dựng form thì lần gửi thứ hai với nội
  *    dung khác bị 422 `IDEMPOTENCY_KEY_REUSED`.
  *
- * SERVICE_LEVEL và các chiến lược khác CANARY chưa có executor ở Service 3 (§7.2), nên
- * không có trong form — hiện chúng ra chỉ để nhận 422 là nói dối về khả năng hệ thống.
+ * [Plan #46] Hai chiến lược ở mức flag (§7.2): CANARY tăng dần một rule phân phối; ATTRIBUTE_SPLIT
+ * đưa nhóm khớp một rule theo thuộc tính/segment sang variant mới trong MỘT bậc, không tự quyết —
+ * nên form ẩn nhịp bậc và ngưỡng rollback của nó. BLUE_GREEN "không áp dụng" ở mức flag; SERVICE_LEVEL
+ * là Plan #47 — không có trong form cho tới khi Service 3 chạy được chúng.
  */
+type FlagStrategy = "CANARY" | "ATTRIBUTE_SPLIT";
+
+const SPLIT_RULE_TYPES = new Set(["ATTRIBUTE_BASED", "SEGMENT"]);
 export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
   const { project, env } = useProjectContext();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tz = browserTimeZone();
 
+  const [strategy, setStrategy] = useState<FlagStrategy>("CANARY");
+  const split = strategy === "ATTRIBUTE_SPLIT";
   const [flagId, setFlagId] = useState("");
   const [ruleId, setRuleId] = useState("");
   const [variantId, setVariantId] = useState("");
@@ -107,12 +114,13 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
       const body: CreateFlagRolloutInput = {
         scope: "FLAG_LEVEL",
         envId: env.id,
-        strategy: "CANARY",
+        strategy,
         flagEnvConfigId: envState.configId,
         targetingRuleId: ruleId,
         targetVariantId: variantId,
         workloadName,
-        stepPercent,
+        // ATTRIBUTE_SPLIT có đúng một bậc: nhóm khớp sang 100%
+        stepPercent: split ? 100 : stepPercent,
         stepIntervalSeconds: stepInterval,
         analysisIntervalSeconds: analysisInterval,
         warmUpRequests: warmUp,
@@ -155,7 +163,11 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog
       title={`Tạo rollout ở ${env.name}`}
-      description="Canary theo flag: tăng dần tỉ lệ của một variant trong một rule phân phối, cùng một phiên bản mã."
+      description={
+        split
+          ? "Chia theo thuộc tính: nhóm khớp một rule theo thuộc tính hay segment nhận variant mới; bạn quyết promote hay rollback."
+          : "Canary theo flag: tăng dần tỉ lệ của một variant trong một rule phân phối, cùng một phiên bản mã."
+      }
       onClose={onClose}
       wide
       footer={
@@ -174,6 +186,30 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
         </>
       }
     >
+      <div className="f">
+        <span className="lbl">Chiến lược</span>
+        <div className="seg" role="group" aria-label="Chiến lược">
+          {(
+            [
+              ["CANARY", "Canary"],
+              ["ATTRIBUTE_SPLIT", "Theo thuộc tính"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={strategy === value}
+              onClick={() => {
+                setStrategy(value);
+                setRuleId("");
+                setVariantId("");
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="f">
         <label htmlFor="ro-flag">Flag (đang dùng)</label>
         <input
@@ -208,7 +244,9 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
       </div>
       {flagId !== "" && (
         <div className="f">
-          <label htmlFor="ro-rule">Rule sẽ ramp</label>
+          <label htmlFor="ro-rule">
+            {split ? "Rule theo thuộc tính" : "Rule sẽ ramp"}
+          </label>
           <select
             id="ro-rule"
             className="sel"
@@ -219,19 +257,23 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
             }}
           >
             <option value="">Chọn rule</option>
-            {rules.data?.rules.map((r, i) => (
-              <option key={r.id} value={r.id}>
-                Rule {i + 1}
-                {r.description === null ? "" : `: ${r.description}`}
-                {r.serve.kind === "distribution" ? "" : " (một variant)"}
-              </option>
-            ))}
+            {rules.data?.rules
+              .filter((r) => !split || SPLIT_RULE_TYPES.has(r.ruleType))
+              .map((r, i) => (
+                <option key={r.id} value={r.id}>
+                  Rule {i + 1}
+                  {r.description === null ? "" : `: ${r.description}`}
+                  {r.serve.kind === "distribution" ? "" : " (một variant)"}
+                </option>
+              ))}
           </select>
         </div>
       )}
       {rule !== undefined && rule.serve.kind === "distribution" && (
         <div className="f">
-          <label htmlFor="ro-variant">Variant tăng dần</label>
+          <label htmlFor="ro-variant">
+            {split ? "Variant mới cho nhóm khớp" : "Variant tăng dần"}
+          </label>
           <select
             id="ro-variant"
             className="sel"
@@ -307,78 +349,82 @@ export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
           onRetry={() => probe.mutate()}
         />
       )}
-      <fieldset className="fs">
-        <legend>Nhịp</legend>
-        <div className="grid-f">
-          <NumberField
-            id="ro-step"
-            label="Mỗi bậc tăng (%)"
-            value={stepPercent}
-            onChange={setStepPercent}
-            min={0.01}
-            max={100}
-            step={0.01}
-          />
-          <NumberField
-            id="ro-dwell"
-            label="Giữ mỗi bậc (giây)"
-            hint="Đủ thời gian này mới lên bậc tiếp."
-            value={stepInterval}
-            onChange={setStepInterval}
-            min={1}
-          />
-          <NumberField
-            id="ro-analysis"
-            label="Đo lại mỗi (giây)"
-            hint="Vẫn đo trong lúc chờ lên bậc: vượt ngưỡng là rollback ngay."
-            value={analysisInterval}
-            onChange={setAnalysisInterval}
-            min={1}
-          />
-          <NumberField
-            id="ro-warm"
-            label="Số request tối thiểu trước khi đánh giá"
-            value={warmUp}
-            onChange={setWarmUp}
-            min={1}
-          />
-        </div>
-      </fieldset>
-      <fieldset className="fs">
-        <legend>Ngưỡng rollback</legend>
-        <div className="grid-f">
-          <NumberField
-            id="ro-err"
-            label="Tỉ lệ lỗi tối đa (%)"
-            value={errorRate}
-            onChange={setErrorRate}
-            min={0}
-            max={100}
-            step={0.1}
-          />
-          <NumberField
-            id="ro-lat"
-            label="Latency P99 tối đa (ms)"
-            value={latency}
-            onChange={setLatency}
-            min={1}
-          />
-          <NumberField
-            id="ro-minerr"
-            label="Số lỗi tối thiểu để tính vượt"
-            value={minErrors}
-            onChange={setMinErrors}
-            min={1}
-          />
-          <NumberField
-            id="ro-breach"
-            label="Vượt liên tiếp mấy lần thì rollback"
-            value={breaches}
-            onChange={setBreaches}
-            min={1}
-          />
-        </div>
-      </fieldset>
+      {!split && (
+        <>
+          <fieldset className="fs">
+            <legend>Nhịp</legend>
+            <div className="grid-f">
+              <NumberField
+                id="ro-step"
+                label="Mỗi bậc tăng (%)"
+                value={stepPercent}
+                onChange={setStepPercent}
+                min={0.01}
+                max={100}
+                step={0.01}
+              />
+              <NumberField
+                id="ro-dwell"
+                label="Giữ mỗi bậc (giây)"
+                hint="Đủ thời gian này mới lên bậc tiếp."
+                value={stepInterval}
+                onChange={setStepInterval}
+                min={1}
+              />
+              <NumberField
+                id="ro-analysis"
+                label="Đo lại mỗi (giây)"
+                hint="Vẫn đo trong lúc chờ lên bậc: vượt ngưỡng là rollback ngay."
+                value={analysisInterval}
+                onChange={setAnalysisInterval}
+                min={1}
+              />
+              <NumberField
+                id="ro-warm"
+                label="Số request tối thiểu trước khi đánh giá"
+                value={warmUp}
+                onChange={setWarmUp}
+                min={1}
+              />
+            </div>
+          </fieldset>
+          <fieldset className="fs">
+            <legend>Ngưỡng rollback</legend>
+            <div className="grid-f">
+              <NumberField
+                id="ro-err"
+                label="Tỉ lệ lỗi tối đa (%)"
+                value={errorRate}
+                onChange={setErrorRate}
+                min={0}
+                max={100}
+                step={0.1}
+              />
+              <NumberField
+                id="ro-lat"
+                label="Latency P99 tối đa (ms)"
+                value={latency}
+                onChange={setLatency}
+                min={1}
+              />
+              <NumberField
+                id="ro-minerr"
+                label="Số lỗi tối thiểu để tính vượt"
+                value={minErrors}
+                onChange={setMinErrors}
+                min={1}
+              />
+              <NumberField
+                id="ro-breach"
+                label="Vượt liên tiếp mấy lần thì rollback"
+                value={breaches}
+                onChange={setBreaches}
+                min={1}
+              />
+            </div>
+          </fieldset>
+        </>
+      )}
       {create.isError && (
         <p role="alert" className="field-error">
           {Object.values(fields)[0] ?? messageOf(create.error)}

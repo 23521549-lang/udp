@@ -66,5 +66,7 @@ export type SessionRow = z.infer<typeof sessionRowSchema>;
 export interface IntentRow {
   id: string;
   action: IntentAction;
+  /** [v4.11, Plan #46] Người đã bấm — S3 chuyển nó cho S2 khi thi hành ý định ghi cấu hình flag (I40) */
+  actorUserId: string | null;
   createdAt: Date;
 }

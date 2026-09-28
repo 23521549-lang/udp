@@ -1,15 +1,17 @@
 import type { SessionRow } from "../rollout-session/types.js";
+import { attributeSplitStrategy } from "./attribute-split/attribute-split.strategy.js";
 import { canaryStrategy } from "./canary/canary.strategy.js";
 import type { RolloutStrategy, StrategyFor } from "./strategy.js";
 
 /**
  * Registry chiến lược. Không có trong đây ⇒ reconciler HOLD với lý do rõ, không
- * đoán. ATTRIBUTE_SPLIT và BLUE_GREEN của FLAG_LEVEL chỉ có đường tay (§7.2) và
- * cần endpoint đổi default variant chưa có — ngày dựng chúng thì thêm vào đây,
- * không thêm `if (strategy === ...)` vào reconciler.
+ * đoán. Khác biệt giữa các chiến lược nằm ở thuộc tính của chúng (`autoDecide`,
+ * `finish`, `ruleIssue`) — không thêm `if (strategy === ...)` vào reconciler.
+ * BLUE_GREEN ở FLAG_LEVEL "không áp dụng" (§7.2); Service 1 từ chối lúc tạo.
  */
 const REGISTRY: Partial<Record<SessionRow["strategy"], RolloutStrategy>> = {
   CANARY: canaryStrategy,
+  ATTRIBUTE_SPLIT: attributeSplitStrategy,
 };
 
 export const strategyFor: StrategyFor = (session) => REGISTRY[session.strategy];

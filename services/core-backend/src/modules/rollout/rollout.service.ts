@@ -128,9 +128,10 @@ export async function create(
       "SERVICE_LEVEL chưa được hỗ trợ — Service 3 chưa có executor cho workload (cần cluster-access, ADR-06)",
     );
   }
-  if (input.strategy !== "CANARY") {
+  if (input.strategy === "BLUE_GREEN") {
+    // Ma trận §7.2: ở mức flag, đổi mặc định đã là "chuyển 100%" — không có hai môi trường để đổi
     throw new UnprocessableError(
-      `${input.strategy} ở FLAG_LEVEL chưa có executor (§7.2) — chỉ CANARY chạy tự động được`,
+      "BLUE_GREEN không áp dụng ở FLAG_LEVEL (§7.2) — dùng CANARY với stepPercent = 100",
     );
   }
 
@@ -151,6 +152,16 @@ export async function create(
     // Hook không gắn nhãn khi flag tắt (§6.6): probe pha 2 sẽ không bao giờ qua
     throw new UnprocessableError(
       `Flag "${target.flagKey}" đang TẮT ở environment này — bật flag trước khi rollout`,
+    );
+  }
+  if (
+    input.strategy === "ATTRIBUTE_SPLIT" &&
+    target.ruleType !== "ATTRIBUTE_BASED" &&
+    target.ruleType !== "SEGMENT"
+  ) {
+    // Cùng luật với `ruleIssue` của chiến lược ở Service 3 — tạo được thì chạy được
+    throw new UnprocessableError(
+      `ATTRIBUTE_SPLIT cần rule ATTRIBUTE_BASED hoặc SEGMENT, rule này là ${target.ruleType} (§7.2)`,
     );
   }
   const serve = flagServeDbSchema.safeParse(target.serve);

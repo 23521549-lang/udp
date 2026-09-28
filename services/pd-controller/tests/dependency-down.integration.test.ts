@@ -385,6 +385,7 @@ describe("I30(a) — kill-switch khi Service 2 chết", () => {
           }),
         untrack: () => Promise.resolve({ status: "SUCCESS", changed: false }),
         track: () => Promise.resolve({ status: "SUCCESS", changed: false }),
+        setDefaultVariant: () => Promise.resolve({ status: "SUCCESS" }),
       },
       killSwitch: {
         apply: () => {

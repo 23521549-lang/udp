@@ -45,6 +45,20 @@ const ACTION_LABEL: Record<RolloutIntentActionWire, string> = {
   ROLLBACK: "Rollback",
 };
 
+/**
+ * [Plan #46] Nhãn theo chiến lược: PROMOTE của ATTRIBUTE_SPLIT là đổi variant mặc định (§7.2), không
+ * phải "lên 100%" của một rule.
+ */
+function labelOf(
+  action: RolloutIntentActionWire,
+  rollout: RolloutDetailWire,
+): string {
+  if (action === "PROMOTE" && rollout.strategy === "ATTRIBUTE_SPLIT") {
+    return `Đổi mặc định sang ${rollout.flag?.targetVariant ?? "variant mới"}`;
+  }
+  return ACTION_LABEL[action];
+}
+
 /** Hành động hợp lệ theo trạng thái — ẩn nút vô nghĩa thay vì để backend trả 409 */
 export function actionsFor(
   status: RolloutDetailWire["status"],
@@ -115,6 +129,8 @@ export function RolloutDetailPage() {
 function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
   const { project } = useProjectContext();
   const snap = rollout.latestMetricSnapshot;
+  // [Plan #46] §10.9 AttributeSplitDetail: số KỸ THUẬT của hai nhánh, không tự quyết, không z-score
+  const split = rollout.strategy === "ATTRIBUTE_SPLIT";
   const decision = rollout.lastDecision;
   const maxBreaches = Number(rollout.thresholds.maxConsecutiveBreaches ?? 2);
   const errorLimit = Number(rollout.thresholds.errorRate ?? 0.05);
@@ -171,11 +187,26 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         </div>
       )}
 
+      {split && (
+        <div className="alert" role="note">
+          <Icon of={CircleAlert} />
+          <div>
+            <b>Chia theo thuộc tính: hệ thống không tự promote hay rollback</b>
+            <div>
+              Hai nhóm khác nhau về bản chất (§7.2), nên chênh lệch dưới đây là
+              số kỹ thuật, không quy được cho nhánh flag. Bạn quyết: đổi variant
+              mặc định sang variant mới, hoặc rollback.
+            </div>
+          </div>
+        </div>
+      )}
       <WhyStill rollout={rollout} maxBreaches={maxBreaches} />
 
       <div className="stat">
         <div>
-          <div className="l">Lưu lượng variant mới</div>
+          <div className="l">
+            {split ? "Nhóm khớp nhận variant mới" : "Lưu lượng variant mới"}
+          </div>
           <div className="v num">
             {formatPercent(rollout.currentTrafficPercentage)}
           </div>
@@ -189,7 +220,11 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
           </div>
         </div>
         <div>
-          <div className="l">Tỉ lệ lỗi canary / đối chứng</div>
+          <div className="l">
+            {split
+              ? "Tỉ lệ lỗi nhánh mới / nhánh cũ"
+              : "Tỉ lệ lỗi canary / đối chứng"}
+          </div>
           <div className="v num">
             {snap === undefined
               ? "–"
@@ -239,7 +274,7 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
                   <div key={q}>{q}</div>
                 ))}
               </div>
-              {snap.zScore !== null && (
+              {!split && snap.zScore !== null && (
                 <p className="c3">z-score: {snap.zScore.toFixed(2)}</p>
               )}
             </details>
@@ -389,20 +424,26 @@ function Actions({ rollout }: { rollout: RolloutDetailWire }) {
           <Icon of={icon[a]} />
           {pending && rollout.pendingIntent?.action === a
             ? "Đang thực hiện..."
-            : ACTION_LABEL[a]}
+            : labelOf(a, rollout)}
         </button>
       ))}
       {confirm !== null && (
         <ConfirmDialog
           title={
-            confirm === "ROLLBACK" ? "Rollback rollout này?" : "Đưa lên 100%?"
+            confirm === "ROLLBACK"
+              ? "Rollback rollout này?"
+              : rollout.strategy === "ATTRIBUTE_SPLIT"
+                ? "Đổi variant mặc định?"
+                : "Đưa lên 100%?"
           }
           description={
             confirm === "ROLLBACK"
               ? `Lưu lượng về lại mốc ${rollout.baselinePercentage === null ? "ban đầu" : formatPercent(rollout.baselinePercentage)}.`
-              : "Mọi người dùng khớp rule sẽ nhận variant mới."
+              : rollout.strategy === "ATTRIBUTE_SPLIT"
+                ? "Mọi người dùng của environment, không riêng nhóm khớp, sẽ nhận variant mới làm mặc định. Rollout kết thúc."
+                : "Mọi người dùng khớp rule sẽ nhận variant mới."
           }
-          confirmLabel={ACTION_LABEL[confirm]}
+          confirmLabel={labelOf(confirm, rollout)}
           danger={confirm === "ROLLBACK"}
           busy={act.isPending}
           error={act.isError ? messageOf(act.error) : undefined}

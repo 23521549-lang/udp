@@ -62,6 +62,7 @@ function spyExecutor(
         spy.tracks.push(sessionId);
         return Promise.resolve(trackOutcome);
       },
+      setDefaultVariant: () => Promise.resolve({ status: "SUCCESS" }),
     },
   };
   return spy;

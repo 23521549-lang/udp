@@ -163,6 +163,12 @@ export type CanaryPair =
 export function canaryPairOf(
   serve: FlagServe,
   targetVariantId: string,
+  /**
+   * [v4.11, Plan #46] Variant mục tiêu ĐÃ ở 100% có hợp lệ không. Tạo rollout: không — không còn gì
+   * để ramp. Đang chạy một chiến lược mà "lên 100%" chưa phải xong (ATTRIBUTE_SPLIT đứng ở 100% chờ
+   * promote tay, §7.2): có.
+   */
+  allowFull = false,
 ): CanaryPair {
   if (serve.kind !== "distribution") {
     return invalid(
@@ -179,7 +185,7 @@ export function canaryPairOf(
   if (target === undefined || other === undefined) {
     return invalid("target_variant_id không nằm trong phân phối của rule");
   }
-  if (target.weight >= TOTAL_BUCKETS) {
+  if (!allowFull && target.weight >= TOTAL_BUCKETS) {
     return invalid("variant mục tiêu đã phục vụ 100% — không còn gì để ramp");
   }
   return {

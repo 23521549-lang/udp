@@ -67,8 +67,9 @@ hành dừng. Chạy theo lô ở TIỀN CẢNH, mỗi lô dưới 10 phút, kh�
    - `grid-tier2.test.ts` — CẢ TỆP một lượt (~10 phút, ba phép meta cần cả tệp), chạy nền và
      không chạy gì khác cùng lúc.
 2. **Service 2**: hai lô 19 tệp (~5–6 phút mỗi lô). **Service 3**: một lượt (~3 phút).
-3. **Portal**: `vitest run` hai lô (`admin-deploy`…`i38`, rồi `palette`…`variants`; một lượt đầy đủ đỏ
-   ô đầu của vài tệp vì hết hạn chờ khi 17 worker jsdom chạy song song — Plan #44) + `vite build`.
+3. **Portal**: `vitest run` ba lô (`admin-deploy`…`i38`; `overview-deploy`…`provisioning`; `rollout`…
+   `variants`; lô lớn hơn đỏ ô đầu của vài tệp vì hết hạn chờ khi nhiều worker jsdom chạy song song —
+   Plan #44, #46) + `vite build`.
    **design-lint**, `shared-types`, `http`, `config`, `adapter-core`, `experiments`: mỗi package một lượt.
 4. `eslint` và `prettier --check` CHỈ trên tệp đã đổi — `prettier --write` cả thư mục `tests/` gây
    thay đổi định dạng không liên quan.
