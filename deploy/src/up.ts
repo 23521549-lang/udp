@@ -1,5 +1,3 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -13,6 +11,13 @@ import {
   SAMPLE_NAMESPACE,
   SECRET_NAME,
 } from "./cluster.js";
+import {
+  buildImage,
+  ensureNamespace,
+  ensureSecret,
+  install,
+  pinnedKubectl,
+} from "./install.js";
 import { has, query, run } from "./shell.js";
 import { SEED_DEV_PASSWORD, SEED_OWNER_EMAIL } from "@udp/db/seed-constants";
 
@@ -21,8 +26,9 @@ import { SEED_DEV_PASSWORD, SEED_OWNER_EMAIL } from "@udp/db/seed-constants";
  *
  *   pnpm deploy:up
  *
- * Chạy lại được: cụm và Secret đã có thì giữ nguyên (dữ liệu PostgreSQL sống trên PVC, đổi mật khẩu
- * owner sau lần khởi tạo đầu là khoá mình ra ngoài); image build lại và nạp lại; job migrate chạy lại.
+ * Chạy lại được: cụm đã có thì giữ nguyên; Secret đã có thì giữ mọi khoá cũ, chỉ bổ sung khoá mới (dữ liệu
+ * PostgreSQL sống trên PVC, đổi mật khẩu owner sau lần khởi tạo đầu là khoá mình ra ngoài — `install.ts`);
+ * image build lại và nạp lại; job migrate chạy lại.
  */
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -31,10 +37,7 @@ const KIND_CONFIG = join(ROOT, "deploy/kind/cluster.yaml");
 const SERVICES = ["core-backend", "flag-service", "pd-controller"];
 
 /** kubectl luôn nói với ĐÚNG cụm kind của UDP, bất kể context hiện tại của máy */
-const kubectl = (args: readonly string[]): void =>
-  run("kubectl", ["--context", KUBE_CONTEXT, ...args]);
-const askKubectl = (args: readonly string[]): string | null =>
-  query("kubectl", ["--context", KUBE_CONTEXT, ...args]);
+const kube = pinnedKubectl(["--context", KUBE_CONTEXT]);
 
 function requireTools(): void {
   const missing = ["docker", "kind", "kubectl"].filter((tool) => !has(tool));
@@ -60,19 +63,7 @@ function ensureCluster(): void {
 
 function buildAndLoadImages(): void {
   for (const image of IMAGES) {
-    const buildArgs = Object.entries(image.args).flatMap(([k, v]) => [
-      "--build-arg",
-      `${k}=${v}`,
-    ]);
-    run("docker", [
-      "build",
-      "-f",
-      join(ROOT, image.dockerfile),
-      ...buildArgs,
-      "-t",
-      imageRef(image),
-      ROOT,
-    ]);
+    buildImage(ROOT, image, imageRef(image));
     run("kind", [
       "load",
       "docker-image",
@@ -83,115 +74,18 @@ function buildAndLoadImages(): void {
   }
 }
 
-/**
- * Secret tạo MỘT lần, qua tệp tạm quyền 0600 — không bao giờ trên dòng lệnh (lộ trong danh sách tiến
- * trình) và không bao giờ trong repo.
- */
-function ensureSecret(): void {
-  const namespaceYaml = askKubectl([
-    "create",
-    "namespace",
-    NAMESPACE,
-    "--dry-run=client",
-    "-o",
-    "yaml",
-  ]);
-  if (namespaceYaml === null)
-    throw new Error("kubectl không dựng được manifest namespace");
-  const dir = mkdtempSync(join(tmpdir(), "udp-ns-"));
-  try {
-    const nsFile = join(dir, "namespace.yaml");
-    writeFileSync(nsFile, namespaceYaml);
-    kubectl(["apply", "-f", nsFile]);
-    if (askKubectl(["get", "secret", SECRET_NAME, "-n", NAMESPACE]) !== null)
-      return;
-    const envFile = join(dir, "secrets.env");
-    const body = Object.entries(generateSecrets())
-      .map(([k, v]) => `${k}=${v}`)
-      .join("\n");
-    writeFileSync(envFile, `${body}\n`, { mode: 0o600 });
-    chmodSync(envFile, 0o600);
-    kubectl([
-      "create",
-      "secret",
-      "generic",
-      SECRET_NAME,
-      "-n",
-      NAMESPACE,
-      `--from-env-file=${envFile}`,
-    ]);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-function deploy(): void {
-  // Job bất biến: xoá lượt cũ để lượt này chạy migrate trên image vừa nạp
-  kubectl([
-    "delete",
-    "job",
-    "udp-migrate",
-    "-n",
-    NAMESPACE,
-    "--ignore-not-found",
-  ]);
-  kubectl(["apply", "-k", OVERLAY]);
-  kubectl([
-    "rollout",
-    "status",
-    "statefulset/postgres",
-    "-n",
-    NAMESPACE,
-    "--timeout=300s",
-  ]);
-  kubectl([
-    "wait",
-    "--for=condition=complete",
-    "job/udp-migrate",
-    "-n",
-    NAMESPACE,
-    "--timeout=600s",
-  ]);
-  // Service khởi động trước khi role có mật khẩu thì crash-loop với backoff dài — khởi động lại ngay
-  kubectl([
-    "rollout",
-    "restart",
-    "-n",
-    NAMESPACE,
-    ...SERVICES.map((s) => `deployment/${s}`),
-  ]);
-  for (const name of [...SERVICES, "portal", "prometheus"]) {
-    kubectl([
-      "rollout",
-      "status",
-      `deployment/${name}`,
-      "-n",
-      NAMESPACE,
-      "--timeout=300s",
-    ]);
-  }
-  kubectl([
-    "rollout",
-    "restart",
-    "deployment/sample-app",
-    "-n",
-    SAMPLE_NAMESPACE,
-  ]);
-  kubectl([
-    "rollout",
-    "status",
-    "deployment/sample-app",
-    "-n",
-    SAMPLE_NAMESPACE,
-    "--timeout=300s",
-  ]);
-}
-
 requireTools();
 ensureCluster();
 buildAndLoadImages();
-ensureSecret();
-deploy();
+ensureNamespace(kube, NAMESPACE);
+ensureSecret(kube, NAMESPACE, SECRET_NAME, generateSecrets);
+install(kube, {
+  namespace: NAMESPACE,
+  kustomization: OVERLAY,
+  services: SERVICES,
+  alsoReady: ["portal", "prometheus"],
+  extra: [{ namespace: SAMPLE_NAMESPACE, name: "sample-app" }],
+});
 console.info(`
 UDP đã chạy trên kind "${KIND_CLUSTER}":
   Portal     http://localhost:${String(HOST_PORTS.portal)}   (tài khoản seed: ${SEED_OWNER_EMAIL} / ${SEED_DEV_PASSWORD})

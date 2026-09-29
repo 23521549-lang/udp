@@ -1,0 +1,25 @@
+# UDP trên máy ảo công khai (Plan #52: Oracle Cloud Always Free, k3s một node) — CÙNG base với kind. Overlay này
+# không tự dùng được: host, email ACME và tag image là giá trị giữ chỗ (`udp.invalid`, không tag) mà bản phát hành
+# (`deploy/src/vm.ts` → `releaseKustomization`, `pnpm --filter @udp/deploy vm-up`) thay bằng giá trị của máy.
+# Không seed, không sample-app (QĐ-6); `MANAGED_CLOUDS` rỗng của base giữ nguyên.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - ingress.yaml
+  - tls.yaml
+  - traefik.yaml
+  - backup.yaml
+patches:
+  - path: proxy-hops.yaml
+  - path: postgres-storage.yaml
+configMapGenerator:
+  - name: udp-config
+    behavior: merge
+    literals:
+      - CORS_ORIGIN=https://udp.invalid
+      - COOKIE_DOMAIN=udp.invalid
+      # Issuer OIDC công khai cho federation BYOC GCP/Azure — Ingress route /oidc về Service 1
+      - UDP_OIDC_ISSUER=https://udp.invalid/oidc
+      # Flagger trong cluster tenant gọi gate của Service 3 qua đường công khai (Plan #51)
+      - PD_CONTROLLER_WEBHOOK_URL=https://udp.invalid

@@ -1,0 +1,12 @@
+# Traefik có sẵn của k3s (Plan #52 QĐ-5): giữ IP của khách tới tận pod — rate limit của S1/S2 đếm theo IP, và
+# `externalTrafficPolicy: Cluster` mặc định SNAT mọi khách thành một địa chỉ. Một node nên `Local` không mất gì.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        externalTrafficPolicy: Local

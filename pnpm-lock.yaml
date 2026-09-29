@@ -142,7 +142,13 @@ importers:
       tsx:
         specifier: ^4.19.1
         version: 4.23.12
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
+      '@udp/http':
+        specifier: workspace:*
+        version: link:../packages/http
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

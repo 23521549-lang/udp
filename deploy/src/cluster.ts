@@ -100,5 +100,9 @@ export const IMAGES: readonly ImageSpec[] = [
   },
 ];
 
+/** Máy ảo dùng tag theo commit (Plan #52 QĐ-3) */
+export const imageRefWithTag = (image: ImageSpec, tag: string): string =>
+  `${image.name}:${tag}`;
+
 export const imageRef = (image: ImageSpec): string =>
-  `${image.name}:${IMAGE_TAG}`;
+  imageRefWithTag(image, IMAGE_TAG);

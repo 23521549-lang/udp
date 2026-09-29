@@ -1,0 +1,70 @@
+# Bề mặt công khai DUY NHẤT (Plan #52 QĐ-5) — cùng bảng với `PUBLIC_ROUTES` của deploy/src/vm.ts (test canh).
+# `/internal`, `/metrics`, probe và Prometheus không có route: những đường đó rơi vào Portal và nhận trang SPA.
+# HTTP → HTTPS bằng Middleware (no-op khi đã https); route thử thách ACME của cert-manager dài hơn nên thắng.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: udp
+  namespace: udp
+  annotations:
+    cert-manager.io/cluster-issuer: udp-letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: udp-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - udp.invalid
+      secretName: udp-tls
+  rules:
+    - host: udp.invalid
+      http:
+        paths:
+          # SPA + /api (nginx của Portal proxy sang Service 1, cùng origin — cookie httpOnly)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portal
+                port:
+                  name: http
+          # SDK và OFREP trong ứng dụng của khách
+          - path: /sdk
+            pathType: Prefix
+            backend:
+              service:
+                name: flag-service
+                port:
+                  name: http
+          - path: /ofrep
+            pathType: Prefix
+            backend:
+              service:
+                name: flag-service
+                port:
+                  name: http
+          # Discovery + JWKS mà cloud của khách đọc (federation GCP/Azure)
+          - path: /oidc
+            pathType: Prefix
+            backend:
+              service:
+                name: core-backend
+                port:
+                  name: http
+          # Gate mà Flagger trong cluster tenant hỏi trước mỗi bậc (§7.3)
+          - path: /webhooks/flagger
+            pathType: Prefix
+            backend:
+              service:
+                name: pd-controller
+                port:
+                  name: http
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: udp
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

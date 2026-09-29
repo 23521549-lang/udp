@@ -1,0 +1,32 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: udp-selfsigned-root
+spec:
+  selfSigned: {}
+---
+# Secret của CA nằm ở namespace của cert-manager — nơi ClusterIssuer kiểu CA đọc nó
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: udp-self-signed-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: udp-self-signed-ca
+  secretName: udp-self-signed-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: udp-selfsigned-root
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: udp-self-signed
+spec:
+  ca:
+    secretName: udp-self-signed-ca

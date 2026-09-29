@@ -17,7 +17,18 @@ export function query(command: string, args: readonly string[]): string | null {
   return result.status === 0 ? result.stdout : null;
 }
 
-/** Công cụ có trên PATH không */
+/**
+ * Lệnh hỏi phiên bản của từng công cụ. `kubectl version` trần hỏi cả API server và thoát mã 1 khi chưa có cụm nào
+ * — đúng lúc `deploy:up` hỏi, trước khi dựng cụm; `sudo` không có lệnh con `version`. `docker version` thì CỐ Ý
+ * hỏi cả daemon: Docker có mà chưa chạy cũng là "chưa dùng được".
+ */
+const VERSION_PROBE: Readonly<Record<string, readonly string[]>> = {
+  kubectl: ["version", "--client"],
+  sudo: ["-V"],
+};
+
+/** Công cụ có trên PATH và dùng được không */
 export function has(command: string): boolean {
-  return spawnSync(command, ["version"], { stdio: "ignore" }).status === 0;
+  const probe = VERSION_PROBE[command] ?? ["version"];
+  return spawnSync(command, probe, { stdio: "ignore" }).status === 0;
 }

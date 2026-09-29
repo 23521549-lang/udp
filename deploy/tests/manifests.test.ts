@@ -1,11 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { envSchema } from "@udp/config/env-schema";
 import { SEED_DEV_SERVER_KEY } from "@udp/db/seed-constants";
 import { beforeAll, describe, expect, it } from "vitest";
-import { parse, parseAllDocuments } from "yaml";
+import { parse } from "yaml";
 import {
   generateSecrets,
   HOST_PORTS,
@@ -15,6 +14,14 @@ import {
   SAMPLE_NAMESPACE,
   SECRET_NAME,
 } from "../src/cluster.js";
+import {
+  byKind as byKindIn,
+  containersOf,
+  render,
+  templateOf,
+  workloads as workloadsIn,
+  type Resource,
+} from "./kustomize.js";
 
 /**
  * Plan #49 AC-1, AC-2: overlay `kind` dựng bằng `kubectl kustomize` THẬT rồi kiểm những điều mà một
@@ -25,51 +32,14 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const OVERLAY = resolve(here, "../k8s/overlays/kind");
 
-type Json = Record<string, unknown>;
-interface Resource {
-  kind: string;
-  metadata: { name: string; namespace?: string };
-  spec?: Json;
-  data?: Record<string, string>;
-}
-interface Container {
-  name: string;
-  image: string;
-  ports?: { name: string; containerPort: number }[];
-  envFrom?: { configMapRef?: { name: string }; secretRef?: { name: string } }[];
-  env?: {
-    name: string;
-    value?: string;
-    valueFrom?: { secretKeyRef?: { name: string; key: string } };
-  }[];
-  readinessProbe?: { httpGet?: { path: string } };
-  livenessProbe?: { httpGet?: { path: string } };
-  resources?: { requests?: Json; limits?: Json };
-}
-interface PodTemplate {
-  spec: {
-    securityContext?: { runAsNonRoot?: boolean };
-    containers: Container[];
-  };
-}
-
 let docs: Resource[];
 
 beforeAll(() => {
-  const rendered = execFileSync("kubectl", ["kustomize", OVERLAY], {
-    encoding: "utf8",
-  });
-  docs = parseAllDocuments(rendered).map((d) => d.toJS() as Resource);
+  docs = render(OVERLAY).docs;
 });
 
-const byKind = (kind: string): Resource[] =>
-  docs.filter((d) => d.kind === kind);
-const workloads = (): Resource[] =>
-  docs.filter((d) => ["Deployment", "StatefulSet", "Job"].includes(d.kind));
-const templateOf = (r: Resource): PodTemplate =>
-  (r.spec as { template: PodTemplate }).template;
-const containersOf = (r: Resource): Container[] =>
-  templateOf(r).spec.containers;
+const byKind = (kind: string): Resource[] => byKindIn(docs, kind);
+const workloads = (): Resource[] => workloadsIn(docs);
 const UDP_SERVICES = ["core-backend", "flag-service", "pd-controller"];
 
 describe("overlay kind (Plan #49)", () => {

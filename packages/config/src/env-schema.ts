@@ -17,7 +17,7 @@ const bool = z.enum(["true", "false"]).transform((v) => v === "true");
  * 32 byte, và một chuỗi ngắn hơn không làm thư viện báo lỗi mà chỉ làm khoá yếu
  * đi một cách âm thầm.
  */
-function base64Key(bytes: number) {
+export function base64Key(bytes: number) {
   return z.string().superRefine((value, ctx) => {
     let decoded: Buffer;
     try {
@@ -75,7 +75,7 @@ const durationSeconds = z
  * Kiểm ngay tại đây rằng nó là khoá RSA đọc được và dài ≥ 2048 bit: một khoá hỏng mà chỉ
  * lộ ra lúc cloud của khách gọi đổi token là một lỗi xa chỗ phải sửa tới ba bước.
  */
-function rsaPrivateKeyBase64Pem() {
+export function rsaPrivateKeyBase64Pem() {
   return z.string().superRefine((value, ctx) => {
     try {
       const key = createPrivateKey(
