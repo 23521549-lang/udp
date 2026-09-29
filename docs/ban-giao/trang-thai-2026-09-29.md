@@ -104,4 +104,21 @@ Chạy theo lô ở TIỀN CẢNH, mỗi lô dưới 10 phút, không chạy hai
 6. Mẫu golden: xoá đúng tệp cần ghi lại rồi `UDP_CAPTURE_WIRE=1` chạy tệp test sinh ra nó; hoàn nguyên mọi mẫu
    khác bị ghi đè ngoài ý muốn.
 
+## 6. Bản xem thử Portal (không cần hạ tầng)
+
+`apps/portal/demo/`: CHÍNH mã Portal (`src/`) chạy với một backend giả lập trong trình duyệt — chặn `fetch` tới
+`/api/v1`, dữ liệu mẫu có trạng thái dựng theo mẫu response thật (`services/core-backend/tests/fixtures/wire/`),
+hash history cho trang tĩnh. Khu `/app` và trang quản trị `/admin` đều bấm được; thao tác chỉ sống trong trang.
+Dữ liệu: 10 người dùng, 8 project ở đủ trạng thái; `checkout-service` có 16 flag, 6 segment, 6 rollout (một
+canary tự tiến theo thời gian), ~90 lần deploy/30 ngày cho DORA; `notification-worker` có job dựng hạ tầng chạy
+dần. Mọi số là minh hoạ — trang ghi rõ "Bản xem thử · dữ liệu mẫu".
+
+- Đang publish ở một trang Artifact riêng tư của người dùng: https://claude.ai/artifact/768yrS8CTn8zVpmjrmPGko
+- Build lại: `pnpm --filter @udp/portal demo:build` ⇒ `apps/portal/demo/dist/` (một tệp JS + một tệp CSS).
+- Hợp đồng: `demo/contract.check.ts` gọi MỌI hàm API của Portal qua lớp giả lập — nằm trong `test` của Portal,
+  nên API đổi mà bản xem thử lệch là CI đỏ; `typecheck` của Portal kiểm cả `demo/`.
+- Lỗi Portal lộ ra khi có dữ liệu thật và đã sửa: cột thời gian của danh sách Flag/Rollout gãy ba dòng (cột 26px
+  của bản mẫu — ghi đè ở `portal.css`, `prototype.css` giữ nguyên văn); trang Domain dùng nhầm class `.sect` nên
+  tên domain và form nằm ngang, lệch phải; một test của trang Domain chập chờn vì đọc kết quả kiểm trước debounce.
+
 Commit chỉ ở máy; người dùng tự đẩy lên GitHub. Không đọc hay commit `.env*`.

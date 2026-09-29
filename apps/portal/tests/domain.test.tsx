@@ -111,7 +111,10 @@ describe("trang Domain", () => {
     expect(screen.getByLabelText("maxHosts")).toHaveValue(50);
 
     const status = await screen.findByRole("status", { name: "Kiểm cấu hình" });
-    expect(within(status).getByText(/Cấu hình hợp lệ/)).toBeInTheDocument();
+    // Kiểm có debounce: vùng trạng thái có TRƯỚC kết quả — chờ chữ, đừng đọc ngay
+    expect(
+      await within(status).findByText(/Cấu hình hợp lệ/),
+    ).toBeInTheDocument();
     expect(within(status).getByText(/traces.sink/)).toBeInTheDocument();
 
     await userEvent.click(

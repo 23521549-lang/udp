@@ -116,8 +116,9 @@ export function RolloutsPage() {
                 <span className="num">
                   {formatPercent(r.currentTrafficPercentage)}
                 </span>
-                <span className="when">{relativeTime(r.updatedAt)}</span>
+                {/* Cột 64px để trống; thời gian ở cột cuối — cùng lưới `.row` với danh sách flag */}
                 <span />
+                <span className="when">{relativeTime(r.updatedAt)}</span>
               </Link>
             ))}
           </div>

@@ -5,6 +5,7 @@ import {
   createRouter,
   Outlet,
   redirect,
+  type RouterHistory,
 } from "@tanstack/react-router";
 import { Toaster } from "../components/Toast";
 import { AdminLayout } from "../features/admin/AdminLayout";
@@ -359,12 +360,20 @@ export const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export function createAppRouter(queryClient: QueryClient) {
+/**
+ * `history` mặc định là history của trình duyệt. Bản xem thử (`apps/portal/demo`) truyền hash history: nó
+ * chạy từ một trang tĩnh không phục vụ được đường sâu như `/app/projects`.
+ */
+export function createAppRouter(
+  queryClient: QueryClient,
+  history?: RouterHistory,
+) {
   return createRouter({
     routeTree,
     context: { queryClient },
     defaultPreload: false,
     scrollRestoration: true,
+    ...(history === undefined ? {} : { history }),
   });
 }
 

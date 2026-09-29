@@ -38,7 +38,7 @@ export function DomainRow({
   const noTools = entry.tools.length === 0;
   const id = `dom-${entry.domainType}`;
   return (
-    <div className="sect" aria-label={entry.displayName}>
+    <div className="dom-row" aria-label={entry.displayName}>
       <div className="r">
         <Switch
           checked={draft.enabled}

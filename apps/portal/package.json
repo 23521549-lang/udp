@@ -9,8 +9,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p demo/tsconfig.json",
+    "test": "vitest run && vitest run --config demo/vitest.config.ts",
+    "demo:build": "vite build --config demo/vite.config.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

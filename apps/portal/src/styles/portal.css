@@ -411,3 +411,42 @@ details.cardc .q {
   align-items: center;
   gap: 10px;
 }
+
+/*
+ * Một domain trên trang Domain: dòng tiêu đề (công tắc, tên, trạng thái, "Chi tiết"), form cấu hình bên dưới.
+ * Trước đây dùng nhầm `.sect` — kiểu của dòng tiêu đề mục, đẩy cả khối sang phải cạnh form.
+ */
+.dom-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.dom-row > .r {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dom-row > .form {
+  max-width: 560px;
+}
+
+/*
+ * Danh sách flag và rollout: cột cuối chứa thời gian tương đối ("20 phút trước"). Bản mẫu cho cột đó 26px (một
+ * biểu tượng) nên chữ gãy thành ba dòng; ghi đè ở đây vì prototype.css phải giữ nguyên văn bản mẫu đã duyệt.
+ */
+.row {
+  grid-template-columns:
+    18px minmax(160px, 1.4fr) minmax(120px, 1fr) 108px 80px 64px
+    84px;
+}
+.row .when {
+  white-space: nowrap;
+}
+@media (max-width: 860px) {
+  .row {
+    grid-template-columns: 18px minmax(0, 1fr) 64px;
+  }
+}

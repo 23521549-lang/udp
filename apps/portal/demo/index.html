@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>UDP Portal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap"
+    />
+    <style>
+      /* Bản xem thử — dữ liệu minh hoạ, không phải hệ thống thật. Màu lấy từ token của Portal */
+      .demo-badge {
+        position: fixed;
+        z-index: 60;
+        right: 12px;
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line-2);
+        background: var(--amber-soft);
+        color: var(--ink);
+        font: 500 12px/1.4 var(--sans);
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div class="demo-badge" role="note">
+      Bản xem thử · dữ liệu mẫu, không kết nối hệ thống thật
+    </div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
