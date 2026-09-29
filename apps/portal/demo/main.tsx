@@ -3,8 +3,10 @@ import { createHashHistory, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createAppRouter } from "../src/app/router";
-import { applyTheme } from "../src/app/theme";
+import { appMessages } from "../src/app/app.messages";
+import { applyTheme, watchSystemTheme } from "../src/app/theme";
 import { bootstrapAuth } from "../src/features/auth/session";
+import { applyLocale, currentLocale, messagesOf } from "../src/i18n";
 import { createQueryClient } from "../src/lib/query-client";
 import "../src/styles/prototype.css";
 import "../src/styles/portal.css";
@@ -16,13 +18,15 @@ import { installMockBackend } from "./mock/server";
  */
 installMockBackend();
 applyTheme();
+watchSystemTheme();
+applyLocale(currentLocale());
 const queryClient = createQueryClient();
 const router = createAppRouter(queryClient, createHashHistory());
 const root = createRoot(document.getElementById("root") as HTMLElement);
 
 root.render(
   <div className="boot" role="status">
-    Đang tải…
+    {messagesOf(appMessages).loading}
   </div>,
 );
 

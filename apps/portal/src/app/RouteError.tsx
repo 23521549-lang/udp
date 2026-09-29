@@ -4,6 +4,8 @@ import {
   type ErrorComponentProps,
 } from "@tanstack/react-router";
 import { ErrorState } from "../components/States";
+import { useMessages } from "../i18n";
+import { appMessages } from "./app.messages";
 
 /**
  * Ranh giới lỗi của route (§10.10, hai tầng): một màn hình ném thì chỉ màn hình đó hiện
@@ -24,25 +26,27 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
  */
 export function NotFound() {
   const { pathname } = useLocation();
+  const m = useMessages(appMessages).notFound;
   const inConsole = pathname.startsWith("/admin");
   return (
     <div className="page">
       <div className="state" role="alert">
-        <h1 className="title">Không tìm thấy trang</h1>
+        <h1 className="title">{m.title}</h1>
         <p className="c3">
-          Đường dẫn{" "}
-          <span className="mono" translate="no">
-            {pathname}
-          </span>{" "}
-          không có trong {inConsole ? "Bảng điều khiển nền tảng" : "Portal"}.
+          {m.body(
+            <span className="mono" translate="no">
+              {pathname}
+            </span>,
+            inConsole,
+          )}
         </p>
         {inConsole ? (
           <Link to="/admin/overview" className="btn">
-            Về Bảng điều khiển
+            {m.backToConsole}
           </Link>
         ) : (
           <Link to="/app/home" className="btn">
-            Về trang chủ
+            {m.backToHome}
           </Link>
         )}
       </div>

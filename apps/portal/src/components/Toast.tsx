@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { create } from "zustand";
+import { useMessages } from "../i18n";
+import { componentsMessages } from "./components.messages";
 
 /**
  * Thông báo kiểu "viên thuốc tối giữa đáy" (DESIGN.md §6). Thao tác đảo ngược được thì
@@ -47,6 +49,7 @@ export const toast = {
 const LIFETIME_MS = { error: 8000, undo: 5000, info: 4000 } as const;
 
 function ToastView({ item }: { item: ToastItem }) {
+  const m = useMessages(componentsMessages);
   const dismiss = useToasts((s) => s.dismiss);
   const [paused, setPaused] = useState(false);
   useEffect(() => {
@@ -78,7 +81,7 @@ function ToastView({ item }: { item: ToastItem }) {
             dismiss(item.id);
           }}
         >
-          Hoàn tác
+          {m.undo}
         </button>
       )}
     </div>

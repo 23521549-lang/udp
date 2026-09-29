@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 import { type ReactNode } from "react";
 import { PageHead, type Mini } from "../../components/PageHead";
+import { appMessages } from "../../app/app.messages";
 import { NAV, NavBody, Shell } from "../../app/Shell";
+import { useMessages } from "../../i18n";
 
 /**
  * Bảng điều khiển nền tảng (§10.11, §10.13; Plan #53 QĐ-1) — khung riêng của nhà phát hành, chỉ
@@ -20,36 +22,37 @@ import { NAV, NavBody, Shell } from "../../app/Shell";
  * và trang nói đúng điều đó.
  */
 export function AdminLayout() {
+  const m = useMessages(appMessages).consoleNav;
   return (
     <Shell
       kind="console"
-      label="Điều hướng Bảng điều khiển"
+      label={m.label}
       nav={
-        <nav aria-label="Bảng điều khiển">
-          <div className="grp">Nền tảng</div>
+        <nav aria-label={m.nav}>
+          <div className="grp">{m.group}</div>
           <Link {...NAV} to="/admin/overview">
-            <NavBody icon={Gauge}>Tổng quan</NavBody>
+            <NavBody icon={Gauge}>{m.overview}</NavBody>
           </Link>
           <Link {...NAV} to="/admin/users">
-            <NavBody icon={Users}>Người dùng</NavBody>
+            <NavBody icon={Users}>{m.users}</NavBody>
           </Link>
           <Link {...NAV} to="/admin/projects">
-            <NavBody icon={FolderKanban}>Project</NavBody>
+            <NavBody icon={FolderKanban}>{m.projects}</NavBody>
           </Link>
           <Link {...NAV} to="/admin/credentials">
-            <NavBody icon={KeyRound}>Credential</NavBody>
+            <NavBody icon={KeyRound}>{m.credentials}</NavBody>
           </Link>
           <Link {...NAV} to="/admin/jobs">
-            <NavBody icon={ListX}>Job lỗi</NavBody>
+            <NavBody icon={ListX}>{m.jobs}</NavBody>
           </Link>
           <Link {...NAV} to="/admin/orphans">
-            <NavBody icon={PiggyBank}>Tài nguyên mồ côi</NavBody>
+            <NavBody icon={PiggyBank}>{m.orphans}</NavBody>
           </Link>
           <Link {...NAV} to="/admin/system">
-            <NavBody icon={Server}>Hệ thống</NavBody>
+            <NavBody icon={Server}>{m.system}</NavBody>
           </Link>
           <Link {...NAV} to="/admin/catalog">
-            <NavBody icon={Blocks}>Catalog domain</NavBody>
+            <NavBody icon={Blocks}>{m.catalog}</NavBody>
           </Link>
         </nav>
       }
@@ -72,11 +75,12 @@ export function AdminPage({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  const m = useMessages(appMessages).consoleNav;
   return (
     <>
       <div className="bar">
         <div className="crumbs">
-          <span className="c3">Bảng điều khiển</span>
+          <span className="c3">{m.nav}</span>
           <span className="sep">/</span>
           <b>{title}</b>
         </div>

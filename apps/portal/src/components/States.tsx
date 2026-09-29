@@ -1,13 +1,16 @@
 import { AlertCircle } from "lucide-react";
 import type { ReactNode } from "react";
 import { messageOf } from "../lib/errors";
+import { useMessages } from "../i18n";
 import { isApiError } from "../lib/http";
+import { componentsMessages } from "./components.messages";
 import { Icon } from "./Icon";
 
-export function Loading({ label = "Đang tải…" }: { label?: string }) {
+export function Loading({ label }: { label?: string }) {
+  const m = useMessages(componentsMessages);
   return (
     <div className="state" role="status" aria-live="polite">
-      {label}
+      {label ?? m.loading}
     </div>
   );
 }
@@ -42,6 +45,7 @@ export function ErrorState({
   onRetry?: () => void;
   back?: ReactNode;
 }) {
+  const m = useMessages(componentsMessages);
   const notFound = isApiError(error) && error.status === 404;
   return (
     <div className="state" role="alert">
@@ -53,7 +57,7 @@ export function ErrorState({
         ? back
         : onRetry !== undefined && (
             <button type="button" className="btn" onClick={onRetry}>
-              Thử lại
+              {m.retry}
             </button>
           )}
     </div>

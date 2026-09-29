@@ -1,4 +1,6 @@
 import { useBlocker } from "@tanstack/react-router";
+import { useMessages } from "../i18n";
+import { componentsMessages } from "./components.messages";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 /**
@@ -15,6 +17,7 @@ export function UnsavedGuard({
   dirty: boolean;
   what: string;
 }) {
+  const m = useMessages(componentsMessages).unsaved;
   const blocker = useBlocker({
     shouldBlockFn: () => dirty,
     enableBeforeUnload: () => dirty,
@@ -24,9 +27,9 @@ export function UnsavedGuard({
   if (blocker.status !== "blocked") return null;
   return (
     <ConfirmDialog
-      title="Bỏ thay đổi chưa lưu?"
-      description={`${what} chưa lưu sẽ mất nếu rời chỗ này.`}
-      confirmLabel="Bỏ thay đổi"
+      title={m.title}
+      description={m.description(what)}
+      confirmLabel={m.confirm}
       danger
       onConfirm={() => blocker.proceed()}
       onClose={() => blocker.reset()}

@@ -1,4 +1,6 @@
+import { useMessages } from "../i18n";
 import { formatNumber } from "../lib/format";
+import { componentsMessages } from "./components.messages";
 
 /**
  * Điều hướng theo trang của một danh sách có `total` ở máy chủ. Một component cho mọi danh sách
@@ -19,6 +21,7 @@ export function Pager({
   total: number;
   onChange: (offset: number) => void;
 }) {
+  const m = useMessages(componentsMessages);
   if (total <= pageSize) return null;
   const last = Math.min(offset + pageSize, total);
   return (
@@ -29,7 +32,7 @@ export function Pager({
         disabled={offset === 0}
         onClick={() => onChange(Math.max(0, offset - pageSize))}
       >
-        Trang trước
+        {m.prevPage}
       </button>
       <span className="c3 num" aria-live="polite">
         {formatNumber(offset + 1)}–{formatNumber(last)} / {formatNumber(total)}
@@ -40,7 +43,7 @@ export function Pager({
         disabled={last >= total}
         onClick={() => onChange(offset + pageSize)}
       >
-        Trang sau
+        {m.nextPage}
       </button>
     </nav>
   );

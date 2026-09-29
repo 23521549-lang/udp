@@ -584,6 +584,31 @@ details.cardc .q {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* [Plan #54] Giao diện và ngôn ngữ: nhãn nhỏ trên một hàng nút bật, nút chia đều bề ngang */
+.pref {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 8px;
+}
+.pref-l {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.pref .seg {
+  display: flex;
+}
+.pref .seg button {
+  flex: 1;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.auth-card .pref {
+  margin-top: 18px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--line);
+}
 .acct-it {
   display: flex;
   align-items: center;

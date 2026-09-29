@@ -5,6 +5,7 @@ import { server } from "./msw";
 import { useAuthStore } from "../src/features/auth/auth-store";
 import { useToasts } from "../src/components/Toast";
 import { usePaletteStore } from "../src/features/project/CommandPalette";
+import { useLocaleStore } from "../src/i18n";
 
 /**
  * Hạn chờ của `findBy*`/`waitFor`: 5 giây thay cho 1 giây mặc định. Một lượt đầy đủ chạy nhiều
@@ -21,6 +22,13 @@ configure({ asyncUtilTimeout: 5_000 });
 window.scrollTo = () => undefined;
 
 /**
+ * Ngôn ngữ của test là tiếng Việt — ngôn ngữ mặc định của sản phẩm. jsdom báo trình duyệt là `en-US`, nên
+ * không đặt thì store tự chọn tiếng Anh và mọi câu mà test tìm đều khác. Test tiếng Anh tự đổi rồi được
+ * trả về đây sau mỗi ô.
+ */
+useLocaleStore.setState({ locale: "vi" });
+
+/**
  * `onUnhandledRequest: "error"`: một request mà không handler nào khai là một request
  * test không biết tới — để nó trôi qua im lặng là để test xanh trên một đường không ai
  * kiểm.
@@ -32,6 +40,9 @@ afterEach(() => {
   useAuthStore.setState({ user: null, isInitializing: false });
   useToasts.setState({ items: [] });
   usePaletteStore.setState({ open: false });
+  useLocaleStore.setState({ locale: "vi" });
+  document.documentElement.lang = "vi";
+  delete document.documentElement.dataset.theme;
   document.cookie = "udp_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
   localStorage.clear();
 });

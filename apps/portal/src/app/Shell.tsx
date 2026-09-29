@@ -5,16 +5,16 @@ import {
   LayoutGrid,
   LogOut,
   Menu,
-  Moon,
   ShieldCheck,
-  Sun,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../components/Icon";
 import { Logo } from "../components/Logo";
 import { authApi } from "../features/auth/auth-api";
 import { useAuthStore } from "../features/auth/auth-store";
-import { useTheme } from "./theme";
+import { useMessages } from "../i18n";
+import { appMessages } from "./app.messages";
+import { LanguageSwitch, ThemeSwitch } from "./Preferences";
 
 /**
  * Khung chung của hai không gian (DESIGN.md §4 "Hai khung", Plan #53 QĐ-1):
@@ -35,6 +35,7 @@ export function Shell({
   label: string;
   nav: ReactNode;
 }) {
+  const m = useMessages(appMessages);
   const [open, setOpen] = useState(false);
   const side = useRef<HTMLElement>(null);
   const menuBtn = useRef<HTMLButtonElement>(null);
@@ -58,7 +59,7 @@ export function Shell({
         className="skip"
         onClick={() => document.getElementById("main")?.focus()}
       >
-        Bỏ qua tới nội dung
+        {m.skipToContent}
       </button>
       <aside
         id="side"
@@ -74,7 +75,7 @@ export function Shell({
           <Link to="/admin/overview" className="ws">
             <Logo />
             <b>udp</b>
-            <span className="ws-tag">Nhà phát hành</span>
+            <span className="ws-tag">{m.consoleNav.tag}</span>
           </Link>
         ) : (
           <Link to="/app/home" className="ws">
@@ -97,7 +98,7 @@ export function Shell({
           ref={menuBtn}
           type="button"
           className="ib menubtn"
-          aria-label="Mở menu"
+          aria-label={m.openMenu}
           aria-expanded={open}
           aria-controls="side"
           onClick={() => setOpen((v) => !v)}
@@ -151,7 +152,7 @@ function AccountMenu({ kind }: { kind: "portal" | "console" }) {
   const clearUser = useAuthStore((s) => s.clearUser);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { theme, toggle } = useTheme();
+  const m = useMessages(appMessages);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -203,7 +204,7 @@ function AccountMenu({ kind }: { kind: "portal" | "console" }) {
         <Icon of={ChevronsUpDown} size={14} />
       </button>
       {open && (
-        <div id={menuId} className="acct" role="group" aria-label="Tài khoản">
+        <div id={menuId} className="acct" role="group" aria-label={m.account}>
           <div className="acct-id">
             <b>{user?.name}</b>
             <span className="c3">{user?.email}</span>
@@ -212,25 +213,23 @@ function AccountMenu({ kind }: { kind: "portal" | "console" }) {
             (kind === "portal" ? (
               <Link to="/admin/overview" className="acct-it">
                 <Icon of={ShieldCheck} />
-                Bảng điều khiển nền tảng
+                {m.platformConsole}
               </Link>
             ) : (
               <Link to="/app/home" className="acct-it">
                 <Icon of={LayoutGrid} />
-                Về Portal
+                {m.backToPortal}
               </Link>
             ))}
-          <button type="button" className="acct-it" onClick={toggle}>
-            <Icon of={theme === "dark" ? Sun : Moon} />
-            {theme === "dark" ? "Giao diện sáng" : "Giao diện tối"}
-          </button>
+          <ThemeSwitch />
+          <LanguageSwitch />
           <button
             type="button"
             className="acct-it"
             onClick={() => void logout()}
           >
             <Icon of={LogOut} />
-            Đăng xuất
+            {m.signOut}
           </button>
         </div>
       )}

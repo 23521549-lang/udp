@@ -1,9 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
+import { LanguageSwitch } from "../../app/Preferences";
 import { Logo } from "../../components/Logo";
+import { useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { authApi } from "./auth-api";
+import { authMessages } from "./auth.messages";
 import { useAuthStore } from "./auth-store";
 
 const HOME = "/app/home";
@@ -42,6 +45,8 @@ function AuthFrame({
         </div>
         <h1>{title}</h1>
         {children}
+        {/* Người chưa đăng nhập cũng chọn được ngôn ngữ (Plan #54 QĐ-1) */}
+        <LanguageSwitch />
       </div>
     </main>
   );
@@ -78,6 +83,7 @@ function Field({
 }
 
 export function LoginPage() {
+  const m = useMessages(authMessages);
   const search = useSearch({ from: "/login" });
   const navigate = useNavigate();
   const setUser = useAuthStore((s) => s.setUser);
@@ -99,11 +105,11 @@ export function LoginPage() {
   };
 
   return (
-    <AuthFrame title="Đăng nhập">
+    <AuthFrame title={m.signIn}>
       <form className="auth-form" onSubmit={submit} noValidate>
         <Field
           id="email"
-          label="Email"
+          label={m.email}
           type="email"
           autoComplete="email"
           required
@@ -113,7 +119,7 @@ export function LoginPage() {
         />
         <Field
           id="password"
-          label="Mật khẩu"
+          label={m.password}
           type="password"
           autoComplete="current-password"
           required
@@ -127,17 +133,18 @@ export function LoginPage() {
           </p>
         )}
         <button type="submit" className="btn pri" disabled={login.isPending}>
-          {login.isPending ? "Đang đăng nhập…" : "Đăng nhập"}
+          {login.isPending ? m.signingIn : m.signIn}
         </button>
       </form>
       <p className="c3">
-        Chưa có tài khoản? <Link to="/register">Đăng ký</Link>
+        {m.noAccount(<Link to="/register">{m.registerLink}</Link>)}
       </p>
     </AuthFrame>
   );
 }
 
 export function RegisterPage() {
+  const m = useMessages(authMessages);
   const navigate = useNavigate();
   const setUser = useAuthStore((s) => s.setUser);
   const [name, setName] = useState("");
@@ -154,7 +161,7 @@ export function RegisterPage() {
   const fields = fieldErrorsOf(register.error);
 
   return (
-    <AuthFrame title="Tạo tài khoản">
+    <AuthFrame title={m.register}>
       <form
         className="auth-form"
         noValidate
@@ -165,7 +172,7 @@ export function RegisterPage() {
       >
         <Field
           id="name"
-          label="Tên"
+          label={m.name}
           autoComplete="name"
           required
           value={name}
@@ -174,7 +181,7 @@ export function RegisterPage() {
         />
         <Field
           id="email"
-          label="Email"
+          label={m.email}
           type="email"
           autoComplete="email"
           required
@@ -184,7 +191,7 @@ export function RegisterPage() {
         />
         <Field
           id="password"
-          label="Mật khẩu"
+          label={m.password}
           type="password"
           autoComplete="new-password"
           required
@@ -198,12 +205,10 @@ export function RegisterPage() {
           </p>
         )}
         <button type="submit" className="btn pri" disabled={register.isPending}>
-          {register.isPending ? "Đang tạo…" : "Tạo tài khoản"}
+          {register.isPending ? m.registering : m.register}
         </button>
       </form>
-      <p className="c3">
-        Đã có tài khoản? <Link to="/login">Đăng nhập</Link>
-      </p>
+      <p className="c3">{m.haveAccount(<Link to="/login">{m.signIn}</Link>)}</p>
     </AuthFrame>
   );
 }

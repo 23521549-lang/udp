@@ -1,5 +1,7 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
+import { useMessages } from "../i18n";
+import { componentsMessages } from "./components.messages";
 import { Icon } from "./Icon";
 import { toast } from "./Toast";
 
@@ -11,13 +13,14 @@ import { toast } from "./Toast";
 export function CodeBlock({
   code,
   label,
-  copyLabel = "Sao chép",
+  copyLabel,
 }: {
   code: string;
   /** Tên truy cập của khối, khi màn hình có nhiều khối */
   label?: string;
   copyLabel?: string;
 }) {
+  const m = useMessages(componentsMessages);
   const [copied, setCopied] = useState(false);
   return (
     // `aria-label` trên `<pre>` trơn bị trình đọc màn hình bỏ qua: tên đặt ở vùng bao ngoài
@@ -29,7 +32,7 @@ export function CodeBlock({
       <button
         type="button"
         className="ib cp"
-        aria-label={copyLabel}
+        aria-label={copyLabel ?? m.copy}
         onClick={() => {
           // clipboard vắng mặt ngoài HTTPS dù kiểu DOM nói có: đi qua Promise để thành lỗi bắt được
           void Promise.resolve()
@@ -37,9 +40,9 @@ export function CodeBlock({
             .then(
               () => {
                 setCopied(true);
-                toast.info("Đã sao chép");
+                toast.info(m.copied);
               },
-              () => toast.error("Không sao chép được, hãy chọn và chép tay"),
+              () => toast.error(m.copyFailed),
             );
         }}
       >

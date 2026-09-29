@@ -1,74 +1,140 @@
+import { currentLocale, INTL_LOCALE, type Locale } from "../i18n";
+import { formatMessages } from "./format.messages";
+
 /**
- * Định dạng số và thời gian theo `vi-VN` — một chỗ, để mọi con số trên màn hình cùng
- * dấu phân cách và mọi mốc thời gian cùng cách nói.
+ * Định dạng số và thời gian theo NGÔN NGỮ ĐANG CHỌN (`vi-VN` hay `en-US`, Plan #54) — một chỗ, để mọi con
+ * số trên màn hình cùng dấu phân cách và mọi mốc thời gian cùng cách nói. Bộ định dạng `Intl` dựng một lần
+ * cho mỗi ngôn ngữ; component vẽ lại khi đổi ngôn ngữ (qua chữ của chính nó) nên gọi lại là đúng ngôn ngữ mới.
  */
 
-const nf = new Intl.NumberFormat("vi-VN");
-const pf = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 });
-
-export const formatNumber = (n: number): string => nf.format(n);
-/** Byte theo đơn vị nhị phân — trần segment là 4 MiB, không phải 4 MB; ổ đĩa là GiB */
-export function formatBytes(n: number): string {
-  if (n >= 1024 ** 3) return `${pf.format(n / 1024 ** 3)} GiB`;
-  if (n >= 1024 * 1024) return `${pf.format(n / (1024 * 1024))} MiB`;
-  if (n >= 1024) return `${pf.format(n / 1024)} KiB`;
-  return `${nf.format(n)} B`;
+interface Formatters {
+  number: Intl.NumberFormat;
+  decimal: Intl.NumberFormat;
+  compact: Intl.NumberFormat;
+  usd: Intl.NumberFormat;
+  usdSmall: Intl.NumberFormat;
+  relative: Intl.RelativeTimeFormat;
+  dateTime: Intl.DateTimeFormat;
+  dayShort: Intl.DateTimeFormat;
+  dayFull: Intl.DateTimeFormat;
+  clock: Intl.DateTimeFormat;
+  dayMonth: Intl.DateTimeFormat;
+  dayMonthClock: Intl.DateTimeFormat;
 }
 
-export const formatPercent = (n: number): string => `${pf.format(n)}%`;
+const cache = new Map<Locale, Formatters>();
+
+function build(tag: string): Formatters {
+  return {
+    number: new Intl.NumberFormat(tag),
+    decimal: new Intl.NumberFormat(tag, { maximumFractionDigits: 2 }),
+    compact: new Intl.NumberFormat(tag, {
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }),
+    usd: new Intl.NumberFormat(tag, {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }),
+    usdSmall: new Intl.NumberFormat(tag, {
+      style: "currency",
+      currency: "USD",
+      maximumSignificantDigits: 3,
+    }),
+    relative: new Intl.RelativeTimeFormat(tag, { numeric: "auto" }),
+    dateTime: new Intl.DateTimeFormat(tag, {
+      dateStyle: "short",
+      timeStyle: "short",
+    }),
+    dayShort: new Intl.DateTimeFormat(tag, {
+      day: "numeric",
+      month: "numeric",
+      timeZone: "UTC",
+    }),
+    dayFull: new Intl.DateTimeFormat(tag, {
+      weekday: "long",
+      day: "numeric",
+      month: "numeric",
+      timeZone: "UTC",
+    }),
+    clock: new Intl.DateTimeFormat(tag, { hour: "2-digit", minute: "2-digit" }),
+    dayMonth: new Intl.DateTimeFormat(tag, {
+      day: "2-digit",
+      month: "2-digit",
+    }),
+    dayMonthClock: new Intl.DateTimeFormat(tag, {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  };
+}
+
+function fmt(): Formatters {
+  const locale = currentLocale();
+  let f = cache.get(locale);
+  if (f === undefined) {
+    f = build(INTL_LOCALE[locale]);
+    cache.set(locale, f);
+  }
+  return f;
+}
+
+export const formatNumber = (n: number): string => fmt().number.format(n);
+/** Byte theo đơn vị nhị phân — trần segment là 4 MiB, không phải 4 MB; ổ đĩa là GiB */
+export function formatBytes(n: number): string {
+  const d = fmt().decimal;
+  if (n >= 1024 ** 3) return `${d.format(n / 1024 ** 3)} GiB`;
+  if (n >= 1024 * 1024) return `${d.format(n / (1024 * 1024))} MiB`;
+  if (n >= 1024) return `${d.format(n / 1024)} KiB`;
+  return `${formatNumber(n)} B`;
+}
+
+export const formatPercent = (n: number): string =>
+  `${fmt().decimal.format(n)}%`;
 
 /** Số theo trọng số hai chữ số lẻ (z-score, hệ số) — cùng dấu thập phân với mọi số khác */
-export const formatDecimal = (n: number): string => pf.format(n);
+export const formatDecimal = (n: number): string => fmt().decimal.format(n);
 
-const cf = new Intl.NumberFormat("vi-VN", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-/** "12 N", "3,1 Tr" — rút gọn theo chính quy ước vi-VN của Intl, không tự ghép K/M */
-export const compactNumber = (n: number): string => cf.format(n);
+/** "12 N" / "12K" — rút gọn theo chính quy ước của ngôn ngữ trong Intl, không tự ghép K/M */
+export const compactNumber = (n: number): string => fmt().compact.format(n);
 
-const usdf = new Intl.NumberFormat("vi-VN", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const usdSmall = new Intl.NumberFormat("vi-VN", {
-  style: "currency",
-  currency: "USD",
-  maximumSignificantDigits: 3,
-});
 /**
  * Tiền USD (chi phí cloud luôn tính bằng USD). Dưới 1 cent — giá theo giờ của một địa chỉ IP —
  * giữ ba chữ số có nghĩa thay vì làm tròn thành "0,00 US$".
  */
 export function formatUsd(n: number): string {
-  return n !== 0 && Math.abs(n) < 0.01 ? usdSmall.format(n) : usdf.format(n);
+  return n !== 0 && Math.abs(n) < 0.01
+    ? fmt().usdSmall.format(n)
+    : fmt().usd.format(n);
 }
 
 /**
- * Thời lượng từ giây: "45 giây", "5 phút", "1 giờ 5 phút", "2 ngày 3 giờ" — hai đơn vị lớn nhất.
- * `null` (median chưa có mẫu) là "–", không bao giờ là "0 giây".
+ * Thời lượng từ giây: "45 giây" / "45s", "1 giờ 5 phút" / "1h 5m", "2 ngày 3 giờ" / "2d 3h" — hai đơn vị
+ * lớn nhất. `null` (median chưa có mẫu) là "–", không bao giờ là "0 giây".
  */
 export function formatDuration(totalSeconds: number | null): string {
   if (totalSeconds === null) return "–";
+  const unit = formatMessages[currentLocale()].unit;
   const s = Math.max(0, Math.round(totalSeconds));
-  const parts: [number, string][] = [
-    [Math.floor(s / 86400), "ngày"],
-    [Math.floor((s % 86400) / 3600), "giờ"],
-    [Math.floor((s % 3600) / 60), "phút"],
-    [s % 60, "giây"],
+  const parts: [number, (n: string) => string][] = [
+    [Math.floor(s / 86400), unit.day],
+    [Math.floor((s % 86400) / 3600), unit.hour],
+    [Math.floor((s % 3600) / 60), unit.minute],
+    [s % 60, unit.second],
   ];
   const first = parts.findIndex(([v]) => v > 0);
-  if (first === -1) return "0 giây";
+  if (first === -1) return unit.second(formatNumber(0));
   return parts
     .slice(first, first + 2)
     .filter(([v]) => v > 0)
-    .map(([v, unit]) => `${nf.format(v)} ${unit}`)
+    .map(([v, of]) => of(formatNumber(v)))
     .join(" ");
 }
 
-const rtf = new Intl.RelativeTimeFormat("vi-VN", { numeric: "auto" });
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["year", 365 * 24 * 3600],
   ["month", 30 * 24 * 3600],
@@ -78,23 +144,25 @@ const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["second", 1],
 ];
 
-/** "2 giờ trước" — `now` truyền vào được để test không phụ thuộc đồng hồ */
+/** "2 giờ trước" / "2 hours ago" — `now` truyền vào được để test không phụ thuộc đồng hồ */
 export function relativeTime(iso: string, now: number = Date.now()): string {
   const seconds = Math.round((new Date(iso).getTime() - now) / 1000);
   for (const [unit, size] of UNITS) {
     if (Math.abs(seconds) >= size || unit === "second") {
-      return rtf.format(Math.round(seconds / size), unit);
+      return fmt().relative.format(Math.round(seconds / size), unit);
     }
   }
-  return rtf.format(0, "second");
+  return fmt().relative.format(0, "second");
 }
 
-const dtf = new Intl.DateTimeFormat("vi-VN", {
-  dateStyle: "short",
-  timeStyle: "short",
-});
 export const formatDateTime = (iso: string): string =>
-  dtf.format(new Date(iso));
+  fmt().dateTime.format(new Date(iso));
+
+/** Mốc của trục thời gian biểu đồ (epoch ms): giờ:phút, ngày/tháng, và cả hai cho tooltip */
+export const formatClock = (ms: number): string => fmt().clock.format(ms);
+export const formatDayMonth = (ms: number): string => fmt().dayMonth.format(ms);
+export const formatDayMonthClock = (ms: number): string =>
+  fmt().dayMonthClock.format(ms);
 
 /** Múi giờ của trình duyệt — tham số `tz` của stats (§9) */
 export const browserTimeZone = (): string =>
@@ -111,25 +179,15 @@ export function graphemeLength(text: string): number {
   return n;
 }
 
-const dayShort = new Intl.DateTimeFormat("vi-VN", {
-  day: "numeric",
-  month: "numeric",
-  timeZone: "UTC",
-});
-const dayFull = new Intl.DateTimeFormat("vi-VN", {
-  weekday: "long",
-  day: "numeric",
-  month: "numeric",
-  timeZone: "UTC",
-});
 /**
- * Nhãn của MỘT ngày lịch `YYYY-MM-DD` cho biểu đồ theo ngày: "29/9" dưới cột, "Thứ Hai, 29/9" cho
- * tooltip và trình đọc màn hình. Ngày lịch không có giờ, nên đọc và in ở UTC: không có múi giờ nào
+ * Nhãn của MỘT ngày lịch `YYYY-MM-DD` cho biểu đồ theo ngày: "29/9" / "9/29" dưới cột, "Thứ Hai, 29/9" /
+ * "Monday, 9/29" cho tooltip và trình đọc màn hình. Ngày lịch không có giờ, nên đọc và in ở UTC: không có múi giờ nào
  * đẩy nó sang ngày bên cạnh.
  */
 export function dayLabel(date: string): { short: string; full: string } {
   const d = new Date(`${date}T00:00:00Z`);
-  return { short: dayShort.format(d), full: dayFull.format(d) };
+  const f = fmt();
+  return { short: f.dayShort.format(d), full: f.dayFull.format(d) };
 }
 
 /** `n` ngày lịch gần nhất theo giờ của trình duyệt, cũ nhất trước, dạng `YYYY-MM-DD` */

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useMessages } from "../i18n";
+import { componentsMessages } from "./components.messages";
 import { Dialog } from "./Dialog";
 
 /**
@@ -35,6 +37,7 @@ export function ConfirmDialog({
   /** Nội dung thêm giữa mô tả và ô gõ xác nhận */
   children?: React.ReactNode;
 }) {
+  const m = useMessages(componentsMessages);
   const [typed, setTyped] = useState("");
   const norm = (s: string) => s.trim().normalize("NFC");
   const ok = typeToConfirm === undefined || norm(typed) === norm(typeToConfirm);
@@ -47,7 +50,7 @@ export function ConfirmDialog({
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>
-            Huỷ
+            {m.cancel}
           </button>
           <button
             type="button"
@@ -57,7 +60,7 @@ export function ConfirmDialog({
               onConfirm(typeToConfirm === undefined ? undefined : typed.trim())
             }
           >
-            {busy ? "Đang thực hiện…" : confirmLabel}
+            {busy ? m.working : confirmLabel}
           </button>
         </>
       }
@@ -66,11 +69,11 @@ export function ConfirmDialog({
       {typeToConfirm !== undefined && (
         <div className="f">
           <label htmlFor="confirm-typed">
-            Gõ{" "}
-            <span className="mono" translate="no">
-              {typeToConfirm}
-            </span>{" "}
-            để xác nhận
+            {m.typeToConfirm(
+              <span className="mono" translate="no">
+                {typeToConfirm}
+              </span>,
+            )}
           </label>
           <input
             id="confirm-typed"

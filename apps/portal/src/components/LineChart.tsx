@@ -7,6 +7,13 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
+import { useMessages } from "../i18n";
+import {
+  formatClock,
+  formatDayMonth,
+  formatDayMonthClock,
+} from "../lib/format";
+import { componentsMessages } from "./components.messages";
 
 /**
  * Biểu đồ đường theo thời gian (DESIGN.md §6 "Biểu đồ" và "Trục biểu đồ"). Một component cho mọi
@@ -147,21 +154,6 @@ function runs(
   return out;
 }
 
-const timeFmt = new Intl.DateTimeFormat("vi-VN", {
-  hour: "2-digit",
-  minute: "2-digit",
-});
-const dayFmt = new Intl.DateTimeFormat("vi-VN", {
-  day: "2-digit",
-  month: "2-digit",
-});
-const fullFmt = new Intl.DateTimeFormat("vi-VN", {
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
 export function LineChart({
   title,
   level,
@@ -182,6 +174,7 @@ export function LineChart({
   threshold?: ChartThreshold;
   height?: number;
 }) {
+  const m = useMessages(componentsMessages).chart;
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
   const [at, setAt] = useState<number | null>(null);
@@ -213,7 +206,7 @@ export function LineChart({
   const bottom = PAD.top + plotH;
 
   const spanMs = n > 1 ? nth(times, n - 1) - nth(times, 0) : 0;
-  const tickFmt = spanMs > 36 * 3600_000 ? dayFmt : timeFmt;
+  const tickFmt = spanMs > 36 * 3600_000 ? formatDayMonth : formatClock;
   const xTicks =
     n <= 1
       ? [0]
@@ -254,10 +247,10 @@ export function LineChart({
 
   const tipText = (i: number): string =>
     [
-      fullFmt.format(nth(times, i)),
+      formatDayMonthClock(nth(times, i)),
       ...series.map((s) => {
         const v = s.values[i];
-        return `${s.label}: ${v === null || v === undefined ? "không có dữ liệu" : format(v)}`;
+        return `${s.label}: ${v === null || v === undefined ? m.noData : format(v)}`;
       }),
     ].join(", ");
 
@@ -276,7 +269,7 @@ export function LineChart({
             <span className="lg">
               <i style={{ background: "var(--red)" }} />
               {threshold.label}
-              {!domain.thresholdInside && domain.hasData && ", cao hơn khung"}
+              {!domain.thresholdInside && domain.hasData && m.aboveFrame}
             </span>
           )}
         </span>
@@ -286,8 +279,8 @@ export function LineChart({
         className="chart"
         tabIndex={0}
         role="group"
-        aria-roledescription="biểu đồ"
-        aria-label={`${title}. Dùng phím mũi tên để đọc từng thời điểm.`}
+        aria-roledescription={m.role}
+        aria-label={m.keyboardHint(title)}
         onKeyDown={onKey}
         onBlur={() => setAt(null)}
       >
@@ -327,7 +320,7 @@ export function LineChart({
                 textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"}
                 className="lc-ax"
               >
-                {tickFmt.format(nth(times, i))}
+                {tickFmt(nth(times, i))}
               </text>
             ))}
           {domain.hasData &&
@@ -409,7 +402,7 @@ export function LineChart({
             onPointerLeave={() => setAt(null)}
           />
         </svg>
-        {!domain.hasData && <div className="lc-empty">Chưa có dữ liệu</div>}
+        {!domain.hasData && <div className="lc-empty">{m.empty}</div>}
         {at !== null && domain.hasData && (
           <div
             className="tip"
@@ -419,7 +412,7 @@ export function LineChart({
               opacity: 1,
             }}
           >
-            <div className="c3">{fullFmt.format(nth(times, at))}</div>
+            <div className="c3">{formatDayMonthClock(nth(times, at))}</div>
             {series.map((s) => {
               const v = s.values[at];
               return (
@@ -439,13 +432,13 @@ export function LineChart({
         {at !== null && byKey ? tipText(at) : ""}
       </span>
       <details className="lc-tbl">
-        <summary>Bảng số liệu</summary>
+        <summary>{m.table}</summary>
         <div className="table-wrap">
           <table className="dtable">
             <caption className="visually-hidden">{title}</caption>
             <thead>
               <tr>
-                <th scope="col">Thời điểm</th>
+                <th scope="col">{m.time}</th>
                 {series.map((s) => (
                   <th key={s.key} scope="col" className="num">
                     {s.label}
@@ -456,7 +449,7 @@ export function LineChart({
             <tbody>
               {times.map((t, i) => (
                 <tr key={t}>
-                  <td>{fullFmt.format(t)}</td>
+                  <td>{formatDayMonthClock(t)}</td>
                   {series.map((s) => {
                     const v = s.values[i];
                     return (

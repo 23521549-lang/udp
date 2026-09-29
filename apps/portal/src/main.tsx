@@ -3,7 +3,9 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createAppRouter } from "./app/router";
-import { applyTheme } from "./app/theme";
+import { appMessages } from "./app/app.messages";
+import { applyTheme, watchSystemTheme } from "./app/theme";
+import { applyLocale, currentLocale, messagesOf } from "./i18n";
 import { bootstrapAuth } from "./features/auth/session";
 import { createQueryClient } from "./lib/query-client";
 import "./styles/prototype.css";
@@ -15,13 +17,15 @@ import "./styles/portal.css";
  * định trên một trạng thái chưa biết.
  */
 applyTheme();
+watchSystemTheme();
+applyLocale(currentLocale());
 const queryClient = createQueryClient();
 const router = createAppRouter(queryClient);
 const root = createRoot(document.getElementById("root") as HTMLElement);
 
 root.render(
   <div className="boot" role="status">
-    Đang tải…
+    {messagesOf(appMessages).loading}
   </div>,
 );
 

@@ -251,3 +251,297 @@ describe("lint thiết kế của Portal", () => {
     expect(copy.replace(/^\/\*[\s\S]*?\*\/\n/, "").trim()).toBe(original);
   });
 });
+
+/*
+ * [Plan #54 QĐ-2] Luật của hai ngôn ngữ: mọi chữ giao diện nằm trong `*.messages.ts(x)` với hai bản, và bản
+ * tiếng Anh thật sự là tiếng Anh. Thiếu khoá hay sai tham số thì TypeScript đã bắt (`defineMessages`); các
+ * luật này bắt thứ kiểu không thấy: một câu viết thẳng trong component.
+ */
+const VI =
+  /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+const isMessages = (f: string): boolean => /\.messages\.tsx?$/.test(f);
+
+/** Chữ chỉ lập trình viên đọc, hay tên ngôn ngữ viết bằng chính ngôn ngữ đó — khai tường minh */
+const VI_EXEMPT = new Set([
+  // Lý do miễn trừ I38 của từng query key: đọc trong test, không lên màn hình
+  "lib/query-keys.ts",
+  // "Tiếng Việt" trong bộ chọn ngôn ngữ: tên ngôn ngữ không dịch
+  "i18n/index.ts",
+]);
+
+/** Đường dẫn tương đối với `src/`, dấu `/` trên mọi hệ điều hành */
+const relPosix = (file: string): string =>
+  relative(SRC, file).replaceAll("\\", "/");
+
+/** Chữ JSX không phải câu: tên thương hiệu */
+const JSX_TEXT_ALLOWED = new Set(["udp"]);
+
+/** Thuộc tính mà trình đọc màn hình hay người dùng đọc — phải đến từ messages */
+const TEXT_ATTRIBUTES = new Set([
+  "aria-label",
+  "aria-roledescription",
+  "aria-valuetext",
+  "title",
+  "placeholder",
+  "alt",
+]);
+
+/**
+ * Hàng đợi chuyển chữ của Plan #54 đợt 54b: tệp CHƯA chuyển. Mỗi tệp ở đây phải còn vi phạm thật (một tệp đã
+ * chuyển xong mà quên xoá khỏi danh sách là đỏ), nên danh sách chỉ ngắn đi. Đợt 54b kết thúc khi nó rỗng và bị
+ * xoá cùng phép kiểm của nó.
+ */
+const PENDING = new Set<string>([
+  "features/admin/pages/AdminCatalogPage.tsx",
+  "features/admin/pages/AdminCredentialsPage.tsx",
+  "features/admin/pages/AdminJobsPage.tsx",
+  "features/admin/pages/AdminOrphansPage.tsx",
+  "features/admin/pages/AdminOverviewPage.tsx",
+  "features/admin/pages/AdminProjectsPage.tsx",
+  "features/admin/pages/AdminSystemPage.tsx",
+  "features/admin/pages/AdminUsersPage.tsx",
+  "features/admin/platform-model.ts",
+  "features/architecture/ArchitectureDiagram.tsx",
+  "features/architecture/ArchitecturePage.tsx",
+  "features/architecture/DomainHealthGrid.tsx",
+  "features/architecture/architecture-model.ts",
+  "features/auth/session.ts",
+  "features/code/CodePage.tsx",
+  "features/code/RepoReadinessCard.tsx",
+  "features/deployment/DeploymentsPage.tsx",
+  "features/deployment/DoraCards.tsx",
+  "features/domain/CicdPanel.tsx",
+  "features/domain/ConfigForm.tsx",
+  "features/domain/DomainActions.tsx",
+  "features/domain/DomainDetailPage.tsx",
+  "features/domain/DomainPanel.tsx",
+  "features/domain/DomainRow.tsx",
+  "features/domain/DomainsPage.tsx",
+  "features/domain/ValidationPanel.tsx",
+  "features/domain/config-labels.ts",
+  "features/domain/domain-labels.ts",
+  "features/flag/CleanupPage.tsx",
+  "features/flag/CreateFlagDialog.tsx",
+  "features/flag/FlagDetail.tsx",
+  "features/flag/FlagsPage.tsx",
+  "features/flag/PromoteDialog.tsx",
+  "features/flag/RuleEditor.tsx",
+  "features/flag/detail/EnvControls.tsx",
+  "features/flag/detail/LifecycleActions.tsx",
+  "features/flag/detail/RulesSection.tsx",
+  "features/flag/detail/SdkSnippet.tsx",
+  "features/flag/detail/StatsSection.tsx",
+  "features/flag/detail/Tester.tsx",
+  "features/flag/detail/VariantsSection.tsx",
+  "features/flag/flag-labels.ts",
+  "features/flag/rules-model.ts",
+  "features/home/HomePage.tsx",
+  "features/monitoring/MonitoringPage.tsx",
+  "features/project/CommandPalette.tsx",
+  "features/project/NewProjectPage.tsx",
+  "features/project/OverviewPage.tsx",
+  "features/project/ProjectLayout.tsx",
+  "features/project/ProjectsPage.tsx",
+  "features/project/SettingsPage.tsx",
+  "features/project/cloud/CloudCard.tsx",
+  "features/project/cloud/CloudEditor.tsx",
+  "features/project/cloud/CloudPanel.tsx",
+  "features/project/cloud/CloudStatus.tsx",
+  "features/project/cloud/cloud-form.ts",
+  "features/project/cloud/cloud-labels.ts",
+  "features/project/roles.ts",
+  "features/project/settings/AuditTab.tsx",
+  "features/project/settings/EnvironmentsTab.tsx",
+  "features/project/settings/MembersTab.tsx",
+  "features/project/settings/ProjectTab.tsx",
+  "features/project/settings/SdkKeysTab.tsx",
+  "features/provisioning/CostPanel.tsx",
+  "features/provisioning/InfraPage.tsx",
+  "features/provisioning/JobLog.tsx",
+  "features/provisioning/PreviewPanel.tsx",
+  "features/provisioning/provisioning-labels.ts",
+  "features/rollout/CreateRolloutDialog.tsx",
+  "features/rollout/RolloutDetailPage.tsx",
+  "features/rollout/RolloutsPage.tsx",
+  "features/rollout/ServiceRolloutDialog.tsx",
+  "features/rollout/rollout-form.tsx",
+  "features/rollout/rollout-status.tsx",
+  "features/rollout/use-rollout-watcher.ts",
+  "features/segment/SegmentsPage.tsx",
+  "lib/http.ts",
+]);
+
+interface Violation {
+  file: string;
+  line: number;
+  what: string;
+}
+
+function i18nViolations(file: string): Violation[] {
+  const rel = relPosix(file);
+  if (isMessages(file)) return [];
+  const src = ts.createSourceFile(
+    file,
+    readFileSync(file, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const out: Violation[] = [];
+  const at = (node: ts.Node, what: string): void => {
+    out.push({
+      file: rel,
+      line: src.getLineAndCharacterOfPosition(node.getStart()).line + 1,
+      what,
+    });
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxText(node)) {
+      const text = node.text.trim();
+      if (/\p{L}{2,}/u.test(text) && !JSX_TEXT_ALLOWED.has(text)) {
+        at(node, `chữ JSX "${text.slice(0, 40)}"`);
+      }
+    } else if (
+      ts.isJsxAttribute(node) &&
+      TEXT_ATTRIBUTES.has(node.name.getText(src)) &&
+      node.initializer !== undefined &&
+      ts.isStringLiteral(node.initializer) &&
+      /\p{L}/u.test(node.initializer.text)
+    ) {
+      at(
+        node,
+        `${node.name.getText(src)}="${node.initializer.text.slice(0, 40)}"`,
+      );
+    } else if (
+      !VI_EXEMPT.has(rel) &&
+      (ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node) ||
+        ts.isTemplateHead(node) ||
+        ts.isTemplateMiddle(node) ||
+        ts.isTemplateTail(node)) &&
+      VI.test(node.text)
+    ) {
+      at(node, `chuỗi tiếng Việt "${node.text.slice(0, 40)}"`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(src);
+  return out;
+}
+
+/** Nút chữ trong bản `en` của mọi `defineMessages({ vi, en })` của một tệp messages */
+function englishTexts(file: string): { line: number; text: string }[] {
+  const src = ts.createSourceFile(
+    file,
+    readFileSync(file, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const out: { line: number; text: string }[] = [];
+  const collect = (node: ts.Node): void => {
+    if (
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node) ||
+      ts.isJsxText(node) ||
+      ts.isTemplateHead(node) ||
+      ts.isTemplateMiddle(node) ||
+      ts.isTemplateTail(node)
+    ) {
+      out.push({
+        line: src.getLineAndCharacterOfPosition(node.getStart()).line + 1,
+        text: node.text,
+      });
+    }
+    ts.forEachChild(node, collect);
+  };
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.getText(src) === "defineMessages" &&
+      node.arguments[0] !== undefined &&
+      ts.isObjectLiteralExpression(node.arguments[0])
+    ) {
+      for (const p of node.arguments[0].properties) {
+        if (ts.isPropertyAssignment(p) && p.name.getText(src) === "en") {
+          collect(p.initializer);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(src);
+  return out;
+}
+
+describe("hai ngôn ngữ (Plan #54 QĐ-2)", () => {
+  const byFile = new Map(
+    codeFiles.map((f) => [relPosix(f), i18nViolations(f)] as const),
+  );
+
+  it("không chữ giao diện viết thẳng ngoài *.messages.ts: không chuỗi có dấu, không chữ JSX, không aria-label/title/placeholder/alt là chuỗi", () => {
+    const offenders = [...byFile.values()]
+      .flat()
+      .filter((v) => !PENDING.has(v.file))
+      .map((v) => `${v.file}:${String(v.line)} ${v.what}`);
+    expect(offenders).toEqual([]);
+  });
+
+  it("hàng đợi chuyển chữ chỉ ngắn đi: tệp nào trong đó cũng còn vi phạm thật", () => {
+    const done = [...PENDING].filter((f) => (byFile.get(f) ?? []).length === 0);
+    expect(done).toEqual([]);
+  });
+
+  it("bản tiếng Anh không còn chữ tiếng Việt (bắt chỗ chép nguyên văn mà quên dịch)", () => {
+    const offenders = codeFiles.filter(isMessages).flatMap((f) =>
+      englishTexts(f)
+        .filter((t) => VI.test(t.text))
+        .map(
+          (t) =>
+            `${relative(SRC, f)}:${String(t.line)}: ${t.text.slice(0, 40)}`,
+        ),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("placeholder trong messages kết thúc bằng '…' ở cả hai ngôn ngữ (luật của Plan #53 đi theo chữ)", () => {
+    const offenders = codeFiles.filter(isMessages).flatMap((file) => {
+      const src = ts.createSourceFile(
+        file,
+        readFileSync(file, "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+        file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+      );
+      const out: string[] = [];
+      const visit = (node: ts.Node): void => {
+        if (
+          ts.isPropertyAssignment(node) &&
+          /placeholder$/i.test(node.name.getText(src)) &&
+          (ts.isStringLiteral(node.initializer) ||
+            ts.isNoSubstitutionTemplateLiteral(node.initializer)) &&
+          !node.initializer.text.endsWith("…")
+        ) {
+          const line =
+            src.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+          out.push(
+            `${relative(SRC, file)}:${String(line)}: ${node.initializer.text}`,
+          );
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(src);
+      return out;
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  it("đối chứng: luật THẤY chữ viết thẳng và bỏ qua chữ trong messages", () => {
+    const probe = join(here, "fixtures", "emdash-probe.tsx");
+    expect(i18nViolations(probe).length).toBeGreaterThan(0);
+    const messages = codeFiles.find((f) => f.endsWith("app.messages.tsx"));
+    expect(messages).toBeDefined();
+    expect(i18nViolations(messages ?? "")).toEqual([]);
+    expect(englishTexts(messages ?? "").length).toBeGreaterThan(20);
+  });
+});

@@ -1,0 +1,124 @@
+import type { ReactNode } from "react";
+import { defineMessages } from "../i18n";
+
+/** Chữ của khung ứng dụng: thanh bên hai khung, menu tài khoản, trang không tìm thấy, màn khởi động */
+export const appMessages = defineMessages({
+  vi: {
+    loading: "Đang tải…",
+    skipToContent: "Bỏ qua tới nội dung",
+    openMenu: "Mở menu",
+    account: "Tài khoản",
+    platformConsole: "Bảng điều khiển nền tảng",
+    backToPortal: "Về Portal",
+    signOut: "Đăng xuất",
+    appearance: "Giao diện",
+    theme: { light: "Sáng", dark: "Tối", system: "Theo hệ thống" },
+    language: "Ngôn ngữ",
+    quickDarkTheme: "Giao diện tối",
+    quickLightTheme: "Giao diện sáng",
+    portalNav: {
+      label: "Điều hướng chính",
+      sections: "Phân hệ",
+      projectSections: "Phân hệ của project",
+      home: "Trang chủ",
+      projects: "Project",
+      allProjects: "Mọi project",
+      quickSearch: "Tìm nhanh",
+      overview: "Tổng quan",
+      architecture: "Kiến trúc",
+      monitoring: "Giám sát",
+      flags: "Flag",
+      segments: "Segment",
+      rollouts: "Rollout",
+      deployments: "Deploy",
+      code: "Mã nguồn",
+      domains: "Domain",
+      infra: "Hạ tầng",
+      settings: "Cài đặt",
+    },
+    consoleNav: {
+      label: "Điều hướng Bảng điều khiển",
+      nav: "Bảng điều khiển",
+      tag: "Nhà phát hành",
+      group: "Nền tảng",
+      overview: "Tổng quan",
+      users: "Người dùng",
+      projects: "Project",
+      credentials: "Credential",
+      jobs: "Job lỗi",
+      orphans: "Tài nguyên mồ côi",
+      system: "Hệ thống",
+      catalog: "Catalog domain",
+    },
+    notFound: {
+      title: "Không tìm thấy trang",
+      body: (path: ReactNode, inConsole: boolean) => (
+        <>
+          Đường dẫn {path} không có trong{" "}
+          {inConsole ? "Bảng điều khiển nền tảng" : "Portal"}.
+        </>
+      ),
+      backToConsole: "Về Bảng điều khiển",
+      backToHome: "Về trang chủ",
+    },
+  },
+  en: {
+    loading: "Loading…",
+    skipToContent: "Skip to content",
+    openMenu: "Open menu",
+    account: "Account",
+    platformConsole: "Platform console",
+    backToPortal: "Back to Portal",
+    signOut: "Sign out",
+    appearance: "Appearance",
+    theme: { light: "Light", dark: "Dark", system: "System" },
+    language: "Language",
+    quickDarkTheme: "Dark theme",
+    quickLightTheme: "Light theme",
+    portalNav: {
+      label: "Main navigation",
+      sections: "Sections",
+      projectSections: "Project sections",
+      home: "Home",
+      projects: "Projects",
+      allProjects: "All projects",
+      quickSearch: "Quick search",
+      overview: "Overview",
+      architecture: "Architecture",
+      monitoring: "Monitoring",
+      flags: "Flags",
+      segments: "Segments",
+      rollouts: "Rollouts",
+      deployments: "Deployments",
+      code: "Source code",
+      domains: "Domains",
+      infra: "Infrastructure",
+      settings: "Settings",
+    },
+    consoleNav: {
+      label: "Console navigation",
+      nav: "Platform console",
+      tag: "Operator",
+      group: "Platform",
+      overview: "Overview",
+      users: "Users",
+      projects: "Projects",
+      credentials: "Credentials",
+      jobs: "Failed jobs",
+      orphans: "Orphaned resources",
+      system: "System",
+      catalog: "Domain catalog",
+    },
+    notFound: {
+      title: "Page not found",
+      body: (path: ReactNode, inConsole: boolean) => (
+        <>
+          The path {path} does not exist in{" "}
+          {inConsole ? "the platform console" : "the Portal"}.
+        </>
+      ),
+      backToConsole: "Back to the console",
+      backToHome: "Back to Home",
+    },
+  },
+});
