@@ -55,7 +55,7 @@ export const provisioningLabelMessages = defineMessages({
       "nat-gateway": "NAT gateway",
       "load-balancer": "Load balancer",
       nodes: "Node",
-    } as Record<string, string>,
+    },
   },
   en: {
     jobState: {

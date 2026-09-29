@@ -40,7 +40,7 @@ export const resourceStatusLabel = (
 ): string => labels().resourceStatus[status];
 
 export const costItemLabel = (item: string): string =>
-  labels().costItem[item] ?? item;
+  labelOf(labels().costItem, item);
 
 /** Bốn pha tiến về phía trước, theo thứ tự chạy (§8.1) */
 export const PHASES = [
