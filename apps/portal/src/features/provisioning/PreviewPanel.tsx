@@ -13,7 +13,7 @@ import { qk } from "../../lib/query-keys";
 import { can } from "../project/roles";
 import { provisioningApi } from "./provisioning-api";
 import { formatUsd } from "../../lib/format";
-import { BLOCKER_LABEL, costItemLabel } from "./provisioning-labels";
+import { blockerLabel, costItemLabel } from "./provisioning-labels";
 
 /**
  * Bước xem trước (§10.5 bước 4, §4.4 lớp 2): chi phí theo từng mục (control plane, NAT,
@@ -165,7 +165,7 @@ function Preview({
           <Icon of={CircleAlert} />
           <ul>
             {preview.blockers.map((b) => (
-              <li key={b}>{BLOCKER_LABEL[b]}</li>
+              <li key={b}>{blockerLabel(b)}</li>
             ))}
           </ul>
         </div>

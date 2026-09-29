@@ -17,9 +17,10 @@ import {
 import { qk } from "../../lib/query-keys";
 import { useAuthStore } from "../auth/auth-store";
 import { PROVIDER_LABEL } from "../project/cloud/cloud-labels";
-import { ProjectStatus } from "../project/ProjectsPage";
-import { ROLE_LABEL } from "../project/roles";
-import { JOB_TYPE_LABEL, labelOf } from "../provisioning/provisioning-labels";
+import { ProjectStatus } from "../project/ProjectStatus";
+import { rolesMessages } from "../project/roles.messages";
+import { useMessages } from "../../i18n";
+import { jobTypeLabel } from "../provisioning/provisioning-labels";
 import { RolloutStatusLabel } from "../rollout/rollout-status";
 import { homeApi } from "./home-api";
 
@@ -92,6 +93,7 @@ export const firstNameOf = (name: string): string =>
   name.trim().split(/\s+/).pop() ?? name;
 
 function HomeBody({ home }: { home: HomeWire }) {
+  const roles = useMessages(rolesMessages).role;
   return (
     <>
       <section aria-labelledby="home-attention">
@@ -175,7 +177,7 @@ function HomeBody({ home }: { home: HomeWire }) {
                   <ProjectStatus status={p.status} expiresAt={p.expiresAt} />
                 </span>
                 <span className="c3">
-                  {ROLE_LABEL[p.myRole]}
+                  {roles[p.myRole]}
                   {p.cloudProvider !== null &&
                     `, ${PROVIDER_LABEL[p.cloudProvider]}`}
                   , {p.environmentCount} environment
@@ -232,7 +234,7 @@ const ATTENTION: Record<
   },
   JOB_FAILED: {
     tone: "error",
-    text: (a) => `${labelOf(JOB_TYPE_LABEL, a.subject)} thất bại`,
+    text: (a) => `${jobTypeLabel(a.subject)} thất bại`,
   },
   PROJECT_EXPIRING: {
     tone: "warn",

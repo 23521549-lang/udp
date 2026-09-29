@@ -19,9 +19,10 @@ import { CloudCard } from "./cloud/CloudCard";
 import { PROVIDER_LABEL } from "./cloud/cloud-labels";
 import { ProjectBar } from "./ProjectBar";
 import { useProjectContext } from "./ProjectLayout";
-import { ProjectStatus } from "./ProjectsPage";
+import { ProjectStatus } from "./ProjectStatus";
 import { projectApi } from "./project-api";
-import { ROLE_LABEL } from "./roles";
+import { rolesMessages } from "./roles.messages";
+import { useMessages } from "../../i18n";
 
 /**
  * Tổng quan (§10.6, Plan #53 QĐ-7): trạng thái project và ba chỉ số nhanh ở đầu trang; thẻ Cloud (đổi
@@ -29,6 +30,7 @@ import { ROLE_LABEL } from "./roles";
  * CHÍNH `GET /architecture` của trang Kiến trúc (một nguồn); environment và rollout gần đây.
  */
 export function OverviewPage() {
+  const roles = useMessages(rolesMessages).role;
   const { project, envs, env, cluster } = useProjectContext();
 
   // [Plan #41] Hai con số bằng `limit=1` — không tải danh sách flag chỉ để đếm
@@ -69,7 +71,7 @@ export function OverviewPage() {
                 status={project.status}
                 expiresAt={project.expiresAt}
               />
-              <span>Vai của bạn: {ROLE_LABEL[project.myRole]}</span>
+              <span>Vai của bạn: {roles[project.myRole]}</span>
             </span>
           }
           minis={[

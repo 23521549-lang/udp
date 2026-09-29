@@ -5,7 +5,9 @@ import { Empty, ErrorState, Loading } from "../../../components/States";
 import { formatDateTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { PROVIDER_LABEL } from "../../project/cloud/cloud-labels";
-import { PROJECT_STATUS, ProjectStatus } from "../../project/ProjectsPage";
+import { useMessages } from "../../../i18n";
+import { projectStatusMessages } from "../../project/project-status.messages";
+import { ProjectStatus } from "../../project/ProjectStatus";
 import { ADMIN_PAGE_SIZE, adminApi } from "../admin-api";
 import { AdminPage } from "../AdminLayout";
 
@@ -20,6 +22,7 @@ export type AdminProjectStatus = (typeof ADMIN_PROJECT_STATUSES)[number];
 
 /** Mọi project (§10.11). Bộ lọc và trang trên URL (Plan #53 QĐ-9) */
 export function AdminProjectsPage() {
+  const statusLabel = useMessages(projectStatusMessages).status;
   const search = useSearch({ from: "/admin/projects" });
   const navigate = useNavigate({ from: "/admin/projects" });
   const status = search.status;
@@ -64,7 +67,7 @@ export function AdminProjectsPage() {
           <option value="">Mọi trạng thái</option>
           {ADMIN_PROJECT_STATUSES.map((s) => (
             <option key={s} value={s}>
-              {PROJECT_STATUS[s].label}
+              {statusLabel[s]}
             </option>
           ))}
         </select>

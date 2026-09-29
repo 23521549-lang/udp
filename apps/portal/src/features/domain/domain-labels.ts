@@ -4,38 +4,24 @@ import type {
   DomainValidationWire,
   ProjectDomainWire,
 } from "@udp/shared-types/wire";
+import { messagesOf } from "../../i18n";
+import { domainLabelMessages } from "./domain-labels.messages";
 
 /**
- * Chữ hiển thị của trang Domain (I37: mã ở máy chủ, câu ở Portal). `Record` theo đúng kiểu
- * dây: thêm một mã validator hay một trạng thái mà quên câu là lỗi biên dịch.
+ * Nhãn của domain theo ngôn ngữ đang chọn (Plan #54) — hàm tra đọc ngôn ngữ lúc gọi, như `formatNumber`;
+ * component gọi chúng đã theo dõi ngôn ngữ qua chữ của chính nó. Chữ ở `domain-labels.messages.ts`.
  */
+const labels = () => messagesOf(domainLabelMessages);
 
-export const TIER_LABEL: Record<DomainCatalogEntryWire["tier"], string> = {
-  CORE: "Cốt lõi",
-  STANDARD: "Tiêu chuẩn",
-  ADVANCED: "Nâng cao",
-};
+export const tierLabel = (tier: DomainCatalogEntryWire["tier"]): string =>
+  labels().tier[tier];
 
-export const STATUS_LABEL: Record<
-  NonNullable<ProjectDomainWire["status"]>,
-  string
-> = {
-  PENDING: "Chờ triển khai",
-  DEPLOYING: "Đang triển khai",
-  ACTIVE: "Đang chạy",
-  SWITCHING: "Đang đổi tool",
-  RECONFIGURING: "Đang cấu hình lại",
-  TEARINGDOWN: "Đang gỡ",
-  BLOCKED: "Bị chặn",
-  ERROR: "Lỗi",
-};
+export const domainStatusLabel = (
+  status: NonNullable<ProjectDomainWire["status"]>,
+): string => labels().status[status];
 
-export const DRIFT_LABEL: Record<DomainDriftWire["verdict"], string> = {
-  NOT_DEPLOYED: "Chưa triển khai, chưa có gì để trôi",
-  CLEAN: "Khớp cấu hình mong muốn",
-  DRIFTED: "Đã trôi khỏi cấu hình mong muốn",
-  SCAN_FAILED: "Lần quét gần nhất không chạy được",
-};
+export const driftLabel = (verdict: DomainDriftWire["verdict"]): string =>
+  labels().drift[verdict];
 
 type Issue =
   | DomainValidationWire["errors"][number]
@@ -43,30 +29,31 @@ type Issue =
 
 /**
  * Câu cho một vấn đề của validator. `nameOf` đổi khoá `<domain>:<tool>` thành tên đọc được
- * (`datadog, Giám sát`); `subject`/`detail` giữ đúng nghĩa resolver trả về.
+ * (`datadog (Monitoring)`); `subject`/`detail` giữ đúng nghĩa resolver trả về.
  */
 export function issueText(
   issue: Issue,
   nameOf: (key: string) => string,
 ): string {
+  const t = labels().issue;
   const d = issue.detail;
   switch (issue.code) {
     case "MISSING_CAPABILITY":
-      return `${nameOf(issue.subject)} cần ${d[0] ?? "?"}, nhưng chưa tool nào đang bật cung cấp nó.`;
+      return t.missingCapability(nameOf(issue.subject), d[0] ?? "?");
     case "MISSING_ANY_OF":
-      return `${nameOf(issue.subject)} cần ít nhất một trong: ${d.join(", ")}.`;
+      return t.missingAnyOf(nameOf(issue.subject), d.join(", "));
     case "VERSION_MISMATCH":
-      return `Phiên bản không tương thích: ${nameOf(issue.subject)} với ${d.map(nameOf).join(", ")}.`;
+      return t.versionMismatch(nameOf(issue.subject), d.map(nameOf).join(", "));
     case "CONFLICT":
-      return `Không bật đồng thời được ${d.map(nameOf).join(" và ")} (${nameOf(issue.subject)}).`;
+      return t.conflict(d.map(nameOf), nameOf(issue.subject));
     case "AMBIGUOUS_PROVIDER":
-      return `Nhiều tool cùng cung cấp ${issue.subject}: ${d.map(nameOf).join(", ")}. Chọn một.`;
+      return t.ambiguousProvider(issue.subject, d.map(nameOf).join(", "));
     case "CYCLIC_DEPENDENCY":
-      return "Khai báo capability của các tool tạo thành vòng phụ thuộc.";
+      return t.cyclicDependency;
     case "CLOUD_MISMATCH":
-      return `${nameOf(issue.subject)} chỉ chạy trên ${d[0] ?? "?"}, còn project dùng ${d[1] ?? "?"}.`;
+      return t.cloudMismatch(nameOf(issue.subject), d[0] ?? "?", d[1] ?? "?");
     case "RECOMMENDED_MISSING":
-      return `${nameOf(issue.subject)} hoạt động tốt hơn khi có ${d[0] ?? "?"}. Không bắt buộc.`;
+      return t.recommendedMissing(nameOf(issue.subject), d[0] ?? "?");
   }
 }
 

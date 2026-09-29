@@ -3,7 +3,7 @@ import type {
   ArchitectureWire,
 } from "@udp/shared-types/wire";
 import type { Tone } from "../../components/StatusLabel";
-import { STATUS_LABEL } from "../domain/domain-labels";
+import { domainStatusLabel } from "../domain/domain-labels";
 
 /**
  * [Plan #53] Mô hình của sơ đồ kiến trúc và lưới sức khoẻ — THUẦN, test được không cần DOM.
@@ -22,9 +22,9 @@ export function toolHealth(tool: ArchitectureToolWire): {
     case null:
       return { tone: "unknown", label: "Chưa triển khai" };
     case "ERROR":
-      return { tone: "error", label: STATUS_LABEL.ERROR };
+      return { tone: "error", label: domainStatusLabel("ERROR") };
     case "BLOCKED":
-      return { tone: "warn", label: STATUS_LABEL.BLOCKED };
+      return { tone: "warn", label: domainStatusLabel("BLOCKED") };
     case "ACTIVE":
       if (tool.drift.verdict === "DRIFTED") {
         return { tone: "warn", label: "Lệch cấu hình" };
@@ -34,7 +34,7 @@ export function toolHealth(tool: ArchitectureToolWire): {
       }
       return { tone: "ok", label: "Ổn định" };
     default:
-      return { tone: "running", label: STATUS_LABEL[tool.status] };
+      return { tone: "running", label: domainStatusLabel(tool.status) };
   }
 }
 

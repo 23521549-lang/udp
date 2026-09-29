@@ -12,7 +12,7 @@ import { CostPanel } from "./CostPanel";
 import { JobLog } from "./JobLog";
 import { PreviewPanel } from "./PreviewPanel";
 import { provisioningApi } from "./provisioning-api";
-import { JOB_STATE_LABEL, TERMINAL_STATES } from "./provisioning-labels";
+import { jobStateLabel, TERMINAL_STATES } from "./provisioning-labels";
 import { PageHead } from "../../components/PageHead";
 
 /** Project còn chạy lại được: nháp, hay lỗi sau khi đã dọn (§8.1) */
@@ -100,7 +100,7 @@ function History({
           {jobs.map((j) => (
             <tr key={j.id}>
               <th scope="row">{formatDateTime(j.createdAt)}</th>
-              <td>{JOB_STATE_LABEL[j.state]}</td>
+              <td>{jobStateLabel(j.state)}</td>
               <td>
                 <button
                   type="button"

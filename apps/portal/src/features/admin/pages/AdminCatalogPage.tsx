@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ErrorState, Loading } from "../../../components/States";
 import { qk } from "../../../lib/query-keys";
 import { domainApi } from "../../domain/domain-api";
-import { TIER_LABEL } from "../../domain/domain-labels";
+import { tierLabel } from "../../domain/domain-labels";
 import { AdminPage } from "../AdminLayout";
 
 /**
@@ -42,7 +42,7 @@ export function AdminCatalogPage() {
               {catalog.data.domains.map((d) => (
                 <tr key={d.domainType}>
                   <th scope="row">{d.displayName}</th>
-                  <td>{TIER_LABEL[d.tier]}</td>
+                  <td>{tierLabel(d.tier)}</td>
                   <td>{d.isAvailable ? "Có" : "Đã gỡ"}</td>
                   <td className="mono">
                     {d.tools.length === 0

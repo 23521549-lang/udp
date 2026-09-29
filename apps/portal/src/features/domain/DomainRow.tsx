@@ -6,7 +6,7 @@ import type {
 import { Switch } from "../../components/Switch";
 import { ConfigForm } from "./ConfigForm";
 import type { DraftEntry } from "./domain-model";
-import { STATUS_LABEL } from "./domain-labels";
+import { domainStatusLabel } from "./domain-labels";
 
 /**
  * Một domain trong trang cấu hình (§10.7 `DomainRow`): công tắc, chọn tool, trạng thái đã
@@ -49,7 +49,7 @@ export function DomainRow({
         />
         <b>{entry.displayName}</b>
         {saved?.status !== null && saved?.status !== undefined && (
-          <span className="chip soft">{STATUS_LABEL[saved.status]}</span>
+          <span className="chip soft">{domainStatusLabel(saved.status)}</span>
         )}
         {saved?.status !== null && saved?.status !== undefined && (
           <Link

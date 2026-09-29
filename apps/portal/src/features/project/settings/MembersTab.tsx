@@ -8,7 +8,9 @@ import { fieldErrorsOf, messageOf } from "../../../lib/errors";
 import { qk, qkPrefix } from "../../../lib/query-keys";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
-import { can, PERMISSIONS, ROLE_LABEL } from "../roles";
+import { useMessages } from "../../../i18n";
+import { can, PERMISSIONS } from "../roles";
+import { rolesMessages } from "../roles.messages";
 
 const ASSIGNABLE: Exclude<ProjectRoleWire, "OWNER">[] = [
   "MAINTAINER",
@@ -17,6 +19,7 @@ const ASSIGNABLE: Exclude<ProjectRoleWire, "OWNER">[] = [
 ];
 
 export function MembersTab() {
+  const { role: roles, permission } = useMessages(rolesMessages);
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
@@ -67,7 +70,7 @@ export function MembersTab() {
       { userId: m.userId, role: next },
       {
         onSuccess: () =>
-          toast.info(`Đã đổi vai ${m.email} thành ${ROLE_LABEL[next]}`, () =>
+          toast.info(`Đã đổi vai ${m.email} thành ${roles[next]}`, () =>
             update.mutate({ userId: m.userId, role: m.role }),
           ),
       },
@@ -141,7 +144,7 @@ export function MembersTab() {
           >
             {ASSIGNABLE.map((r) => (
               <option key={r} value={r}>
-                {ROLE_LABEL[r]}
+                {roles[r]}
               </option>
             ))}
           </select>
@@ -194,12 +197,12 @@ export function MembersTab() {
                   >
                     {ASSIGNABLE.map((r) => (
                       <option key={r} value={r}>
-                        {ROLE_LABEL[r]}
+                        {roles[r]}
                       </option>
                     ))}
                   </select>
                 ) : (
-                  ROLE_LABEL[m.projectRole]
+                  roles[m.projectRole]
                 )}
               </span>
               {isOwner && m.projectRole !== "OWNER" && (
@@ -245,7 +248,7 @@ export function MembersTab() {
               {(["VIEWER", "DEVELOPER", "MAINTAINER", "OWNER"] as const).map(
                 (r) => (
                   <th key={r} scope="col">
-                    {ROLE_LABEL[r]}
+                    {roles[r]}
                   </th>
                 ),
               )}
@@ -253,8 +256,8 @@ export function MembersTab() {
           </thead>
           <tbody>
             {PERMISSIONS.map((p) => (
-              <tr key={p.action}>
-                <th scope="row">{p.action}</th>
+              <tr key={p.key}>
+                <th scope="row">{permission[p.key]}</th>
                 {(["VIEWER", "DEVELOPER", "MAINTAINER", "OWNER"] as const).map(
                   (r) => (
                     <td key={r}>{can(r, p.min) ? "Có" : "–"}</td>

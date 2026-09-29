@@ -1,56 +1,19 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import type { PublicProjectWire } from "@udp/shared-types/wire";
 import { Plus } from "lucide-react";
 import { Icon } from "../../components/Icon";
 import { Pager } from "../../components/Pager";
-import { StatusLabel, type Tone } from "../../components/StatusLabel";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { formatDateTime, relativeTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { PROJECT_PAGE_SIZE, projectApi } from "./project-api";
-import { ROLE_LABEL } from "./roles";
+import { ProjectStatus } from "./ProjectStatus";
+import { rolesMessages } from "./roles.messages";
+import { useMessages } from "../../i18n";
 import { PageHead } from "../../components/PageHead";
 
-/** Chữ và tone cho trạng thái project — icon kèm chữ, không chấm màu (DESIGN.md §5) */
-export const PROJECT_STATUS: Record<
-  PublicProjectWire["status"],
-  { label: string; tone: Tone }
-> = {
-  DRAFT: { label: "Nháp", tone: "unknown" },
-  PROVISIONING: { label: "Đang dựng hạ tầng", tone: "running" },
-  ACTIVE: { label: "Ổn định", tone: "ok" },
-  ERROR: { label: "Cần xem", tone: "error" },
-  DELETED: { label: "Đã xoá", tone: "unknown" },
-};
-
-/**
- * Trạng thái project, kèm nhãn hết hạn khi TTL đã qua (§4.4 lớp 3): với `WARN` máy chủ chỉ
- * cảnh báo và KHÔNG xoá, nên nhãn này là nơi duy nhất người dùng thấy project đã quá hạn.
- */
-export function ProjectStatus({
-  status,
-  expiresAt = null,
-  now = Date.now(),
-}: {
-  status: PublicProjectWire["status"];
-  expiresAt?: string | null;
-  now?: number;
-}) {
-  const s = PROJECT_STATUS[status];
-  const expired =
-    expiresAt !== null &&
-    status !== "DELETED" &&
-    new Date(expiresAt).getTime() <= now;
-  return (
-    <>
-      <StatusLabel tone={s.tone}>{s.label}</StatusLabel>
-      {expired && <span className="chip soft">Hết hạn</span>}
-    </>
-  );
-}
-
 export function ProjectsPage() {
+  const roles = useMessages(rolesMessages).role;
   const offset = useSearch({ from: "/app/projects" }).offset ?? 0;
   const navigate = useNavigate();
   const setOffset = (n: number): void => {
@@ -107,7 +70,7 @@ export function ProjectsPage() {
                     <span className="t lst-name" translate="no">
                       {p.name}
                     </span>
-                    <span className="chip soft">{ROLE_LABEL[p.myRole]}</span>
+                    <span className="chip soft">{roles[p.myRole]}</span>
                     <span className="c3 mono">{p.languageRuntime}</span>
                     <span className="lst-end">
                       <ProjectStatus

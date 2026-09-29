@@ -28,7 +28,7 @@ import {
   targetOf,
   type DomainDraft,
 } from "./domain-model";
-import { TIER_LABEL, toolNamer } from "./domain-labels";
+import { tierLabel, toolNamer } from "./domain-labels";
 import { DomainRow } from "./DomainRow";
 import { ValidationPanel } from "./ValidationPanel";
 
@@ -262,7 +262,7 @@ function DomainEditor({
       {tiers.map(({ tier, entries }) =>
         entries.length === 0 ? null : (
           <div key={tier}>
-            <Heading className="h2">{TIER_LABEL[tier]}</Heading>
+            <Heading className="h2">{tierLabel(tier)}</Heading>
             {entries.map((entry) => (
               <DomainRow
                 key={entry.domainType}

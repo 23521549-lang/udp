@@ -6,9 +6,8 @@ import { StatusLabel } from "../../../components/StatusLabel";
 import { formatDateTime, relativeTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import {
-  JOB_STATE_LABEL,
-  JOB_TYPE_LABEL,
-  labelOf,
+  jobStateLabel,
+  jobTypeLabel,
 } from "../../provisioning/provisioning-labels";
 import { ADMIN_PAGE_SIZE, adminApi } from "../admin-api";
 import { AdminPage } from "../AdminLayout";
@@ -73,7 +72,7 @@ export function AdminJobsPage() {
           : [
               {
                 value: jobs.data.total,
-                label: JOB_STATE_LABEL[state].toLowerCase(),
+                label: jobStateLabel(state).toLowerCase(),
               },
             ]
       }
@@ -87,7 +86,7 @@ export function AdminJobsPage() {
               aria-pressed={state === s}
               onClick={() => setState(s)}
             >
-              {JOB_STATE_LABEL[s]}
+              {jobStateLabel(s)}
             </button>
           ))}
         </div>
@@ -97,7 +96,7 @@ export function AdminJobsPage() {
       ) : jobs.isError ? (
         <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} />
       ) : jobs.data.jobs.length === 0 ? (
-        <Empty title={`Không có job nào "${JOB_STATE_LABEL[state]}"`} />
+        <Empty title={`Không có job nào "${jobStateLabel(state)}"`} />
       ) : (
         <ul className="lst job-list" aria-label="Job">
           {jobs.data.jobs.map((j) => {
@@ -106,11 +105,11 @@ export function AdminJobsPage() {
               <li key={j.id} className="it job-it">
                 <div className="job-h">
                   <b translate="no">{j.project.name}</b>
-                  <span>{labelOf(JOB_TYPE_LABEL, j.jobType)}</span>
+                  <span>{jobTypeLabel(j.jobType)}</span>
                   <StatusLabel
                     tone={state === "CANCEL_REQUESTED" ? "running" : "error"}
                   >
-                    {labelOf(JOB_STATE_LABEL, j.state)}
+                    {jobStateLabel(j.state)}
                   </StatusLabel>
                   <span className="c3">lần {j.attempt}</span>
                   <span

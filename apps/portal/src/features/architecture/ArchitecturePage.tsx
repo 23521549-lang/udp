@@ -12,7 +12,7 @@ import { Empty, ErrorState, Loading } from "../../components/States";
 import { StatusLabel } from "../../components/StatusLabel";
 import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
-import { DRIFT_LABEL } from "../domain/domain-labels";
+import { driftLabel } from "../domain/domain-labels";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { ArchitectureDiagram } from "./ArchitectureDiagram";
@@ -243,7 +243,7 @@ function ToolPanel({
           </dd>
           <dt>Drift</dt>
           <dd>
-            {DRIFT_LABEL[tool.drift.verdict]}
+            {driftLabel(tool.drift.verdict)}
             {tool.drift.at !== null && `, ${formatDateTime(tool.drift.at)}`}
           </dd>
           <dt>Phạm vi</dt>

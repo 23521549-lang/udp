@@ -18,10 +18,7 @@ import {
 } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { PROVIDER_LABEL } from "../../project/cloud/cloud-labels";
-import {
-  JOB_TYPE_LABEL,
-  labelOf,
-} from "../../provisioning/provisioning-labels";
+import { jobTypeLabel } from "../../provisioning/provisioning-labels";
 import { AdminPage } from "../AdminLayout";
 import { adminApi } from "../admin-api";
 import {
@@ -468,7 +465,7 @@ function RecentFailedJobs() {
     <ul className="lst" aria-label="Job thất bại gần nhất">
       {recent.map((j) => (
         <li key={j.id} className="it">
-          <span>{labelOf(JOB_TYPE_LABEL, j.jobType)}</span>
+          <span>{jobTypeLabel(j.jobType)}</span>
           <span className="c3" translate="no">
             {j.project.name}
           </span>

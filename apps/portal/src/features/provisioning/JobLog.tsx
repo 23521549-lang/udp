@@ -8,13 +8,13 @@ import { ErrorState, Loading } from "../../components/States";
 import { messageOf } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
-import { STATUS_LABEL } from "../domain/domain-labels";
+import { domainStatusLabel } from "../domain/domain-labels";
 import { can } from "../project/roles";
 import { provisioningApi } from "./provisioning-api";
 import {
-  JOB_STATE_LABEL,
+  jobStateLabel,
   PHASES,
-  RESOURCE_STATUS_LABEL,
+  resourceStatusLabel,
   TERMINAL_STATES,
 } from "./provisioning-labels";
 
@@ -120,7 +120,7 @@ function JobView({
         <dt>Trạng thái</dt>
         {/* Đổi pha được đọc lên: job chạy nhiều phút, người dùng không ngồi nhìn màn hình */}
         <dd aria-live="polite">
-          <span className="chip soft">{JOB_STATE_LABEL[job.state]}</span>
+          <span className="chip soft">{jobStateLabel(job.state)}</span>
         </dd>
         <dt>Bắt đầu</dt>
         <dd>{formatDateTime(job.createdAt)}</dd>
@@ -143,7 +143,7 @@ function JobView({
                 <span className="visually-hidden">Xong: </span>
               </>
             ) : null}
-            {JOB_STATE_LABEL[phase]}
+            {jobStateLabel(phase)}
           </li>
         ))}
       </ol>
@@ -180,7 +180,7 @@ function JobView({
                     {r.name}
                   </th>
                   <td className="mono">{r.kind}</td>
-                  <td>{RESOURCE_STATUS_LABEL[r.status]}</td>
+                  <td>{resourceStatusLabel(r.status)}</td>
                 </tr>
               ))}
             </tbody>
@@ -192,7 +192,7 @@ function JobView({
         <ul className="plan-list" aria-label="Domain">
           {detail.domains.map((d) => (
             <li key={d.domainType}>
-              {d.domainType}: {STATUS_LABEL[d.status]}
+              {d.domainType}: {domainStatusLabel(d.status)}
               {d.message !== null && ` (${d.message})`}
             </li>
           ))}

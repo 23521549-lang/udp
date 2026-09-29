@@ -11,7 +11,7 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { CicdPanel } from "./CicdPanel";
 import { domainApi } from "./domain-api";
 import { DomainActions } from "./DomainActions";
-import { DRIFT_LABEL, STATUS_LABEL } from "./domain-labels";
+import { domainStatusLabel, driftLabel } from "./domain-labels";
 
 /**
  * Chi tiết một domain (§10.13): trạng thái đã lưu và kết quả quét drift gần nhất — câu
@@ -52,7 +52,7 @@ export function DomainDetailPage() {
               <dd>
                 {domain.data.domain.status === null
                   ? "Chưa cấu hình"
-                  : STATUS_LABEL[domain.data.domain.status]}
+                  : domainStatusLabel(domain.data.domain.status)}
                 {!domain.data.domain.isEnabled && " (đang tắt)"}
               </dd>
               <dt>Cập nhật</dt>
@@ -99,7 +99,7 @@ export function DomainDetailPage() {
                         : CircleAlert
                   }
                 />{" "}
-                {DRIFT_LABEL[drift.data.drift.verdict]}
+                {driftLabel(drift.data.drift.verdict)}
               </span>
               {drift.data.drift.message !== null && (
                 <CodeBlock code={drift.data.drift.message} label="Chỗ trôi" />
