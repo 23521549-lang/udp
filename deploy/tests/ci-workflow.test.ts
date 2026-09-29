@@ -102,6 +102,25 @@ describe("CI (§13.5)", () => {
     );
     expect(diagnose?.if).toBe("failure()");
   });
+
+  it("portal-demo: build bản xem thử, cài Chromium, rồi mới chụp; ảnh chụp lên artifact kể cả khi đỏ (Plan #53 QĐ-11)", () => {
+    const demo = job("portal-demo");
+    expect(demo.if).toBeUndefined();
+    const order = [
+      "@udp/portal demo:build",
+      "playwright install --with-deps chromium",
+      "@udp/portal demo:screens",
+    ].map((command) => indexOfRun(demo, command));
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const upload = demo.steps.find((s) =>
+      s.uses?.startsWith("actions/upload-artifact"),
+    );
+    expect(upload?.if).toBe("always()");
+    expect(upload?.with?.["path"]).toBe("apps/portal/demo/screens/");
+    // Không secret: bản xem thử chạy hoàn toàn trong trang
+    expect(JSON.stringify(demo)).not.toMatch(/secrets\./);
+  });
 });
 
 describe("máy ảo công khai (Plan #52)", () => {

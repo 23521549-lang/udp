@@ -50,6 +50,8 @@ Thumbs.db
 coverage/
 playwright-report/
 test-results/
+# Ảnh chụp của cổng portal-demo (Plan #53 QĐ-11) — artifact của CI, không phải mã
+apps/portal/demo/screens/
 *.log
 
 # Bản phát hành của máy ảo do `vm-up` sinh (Plan #52) và bản tạm của test

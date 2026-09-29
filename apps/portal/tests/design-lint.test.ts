@@ -74,6 +74,16 @@ describe("lint thiết kế của Portal", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("không em-dash trong dữ liệu mẫu của bản xem thử — chữ ở đó cũng lên màn hình", () => {
+    const MOCK = join(here, "..", "demo", "mock");
+    const offenders = walk(MOCK, /\.ts$/).flatMap((f) =>
+      visibleTexts(f)
+        .filter((t) => t.text.includes("—"))
+        .map((t) => `${relative(MOCK, f)}:${String(t.line)}`),
+    );
+    expect(offenders).toEqual([]);
+  });
+
   it("đối chứng: bộ đọc chữ THẤY em-dash trong chuỗi và bỏ qua chú thích", () => {
     const probe = join(here, "fixtures", "emdash-probe.tsx");
     const texts = visibleTexts(probe).map((t) => t.text);

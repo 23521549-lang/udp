@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type RefObject } from "react";
+import { useLayoutEffect, useState } from "react";
 import type { ArchitectureWire } from "@udp/shared-types/wire";
 
 /**
@@ -23,7 +23,11 @@ export function EdgeLayer({
   active,
   version,
 }: {
-  container: RefObject<HTMLDivElement>;
+  /**
+   * Khung chứa các nút, nhận qua STATE (callback ref) chứ không qua `RefObject`: ref của phần tử cha
+   * được gắn SAU layout effect của con, nên một `RefObject` còn `null` đúng lúc lớp này đo lần đầu.
+   */
+  container: HTMLElement | null;
   edges: ArchitectureWire["edges"];
   /** Công cụ đang chọn hoặc đang trỏ — cạnh của nó nổi lên */
   active: string | undefined;
@@ -34,7 +38,7 @@ export function EdgeLayer({
   const [size, setSize] = useState({ w: 0, h: 0 });
 
   useLayoutEffect(() => {
-    const root = container.current;
+    const root = container;
     if (root === null) return;
     const measure = (): void => {
       const origin = root.getBoundingClientRect();

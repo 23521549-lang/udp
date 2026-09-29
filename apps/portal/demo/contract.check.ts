@@ -1,10 +1,14 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { adminApi } from "../src/features/admin/admin-api";
+import { RED_RANGES } from "@udp/shared-types/wire";
+import { ADMIN_PAGE_SIZE, adminApi } from "../src/features/admin/admin-api";
+import { architectureApi } from "../src/features/architecture/architecture-api";
 import { authApi } from "../src/features/auth/auth-api";
 import { codeApi } from "../src/features/code/code-api";
 import { deploymentApi } from "../src/features/deployment/deployment-api";
 import { domainApi } from "../src/features/domain/domain-api";
 import { flagApi } from "../src/features/flag/flag-api";
+import { homeApi } from "../src/features/home/home-api";
+import { monitoringApi } from "../src/features/monitoring/monitoring-api";
 import { cloudApi } from "../src/features/project/cloud/cloud-api";
 import { projectApi } from "../src/features/project/project-api";
 import { provisioningApi } from "../src/features/provisioning/provisioning-api";
@@ -61,31 +65,78 @@ describe("đăng nhập và quản trị", () => {
     expect(
       (await authApi.login({ email: "a@b.dev", password: "x" })).user,
     ).toBeDefined();
-    const { users } = await adminApi.users(undefined);
-    expect(users.length).toBe(10);
-    expect((await adminApi.users("khánh")).users.length).toBe(1);
+    // Đủ người cho nhiều trang: trang 1 đầy, trang 3 là phần còn lại
+    const { users, total } = await adminApi.users(undefined, 0);
+    expect(total).toBe(130);
+    expect(users.length).toBe(ADMIN_PAGE_SIZE);
+    const last = await adminApi.users(undefined, 2 * ADMIN_PAGE_SIZE);
+    expect(last.users.length).toBe(total - 2 * ADMIN_PAGE_SIZE);
+    expect((await adminApi.users("khánh", 0)).users.length).toBe(1);
     const target = users.find((u) => u.platformRole === "USER");
     expect(
       (await adminApi.setRole(target?.id ?? "", "PLATFORM_ADMIN")).user
         .platformRole,
     ).toBe("PLATFORM_ADMIN");
-    expect((await adminApi.projects(undefined)).projects.length).toBe(8);
-    expect((await adminApi.projects("DRAFT")).projects.length).toBeGreaterThan(
-      0,
-    );
+    expect((await adminApi.projects(undefined, 0)).total).toBe(24);
+    for (const status of [
+      "DRAFT",
+      "PROVISIONING",
+      "ACTIVE",
+      "ERROR",
+      "DELETED",
+    ]) {
+      expect(
+        (await adminApi.projects(status, 0)).projects.length,
+      ).toBeGreaterThan(0);
+    }
     expect((await adminApi.credentials()).credentials.length).toBeGreaterThan(
       0,
     );
     for (const state of ["FAILED", "COMPENSATION_FAILED", "CANCEL_REQUESTED"]) {
-      await adminApi.jobs(state);
+      expect((await adminApi.jobs(state, 0)).total).toBeGreaterThan(0);
     }
-    expect((await adminApi.jobs("FAILED")).jobs.length).toBeGreaterThan(0);
     const orphans = await adminApi.orphans();
-    expect(orphans.resources.length).toBe(2);
+    expect(orphans.resources.length).toBe(6);
+    expect(orphans.unpriced.length).toBeGreaterThan(0);
+
+    // Tổng quan của Bảng điều khiển: số liệu khớp các danh sách, cụm có đủ tín hiệu
+    const { overview } = await adminApi.overview();
+    expect(overview.users.total).toBe(total);
+    expect(overview.users.newLast7d).toBeGreaterThan(0);
+    expect(overview.clouds.map((c) => c.provider).sort()).toEqual([
+      "AWS",
+      "AZURE",
+      "GCP",
+    ]);
+    expect(overview.orphans.count).toBe(orphans.resources.length);
+    expect(overview.tools.length).toBe(10);
+    const { platform } = await adminApi.platform();
+    expect(platform.node.state).toBe("ok");
+    expect(platform.release).not.toBeNull();
     expect(
       (await adminApi.system()).services.every((s) => s.status === "up"),
     ).toBe(true);
     expect((await domainApi.catalog()).domains.length).toBe(16);
+  });
+});
+
+describe("trang chủ", () => {
+  it("việc cần xử lý đủ sáu loại, rollout đang chạy, deploy 14 ngày", async () => {
+    const { home } = await homeApi.get();
+    expect(home.projects.length).toBe(9);
+    expect(new Set(home.attention.map((a) => a.kind))).toEqual(
+      new Set([
+        "DEPLOY_PENDING",
+        "DOMAIN_ERROR",
+        "DOMAIN_DRIFTED",
+        "JOB_FAILED",
+        "PROJECT_EXPIRING",
+        "ROLLOUT_PAUSED",
+      ]),
+    );
+    expect(home.rollouts.length).toBeGreaterThanOrEqual(4);
+    expect(home.deploys.length).toBe(14);
+    expect(home.deploys.some((d) => d.failure > 0)).toBe(true);
   });
 });
 
@@ -95,13 +146,21 @@ describe("mọi project người xem thấy", () => {
     expect([...projects.keys()].sort()).toEqual([
       "analytics-api",
       "checkout-service",
+      "fraud-detector",
       "legacy-billing",
+      "marketing-site",
       "mobile-bff",
       "notification-worker",
       "payment-gateway",
+      "search-service",
     ]);
     for (const project of projects.values()) {
       const { environments, cluster } = await projectApi.get(project.id);
+      const { architecture } = await architectureApi.get(project.id);
+      expect(architecture.environments.length).toBe(environments.length);
+      const monitored = architecture.tools.some(
+        (t) => t.domainType === "MONITORING",
+      );
       await projectApi.members(project.id);
       await projectApi.audit(project.id, {});
       await cloudApi.get(project.id);
@@ -120,11 +179,34 @@ describe("mọi project người xem thấy", () => {
       if (cluster === null) {
         await expectStatus(provisioningApi.cost(project.id, 7), 409);
       } else {
-        await provisioningApi.cost(project.id, 30);
+        const { cost } = await provisioningApi.cost(project.id, 30);
+        // Tổng các ngày BẰNG tổng kỳ, tới từng cent
+        expect(
+          Math.round(cost.daily.reduce((s, d) => s + d.totalUsd, 0) * 100),
+        ).toBe(Math.round(cost.totalUsd * 100));
         await domainApi.cicd(project.id);
         await domainApi.pipelineTemplate(project.id);
       }
       for (const env of environments) {
+        for (const range of RED_RANGES) {
+          if (monitored && cluster !== null) {
+            const { metrics } = await monitoringApi.red(
+              project.id,
+              env.id,
+              range,
+            );
+            expect(
+              metrics.workloads.every(
+                (w) => w.requestRate.length === metrics.points,
+              ),
+            ).toBe(true);
+          } else {
+            await expectStatus(
+              monitoringApi.red(project.id, env.id, range),
+              409,
+            );
+          }
+        }
         await projectApi.sdkKeys(project.id, env.id);
         await deploymentApi.list(project.id, env.id);
         await deploymentApi.latest(project.id, env.id);

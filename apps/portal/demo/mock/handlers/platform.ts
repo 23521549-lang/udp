@@ -1,4 +1,5 @@
 import type {
+  CostWire,
   DomainCatalogEntryWire,
   JobDetailWire,
   ProjectDomainWire,
@@ -79,12 +80,39 @@ interface DomainTarget {
 const targetKey = (d: DomainTarget): string =>
   `${d.domainType.toLowerCase()}:${d.toolId}`;
 
+/**
+ * Chi phí theo ngày (Plan #53 QĐ-4): tổng các ngày BẰNG `totalUsd` như bộ tính thật. Cuối tuần rẻ hơn (ít node
+ * tự co giãn), cộng một chút nhiễu tất định theo ngày.
+ */
+function dailyOf(totalUsd: number, days: number): CostWire["daily"] {
+  const today = Date.parse(`${nowIso().slice(0, 10)}T00:00:00Z`);
+  const dates = Array.from(
+    { length: days },
+    (_, i) => new Date(today - (days - 1 - i) * 86_400_000),
+  );
+  const weights = dates.map(
+    (d) =>
+      (d.getUTCDay() === 0 || d.getUTCDay() === 6 ? 0.78 : 1) *
+      (0.92 + ((d.getUTCDate() * 37) % 17) / 100),
+  );
+  const sum = weights.reduce((s, w) => s + w, 0);
+  const cents = Math.round(totalUsd * 100);
+  const daily = weights.map((w) => Math.floor((cents * w) / sum));
+  // Phần cent lẻ dồn vào ngày gần nhất: tổng khớp đến từng cent
+  daily[daily.length - 1] =
+    (daily[daily.length - 1] ?? 0) + cents - daily.reduce((s, c) => s + c, 0);
+  return dates.map((d, i) => ({
+    date: d.toISOString().slice(0, 10),
+    totalUsd: (daily[i] ?? 0) / 100,
+  }));
+}
+
 function scaleCost(p: ProjectRecord, days: number) {
   if (p.cost === null) {
     throw new HttpProblem(
       409,
       "COST_NOT_ENABLED",
-      "Project chưa bật OpenCost hay Kubecost — chưa có chi phí thực để hiện",
+      "Project chưa bật OpenCost hay Kubecost, chưa có chi phí thực để hiện",
     );
   }
   const round = (x: number) => Math.round(x * days * 100) / 100;
@@ -96,12 +124,14 @@ function scaleCost(p: ProjectRecord, days: number) {
     storageUsd: round(e.storageUsd),
     networkUsd: round(e.networkUsd),
   }));
+  const totalUsd =
+    Math.round(environments.reduce((s, e) => s + e.totalUsd, 0) * 100) / 100;
   return {
     ...p.cost,
     days,
-    totalUsd:
-      Math.round(environments.reduce((s, e) => s + e.totalUsd, 0) * 100) / 100,
+    totalUsd,
     environments,
+    daily: dailyOf(totalUsd, days),
   };
 }
 
@@ -451,7 +481,7 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
         job.updatedAt = nowIso();
         job.lastError = {
           step: "COMPENSATION",
-          message: "hủy theo yêu cầu — đã dọn sạch tài nguyên đã tạo",
+          message: "Hủy theo yêu cầu, đã dọn sạch tài nguyên đã tạo",
           orphans: [],
           at: nowIso(),
         };

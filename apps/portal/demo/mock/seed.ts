@@ -37,6 +37,7 @@ import type {
   ProjectRecord,
 } from "./db";
 import { golden } from "./goldens";
+import { crowd } from "./people";
 import { between, hex, pick, prng, uuid } from "./random";
 
 /**
@@ -353,7 +354,7 @@ const CHECKOUT_FLAGS: FlagSpec[] = [
     key: "new-checkout-flow",
     type: "BOOLEAN",
     description:
-      "Luồng thanh toán một trang thay cho ba bước cũ — đang canary ở prod",
+      "Luồng thanh toán một trang thay cho ba bước cũ, đang canary ở prod",
     default: "off",
     ageDays: 21,
     enabled: [true, true, true],
@@ -431,7 +432,7 @@ const CHECKOUT_FLAGS: FlagSpec[] = [
   {
     key: "checkout-button-color",
     type: "STRING",
-    description: "Màu nút Thanh toán — thử nghiệm A/B đã chốt xanh lá",
+    description: "Màu nút Thanh toán: thử nghiệm A/B đã chốt xanh lá",
     variants: [
       ["blue", "#2563eb"],
       ["green", "#16a34a"],
@@ -458,7 +459,7 @@ const CHECKOUT_FLAGS: FlagSpec[] = [
   {
     key: "max-cart-items",
     type: "NUMBER",
-    description: "Số món tối đa trong giỏ — tăng cho khách doanh nghiệp",
+    description: "Số món tối đa trong giỏ, tăng cho khách doanh nghiệp",
     variants: [
       ["standard", 50],
       ["large", 200],
@@ -593,7 +594,7 @@ const CHECKOUT_FLAGS: FlagSpec[] = [
   {
     key: "search-v2",
     type: "BOOLEAN",
-    description: "Tìm kiếm ngữ nghĩa — canary prod bị rollback tự động",
+    description: "Tìm kiếm ngữ nghĩa: canary prod bị rollback tự động",
     default: "off",
     ageDays: 12,
     enabled: [true, true, false],
@@ -619,7 +620,7 @@ const CHECKOUT_FLAGS: FlagSpec[] = [
   {
     key: "express-delivery",
     type: "BOOLEAN",
-    description: "Giao hàng hoả tốc 2 giờ — đang chờ đối tác vận chuyển",
+    description: "Giao hàng hoả tốc 2 giờ, đang chờ đối tác vận chuyển",
     default: "off",
     lifecycle: "DRAFT",
     ageDays: 4,
@@ -638,7 +639,7 @@ const CHECKOUT_FLAGS: FlagSpec[] = [
   {
     key: "loyalty-points",
     type: "BOOLEAN",
-    description: "Tích điểm thành viên — bản nháp chưa ai đụng tới",
+    description: "Tích điểm thành viên: bản nháp chưa ai đụng tới",
     default: "off",
     lifecycle: "DRAFT",
     ageDays: 64,
@@ -688,7 +689,7 @@ const CHECKOUT_FLAGS: FlagSpec[] = [
 
 /** Bộ flag gọn cho các project khác — cùng khuôn, ít hơn */
 function smallFlagSet(
-  domain: "payment" | "mobile" | "billing" | "draft",
+  domain: "payment" | "mobile" | "billing" | "draft" | "search" | "web",
 ): FlagSpec[] {
   const common: FlagSpec[] = [
     {
@@ -815,6 +816,80 @@ function smallFlagSet(
         lastEvaluatedDaysAgo: 9,
       },
     ],
+    search: [
+      {
+        key: "semantic-ranking",
+        type: "BOOLEAN",
+        description: "Xếp hạng kết quả theo ngữ nghĩa thay cho BM25",
+        default: "off",
+        ageDays: 9,
+        enabled: [true, true, true],
+        rules: {
+          dev: [{ type: "ALL", serve: "on" }],
+          prod: [
+            {
+              type: "ALL",
+              serve: [
+                ["on", 20],
+                ["off", 80],
+              ],
+              description: "Canary do UDP điều khiển",
+            },
+          ],
+        },
+        traffic: 73_000,
+        mix: { on: 0.2, off: 0.8 },
+      },
+      {
+        key: "typo-tolerance",
+        type: "NUMBER",
+        description: "Số ký tự sai tối đa được bỏ qua khi tìm",
+        variants: [
+          ["strict", 1],
+          ["loose", 2],
+        ],
+        default: "strict",
+        ageDays: 140,
+        enabled: [true, true, true],
+        traffic: 73_000,
+        mix: { strict: 1 },
+      },
+    ],
+    web: [
+      {
+        key: "hero-banner-variant",
+        type: "STRING",
+        description: "Ảnh bìa trang chủ cho chiến dịch 10/10",
+        variants: [
+          ["classic", "classic"],
+          ["sale-1010", "sale-1010"],
+        ],
+        default: "classic",
+        ageDays: 6,
+        enabled: [true, true, false],
+        traffic: 0,
+        lastEvaluatedDaysAgo: 1,
+      },
+      {
+        key: "newsletter-popup",
+        type: "BOOLEAN",
+        description: "Hộp đăng ký bản tin khi rời trang",
+        default: "off",
+        ageDays: 45,
+        enabled: [true, true, true],
+        rules: {
+          prod: [
+            {
+              type: "ATTRIBUTE_BASED",
+              when: [{ attribute: "returning", operator: "eq", value: false }],
+              serve: "on",
+            },
+          ],
+        },
+        traffic: 21_000,
+        mix: { off: 0.64, on: 0.36 },
+      },
+    ],
     draft: [
       {
         key: "report-export",
@@ -890,7 +965,7 @@ const CHECKOUT_SEGMENTS: SegmentSpec[] = [
   },
   {
     name: "legacy-app-versions",
-    description: "App dưới 3.0 — sắp ngừng hỗ trợ",
+    description: "App dưới 3.0, sắp ngừng hỗ trợ",
     all: [{ attribute: "appVersion", operator: "semverLt", value: "3.0.0" }],
     ageDays: 45,
   },
@@ -1243,29 +1318,45 @@ const AZURE_STEPS = {
     [
       "resource-group",
       "ResourceGroup",
-      "/subscriptions/5f2c/resourceGroups/udp-notification-worker",
+      "/subscriptions/5f2c8a31-0d7e-4b6f-9a1e-3c2b7d4e9f10/resourceGroups/udp",
     ],
-    ["vnet", "VirtualNetwork", "/subscriptions/5f2c/.../virtualNetworks/udp"],
-    ["subnet-nodes", "Subnet", "/subscriptions/5f2c/.../subnets/nodes"],
+    [
+      "vnet",
+      "VirtualNetwork",
+      "/subscriptions/5f2c8a31-0d7e-4b6f-9a1e-3c2b7d4e9f10/resourceGroups/udp/providers/Microsoft.Network/virtualNetworks/udp",
+    ],
+    [
+      "subnet-nodes",
+      "Subnet",
+      "/subscriptions/5f2c8a31-0d7e-4b6f-9a1e-3c2b7d4e9f10/resourceGroups/udp/providers/Microsoft.Network/virtualNetworks/udp/subnets/nodes",
+    ],
     [
       "public-ip",
       "PublicIpAddress",
-      "/subscriptions/5f2c/.../publicIPAddresses/udp-nat",
+      "/subscriptions/5f2c8a31-0d7e-4b6f-9a1e-3c2b7d4e9f10/resourceGroups/udp/providers/Microsoft.Network/publicIPAddresses/udp-nat",
     ],
-    ["nat-gateway", "NatGateway", "/subscriptions/5f2c/.../natGateways/udp"],
+    [
+      "nat-gateway",
+      "NatGateway",
+      "/subscriptions/5f2c8a31-0d7e-4b6f-9a1e-3c2b7d4e9f10/resourceGroups/udp/providers/Microsoft.Network/natGateways/udp",
+    ],
   ],
   cluster: [
     [
       "identity",
       "UserAssignedIdentity",
-      "/subscriptions/5f2c/.../userAssignedIdentities/udp",
+      "/subscriptions/5f2c8a31-0d7e-4b6f-9a1e-3c2b7d4e9f10/resourceGroups/udp/providers/Microsoft.ManagedIdentity/userAssignedIdentities/udp",
     ],
     [
       "aks-cluster",
       "ManagedCluster",
-      "/subscriptions/5f2c/.../managedClusters/udp",
+      "/subscriptions/5f2c8a31-0d7e-4b6f-9a1e-3c2b7d4e9f10/resourceGroups/udp/providers/Microsoft.ContainerService/managedClusters/udp",
     ],
-    ["node-pool", "AgentPool", "/subscriptions/5f2c/.../agentPools/default"],
+    [
+      "node-pool",
+      "AgentPool",
+      "/subscriptions/5f2c8a31-0d7e-4b6f-9a1e-3c2b7d4e9f10/resourceGroups/udp/providers/Microsoft.ContainerService/managedClusters/udp/agentPools/default",
+    ],
   ],
 } as const;
 
@@ -1518,7 +1609,7 @@ function buildRollout(
             reason:
               spec.status === "PAUSED"
                 ? "Session đang tạm dừng theo yêu cầu"
-                : "Lỗi canary 0,41% so với baseline 0,48% — trong ngưỡng, sẵn sàng bậc tiếp",
+                : "Lỗi canary 0,41% so với baseline 0,48%: trong ngưỡng, sẵn sàng bậc tiếp",
             breach: false,
             breachStreak: 0,
             breachAt: null,
@@ -1680,6 +1771,8 @@ interface Extras {
   preferences: DomainState["preferences"];
   deploysPerDay: [number, number, number];
   workload: string;
+  /** Workload khác của project — mỗi cái một nhịp deploy bằng nửa workload chính */
+  extraWorkloads?: string[];
   rollouts: RolloutSpec[];
   cost: number;
 }
@@ -1699,18 +1792,23 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
   const flags = extras.flags.map((f) => buildFlag(f, environments, segmentIds));
   const deploymentLogs: ProjectRecord["deploymentLogs"] = {};
   const running = spec.status === "ACTIVE";
+  const workloads = [extras.workload, ...(extras.extraWorkloads ?? [])];
   const deployments = Object.fromEntries(
     environments.map((env, i) => [
       env.id,
       running
-        ? deploymentsFor(
-            env,
-            extras.workload,
-            extras.deploysPerDay[i] ?? 0,
-            env.isProduction ? 0.08 : 0.12,
-            deploymentLogs,
-            repo ?? spec.name,
-          )
+        ? workloads
+            .flatMap((workload, w) =>
+              deploymentsFor(
+                env,
+                workload,
+                (extras.deploysPerDay[i] ?? 0) * (w === 0 ? 1 : 0.5),
+                env.isProduction ? 0.08 : 0.12,
+                deploymentLogs,
+                repo ?? spec.name,
+              ),
+            )
+            .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
         : [],
     ]),
   );
@@ -1799,6 +1897,7 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
           days: 1,
           currency: "USD",
           totalUsd: 0,
+          daily: [],
           environments: environments.map((env, i) => {
             const share = [0.12, 0.23, 0.65][i] ?? 0.2;
             const total = extras.cost * share;
@@ -1935,6 +2034,7 @@ function checkoutService(): ProjectRecord {
       ],
       deploysPerDay: [2.6, 1.4, 0.7],
       workload: "checkout-api",
+      extraWorkloads: ["checkout-worker", "checkout-web"],
       rollouts: [
         {
           flag: "new-checkout-flow",
@@ -1983,7 +2083,7 @@ function checkoutService(): ProjectRecord {
           steps: [10, 20],
           end: "ROLLBACK",
           failReason:
-            "Tỉ lệ lỗi canary 7,8% vượt ngưỡng 5% hai lần liên tiếp — tự rollback về 0%",
+            "Tỉ lệ lỗi canary 7,8% vượt ngưỡng 5% hai lần liên tiếp, tự rollback về 0%",
         },
         {
           flag: "checkout-button-color",
@@ -2024,7 +2124,7 @@ function checkoutService(): ProjectRecord {
   p.domains.drift["SECURITY"] = {
     verdict: "SCAN_FAILED",
     message:
-      "trivy-operator: CrashLoopBackOff — không đủ bộ nhớ cho cơ sở dữ liệu lỗ hổng (limit 256Mi)",
+      "trivy-operator: CrashLoopBackOff, không đủ bộ nhớ cho cơ sở dữ liệu lỗ hổng (limit 256Mi)",
     at: minutesAgo(12),
   };
   const monitoring = p.domains.versions["MONITORING"];
@@ -2087,7 +2187,7 @@ function addPendingProdDeploy(p: ProjectRecord): void {
       detail: {
         repo: "udp-demo/checkout-service",
         ref: "main",
-        reason: "prod không tự deploy — chờ người có quyền duyệt",
+        reason: "prod không tự deploy, chờ người có quyền duyệt",
       },
     },
   ];
@@ -2170,6 +2270,7 @@ function paymentGateway(): ProjectRecord {
       preferences: [],
       deploysPerDay: [1.6, 0.9, 0.4],
       workload: "payment-api",
+      extraWorkloads: ["payment-webhooks"],
       rollouts: [
         {
           flag: "3ds-v2",
@@ -2268,6 +2369,7 @@ function mobileBff(): ProjectRecord {
       preferences: [],
       deploysPerDay: [3.1, 1.2, 0.5],
       workload: "mobile-bff",
+      extraWorkloads: ["image-resizer"],
       rollouts: [],
       cost: 3.1,
     },
@@ -2277,7 +2379,7 @@ function mobileBff(): ProjectRecord {
   failed.lastError = {
     step: "DOMAINS",
     message:
-      "istio: istiod không Ready sau 600 giây — webhook sidecar-injector từ chối pod (thiếu CPU request trên node t3.medium)",
+      "istio: istiod không Ready sau 600 giây: webhook sidecar-injector từ chối pod (thiếu CPU request trên node t3.medium)",
     orphans: [],
     at: daysAgo(4.9),
   };
@@ -2358,7 +2460,7 @@ function legacyBilling(): ProjectRecord {
   failed.lastError = {
     step: "CLUSTER",
     message:
-      "EKS CreateCluster: ResourceLimitExceeded — tài khoản đã có 100 cluster ở ap-southeast-1; bù trừ không xoá được NAT gateway",
+      "EKS CreateCluster: ResourceLimitExceeded, tài khoản đã có 100 cluster ở ap-southeast-1; bù trừ không xoá được NAT gateway",
     orphans: ["nat", "eip"],
     at: hoursAgo(23),
   };
@@ -2410,6 +2512,585 @@ function adminOnlyProject(
   );
 }
 
+// ------------------------------------------------------------- đội mở rộng (Plan #53 QĐ-10)
+
+/**
+ * Đám đông người dùng của các nhóm khác — hạt giống RIÊNG, nên id và số của nhóm có tên ở trên không đổi khi
+ * đám đông đổi cỡ.
+ */
+const crowdRng = prng(20261001);
+const CROWD: Person[] = crowd(
+  crowdRng,
+  120,
+  new Set(PEOPLE.map((p) => p.email)),
+).map((m) => ({ id: uuid(crowdRng), ...m }));
+
+const crowdAt = (i: number): Person => {
+  const p = CROWD[i % CROWD.length];
+  if (p === undefined) throw new Error("đám đông rỗng");
+  return p;
+};
+
+/** Các bộ công cụ thật mà các nhóm hay chọn — gộp lại phủ gần hết catalog §5.5 */
+const AWS_DATADOG: Partial<Record<string, DomainPick>> = {
+  CONTAINER_REGISTRY: { tool: "ecr" },
+  CICD: { tool: "gitlab-ci" },
+  MONITORING: { tool: "datadog", config: { site: "datadoghq.com" } },
+  LOGGING: { tool: "datadog-logs" },
+  INGRESS: { tool: "traefik" },
+  SERVICE_MESH: { tool: "linkerd" },
+  PROGRESSIVE_DELIVERY: { tool: "flagger" },
+  SECRETS: { tool: "aws-secrets-manager" },
+  COST: { tool: "kubecost" },
+};
+
+const GCP_NATIVE: Partial<Record<string, DomainPick>> = {
+  CONTAINER_REGISTRY: { tool: "gcp-artifact-registry" },
+  CICD: { tool: "tekton" },
+  MONITORING: { tool: "victoria-metrics" },
+  LOGGING: { tool: "loki" },
+  TRACING: { tool: "jaeger" },
+  INGRESS: { tool: "nginx" },
+  GITOPS: { tool: "flux" },
+  SECRETS: { tool: "gcp-secret-manager" },
+  POLICY: { tool: "gatekeeper" },
+  DATABASE: { tool: "redis" },
+};
+
+const AZURE_ENTERPRISE: Partial<Record<string, DomainPick>> = {
+  CONTAINER_REGISTRY: { tool: "acr" },
+  CICD: { tool: "jenkins" },
+  MONITORING: { tool: "newrelic" },
+  LOGGING: { tool: "elk" },
+  TRACING: { tool: "zipkin" },
+  INGRESS: { tool: "nginx" },
+  SERVICE_MESH: { tool: "istio" },
+  PROGRESSIVE_DELIVERY: { tool: "argo-rollouts" },
+  GITOPS: { tool: "argo-cd" },
+  SECRETS: { tool: "azure-key-vault" },
+  SECURITY: { tool: "falco" },
+  POLICY: { tool: "kyverno" },
+  DATABASE: { tool: "mongodb" },
+};
+
+const DYNATRACE_STACK: Partial<Record<string, DomainPick>> = {
+  CONTAINER_REGISTRY: { tool: "docker-hub" },
+  CICD: { tool: "circleci" },
+  INFRA: { tool: "pulumi" },
+  MONITORING: { tool: "dynatrace" },
+  LOGGING: { tool: "fluentd" },
+  TRACING: { tool: "tempo" },
+  INGRESS: { tool: "nginx" },
+  PROGRESSIVE_DELIVERY: { tool: "spinnaker" },
+  SECRETS: { tool: "external-secrets" },
+  SECURITY: { tool: "aqua" },
+  DATABASE: { tool: "mysql" },
+  COST: { tool: "opencost" },
+  ARTIFACT_REGISTRY: { tool: "artifactory" },
+};
+
+const LEAN_STACK: Partial<Record<string, DomainPick>> = {
+  CONTAINER_REGISTRY: { tool: "harbor" },
+  CICD: { tool: "drone" },
+  INFRA: { tool: "ack" },
+  MONITORING: { tool: "grafana-cloud" },
+  LOGGING: { tool: "opensearch" },
+  INGRESS: { tool: "traefik" },
+  SERVICE_MESH: { tool: "consul-connect" },
+  SECRETS: { tool: "sealed-secrets" },
+  SECURITY: { tool: "checkov" },
+  DATABASE: { tool: "minio" },
+  ARTIFACT_REGISTRY: { tool: "nexus" },
+};
+
+const LAB_STACK: Partial<Record<string, DomainPick>> = {
+  CONTAINER_REGISTRY: { tool: "ghcr" },
+  CICD: { tool: "github-actions" },
+  INFRA: { tool: "ansible" },
+  MONITORING: { tool: "prometheus-grafana" },
+  LOGGING: { tool: "fluent-bit" },
+  TRACING: { tool: "tempo" },
+  SERVICE_MESH: { tool: "kuma" },
+  INGRESS: { tool: "nginx" },
+  PROGRESSIVE_DELIVERY: { tool: "flagger" },
+  SECURITY: { tool: "grype" },
+  DATABASE: { tool: "k8ssandra" },
+  ARTIFACT_REGISTRY: { tool: "github-packages" },
+  COST: { tool: "opencost" },
+};
+
+/** Một sự cố trong lịch sử project — thứ làm trang Job lỗi và Tài nguyên mồ côi có việc */
+type Incident =
+  | {
+      kind: "failed";
+      jobType: JobDetailWire["job"]["jobType"];
+      daysAgo: number;
+      step: string;
+      message: string;
+    }
+  | {
+      kind: "compensationFailed";
+      daysAgo: number;
+      step: string;
+      message: string;
+      orphans: string[];
+    }
+  | { kind: "cancelRequested"; hoursAgo: number }
+  | { kind: "provisioning"; state: "NETWORK" | "CLUSTER" | "DOMAINS" };
+
+interface FleetSpec {
+  name: string;
+  owner: number;
+  status: ProjectStatusWire;
+  cloud?: { provider: Provider; region: string; validated?: boolean };
+  runtime?: "nodejs" | "python";
+  ageDays: number;
+  domains?: Partial<Record<string, DomainPick>>;
+  workload: string;
+  extraWorkloads?: string[];
+  deploysPerDay?: [number, number, number];
+  cost?: number;
+  drift?: Record<string, "DRIFTED" | "SCAN_FAILED">;
+  incidents?: Incident[];
+}
+
+/** Project của các nhóm khác: người xem (quản trị viên) không là thành viên — chỉ Bảng điều khiển thấy */
+const FLEET: FleetSpec[] = [
+  {
+    name: "inventory-sync",
+    owner: 3,
+    status: "ACTIVE",
+    cloud: { provider: "AWS", region: "ap-southeast-1" },
+    ageDays: 150,
+    domains: AWS_DATADOG,
+    workload: "inventory-api",
+    extraWorkloads: ["stock-worker"],
+    deploysPerDay: [2.2, 1.1, 0.6],
+    cost: 6.4,
+    incidents: [
+      {
+        kind: "failed",
+        jobType: "PROVISION",
+        daysAgo: 149.6,
+        step: "CLUSTER",
+        message:
+          "EC2 RunInstances: VcpuLimitExceeded, hạn mức 32 vCPU On-Demand của vùng đã dùng hết",
+      },
+    ],
+  },
+  {
+    name: "order-events",
+    owner: 11,
+    status: "ACTIVE",
+    cloud: { provider: "GCP", region: "asia-southeast1" },
+    runtime: "python",
+    ageDays: 210,
+    domains: { ...GCP_NATIVE, INFRA: { tool: "config-connector" } },
+    workload: "order-events-consumer",
+    extraWorkloads: ["order-events-api"],
+    deploysPerDay: [1.8, 0.8, 0.4],
+    cost: 4.9,
+    drift: { GITOPS: "DRIFTED" },
+  },
+  {
+    name: "loyalty-api",
+    owner: 19,
+    status: "ACTIVE",
+    cloud: { provider: "AZURE", region: "southeastasia" },
+    ageDays: 95,
+    domains: { ...AZURE_ENTERPRISE, INFRA: { tool: "aso" } },
+    workload: "loyalty-api",
+    deploysPerDay: [1.2, 0.7, 0.3],
+    cost: 5.6,
+    incidents: [
+      {
+        kind: "failed",
+        jobType: "DOMAIN_APPLY",
+        daysAgo: 11,
+        step: "DOMAINS",
+        message:
+          "helm upgrade newrelic-bundle: hết giờ chờ DaemonSet newrelic-infrastructure (0/3 Ready)",
+      },
+    ],
+  },
+  {
+    name: "partner-portal",
+    owner: 27,
+    status: "DRAFT",
+    cloud: { provider: "AWS", region: "ap-southeast-1", validated: false },
+    ageDays: 8,
+    workload: "partner-web",
+  },
+  {
+    name: "ml-feature-store",
+    owner: 33,
+    status: "PROVISIONING",
+    cloud: { provider: "GCP", region: "asia-southeast1" },
+    runtime: "python",
+    ageDays: 1,
+    workload: "feature-server",
+    incidents: [{ kind: "provisioning", state: "CLUSTER" }],
+  },
+  {
+    name: "sms-gateway",
+    owner: 41,
+    status: "ERROR",
+    cloud: { provider: "AZURE", region: "southeastasia" },
+    ageDays: 16,
+    workload: "sms-gateway",
+    incidents: [
+      {
+        kind: "compensationFailed",
+        daysAgo: 2,
+        step: "CLUSTER",
+        message:
+          "AKS: QuotaExceeded, vùng southeastasia chỉ còn 4 lõi Standard_DSv3; bù trừ không xoá được NAT gateway và IP công khai",
+        orphans: ["public-ip", "nat-gateway"],
+      },
+    ],
+  },
+  {
+    name: "report-builder",
+    owner: 48,
+    status: "ERROR",
+    cloud: { provider: "GCP", region: "asia-southeast1" },
+    runtime: "python",
+    ageDays: 23,
+    workload: "report-builder",
+    incidents: [
+      {
+        kind: "compensationFailed",
+        daysAgo: 4,
+        step: "CLUSTER",
+        message:
+          "container.clusters.create: ZONE_RESOURCE_POOL_EXHAUSTED ở asia-southeast1-b; bù trừ hết giờ khi xoá Cloud NAT và cluster dở",
+        orphans: ["nat", "cluster"],
+      },
+    ],
+  },
+  {
+    name: "hr-portal",
+    owner: 52,
+    status: "DELETED",
+    cloud: { provider: "AWS", region: "ap-southeast-1" },
+    ageDays: 260,
+    workload: "hr-portal",
+  },
+  {
+    name: "promo-engine",
+    owner: 58,
+    status: "ACTIVE",
+    cloud: { provider: "AWS", region: "ap-northeast-1" },
+    ageDays: 70,
+    domains: LAB_STACK,
+    workload: "promo-engine",
+    extraWorkloads: ["coupon-worker"],
+    deploysPerDay: [3.4, 1.6, 0.9],
+    cost: 3.8,
+    drift: { SECURITY: "SCAN_FAILED" },
+    incidents: [{ kind: "cancelRequested", hoursAgo: 0.3 }],
+  },
+  {
+    name: "edu-lms",
+    owner: 64,
+    status: "ACTIVE",
+    cloud: { provider: "AZURE", region: "eastasia" },
+    ageDays: 320,
+    domains: DYNATRACE_STACK,
+    workload: "lms-web",
+    extraWorkloads: ["lms-api", "video-transcoder"],
+    deploysPerDay: [1.5, 0.9, 0.5],
+    cost: 9.2,
+  },
+  {
+    name: "clinic-booking",
+    owner: 71,
+    status: "DRAFT",
+    cloud: { provider: "GCP", region: "asia-southeast1", validated: true },
+    ageDays: 3,
+    workload: "booking-api",
+  },
+  {
+    name: "fleet-tracker",
+    owner: 77,
+    status: "ACTIVE",
+    cloud: { provider: "AWS", region: "ap-southeast-1" },
+    ageDays: 180,
+    domains: LEAN_STACK,
+    workload: "tracker-ingest",
+    extraWorkloads: ["tracker-api"],
+    deploysPerDay: [2.8, 1.3, 0.7],
+    cost: 4.1,
+    incidents: [
+      {
+        kind: "failed",
+        jobType: "PROVISION",
+        daysAgo: 179.7,
+        step: "CLUSTER",
+        message:
+          "iam:PassRole bị từ chối cho role udp-node: role tin UDP thiếu quyền PassRole",
+      },
+      {
+        kind: "failed",
+        jobType: "DOMAIN_APPLY",
+        daysAgo: 30,
+        step: "DOMAINS",
+        message:
+          "consul-connect: server-0 không bầu được leader sau 300 giây (PVC chưa gắn)",
+      },
+    ],
+  },
+  {
+    name: "chatops-bot",
+    owner: 83,
+    status: "DRAFT",
+    ageDays: 1,
+    workload: "chatops-bot",
+  },
+];
+
+function incidentJob(p: ProjectRecord, incident: Incident): JobRecord {
+  const provider = p.cloud?.provider ?? "AWS";
+  switch (incident.kind) {
+    case "failed": {
+      const j = job(incident.jobType, "FAILED", incident.daysAgo, null);
+      j.attempt = 3;
+      j.lastError = {
+        step: incident.step,
+        message: incident.message,
+        orphans: [],
+        at: daysAgo(incident.daysAgo - 0.01),
+      };
+      return { detail: { job: j, resources: [], domains: [] } };
+    }
+    case "compensationFailed": {
+      const j = job(
+        "PROVISION",
+        "COMPENSATION_FAILED",
+        incident.daysAgo,
+        p.preview.cost.monthlyUsd,
+      );
+      j.attempt = 3;
+      j.lastError = {
+        step: incident.step,
+        message: incident.message,
+        orphans: incident.orphans,
+        at: daysAgo(incident.daysAgo - 0.02),
+      };
+      const at = daysAgo(incident.daysAgo - 0.02);
+      const resources = resourcesOf(provider, "DELETED", at).map((r) =>
+        incident.orphans.includes(r.name)
+          ? { ...r, status: "ORPHAN_SUSPECTED" as const }
+          : r,
+      );
+      return { detail: { job: j, resources, domains: [] } };
+    }
+    case "cancelRequested": {
+      const j = job("DOMAIN_APPLY", "CANCEL_REQUESTED", 0, null);
+      j.createdAt = hoursAgo(incident.hoursAgo);
+      j.updatedAt = minutesAgo(2);
+      return { detail: { job: j, resources: [], domains: [] } };
+    }
+    case "provisioning": {
+      const j = job("PROVISION", incident.state, 0, p.preview.cost.monthlyUsd);
+      j.createdAt = minutesAgo(19);
+      j.updatedAt = minutesAgo(1);
+      const network = resourcesOf(provider, "READY", minutesAgo(12)).filter(
+        (r) => r.step === "NETWORK",
+      );
+      return { detail: { job: j, resources: network, domains: [] } };
+    }
+  }
+}
+
+function fleetProject(spec: FleetSpec, index: number): ProjectRecord {
+  const owner = crowdAt(spec.owner);
+  const members: [Person, Exclude<ProjectRoleWire, "OWNER">][] = [
+    [crowdAt(spec.owner + 1), "MAINTAINER"],
+    [crowdAt(spec.owner + 2), "DEVELOPER"],
+    [crowdAt(spec.owner + 3), index % 2 === 0 ? "DEVELOPER" : "VIEWER"],
+  ];
+  const p = buildProject(
+    {
+      name: spec.name,
+      runtime: spec.runtime ?? "nodejs",
+      mode: index % 3 === 0 ? "IMPORT_EXISTING" : "CREATE_NEW",
+      status: spec.status,
+      myRole: null,
+      owner,
+      members,
+      ...(spec.cloud === undefined
+        ? {}
+        : {
+            cloud: {
+              provider: spec.cloud.provider,
+              region: spec.cloud.region,
+              validated: spec.cloud.validated ?? true,
+            },
+          }),
+      ageDays: spec.ageDays,
+    },
+    {
+      flags: [],
+      segments: [],
+      domains: spec.domains ?? {},
+      preferences: [],
+      deploysPerDay: spec.deploysPerDay ?? [0, 0, 0],
+      workload: spec.workload,
+      ...(spec.extraWorkloads === undefined
+        ? {}
+        : { extraWorkloads: spec.extraWorkloads }),
+      rollouts: [],
+      cost: spec.cost ?? 0,
+    },
+  );
+  for (const [domainType, verdict] of Object.entries(spec.drift ?? {})) {
+    p.domains.drift[domainType] = {
+      verdict,
+      message:
+        verdict === "DRIFTED"
+          ? "Tài nguyên trong cụm lệch cấu hình mong muốn (sửa tay bằng kubectl)"
+          : "Lần quét gần nhất không chạy được: hết giờ chờ API server",
+      at: minutesAgo(between(rng, 15, 400)),
+    };
+  }
+  for (const incident of spec.incidents ?? []) {
+    p.jobs.push(incidentJob(p, incident));
+  }
+  return p;
+}
+
+/** Ba project khác mà người xem là thành viên — đủ hình cho trang chủ và trang Giám sát */
+function searchService(): ProjectRecord {
+  return buildProject(
+    {
+      name: "search-service",
+      runtime: "python",
+      mode: "CREATE_NEW",
+      status: "ACTIVE",
+      myRole: "VIEWER",
+      owner: crowdAt(5),
+      members: [
+        [crowdAt(6), "MAINTAINER"],
+        [ANH, "VIEWER"],
+      ],
+      cloud: { provider: "GCP", region: "asia-southeast1", validated: true },
+      ageDays: 75,
+    },
+    {
+      flags: smallFlagSet("search"),
+      segments: [],
+      domains: {
+        ...GCP_NATIVE,
+        MONITORING: { tool: "datadog", config: { site: "datadoghq.com" } },
+        LOGGING: { tool: "datadog-logs" },
+        PROGRESSIVE_DELIVERY: { tool: "argo-rollouts" },
+        SERVICE_MESH: { tool: "istio" },
+      },
+      preferences: [
+        { capabilityId: "metrics.query", providerToolId: "monitoring:datadog" },
+      ],
+      deploysPerDay: [2.4, 1.2, 0.8],
+      workload: "search-api",
+      extraWorkloads: ["search-indexer"],
+      rollouts: [
+        {
+          flag: "semantic-ranking",
+          env: "prod",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "IN_PROGRESS",
+          percent: 20,
+          workload: "search-api",
+          startedHoursAgo: 1.1,
+          steps: [10, 20],
+        },
+      ],
+      cost: 5.1,
+    },
+  );
+}
+
+function fraudDetector(): ProjectRecord {
+  const p = buildProject(
+    {
+      name: "fraud-detector",
+      runtime: "python",
+      mode: "IMPORT_EXISTING",
+      status: "ACTIVE",
+      myRole: "MAINTAINER",
+      owner: KHANH,
+      members: [
+        [ANH, "MAINTAINER"],
+        [crowdAt(9), "DEVELOPER"],
+      ],
+      cloud: { provider: "AZURE", region: "southeastasia", validated: true },
+      ageDays: 110,
+    },
+    {
+      flags: smallFlagSet("payment"),
+      segments: [],
+      domains: AZURE_ENTERPRISE,
+      preferences: [],
+      deploysPerDay: [1.4, 0.8, 0.4],
+      workload: "fraud-scorer",
+      extraWorkloads: ["fraud-rules-sync"],
+      rollouts: [
+        {
+          env: "staging",
+          scope: "SERVICE_LEVEL",
+          strategy: "CANARY",
+          status: "PAUSED",
+          percent: 30,
+          workload: "fraud-scorer",
+          versions: ["v1.19.2", "v1.20.0"],
+          startedHoursAgo: 3,
+          steps: [10, 20, 30],
+          end: "PAUSE",
+        },
+      ],
+      cost: 7.3,
+    },
+  );
+  p.domains.drift["POLICY"] = {
+    verdict: "DRIFTED",
+    message:
+      "ClusterPolicy require-requests-limits bị sửa tay: validationFailureAction Audit thay cho Enforce",
+    at: minutesAgo(48),
+  };
+  return p;
+}
+
+function marketingSite(): ProjectRecord {
+  return buildProject(
+    {
+      name: "marketing-site",
+      runtime: "nodejs",
+      mode: "CREATE_NEW",
+      status: "ACTIVE",
+      myRole: "DEVELOPER",
+      owner: crowdAt(14),
+      members: [[ANH, "DEVELOPER"]],
+      cloud: { provider: "AWS", region: "ap-southeast-1", validated: true },
+      ageDays: 40,
+    },
+    {
+      flags: smallFlagSet("web"),
+      segments: [],
+      domains: {
+        CONTAINER_REGISTRY: { tool: "ghcr" },
+        CICD: { tool: "github-actions" },
+        INGRESS: { tool: "nginx" },
+      },
+      preferences: [],
+      deploysPerDay: [1.1, 0.5, 0.3],
+      workload: "marketing-web",
+      rollouts: [],
+      cost: 1.2,
+    },
+  );
+}
+
 const EMPTY_EXTRAS = (workload: string): Extras => ({
   flags: [],
   segments: [],
@@ -2447,7 +3128,7 @@ export function createDraftProject(input: {
 }
 
 export function createDb(): Db {
-  const users: AdminUserWire[] = PEOPLE.map((p) => ({
+  const users: AdminUserWire[] = [...PEOPLE, ...CROWD].map((p) => ({
     id: p.id,
     email: p.email,
     name: p.name,
@@ -2470,8 +3151,12 @@ export function createDb(): Db {
       mobileBff(),
       analyticsApi(),
       legacyBilling(),
+      searchService(),
+      fraudDetector(),
+      marketingSite(),
       adminOnlyProject("data-pipeline", TUNG, "ACTIVE", "GCP"),
       adminOnlyProject("internal-wiki", LINH, "DRAFT", undefined),
+      ...FLEET.map(fleetProject),
     ],
     configVersion: 1_284,
   };

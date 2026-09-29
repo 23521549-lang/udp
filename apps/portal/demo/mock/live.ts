@@ -50,8 +50,8 @@ function advanceRollout(
       ...rollout.lastDecision,
       decision: atCeiling ? "HOLD" : "PROMOTE",
       reason: atCeiling
-        ? `Đã tới ${String(live.upTo)}% — bậc cuối chờ người duyệt (Promote) để lên 100%`
-        : "Lỗi canary 0,41% so với baseline 0,48% — trong ngưỡng, sẵn sàng bậc tiếp",
+        ? `Đã tới ${String(live.upTo)}%. Bậc cuối chờ người duyệt (Promote) để lên 100%`
+        : "Lỗi canary 0,41% so với baseline 0,48%: trong ngưỡng, sẵn sàng bậc tiếp",
       at: nowIso(),
     };
   }

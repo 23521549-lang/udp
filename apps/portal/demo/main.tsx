@@ -22,7 +22,7 @@ const root = createRoot(document.getElementById("root") as HTMLElement);
 
 root.render(
   <div className="boot" role="status">
-    Đang tải...
+    Đang tải…
   </div>,
 );
 

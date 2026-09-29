@@ -205,6 +205,37 @@ jobs:
           I28_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: pnpm --filter @udp/design-lint i28 --base "$I28_BASE" --head "$I28_HEAD"
 
+  portal-demo:
+    # [Plan #53 QĐ-11] Cổng chụp màn của bản xem thử: build bản tĩnh (lớp giả lập trong trang, không backend,
+    # không database, không secret), rồi Playwright đi qua mọi màn của hai khung ở 1440×900 và 375×812 — không lỗi
+    # console, không tràn ngang, đúng một main và một h1, không trang "Không tìm thấy", không "...". Không so
+    # pixel. Ảnh chụp là artifact để người review xem. Chi phí 0: repo public, Chromium tải trong runner.
+    name: portal demo — chụp mọi màn ở hai cỡ khung
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: build bản xem thử
+        run: pnpm --filter @udp/portal demo:build
+      - name: Chromium cho Playwright
+        run: pnpm --filter @udp/portal exec playwright install --with-deps chromium
+      - name: chụp và kiểm mọi màn
+        run: pnpm --filter @udp/portal demo:screens
+      - name: ảnh chụp
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-demo-screens-${{ github.run_id }}
+          path: apps/portal/demo/screens/
+          if-no-files-found: ignore
+          retention-days: 7
+
   kind:
     # [Plan #50] §13.5 "build image → dựng kind → E2E rút gọn" và làn đêm "benchmark".
     # Chạy ĐÚNG `pnpm deploy:up` mà README hứa với developer (Plan #49, D-P37): build 6

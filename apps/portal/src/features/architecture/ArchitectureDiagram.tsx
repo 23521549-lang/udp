@@ -4,7 +4,7 @@ import type {
   ArchitectureWire,
 } from "@udp/shared-types/wire";
 import { Cloud, Lock, Network, Server } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Icon } from "../../components/Icon";
 import { StatusLabel, type Tone } from "../../components/StatusLabel";
 import { relativeTime } from "../../lib/format";
@@ -37,7 +37,8 @@ export function ArchitectureDiagram({
   selected: string | undefined;
   onSelect: (key: string) => void;
 }) {
-  const root = useRef<HTMLDivElement>(null);
+  // Callback ref qua state: lớp cạnh đo SAU khi khung đã gắn (xem `EdgeLayer`)
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [hover, setHover] = useState<string | undefined>(undefined);
   const tiers = tiersOf(arch.tools);
   const perNamespace = namespaceTools(arch.tools);
@@ -54,7 +55,7 @@ export function ArchitectureDiagram({
   );
 
   return (
-    <div className="arch" ref={root}>
+    <div className="arch" ref={setRoot}>
       <section className="arch-cloud" aria-labelledby="arch-cloud-h">
         <header className="arch-h">
           <Icon of={Cloud} />

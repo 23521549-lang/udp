@@ -1006,10 +1006,28 @@ h2.gh {
  * Danh sách `.lst` có hàng bọc `role="listitem"` (link vẫn là link cho trình đọc màn hình). Luật
  * `.lst a:last-child` của bản mẫu giả định link là con trực tiếp: đặt lại đường kẻ theo hàng bọc.
  */
-.lst > [role="listitem"] > a {
+.lst > [role="listitem"] > a,
+.lst > li > a {
   border-bottom: 1px solid var(--line);
 }
-.lst > [role="listitem"]:last-child > a {
+.lst > [role="listitem"]:last-child > a,
+.lst > li:last-child > a {
+  border-bottom: 0;
+}
+/* Danh sách bằng `<ul>`/`<ol>` thật (Plan #53): bỏ dấu đầu dòng, hàng `li.it` cùng khuôn với `div.it` */
+ul.lst,
+ol.lst {
+  list-style: none;
+  padding: 0;
+}
+.lst > li.it {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.lst > li.it:last-child {
   border-bottom: 0;
 }
 .lst a[aria-current="true"] {
@@ -1073,6 +1091,11 @@ h2.gh {
 }
 
 /* ------------------------------------------------------------------ Plan #53 đợt d: màn mới */
+
+/* Nhãn của chỉ số nhanh không bẻ dòng giữa từ ("công / cụ") khi đầu trang hẹp lại */
+.minis span {
+  white-space: nowrap;
+}
 
 /* Hàng bộ lọc nằm trong nội dung trang (không phải thanh dưới đầu trang) */
 .filters.flush {

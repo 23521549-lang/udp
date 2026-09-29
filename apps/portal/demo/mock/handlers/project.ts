@@ -261,13 +261,14 @@ export function registerProjectRoutes(router: Router, db: Db): void {
       const p = projectOf(db, id);
       const action = req.query.get("action");
       const limit = intParam(req.query, "limit", 50);
-      const entries = p.audit
-        .filter(
-          (e) =>
-            action === null || action === "" || e.action.startsWith(action),
-        )
-        .slice(0, limit);
-      return ok({ entries });
+      const offset = intParam(req.query, "offset", 0);
+      const matched = p.audit.filter(
+        (e) => action === null || action === "" || e.action.startsWith(action),
+      );
+      return ok({
+        entries: matched.slice(offset, offset + limit),
+        total: matched.length,
+      });
     })
 
     // ---------------------------------------------------------- thành viên

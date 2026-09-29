@@ -202,7 +202,7 @@ function PlatformSignals({
           </span>
         ) : (
           <Meter
-            label="Dữ liệu trên ổ PostgreSQL"
+            label="PostgreSQL"
             value={databaseBytes}
             max={p.postgresVolume.capacityBytes}
             format={formatBytes}

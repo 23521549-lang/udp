@@ -1,4 +1,5 @@
 import { registerAuthAdminRoutes } from "./handlers/auth-admin";
+import { registerDashboardRoutes } from "./handlers/dashboards";
 import { registerDeliveryRoutes } from "./handlers/delivery";
 import { registerFlagRoutes } from "./handlers/flag";
 import { registerPlatformRoutes } from "./handlers/platform";
@@ -48,6 +49,7 @@ export function createMockBackend(): MockBackend {
   registerFlagRoutes(router, db);
   registerDeliveryRoutes(router, db);
   registerPlatformRoutes(router, db);
+  registerDashboardRoutes(router, db);
   return {
     handle(method, url, body) {
       const path = url.pathname.slice(API_PREFIX.length);

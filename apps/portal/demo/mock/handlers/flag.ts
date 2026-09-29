@@ -536,7 +536,7 @@ export function registerFlagRoutes(router: Router, db: Db): void {
             problem: {
               status: 409,
               title: "Flag was evaluated recently",
-              detail: `Flag còn ${String(status.evalCount7d)} lượt đánh giá trong 7 ngày gần nhất — gỡ flag khỏi code của bạn trước khi lưu trữ nó`,
+              detail: `Flag còn ${String(status.evalCount7d)} lượt đánh giá trong 7 ngày gần nhất. Gỡ flag khỏi code của bạn trước khi lưu trữ nó`,
               code: "FLAG_RECENTLY_EVALUATED",
             },
           };
@@ -916,7 +916,7 @@ export function registerFlagRoutes(router: Router, db: Db): void {
           throw new HttpProblem(
             409,
             "SEGMENT_IN_USE",
-            `Segment đang được ${String(segment.usage.flagCount)} flag dùng — gỡ khỏi rule trước khi xoá`,
+            `Segment đang được ${String(segment.usage.flagCount)} flag dùng. Gỡ khỏi rule trước khi xoá`,
           );
         }
         p.segments = p.segments.filter((s) => s.id !== segmentId);

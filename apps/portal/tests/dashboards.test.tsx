@@ -350,7 +350,7 @@ describe("Bảng điều khiển: Tổng quan", () => {
       screen.getByRole("region", { name: "Bản phát hành" }),
     ).toHaveTextContent("Không khai UDP_RELEASE");
     expect(
-      await screen.findByRole("meter", { name: "Dữ liệu trên ổ PostgreSQL" }),
+      await screen.findByRole("meter", { name: "PostgreSQL" }),
     ).toBeInTheDocument();
     expect((await screen.findAllByText("53")).length).toBeGreaterThan(0);
   });

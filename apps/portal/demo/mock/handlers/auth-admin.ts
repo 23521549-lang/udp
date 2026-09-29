@@ -4,8 +4,10 @@ import {
   bodyOf,
   found,
   HttpProblem,
+  intParam,
   noContent,
   ok,
+  type MockRequest,
   type Router,
 } from "../router";
 
@@ -21,7 +23,7 @@ function requireSignedIn(db: Db): void {
     throw new HttpProblem(
       401,
       "UNAUTHENTICATED",
-      "Phiên đăng nhập đã hết — đăng nhập lại",
+      "Phiên đăng nhập đã hết, hãy đăng nhập lại",
     );
   }
 }
@@ -36,6 +38,54 @@ const ACTIVE_STATES = new Set([
   "CANCEL_REQUESTED",
   "COMPENSATING",
 ]);
+
+/** Một trang của danh sách quản trị: `limit` ≤ 100 như Service 1, `total` đếm theo bộ lọc */
+function pageOf<T>(req: MockRequest, rows: T[]): { rows: T[]; total: number } {
+  const limit = Math.min(Math.max(intParam(req.query, "limit", 50), 1), 100);
+  const offset = Math.max(intParam(req.query, "offset", 0), 0);
+  return { rows: rows.slice(offset, offset + limit), total: rows.length };
+}
+
+/** Giá theo giờ của loại tài nguyên hay bị bỏ lại — `null` là chưa định giá được (không bao giờ là 0) */
+const ORPHAN_USD_PER_HOUR: Record<string, number> = {
+  NatGateway: 0.059,
+  ElasticIp: 0.005,
+  PublicIpAddress: 0.005,
+  RouterNat: 0.044,
+  EksCluster: 0.1,
+  ManagedCluster: 0.1,
+};
+
+/** Tài nguyên mồ côi toàn hệ thống — trang Tài nguyên mồ côi và thẻ ở Tổng quan dùng chung */
+export function orphansOf(db: Db) {
+  const resources = db.projects.flatMap((p) =>
+    p.jobs.flatMap(({ detail }) =>
+      detail.resources
+        .filter((r) => r.status === "ORPHAN_SUSPECTED")
+        .map((r) => ({
+          id: crypto.randomUUID(),
+          projectId: p.project.id,
+          projectName: p.project.name,
+          kind: r.kind,
+          provider: p.cloud?.provider ?? ("AWS" as const),
+          region: p.cloud?.region ?? "ap-southeast-1",
+          providerId: r.providerId,
+          usdPerHour: ORPHAN_USD_PER_HOUR[r.kind] ?? null,
+          updatedAt: r.updatedAt,
+        })),
+    ),
+  );
+  return {
+    resources,
+    estimatedUsdPerHour:
+      Math.round(
+        resources.reduce((s, r) => s + (r.usdPerHour ?? 0), 0) * 1000,
+      ) / 1000,
+    unpriced: resources.filter((r) => r.usdPerHour === null).map((r) => r.kind),
+    pricingAsOf: "2026-09-01",
+    cloudScanned: true,
+  };
+}
 
 export function registerAuthAdminRoutes(router: Router, db: Db): void {
   router
@@ -66,14 +116,16 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
     // ---------------------------------------------------------- quản trị
     .on("GET", "/admin/users", (req) => {
       const search = (req.query.get("search") ?? "").toLowerCase();
-      return ok({
-        users: db.users.filter(
+      const { rows, total } = pageOf(
+        req,
+        db.users.filter(
           (u) =>
             search === "" ||
             u.email.includes(search) ||
             u.name.toLowerCase().includes(search),
         ),
-      });
+      );
+      return ok({ users: rows, total });
     })
     .on("PATCH", "/admin/users/:id/platform-role", (req, [id = ""]) => {
       const user = found(
@@ -87,7 +139,7 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
         throw new HttpProblem(
           409,
           "LAST_ADMIN_SELF_DEMOTE",
-          "Không tự bỏ quyền quản trị của chính mình trong bản xem thử — trang /admin sẽ không mở được nữa",
+          "Không tự bỏ quyền quản trị của chính mình trong bản xem thử: trang /admin sẽ không mở được nữa",
         );
       }
       user.platformRole = platformRole;
@@ -95,24 +147,27 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
     })
     .on("GET", "/admin/projects", (req) => {
       const status = req.query.get("status");
+      const { rows, total } = pageOf(
+        req,
+        db.projects.filter(
+          (p) =>
+            status === null || status === "" || p.project.status === status,
+        ),
+      );
       return ok({
-        projects: db.projects
-          .filter(
-            (p) =>
-              status === null || status === "" || p.project.status === status,
-          )
-          .map((p) => {
-            const owner = db.users.find((u) => u.id === p.project.ownerId);
-            return {
-              id: p.project.id,
-              name: p.project.name,
-              status: p.project.status,
-              owner: { id: p.project.ownerId, email: owner?.email ?? "" },
-              memberCount: p.members.length,
-              cloudProvider: p.cloud?.provider ?? null,
-              createdAt: p.project.createdAt,
-            };
-          }),
+        total,
+        projects: rows.map((p) => {
+          const owner = db.users.find((u) => u.id === p.project.ownerId);
+          return {
+            id: p.project.id,
+            name: p.project.name,
+            status: p.project.status,
+            owner: { id: p.project.ownerId, email: owner?.email ?? "" },
+            memberCount: p.members.length,
+            cloudProvider: p.cloud?.provider ?? null,
+            createdAt: p.project.createdAt,
+          };
+        }),
       });
     })
     .on("GET", "/admin/credentials", () =>
@@ -155,48 +210,15 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
         state === "" ||
         state === s ||
         (state === "ACTIVE" && ACTIVE_STATES.has(s));
-      return ok({
-        jobs: jobs
+      const { rows, total } = pageOf(
+        req,
+        jobs
           .filter((j) => matches(j.state))
           .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-      });
-    })
-    .on("GET", "/admin/orphan-resources", () => {
-      const resources = db.projects.flatMap((p) =>
-        p.jobs.flatMap(({ detail }) =>
-          detail.resources
-            .filter((r) => r.status === "ORPHAN_SUSPECTED")
-            .map((r) => ({
-              id: crypto.randomUUID(),
-              projectId: p.project.id,
-              projectName: p.project.name,
-              kind: r.kind,
-              provider: p.cloud?.provider ?? "AWS",
-              region: p.cloud?.region ?? "ap-southeast-1",
-              providerId: r.providerId,
-              usdPerHour:
-                r.kind === "NatGateway"
-                  ? 0.059
-                  : r.kind === "ElasticIp"
-                    ? 0.005
-                    : null,
-              updatedAt: r.updatedAt,
-            })),
-        ),
       );
-      return ok({
-        resources,
-        estimatedUsdPerHour:
-          Math.round(
-            resources.reduce((s, r) => s + (r.usdPerHour ?? 0), 0) * 1000,
-          ) / 1000,
-        unpriced: resources
-          .filter((r) => r.usdPerHour === null)
-          .map((r) => r.kind),
-        pricingAsOf: "2026-09-01",
-        cloudScanned: true,
-      });
+      return ok({ jobs: rows, total });
     })
+    .on("GET", "/admin/orphan-resources", () => ok(orphansOf(db)))
     .on("GET", "/admin/system/health", () =>
       ok({
         services: [
