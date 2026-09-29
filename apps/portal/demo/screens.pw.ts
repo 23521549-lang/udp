@@ -1,17 +1,53 @@
 import { fileURLToPath } from "node:url";
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * [Plan #53 QĐ-11] Mọi màn của hai khung, ở máy tính (1440×900) và điện thoại (375×812 — tiêu chí của mục nợ
- * `portal-responsive`). Mỗi màn phải: không lỗi console, không tràn ngang, có đúng một `main` và một `h1`, không
- * rơi vào trang "Không tìm thấy", không gặp route mà lớp giả lập chưa có, không hiện lỗi tải, không có "...".
- * Ảnh chụp cả trang nằm ở `demo/screens/<khung>/` để người xem.
+ * [Plan #53 QĐ-11, Plan #54 QĐ-4] Mọi màn của hai khung qua NĂM lượt: máy tính (1440×900) và điện thoại
+ * (375×812 — tiêu chí của mục nợ `portal-responsive`) ở giao diện sáng, cả hai ở giao diện TỐI, và máy tính bằng
+ * TIẾNG ANH. Mỗi màn phải: không lỗi console, không tràn ngang, có đúng một `main` và một `h1`, không rơi vào
+ * trang "Không tìm thấy", không gặp route mà lớp giả lập chưa có, không hiện lỗi tải, không có "...", có phần
+ * chính của nó, và **đủ tương phản chữ WCAG AA** (axe-core `color-contrast`) — thứ quyết định một giao diện tối
+ * "dùng được". Lượt tiếng Anh thêm: `<html lang="en">` và khung (thanh bên, tiêu đề, đầu bảng, nhãn) không còn
+ * chữ tiếng Việt. Ảnh chụp cả trang nằm ở `demo/screens/<lượt>/` để người xem; không so pixel.
  */
 
-const VIEWPORTS = [
-  { name: "desktop", width: 1440, height: 900 },
-  { name: "mobile", width: 375, height: 812 },
-] as const;
+type Locale = "vi" | "en";
+type Theme = "light" | "dark";
+
+interface Pass {
+  name: string;
+  width: number;
+  height: number;
+  locale: Locale;
+  theme: Theme;
+}
+
+const PASSES: readonly Pass[] = [
+  { name: "desktop", width: 1440, height: 900, locale: "vi", theme: "light" },
+  { name: "mobile", width: 375, height: 812, locale: "vi", theme: "light" },
+  {
+    name: "desktop-dark",
+    width: 1440,
+    height: 900,
+    locale: "vi",
+    theme: "dark",
+  },
+  { name: "mobile-dark", width: 375, height: 812, locale: "vi", theme: "dark" },
+  {
+    name: "desktop-en",
+    width: 1440,
+    height: 900,
+    locale: "en",
+    theme: "light",
+  },
+];
+
+/** Chữ mà cổng tự đọc để biết trang đã tải xong hay rơi vào 404 — theo ngôn ngữ của lượt */
+const TEXT: Record<Locale, { loading: string; notFound: string }> = {
+  vi: { loading: "Đang tải…", notFound: "Không tìm thấy trang" },
+  en: { loading: "Loading…", notFound: "Page not found" },
+};
 
 interface Ids {
   checkout: string;
@@ -42,7 +78,8 @@ const SCREENS: Screen[] = [
   [
     "monitoring-off",
     (i) => `/app/projects/${i.marketing}/monitoring`,
-    "text=Chưa có nguồn metrics",
+    // Trạng thái "chưa có nguồn metrics" dẫn sang trang Domain — không phụ thuộc ngôn ngữ
+    '.state a[href$="/domains"]',
   ],
   ["flags", (i) => `/app/projects/${i.checkout}/flags`],
   ["flags-cleanup", (i) => `/app/projects/${i.checkout}/flags/cleanup`],
@@ -76,6 +113,15 @@ const SCREENS: Screen[] = [
 /** Font từ Google không tải được (máy không mạng) không phải lỗi của Portal */
 const IGNORED_CONSOLE = /fonts\.(googleapis|gstatic)\.com/;
 
+const VI =
+  /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+
+/**
+ * Chỗ của KHUNG — chữ ở đây do Portal viết, không phải dữ liệu người dùng (tên người, mô tả flag vẫn là tiếng Việt
+ * của dữ liệu mẫu): điều hướng, tiêu đề trang, đầu bảng, nhãn ô nhập.
+ */
+const CHROME = "nav, h1, thead, label";
+
 /** Id của dữ liệu mẫu, hỏi thẳng lớp giả lập trong trang (id tất định nhưng sinh ra, không viết tay) */
 async function discover(page: Page): Promise<Ids> {
   await page.goto("./#/app/home");
@@ -101,11 +147,41 @@ async function discover(page: Page): Promise<Ids> {
   });
 }
 
-for (const viewport of VIEWPORTS) {
-  test.describe(`${viewport.name} ${String(viewport.width)}×${String(viewport.height)}`, () => {
-    test.use({ viewport: { width: viewport.width, height: viewport.height } });
+/** Mỗi chỗ thiếu tương phản một dòng: phần tử, tỉ lệ đo được, tỉ lệ cần */
+async function contrastProblems(page: Page): Promise<string[]> {
+  const result = await new AxeBuilder({ page })
+    .withRules(["color-contrast"])
+    .analyze();
+  return result.violations.flatMap((v) =>
+    v.nodes.map((n) => {
+      const data = (n.any[0]?.data ?? {}) as {
+        contrastRatio?: number;
+        expectedContrastRatio?: string;
+        fgColor?: string;
+        bgColor?: string;
+      };
+      return `tương phản ${String(data.contrastRatio ?? "?")}:1 < ${data.expectedContrastRatio ?? "4.5:1"} (${data.fgColor ?? "?"} trên ${data.bgColor ?? "?"}) ở ${n.target.join(" ")}`;
+    }),
+  );
+}
+
+for (const pass of PASSES) {
+  test.describe(`${pass.name} ${String(pass.width)}×${String(pass.height)}`, () => {
+    test.use({
+      viewport: { width: pass.width, height: pass.height },
+      colorScheme: pass.theme,
+    });
+    test.setTimeout(600_000);
 
     test("mọi màn đạt", async ({ page }) => {
+      // Lựa chọn tay của người dùng, đặt TRƯỚC khi trang chạy: theme-boot.js và store ngôn ngữ đọc lúc khởi động
+      await page.addInitScript(
+        ([locale, theme]) => {
+          localStorage.setItem("udp_locale", locale);
+          localStorage.setItem("udp_theme", theme);
+        },
+        [pass.locale, pass.theme] as const,
+      );
       const errors: string[] = [];
       page.on("console", (msg) => {
         if (msg.type() === "error" && !IGNORED_CONSOLE.test(msg.text())) {
@@ -121,7 +197,7 @@ for (const viewport of VIEWPORTS) {
         errors.length = 0;
         await page.goto(`./#${path(ids)}`);
         await expect(page.locator("h1").first()).toBeVisible();
-        await expect(page.getByText("Đang tải…")).toHaveCount(0, {
+        await expect(page.getByText(TEXT[pass.locale].loading)).toHaveCount(0, {
           timeout: 15_000,
         });
         // Biểu đồ đo khung bằng ResizeObserver; lớp cạnh của sơ đồ vẽ sau layout
@@ -139,18 +215,35 @@ for (const viewport of VIEWPORTS) {
         const loadErrors = await page.locator(".state[role='alert']").count();
         if (loadErrors > 0) problems.push(`${String(loadErrors)} lỗi tải`);
         const text = await page.locator("body").innerText();
-        if (text.includes("Không tìm thấy trang"))
+        if (text.includes(TEXT[pass.locale].notFound))
           problems.push("trang Không tìm thấy");
         if (text.includes("Bản xem thử chưa có"))
           problems.push("route giả chưa có");
         if (text.includes("...")) problems.push('chữ có "..."');
         if (must !== undefined && (await page.locator(must).count()) === 0)
           problems.push(`thiếu ${must}`);
+
+        const root = await page.evaluate(() => ({
+          lang: document.documentElement.lang,
+          theme: document.documentElement.dataset.theme,
+        }));
+        if (root.lang !== pass.locale) problems.push(`lang="${root.lang}"`);
+        if (root.theme !== pass.theme)
+          problems.push(`theme="${String(root.theme)}"`);
+        if (pass.locale === "en") {
+          const chrome = await page.locator(CHROME).allInnerTexts();
+          const vi = chrome.filter((t) => VI.test(t));
+          if (vi.length > 0)
+            problems.push(
+              `khung còn tiếng Việt: ${vi.slice(0, 3).join(" | ")}`,
+            );
+        }
+        problems.push(...(await contrastProblems(page)));
         if (errors.length > 0) problems.push(`console: ${errors.join(" | ")}`);
 
         await page.screenshot({
           path: fileURLToPath(
-            new URL(`./screens/${viewport.name}/${name}.png`, import.meta.url),
+            new URL(`./screens/${pass.name}/${name}.png`, import.meta.url),
           ),
           fullPage: true,
         });

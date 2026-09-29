@@ -22,7 +22,8 @@ import {
   relativeTime,
 } from "../src/lib/format";
 import { API, golden, server } from "./msw";
-import { renderApp } from "./render";
+import { projectFixture, useProjectHandlers } from "./project-fixtures";
+import { renderApp, USER } from "./render";
 
 /**
  * [Plan #54] Hai ngôn ngữ và ba lựa chọn giao diện: tầng i18n (kiểu, chọn ngôn ngữ, định dạng), bộ chọn ở menu
@@ -209,5 +210,99 @@ describe("giao diện ba lựa chọn", () => {
     expect(
       within(appearance).getByRole("button", { name: "Tối" }),
     ).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+/**
+ * [Plan #54 AC-2] Vài màn chính bằng tiếng Anh, đi qua CHÍNH đường người dùng đi: tiêu đề, điều hướng, nhãn, câu
+ * có tham số, số theo quy ước en-US. Lượt tiếng Anh của cổng `portal-demo` phủ mọi màn trên trình duyệt thật.
+ */
+describe("màn chính bằng tiếng Anh", () => {
+  it("trang chủ: lời chào, việc cần xử lý, câu có tham số", async () => {
+    setLocale("en");
+    server.use(
+      http.get(`${API}/home`, () => HttpResponse.json(golden("GET /home"))),
+    );
+    renderApp("/app/home");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Hi Tester" }),
+    ).toBeInTheDocument();
+    const list = await screen.findByRole("list", { name: "Needs attention" });
+    expect(
+      within(list).getByText("Deployment checkout-api awaiting approval"),
+    ).toBeInTheDocument();
+    expect(
+      within(list).getByText("Project expires within 48 hours"),
+    ).toBeInTheDocument();
+  });
+
+  it("danh sách flag: tiêu đề, cột, nút theo tiếng Anh", async () => {
+    setLocale("en");
+    const detail = projectFixture("OWNER");
+    useProjectHandlers(detail);
+    renderApp(`/app/projects/${detail.project.id}/flags`);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Flags" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Create flag/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("searchbox", { name: "Search flags" }),
+    ).toHaveAttribute("placeholder", "Search by key or description…");
+  });
+
+  it("Bảng điều khiển: Tổng quan và điều hướng bằng tiếng Anh, số theo en-US", async () => {
+    setLocale("en");
+    server.use(
+      http.get(`${API}/admin/overview`, () =>
+        HttpResponse.json(golden("GET /admin/overview")),
+      ),
+      http.get(`${API}/admin/platform`, () =>
+        HttpResponse.json(golden("GET /admin/platform")),
+      ),
+      http.get(`${API}/admin/system/health`, () =>
+        HttpResponse.json(golden("GET /admin/system/health")),
+      ),
+      http.get(`${API}/admin/jobs`, () =>
+        HttpResponse.json(golden("GET /admin/jobs")),
+      ),
+    );
+    renderApp("/admin/overview", {
+      user: { ...USER, platformRole: "PLATFORM_ADMIN" },
+    });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Overview" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Platform console" }),
+    ).toHaveTextContent("Orphaned resources");
+    expect(
+      await screen.findByRole("heading", { name: "Machine running UDP" }),
+    ).toBeInTheDocument();
+  });
+
+  it("Giám sát: khoảng thời gian và nút mở công cụ theo mã của máy chủ", async () => {
+    setLocale("en");
+    const detail = projectFixture("VIEWER");
+    useProjectHandlers(detail);
+    server.use(
+      http.get(`${API}/projects/:id/metrics/red`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/metrics/red")),
+      ),
+      http.get(`${API}/projects/:id/metrics/dora`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/metrics/dora")),
+      ),
+    );
+    renderApp(`/app/projects/${detail.project.id}/monitoring`);
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Monitoring" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "24 hours" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("region", { name: "Open Grafana" }),
+    ).toBeInTheDocument();
   });
 });

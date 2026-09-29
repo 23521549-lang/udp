@@ -32,7 +32,7 @@ phân hệ gọn, luật biểu đồ, lưới sức khoẻ domain và sơ đồ
 | `--sunk`                    | `oklch(97.4% .003 275)`                 | `oklch(18% .005 275)`    | Nền nhóm, ô code                                                     |
 | `--hover` / `--active`      | `96%` / `94.2%`                         | `23%` / `26%`            | Rê chuột / đang chọn                                                 |
 | `--line` / `--line-2`       | `92.6%` / `88.5%`                       | `26.5%` / `32%`          | Viền 1px, viền input                                                 |
-| `--ink` … `--ink-4`         | `21%` `44%` `60%` `72%`                 | `95%` `76%` `60%` `46%`  | Chữ chính → phụ → mờ → rất mờ                                        |
+| `--ink` … `--ink-4`         | `21%` `44%` `52%` `72%`                 | `95%` `76%` `67%` `46%`  | Chữ chính → phụ → mờ → rất mờ                                        |
 | `--accent`                  | `oklch(54% .2 262)`                     | `oklch(66% .17 258)`     | Màu thương hiệu: nút chính, mục đang chọn, rollout đang chạy         |
 | `--accent-soft`             | `oklch(95.6% .028 262)`                 | `oklch(28% .07 260)`     | Nền mục menu đang chọn                                               |
 | `--green` `--amber` `--red` | `60% .14 152` `72% .15 72` `58% .19 25` | sáng hơn ~12%            | Chỉ cho trạng thái: ổn định, tạm dừng/cảnh báo, lỗi/rollback         |
@@ -41,6 +41,12 @@ phân hệ gọn, luật biểu đồ, lưới sức khoẻ domain và sơ đồ
 | `--console-*`               | nền `21% .03 262`, chữ `95%`            | như sáng                 | Thanh bên và thanh đầu của Bảng điều khiển nền tảng                  |
 
 Màu hex tương đương của `--accent` (dùng cho favicon, ảnh): `#2B5BE0`.
+
+**Tương phản chữ (Plan #54, đo bằng axe-core trên mọi màn, cả hai chế độ).** Chữ của Portal đạt WCAG AA 4.5:1 trên
+MỌI nền nó thật sự nằm lên, kể cả nền khó nhất: `--accent-soft` của mục đang chọn. `--ink-3` là chữ phụ nhạt nhất
+được phép cho chữ đọc: `52%` ở sáng (thấp nhất 4.8:1, trên `--accent-soft`), `67%` ở tối (thấp nhất 4.9:1). Bản
+trước (`60%` ở cả hai) chỉ đạt 3.5–4.3:1. `--ink-4` chỉ cho thứ không phải chữ đọc: dấu `/` của breadcrumb, chấm
+màu của environment, thanh tỉ lệ.
 
 **Không** dùng gradient trang trí, nền màu loang, màu kẹo nhiều sắc, hoặc màu để trang trí.
 
