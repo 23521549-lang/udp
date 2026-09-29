@@ -222,6 +222,8 @@ export function releaseKustomization(
           `COOKIE_DOMAIN=${host}`,
           `UDP_OIDC_ISSUER=${origin}${OIDC_PATH}`,
           `PD_CONTROLLER_WEBHOOK_URL=${origin}`,
+          // [Plan #53 QĐ-6] Bảng điều khiển nền tảng hiện bản đang chạy — chính tag image của bản này
+          `UDP_RELEASE=${tag}`,
         ],
       },
     ],

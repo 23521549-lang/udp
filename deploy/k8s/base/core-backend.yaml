@@ -26,6 +26,9 @@ spec:
       labels:
         app.kubernetes.io/name: core-backend
     spec:
+      # [Plan #53] Token của ServiceAccount chỉ-đọc (core-backend-rbac.yaml) — đọc node, PVC PostgreSQL,
+      # CronJob sao lưu, Certificate cho Bảng điều khiển nền tảng. Không quyền ghi, không secret.
+      serviceAccountName: core-backend
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

@@ -1,4 +1,5 @@
 import {
+  SEED_ADMIN_EMAIL,
   SEED_CHECKOUT_FLAG_KEY,
   SEED_DEV_SERVER_KEY,
   SEED_IDS,
@@ -161,6 +162,31 @@ describe("Luồng 4 — bật/tắt ở Portal tới SDK", () => {
     } finally {
       stream.close();
     }
+  });
+});
+
+describe("Bảng điều khiển nền tảng trên cụm thật (Plan #53 QĐ-6)", () => {
+  it("ServiceAccount chỉ-đọc của Service 1 đọc được cụm; thứ kind không có thì nói đúng lý do, không FORBIDDEN", async () => {
+    const admin = await login(SEED_ADMIN_EMAIL);
+    const res = await api<{
+      platform: {
+        release: string | null;
+        node: { state: string; reason?: string };
+        postgresVolume: { state: string; capacityBytes?: number };
+        backup: { state: string; reason?: string };
+        certificate: { state: string; reason?: string };
+      };
+    }>(admin, "GET", "/admin/platform");
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const p = res.body.platform;
+    expect(p.release).toBe("local");
+    // PVC của PostgreSQL: RBAC `persistentvolumeclaims get` hoạt động trên API server thật
+    expect(p.postgresVolume.state).toBe("ok");
+    // kind: không metrics-server, không cert-manager, không CronJob sao lưu (chúng là của máy ảo)
+    const notConfigured = { state: "unavailable", reason: "NOT_CONFIGURED" };
+    expect(p.node).toEqual(notConfigured);
+    expect(p.certificate).toEqual(notConfigured);
+    expect(p.backup).toEqual(notConfigured);
   });
 });
 

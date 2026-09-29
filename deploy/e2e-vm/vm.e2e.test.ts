@@ -187,6 +187,58 @@ describe("SSE qua Traefik", () => {
   }, 120_000);
 });
 
+describe("Bảng điều khiển nền tảng (Plan #53 QĐ-6)", () => {
+  it("máy có đủ tín hiệu qua RBAC chỉ-đọc: node (metrics-server của k3s), PVC PostgreSQL, CronJob sao lưu, chứng chỉ", async () => {
+    // Nâng chủ project lên PLATFORM_ADMIN bằng owner của database qua socket trong pod (email do chính test sinh)
+    kube.run([
+      "exec",
+      "-n",
+      NAMESPACE,
+      "postgres-0",
+      "--",
+      "psql",
+      "--username=udp",
+      "--dbname=udp",
+      "--set=ON_ERROR_STOP=1",
+      "--command",
+      `UPDATE users SET platform_role = 'PLATFORM_ADMIN' WHERE email = '${owner.email}'`,
+    ]);
+    const platform = await eventually(
+      async () => {
+        const res = await api<{
+          platform: {
+            release: string | null;
+            node: { state: string };
+            postgresVolume: { state: string; capacityBytes?: number };
+            backup: { state: string; schedule?: string };
+            certificate: { state: string; name?: string; ready?: boolean };
+          };
+        }>(target, session, "GET", "/admin/platform");
+        // metrics-server của k3s cần một chu kỳ scrape sau khi máy lên mới có số đo node
+        return res.status === 200 && res.body.platform.node.state === "ok"
+          ? res.body.platform
+          : undefined;
+      },
+      180_000,
+      "số đo node từ metrics-server",
+    );
+    expect(platform.release).toMatch(/^[0-9a-f]{12}$/);
+    expect(platform.postgresVolume).toMatchObject({
+      state: "ok",
+      capacityBytes: 20 * 1024 ** 3,
+    });
+    expect(platform.backup).toMatchObject({
+      state: "ok",
+      schedule: "30 19 * * *",
+    });
+    expect(platform.certificate).toMatchObject({
+      state: "ok",
+      name: "udp-tls",
+      ready: true,
+    });
+  }, 240_000);
+});
+
 describe("sao lưu → khôi phục (QĐ-7)", () => {
   it("CronJob đẩy bản dump ra ngoài máy; khôi phục đưa database về đúng lúc sao lưu", async () => {
     const sink = await startSink(target.settings.UDP_BACKUP_UPLOAD_URL);

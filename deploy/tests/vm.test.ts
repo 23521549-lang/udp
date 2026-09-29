@@ -245,6 +245,8 @@ describe("bản phát hành vm — Let's Encrypt (Plan #52 AC-1)", () => {
     expect(s1["UDP_OIDC_ISSUER"]).toBe(`${origin}${OIDC_PATH}`);
     expect(s1["PD_CONTROLLER_WEBHOOK_URL"]).toBe(origin);
     expect(s1["MANAGED_CLOUDS"]).toBe("");
+    // [Plan #53 QĐ-6] Bảng điều khiển nền tảng hiện CHÍNH tag image của bản này
+    expect(s1["UDP_RELEASE"]).toBe(releaseTag(SHA));
   });
 
   it("số proxy tin cậy đúng đường của từng service: S1 sau Traefik + nginx, S2 sau Traefik", () => {

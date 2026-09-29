@@ -219,6 +219,56 @@ describe("overlay kind (Plan #49)", () => {
     ).toBe(true);
   });
 
+  it("[Plan #53] Service 1 chạy bằng ServiceAccount riêng với quyền CHỈ-ĐỌC — không verb ghi, không secret", () => {
+    const s1 = workloads().find((w) => w.metadata.name === "core-backend");
+    expect(
+      (templateOf(s1 as Resource).spec as { serviceAccountName?: string })
+        .serviceAccountName,
+    ).toBe("core-backend");
+    expect(
+      byKind("ServiceAccount").map(
+        (s) => `${s.metadata.namespace ?? ""}/${s.metadata.name}`,
+      ),
+    ).toContain(`${NAMESPACE}/core-backend`);
+
+    const rules = [...byKind("Role"), ...byKind("ClusterRole")]
+      .filter((r) => r.metadata.name.includes("core-backend"))
+      .flatMap(
+        (r) =>
+          (
+            r as unknown as {
+              rules: { resources: string[]; verbs: string[] }[];
+            }
+          ).rules,
+      );
+    expect(rules.length).toBeGreaterThan(0);
+    for (const rule of rules) {
+      expect(rule.verbs.filter((v) => !["get", "list"].includes(v))).toEqual(
+        [],
+      );
+      expect(rule.resources).not.toContain("secrets");
+      expect(rule.resources.some((r) => r.includes("/"))).toBe(false);
+    }
+    const bindings = [...byKind("RoleBinding"), ...byKind("ClusterRoleBinding")]
+      .filter((b) => b.metadata.name.includes("core-backend"))
+      .flatMap(
+        (b) =>
+          (b as unknown as { subjects: { name: string; namespace?: string }[] })
+            .subjects,
+      );
+    expect(bindings).toEqual(
+      Array.from({ length: 2 }, () => ({
+        kind: "ServiceAccount",
+        name: "core-backend",
+        namespace: NAMESPACE,
+      })),
+    );
+    const config = byKind("ConfigMap").find((c) =>
+      c.metadata.name.startsWith("udp-config-"),
+    );
+    expect(config?.data?.["UDP_RELEASE"]).toBe("local");
+  });
+
   it("mọi tài nguyên của UDP nằm trong namespace udp", () => {
     const outside = docs.filter(
       (d) =>

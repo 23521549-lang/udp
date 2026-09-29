@@ -17,15 +17,17 @@ export interface Session {
   csrf: string;
 }
 
-/** Đăng nhập QUA proxy `/api` của Portal — cookie phiên và token CSRF như trình duyệt nhận */
-export async function login(): Promise<Session> {
+/**
+ * Đăng nhập QUA proxy `/api` của Portal — cookie phiên và token CSRF như trình duyệt nhận. Mặc định là
+ * chủ project seed; [Plan #53] admin của seed cho Bảng điều khiển nền tảng.
+ */
+export async function login(
+  email: string = SEED_OWNER_EMAIL,
+): Promise<Session> {
   const res = await fetch(`${PORTAL}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      email: SEED_OWNER_EMAIL,
-      password: SEED_DEV_PASSWORD,
-    }),
+    body: JSON.stringify({ email, password: SEED_DEV_PASSWORD }),
   });
   if (!res.ok) throw new Error(`đăng nhập → ${String(res.status)}`);
   const cookies = res.headers.getSetCookie().map((c) => c.split(";")[0] ?? "");
