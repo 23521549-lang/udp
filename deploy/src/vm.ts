@@ -30,6 +30,8 @@ export const VM_SETTINGS_PATH =
 export const BACKUP_SECRET = "udp-backup";
 export const TLS_SECRET = "udp-tls";
 export const INGRESS_NAME = "udp";
+/** Ingress chỉ-HTTP chỉ để chuyển hướng sang HTTPS — Traefik không cho Ingress có `tls` nhận HTTP */
+export const HTTP_REDIRECT_INGRESS = "udp-http";
 
 /** Giá trị giữ chỗ của overlay; bản phát hành thay bằng giá trị của máy — còn sót là test đỏ */
 export const PLACEHOLDER_HOST = "udp.invalid";
@@ -182,13 +184,18 @@ export interface ReleaseInput {
   settings: VmSettings;
   /** Đường tương đối từ thư mục bản phát hành tới `deploy/k8s/overlays/vm` */
   overlay: string;
-  /** Đường tương đối từ thư mục bản phát hành tới `deploy/k8s/components/self-signed-tls` */
-  selfSignedComponent: string;
+  /** Đường tương đối từ thư mục bản phát hành tới `deploy/k8s/components` */
+  components: string;
 }
+
+/** Component mang ClusterIssuer của một lựa chọn TLS — bản phát hành kèm đúng MỘT */
+export const issuerComponent = (issuer: TlsIssuer): string =>
+  issuer === "self-signed" ? "self-signed-tls" : "letsencrypt";
 
 /**
  * Kustomization của MỘT bản phát hành (QĐ-4) — hàm thuần, ghi ra dạng JSON (JSON là YAML hợp lệ):
- * tag image theo commit, cấu hình theo host, host của Ingress và email ACME thay giá trị giữ chỗ, issuer đã chọn.
+ * tag image theo commit, cấu hình theo host, host của Ingress thay giá trị giữ chỗ, và đúng một component issuer —
+ * email ACME chỉ khi đó là Let's Encrypt.
  */
 export function releaseKustomization(
   input: ReleaseInput,
@@ -199,13 +206,12 @@ export function releaseKustomization(
   const tag = releaseTag(input.sha);
   const ops = (list: readonly Record<string, unknown>[]): string =>
     JSON.stringify(list);
+  const acme = settings.TLS_ISSUER !== "self-signed";
   return {
     apiVersion: "kustomize.config.k8s.io/v1beta1",
     kind: "Kustomization",
     resources: [input.overlay],
-    ...(settings.TLS_ISSUER === "self-signed"
-      ? { components: [input.selfSignedComponent] }
-      : {}),
+    components: [`${input.components}/${issuerComponent(settings.TLS_ISSUER)}`],
     images: VM_IMAGES.map((image) => ({ name: image.name, newTag: tag })),
     configMapGenerator: [
       {
@@ -233,15 +239,28 @@ export function releaseKustomization(
         ]),
       },
       {
-        target: { kind: "ClusterIssuer", labelSelector: "udp.io/acme=true" },
+        target: { kind: "Ingress", name: HTTP_REDIRECT_INGRESS },
         patch: ops([
-          {
-            op: "replace",
-            path: "/spec/acme/email",
-            value: settings.ACME_EMAIL,
-          },
+          { op: "replace", path: "/spec/rules/0/host", value: host },
         ]),
       },
+      ...(acme
+        ? [
+            {
+              target: {
+                kind: "ClusterIssuer",
+                labelSelector: "udp.io/acme=true",
+              },
+              patch: ops([
+                {
+                  op: "replace",
+                  path: "/spec/acme/email",
+                  value: settings.ACME_EMAIL,
+                },
+              ]),
+            },
+          ]
+        : []),
     ],
   };
 }

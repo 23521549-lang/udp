@@ -1,13 +1,13 @@
 # UDP trên máy ảo công khai (Plan #52: Oracle Cloud Always Free, k3s một node) — CÙNG base với kind. Overlay này
 # không tự dùng được: host, email ACME và tag image là giá trị giữ chỗ (`udp.invalid`, không tag) mà bản phát hành
 # (`deploy/src/vm.ts` → `releaseKustomization`, `pnpm --filter @udp/deploy vm-up`) thay bằng giá trị của máy.
+# ClusterIssuer đến từ component mà bản phát hành chọn (deploy/k8s/components: letsencrypt | self-signed-tls).
 # Không seed, không sample-app (QĐ-6); `MANAGED_CLOUDS` rỗng của base giữ nguyên.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
   - ingress.yaml
-  - tls.yaml
   - traefik.yaml
   - backup.yaml
 patches:

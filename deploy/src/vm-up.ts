@@ -45,7 +45,7 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const RELEASE_DIR = join(ROOT, "deploy/k8s/release");
 const OVERLAY = join(ROOT, "deploy/k8s/overlays/vm");
-const SELF_SIGNED = join(ROOT, "deploy/k8s/components/self-signed-tls");
+const COMPONENTS = join(ROOT, "deploy/k8s/components");
 const SERVICES = ["core-backend", "flag-service", "pd-controller"];
 
 function releaseSha(argv: readonly string[]): string {
@@ -122,10 +122,7 @@ function writeRelease(sha: string, settings: VmSettings): string {
     sha,
     settings,
     overlay: relative(RELEASE_DIR, OVERLAY).replaceAll("\\", "/"),
-    selfSignedComponent: relative(RELEASE_DIR, SELF_SIGNED).replaceAll(
-      "\\",
-      "/",
-    ),
+    components: relative(RELEASE_DIR, COMPONENTS).replaceAll("\\", "/"),
   });
   writeFileSync(
     join(RELEASE_DIR, "kustomization.yaml"),

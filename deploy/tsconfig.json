@@ -8,7 +8,9 @@
     "src/**/*.ts",
     "tests/**/*.ts",
     "e2e/**/*.ts",
+    "e2e-vm/**/*.ts",
     "vitest.config.ts",
-    "vitest.e2e.config.ts"
+    "vitest.e2e.config.ts",
+    "vitest.e2e-vm.config.ts"
   ]
 }

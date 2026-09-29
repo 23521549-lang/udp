@@ -56,7 +56,7 @@ khoá khôi phục tuỳ chọn `UDP_KEK_V1`, `UDP_OIDC_SIGNING_KEY` (QĐ-7). Đ
 khi chạm cụm. Từ nó và commit, `releaseKustomization()` (hàm thuần) sinh một kustomization trong thư mục bị
 gitignore `deploy/k8s/release/`: tag image, gộp ConfigMap (`CORS_ORIGIN`, `COOKIE_DOMAIN`, `UDP_OIDC_ISSUER`,
 `PD_CONTROLLER_WEBHOOK_URL`), thay host của Ingress và email ACME (JSON 6902 trên giá trị giữ chỗ `udp.invalid`
-của overlay), chọn ClusterIssuer, và thêm component CA tự ký khi `TLS_ISSUER=self-signed`. Bảng route nằm ở
+của overlay), và kèm ĐÚNG MỘT component issuer — Let's Encrypt, hay CA tự ký khi `TLS_ISSUER=self-signed` (lượt CI không đăng ký tài khoản ACME nào). Bảng route nằm ở
 YAML của overlay, không ở TypeScript. Test dựng bản phát hành bằng `kubectl kustomize` THẬT rồi parse cấu hình
 từng service bằng CHÍNH `envSchema` (cùng khuôn QĐ-4 của #49).
 
@@ -92,14 +92,18 @@ Storage Always Free qua một Pre-Authenticated Request CHỈ-GHI của bucket, 
 dump KHÔNG mang KEK (§4.3: "một bản dump database MỘT MÌNH là vô dụng"): người dùng chép `UDP_KEK_V1` vào trình
 quản lý mật khẩu một lần; dựng máy mới thì đặt nó vào `vm.env` trước lần phát hành đầu — Secret nhận giá trị đó
 thay vì sinh mới, credential BYOC đã mã hoá giải được. Khôi phục: `pnpm --filter @udp/deploy vm-restore <tệp>` —
-hạ ba service về 0 bản, `pg_restore --clean --if-exists --single-transaction`, dựng lại.
+hạ ba service về 0 bản, `pg_restore --single-transaction` vào một database MỚI rồi đổi tên hoán vị với database
+đang dùng trong một câu lệnh; hỏng thì database cũ chưa bị đụng, xong thì bản cũ ở lại dưới tên
+`udp_before_restore`.
 
 ### QĐ-8: Bí mật sinh trên máy ảo, chỉ được BỔ SUNG, không bao giờ ghi đè
 
 Secret `udp-secrets` sinh lần đầu trên máy (tệp tạm 0600, không qua dòng lệnh — như #49), cộng khoá ký OIDC (RSA
 2048). Bản phát hành sau thêm khoá mới thì Secret được bổ sung đúng khoá thiếu (`kubectl patch --patch-file`),
-khoá đã có không bao giờ bị ghi đè; khoá thuộc một NHÓM liên kết (mật khẩu role + chuỗi kết nối; cặp JWT) mà nhóm
-chỉ còn một phần ⇒ dừng kèm lý do, không sinh bừa một nửa. Cùng hàm áp cho kind (ở đó không có gì để bổ sung).
+khoá đã có không bao giờ bị ghi đè. Khoá gắn với DỮ LIỆU (mật khẩu role và chuỗi kết nối — gắn với PostgreSQL trên
+PVC; KEK — gắn với mọi credential đã mã hoá) mà Secret đang chạy thiếu ⇒ dừng kèm tên khoá, không sinh lại: sinh
+lại là khoá database hay làm credential không giải được. Khoá khác (JWT, bí mật nội bộ) thiếu thì sinh — cái giá chỉ
+là mọi phiên đăng nhập lại. Cùng hàm áp cho kind (ở đó không có gì để bổ sung).
 Secret `udp-backup` (URL của PAR) tách riêng vì người dùng xoay nó.
 
 ### QĐ-9: CD — workflow `Deploy` sau khi CI xanh
@@ -154,10 +158,10 @@ Thẻ ngân hàng Oracle đòi lúc đăng ký chỉ để xác minh. Luật duy
 
 - **AC-1** Bản phát hành `vm` dựng được bằng `kubectl kustomize`; cấu hình TỪNG service (ConfigMap + Secret +
   env riêng của container) qua `envSchema`; image đúng bộ của máy ảo với tag của commit; không seed, không
-  sample-app; Ingress đúng bốn nhóm tiền tố, TLS cho đúng host; không `udp.invalid` nào còn sót; component CA
-  tự ký chỉ có khi được chọn.
-- **AC-2** Kế hoạch bổ sung Secret: thêm đúng khoá thiếu, không ghi đè, từ chối nhóm dở dang; khoá ký OIDC qua
-  schema; khoá khôi phục từ `vm.env` được dùng thay khoá sinh.
+  sample-app; Ingress HTTPS đúng bốn nhóm tiền tố, TLS cho đúng host, HTTP là Ingress riêng chỉ chuyển hướng; không
+  `udp.invalid` nào còn sót; đúng một component issuer theo lựa chọn.
+- **AC-2** Kế hoạch bổ sung Secret: thêm đúng khoá thiếu, không ghi đè, dừng khi thiếu khoá gắn với dữ liệu; khoá ký
+  OIDC qua schema; khoá khôi phục từ `vm.env` được dùng thay khoá sinh, và khác Secret đang chạy thì dừng.
 - **AC-3** `bootstrap.sh`, `release.sh`, `ship.sh` qua `bash -n`; phiên bản ghim khớp một nguồn; `release.sh`
   và `ship.sh` từ chối SHA không đúng dạng.
 - **AC-4** Nối dây của `deploy.yml` và job `vm` được test (sau CI xanh, chỉ push lên main hay chạy tay, host key

@@ -15,6 +15,7 @@ import {
   BACKUP_SECRET,
   backupSecretValues,
   generateVmSecrets,
+  HTTP_REDIRECT_INGRESS,
   issuerName,
   OIDC_PATH,
   parseVmSettings,
@@ -69,9 +70,7 @@ function renderRelease(s: VmSettings): { docs: Resource[]; text: string } {
     sha: SHA,
     settings: s,
     overlay: posix(relative(dir, join(K8S, "overlays/vm"))),
-    selfSignedComponent: posix(
-      relative(dir, join(K8S, "components/self-signed-tls")),
-    ),
+    components: posix(relative(dir, join(K8S, "components"))),
   });
   writeFileSync(
     join(dir, "kustomization.yaml"),
@@ -305,8 +304,12 @@ describe("bản phát hành vm — Let's Encrypt (Plan #52 AC-1)", () => {
     );
   });
 
-  it("mỗi backend của Ingress là một Service có thật với cổng mang đúng tên", () => {
-    for (const p of ingressSpec(docs).rules[0]?.http.paths ?? []) {
+  it("mỗi backend của hai Ingress là một Service có thật với cổng mang đúng tên", () => {
+    const paths = byKind(docs, "Ingress").flatMap(
+      (i) => (i.spec as unknown as IngressSpec).rules[0]?.http.paths ?? [],
+    );
+    expect(paths.length).toBeGreaterThan(PUBLIC_ROUTES.length);
+    for (const p of paths) {
       const service = named(docs, "Service", p.backend.service.name);
       const ports = (service.spec as { ports: { name: string }[] }).ports;
       expect(
@@ -341,9 +344,20 @@ describe("bản phát hành vm — Let's Encrypt (Plan #52 AC-1)", () => {
     }
   });
 
-  it("HTTP chuyển sang HTTPS bằng Middleware có thật mà annotation trỏ tới", () => {
+  it("Ingress công khai chỉ trên HTTPS; HTTP là một Ingress riêng, cùng host, chỉ để chuyển hướng", () => {
+    const entrypoints = "traefik.ingress.kubernetes.io/router.entrypoints";
+    expect(ingressOf(docs).metadata.annotations?.[entrypoints]).toBe(
+      "websecure",
+    );
+    const http = named(docs, "Ingress", HTTP_REDIRECT_INGRESS);
+    const spec = http.spec as unknown as IngressSpec;
+    expect(http.metadata.annotations?.[entrypoints]).toBe("web");
+    // Có `tls` là Traefik chỉ nhận TLS — HTTP sẽ 404 thay vì chuyển hướng
+    expect(spec.tls).toBeUndefined();
+    expect(spec.rules.map((r) => r.host)).toEqual([host]);
+    expect(spec.rules[0]?.http.paths.map((p) => p.path)).toEqual(["/"]);
     const ref =
-      ingressOf(docs).metadata.annotations?.[
+      http.metadata.annotations?.[
         "traefik.ingress.kubernetes.io/router.middlewares"
       ] ?? "";
     const middleware = named(docs, "Middleware", "redirect-https");
@@ -473,22 +487,21 @@ describe("bản phát hành vm — CA tự ký của lượt CI (Plan #52 QĐ-11
     const ca = named(docs, "Certificate", "udp-self-signed-ca");
     expect(ca.metadata.namespace).toBe("cert-manager");
     expect((ca.spec as { isCA: boolean }).isCA).toBe(true);
+    // Lượt CI không đăng ký tài khoản ACME nào với Let's Encrypt
+    expect(
+      byKind(docs, "ClusterIssuer").some((i) => "acme" in (i.spec ?? {})),
+    ).toBe(false);
   });
 
-  it("kustomization của bản phát hành chỉ kèm component khi được chọn", () => {
-    const input = {
-      sha: SHA,
-      overlay: "../overlays/vm",
-      selfSignedComponent: "../components/self-signed-tls",
-    };
-    expect(
-      releaseKustomization({ ...input, settings })["components"],
-    ).toBeUndefined();
-    expect(
+  it("bản phát hành kèm ĐÚNG MỘT component issuer theo lựa chọn", () => {
+    const input = { sha: SHA, overlay: "../overlays/vm", components: "../c" };
+    const componentsOf = (issuer: VmSettings["TLS_ISSUER"]): unknown =>
       releaseKustomization({
         ...input,
-        settings: { ...settings, TLS_ISSUER: "self-signed" },
-      })["components"],
-    ).toEqual(["../components/self-signed-tls"]);
+        settings: { ...settings, TLS_ISSUER: issuer },
+      })["components"];
+    expect(componentsOf("letsencrypt")).toEqual(["../c/letsencrypt"]);
+    expect(componentsOf("letsencrypt-staging")).toEqual(["../c/letsencrypt"]);
+    expect(componentsOf("self-signed")).toEqual(["../c/self-signed-tls"]);
   });
 });

@@ -251,3 +251,36 @@ jobs:
       - name: chẩn đoán cụm
         if: failure()
         run: pnpm --filter @udp/deploy diagnose
+
+  vm:
+    # [Plan #52 QĐ-11] Diễn tập máy ảo công khai (Oracle Always Free) trên runner: CHÍNH `bootstrap.sh` (k3s,
+    # cert-manager, Docker, Node — thứ đã có thì bỏ qua), CHÍNH `release.sh` (build image, nạp vào k3s, bản phát
+    # hành từ vm.env, migrate), rồi E2E qua HTTPS với chứng chỉ cert-manager cấp từ CA tự ký — route công khai,
+    # đường nội bộ không lộ, SSE qua Traefik, sao lưu → khôi phục. Phần runner không thay được (arm64, iptables của
+    # Oracle, Let's Encrypt thật) ở sổ nợ `vm-oracle-real`. Chi phí 0: repo public.
+    name: vm — bootstrap k3s, phát hành, E2E qua HTTPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: dọn đĩa runner
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: dựng máy (bootstrap.sh)
+        timeout-minutes: 20
+        run: bash deploy/vm/bootstrap.sh
+      - name: cấu hình máy diễn tập
+        run: bash deploy/vm/ci-settings.sh
+      - name: phát hành (release.sh)
+        timeout-minutes: 50
+        run: bash deploy/vm/release.sh "$GITHUB_SHA"
+      - name: E2E qua HTTPS
+        timeout-minutes: 15
+        run: pnpm --filter @udp/deploy e2e:vm
+      - name: chẩn đoán máy
+        if: failure()
+        run: pnpm install --frozen-lockfile --filter "@udp/deploy..." && pnpm --filter @udp/deploy diagnose --target vm

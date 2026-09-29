@@ -20,12 +20,26 @@ interface Step {
 }
 interface Job {
   if?: string;
+  environment?: string;
+  env?: Record<string, string>;
   steps: Step[];
+}
+
+interface Workflow {
+  name: string;
+  on: Record<string, unknown>;
+  concurrency?: { group: string; "cancel-in-progress": boolean };
+  jobs: Record<string, Job>;
 }
 
 const workflow = parse(
   readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8"),
-) as { on: Record<string, unknown>; jobs: Record<string, Job> };
+) as Workflow;
+const deployText = readFileSync(
+  resolve(root, ".github/workflows/deploy.yml"),
+  "utf8",
+);
+const deploy = parse(deployText) as Workflow;
 const job = (name: string): Job => {
   const found = workflow.jobs[name];
   if (found === undefined) throw new Error(`thiếu job ${name}`);
@@ -87,5 +101,64 @@ describe("CI (§13.5)", () => {
       s.run?.includes("@udp/deploy diagnose"),
     );
     expect(diagnose?.if).toBe("failure()");
+  });
+});
+
+describe("máy ảo công khai (Plan #52)", () => {
+  it("vm: dựng máy bằng ĐÚNG bootstrap.sh, cấu hình diễn tập, phát hành bằng ĐÚNG release.sh, rồi E2E qua HTTPS", () => {
+    const vm = job("vm");
+    expect(vm.if).toBeUndefined();
+    const order = [
+      "bash deploy/vm/bootstrap.sh",
+      "bash deploy/vm/ci-settings.sh",
+      'bash deploy/vm/release.sh "$GITHUB_SHA"',
+      "pnpm --filter @udp/deploy e2e:vm",
+    ].map((command) => indexOfRun(vm, command));
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const diagnose = vm.steps.find((s) =>
+      s.run?.includes("diagnose --target vm"),
+    );
+    expect(diagnose?.if).toBe("failure()");
+  });
+
+  it("Deploy chạy sau khi CI XANH cho một lần push lên main, hay chạy tay", () => {
+    const run = deploy.on["workflow_run"] as {
+      workflows: string[];
+      types: string[];
+      branches: string[];
+    };
+    expect(run.workflows).toEqual([workflow.name]);
+    expect(run.types).toEqual(["completed"]);
+    expect(run.branches).toEqual(["main"]);
+    expect(Object.keys(deploy.on)).toContain("workflow_dispatch");
+    const vm = deploy.jobs["vm"];
+    expect(vm?.if).toContain("workflow_run.conclusion == 'success'");
+    expect(vm?.if).toContain("workflow_run.event == 'push'");
+    expect(vm?.environment).toBe("vm");
+    // Lượt đang chạy có thể đang giữa migrate — không huỷ
+    expect(deploy.concurrency?.["cancel-in-progress"]).toBe(false);
+  });
+
+  it("phát hành đúng commit CI đã kiểm, chỉ khi còn là đỉnh main; thiếu secret thì bỏ qua", () => {
+    const vm = deploy.jobs["vm"];
+    expect(vm?.env?.["RELEASE_SHA"]).toContain(
+      "github.event.workflow_run.head_sha",
+    );
+    const checkout = vm?.steps.find((s) =>
+      s.uses?.startsWith("actions/checkout"),
+    );
+    expect(checkout?.with?.["ref"]).toBe("${{ env.RELEASE_SHA }}");
+    const ship = vm?.steps.find((s) => s.run?.includes("deploy/vm/ship.sh"));
+    expect(ship?.run).toBe('bash deploy/vm/ship.sh "$RELEASE_SHA"');
+    expect(ship?.if).toContain("env.UDP_VM_HOST != ''");
+    expect(ship?.if).toContain("steps.tip.outputs.stale != 'true'");
+  });
+
+  it("không nội suy biểu thức vào lệnh shell, không tắt kiểm host key", () => {
+    for (const step of deploy.jobs["vm"]?.steps ?? []) {
+      expect(step.run ?? "", step.name).not.toContain("${{");
+    }
+    expect(deployText).not.toMatch(/StrictHostKeyChecking=(no|accept-new)/);
   });
 });

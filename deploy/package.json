@@ -14,6 +14,7 @@
     "vm-up": "tsx src/vm-up.ts",
     "vm-restore": "tsx src/vm-restore.ts",
     "e2e": "vitest run --config vitest.e2e.config.ts",
+    "e2e:vm": "vitest run --config vitest.e2e-vm.config.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
