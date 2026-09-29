@@ -137,7 +137,7 @@ export function PromoteDialog({
             disabled={!ready}
             onClick={() => apply.mutate()}
           >
-            {apply.isPending ? "Đang áp..." : "Áp dụng"}
+            {apply.isPending ? "Đang áp…" : "Áp dụng"}
           </button>
         </>
       }
@@ -166,7 +166,7 @@ export function PromoteDialog({
         </div>
       )}
       {targetRules.isPending && targetId !== "" && (
-        <p className="c3">Đang đọc rule ở env đích...</p>
+        <p className="c3">Đang đọc rule ở env đích…</p>
       )}
       {plan !== undefined && (
         <>

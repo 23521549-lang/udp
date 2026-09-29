@@ -3,8 +3,9 @@ import type {
   DomainConfigFieldWire,
   DomainToolWire,
 } from "@udp/shared-types/wire";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Switch } from "../../components/Switch";
+import { configLabel } from "./config-labels";
 
 /**
  * Form cấu hình một tool, dựng từ `configFields` mà catalog suy từ `configSchema` của adapter
@@ -79,21 +80,38 @@ function FieldInput({
   disabled: boolean;
   error: string | undefined;
 }) {
-  const label = field.required ? `${field.key} *` : field.key;
+  const text = configLabel(field.key);
+  const label = field.required ? `${text} *` : text;
+  /** Khoá gốc cạnh nhãn: thứ người dùng gặp trong tài liệu của tool */
+  const keyTag = (
+    <span className="f-key mono c3" translate="no">
+      {field.key}
+    </span>
+  );
+  const errId = `${id}-err`;
+  const described = error === undefined ? undefined : errId;
   const errorLine = error !== undefined && (
-    <span className="field-error">{error}</span>
+    <span id={errId} className="field-error">
+      {error}
+    </span>
   );
   if (field.secret === true) {
     return (
       <div className="f">
-        <label htmlFor={id}>{label}</label>
+        <div className="f-top">
+          <label htmlFor={id}>{label}</label>
+          {keyTag}
+        </div>
         <SecretInput
           id={id}
           name={field.key}
+          label={text}
           value={value}
           onChange={onChange}
           disabled={disabled}
           invalid={error !== undefined}
+          describedBy={described}
+          required={field.required}
         />
         {errorLine}
       </div>
@@ -103,11 +121,14 @@ function FieldInput({
     case "boolean":
       return (
         <div className="f">
-          <span className="lbl">{label}</span>
+          <div className="f-top" aria-hidden="true">
+            <span className="lbl">{label}</span>
+            {keyTag}
+          </div>
           <Switch
             checked={value === true}
             onChange={onChange}
-            label={field.key}
+            label={text}
             disabled={disabled}
           />
           {errorLine}
@@ -116,18 +137,24 @@ function FieldInput({
     case "enum":
       return (
         <div className="f">
-          <label htmlFor={id}>{label}</label>
+          <div className="f-top">
+            <label htmlFor={id}>{label}</label>
+            {keyTag}
+          </div>
           <select
             id={id}
+            name={field.key}
             className="sel"
             disabled={disabled}
             value={typeof value === "string" ? value : ""}
             aria-invalid={error !== undefined}
+            aria-describedby={described}
+            aria-required={field.required}
             onChange={(e) =>
               onChange(e.target.value === "" ? undefined : e.target.value)
             }
           >
-            <option value="">Chọn</option>
+            <option value="">Chọn…</option>
             {(field.options ?? []).map((o) => (
               <option key={o} value={o}>
                 {o}
@@ -140,17 +167,25 @@ function FieldInput({
     case "number":
       return (
         <div className="f">
-          <label htmlFor={id}>{label}</label>
+          <div className="f-top">
+            <label htmlFor={id}>{label}</label>
+            {keyTag}
+          </div>
           <input
             id={id}
+            name={field.key}
             className="inp num"
             type="number"
+            inputMode={field.integer === true ? "numeric" : "decimal"}
+            autoComplete="off"
             disabled={disabled}
             min={field.min}
             max={field.max}
             step={field.integer === true ? 1 : "any"}
             value={typeof value === "number" ? value : ""}
             aria-invalid={error !== undefined}
+            aria-describedby={described}
+            aria-required={field.required}
             onChange={(e) =>
               onChange(
                 e.target.value === "" ? undefined : Number(e.target.value),
@@ -163,13 +198,21 @@ function FieldInput({
     case "string":
       return (
         <div className="f">
-          <label htmlFor={id}>{label}</label>
+          <div className="f-top">
+            <label htmlFor={id}>{label}</label>
+            {keyTag}
+          </div>
           <input
             id={id}
+            name={field.key}
             className="inp"
+            autoComplete="off"
+            spellCheck={false}
             disabled={disabled}
             value={typeof value === "string" ? value : ""}
             aria-invalid={error !== undefined}
+            aria-describedby={described}
+            aria-required={field.required}
             onChange={(e) =>
               onChange(e.target.value === "" ? undefined : e.target.value)
             }
@@ -182,6 +225,8 @@ function FieldInput({
         <JsonInput
           id={id}
           label={label}
+          keyTag={keyTag}
+          required={field.required}
           value={value}
           onChange={onChange}
           disabled={disabled}
@@ -198,18 +243,25 @@ function FieldInput({
 function SecretInput({
   id,
   name,
+  label,
   value,
   onChange,
   disabled,
   invalid,
+  describedBy,
+  required,
 }: {
   id: string;
-  /** Khoá trường — tên riêng cho nút "Giữ khoá cũ" khi nhiều ô bí mật cùng mở */
+  /** Khoá trường — `name` của ô */
   name: string;
+  /** Nhãn tiếng Việt — tên riêng cho nút "Giữ khoá cũ" khi nhiều ô bí mật cùng mở */
+  label: string;
   value: unknown;
   onChange: (v: unknown) => void;
   disabled: boolean;
   invalid: boolean;
+  describedBy: string | undefined;
+  required: boolean;
 }) {
   const saved = isKeptSecret(value);
   const [editing, setEditing] = useState(false);
@@ -240,12 +292,15 @@ function SecretInput({
     <div className="secret-row">
       <input
         id={id}
+        name={name}
         className="inp"
         type="password"
         autoComplete="new-password"
         disabled={disabled}
         value={typeof value === "string" ? value : ""}
         aria-invalid={invalid}
+        aria-describedby={describedBy}
+        aria-required={required}
         onChange={(e) =>
           onChange(e.target.value === "" ? undefined : e.target.value)
         }
@@ -254,7 +309,7 @@ function SecretInput({
         <button
           type="button"
           className="btn"
-          aria-label={`Giữ khoá cũ của ${name}`}
+          aria-label={`Giữ khoá cũ của ${label}`}
           disabled={disabled}
           onClick={() => {
             onChange({ ...KEPT_SECRET });
@@ -272,6 +327,8 @@ function SecretInput({
 function JsonInput({
   id,
   label,
+  keyTag,
+  required = false,
   value,
   onChange,
   disabled,
@@ -279,6 +336,8 @@ function JsonInput({
 }: {
   id: string;
   label: string;
+  keyTag?: ReactNode;
+  required?: boolean;
   value: unknown;
   onChange: (v: unknown) => void;
   disabled: boolean;
@@ -291,15 +350,21 @@ function JsonInput({
   const shown = parseError ?? error;
   return (
     <div className="f">
-      <label htmlFor={id}>{label}</label>
+      <div className="f-top">
+        <label htmlFor={id}>{label}</label>
+        {keyTag}
+      </div>
       <textarea
         id={id}
         className="inp"
         rows={4}
         spellCheck={false}
+        autoComplete="off"
         disabled={disabled}
         value={text}
         aria-invalid={shown !== undefined}
+        aria-describedby={shown === undefined ? undefined : `${id}-err`}
+        aria-required={required}
         onChange={(e) => {
           setText(e.target.value);
           if (e.target.value.trim() === "") {
@@ -315,7 +380,11 @@ function JsonInput({
           }
         }}
       />
-      {shown !== undefined && <span className="field-error">{shown}</span>}
+      {shown !== undefined && (
+        <span id={`${id}-err`} className="field-error">
+          {shown}
+        </span>
+      )}
     </div>
   );
 }

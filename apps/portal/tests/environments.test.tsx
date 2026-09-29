@@ -125,7 +125,7 @@ describe("tab Environment trong Cài đặt (Plan #40)", () => {
 
     const list = await screen.findByRole("region", { name: "Environment" });
     await userEvent.click(
-      within(list).getAllByRole("button", { name: "Xoá" })[0]!,
+      within(list).getAllByRole("button", { name: /^Xoá environment / })[0]!,
     );
     const dialog = await screen.findByRole("dialog");
     const confirm = within(dialog).getByRole("button", {
@@ -152,7 +152,7 @@ describe("tab Environment trong Cài đặt (Plan #40)", () => {
     expect(
       screen.queryByRole("textbox", { name: "Tên environment mới" }),
     ).not.toBeInTheDocument();
-    expect(within(list).queryByRole("button", { name: "Xoá" })).toBeNull();
+    expect(within(list).queryByRole("button", { name: /^Xoá/ })).toBeNull();
     for (const box of within(list).getAllByRole("checkbox")) {
       expect(box).toBeDisabled();
     }

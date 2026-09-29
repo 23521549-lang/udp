@@ -57,7 +57,7 @@ export function ConfirmDialog({
               onConfirm(typeToConfirm === undefined ? undefined : typed.trim())
             }
           >
-            {busy ? "Đang thực hiện..." : confirmLabel}
+            {busy ? "Đang thực hiện…" : confirmLabel}
           </button>
         </>
       }
@@ -66,12 +66,18 @@ export function ConfirmDialog({
       {typeToConfirm !== undefined && (
         <div className="f">
           <label htmlFor="confirm-typed">
-            Gõ <span className="mono">{typeToConfirm}</span> để xác nhận
+            Gõ{" "}
+            <span className="mono" translate="no">
+              {typeToConfirm}
+            </span>{" "}
+            để xác nhận
           </label>
           <input
             id="confirm-typed"
+            name="confirm"
             className="inp"
             autoComplete="off"
+            spellCheck={false}
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
           />

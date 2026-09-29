@@ -11,7 +11,11 @@ import { describe, expect, it } from "vitest";
 import { safeRedirect } from "../src/features/auth/AuthPages";
 import { defaultEnvOf } from "../src/features/project/env";
 import { API, golden, server } from "./msw";
-import { projectFixture, useProjectHandlers } from "./project-fixtures";
+import {
+  flagFixture,
+  projectFixture,
+  useProjectHandlers,
+} from "./project-fixtures";
 import { renderApp } from "./render";
 
 /**
@@ -24,41 +28,6 @@ const envOf = (d: ProjectDetailResponseWire, production: boolean) => {
   if (e === undefined) throw new Error("mẫu thiếu environment");
   return e;
 };
-
-/** Một flag ACTIVE có cấu hình ở mọi env của project mẫu */
-function flagFixture(detail: ProjectDetailResponseWire): {
-  flag: FlagDetailWire;
-  summary: FlagSummaryWire;
-} {
-  const { flag } = golden<{ flag: FlagDetailWire }>(
-    "GET /projects/{id}/flags/{id}",
-  );
-  flag.lifecycleStatus = "ACTIVE";
-  const template = flag.envs[0];
-  if (template === undefined) throw new Error("mẫu flag thiếu env");
-  flag.envs = detail.environments.map((e, i) => ({
-    ...template,
-    environment: { id: e.id, name: e.name, isProduction: e.isProduction },
-    configId: `${template.configId.slice(0, 35)}${String(i)}`,
-    isEnabled: false,
-  }));
-  const summary: FlagSummaryWire = {
-    id: flag.id,
-    key: flag.key,
-    flagType: flag.flagType,
-    description: flag.description,
-    lifecycleStatus: flag.lifecycleStatus,
-    activatedAt: flag.activatedAt,
-    updatedAt: flag.updatedAt,
-    env: {
-      configId: template.configId,
-      isEnabled: false,
-      isTracked: false,
-      ruleCount: 0,
-    },
-  };
-  return { flag, summary };
-}
 
 describe("đăng nhập và guard", () => {
   it("chưa đăng nhập mở /app/projects ⇒ về /login, giữ đường cũ để quay lại", async () => {
@@ -346,7 +315,7 @@ describe("flag", () => {
     await user.clear(desc);
     await user.type(desc, "mới");
     expect(await screen.findByText(/1 thay đổi ở/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /^Lưu\s*Ctrl S$/ }));
+    await user.click(screen.getByRole("button", { name: /^Lưu\s*Ctrl\sS$/ }));
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0]!.lastKnownUpdatedAt).toBe(rules.updatedAt);
     expect(puts[0]!.rules[0]!.id).toBe(rules.rules[0]!.id);

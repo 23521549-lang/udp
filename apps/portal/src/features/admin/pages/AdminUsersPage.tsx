@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AdminUserWire } from "@udp/shared-types/wire";
-import { Users } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Empty, ErrorState, Loading } from "../../../components/States";
@@ -41,13 +40,12 @@ export function AdminUsersPage() {
     <AdminPage
       title="Người dùng"
       lead="Vai toàn hệ thống. Quyền trong từng project do chủ project quản lý."
-      icon={Users}
     >
       <div className="filters" style={{ padding: "0 0 10px" }}>
         <input
           className="inp"
           aria-label="Tìm người dùng"
-          placeholder="Tìm theo email hoặc tên"
+          placeholder="Tìm theo email hoặc tên…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -60,7 +58,7 @@ export function AdminUsersPage() {
         <Empty title="Không có ai khớp" />
       ) : (
         <div className="table-wrap">
-          <table className="matrix" aria-label="Người dùng">
+          <table className="dtable" aria-label="Người dùng">
             <thead>
               <tr>
                 <th scope="col">Email</th>

@@ -5,6 +5,10 @@ bằng trình duyệt là bấm thử được, không cần build. Đây là **
 Tailwind và shadcn/ui theo §10 của thiết kế). Khi code Portal, mọi màu, chữ, khoảng cách và mẫu tương tác
 lấy từ đây. Nếu cần lệch khỏi chuẩn thì sửa file này trước.
 
+Sửa ngày 29/09/2026 (Plan #53, sau vòng review bằng Web Interface Guidelines, Taste Skill và Awesome Design):
+token trạng thái ba sắc, bảng màu dữ liệu tách khỏi trạng thái, khung riêng cho Bảng điều khiển nền tảng, đầu
+phân hệ gọn, luật biểu đồ, lưới sức khoẻ domain và sơ đồ kiến trúc.
+
 ## 1. Tinh thần
 
 - **Tham chiếu:**
@@ -20,22 +24,29 @@ lấy từ đây. Nếu cần lệch khỏi chuẩn thì sửa file này trướ
 
 ## 2. Màu (OKLCH)
 
-| Token                       | Sáng                                    | Tối                     | Dùng cho                                                     |
-| --------------------------- | --------------------------------------- | ----------------------- | ------------------------------------------------------------ |
-| `--bg`                      | `oklch(96.6% .003 275)`                 | `oklch(16.5% .004 275)` | Nền ngoài cùng, thanh bên                                    |
-| `--panel`                   | `oklch(99.7% .001 275)`                 | `oklch(19.5% .005 275)` | Tấm nội dung chính                                           |
-| `--raised`                  | `oklch(100% 0 0)`                       | `oklch(22.5% .006 275)` | Thẻ, nút, popover                                            |
-| `--sunk`                    | `oklch(97.4% .003 275)`                 | `oklch(18% .005 275)`   | Nền nhóm, ô code                                             |
-| `--hover` / `--active`      | `96%` / `94.2%`                         | `23%` / `26%`           | Rê chuột / đang chọn                                         |
-| `--line` / `--line-2`       | `92.6%` / `88.5%`                       | `26.5%` / `32%`         | Viền 1px, viền input                                         |
-| `--ink` … `--ink-4`         | `21%` `44%` `60%` `72%`                 | `95%` `76%` `60%` `46%` | Chữ chính → phụ → mờ → rất mờ                                |
-| `--accent`                  | `oklch(54% .2 262)`                     | `oklch(66% .17 258)`    | Màu thương hiệu: nút chính, mục đang chọn, rollout đang chạy |
-| `--accent-soft`             | `oklch(95.6% .028 262)`                 | `oklch(28% .07 260)`    | Nền mục menu đang chọn                                       |
-| `--green` `--amber` `--red` | `60% .14 152` `72% .15 72` `58% .19 25` | sáng hơn ~12%           | Chỉ cho trạng thái: ổn định, tạm dừng/cảnh báo, lỗi/rollback |
+| Token                       | Sáng                                    | Tối                      | Dùng cho                                                             |
+| --------------------------- | --------------------------------------- | ------------------------ | -------------------------------------------------------------------- |
+| `--bg`                      | `oklch(96.6% .003 275)`                 | `oklch(16.5% .004 275)`  | Nền ngoài cùng, thanh bên                                            |
+| `--panel`                   | `oklch(99.7% .001 275)`                 | `oklch(19.5% .005 275)`  | Tấm nội dung chính                                                   |
+| `--raised`                  | `oklch(100% 0 0)`                       | `oklch(22.5% .006 275)`  | Thẻ, nút, popover                                                    |
+| `--sunk`                    | `oklch(97.4% .003 275)`                 | `oklch(18% .005 275)`    | Nền nhóm, ô code                                                     |
+| `--hover` / `--active`      | `96%` / `94.2%`                         | `23%` / `26%`            | Rê chuột / đang chọn                                                 |
+| `--line` / `--line-2`       | `92.6%` / `88.5%`                       | `26.5%` / `32%`          | Viền 1px, viền input                                                 |
+| `--ink` … `--ink-4`         | `21%` `44%` `60%` `72%`                 | `95%` `76%` `60%` `46%`  | Chữ chính → phụ → mờ → rất mờ                                        |
+| `--accent`                  | `oklch(54% .2 262)`                     | `oklch(66% .17 258)`     | Màu thương hiệu: nút chính, mục đang chọn, rollout đang chạy         |
+| `--accent-soft`             | `oklch(95.6% .028 262)`                 | `oklch(28% .07 260)`     | Nền mục menu đang chọn                                               |
+| `--green` `--amber` `--red` | `60% .14 152` `72% .15 72` `58% .19 25` | sáng hơn ~12%            | Chỉ cho trạng thái: ổn định, tạm dừng/cảnh báo, lỗi/rollback         |
+| `--*-soft` / `--*-ink`      | nền `96.5%` / chữ `44–50%`              | nền `27%` / chữ `82–87%` | Ba sắc của mỗi trạng thái: nền nhạt và chữ đậm đặt trên nó (≥ 4.5:1) |
+| `--v1` … `--v4`             | xanh 262, xám, lục lam 200, tím 310     | sáng hơn                 | Chuỗi dữ liệu của biểu đồ. Không trùng sắc với ba màu trạng thái     |
+| `--console-*`               | nền `21% .03 262`, chữ `95%`            | như sáng                 | Thanh bên và thanh đầu của Bảng điều khiển nền tảng                  |
 
 Màu hex tương đương của `--accent` (dùng cho favicon, ảnh): `#2B5BE0`.
 
 **Không** dùng gradient trang trí, nền màu loang, màu kẹo nhiều sắc, hoặc màu để trang trí.
+
+**Màu trạng thái khác màu dữ liệu.** Một chuỗi số liệu thường không bao giờ mang màu xanh lá, cam hay đỏ: người
+đọc sẽ hiểu nó là "ổn", "cảnh báo", "lỗi". `--accent` là mục đang chọn, nút chính, focus và rollout đang chạy,
+không bao giờ là "khoẻ".
 
 ## 3. Chữ
 
@@ -60,10 +71,15 @@ Màu hex tương đương của `--accent` (dùng cho favicon, ảnh): `#2B5BE0`
   - dấu `/`;
   - breadcrumb;
   - nút hành động nằm bên phải.
-- **Đầu phân hệ:**
-  - ô icon 40px màu `--accent` đặc, icon trắng;
+- **Đầu phân hệ** (component `PageHead`):
   - tiêu đề 22px và một câu mô tả;
-  - ba chỉ số nhanh ở góc phải.
+  - ba chỉ số nhanh hoặc nút hành động ở góc phải;
+  - nền là nền của tấm, không gradient, không ô icon: icon của phân hệ đã ở thanh bên (sửa 29/09/2026).
+- **Hai khung:**
+  - **Portal** (`/app`) cho developer: thanh bên sáng như trên.
+  - **Bảng điều khiển nền tảng** (`/admin`) cho nhà phát hành: thanh bên nền `--console-bg` ở cả hai chế độ
+    màu, nhãn chữ "Nhà phát hành" cạnh logo. Hai khung phải nhận ra được ngay, không cần đọc chữ.
+  - Chuyển giữa hai khung ở menu tài khoản (bấm tên ở đáy thanh bên), không phải một mục giữa menu.
 - **Bo góc:** 6px cho nút và input, 7px cho mục menu, 8–10px cho thẻ, 12px cho hộp thoại và bảng lệnh.
 - **Khoảng cách:** dòng danh sách cao 44px, trang đệm 26–28px.
 
@@ -94,26 +110,40 @@ Màu hex tương đương của `--accent` (dùng cho favicon, ảnh): `#2B5BE0`
   | Đã rollback | `circle-x`     | đỏ      |
 
 - **Trạng thái hạ tầng hoặc deploy:** chữ ("Ổn định", "Cần xem") kèm `circle-check` hoặc `circle-alert`.
-  **Không dùng chấm màu.**
+  **Không dùng chấm màu.** Năm tone, một bảng duy nhất (`StatusLabel`):
+
+  | Tone      | Icon            | Màu chữ và icon |
+  | --------- | --------------- | --------------- |
+  | Ổn        | `circle-check`  | `--green-ink`   |
+  | Đang chạy | `loader-circle` | `--accent`      |
+  | Cần xem   | `circle-alert`  | `--amber-ink`   |
+  | Lỗi       | `circle-x`      | `--red-ink`     |
+  | Không rõ  | `circle-help`   | `--ink-3`       |
+
 - **Môi trường:**
   - chỉ là **chữ**, không icon, không chấm màu;
   - production có thêm `lock` màu xám vì mọi thay đổi ở đây cần xác nhận.
 
 ## 6. Thành phần
 
-| Thành phần         | Quy tắc                                                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Nút chính          | Nền `--accent`, chữ trắng, cao 28px, có thể kèm `kbd` phím tắt                                                                                                            |
-| Nút phụ            | Nền `--raised`, viền `--line-2`. Nút nguy hiểm là chữ đỏ, bản đặc đỏ chỉ trong hộp thoại xác nhận                                                                         |
-| Bộ chọn môi trường | Nút gọn trên thanh đầu trang: tên + khoá (production) + `chevrons-up-down`. Mở hộp có ô tìm, mỗi dòng gồm tên, mô tả ngắn, phiên bản cấu hình, dấu tích                   |
-| Danh sách          | Nhóm theo trạng thái (tiêu đề nhóm `--sunk`, dính khi cuộn). Dòng 44px gồm vòng tiến độ, tên, key mono, ba vạch dev/staging/production, đường xu hướng, thời gian, avatar |
-| Xem nhanh          | Bấm một dòng thì panel chi tiết trượt ra bên phải, rộng 520px, không chuyển trang. Esc để đóng                                                                            |
-| Rule               | Thẻ viền mảnh: số thứ tự, tên sửa tại chỗ, hàng "Nếu" và hàng "Thì". Chia tỉ lệ gồm thanh xếp chồng, thanh trượt từng variant và dòng tổng (đỏ nếu khác 100%)             |
-| Thanh lưu          | Nổi ở đáy panel khi có thay đổi: "N thay đổi ở {env}", nút Bỏ, nút Lưu (Ctrl S)                                                                                           |
-| Biểu đồ            | Vùng mượt tô gradient nhạt `--accent`, đường ổn định nét đứt xám, ngưỡng nét đứt đỏ. Rê chuột hiện đường dọc, điểm và tooltip số canary so với ổn định                    |
-| Bảng lệnh Ctrl K   | Tìm flag, rollout và lệnh (tạo flag, đổi môi trường, sáng/tối). Mũi tên để chọn, Enter để chạy                                                                            |
-| Thông báo          | Viên thuốc tối ở giữa đáy màn hình. Thao tác đảo ngược được thì có nút "Hoàn tác" (5 giây)                                                                                |
-| Hộp thoại xác nhận | Chỉ cho việc nặng: rollback, lên 100%, bật/tắt ở production                                                                                                               |
+| Thành phần         | Quy tắc                                                                                                                                                                                                                    |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nút chính          | Nền `--accent`, chữ trắng, cao 28px, có thể kèm `kbd` phím tắt                                                                                                                                                             |
+| Nút phụ            | Nền `--raised`, viền `--line-2`. Nút nguy hiểm là chữ đỏ, bản đặc đỏ chỉ trong hộp thoại xác nhận                                                                                                                          |
+| Bộ chọn môi trường | Nút gọn trên thanh đầu trang: tên + khoá (production) + `chevrons-up-down`. Mở hộp có ô tìm, mỗi dòng gồm tên, mô tả ngắn, phiên bản cấu hình, dấu tích                                                                    |
+| Danh sách          | Nhóm theo trạng thái (tiêu đề nhóm `--sunk`, dính khi cuộn). Dòng 44px gồm vòng tiến độ, tên, key mono, ba vạch dev/staging/production, đường xu hướng, thời gian, avatar                                                  |
+| Xem nhanh          | Bấm một dòng thì panel chi tiết trượt ra bên phải, rộng 520px, không chuyển trang. Esc để đóng                                                                                                                             |
+| Rule               | Thẻ viền mảnh: số thứ tự, tên sửa tại chỗ, hàng "Nếu" và hàng "Thì". Chia tỉ lệ gồm thanh xếp chồng, thanh trượt từng variant và dòng tổng (đỏ nếu khác 100%)                                                              |
+| Thanh lưu          | Nổi ở đáy panel khi có thay đổi: "N thay đổi ở {env}", nút Bỏ, nút Lưu (Ctrl S)                                                                                                                                            |
+| Biểu đồ            | Vùng mượt tô gradient nhạt `--accent`, đường ổn định nét đứt xám, ngưỡng nét đứt đỏ. Rê chuột hiện đường dọc, điểm và tooltip số canary so với ổn định                                                                     |
+| Trục biểu đồ       | 3–4 vạch chia có nhãn số theo đơn vị. Thang co theo dữ liệu; ngưỡng nằm ngoài khung thì ghi ở chú giải, không ép dữ liệu dẹt. Tối đa bốn chuỗi; có bảng số liệu thay thế                                                   |
+| Bảng dữ liệu       | Căn trái, số căn phải và `tabular-nums`. Nhãn cột `--ink-3`. Căn giữa chỉ cho ma trận thật (hộp promote)                                                                                                                   |
+| Lưới sức khoẻ      | Mỗi ô một domain: tên, tool (mono), trạng thái bằng `StatusLabel`, drift. Ô không có nền màu; bấm vào tới trang domain                                                                                                     |
+| Sơ đồ kiến trúc    | Khung lồng nhau theo chứa đựng: cloud, mạng, cluster, environment, workload. Mỗi tầng một sắc nền (`--sunk`, `--panel`, `--raised`). Cạnh nét mảnh `--line-2` giữa các công cụ; cạnh của công cụ đang chọn dùng `--accent` |
+| Thanh mức dùng     | Rãnh `--sunk`, phần đã dùng `--ink-3`; vượt 80% thì `--amber`, vượt 95% thì `--red`. Luôn kèm số                                                                                                                           |
+| Bảng lệnh Ctrl K   | Tìm flag, rollout và lệnh (tạo flag, đổi môi trường, sáng/tối). Mũi tên để chọn, Enter để chạy                                                                                                                             |
+| Thông báo          | Viên thuốc tối ở giữa đáy màn hình. Thao tác đảo ngược được thì có nút "Hoàn tác" (5 giây)                                                                                                                                 |
+| Hộp thoại xác nhận | Chỉ cho việc nặng: rollback, lên 100%, bật/tắt ở production                                                                                                                                                                |
 
 ## 7. Tương tác
 

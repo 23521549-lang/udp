@@ -95,6 +95,28 @@ function useDomainHandlers(options: {
 const domainsUrl = (detail: ProjectDetailResponseWire) =>
   `/app/projects/${detail.project.id}/domains`;
 
+/**
+ * Lưu trên project ĐANG CHẠY là áp lên cluster thật: hộp xác nhận kê từng thay đổi (Plan #53 QĐ-9),
+ * rồi mới gửi. Trả về danh sách dòng trong hộp để test đọc.
+ */
+async function saveDomains(): Promise<string[]> {
+  await userEvent.click(
+    screen.getByRole("button", { name: "Lưu cấu hình domain" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Áp cấu hình lên cluster đang chạy?",
+  });
+  const lines = within(
+    within(dialog).getByRole("list", { name: "Thay đổi sẽ áp" }),
+  )
+    .getAllByRole("listitem")
+    .map((li) => li.textContent);
+  await userEvent.click(
+    within(dialog).getByRole("button", { name: "Áp cấu hình" }),
+  );
+  return lines;
+}
+
 describe("trang Domain", () => {
   it("MAINTAINER: bật Monitoring ⇒ form dựng từ schema của adapter, kiểm trực tiếp, lưu cả tập", async () => {
     const detail = projectFixture("MAINTAINER");
@@ -107,8 +129,8 @@ describe("trang Domain", () => {
       await screen.findByRole("switch", { name: "Bật Monitoring" }),
     );
     // Trường của datadog: enum `site`, hai khoá bí mật, số `maxHosts` mặc định 50
-    expect(screen.getByLabelText("site *")).toBeInTheDocument();
-    expect(screen.getByLabelText("maxHosts")).toHaveValue(50);
+    expect(screen.getByLabelText("Site *")).toBeInTheDocument();
+    expect(screen.getByLabelText("Số host tối đa")).toHaveValue(50);
 
     const status = await screen.findByRole("status", { name: "Kiểm cấu hình" });
     // Kiểm có debounce: vùng trạng thái có TRƯỚC kết quả — chờ chữ, đừng đọc ngay
@@ -117,9 +139,7 @@ describe("trang Domain", () => {
     ).toBeInTheDocument();
     expect(within(status).getByText(/traces.sink/)).toBeInTheDocument();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Lưu cấu hình domain" }),
-    );
+    expect(await saveDomains()).toEqual(["Bật Monitoring (datadog)"]);
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0]).toMatchObject({
       lastKnownDomainSetVersion: saved.domainSetVersion,
@@ -136,21 +156,19 @@ describe("trang Domain", () => {
     renderApp(domainsUrl(detail));
 
     // Đã lưu: chỉ có nút "Đổi", không một ô nào mang giá trị
-    await userEvent.click(await screen.findByLabelText("apiKey *"));
-    const apiKey = screen.getByLabelText("apiKey *");
+    await userEvent.click(await screen.findByLabelText("API key *"));
+    const apiKey = screen.getByLabelText("API key *");
     expect(apiKey).toHaveAttribute("type", "password");
     await userEvent.type(apiKey, NEW_KEY);
 
-    await userEvent.click(screen.getByLabelText("appKey *"));
+    await userEvent.click(screen.getByLabelText("Application key *"));
     await userEvent.click(
-      screen.getByRole("button", { name: "Giữ khoá cũ của appKey" }),
+      screen.getByRole("button", { name: "Giữ khoá cũ của Application key" }),
     );
-    expect(screen.getByLabelText("appKey *")).toHaveTextContent("Đổi");
+    expect(screen.getByLabelText("Application key *")).toHaveTextContent("Đổi");
     expect(screen.queryByText(NEW_KEY)).toBeNull();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Lưu cấu hình domain" }),
-    );
+    await saveDomains();
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0]).toMatchObject({
       domains: [
@@ -242,9 +260,7 @@ describe("trang Domain", () => {
     await userEvent.click(
       await screen.findByRole("switch", { name: "Bật Monitoring" }),
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Lưu cấu hình domain" }),
-    );
+    await saveDomains();
     expect(await screen.findByText(/người khác sửa/)).toBeInTheDocument();
   });
 
@@ -297,9 +313,7 @@ describe("project đang chạy (Plan #30)", () => {
     await userEvent.click(
       await screen.findByRole("switch", { name: "Bật Monitoring" }),
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Lưu cấu hình domain" }),
-    );
+    await saveDomains();
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(
       await screen.findByRole("region", { name: "Đang áp cấu hình domain" }),

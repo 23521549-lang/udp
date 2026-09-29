@@ -153,7 +153,7 @@ export function ServiceRolloutDialog({
             disabled={!ready}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Đang tạo..." : "Tạo rollout"}
+            {create.isPending ? "Đang tạo…" : "Tạo rollout"}
           </button>
         </>
       }
@@ -225,7 +225,7 @@ export function ServiceRolloutDialog({
           <input
             id="sr-workload"
             className="inp mono"
-            placeholder="checkout-api"
+            placeholder="checkout-api…"
             value={workloadName}
             onChange={(e) => {
               setWorkloadName(e.target.value.trim());
@@ -238,7 +238,7 @@ export function ServiceRolloutDialog({
             disabled={!workloadOk || probe.isPending}
             onClick={() => probe.mutate()}
           >
-            {probe.isPending ? "Đang kiểm tra..." : "Kiểm tra metric"}
+            {probe.isPending ? "Đang kiểm tra…" : "Kiểm tra metric"}
           </button>
         </div>
         {probed?.hasSeries === true && (
@@ -266,7 +266,7 @@ export function ServiceRolloutDialog({
         <input
           id="sr-tag"
           className="inp mono"
-          placeholder="1.4.2"
+          placeholder="1.4.2…"
           value={imageTag}
           onChange={(e) => setImageTag(e.target.value.trim())}
         />
@@ -284,7 +284,7 @@ export function ServiceRolloutDialog({
             <input
               id="sr-header"
               className="inp mono"
-              placeholder="X-Beta"
+              placeholder="X-Beta…"
               value={header}
               onChange={(e) => setHeader(e.target.value.trim())}
             />
@@ -294,7 +294,7 @@ export function ServiceRolloutDialog({
             <input
               id="sr-header-value"
               className="inp mono"
-              placeholder="1"
+              placeholder="1…"
               value={headerValue}
               onChange={(e) => setHeaderValue(e.target.value)}
             />

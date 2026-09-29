@@ -1,35 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { DeploymentWire, DoraWire } from "@udp/shared-types/wire";
-import { CircleAlert, CircleCheck, CircleX, Rocket } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleX } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { messageOf } from "../../lib/errors";
-import { formatDateTime, formatNumber, formatPercent } from "../../lib/format";
+import {
+  formatDateTime,
+  formatDuration,
+  formatNumber,
+  formatPercent,
+} from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { deploymentApi } from "./deployment-api";
+import { PageHead } from "../../components/PageHead";
 
 const RANGES = [7, 30, 90] as const;
-
-/** Thời lượng dễ đọc: "3 giờ 20 phút", "45 giây" */
-export function formatDuration(seconds: number | null): string {
-  if (seconds === null) return "–";
-  const s = Math.round(seconds);
-  if (s < 60) return `${String(s)} giây`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${String(m)} phút`;
-  const h = Math.floor(m / 60);
-  if (h < 48)
-    return m % 60 === 0
-      ? `${String(h)} giờ`
-      : `${String(h)} giờ ${String(m % 60)} phút`;
-  return `${String(Math.round(h / 24))} ngày`;
-}
 
 const STATUS: Record<
   DeploymentWire["status"],
@@ -88,15 +79,10 @@ export function DeploymentsPage() {
     <>
       <ProjectBar title="Deploy" />
       <div className="scroll">
-        <div className="mhead">
-          <span className="tile xl">
-            <Icon of={Rocket} size={21} />
-          </span>
-          <div>
-            <h1>Deploy</h1>
-            <p>Lịch sử triển khai và bốn chỉ số DORA ở {env.name}.</p>
-          </div>
-          <div className="acts">
+        <PageHead
+          title="Deploy"
+          lead={<>Lịch sử triển khai và bốn chỉ số DORA ở {env.name}.</>}
+          actions={
             <div className="seg" role="group" aria-label="Khoảng thời gian">
               {RANGES.map((d) => (
                 <button
@@ -109,8 +95,8 @@ export function DeploymentsPage() {
                 </button>
               ))}
             </div>
-          </div>
-        </div>
+          }
+        />
         <div className="page">
           {dora.isPending ? (
             <Loading />

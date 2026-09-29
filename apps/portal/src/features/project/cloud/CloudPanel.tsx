@@ -50,9 +50,9 @@ export function CloudPanel({
       ) : (
         <CloudStatus projectId={projectId} cloud={cloud} canCheck={isOwner} />
       )}
-      <h3 className="h2">
+      <h2 className="h2">
         {cloud === null ? "Chọn cloud và cách xác thực" : "Đổi cấu hình"}
-      </h3>
+      </h2>
       <CloudEditor
         projectId={projectId}
         canEdit={isOwner}

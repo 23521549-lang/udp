@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router";
 import {
   ChartNoAxesColumnIncreasing,
   Flag,
-  LayoutDashboard,
   Lock,
   Rocket,
   Server,
@@ -27,6 +26,7 @@ import { RepoReadinessCard } from "../code/RepoReadinessCard";
 import { useProjectContext } from "./ProjectLayout";
 import { projectApi } from "./project-api";
 import { ROLE_LABEL } from "./roles";
+import { PageHead } from "../../components/PageHead";
 
 /**
  * Tổng quan (§10.6): trạng thái project, ba chỉ số nhanh (flag đang bật ở env đang chọn, rollout
@@ -64,21 +64,18 @@ export function OverviewPage() {
     <>
       <ProjectBar title="Tổng quan" />
       <div className="scroll">
-        <div className="mhead">
-          <span className="tile xl">
-            <Icon of={LayoutDashboard} size={21} />
-          </span>
-          <div>
-            <h1>{project.name}</h1>
-            <p>
+        <PageHead
+          title={<span translate="no">{project.name}</span>}
+          lead={
+            <span className="lead-line">
               <ProjectStatus
                 status={project.status}
                 expiresAt={project.expiresAt}
-              />{" "}
-              · Vai của bạn: {ROLE_LABEL[project.myRole]}
-            </p>
-          </div>
-        </div>
+              />
+              <span>Vai của bạn: {ROLE_LABEL[project.myRole]}</span>
+            </span>
+          }
+        />
         <div className="page">
           <div className="kpis">
             <Kpi

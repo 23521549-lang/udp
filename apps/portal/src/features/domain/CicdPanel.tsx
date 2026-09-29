@@ -32,7 +32,7 @@ export function CicdPanel() {
 
   return (
     <section aria-label="Webhook CI/CD">
-      <h3 className="h2">Webhook CI/CD</h3>
+      <h2 className="h2">Webhook CI/CD</h2>
       <p className="c3">
         Bước cuối của pipeline gọi địa chỉ này, ký thân bằng secret webhook.
         Deploy xong flag vẫn tắt: deploy không phải release.
@@ -166,7 +166,7 @@ function SecretDialog({
             onClick={() => rotate.mutate()}
           >
             {rotate.isPending
-              ? "Đang sinh..."
+              ? "Đang sinh…"
               : rotating
                 ? "Xoay secret"
                 : "Sinh secret"}

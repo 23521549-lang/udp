@@ -118,7 +118,8 @@ function JobView({
     <section aria-label="Tiến độ triển khai">
       <dl className="props">
         <dt>Trạng thái</dt>
-        <dd>
+        {/* Đổi pha được đọc lên: job chạy nhiều phút, người dùng không ngồi nhìn màn hình */}
+        <dd aria-live="polite">
           <span className="chip soft">{JOB_STATE_LABEL[job.state]}</span>
         </dd>
         <dt>Bắt đầu</dt>
@@ -137,7 +138,10 @@ function JobView({
               : {})}
           >
             {job.state === "DONE" || (reached >= 0 && i < reached) ? (
-              <Icon of={CircleCheck} />
+              <>
+                <Icon of={CircleCheck} />
+                <span className="visually-hidden">Xong: </span>
+              </>
             ) : null}
             {JOB_STATE_LABEL[phase]}
           </li>
@@ -161,7 +165,7 @@ function JobView({
 
       {detail.resources.length > 0 && (
         <div className="table-wrap">
-          <table className="matrix" aria-label="Tài nguyên cloud">
+          <table className="dtable" aria-label="Tài nguyên cloud">
             <thead>
               <tr>
                 <th scope="col">Tên</th>

@@ -124,7 +124,7 @@ export function LoginPage() {
           </p>
         )}
         <button type="submit" className="btn pri" disabled={login.isPending}>
-          {login.isPending ? "Đang đăng nhập..." : "Đăng nhập"}
+          {login.isPending ? "Đang đăng nhập…" : "Đăng nhập"}
         </button>
       </form>
       <p className="c3">
@@ -195,7 +195,7 @@ export function RegisterPage() {
           </p>
         )}
         <button type="submit" className="btn pri" disabled={register.isPending}>
-          {register.isPending ? "Đang tạo..." : "Tạo tài khoản"}
+          {register.isPending ? "Đang tạo…" : "Tạo tài khoản"}
         </button>
       </form>
       <p className="c3">

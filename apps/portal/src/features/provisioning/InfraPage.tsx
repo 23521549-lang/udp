@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { ProvisioningJobWire } from "@udp/shared-types/wire";
-import { Server } from "lucide-react";
+
 import { useState } from "react";
-import { Icon } from "../../components/Icon";
 import { ErrorState, Loading } from "../../components/States";
 import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
@@ -14,6 +13,7 @@ import { JobLog } from "./JobLog";
 import { PreviewPanel } from "./PreviewPanel";
 import { provisioningApi } from "./provisioning-api";
 import { JOB_STATE_LABEL, TERMINAL_STATES } from "./provisioning-labels";
+import { PageHead } from "../../components/PageHead";
 
 /** Project còn chạy lại được: nháp, hay lỗi sau khi đã dọn (§8.1) */
 const STARTABLE = ["DRAFT", "ERROR"];
@@ -39,18 +39,10 @@ export function InfraPage() {
     <>
       <ProjectBar title="Hạ tầng" envScoped={false} />
       <div className="scroll">
-        <div className="mhead">
-          <span className="tile xl">
-            <Icon of={Server} size={21} />
-          </span>
-          <div>
-            <h1>Hạ tầng</h1>
-            <p>
-              Mạng, cluster và domain của project trên tài khoản cloud của bạn.
-              Một cluster phục vụ mọi environment.
-            </p>
-          </div>
-        </div>
+        <PageHead
+          title="Hạ tầng"
+          lead="Mạng, cluster và domain của project trên tài khoản cloud của bạn. Một cluster phục vụ mọi environment."
+        />
         <div className="page">
           {jobs.isPending && <Loading />}
           {jobs.isError && (
@@ -96,7 +88,7 @@ function History({
 }) {
   return (
     <div className="table-wrap">
-      <table className="matrix" aria-label="Các lượt triển khai">
+      <table className="dtable" aria-label="Các lượt triển khai">
         <thead>
           <tr>
             <th scope="col">Bắt đầu</th>

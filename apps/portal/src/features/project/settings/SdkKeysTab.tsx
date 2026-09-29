@@ -48,7 +48,7 @@ export function SdkKeysTab() {
   return (
     <section aria-label={`SDK key ở ${env.name}`}>
       <div className="sect">
-        <h3>SDK key ở {env.name}</h3>
+        <h2>SDK key ở {env.name}</h2>
         {isOwner && (
           <div className="r">
             <button
@@ -78,7 +78,9 @@ export function SdkKeysTab() {
         <div className="lst">
           {keys.data.keys.map((k) => (
             <div key={k.id} className="it">
-              <span className="mono">{k.maskedKey}</span>
+              <span className="mono" translate="no">
+                {k.maskedKey}
+              </span>
               <span className="chip soft">{k.keyType}</span>
               <span className="c3">{k.label ?? ""}</span>
               <span className="c3" style={{ marginLeft: "auto" }}>
@@ -181,7 +183,7 @@ function CreateKeyDialog({ onClose }: { onClose: () => void }) {
             disabled={create.isPending}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Đang tạo..." : "Tạo key"}
+            {create.isPending ? "Đang tạo…" : "Tạo key"}
           </button>
         </>
       }

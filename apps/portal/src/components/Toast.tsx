@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { create } from "zustand";
 
 /**
@@ -39,14 +39,36 @@ export const toast = {
   error: (text: string) => useToasts.getState().push({ text, tone: "error" }),
 };
 
+/**
+ * Thời gian hiện: lỗi lâu nhất (người dùng cần đọc hết một câu lỗi dài), có Hoàn tác đúng 5 giây của
+ * DESIGN.md §7, còn lại 4 giây. Rê chuột hay focus vào toast thì dừng đếm — không ai đọc kịp một
+ * lỗi đang biến mất dưới tay mình.
+ */
+const LIFETIME_MS = { error: 8000, undo: 5000, info: 4000 } as const;
+
 function ToastView({ item }: { item: ToastItem }) {
   const dismiss = useToasts((s) => s.dismiss);
+  const [paused, setPaused] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => dismiss(item.id), item.undo ? 5000 : 4000);
+    if (paused) return;
+    const ms =
+      item.tone === "error"
+        ? LIFETIME_MS.error
+        : item.undo
+          ? LIFETIME_MS.undo
+          : LIFETIME_MS.info;
+    const timer = setTimeout(() => dismiss(item.id), ms);
     return () => clearTimeout(timer);
-  }, [item, dismiss]);
+  }, [item, dismiss, paused]);
   return (
-    <div className="toast" role={item.tone === "error" ? "alert" : "status"}>
+    <div
+      className="toast"
+      role={item.tone === "error" ? "alert" : "status"}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+    >
       <span>{item.text}</span>
       {item.undo !== undefined && (
         <button

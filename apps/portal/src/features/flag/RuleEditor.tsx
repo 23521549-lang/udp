@@ -9,6 +9,7 @@ import type { FlagVariantWire } from "@udp/shared-types/wire";
 import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { Icon } from "../../components/Icon";
+import { formatPercent } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { segmentApi } from "../segment/segment-api";
 import {
@@ -102,13 +103,19 @@ export function RuleCard({
   onRemove: () => void;
 }) {
   const label = `Rule ${String(index + 1)}`;
+  const problemId = `${rule.localKey}-problem`;
   return (
-    <div className="rule" role="group" aria-label={label}>
+    <div
+      className="rule"
+      role="group"
+      aria-label={label}
+      aria-describedby={problem === undefined ? undefined : problemId}
+    >
       <div className="rule-h">
         <span className="idx">{index + 1}</span>
         <input
           aria-label={`Mô tả ${label}`}
-          placeholder="Mô tả rule"
+          placeholder="Mô tả rule…"
           value={rule.description ?? ""}
           disabled={readOnly}
           onChange={(e) => onChange({ ...rule, description: e.target.value })}
@@ -175,11 +182,14 @@ export function RuleCard({
           readOnly={readOnly}
           onChange={(serve) => onChange({ ...rule, serve })}
         />
-        {problem !== undefined && (
-          <span className="field-error" style={{ gridColumn: "2" }}>
-            {problem}
-          </span>
-        )}
+        <span
+          id={problemId}
+          className="field-error"
+          style={{ gridColumn: "2" }}
+          aria-live="polite"
+        >
+          {problem ?? ""}
+        </span>
       </div>
     </div>
   );
@@ -254,7 +264,7 @@ export function AttributeConditions({
           <input
             className="inp mono"
             aria-label={`Thuộc tính ${String(i + 1)} của ${label}`}
-            placeholder="country"
+            placeholder="country…"
             value={c.attribute}
             disabled={readOnly}
             onChange={(e) =>
@@ -294,7 +304,7 @@ export function AttributeConditions({
           <input
             className="inp"
             aria-label={`Giá trị ${String(i + 1)} của ${label}`}
-            placeholder={LIST_OPS.has(c.operator) ? "VN, TH" : "VN"}
+            placeholder={LIST_OPS.has(c.operator) ? "VN, TH…" : "VN…"}
             value={textOf(c.value)}
             disabled={readOnly}
             onChange={(e) =>
@@ -377,7 +387,7 @@ export function TagInput({
       ))}
       <input
         aria-label={label}
-        placeholder={values.length === 0 ? "user-1, user-2" : ""}
+        placeholder={values.length === 0 ? "user-1, user-2…" : ""}
         value={text}
         disabled={readOnly}
         onChange={(e) => setText(e.target.value)}
@@ -534,7 +544,7 @@ function Distribution({
             min={0}
             max={100}
             step={0.1}
-            aria-label={`Tỉ lệ ${keyOf(w.variantId)} của ${label}`}
+            aria-label={`Kéo tỉ lệ ${keyOf(w.variantId)} của ${label}`}
             value={percentOf(w.weight)}
             disabled={readOnly}
             onChange={(e) =>
@@ -543,7 +553,27 @@ function Distribution({
               )
             }
           />
-          <span className="pct">{percentOf(w.weight)}%</span>
+          {/* Ô số cạnh thanh trượt: gõ đúng 33,3 thay vì dò bằng chuột từng 0,1 */}
+          <input
+            type="number"
+            className="inp num pct-in"
+            inputMode="decimal"
+            min={0}
+            max={100}
+            step={0.1}
+            aria-label={`Tỉ lệ ${keyOf(w.variantId)} của ${label} (%)`}
+            value={percentOf(w.weight)}
+            disabled={readOnly}
+            onChange={(e) =>
+              onChange(
+                setWeight(
+                  serve,
+                  w.variantId,
+                  weightOf(Math.min(100, Math.max(0, Number(e.target.value)))),
+                ),
+              )
+            }
+          />
         </div>
       ))}
       <div
@@ -551,7 +581,7 @@ function Distribution({
         role={sum === TOTAL_WEIGHT ? undefined : "alert"}
       >
         <span>Tổng</span>
-        <span>{percentOf(sum)}%</span>
+        <span className="num">{formatPercent(percentOf(sum))}</span>
       </div>
     </div>
   );

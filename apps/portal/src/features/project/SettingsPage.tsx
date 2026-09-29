@@ -1,7 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Settings2 } from "lucide-react";
+
 import type { SettingsSearch } from "../../app/router";
-import { Icon } from "../../components/Icon";
 import { ProjectBar } from "./ProjectBar";
 import { CloudPanel } from "./cloud/CloudPanel";
 import { useProjectContext } from "./ProjectLayout";
@@ -10,6 +9,7 @@ import { EnvironmentsTab } from "./settings/EnvironmentsTab";
 import { MembersTab } from "./settings/MembersTab";
 import { ProjectTab } from "./settings/ProjectTab";
 import { SdkKeysTab } from "./settings/SdkKeysTab";
+import { PageHead } from "../../components/PageHead";
 
 type Tab = NonNullable<SettingsSearch["tab"]>;
 const TAB_LABEL: Record<Tab, string> = {
@@ -31,18 +31,10 @@ export function SettingsPage() {
     <>
       <ProjectBar title="Cài đặt" envScoped={tab === "keys"} />
       <div className="scroll">
-        <div className="mhead">
-          <span className="tile xl">
-            <Icon of={Settings2} size={21} />
-          </span>
-          <div>
-            <h1>Cài đặt</h1>
-            <p>
-              SDK key, environment, thành viên, nhật ký, cloud và trần tài
-              nguyên.
-            </p>
-          </div>
-        </div>
+        <PageHead
+          title="Cài đặt"
+          lead="SDK key, environment, thành viên, nhật ký, cloud và trần tài nguyên."
+        />
         <div className="page">
           <div className="envtabs" role="tablist" aria-label="Mục cài đặt">
             {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (

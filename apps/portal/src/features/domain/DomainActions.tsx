@@ -110,7 +110,7 @@ export function DomainActions({
             onClick={() => scan.mutate()}
           >
             <Icon of={RefreshCw} />
-            {scan.isPending ? "Đang quét..." : "Quét drift ngay"}
+            {scan.isPending ? "Đang quét…" : "Quét drift ngay"}
           </button>
         )}
         {target !== undefined && (

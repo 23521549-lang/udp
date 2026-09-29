@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { FolderKanban } from "lucide-react";
 import { useState } from "react";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { formatDateTime } from "../../../lib/format";
@@ -27,7 +26,6 @@ export function AdminProjectsPage() {
     <AdminPage
       title="Project"
       lead="Mọi project trên nền tảng, kể cả đã xoá mềm."
-      icon={FolderKanban}
     >
       <div className="filters" style={{ padding: "0 0 10px" }}>
         <select
@@ -56,7 +54,7 @@ export function AdminProjectsPage() {
         <Empty title="Không có project nào" />
       ) : (
         <div className="table-wrap">
-          <table className="matrix" aria-label="Project">
+          <table className="dtable" aria-label="Project">
             <thead>
               <tr>
                 <th scope="col">Tên</th>

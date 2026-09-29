@@ -7,7 +7,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { formatDuration } from "../src/features/deployment/DeploymentsPage";
+import { formatDuration } from "../src/lib/format";
 import { API, golden, server } from "./msw";
 import { renderApp, USER } from "./render";
 

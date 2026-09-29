@@ -3,7 +3,6 @@ import {
   CircleAlert,
   CircleCheck,
   CircleHelp,
-  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { Icon } from "../../../components/Icon";
@@ -32,7 +31,6 @@ export function AdminSystemPage() {
     <AdminPage
       title="Hệ thống"
       lead="Sức khoẻ ba service và database, tự cập nhật mỗi 30 giây."
-      icon={Shield}
     >
       {system.isPending ? (
         <Loading />

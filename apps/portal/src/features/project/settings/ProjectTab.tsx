@@ -99,7 +99,7 @@ export function ProjectTab() {
         <dd>{formatDateTime(project.createdAt)}</dd>
       </dl>
 
-      <h3 className="h2">Trần tài nguyên</h3>
+      <h2 className="h2">Trần tài nguyên</h2>
       <p className="c3">
         Cưỡng chế chứ không phải gợi ý: provisioning vượt trần bị từ chối
         (§4.4).
@@ -142,9 +142,9 @@ export function ProjectTab() {
         <p className="field-error">{messageOf(saveQuota.error)}</p>
       )}
 
-      <h3 className="h2" style={{ marginTop: 22 }}>
+      <h2 className="h2" style={{ marginTop: 22 }}>
         Hạn dùng
-      </h3>
+      </h2>
       <p className="c3">
         Hết hạn thì chỉ cảnh báo chủ sở hữu, không tự xoá tài nguyên của bạn
         (§4.4).
@@ -186,9 +186,9 @@ export function ProjectTab() {
 
       {isOwner && (
         <>
-          <h3 className="h2" style={{ marginTop: 22 }}>
+          <h2 className="h2" style={{ marginTop: 22 }}>
             Vùng nguy hiểm
-          </h3>
+          </h2>
           <button
             type="button"
             className="btn danger"

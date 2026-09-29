@@ -318,7 +318,7 @@ details.cardc .q {
   gap: 10px;
 }
 
-.snips h4 {
+.snips h3 {
   margin: 0 0 4px;
   font-size: 12px;
   font-weight: 500;
@@ -449,4 +449,625 @@ details.cardc .q {
   .row {
     grid-template-columns: 18px minmax(0, 1fr) 64px;
   }
+}
+
+/* ======================================================================
+ * Plan #53 — khung hai không gian, component dùng chung, sửa theo review
+ * ====================================================================== */
+
+/* ---------- đầu phân hệ (PageHead) ---------- */
+.mhead-t {
+  min-width: 0;
+}
+.mhead h1 {
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.lead-line {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+@media (max-width: 860px) {
+  .mhead {
+    flex-wrap: wrap;
+  }
+  .mhead .minis,
+  .mhead .acts {
+    margin-left: 0;
+  }
+}
+
+/* ---------- khung chung (Shell) ---------- */
+.skip {
+  position: fixed;
+  left: 12px;
+  top: -48px;
+  z-index: 70;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: var(--raised);
+  box-shadow: var(--shadow-pop);
+  font-weight: 500;
+  transition: top 0.12s var(--ease);
+}
+.skip:focus-visible {
+  top: 12px;
+}
+.main:focus {
+  outline: none;
+}
+.main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.ib.menubtn {
+  position: absolute;
+  top: 9px;
+  left: 8px;
+  z-index: 3;
+}
+@media (min-width: 861px) {
+  .side-scrim {
+    display: none;
+  }
+}
+@media (max-width: 860px) {
+  .side {
+    overscroll-behavior: contain;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+}
+.shell {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: max(8px, env(safe-area-inset-right, 0px));
+}
+@media (max-width: 860px) {
+  .shell {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+}
+
+/* Khu tài khoản: một nút mở menu (đổi khung, giao diện, đăng xuất) */
+.me {
+  position: relative;
+  padding: 4px 0 0;
+}
+.me-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--ink-2);
+  text-align: left;
+}
+.me-btn:hover,
+.me-btn[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--ink);
+}
+.me .av {
+  background: var(--accent);
+}
+.acct {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 36;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
+  animation: pop 0.14s var(--ease);
+}
+.acct-id {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+  min-width: 0;
+}
+.acct-id b,
+.acct-id span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-it {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--ink-2);
+  font-weight: 500;
+  text-align: left;
+}
+.acct-it:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/*
+ * Bảng điều khiển nền tảng: cùng lớp của bản mẫu, nhưng thanh bên đọc token `--console-*`.
+ * Định nghĩa LẠI token trong phạm vi thanh bên thay vì viết lại từng lớp: mọi thành phần của
+ * bản mẫu bên trong (mục menu, nhóm, logo, tài khoản) tự đổi theo.
+ */
+.shell.console {
+  background: var(--console-bg);
+}
+.shell.console .side {
+  --bg: var(--console-bg);
+  --panel: var(--console-raised);
+  --hover: var(--console-raised);
+  --line: var(--console-line);
+  --ink: var(--console-ink);
+  --ink-2: var(--console-ink-2);
+  --ink-3: var(--console-ink-2);
+  --accent-soft: var(--console-active);
+  --accent-2: var(--console-ink);
+  color: var(--console-ink);
+}
+.shell.console .acct {
+  --raised: var(--console-raised);
+}
+.ws-tag {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--console-bg);
+  background: var(--console-ink);
+  white-space: nowrap;
+}
+
+/* ---------- nhãn trạng thái (StatusLabel) ---------- */
+.sl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.sl svg.i {
+  width: 15px;
+  height: 15px;
+}
+.sl.ok {
+  color: var(--green-ink);
+}
+.sl.running {
+  color: var(--accent);
+}
+.sl.warn {
+  color: var(--amber-ink);
+}
+.sl.error {
+  color: var(--red-ink);
+}
+.sl.unknown {
+  color: var(--ink-3);
+}
+
+/* ---------- thanh mức dùng (Meter) ---------- */
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.meter-h {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+.meter-t {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow: hidden;
+}
+.meter-t i {
+  display: block;
+  height: 100%;
+  background: var(--ink-3);
+  transform-origin: left center;
+  transition: transform 0.4s var(--ease);
+}
+.meter-t.high i {
+  background: var(--amber);
+}
+.meter-t.crit i {
+  background: var(--red);
+}
+
+/* ---------- biểu đồ (LineChart, BarChart) ---------- */
+.lc,
+.bc {
+  margin: 0;
+  min-width: 0;
+}
+.lc-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 6px;
+}
+.lc-h h2,
+.lc-h h3,
+.lc-h h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.lc-lg {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.lc .chart {
+  border-radius: 6px;
+}
+.lc .chart svg {
+  width: 100%;
+  height: auto;
+}
+.lc-ax {
+  font-size: 11px;
+  fill: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.lc-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.lc-tbl {
+  margin-top: 4px;
+  font-size: 12px;
+}
+.lc-tbl summary {
+  cursor: pointer;
+  color: var(--ink-3);
+  width: max-content;
+}
+.lc-tbl .table-wrap {
+  margin-top: 6px;
+  max-height: 240px;
+  overflow: auto;
+}
+.bc-plot {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding-top: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.bc-max {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 11px;
+}
+.bc-col {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 3px;
+}
+.bc-col:hover,
+.bc-col:focus-visible {
+  background: var(--hover);
+}
+.bc-stack {
+  width: 100%;
+  min-height: 1px;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+}
+.bc-stack i {
+  display: block;
+  min-height: 2px;
+}
+.bc-neutral {
+  background: var(--v2);
+}
+.bc-accent {
+  background: var(--accent);
+}
+.bc-error {
+  background: var(--red);
+}
+.lg i.bc-neutral,
+.lg i.bc-accent,
+.lg i.bc-error {
+  height: 8px;
+  width: 8px;
+  border-radius: 2px;
+}
+.bc-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--raised);
+  box-shadow: var(--shadow-pop);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.bc-col:hover .bc-tip,
+.bc-col:focus-visible .bc-tip {
+  opacity: 1;
+}
+.bc-x {
+  display: flex;
+  gap: 3px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.bc-x span {
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ---------- bảng dữ liệu ---------- */
+.dtable {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+}
+.dtable th,
+.dtable td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+.dtable tbody tr:last-child td {
+  border-bottom: 0;
+}
+.dtable thead th {
+  color: var(--ink-3);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.dtable .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dtable tbody tr:hover {
+  background: var(--hover);
+}
+
+/* ---------- sửa theo review 29/09 (Web Interface Guidelines) ---------- */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a,
+input,
+select,
+textarea,
+label {
+  touch-action: manipulation;
+}
+/* Ô trong các khối có viền riêng bị bản mẫu tắt outline: focus hiện ở khối chứa */
+.rule-h:focus-within,
+.tagin:focus-within {
+  box-shadow:
+    inset 0 0 0 1px var(--accent),
+    0 0 0 3px var(--accent-soft);
+}
+.rule-h:focus-within {
+  border-radius: 8px 8px 0 0;
+}
+.filters .q:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.pal .in:focus-within {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.sel:focus:not(:focus-visible),
+.inp:focus:not(:focus-visible) {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* Hộp thoại dài (tạo rollout: 13 ô) không đẩy nút ra ngoài màn hình */
+.modal {
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+}
+.modal .mb {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+}
+.modal .mh,
+.modal .mf {
+  flex: none;
+}
+.pal .ls,
+.peek .inner {
+  overscroll-behavior: contain;
+}
+/* Toast dài xuống dòng thay vì tràn ngang trên điện thoại */
+.toast {
+  white-space: normal;
+  height: auto;
+  min-height: 40px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+/* Dòng dính của danh sách không che dòng đang focus */
+.scroll {
+  scroll-padding-top: 40px;
+}
+/* Hover cho các nút bản mẫu còn thiếu */
+.envpop .op:hover,
+.opts button:hover {
+  background: var(--hover);
+}
+.seg button:hover:not([aria-pressed="true"]),
+.envtabs button:hover:not([aria-selected="true"]) {
+  color: var(--ink-2);
+}
+.tagin .c button:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* Danh sách flag: dòng là link (Ctrl-click mở tab mới), có hàng tiêu đề cột */
+a.row {
+  color: inherit;
+}
+.row[aria-current="true"] {
+  background: var(--active);
+}
+h2.gh {
+  margin: 0;
+  font-size: inherit;
+}
+.row.row-h {
+  height: 30px;
+  cursor: default;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  background: var(--panel);
+}
+.row.row-h:hover {
+  background: var(--panel);
+}
+@media (max-width: 860px) {
+  .row.row-h {
+    display: none;
+  }
+}
+
+/* Form cấu hình domain: nhãn tiếng Việt, khoá gốc của tool ở bên phải */
+.f-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.f-top > label,
+.f-top > .lbl {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.f-key {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Danh sách `.lst` có hàng bọc `role="listitem"` (link vẫn là link cho trình đọc màn hình). Luật
+ * `.lst a:last-child` của bản mẫu giả định link là con trực tiếp: đặt lại đường kẻ theo hàng bọc.
+ */
+.lst > [role="listitem"] > a {
+  border-bottom: 1px solid var(--line);
+}
+.lst > [role="listitem"]:last-child > a {
+  border-bottom: 0;
+}
+.lst a[aria-current="true"] {
+  background: var(--active);
+}
+.lst-name {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lst-end {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Tiêu đề mục ở bậc h2 (sửa bậc nhảy h1 → h3): cùng kiểu với h3 của bản mẫu */
+.sect h2,
+.cardc .hd h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Bảng lệnh: lựa chọn là phần tử của combobox (không phải nút), vẫn bấm được bằng chuột */
+.pal .op {
+  cursor: pointer;
+}
+/* Bộ chọn environment: nút thường, environment đang chọn đánh dấu bằng aria-current */
+.envpop .op[aria-current="true"] {
+  background: var(--active);
+}
+.envpop-empty {
+  margin: 4px 8px 8px;
+  font-size: 12px;
+}
+/* Ô chọn và nhãn là một vùng bấm (không khoảng chết) */
+.check-row,
+.line.check {
+  cursor: pointer;
+}
+.check-row:hover {
+  background: var(--hover);
+}
+/* Ô số cạnh thanh trượt chia tỉ lệ */
+.dist .pct-in {
+  width: 100%;
+  height: 24px;
+  padding: 0 4px;
+  text-align: right;
+}
+.dtable tbody th {
+  font-weight: 500;
+}
+.dtable tfoot td {
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
 }

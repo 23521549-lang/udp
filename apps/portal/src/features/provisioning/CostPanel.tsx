@@ -6,7 +6,7 @@ import { problemSlugOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
 import { useProjectContext } from "../project/ProjectLayout";
 import { provisioningApi } from "./provisioning-api";
-import { usd } from "./provisioning-labels";
+import { formatUsd } from "../../lib/format";
 
 const WINDOWS = [7, 30] as const;
 
@@ -53,26 +53,36 @@ export function CostPanel() {
         <ErrorState error={cost.error} onRetry={() => void cost.refetch()} />
       )}
       {cost.data !== undefined && (
-        <table className="matrix" aria-label="Chi phí theo environment">
+        <table className="dtable" aria-label="Chi phí theo environment">
           <thead>
             <tr>
               <th scope="col">Environment</th>
-              <th scope="col">CPU</th>
-              <th scope="col">RAM</th>
-              <th scope="col">Lưu trữ</th>
-              <th scope="col">Mạng</th>
-              <th scope="col">Tổng (USD)</th>
+              <th scope="col" className="num">
+                CPU
+              </th>
+              <th scope="col" className="num">
+                RAM
+              </th>
+              <th scope="col" className="num">
+                Lưu trữ
+              </th>
+              <th scope="col" className="num">
+                Mạng
+              </th>
+              <th scope="col" className="num">
+                Tổng
+              </th>
             </tr>
           </thead>
           <tbody>
             {cost.data.cost.environments.map((e) => (
               <tr key={e.environmentId}>
                 <td>{e.name}</td>
-                <td className="num">{usd(e.cpuUsd)}</td>
-                <td className="num">{usd(e.ramUsd)}</td>
-                <td className="num">{usd(e.storageUsd)}</td>
-                <td className="num">{usd(e.networkUsd)}</td>
-                <td className="num">{usd(e.totalUsd)}</td>
+                <td className="num">{formatUsd(e.cpuUsd)}</td>
+                <td className="num">{formatUsd(e.ramUsd)}</td>
+                <td className="num">{formatUsd(e.storageUsd)}</td>
+                <td className="num">{formatUsd(e.networkUsd)}</td>
+                <td className="num">{formatUsd(e.totalUsd)}</td>
               </tr>
             ))}
           </tbody>
@@ -82,7 +92,7 @@ export function CostPanel() {
                 Tổng {cost.data.cost.days} ngày, nguồn {cost.data.cost.provider}
               </td>
               <td className="num">
-                <b>{usd(cost.data.cost.totalUsd)}</b>
+                <b>{formatUsd(cost.data.cost.totalUsd)}</b>
               </td>
             </tr>
           </tfoot>

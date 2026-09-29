@@ -5,8 +5,10 @@ import type {
   ProjectRoleWire,
 } from "@udp/shared-types/wire";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
+import { UnsavedGuard } from "../../components/UnsavedGuard";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { isApiError } from "../../lib/http";
 import { qk } from "../../lib/query-keys";
@@ -14,9 +16,11 @@ import { can } from "../project/roles";
 import { JobLog } from "../provisioning/JobLog";
 import { domainApi } from "./domain-api";
 import {
+  changesOf,
   chooseTool,
   choosePreference,
   draftFrom,
+  type DomainChange,
   enableSuggested,
   sameTarget,
   setConfig,
@@ -35,10 +39,19 @@ import { ValidationPanel } from "./ValidationPanel";
 export function DomainPanel({
   projectId,
   role,
+  live,
+  level,
   onSaved,
 }: {
   projectId: string;
   role: ProjectRoleWire;
+  /**
+   * Project đang chạy (ACTIVE): lưu là ÁP lên cluster thật — bật, tắt, đổi tool — nên phải xác nhận
+   * kèm danh sách thay đổi. Trong wizard (DRAFT) lưu chỉ ghi cấu hình, không cần hỏi.
+   */
+  live: boolean;
+  /** Bậc tiêu đề của nhóm domain theo chỗ đặt: trang Domain (h1 → h2), wizard (h2 → h3) */
+  level: 2 | 3;
   onSaved?: () => void;
 }) {
   const catalog = useQuery({
@@ -60,8 +73,19 @@ export function DomainPanel({
     void queryClient.invalidateQueries({ queryKey: qk.domains(projectId) });
   }, [queryClient, projectId]);
   if (catalog.isPending || saved.isPending) return <Loading />;
-  if (catalog.isError) return <ErrorState error={catalog.error} />;
-  if (saved.isError) return <ErrorState error={saved.error} />;
+  if (catalog.isError) {
+    return (
+      <ErrorState
+        error={catalog.error}
+        onRetry={() => void catalog.refetch()}
+      />
+    );
+  }
+  if (saved.isError) {
+    return (
+      <ErrorState error={saved.error} onRetry={() => void saved.refetch()} />
+    );
+  }
   return (
     <>
       {applying !== null && (
@@ -86,11 +110,33 @@ export function DomainPanel({
         saved={saved.data}
         canTry={can(role, "DEVELOPER")}
         canSave={can(role, "MAINTAINER")}
+        live={live}
+        level={level}
         onApplying={setApplying}
         {...(onSaved === undefined ? {} : { onSaved })}
       />
     </>
   );
+}
+
+/** Một dòng của hộp xác nhận: "Bật Monitoring (prometheus-grafana)" */
+function describeChange(
+  change: DomainChange,
+  catalog: readonly DomainCatalogEntryWire[],
+): string {
+  const domain =
+    catalog.find((c) => c.domainType === change.domainType)?.displayName ??
+    change.domainType;
+  switch (change.kind) {
+    case "enable":
+      return `Bật ${domain} (${change.toolId})`;
+    case "disable":
+      return `Tắt ${domain} (${change.toolId}): gỡ công cụ khỏi cluster`;
+    case "switch":
+      return `Đổi ${domain}: ${change.from} sang ${change.to}`;
+    case "config":
+      return `Đổi cấu hình ${domain} (${change.toolId})`;
+  }
 }
 
 const DEBOUNCE_MS = 400;
@@ -137,6 +183,8 @@ function DomainEditor({
   saved,
   canTry,
   canSave,
+  live,
+  level,
   onApplying,
   onSaved,
 }: {
@@ -145,13 +193,18 @@ function DomainEditor({
   saved: ProjectDomainsResponseWire;
   canTry: boolean;
   canSave: boolean;
+  live: boolean;
+  level: 2 | 3;
   onApplying: (jobId: string) => void;
   onSaved?: () => void;
 }) {
   const queryClient = useQueryClient();
   const initial = useMemo(() => draftFrom(catalog, saved), [catalog, saved]);
   const [draft, setDraft] = useState(initial);
+  const [confirming, setConfirming] = useState(false);
   const dirty = !sameTarget(draft, initial);
+  const changes = useMemo(() => changesOf(initial, draft), [initial, draft]);
+  const Heading = `h${String(level)}` as "h2" | "h3";
   const nameOf = useMemo(() => toolNamer(catalog), [catalog]);
   const validation = useLiveValidation(projectId, draft, canTry && dirty);
 
@@ -162,6 +215,7 @@ function DomainEditor({
         lastKnownDomainSetVersion: saved.domainSetVersion,
       }),
     onSuccess: ({ job, ...current }) => {
+      setConfirming(false);
       queryClient.setQueryData(qk.domains(projectId), current);
       if (job === null) {
         toast.info("Đã lưu cấu hình domain");
@@ -172,6 +226,7 @@ function DomainEditor({
       onSaved?.();
     },
     onError: async (error) => {
+      setConfirming(false);
       if (isApiError(error) && error.code === "OPTIMISTIC_LOCK") {
         toast.error(messageOf(error));
         await queryClient.invalidateQueries({
@@ -191,12 +246,23 @@ function DomainEditor({
     entries: catalog.filter((c) => c.tier === tier),
   }));
 
+  const discard = () => {
+    const before = draft;
+    setDraft(initial);
+    toast.info("Đã bỏ thay đổi cấu hình domain", () => setDraft(before));
+  };
+  const submit = () => {
+    if (live) setConfirming(true);
+    else save.mutate();
+  };
+
   return (
     <section aria-label="Cấu hình domain">
+      <UnsavedGuard dirty={dirty} what="Thay đổi cấu hình domain" />
       {tiers.map(({ tier, entries }) =>
         entries.length === 0 ? null : (
           <div key={tier}>
-            <h3 className="h2">{TIER_LABEL[tier]}</h3>
+            <Heading className="h2">{TIER_LABEL[tier]}</Heading>
             {entries.map((entry) => (
               <DomainRow
                 key={entry.domainType}
@@ -248,7 +314,7 @@ function DomainEditor({
             type="button"
             className="btn"
             disabled={!dirty || save.isPending}
-            onClick={() => setDraft(initial)}
+            onClick={discard}
           >
             Bỏ thay đổi
           </button>
@@ -256,11 +322,28 @@ function DomainEditor({
             type="button"
             className="btn pri"
             disabled={!dirty || save.isPending}
-            onClick={() => save.mutate()}
+            onClick={submit}
           >
-            {save.isPending ? "Đang lưu..." : "Lưu cấu hình domain"}
+            {save.isPending ? "Đang lưu…" : "Lưu cấu hình domain"}
           </button>
         </div>
+      )}
+      {confirming && (
+        <ConfirmDialog
+          title="Áp cấu hình lên cluster đang chạy?"
+          description="Project đang chạy: các thay đổi dưới đây được áp ngay lên cluster, theo thứ tự phụ thuộc."
+          confirmLabel="Áp cấu hình"
+          danger={changes.some((c) => c.kind !== "config")}
+          busy={save.isPending}
+          onConfirm={() => save.mutate()}
+          onClose={() => setConfirming(false)}
+        >
+          <ul className="plan-list" aria-label="Thay đổi sẽ áp">
+            {changes.map((c) => (
+              <li key={c.domainType}>{describeChange(c, catalog)}</li>
+            ))}
+          </ul>
+        </ConfirmDialog>
       )}
     </section>
   );

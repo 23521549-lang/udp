@@ -1,25 +1,27 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import type { PublicProjectWire } from "@udp/shared-types/wire";
-import { CircleAlert, CircleCheck, FolderKanban, Plus } from "lucide-react";
-import { useState } from "react";
+import { Plus } from "lucide-react";
 import { Icon } from "../../components/Icon";
+import { Pager } from "../../components/Pager";
+import { StatusLabel, type Tone } from "../../components/StatusLabel";
 import { Empty, ErrorState, Loading } from "../../components/States";
-import { relativeTime } from "../../lib/format";
+import { formatDateTime, relativeTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { PROJECT_PAGE_SIZE, projectApi } from "./project-api";
 import { ROLE_LABEL } from "./roles";
+import { PageHead } from "../../components/PageHead";
 
-/** Chữ cho trạng thái project — kèm icon, không chấm màu (DESIGN.md §5) */
+/** Chữ và tone cho trạng thái project — icon kèm chữ, không chấm màu (DESIGN.md §5) */
 export const PROJECT_STATUS: Record<
   PublicProjectWire["status"],
-  { label: string; ok: boolean }
+  { label: string; tone: Tone }
 > = {
-  DRAFT: { label: "Nháp", ok: false },
-  PROVISIONING: { label: "Đang dựng hạ tầng", ok: false },
-  ACTIVE: { label: "Ổn định", ok: true },
-  ERROR: { label: "Cần xem", ok: false },
-  DELETED: { label: "Đã xoá", ok: false },
+  DRAFT: { label: "Nháp", tone: "unknown" },
+  PROVISIONING: { label: "Đang dựng hạ tầng", tone: "running" },
+  ACTIVE: { label: "Ổn định", tone: "ok" },
+  ERROR: { label: "Cần xem", tone: "error" },
+  DELETED: { label: "Đã xoá", tone: "unknown" },
 };
 
 /**
@@ -42,17 +44,21 @@ export function ProjectStatus({
     new Date(expiresAt).getTime() <= now;
   return (
     <>
-      <span className={s.ok ? "stt" : "stt warn"}>
-        <Icon of={s.ok ? CircleCheck : CircleAlert} />
-        {s.label}
-      </span>
+      <StatusLabel tone={s.tone}>{s.label}</StatusLabel>
       {expired && <span className="chip soft">Hết hạn</span>}
     </>
   );
 }
 
 export function ProjectsPage() {
-  const [offset, setOffset] = useState(0);
+  const offset = useSearch({ from: "/app/projects" }).offset ?? 0;
+  const navigate = useNavigate();
+  const setOffset = (n: number): void => {
+    void navigate({
+      to: "/app/projects",
+      search: n === 0 ? {} : { offset: n },
+    });
+  };
   const projects = useQuery({
     queryKey: qk.projects(offset),
     queryFn: () => projectApi.list(offset),
@@ -74,15 +80,7 @@ export function ProjectsPage() {
         </div>
       </div>
       <div className="scroll">
-        <div className="mhead">
-          <span className="tile xl">
-            <Icon of={FolderKanban} size={21} />
-          </span>
-          <div>
-            <h1>Project</h1>
-            <p>Mọi project mà bạn là thành viên.</p>
-          </div>
-        </div>
+        <PageHead title="Project" lead="Mọi project mà bạn là thành viên." />
         <div className="page">
           {projects.isPending ? (
             <Loading />
@@ -98,57 +96,43 @@ export function ProjectsPage() {
               </Link>
             </Empty>
           ) : (
-            <div className="lst" role="list">
+            <div className="lst" role="list" aria-label="Project của bạn">
               {projects.data.projects.map((p) => (
-                <Link
-                  key={p.id}
-                  role="listitem"
-                  to="/app/projects/$projectId"
-                  params={{ projectId: p.id }}
-                  search={{}}
-                >
-                  <span className="t" style={{ fontWeight: 500 }}>
-                    {p.name}
-                  </span>
-                  <span className="chip soft">{ROLE_LABEL[p.myRole]}</span>
-                  <span className="c3 mono">{p.languageRuntime}</span>
-                  <span style={{ marginLeft: "auto" }}>
-                    <ProjectStatus status={p.status} expiresAt={p.expiresAt} />
-                  </span>
-                  <span className="c3 num">{relativeTime(p.createdAt)}</span>
-                </Link>
+                <div role="listitem" key={p.id}>
+                  <Link
+                    to="/app/projects/$projectId"
+                    params={{ projectId: p.id }}
+                    search={{}}
+                  >
+                    <span className="t lst-name" translate="no">
+                      {p.name}
+                    </span>
+                    <span className="chip soft">{ROLE_LABEL[p.myRole]}</span>
+                    <span className="c3 mono">{p.languageRuntime}</span>
+                    <span className="lst-end">
+                      <ProjectStatus
+                        status={p.status}
+                        expiresAt={p.expiresAt}
+                      />
+                    </span>
+                    <span
+                      className="c3 num"
+                      title={formatDateTime(p.createdAt)}
+                    >
+                      {relativeTime(p.createdAt)}
+                    </span>
+                  </Link>
+                </div>
               ))}
             </div>
           )}
-          {total > PROJECT_PAGE_SIZE && (
-            <nav
-              className="line pager"
-              aria-label="Trang của danh sách project"
-            >
-              <button
-                type="button"
-                className="btn"
-                disabled={offset === 0}
-                onClick={() =>
-                  setOffset(Math.max(0, offset - PROJECT_PAGE_SIZE))
-                }
-              >
-                Trang trước
-              </button>
-              <span className="c3 num">
-                {offset + 1}–{Math.min(offset + PROJECT_PAGE_SIZE, total)} /{" "}
-                {total}
-              </span>
-              <button
-                type="button"
-                className="btn"
-                disabled={offset + PROJECT_PAGE_SIZE >= total}
-                onClick={() => setOffset(offset + PROJECT_PAGE_SIZE)}
-              >
-                Trang sau
-              </button>
-            </nav>
-          )}
+          <Pager
+            label="Trang của danh sách project"
+            offset={offset}
+            pageSize={PROJECT_PAGE_SIZE}
+            total={total}
+            onChange={setOffset}
+          />
         </div>
       </div>
     </>

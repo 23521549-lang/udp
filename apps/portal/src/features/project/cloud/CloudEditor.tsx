@@ -10,6 +10,7 @@ import { CodeBlock } from "../../../components/CodeBlock";
 import { Icon } from "../../../components/Icon";
 import { ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
+import { UnsavedGuard } from "../../../components/UnsavedGuard";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
 import { qk } from "../../../lib/query-keys";
 import { cloudApi } from "./cloud-api";
@@ -46,6 +47,13 @@ export function CloudEditor({
     initialForm(initialProvider),
   );
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+  /**
+   * Bản nháp theo từng cloud: bấm nhầm sang GCP rồi quay lại AWS không xoá khoá vừa gõ. Chỉ sống
+   * trong trang — bí mật không đi vào storage nào.
+   */
+  const [drafts, setDrafts] = useState<
+    Partial<Record<CloudProviderWire, CloudForm>>
+  >({});
   const setup = useQuery({
     queryKey: qk.cloudSetup(projectId, form.provider),
     queryFn: () => cloudApi.setup(projectId, form.provider),
@@ -72,21 +80,38 @@ export function CloudEditor({
   const errors = { ...serverErrors, ...clientErrors };
 
   const chooseProvider = (provider: CloudProviderWire) => {
-    setForm(initialForm(provider));
+    if (provider === form.provider) return;
+    setDrafts((d) => ({ ...d, [form.provider]: form }));
+    setForm(drafts[provider] ?? initialForm(provider));
     setClientErrors({});
   };
   const submit = () => {
     const built = buildBody(form);
     if (!built.ok) {
       setClientErrors(built.errors);
+      // Lỗi đầu tiên nhận focus: người dùng bàn phím không phải đi tìm ô sai
+      const first = Object.keys(built.errors)[0];
+      if (first !== undefined) {
+        requestAnimationFrame(() =>
+          document.getElementById(`cloud-${first}`)?.focus(),
+        );
+      }
       return;
     }
     setClientErrors({});
     save.mutate(built.body);
   };
+  // Khoá đã gõ mà chưa lưu: rời trang thì hỏi (gõ lại một khoá bí mật dài là việc không ai muốn)
+  const typed =
+    form.keyJson.trim() !== "" ||
+    Object.values(form.fields).some((v) => v.trim() !== "");
 
   return (
     <section aria-label="Cấu hình cloud">
+      <UnsavedGuard
+        dirty={typed && !save.isPending}
+        what="Credential cloud đã gõ"
+      />
       <div className="f">
         <span className="lbl" id="cloud-provider">
           Cloud
@@ -110,7 +135,9 @@ export function CloudEditor({
       </div>
 
       {setup.isPending && <Loading />}
-      {setup.isError && <ErrorState error={setup.error} />}
+      {setup.isError && (
+        <ErrorState error={setup.error} onRetry={() => void setup.refetch()} />
+      )}
       {setup.data !== undefined && (
         <SetupBody
           setup={setup.data.setup}
@@ -135,7 +162,7 @@ export function CloudEditor({
               disabled={save.isPending}
               onClick={submit}
             >
-              {save.isPending ? "Đang lưu..." : "Lưu cấu hình cloud"}
+              {save.isPending ? "Đang lưu…" : "Lưu cấu hình cloud"}
             </button>
           </div>
         </>
@@ -270,7 +297,7 @@ function Snippets({ method }: { method: Method }) {
     <div className="snips" aria-label="Việc cần làm bên cloud">
       {method.snippets.map((s) => (
         <div key={s.id}>
-          <h4>{SNIPPET_TITLE[s.id] ?? s.id}</h4>
+          <h3>{SNIPPET_TITLE[s.id] ?? s.id}</h3>
           <CodeBlock code={s.content} label={SNIPPET_TITLE[s.id] ?? s.id} />
         </div>
       ))}
@@ -299,10 +326,15 @@ function CredentialInputs({
           spellCheck={false}
           value={form.keyJson}
           aria-invalid={errors.keyJson !== undefined}
+          aria-describedby={
+            errors.keyJson === undefined ? undefined : "cloud-keyJson-err"
+          }
           onChange={(e) => setForm({ ...form, keyJson: e.target.value })}
         />
         {errors.keyJson !== undefined && (
-          <span className="field-error">{errors.keyJson}</span>
+          <span id="cloud-keyJson-err" className="field-error">
+            {errors.keyJson}
+          </span>
         )}
       </div>
     );
@@ -349,15 +381,26 @@ function Field({
       <label htmlFor={`cloud-${id}`}>{label}</label>
       <input
         id={`cloud-${id}`}
+        name={id}
         className="inp"
         type={secret ? "password" : "text"}
-        autoComplete="off"
+        /*
+         * "new-password", không "off": trình duyệt bỏ qua "off" trên ô mật khẩu và tự điền mật khẩu
+         * đăng nhập Portal vào ô khoá bí mật của cloud — một bí mật rò sang chỗ của bí mật khác.
+         */
+        autoComplete={secret ? "new-password" : "off"}
+        spellCheck={false}
         placeholder={placeholder}
         value={value}
         aria-invalid={error !== undefined}
+        aria-describedby={error === undefined ? undefined : `cloud-${id}-err`}
         onChange={(e) => onChange(e.target.value)}
       />
-      {error !== undefined && <span className="field-error">{error}</span>}
+      {error !== undefined && (
+        <span id={`cloud-${id}-err`} className="field-error">
+          {error}
+        </span>
+      )}
     </div>
   );
 }

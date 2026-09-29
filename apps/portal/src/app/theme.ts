@@ -33,8 +33,19 @@ export function currentTheme(): Theme {
   return stored() ?? systemTheme();
 }
 
+/**
+ * Đặt `data-theme` và cho `<meta name="theme-color">` (thanh địa chỉ trên điện thoại) đúng màu nền
+ * `--bg` của giao diện vừa áp — đọc từ token, không ghi màu thô vào mã.
+ */
 export function applyTheme(theme: Theme = currentTheme()): void {
-  document.documentElement.dataset.theme = theme;
+  const root = document.documentElement;
+  root.dataset.theme = theme;
+  const bg = getComputedStyle(root).getPropertyValue("--bg").trim();
+  if (bg !== "") {
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", bg);
+  }
 }
 
 export function useTheme(): { theme: Theme; toggle: () => void } {

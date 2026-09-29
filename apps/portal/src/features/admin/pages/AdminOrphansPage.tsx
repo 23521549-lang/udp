@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlert, PiggyBank } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import { Icon } from "../../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { formatNumber } from "../../../lib/format";
@@ -21,7 +21,6 @@ export function AdminOrphansPage() {
     <AdminPage
       title="Tài nguyên mồ côi"
       lead="Tài nguyên cloud không dọn được sau teardown, kèm chi phí đang chạy."
-      icon={PiggyBank}
     >
       {orphans.isPending ? (
         <Loading />
@@ -72,7 +71,7 @@ export function AdminOrphansPage() {
             <Empty title="Không có tài nguyên mồ côi nào trong sổ" />
           ) : (
             <div className="table-wrap">
-              <table className="matrix" aria-label="Tài nguyên mồ côi">
+              <table className="dtable" aria-label="Tài nguyên mồ côi">
                 <thead>
                   <tr>
                     <th scope="col">Project</th>

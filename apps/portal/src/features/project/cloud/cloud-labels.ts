@@ -72,26 +72,26 @@ export const CREDENTIAL_FIELDS: Record<
     {
       key: "roleArn",
       label: "ARN của role",
-      placeholder: "arn:aws:iam::123456789012:role/udp-deployer",
+      placeholder: "arn:aws:iam::123456789012:role/udp-deployer…",
     },
   ],
   AWS_KEY: [
-    { key: "accessKeyId", label: "Access key ID", placeholder: "AKIA..." },
+    { key: "accessKeyId", label: "Access key ID", placeholder: "AKIA…" },
     { key: "secretAccessKey", label: "Secret access key", secret: true },
   ],
   GCP_WIF: [
-    { key: "gcpProjectId", label: "Project ID", placeholder: "my-project" },
+    { key: "gcpProjectId", label: "Project ID", placeholder: "my-project…" },
     {
       key: "projectNumber",
       label: "Project number",
-      placeholder: "123456789012",
+      placeholder: "123456789012…",
     },
-    { key: "poolId", label: "Pool ID", placeholder: "udp-pool" },
-    { key: "providerId", label: "Provider ID", placeholder: "udp-oidc" },
+    { key: "poolId", label: "Pool ID", placeholder: "udp-pool…" },
+    { key: "providerId", label: "Provider ID", placeholder: "udp-oidc…" },
     {
       key: "serviceAccountEmail",
       label: "Email service account",
-      placeholder: "udp@my-project.iam.gserviceaccount.com",
+      placeholder: "udp@my-project.iam.gserviceaccount.com…",
     },
   ],
   AZURE_FEDERATED: [

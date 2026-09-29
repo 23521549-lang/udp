@@ -38,7 +38,8 @@ export function DomainRow({
   const noTools = entry.tools.length === 0;
   const id = `dom-${entry.domainType}`;
   return (
-    <div className="dom-row" aria-label={entry.displayName}>
+    // `role="group"`: nhãn trên một `div` trơn bị trình đọc màn hình bỏ qua
+    <div className="dom-row" role="group" aria-label={entry.displayName}>
       <div className="r">
         <Switch
           checked={draft.enabled}
@@ -58,6 +59,7 @@ export function DomainRow({
             className="c3"
           >
             Chi tiết
+            <span className="visually-hidden"> {entry.displayName}</span>
           </Link>
         )}
       </div>
@@ -69,6 +71,7 @@ export function DomainRow({
               <label htmlFor={`${id}-tool`}>Công cụ</label>
               <select
                 id={`${id}-tool`}
+                name={`${entry.domainType}-tool`}
                 className="sel"
                 disabled={!canEdit}
                 value={tool.toolId}

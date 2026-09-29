@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  createBrowserHistory,
   createMemoryHistory,
-  createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
 import type { PublicUserWire } from "@udp/shared-types/wire";
 import { render } from "@testing-library/react";
-import { routeTree } from "../src/app/router";
+import { createAppRouter } from "../src/app/router";
 import { useAuthStore } from "../src/features/auth/auth-store";
 
 export const USER: PublicUserWire = {
@@ -22,17 +22,30 @@ export const USER: PublicUserWire = {
  */
 export function renderApp(
   url: string,
-  { user = USER }: { user?: PublicUserWire | null } = {},
+  {
+    user = USER,
+    history = "memory",
+  }: {
+    user?: PublicUserWire | null;
+    /**
+     * "browser": history thật của jsdom. Cần cho test chặn-rời-trang: memory history của TanStack không
+     * giữ blocker nào (`block` là no-op), còn trình duyệt và hash history của bản xem thử thì giữ.
+     */
+    history?: "memory" | "browser";
+  } = {},
 ) {
   useAuthStore.setState({ user, isInitializing: false });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const router = createRouter({
-    routeTree,
-    context: { queryClient },
-    history: createMemoryHistory({ initialEntries: [url] }),
-  });
+  // CHÍNH cấu hình router của ứng dụng (trang 404 mặc định, cuộn…), chỉ đổi history
+  if (history === "browser") window.history.replaceState(null, "", url);
+  const router = createAppRouter(
+    queryClient,
+    history === "browser"
+      ? createBrowserHistory()
+      : createMemoryHistory({ initialEntries: [url] }),
+  );
   const view = render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />

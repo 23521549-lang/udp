@@ -269,6 +269,26 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
   const shown = matchItems(items, query);
   const current = Math.min(sel, Math.max(0, shown.length - 1));
+  /** Các đoạn liên tiếp cùng nhóm — mỗi đoạn là một `role="group"` có tên trong listbox */
+  const sections = shown.reduce<
+    { group: string; start: number; items: typeof shown }[]
+  >((acc, item, i) => {
+    const last = acc[acc.length - 1];
+    if (last !== undefined && last.group === item.group) last.items.push(item);
+    else acc.push({ group: item.group, start: i, items: [item] });
+    return acc;
+  }, []);
+
+  /*
+   * Bảng lệnh là hộp thoại: Tab không được lọt ra trang phía sau (focus ở lại ô gõ — các lựa chọn đi
+   * bằng mũi tên), và đóng lại thì focus về đúng chỗ đã mở nó.
+   */
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    return () => {
+      if (opener !== null && document.contains(opener)) opener.focus();
+    };
+  }, []);
 
   const runAt = (i: number) => {
     const item = shown[i];
@@ -295,6 +315,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="Tìm nhanh"
+        onKeyDown={(e) => {
+          if (e.key === "Tab") e.preventDefault();
+        }}
       >
         <div className="in">
           <Icon of={Search} />
@@ -307,7 +330,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
               shown.length > 0 ? `pal-${String(current)}` : undefined
             }
             aria-label="Tìm flag, rollout hoặc gõ lệnh"
-            placeholder="Tìm flag, rollout hoặc gõ lệnh"
+            placeholder="Tìm flag, rollout hoặc gõ lệnh…"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -331,35 +354,56 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
           />
           <kbd>Esc</kbd>
         </div>
-        <div className="ls" id="palette-list" role="listbox" ref={listRef}>
-          {shown.length === 0 && <div className="gl">Không có kết quả</div>}
-          {shown.map((item, i) => (
-            <div key={`${item.group}-${item.label}-${String(i)}`}>
-              {(i === 0 || shown[i - 1]?.group !== item.group) && (
-                <div className="gl">{item.group}</div>
-              )}
-              <button
-                type="button"
-                id={`pal-${String(i)}`}
-                className="op"
-                role="option"
-                aria-selected={i === current}
-                tabIndex={-1}
-                onMouseMove={() => setSel(i)}
-                onClick={() => runAt(i)}
-              >
-                <Icon of={item.icon} />
-                <span>{item.label}</span>
-                <span className="h">
-                  {item.hint.length > 0 && item.hint.length < 3 ? (
-                    <kbd>{item.hint}</kbd>
-                  ) : (
-                    item.hint
-                  )}
-                </span>
-              </button>
+        <div
+          className="ls"
+          id="palette-list"
+          role="listbox"
+          aria-label="Kết quả"
+          ref={listRef}
+        >
+          {shown.length === 0 && (
+            <div className="gl" role="status">
+              Không có kết quả
             </div>
-          ))}
+          )}
+          {sections.map((section) => {
+            const headId = `pal-g-${String(section.start)}`;
+            return (
+              <div key={headId} role="group" aria-labelledby={headId}>
+                <div className="gl" id={headId} aria-hidden="true">
+                  {section.group}
+                </div>
+                {section.items.map((item, k) => {
+                  const i = section.start + k;
+                  return (
+                    /*
+                     * Lựa chọn của combobox: focus ở lại ô gõ (aria-activedescendant), bàn phím đi
+                     * bằng mũi tên và Enter ở ô gõ — lựa chọn không là nút riêng để Tab dừng lại.
+                     */
+                    <div
+                      key={`${item.label}-${String(i)}`}
+                      id={`pal-${String(i)}`}
+                      className="op"
+                      role="option"
+                      aria-selected={i === current}
+                      onMouseMove={() => setSel(i)}
+                      onClick={() => runAt(i)}
+                    >
+                      <Icon of={item.icon} />
+                      <span>{item.label}</span>
+                      <span className="h">
+                        {item.hint.length > 0 && item.hint.length < 3 ? (
+                          <kbd>{item.hint}</kbd>
+                        ) : (
+                          item.hint
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
         <div className="ft">
           <span>

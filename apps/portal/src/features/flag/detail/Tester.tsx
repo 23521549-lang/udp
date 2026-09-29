@@ -47,7 +47,10 @@ export function Tester({
           <label htmlFor="t-key">targetingKey</label>
           <input
             id="t-key"
+            name="targetingKey"
             className="inp mono"
+            autoComplete="off"
+            spellCheck={false}
             value={targetingKey}
             onChange={(e) => setTargetingKey(e.target.value)}
           />
@@ -56,8 +59,11 @@ export function Tester({
           <label htmlFor="t-attrs">Thuộc tính (mỗi dòng key=value)</label>
           <textarea
             id="t-attrs"
+            name="attributes"
             className="inp mono"
             rows={2}
+            autoComplete="off"
+            spellCheck={false}
             value={attrs}
             onChange={(e) => setAttrs(e.target.value)}
           />
@@ -68,32 +74,35 @@ export function Tester({
           disabled={run.isPending}
           onClick={() => run.mutate()}
         >
-          {run.isPending ? "Đang đánh giá..." : "Đánh giá"}
+          {run.isPending ? "Đang đánh giá…" : "Đánh giá"}
         </button>
       </div>
-      {run.isError && <p className="field-error">{messageOf(run.error)}</p>}
-      {result !== undefined && (
-        <dl className="props" aria-label="Kết quả đánh giá">
-          <dt>Giá trị</dt>
-          <dd className="mono">{JSON.stringify(result.evaluation.value)}</dd>
-          <dt>Variant</dt>
-          <dd className="mono">{variantKey ?? "(không có)"}</dd>
-          <dt>Lý do</dt>
-          <dd className="mono">{result.evaluation.reason}</dd>
-          <dt>Rule khớp</dt>
-          <dd>
-            {result.rule === undefined
-              ? "Không rule nào"
-              : `Rule ưu tiên ${String(result.rule.priority)} (${result.rule.ruleType})`}
-          </dd>
-          {result.draft && (
-            <>
-              <dt>Lưu ý</dt>
-              <dd className="c3">Flag còn nháp: SDK chưa thấy nó.</dd>
-            </>
-          )}
-        </dl>
-      )}
+      {/* Kết quả và lỗi được đọc lên khi có: người dùng bàn phím không phải tự dò xuống */}
+      <div aria-live="polite">
+        {run.isError && <p className="field-error">{messageOf(run.error)}</p>}
+        {result !== undefined && (
+          <dl className="props" aria-label="Kết quả đánh giá">
+            <dt>Giá trị</dt>
+            <dd className="mono">{JSON.stringify(result.evaluation.value)}</dd>
+            <dt>Variant</dt>
+            <dd className="mono">{variantKey ?? "(không có)"}</dd>
+            <dt>Lý do</dt>
+            <dd className="mono">{result.evaluation.reason}</dd>
+            <dt>Rule khớp</dt>
+            <dd>
+              {result.rule === undefined
+                ? "Không rule nào"
+                : `Rule ưu tiên ${String(result.rule.priority)} (${result.rule.ruleType})`}
+            </dd>
+            {result.draft && (
+              <>
+                <dt>Lưu ý</dt>
+                <dd className="c3">Flag còn nháp: SDK chưa thấy nó.</dd>
+              </>
+            )}
+          </dl>
+        )}
+      </div>
     </section>
   );
 }

@@ -9,10 +9,17 @@ import { CircleAlert, CircleX, Pause, Play, Undo2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
+import { LineChart } from "../../components/LineChart";
 import { ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
 import { messageOf } from "../../lib/errors";
-import { formatDateTime, formatNumber, formatPercent } from "../../lib/format";
+import {
+  formatDateTime,
+  formatDecimal,
+  formatDuration,
+  formatNumber,
+  formatPercent,
+} from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
@@ -136,6 +143,16 @@ export function RolloutDetailPage() {
             <ErrorState
               error={rollout.error}
               onRetry={() => void rollout.refetch()}
+              back={
+                <Link
+                  to="/app/projects/$projectId/rollouts"
+                  params={{ projectId: project.id }}
+                  search={{ env: env.id }}
+                  className="btn"
+                >
+                  Về danh sách rollout
+                </Link>
+              }
             />
           ) : (
             <RolloutBody rollout={rollout.data.rollout} />
@@ -161,7 +178,7 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
     <>
       <div className="hero">
         <div className="t">
-          <h1 className="title mono">
+          <h1 className="title mono" translate="no">
             {rollout.flag?.key ?? rollout.workloadName ?? "rollout"}
           </h1>
           <p className="lead">
@@ -251,9 +268,9 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
           <div>
             <b>Chia theo thuộc tính: hệ thống không tự promote hay rollback</b>
             <div>
-              Hai nhóm khác nhau về bản chất (§7.2), nên chênh lệch dưới đây là
-              số kỹ thuật, không quy được cho nhánh flag. Bạn quyết: đổi variant
-              mặc định sang variant mới, hoặc rollback.
+              Hai nhóm khác nhau về bản chất, nên chênh lệch dưới đây là số kỹ
+              thuật, không quy được cho nhánh flag. Bạn quyết: đổi variant mặc
+              định sang variant mới, hoặc rollback.
             </div>
           </div>
         </div>
@@ -311,8 +328,16 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         </div>
       </div>
 
-      <div className="steps" aria-label="Tiến độ">
-        <div className={rollout.status === "FAILED" ? "seg2 fail" : "seg2"}>
+      <div className="steps">
+        <div
+          className={rollout.status === "FAILED" ? "seg2 fail" : "seg2"}
+          role="progressbar"
+          aria-label="Lưu lượng đã chuyển"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={rollout.currentTrafficPercentage}
+          aria-valuetext={formatPercent(rollout.currentTrafficPercentage)}
+        >
           <i
             style={{ width: `${String(rollout.currentTrafficPercentage)}%` }}
           />
@@ -320,8 +345,8 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         <div className="lb">
           <span>
             Bậc <b>{formatPercent(rollout.stepPercent)}</b> mỗi{" "}
-            {rollout.stepIntervalSeconds}s · đo lại mỗi{" "}
-            {rollout.analysisIntervalSeconds}s
+            {formatDuration(rollout.stepIntervalSeconds)}, đo lại mỗi{" "}
+            {formatDuration(rollout.analysisIntervalSeconds)}
           </span>
           <b>{formatPercent(rollout.currentTrafficPercentage)}</b>
         </div>
@@ -339,15 +364,15 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
                 ))}
               </div>
               {!split && snap.zScore !== null && (
-                <p className="c3">z-score: {snap.zScore.toFixed(2)}</p>
+                <p className="c3">z-score: {formatDecimal(snap.zScore)}</p>
               )}
             </details>
           )}
         </div>
         <div className="panel2">
-          <h3 className="h2" style={{ marginTop: 10 }}>
+          <h2 className="h2" style={{ marginTop: 10 }}>
             Nhật ký
-          </h3>
+          </h2>
           <EventFeed events={rollout.events} />
         </div>
       </div>
@@ -401,37 +426,38 @@ function WhyStill({
     0,
     Math.round((stepStart + rollout.stepIntervalSeconds * 1000 - now) / 1000),
   );
-  const fmt = (s: number) =>
-    s >= 60
-      ? `${String(Math.floor(s / 60))}m${String(s % 60)}s`
-      : `${String(s)}s`;
-
+  /*
+   * Chỉ LÝ DO (đổi vài phút một lần) nằm trong vùng aria-live; hai đồng hồ đếm từng giây ở ngoài nó —
+   * nếu không trình đọc màn hình đọc lại cả khối mỗi giây.
+   */
   return (
-    <div className="alert amber" role="status" aria-live="polite">
+    <div className="alert amber">
       <Icon of={CircleAlert} />
       <div>
-        {rollout.pendingIntent !== undefined ? (
-          <b>
-            Đang thực hiện: {EVENT_LABEL[rollout.pendingIntent.action]} (yêu cầu
-            bởi {rollout.pendingIntent.byUser || "một thành viên"})
-          </b>
-        ) : (
-          <b>{decision?.reason ?? "Đang chờ lần đo đầu tiên."}</b>
-        )}
-        {decision?.breach === true && (
-          <div>
-            Vượt ngưỡng {decision.breachStreak}/{maxBreaches}
-            {decision.breachStreak + 1 >= maxBreaches
-              ? ", sẽ rollback nếu lần đo tới vẫn vượt"
-              : ""}
-          </div>
-        )}
+        <div role="status" aria-live="polite">
+          {rollout.pendingIntent !== undefined ? (
+            <b>
+              Đang thực hiện: {EVENT_LABEL[rollout.pendingIntent.action]} (yêu
+              cầu bởi {rollout.pendingIntent.byUser || "một thành viên"})
+            </b>
+          ) : (
+            <b>{decision?.reason ?? "Đang chờ lần đo đầu tiên."}</b>
+          )}
+          {decision?.breach === true && (
+            <div>
+              Vượt ngưỡng {decision.breachStreak}/{maxBreaches}
+              {decision.breachStreak + 1 >= maxBreaches
+                ? ", sẽ rollback nếu lần đo tới vẫn vượt"
+                : ""}
+            </div>
+          )}
+        </div>
         {active && (
-          <div className="c2">
+          <div className="c2 num">
             {nextAnalysis !== undefined && (
-              <>Đo lại sau {fmt(nextAnalysis)} · </>
+              <>Đo lại sau {formatDuration(nextAnalysis)}. </>
             )}
-            Đủ thời gian giữ bậc sau {fmt(dwellLeft)}
+            Đủ thời gian giữ bậc sau {formatDuration(dwellLeft)}.
           </div>
         )}
       </div>
@@ -488,7 +514,7 @@ function Actions({ rollout }: { rollout: RolloutDetailWire }) {
         >
           <Icon of={icon[a]} />
           {pending && rollout.pendingIntent?.action === a
-            ? "Đang thực hiện..."
+            ? "Đang thực hiện…"
             : labelOf(a, rollout)}
         </button>
       ))}
@@ -560,8 +586,9 @@ function EventFeed({ events }: { events: RolloutEventWire[] }) {
 }
 
 /**
- * Tỉ lệ lỗi canary so với đối chứng qua các lần đo có ghi snapshot, cùng vạch ngưỡng
- * (§10.13 "baseline + đối chứng"). Hai đường, ngưỡng nét đứt đỏ (DESIGN.md §6 "Biểu đồ").
+ * Tỉ lệ lỗi canary so với đối chứng qua các lần đo có ghi snapshot, cùng ngưỡng (§10.13 "baseline +
+ * đối chứng"; DESIGN.md §6 "Biểu đồ", "Trục biểu đồ"). Dùng `LineChart` chung: thang co theo dữ liệu,
+ * nên canary 0,4% không còn nằm dẹt dưới đáy vì thang bị kéo tới ngưỡng 5%.
  */
 function ErrorChart({
   events,
@@ -573,87 +600,54 @@ function ErrorChart({
   const points = events
     .filter((e) => e.metricSnapshot !== null)
     .map((e) => ({
-      at: e.createdAt,
-      canary: e.metricSnapshot?.canary.errorRate ?? 0,
-      baseline: e.metricSnapshot?.baseline.errorRate ?? 0,
+      at: new Date(e.createdAt).getTime(),
+      canary:
+        e.metricSnapshot === null
+          ? null
+          : e.metricSnapshot.canary.errorRate * 100,
+      baseline:
+        e.metricSnapshot === null
+          ? null
+          : e.metricSnapshot.baseline.errorRate * 100,
     }))
-    .sort((a, b) => a.at.localeCompare(b.at));
+    .sort((a, b) => a.at - b.at);
 
-  if (points.length < 2) {
+  if (points.length === 0) {
     return (
       <div className="cardc">
         <div className="hd">
-          <h3>Tỉ lệ lỗi</h3>
+          <h2>Tỉ lệ lỗi</h2>
         </div>
-        <p className="c3">Cần ít nhất hai lần đo để vẽ biểu đồ.</p>
+        <p className="c3">Chưa có lần đo nào có số liệu.</p>
       </div>
     );
   }
-  const w = 600;
-  const h = 190;
-  const max = Math.max(
-    limit * 1.5,
-    ...points.map((p) => Math.max(p.canary, p.baseline)),
-  );
-  const x = (i: number) => (i / (points.length - 1)) * w;
-  const y = (v: number) => h - (v / max) * (h - 10) - 5;
-  const line = (key: "canary" | "baseline") =>
-    points
-      .map(
-        (p, i) =>
-          `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`,
-      )
-      .join(" ");
-
   return (
     <div className="cardc">
-      <div className="hd">
-        <h3>Tỉ lệ lỗi</h3>
-        <div className="r">
-          <span className="lg">
-            <i style={{ background: "var(--accent)" }} />
-            canary
-          </span>
-          <span className="lg">
-            <i style={{ background: "var(--ink-4)" }} />
-            đối chứng
-          </span>
-          <span className="lg">
-            <i style={{ background: "var(--red)" }} />
-            ngưỡng {formatPercent(limit * 100)}
-          </span>
-        </div>
-      </div>
-      <div className="chart">
-        <svg
-          viewBox={`0 0 ${String(w)} ${String(h)}`}
-          role="img"
-          aria-label="Biểu đồ tỉ lệ lỗi canary so với đối chứng"
-        >
-          <line
-            x1={0}
-            x2={w}
-            y1={y(limit)}
-            y2={y(limit)}
-            stroke="var(--red)"
-            strokeDasharray="4 4"
-            strokeWidth={1}
-          />
-          <path
-            d={line("baseline")}
-            fill="none"
-            stroke="var(--ink-4)"
-            strokeDasharray="3 3"
-            strokeWidth={1.5}
-          />
-          <path
-            d={line("canary")}
-            fill="none"
-            stroke="var(--accent)"
-            strokeWidth={2}
-          />
-        </svg>
-      </div>
+      <LineChart
+        title="Tỉ lệ lỗi"
+        level={2}
+        times={points.map((p) => p.at)}
+        series={[
+          {
+            key: "canary",
+            label: "canary",
+            tone: "accent",
+            values: points.map((p) => p.canary),
+          },
+          {
+            key: "baseline",
+            label: "đối chứng",
+            tone: "baseline",
+            values: points.map((p) => p.baseline),
+          },
+        ]}
+        threshold={{
+          value: limit * 100,
+          label: `ngưỡng ${formatPercent(limit * 100)}`,
+        }}
+        format={formatPercent}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { StaleFlagsResponseWire } from "@udp/shared-types/wire";
-import { Archive, Brush } from "lucide-react";
+import { Archive } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
@@ -13,6 +14,7 @@ import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { flagApi } from "./flag-api";
+import { PageHead } from "../../components/PageHead";
 
 type Category = "UNUSED" | "SETTLED" | "STALE_DRAFT";
 
@@ -37,7 +39,20 @@ const MAX_BATCH = 20;
 export function CleanupPage() {
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
-  const [category, setCategory] = useState<Category | undefined>(undefined);
+  // Loại đang lọc nằm trên URL: gửi đường dẫn là gửi đúng danh sách đang xem
+  const category = useSearch({
+    from: "/app/projects/$projectId/flags/cleanup",
+  }).category;
+  const navigate = useNavigate();
+  const setCategory = (c: Category | undefined): void => {
+    void navigate({
+      to: ".",
+      search: (prev: Record<string, unknown>) => {
+        const { category: _c, ...rest } = prev;
+        return c === undefined ? rest : { ...rest, category: c };
+      },
+    });
+  };
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState(false);
 
@@ -107,15 +122,10 @@ export function CleanupPage() {
         }
       />
       <div className="scroll">
-        <div className="mhead">
-          <span className="tile xl">
-            <Icon of={Brush} size={21} />
-          </span>
-          <div>
-            <h1>Dọn dẹp flag</h1>
-            <p>Flag không còn tác dụng là nợ trong mã. Gộp mọi environment.</p>
-          </div>
-        </div>
+        <PageHead
+          title="Dọn dẹp flag"
+          lead="Flag không còn tác dụng là nợ trong mã. Gộp mọi environment."
+        />
         <div className="filters">
           <div className="seg" role="group" aria-label="Loại">
             <button
@@ -142,7 +152,7 @@ export function CleanupPage() {
           {stale.data?.telemetry.firstReportAt === null && (
             <p className="c3">
               Project chưa nhận báo cáo telemetry nào từ SDK, nên chưa xét được
-              "Không dùng" và "Đã ngã ngũ".
+              “Không dùng” và “Đã ngã ngũ”.
             </p>
           )}
           {stale.isPending ? (
@@ -155,7 +165,7 @@ export function CleanupPage() {
           ) : items.length === 0 ? (
             <Empty title="Không có flag nào cần dọn" />
           ) : (
-            <div className="lst">
+            <div className="lst" role="list" aria-label="Flag cần dọn">
               {items.map((item) => (
                 <StaleRow
                   key={item.flag.id}
@@ -203,19 +213,20 @@ function StaleRow({
   disabled: boolean;
   onToggle: () => void;
 }) {
-  const id = `stale-${item.flag.id}`;
+  // Cả dòng là nhãn của ô chọn: không có khoảng chết giữa ô và chữ (Web Interface Guidelines)
   return (
-    <div className="it">
+    <label className="it check-row" role="listitem">
       <input
-        id={id}
         type="checkbox"
+        name="flag"
+        value={item.flag.id}
         checked={checked}
         disabled={disabled}
         onChange={onToggle}
       />
-      <label htmlFor={id} className="mono">
+      <span className="mono" translate="no">
         {item.flag.key}
-      </label>
+      </span>
       <span className="chip soft">{CATEGORY[item.category].label}</span>
       <span className="c3">{CATEGORY[item.category].hint}</span>
       <span className="c3 num" style={{ marginLeft: "auto" }}>
@@ -233,6 +244,6 @@ function StaleRow({
             : "còn lượt gần đây"}
         </span>
       )}
-    </div>
+    </label>
   );
 }

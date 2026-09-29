@@ -232,7 +232,7 @@ function FlagRolloutDialog({
             disabled={!ready}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Đang tạo..." : "Tạo rollout"}
+            {create.isPending ? "Đang tạo…" : "Tạo rollout"}
           </button>
         </>
       }
@@ -267,7 +267,7 @@ function FlagRolloutDialog({
         <input
           className="inp"
           aria-label="Tìm flag đang dùng"
-          placeholder="Tìm theo key"
+          placeholder="Tìm theo key…"
           value={flagSearch}
           onChange={(e) => setFlagSearch(e.target.value)}
         />
@@ -359,7 +359,7 @@ function FlagRolloutDialog({
           <input
             id="ro-workload"
             className="inp mono"
-            placeholder="checkout-api"
+            placeholder="checkout-api…"
             value={workloadName}
             onChange={(e) => {
               setWorkloadName(e.target.value.trim());
@@ -372,7 +372,7 @@ function FlagRolloutDialog({
             disabled={!workloadOk || probe.isPending}
             onClick={() => probe.mutate()}
           >
-            {probe.isPending ? "Đang kiểm tra..." : "Kiểm tra metric"}
+            {probe.isPending ? "Đang kiểm tra…" : "Kiểm tra metric"}
           </button>
         </div>
         {workloadName !== "" && !workloadOk && (

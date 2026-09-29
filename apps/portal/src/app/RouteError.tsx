@@ -1,4 +1,8 @@
-import { Link, type ErrorComponentProps } from "@tanstack/react-router";
+import {
+  Link,
+  useLocation,
+  type ErrorComponentProps,
+} from "@tanstack/react-router";
 import { ErrorState } from "../components/States";
 
 /**
@@ -13,14 +17,34 @@ export function RouteError({ error, reset }: ErrorComponentProps) {
   );
 }
 
+/**
+ * Đường dẫn không khớp route nào. Là `defaultNotFoundComponent` của router nên hiện NGAY TRONG
+ * khung đang đứng (Portal hay Bảng điều khiển), với lối về đúng khung đó — không phải chữ
+ * "Not Found" mặc định của thư viện.
+ */
 export function NotFound() {
+  const { pathname } = useLocation();
+  const inConsole = pathname.startsWith("/admin");
   return (
     <div className="page">
-      <div className="state">
-        <b>Không tìm thấy trang</b>
-        <Link to="/app/projects" className="btn">
-          Về danh sách project
-        </Link>
+      <div className="state" role="alert">
+        <h1 className="title">Không tìm thấy trang</h1>
+        <p className="c3">
+          Đường dẫn{" "}
+          <span className="mono" translate="no">
+            {pathname}
+          </span>{" "}
+          không có trong {inConsole ? "Bảng điều khiển nền tảng" : "Portal"}.
+        </p>
+        {inConsole ? (
+          <Link to="/admin/users" className="btn">
+            Về Bảng điều khiển
+          </Link>
+        ) : (
+          <Link to="/app/projects" className="btn">
+            Về danh sách project
+          </Link>
+        )}
       </div>
     </div>
   );

@@ -70,5 +70,3 @@ export const TERMINAL_STATES: readonly ProvisioningJobWire["state"][] = [
   "FAILED",
   "COMPENSATION_FAILED",
 ];
-
-export const usd = (n: number): string => `$${n.toFixed(2)}`;

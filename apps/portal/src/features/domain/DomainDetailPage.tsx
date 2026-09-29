@@ -72,7 +72,7 @@ export function DomainDetailPage() {
           {domain.data?.domain.toolConfig !== null &&
             domain.data?.domain.toolConfig !== undefined && (
               <>
-                <h3 className="h2">Cấu hình mong muốn</h3>
+                <h2 className="h2">Cấu hình mong muốn</h2>
                 <CodeBlock
                   code={JSON.stringify(domain.data.domain.toolConfig, null, 2)}
                   label="Cấu hình mong muốn"
@@ -80,7 +80,7 @@ export function DomainDetailPage() {
               </>
             )}
 
-          <h3 className="h2">Drift</h3>
+          <h2 className="h2">Drift</h2>
           {drift.isPending && <Loading />}
           {drift.isError && <ErrorState error={drift.error} />}
           {drift.data !== undefined && (

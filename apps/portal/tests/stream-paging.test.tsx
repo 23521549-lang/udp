@@ -164,7 +164,7 @@ describe("danh sách flag theo trang (AC-5)", () => {
     expect(asked.some((p) => p.get("offset") === "50")).toBe(true);
 
     await userEvent.type(
-      screen.getByRole("textbox", { name: "Tìm flag" }),
+      screen.getByRole("searchbox", { name: "Tìm flag" }),
       "flag-11",
     );
     expect(await screen.findByText("flag-110")).toBeInTheDocument();

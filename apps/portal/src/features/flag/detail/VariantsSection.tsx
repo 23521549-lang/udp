@@ -128,7 +128,7 @@ function VariantsDialog({
             disabled={!ready}
             onClick={() => save.mutate()}
           >
-            {save.isPending ? "Đang lưu..." : "Lưu"}
+            {save.isPending ? "Đang lưu…" : "Lưu"}
           </button>
         </>
       }
@@ -153,7 +153,7 @@ function VariantsDialog({
             <input
               className="inp mono"
               aria-label={`Giá trị variant ${String(i + 1)}`}
-              placeholder={flag.flagType === "JSON" ? '{"a":1}' : ""}
+              placeholder={flag.flagType === "JSON" ? '{"a":1}…' : ""}
               value={r.value}
               onChange={(e) => edit(i, { value: e.target.value })}
             />

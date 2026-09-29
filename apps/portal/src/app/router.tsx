@@ -56,6 +56,15 @@ interface RouterContext {
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.length > 0 ? v : undefined;
 
+/**
+ * Vị trí trang (`offset`) trong URL (Plan #53 QĐ-9: URL phản ánh trạng thái — trang 3 của danh sách
+ * gửi cho đồng nghiệp là trang 3). 0 là mặc định nên không ghi ra.
+ */
+const offsetOf = (v: unknown): number | undefined => {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+};
+
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => (
     <>
@@ -121,12 +130,38 @@ const appIndexRoute = createRoute({
 const projectsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "projects",
+  validateSearch: (s: Record<string, unknown>): { offset?: number } => {
+    const offset = offsetOf(s.offset);
+    return offset === undefined ? {} : { offset };
+  },
   component: ProjectsPage,
 });
+
+/**
+ * Wizard tạo project giữ BƯỚC và PROJECT VỪA TẠO trong URL (Plan #53 QĐ-9): tải lại trang sau bước 1
+ * quay về đúng bước đang làm của đúng project đó — trước đây về ô trống của bước 1, và bấm "Tạo" lần
+ * nữa là một project trùng.
+ */
+export interface NewProjectSearch {
+  project?: string;
+  step?: "cloud" | "domains" | "preview";
+  job?: string;
+}
+const WIZARD_STEPS = ["cloud", "domains", "preview"] as const;
 
 const newProjectRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "projects/new",
+  validateSearch: (s: Record<string, unknown>): NewProjectSearch => {
+    const project = str(s.project);
+    const job = str(s.job);
+    const step = WIZARD_STEPS.find((w) => w === s.step);
+    return {
+      ...(project === undefined ? {} : { project }),
+      ...(step === undefined ? {} : { step }),
+      ...(job === undefined ? {} : { job }),
+    };
+  },
   component: NewProjectPage,
 });
 
@@ -156,6 +191,7 @@ const overviewRoute = createRoute({
 export interface FlagsSearch {
   flag?: string;
   q?: string;
+  offset?: number;
   /** "1" = mở hộp tạo flag (từ bảng lệnh) */
   new?: "1";
 }
@@ -165,18 +201,27 @@ export const flagsRoute = createRoute({
   validateSearch: (s: Record<string, unknown>): FlagsSearch => {
     const flag = str(s.flag);
     const q = str(s.q);
+    const offset = offsetOf(s.offset);
     return {
       ...(flag === undefined ? {} : { flag }),
       ...(q === undefined ? {} : { q }),
+      ...(offset === undefined ? {} : { offset }),
       ...(s.new === "1" ? { new: "1" as const } : {}),
     };
   },
   component: FlagsPage,
 });
 
+const CLEANUP_CATEGORIES = ["UNUSED", "SETTLED", "STALE_DRAFT"] as const;
 const cleanupRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "flags/cleanup",
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { category?: (typeof CLEANUP_CATEGORIES)[number] } => {
+    const category = CLEANUP_CATEGORIES.find((c) => c === s.category);
+    return category === undefined ? {} : { category };
+  },
   component: CleanupPage,
 });
 
@@ -244,6 +289,9 @@ const infraRoute = createRoute({
 
 export interface SettingsSearch {
   tab?: "keys" | "environments" | "members" | "audit" | "cloud" | "project";
+  /** Bộ lọc hành động của tab Nhật ký (Plan #53 QĐ-9: bộ lọc nằm trên URL) */
+  action?: string;
+  offset?: number;
 }
 const TABS = [
   "keys",
@@ -258,7 +306,13 @@ export const settingsRoute = createRoute({
   path: "settings",
   validateSearch: (s: Record<string, unknown>): SettingsSearch => {
     const tab = TABS.find((t) => t === s.tab);
-    return tab === undefined ? {} : { tab };
+    const action = str(s.action);
+    const offset = offsetOf(s.offset);
+    return {
+      ...(tab === undefined ? {} : { tab }),
+      ...(action === undefined ? {} : { action }),
+      ...(offset === undefined ? {} : { offset }),
+    };
   },
   component: SettingsPage,
 });
@@ -373,6 +427,8 @@ export function createAppRouter(
     context: { queryClient },
     defaultPreload: false,
     scrollRestoration: true,
+    /** Đường sai bên trong `/app` hay `/admin` hiện trang "Không tìm thấy" NGAY trong khung đó */
+    defaultNotFoundComponent: NotFound,
     ...(history === undefined ? {} : { history }),
   });
 }

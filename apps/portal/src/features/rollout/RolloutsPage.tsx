@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ChartNoAxesColumnIncreasing, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
-import { formatPercent, relativeTime } from "../../lib/format";
+import { formatDateTime, formatPercent, relativeTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
@@ -12,6 +12,7 @@ import { can } from "../project/roles";
 import { CreateRolloutDialog } from "./CreateRolloutDialog";
 import { rolloutApi } from "./rollout-api";
 import { RolloutStatusIcon, ROLLOUT_STATUS_LABEL } from "./rollout-status";
+import { PageHead } from "../../components/PageHead";
 
 const STRATEGY_LABEL = {
   CANARY: "Canary",
@@ -68,18 +69,15 @@ export function RolloutsPage() {
         }
       />
       <div className="scroll">
-        <div className="mhead">
-          <span className="tile xl">
-            <Icon of={ChartNoAxesColumnIncreasing} size={21} />
-          </span>
-          <div>
-            <h1>Rollout</h1>
-            <p>
+        <PageHead
+          title="Rollout"
+          lead={
+            <>
               Tăng dần một variant, tự rollback khi metric vượt ngưỡng. Đang xem{" "}
               {env.name}.
-            </p>
-          </div>
-        </div>
+            </>
+          }
+        />
         {rollouts.isPending ? (
           <Loading />
         ) : rollouts.isError ? (
@@ -92,34 +90,36 @@ export function RolloutsPage() {
         ) : (
           <div role="list" aria-label="Danh sách rollout">
             {rollouts.data.rollouts.map((r) => (
-              <Link
-                key={r.id}
-                role="listitem"
-                className="row ro-row"
-                to="/app/projects/$projectId/rollouts/$rolloutId"
-                params={{ projectId: project.id, rolloutId: r.id }}
-                search={{ env: env.id }}
-              >
-                <RolloutStatusIcon
-                  status={r.status}
-                  percent={r.currentTrafficPercentage}
-                />
-                <span className="t mono">
-                  {r.flagKey ?? r.workloadName ?? r.id.slice(0, 8)}
-                </span>
-                <span className="k">
-                  {STRATEGY_LABEL[r.strategy]} ·{" "}
-                  {r.scope === "FLAG_LEVEL" ? "theo flag" : "theo phiên bản"}
-                  {r.workloadName !== null ? ` · ${r.workloadName}` : ""}
-                </span>
-                <span>{ROLLOUT_STATUS_LABEL[r.status]}</span>
-                <span className="num">
-                  {formatPercent(r.currentTrafficPercentage)}
-                </span>
-                {/* Cột 64px để trống; thời gian ở cột cuối — cùng lưới `.row` với danh sách flag */}
-                <span />
-                <span className="when">{relativeTime(r.updatedAt)}</span>
-              </Link>
+              <div role="listitem" key={r.id}>
+                <Link
+                  className="row ro-row"
+                  to="/app/projects/$projectId/rollouts/$rolloutId"
+                  params={{ projectId: project.id, rolloutId: r.id }}
+                  search={{ env: env.id }}
+                >
+                  <RolloutStatusIcon
+                    status={r.status}
+                    percent={r.currentTrafficPercentage}
+                  />
+                  <span className="t mono" translate="no">
+                    {r.flagKey ?? r.workloadName ?? r.id.slice(0, 8)}
+                  </span>
+                  <span className="k">
+                    {STRATEGY_LABEL[r.strategy]} ·{" "}
+                    {r.scope === "FLAG_LEVEL" ? "theo flag" : "theo phiên bản"}
+                    {r.workloadName !== null ? ` · ${r.workloadName}` : ""}
+                  </span>
+                  <span>{ROLLOUT_STATUS_LABEL[r.status]}</span>
+                  <span className="num">
+                    {formatPercent(r.currentTrafficPercentage)}
+                  </span>
+                  {/* Cột 64px để trống; thời gian ở cột cuối — cùng lưới `.row` với danh sách flag */}
+                  <span />
+                  <span className="when" title={formatDateTime(r.updatedAt)}>
+                    {relativeTime(r.updatedAt)}
+                  </span>
+                </Link>
+              </div>
             ))}
           </div>
         )}

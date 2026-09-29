@@ -94,8 +94,8 @@ describe("lint thiết kế của Portal", () => {
     const allowed = new Set([
       join("components", "Logo.tsx"),
       join("components", "ProgressRing.tsx"),
-      join("features", "flag", "FlagsPage.tsx"),
-      join("features", "rollout", "RolloutDetailPage.tsx"),
+      join("components", "Sparkline.tsx"),
+      join("components", "LineChart.tsx"),
     ]);
     const offenders = tsxFiles
       .map((f) => relative(SRC, f))
@@ -114,6 +114,106 @@ describe("lint thiết kế của Portal", () => {
             `${relative(SRC, f)}:${String(t.line)}: ${t.text.slice(0, 40)}`,
         ),
     );
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * [Plan #53 QĐ-9] Ba luật từ vòng review bằng Web Interface Guidelines — những lỗi mà mắt sửa được
+   * một lần nhưng tái phát ở màn thứ mười một.
+   */
+  it("không '...' trong chữ giao diện — dùng dấu ba chấm '…'", () => {
+    const offenders = codeFiles.flatMap((f) =>
+      visibleTexts(f)
+        .filter((t) => t.text.includes("..."))
+        .map(
+          (t) =>
+            `${relative(SRC, f)}:${String(t.line)}: ${t.text.slice(0, 40)}`,
+        ),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("Link và button không bị role danh sách ghi đè (mất vai link/nút với trình đọc màn hình)", () => {
+    const banned = new Set(["listitem", "option", "row", "listbox"]);
+    const offenders = tsxFiles.flatMap((file) => {
+      const src = ts.createSourceFile(
+        file,
+        readFileSync(file, "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
+      );
+      const out: string[] = [];
+      const visit = (node: ts.Node): void => {
+        if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+          const tag = node.tagName.getText(src);
+          if (tag === "Link" || tag === "button" || tag === "a") {
+            for (const attr of node.attributes.properties) {
+              if (
+                ts.isJsxAttribute(attr) &&
+                attr.name.getText(src) === "role" &&
+                attr.initializer !== undefined &&
+                ts.isStringLiteral(attr.initializer) &&
+                banned.has(attr.initializer.text)
+              ) {
+                const line =
+                  src.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+                out.push(
+                  `${relative(SRC, file)}:${String(line)} <${tag} role="${attr.initializer.text}">`,
+                );
+              }
+            }
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(src);
+      return out;
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  it("placeholder kết thúc bằng '…' (một ví dụ, không phải nhãn)", () => {
+    const offenders = tsxFiles.flatMap((file) => {
+      const src = ts.createSourceFile(
+        file,
+        readFileSync(file, "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
+      );
+      const out: string[] = [];
+      const visit = (node: ts.Node): void => {
+        if (
+          ts.isJsxAttribute(node) &&
+          node.name.getText(src) === "placeholder" &&
+          node.initializer !== undefined
+        ) {
+          // Chỉ những giá trị placeholder có thể nhận: nhánh của `?:`, không phải chuỗi đem so sánh
+          const valuesOf = (n: ts.Node): string[] =>
+            ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)
+              ? [n.text]
+              : ts.isJsxExpression(n) && n.expression !== undefined
+                ? valuesOf(n.expression)
+                : ts.isParenthesizedExpression(n)
+                  ? valuesOf(n.expression)
+                  : ts.isConditionalExpression(n)
+                    ? [...valuesOf(n.whenTrue), ...valuesOf(n.whenFalse)]
+                    : [];
+          const texts = valuesOf(node.initializer);
+          for (const text of texts) {
+            if (text !== "" && !text.endsWith("…")) {
+              const line =
+                src.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+              out.push(`${relative(SRC, file)}:${String(line)}: ${text}`);
+            }
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(src);
+      return out;
+    });
     expect(offenders).toEqual([]);
   });
 

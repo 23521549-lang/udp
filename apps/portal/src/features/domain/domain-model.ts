@@ -134,6 +134,44 @@ export function enableSuggested(
   return setEnabled(chooseTool(draft, entry, toolId), domainType, true);
 }
 
+/** Một thay đổi của trạng thái đích so với bản đang chạy — hộp xác nhận kê từng dòng */
+export type DomainChange =
+  | { kind: "enable"; domainType: string; toolId: string }
+  | { kind: "disable"; domainType: string; toolId: string }
+  | { kind: "switch"; domainType: string; from: string; to: string }
+  | { kind: "config"; domainType: string; toolId: string };
+
+/**
+ * Khác biệt giữa hai trạng thái ĐÍCH (chỉ domain bật đếm — domain tắt mang cấu hình cũ không làm gì
+ * cluster). Thứ tự theo catalog của bản nháp, để hộp xác nhận đọc cùng thứ tự với trang.
+ */
+export function changesOf(
+  running: DomainDraft,
+  next: DomainDraft,
+): DomainChange[] {
+  const before = new Map(
+    targetOf(running).domains.map((d) => [d.domainType, d]),
+  );
+  const after = new Map(targetOf(next).domains.map((d) => [d.domainType, d]));
+  const out: DomainChange[] = [];
+  for (const domainType of Object.keys(next.entries)) {
+    const a = before.get(domainType);
+    const b = after.get(domainType);
+    if (a === undefined && b !== undefined) {
+      out.push({ kind: "enable", domainType, toolId: b.toolId });
+    } else if (a !== undefined && b === undefined) {
+      out.push({ kind: "disable", domainType, toolId: a.toolId });
+    } else if (a !== undefined && b !== undefined) {
+      if (a.toolId !== b.toolId) {
+        out.push({ kind: "switch", domainType, from: a.toolId, to: b.toolId });
+      } else if (JSON.stringify(a.config) !== JSON.stringify(b.config)) {
+        out.push({ kind: "config", domainType, toolId: b.toolId });
+      }
+    }
+  }
+  return out;
+}
+
 /** Dropdown của AMBIGUOUS_PROVIDER: một lựa chọn cho mỗi capability */
 export function choosePreference(
   draft: DomainDraft,

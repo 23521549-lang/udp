@@ -12,7 +12,8 @@ import { messageOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
 import { can } from "../project/roles";
 import { provisioningApi } from "./provisioning-api";
-import { BLOCKER_LABEL, costItemLabel, usd } from "./provisioning-labels";
+import { formatUsd } from "../../lib/format";
+import { BLOCKER_LABEL, costItemLabel } from "./provisioning-labels";
 
 /**
  * Bước xem trước (§10.5 bước 4, §4.4 lớp 2): chi phí theo từng mục (control plane, NAT,
@@ -106,24 +107,26 @@ function Preview({
       </dl>
 
       <div className="table-wrap">
-        <table className="matrix" aria-label="Chi phí ước tính mỗi tháng">
+        <table className="dtable" aria-label="Chi phí ước tính mỗi tháng">
           <thead>
             <tr>
               <th scope="col">Mục</th>
-              <th scope="col">USD/tháng</th>
+              <th scope="col" className="num">
+                Mỗi tháng
+              </th>
             </tr>
           </thead>
           <tbody>
             {preview.cost.breakdown.map((line) => (
               <tr key={line.item}>
                 <th scope="row">{costItemLabel(line.item)}</th>
-                <td className="num">{usd(line.monthlyUsd)}</td>
+                <td className="num">{formatUsd(line.monthlyUsd)}</td>
               </tr>
             ))}
             <tr>
               <th scope="row">Tổng</th>
               <td className="num">
-                <b>{usd(preview.cost.monthlyUsd)}</b>
+                <b>{formatUsd(preview.cost.monthlyUsd)}</b>
               </td>
             </tr>
           </tbody>
@@ -175,8 +178,8 @@ function Preview({
             checked={confirmed}
             onChange={(e) => setConfirmed(e.target.checked)}
           />
-          Tôi đồng ý chi phí ước tính {usd(preview.cost.monthlyUsd)} mỗi tháng
-          trên tài khoản cloud của mình
+          Tôi đồng ý chi phí ước tính {formatUsd(preview.cost.monthlyUsd)} mỗi
+          tháng trên tài khoản cloud của mình
         </label>
       )}
       {start.isError && (
@@ -193,7 +196,7 @@ function Preview({
             onClick={() => start.mutate()}
           >
             <Icon of={Rocket} />
-            {start.isPending ? "Đang gửi..." : "Bắt đầu triển khai"}
+            {start.isPending ? "Đang gửi…" : "Bắt đầu triển khai"}
           </button>
         </div>
       )}

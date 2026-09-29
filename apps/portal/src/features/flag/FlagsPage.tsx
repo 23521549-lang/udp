@@ -4,9 +4,16 @@ import type { FlagSummaryWire } from "@udp/shared-types/wire";
 import { Brush, Flag, Plus, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "../../components/Icon";
+import { Pager } from "../../components/Pager";
 import { ProgressRing } from "../../components/ProgressRing";
 import { Empty, ErrorState, Loading } from "../../components/States";
-import { browserTimeZone, compactNumber, relativeTime } from "../../lib/format";
+import { Sparkline } from "../../components/Sparkline";
+import {
+  browserTimeZone,
+  compactNumber,
+  formatDateTime,
+  relativeTime,
+} from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
@@ -16,6 +23,7 @@ import { FLAG_PAGE_SIZE, flagApi } from "./flag-api";
 import { useFlagCounts } from "./flag-counts";
 import { LIFECYCLE_LABEL, LIFECYCLE_ORDER } from "./flag-labels";
 import { FlagDetail } from "./FlagDetail";
+import { PageHead } from "../../components/PageHead";
 
 /**
  * Trang Flag (§10.8, DESIGN.md §6 "Danh sách" + "Xem nhanh").
@@ -46,19 +54,47 @@ export function FlagsPage() {
       },
     });
   }, [search.new, navigate]);
+  /*
+   * Từ khoá và trang nằm trên URL (Plan #53 QĐ-9): gửi đường dẫn là gửi đúng thứ đang xem. Ô tìm giữ
+   * chữ đang gõ ở state; chỉ khi ngừng gõ `SEARCH_DEBOUNCE_MS` từ khoá mới lên URL (thay, không đẩy
+   * thêm một mục Back cho mỗi phím), và một lần tìm mới luôn bắt đầu từ trang đầu.
+   */
   const [q, setQ] = useState(search.q ?? "");
-  const [term, setTerm] = useState(q.trim());
-  const [offset, setOffset] = useState(0);
+  const term = (search.q ?? "").trim();
+  const offset = search.offset ?? 0;
   useEffect(() => {
+    const next = q.trim();
+    if (next === term) return;
     const t = setTimeout(() => {
-      setTerm(q.trim());
+      void navigate({
+        to: ".",
+        replace: true,
+        search: (prev: Record<string, unknown>) => {
+          const { q: _q, offset: _o, ...rest } = prev;
+          return next === "" ? rest : { ...rest, q: next };
+        },
+      });
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [q]);
-  // Lần tìm mới hay env khác bắt đầu lại từ trang đầu
-  useEffect(() => {
-    setOffset(0);
-  }, [term, env.id]);
+  }, [q, term, navigate]);
+  const setOffset = useCallback(
+    (n: number) => {
+      void navigate({
+        to: ".",
+        search: (prev: Record<string, unknown>) => {
+          const { offset: _o, ...rest } = prev;
+          return n === 0 ? rest : { ...rest, offset: n };
+        },
+      });
+    },
+    [navigate],
+  );
+  // Đổi env bắt đầu lại từ trang đầu: trang 3 của dev không phải trang 3 của prod
+  const [seenEnv, setSeenEnv] = useState(env.id);
+  if (seenEnv !== env.id) {
+    setSeenEnv(env.id);
+    if (offset !== 0) setOffset(0);
+  }
 
   const flags = useQuery({
     queryKey: qk.flags(project.id, env.id, "stats", { term, offset }),
@@ -163,35 +199,25 @@ export function FlagsPage() {
       />
       <div className="body">
         <div className="scroll">
-          <div className="mhead">
-            <span className="tile xl">
-              <Icon of={Flag} size={21} />
-            </span>
-            <div>
-              <h1>Flag</h1>
-              <p>Bật, tắt và phân phối tính năng ở {env.name}.</p>
-            </div>
-            <div className="minis">
-              <div>
-                <b>{counts.total ?? "–"}</b>
-                <span>flag</span>
-              </div>
-              <div>
-                <b>{counts.enabled ?? "–"}</b>
-                <span>đang bật</span>
-              </div>
-              <div>
-                <b>{counts.drafts ?? "–"}</b>
-                <span>nháp</span>
-              </div>
-            </div>
-          </div>
+          <PageHead
+            title="Flag"
+            lead={<>Bật, tắt và phân phối tính năng ở {env.name}.</>}
+            minis={[
+              { value: counts.total ?? "–", label: "flag" },
+              { value: counts.enabled ?? "–", label: "đang bật" },
+              { value: counts.drafts ?? "–", label: "nháp" },
+            ]}
+          />
           <div className="filters">
             <label className="q">
               <Icon of={Search} />
               <input
+                type="search"
+                name="q"
                 aria-label="Tìm flag"
-                placeholder="Tìm theo key hoặc mô tả"
+                placeholder="Tìm theo key hoặc mô tả…"
+                autoComplete="off"
+                spellCheck={false}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
@@ -220,63 +246,46 @@ export function FlagsPage() {
             <Empty title="Không flag nào khớp">Thử từ khoá khác.</Empty>
           ) : (
             <>
-              <div role="listbox" aria-label="Danh sách flag">
+              <div role="region" aria-label="Danh sách flag">
+                <div className="row row-h" aria-hidden="true">
+                  <span />
+                  <span>Key</span>
+                  <span className="k">Mô tả</span>
+                  <span className="envs">Ở {env.name}</span>
+                  <span className="spark-h">14 ngày</span>
+                  <span className="when">Lượt 7 ngày</span>
+                  <span className="when">Cập nhật</span>
+                </div>
                 {LIFECYCLE_ORDER.map((status) => {
                   const group = ordered.filter(
                     (f) => f.lifecycleStatus === status,
                   );
                   if (group.length === 0) return null;
+                  const headId = `flag-group-${status}`;
                   return (
-                    <div
-                      key={status}
-                      role="group"
-                      aria-label={LIFECYCLE_LABEL[status]}
-                    >
-                      <div className="gh">
+                    <section key={status} aria-labelledby={headId}>
+                      <h2 className="gh" id={headId}>
                         {LIFECYCLE_LABEL[status]}
                         <span className="n">{group.length}</span>
+                      </h2>
+                      <div role="list">
+                        {group.map((f) => (
+                          <div role="listitem" key={f.id}>
+                            <FlagRow flag={f} selected={f.id === search.flag} />
+                          </div>
+                        ))}
                       </div>
-                      {group.map((f) => (
-                        <FlagRow
-                          key={f.id}
-                          flag={f}
-                          selected={f.id === search.flag}
-                          onOpen={() => open(f.id)}
-                        />
-                      ))}
-                    </div>
+                    </section>
                   );
                 })}
               </div>
-              {matched > FLAG_PAGE_SIZE && (
-                <nav
-                  className="line pager"
-                  aria-label="Trang của danh sách flag"
-                >
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={offset === 0}
-                    onClick={() =>
-                      setOffset(Math.max(0, offset - FLAG_PAGE_SIZE))
-                    }
-                  >
-                    Trang trước
-                  </button>
-                  <span className="c3 num">
-                    {offset + 1}–{Math.min(offset + FLAG_PAGE_SIZE, matched)} /{" "}
-                    {matched}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={offset + FLAG_PAGE_SIZE >= matched}
-                    onClick={() => setOffset(offset + FLAG_PAGE_SIZE)}
-                  >
-                    Trang sau
-                  </button>
-                </nav>
-              )}
+              <Pager
+                label="Trang của danh sách flag"
+                offset={offset}
+                pageSize={FLAG_PAGE_SIZE}
+                total={matched}
+                onChange={setOffset}
+              />
             </>
           )}
         </div>
@@ -297,36 +306,33 @@ export function FlagsPage() {
   );
 }
 
+/**
+ * Một dòng flag là một LINK tới `?flag=<id>` (Plan #53 QĐ-9): Ctrl/Cmd-click mở tab mới đúng flag đó,
+ * chuột giữa cũng vậy — trước đây là `div role="option"` chỉ mở được bằng một cú bấm trái.
+ */
 function FlagRow({
   flag,
   selected,
-  onOpen,
 }: {
   flag: FlagSummaryWire;
   selected: boolean;
-  onOpen: () => void;
 }) {
   const on = flag.env?.isEnabled === true;
   return (
-    <div
+    <Link
+      to="."
+      search={(prev: Record<string, unknown>) => ({ ...prev, flag: flag.id })}
       className="row"
-      role="option"
-      aria-selected={selected}
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
+      aria-current={selected ? "true" : undefined}
     >
       <ProgressRing
         percent={on ? 100 : 0}
         tone={flag.env?.isTracked ? "accent" : "muted"}
         dashed={flag.lifecycleStatus === "DRAFT"}
       />
-      <span className="t mono">{flag.key}</span>
+      <span className="t mono" translate="no">
+        {flag.key}
+      </span>
       <span className="k">{flag.description ?? ""}</span>
       <span className="envs">
         <span>
@@ -338,29 +344,9 @@ function FlagRow({
       <span className="when num">
         {flag.stats === undefined ? "" : compactNumber(flag.stats.evalCount7d)}
       </span>
-      <span className="when" title={flag.updatedAt}>
+      <span className="when" title={formatDateTime(flag.updatedAt)}>
         {relativeTime(flag.updatedAt)}
       </span>
-    </div>
-  );
-}
-
-/** Đường xu hướng 14 ngày — số lượt đánh giá, không trục (DESIGN.md §6 "Danh sách") */
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 2) return <span />;
-  const max = Math.max(1, ...values);
-  const w = 64;
-  const h = 18;
-  const step = w / (values.length - 1);
-  const d = values
-    .map(
-      (v, i) =>
-        `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${(h - (v / max) * (h - 2) - 1).toFixed(1)}`,
-    )
-    .join(" ");
-  return (
-    <svg className="spark" width={w} height={h} aria-hidden="true">
-      <path d={d} fill="none" stroke="var(--ink-3)" strokeWidth="1.25" />
-    </svg>
+    </Link>
   );
 }

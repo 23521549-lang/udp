@@ -108,14 +108,18 @@ export function EnvSwitcher() {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
     };
+    // Esc đóng hộp và trả focus về nút đã mở nó — không để focus rơi về đầu trang
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      trigger.current?.focus();
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -132,10 +136,11 @@ export function EnvSwitcher() {
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button
+        ref={trigger}
         type="button"
         className="envsw"
-        aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls="env-pop"
         aria-label={`Environment: ${env.name}`}
         onClick={() => setOpen((v) => !v)}
       >
@@ -151,29 +156,39 @@ export function EnvSwitcher() {
       </button>
       {open && (
         <div
+          id="env-pop"
           className="envpop"
           style={{ position: "absolute", top: 32, left: 0 }}
         >
           <label className="q">
             <input
               autoFocus
-              placeholder="Tìm environment"
+              type="search"
+              name="env-q"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="Tìm environment…"
               aria-label="Tìm environment"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </label>
-          <div role="listbox" aria-label="Environment">
+          <div role="group" aria-label="Environment">
+            {shown.length === 0 && (
+              <p className="c3 envpop-empty" role="status">
+                Không environment nào khớp “{q.trim()}”.
+              </p>
+            )}
             {shown.map((e) => (
               <button
                 key={e.id}
                 type="button"
-                role="option"
                 className="op"
-                aria-selected={e.id === env.id}
+                aria-current={e.id === env.id ? "true" : undefined}
                 onClick={() => {
                   setEnv(e.id);
                   setOpen(false);
+                  trigger.current?.focus();
                 }}
               >
                 <span className="nm">

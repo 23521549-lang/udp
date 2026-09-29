@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { ListX } from "lucide-react";
 import { useState } from "react";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { formatDateTime } from "../../../lib/format";
@@ -17,7 +16,6 @@ export function AdminJobsPage() {
     <AdminPage
       title="Job provisioning"
       lead="Job hỏng hoặc kẹt trên toàn hệ thống."
-      icon={ListX}
     >
       <div className="filters" style={{ padding: "0 0 10px" }}>
         <div className="seg" role="group" aria-label="Trạng thái job">

@@ -20,8 +20,12 @@ export function CodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="code">
-      <pre aria-label={label}>{code}</pre>
+    // `aria-label` trên `<pre>` trơn bị trình đọc màn hình bỏ qua: tên đặt ở vùng bao ngoài
+    <div
+      className="code"
+      {...(label === undefined ? {} : { role: "region", "aria-label": label })}
+    >
+      <pre translate="no">{code}</pre>
       <button
         type="button"
         className="ib cp"

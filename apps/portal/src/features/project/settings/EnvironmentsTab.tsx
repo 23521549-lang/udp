@@ -25,6 +25,11 @@ export function EnvironmentsTab() {
   const [name, setName] = useState("");
   const [isProduction, setIsProduction] = useState(false);
   const [removing, setRemoving] = useState<PublicEnvironmentWire | null>(null);
+  /*
+   * Bỏ đánh dấu Production gỡ mọi lớp bảo vệ của môi trường thật (xác nhận khi bật tắt flag, gõ
+   * lại khi rollback, quyền MAINTAINER) — phải hỏi trước. Đánh dấu thêm thì chỉ chặt hơn, không hỏi.
+   */
+  const [demoting, setDemoting] = useState<PublicEnvironmentWire | null>(null);
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: qk.project(project.id) });
@@ -64,8 +69,14 @@ export function EnvironmentsTab() {
       envId: string;
       body: { isProduction?: boolean; autoDeploy?: boolean };
     }) => projectApi.updateEnvironment(project.id, v.envId, v.body),
-    onSuccess: refresh,
-    onError: (e) => toast.error(messageOf(e)),
+    onSuccess: async () => {
+      setDemoting(null);
+      await refresh();
+    },
+    onError: (e) => {
+      setDemoting(null);
+      toast.error(messageOf(e));
+    },
   });
   const remove = useMutation({
     mutationFn: (envId: string) =>
@@ -92,15 +103,21 @@ export function EnvironmentsTab() {
         >
           <input
             className="inp mono"
+            name="name"
             aria-label="Tên environment mới"
-            placeholder="qa"
+            placeholder="qa…"
+            autoComplete="off"
+            spellCheck={false}
             maxLength={ENVIRONMENT.nameMaxLength}
             value={name}
+            aria-invalid={createErrors.name !== undefined}
+            aria-describedby={create.isError ? "env-add-err" : undefined}
             onChange={(e) => setName(e.target.value.toLowerCase())}
           />
-          <label className="line">
+          <label className="line check">
             <input
               type="checkbox"
+              name="isProduction"
               checked={isProduction}
               onChange={(e) => setIsProduction(e.target.checked)}
             />
@@ -119,7 +136,7 @@ export function EnvironmentsTab() {
             </span>
           )}
           {create.isError && (
-            <span className="field-error">
+            <span id="env-add-err" className="field-error" role="alert">
               {createErrors.name ?? messageOf(create.error)}
             </span>
           )}
@@ -131,29 +148,36 @@ export function EnvironmentsTab() {
         SDK key đều suy từ nó. Environment đã có lịch sử (SDK key, deploy, bật
         tắt flag) giữ lại cùng lịch sử, không xoá được.
       </p>
-      <div className="lst">
+      <div className="lst" role="list" aria-label="Environment của project">
         {envs.map((e) => (
-          <div key={e.id} className="it">
-            <b className="mono" style={{ fontWeight: 500 }}>
+          <div key={e.id} className="it" role="listitem">
+            <b className="mono lst-name" translate="no">
               {e.name}
             </b>
-            <span className="c3 mono">{e.k8sNamespace}</span>
-            <label className="line" style={{ marginLeft: "auto" }}>
+            <span className="c3 mono" translate="no">
+              {e.k8sNamespace}
+            </span>
+            <label className="line check lst-end">
               <input
                 type="checkbox"
                 aria-label={`${e.name} là production`}
                 checked={e.isProduction}
                 disabled={!isOwner || update.isPending}
-                onChange={(ev) =>
-                  update.mutate({
-                    envId: e.id,
-                    body: { isProduction: ev.target.checked },
-                  })
-                }
+                onChange={(ev) => {
+                  if (ev.target.checked) {
+                    update.mutate({
+                      envId: e.id,
+                      body: { isProduction: true },
+                    });
+                  } else {
+                    update.reset();
+                    setDemoting(e);
+                  }
+                }}
               />
               Production
             </label>
-            <label className="line">
+            <label className="line check">
               <input
                 type="checkbox"
                 aria-label={`${e.name} tự deploy từ webhook`}
@@ -172,6 +196,7 @@ export function EnvironmentsTab() {
               <button
                 type="button"
                 className="btn danger"
+                aria-label={`Xoá environment ${e.name}`}
                 disabled={envs.length <= 1}
                 onClick={() => {
                   remove.reset();
@@ -185,6 +210,23 @@ export function EnvironmentsTab() {
         ))}
       </div>
 
+      {demoting !== null && (
+        <ConfirmDialog
+          title={`Bỏ đánh dấu production của ${demoting.name}?`}
+          description="Environment này sẽ không còn cần xác nhận khi bật tắt flag, không còn cần gõ lại khi rollback, và DEVELOPER sửa được cấu hình của nó."
+          confirmLabel="Bỏ đánh dấu production"
+          danger
+          typeToConfirm={demoting.name}
+          busy={update.isPending}
+          onConfirm={() =>
+            update.mutate({
+              envId: demoting.id,
+              body: { isProduction: false },
+            })
+          }
+          onClose={() => setDemoting(null)}
+        />
+      )}
       {removing !== null && (
         <ConfirmDialog
           title={`Xoá environment ${removing.name}?`}

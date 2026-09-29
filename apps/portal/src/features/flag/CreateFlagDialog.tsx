@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CreateFlagFields } from "@udp/shared-types/flag-api";
 import { Plus, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Dialog } from "../../components/Dialog";
 import { Icon } from "../../components/Icon";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
@@ -90,10 +90,24 @@ export function CreateFlagDialog({
       onCreated(flag.id);
     },
   });
-  const fields = fieldErrorsOf(create.error);
+  // Nút "Tạo" không khoá trước khi gửi: key trống ⇒ lỗi ngay dưới ô và ô nhận focus
+  const [keyMissing, setKeyMissing] = useState(false);
+  const keyInput = useRef<HTMLInputElement>(null);
+  const fields = {
+    ...fieldErrorsOf(create.error),
+    ...(keyMissing ? { key: "Nhập key cho flag." } : {}),
+  };
   const variantError = Object.entries(fields).find(([f]) =>
     f.startsWith("variants"),
   )?.[1];
+  const submit = (): void => {
+    if (key === "") {
+      setKeyMissing(true);
+      keyInput.current?.focus();
+      return;
+    }
+    create.mutate();
+  };
 
   return (
     <Dialog
@@ -109,10 +123,10 @@ export function CreateFlagDialog({
           <button
             type="button"
             className="btn pri"
-            disabled={key === "" || create.isPending}
-            onClick={() => create.mutate()}
+            disabled={create.isPending}
+            onClick={submit}
           >
-            {create.isPending ? "Đang tạo..." : "Tạo flag"}
+            {create.isPending ? "Đang tạo…" : "Tạo flag"}
           </button>
         </>
       }
@@ -120,16 +134,28 @@ export function CreateFlagDialog({
       <div className="f">
         <label htmlFor="flag-key">Key</label>
         <input
+          ref={keyInput}
           id="flag-key"
+          name="key"
           className="inp mono"
           autoComplete="off"
-          placeholder="new-checkout"
+          spellCheck={false}
+          translate="no"
+          placeholder="new-checkout…"
           value={key}
           aria-invalid={fields.key !== undefined}
-          onChange={(e) => setKey(formatFlagKey(e.target.value))}
+          aria-describedby={
+            fields.key === undefined ? undefined : "flag-key-err"
+          }
+          onChange={(e) => {
+            setKeyMissing(false);
+            setKey(formatFlagKey(e.target.value));
+          }}
         />
         {fields.key !== undefined ? (
-          <span className="field-error">{fields.key}</span>
+          <span id="flag-key-err" className="field-error">
+            {fields.key}
+          </span>
         ) : (
           <span className="help mono">
             client.{SDK_CALL[flagType]}("{key === "" ? "key" : key}", …)
@@ -158,6 +184,7 @@ export function CreateFlagDialog({
             <div key={i} className="line">
               <input
                 className="inp mono"
+                spellCheck={false}
                 aria-label={`Key variant ${String(i + 1)}`}
                 value={v.key}
                 onChange={(e) =>
@@ -170,8 +197,9 @@ export function CreateFlagDialog({
               />
               <input
                 className="inp mono"
+                spellCheck={false}
                 aria-label={`Giá trị variant ${String(i + 1)}`}
-                placeholder={flagType === "JSON" ? '{"a":1}' : ""}
+                placeholder={flagType === "JSON" ? '{"a":1}…' : ""}
                 value={v.value}
                 onChange={(e) =>
                   setVariants(

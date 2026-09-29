@@ -76,7 +76,7 @@ export function CloudStatus({
             disabled={validate.isPending}
             onClick={() => validate.mutate()}
           >
-            {validate.isPending ? "Đang kiểm..." : "Kiểm tra credential"}
+            {validate.isPending ? "Đang kiểm…" : "Kiểm tra credential"}
           </button>
           <button
             type="button"
@@ -84,7 +84,7 @@ export function CloudStatus({
             disabled={preflight.isPending}
             onClick={() => preflight.mutate()}
           >
-            {preflight.isPending ? "Đang kiểm..." : "Kiểm tra quyền"}
+            {preflight.isPending ? "Đang kiểm…" : "Kiểm tra quyền"}
           </button>
         </div>
       )}

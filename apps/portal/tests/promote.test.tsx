@@ -161,7 +161,7 @@ describe("sao chép rule: dev → production qua Portal", () => {
     );
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "Sao chép sang..." }),
+      await screen.findByRole("button", { name: "Sao chép sang…" }),
     );
     const dialog = await screen.findByRole("dialog");
     await user.selectOptions(
@@ -201,7 +201,7 @@ describe("sao chép rule: dev → production qua Portal", () => {
     );
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "Sao chép sang..." }),
+      await screen.findByRole("button", { name: "Sao chép sang…" }),
     );
     const dialog = await screen.findByRole("dialog");
     await user.selectOptions(

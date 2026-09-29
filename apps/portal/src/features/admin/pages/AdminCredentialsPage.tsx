@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { KeyRound } from "lucide-react";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { formatDateTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
@@ -15,7 +14,6 @@ export function AdminCredentialsPage() {
     <AdminPage
       title="Credential"
       lead="Chỉ siêu dữ liệu và một đoạn dấu vân tay. Nội dung credential không bao giờ được giải mã để hiển thị."
-      icon={KeyRound}
     >
       {creds.isPending ? (
         <Loading />
@@ -25,7 +23,7 @@ export function AdminCredentialsPage() {
         <Empty title="Chưa có credential nào" />
       ) : (
         <div className="table-wrap">
-          <table className="matrix" aria-label="Credential">
+          <table className="dtable" aria-label="Credential">
             <thead>
               <tr>
                 <th scope="col">Project</th>

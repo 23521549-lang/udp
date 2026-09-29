@@ -96,7 +96,7 @@ describe("rollout: trang chi tiết", () => {
     );
   });
 
-  it("intent đang chờ ⇒ nút hiện 'Đang thực hiện...' và mọi nút khoá (§10.12 B3)", async () => {
+  it("intent đang chờ ⇒ nút hiện 'Đang thực hiện…' và mọi nút khoá (§10.12 B3)", async () => {
     const { rollout } = golden<{ rollout: RolloutDetailWire }>(
       "GET /projects/{id}/rollouts/{id}",
     );
@@ -110,7 +110,7 @@ describe("rollout: trang chi tiết", () => {
     const { detail } = setup(rollout);
     renderApp(`/app/projects/${detail.project.id}/rollouts/${rollout.id}`);
     const busy = await screen.findByRole("button", {
-      name: "Đang thực hiện...",
+      name: "Đang thực hiện…",
     });
     expect(busy).toBeDisabled();
     expect(screen.getByRole("button", { name: "Rollback" })).toBeDisabled();

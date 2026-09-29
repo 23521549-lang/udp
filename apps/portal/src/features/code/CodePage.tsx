@@ -8,7 +8,6 @@ import {
   CircleHelp,
   CircleX,
   Download,
-  FileCode2,
   ScanSearch,
   TriangleAlert,
 } from "lucide-react";
@@ -23,6 +22,7 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { codeApi } from "./code-api";
 import { download, zip } from "./zip";
+import { PageHead } from "../../components/PageHead";
 
 /**
  * Mã nguồn của project (§11, Plan #48): project Create New ⇒ cây Golden Path (§11.1) để tải về;
@@ -35,19 +35,14 @@ export function CodePage() {
     <>
       <ProjectBar title="Mã nguồn" />
       <div className="scroll">
-        <div className="mhead">
-          <span className="tile xl">
-            <Icon of={FileCode2} size={21} />
-          </span>
-          <div>
-            <h1>Mã nguồn</h1>
-            <p>
-              {project.creationMode === "CREATE_NEW"
-                ? "Golden Path: dự án mẫu đã tích hợp sẵn provider, middleware đo và pipeline của UDP."
-                : "Quét repo có sẵn để biết còn thiếu gì trước khi dùng rollout mức flag."}
-            </p>
-          </div>
-        </div>
+        <PageHead
+          title="Mã nguồn"
+          lead={
+            project.creationMode === "CREATE_NEW"
+              ? "Golden Path: dự án mẫu đã tích hợp sẵn provider, middleware đo và pipeline của UDP."
+              : "Quét repo có sẵn để biết còn thiếu gì trước khi dùng rollout mức flag."
+          }
+        />
         <div className="page">
           {project.creationMode === "CREATE_NEW" ? (
             <GoldenPathView />
@@ -107,10 +102,10 @@ function GoldenPathFiles() {
       ))}
       <div className="cardc">
         <div className="hd">
-          <h3>
+          <h2>
             {tree.data.runtime === "nodejs" ? "Node.js" : "Python"} ·{" "}
             <span className="mono">{tree.data.slug}</span>
-          </h3>
+          </h2>
           <span className="c3">{files.length} tệp</span>
           <div className="r">
             <button
@@ -197,7 +192,7 @@ function RepoScanView() {
     <>
       <div className="cardc">
         <div className="hd">
-          <h3 className="mono">{project.repoUrl}</h3>
+          <h2 className="mono">{project.repoUrl}</h2>
         </div>
         {canScan && (
           <form
@@ -212,13 +207,13 @@ function RepoScanView() {
               className="inp"
               autoComplete="off"
               aria-label="Token đọc repo (tuỳ chọn, cho repo riêng tư)"
-              placeholder="Token cho repo riêng tư (tuỳ chọn)"
+              placeholder="Token cho repo riêng tư (tuỳ chọn)…"
               value={token}
               onChange={(e) => setToken(e.target.value)}
             />
             <button type="submit" className="btn pri" disabled={scan.isPending}>
               <Icon of={ScanSearch} />
-              {scan.isPending ? "Đang quét..." : "Quét repo"}
+              {scan.isPending ? "Đang quét…" : "Quét repo"}
             </button>
           </form>
         )}

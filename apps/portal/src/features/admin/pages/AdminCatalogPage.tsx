@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { Blocks } from "lucide-react";
 import { ErrorState, Loading } from "../../../components/States";
 import { qk } from "../../../lib/query-keys";
 import { domainApi } from "../../domain/domain-api";
@@ -20,7 +19,6 @@ export function AdminCatalogPage() {
     <AdminPage
       title="Catalog domain"
       lead="Danh mục domain và công cụ mà máy chủ nạp được từ thư mục adapter. Chỉ đọc."
-      icon={Blocks}
     >
       {catalog.isPending ? (
         <Loading />
@@ -31,7 +29,7 @@ export function AdminCatalogPage() {
         />
       ) : (
         <div className="table-wrap">
-          <table className="matrix" aria-label="Catalog domain">
+          <table className="dtable" aria-label="Catalog domain">
             <thead>
               <tr>
                 <th scope="col">Domain</th>

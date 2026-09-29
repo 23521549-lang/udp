@@ -1,8 +1,10 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Info } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import type { NewProjectSearch } from "../../app/router";
 import { Icon } from "../../components/Icon";
+import { ErrorState, Loading } from "../../components/States";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { qk, qkPrefix } from "../../lib/query-keys";
 import type { PublicProjectWire } from "@udp/shared-types/wire";
@@ -26,18 +28,71 @@ const RUNTIMES = [
  * tầng.
  */
 export function NewProjectPage() {
-  const [created, setCreated] = useState<PublicProjectWire | null>(null);
-  const [step, setStep] = useState<"cloud" | "domains" | "preview">("cloud");
-  const [jobId, setJobId] = useState<string | null>(null);
-  if (created === null) return <CreateStep onCreated={setCreated} />;
-  if (jobId !== null) return <JobStep project={created} jobId={jobId} />;
-  switch (step) {
+  const search = useSearch({ from: "/app/projects/new" });
+  const navigate = useNavigate();
+  const go = (next: NewProjectSearch): void => {
+    void navigate({ to: "/app/projects/new", search: next });
+  };
+  const projectId = search.project;
+  const detail = useQuery({
+    queryKey: qk.project(projectId ?? ""),
+    queryFn: () => projectApi.get(projectId ?? ""),
+    enabled: projectId !== undefined,
+  });
+
+  if (projectId === undefined) {
+    return (
+      <CreateStep onCreated={(p) => go({ project: p.id, step: "cloud" })} />
+    );
+  }
+  if (detail.isPending || detail.isError) {
+    return (
+      <>
+        <WizardBar step="Tạo project" />
+        <div className="page">
+          {detail.isPending ? (
+            <Loading />
+          ) : (
+            <ErrorState
+              error={detail.error}
+              onRetry={() => void detail.refetch()}
+              back={
+                <Link to="/app/projects/new" search={{}} className="btn">
+                  Tạo project mới
+                </Link>
+              }
+            />
+          )}
+        </div>
+      </>
+    );
+  }
+  const created = detail.data.project;
+  if (search.job !== undefined) {
+    return <JobStep project={created} jobId={search.job} />;
+  }
+  switch (search.step ?? "cloud") {
     case "cloud":
-      return <CloudStep project={created} onNext={() => setStep("domains")} />;
+      return (
+        <CloudStep
+          project={created}
+          onNext={() => go({ project: created.id, step: "domains" })}
+        />
+      );
     case "domains":
-      return <DomainStep project={created} onNext={() => setStep("preview")} />;
+      return (
+        <DomainStep
+          project={created}
+          onNext={() => go({ project: created.id, step: "preview" })}
+        />
+      );
     case "preview":
-      return <PreviewStep project={created} onStarted={setJobId} />;
+      return (
+        <PreviewStep
+          project={created}
+          onStarted={(jobId) => go({ project: created.id, job: jobId })}
+        />
+      );
   }
 }
 
@@ -124,6 +179,8 @@ function DomainStep({
           <DomainPanel
             projectId={project.id}
             role={project.myRole}
+            live={project.status === "ACTIVE"}
+            level={2}
             onSaved={() => setSaved(true)}
           />
           <div className="form-actions">
@@ -235,7 +292,22 @@ function CreateStep({
       onCreated(data.project);
     },
   });
-  const fields = fieldErrorsOf(create.error);
+  /*
+   * Nút "Tạo" không bị khoá trước khi gửi (Web Interface Guidelines): bấm với tên trống thì lỗi hiện
+   * ngay dưới ô và ô nhận focus — một nút xám không nói vì sao nó xám.
+   */
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+  const nameInput = useRef<HTMLInputElement>(null);
+  const fields = { ...fieldErrorsOf(create.error), ...clientErrors };
+  const submit = (): void => {
+    if (form.name.trim() === "") {
+      setClientErrors({ name: "Nhập tên project." });
+      nameInput.current?.focus();
+      return;
+    }
+    setClientErrors({});
+    create.mutate();
+  };
 
   return (
     <>
@@ -258,22 +330,31 @@ function CreateStep({
             noValidate
             onSubmit={(e) => {
               e.preventDefault();
-              create.mutate();
+              submit();
             }}
           >
             <div className="f">
               <label htmlFor="p-name">Tên project</label>
               <input
+                ref={nameInput}
                 id="p-name"
+                name="name"
                 className="inp"
                 required
                 maxLength={255}
+                autoComplete="off"
+                spellCheck={false}
                 value={form.name}
                 aria-invalid={fields.name !== undefined}
+                aria-describedby={
+                  fields.name === undefined ? undefined : "p-name-err"
+                }
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
               {fields.name !== undefined && (
-                <span className="field-error">{fields.name}</span>
+                <span id="p-name-err" className="field-error">
+                  {fields.name}
+                </span>
               )}
             </div>
             <div className="f">
@@ -308,17 +389,26 @@ function CreateStep({
                 <label htmlFor="p-repo">URL kho mã</label>
                 <input
                   id="p-repo"
+                  name="repoUrl"
                   className="inp"
                   type="url"
-                  placeholder="https://github.com/org/repo"
+                  inputMode="url"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="https://github.com/org/repo…"
                   value={form.repoUrl ?? ""}
                   aria-invalid={fields.repoUrl !== undefined}
+                  aria-describedby={
+                    fields.repoUrl === undefined ? undefined : "p-repo-err"
+                  }
                   onChange={(e) =>
                     setForm({ ...form, repoUrl: e.target.value })
                   }
                 />
                 {fields.repoUrl !== undefined && (
-                  <span className="field-error">{fields.repoUrl}</span>
+                  <span id="p-repo-err" className="field-error">
+                    {fields.repoUrl}
+                  </span>
                 )}
               </div>
             )}
@@ -326,6 +416,7 @@ function CreateStep({
               <label htmlFor="p-runtime">Runtime</label>
               <select
                 id="p-runtime"
+                name="languageRuntime"
                 className="sel"
                 value={form.languageRuntime}
                 onChange={(e) =>
@@ -351,9 +442,9 @@ function CreateStep({
               <button
                 type="submit"
                 className="btn pri"
-                disabled={create.isPending || form.name.trim() === ""}
+                disabled={create.isPending}
               >
-                {create.isPending ? "Đang tạo..." : "Tạo project"}
+                {create.isPending ? "Đang tạo…" : "Tạo project"}
               </button>
             </div>
           </form>

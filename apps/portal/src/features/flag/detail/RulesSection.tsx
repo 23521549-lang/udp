@@ -10,6 +10,8 @@ import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Icon } from "../../../components/Icon";
 import { ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
+import { UnsavedGuard } from "../../../components/UnsavedGuard";
+import { shortcut } from "../../../lib/keys";
 import { messageOf } from "../../../lib/errors";
 import { isApiError } from "../../../lib/http";
 import { qk, qkPrefix } from "../../../lib/query-keys";
@@ -44,13 +46,16 @@ export function RulesSection({
     staleTime: 10_000,
   });
 
-  if (rules.isPending) return <Loading label="Đang tải rule..." />;
+  if (rules.isPending) return <Loading label="Đang tải rule…" />;
   if (rules.isError) {
     return (
       <ErrorState error={rules.error} onRetry={() => void rules.refetch()} />
     );
   }
-  // `key` theo mốc updatedAt: server đổi ⇒ trình sửa dựng lại từ bản mới
+  /*
+   * `key` theo env và mốc updatedAt: server đổi ⇒ trình sửa dựng lại từ bản mới. Đổi env khi còn nháp
+   * KHÔNG lặng lẽ xoá nháp: đổi env là một điều hướng, và `UnsavedGuard` của trình sửa hỏi trước.
+   */
   return (
     <RulesEditor
       key={`${env.id}:${rules.data.updatedAt}`}
@@ -135,8 +140,18 @@ function RulesEditor({
     return () => document.removeEventListener("keydown", onKey);
   }, [submit]);
 
+  const discard = () => {
+    const before = drafts;
+    setDrafts(draftsFromWire(server.rules));
+    toast.info(`Đã bỏ ${String(changes)} thay đổi`, () => setDrafts(before));
+  };
+
   return (
     <section aria-label="Rule">
+      <UnsavedGuard
+        dirty={changes > 0}
+        what={`${String(changes)} thay đổi rule ở ${env.name}`}
+      />
       <div className="sect">
         <h3>Rule ở {env.name}</h3>
         <span className="c3">xét từ trên xuống</span>
@@ -154,7 +169,7 @@ function RulesEditor({
               onClick={() => setPromoting(true)}
             >
               <Icon of={CopyPlus} />
-              Sao chép sang...
+              Sao chép sang…
             </button>
           )}
           {canEdit && (
@@ -210,7 +225,7 @@ function RulesEditor({
           type="button"
           className="btn"
           tabIndex={changes === 0 ? -1 : 0}
-          onClick={() => setDrafts(draftsFromWire(server.rules))}
+          onClick={discard}
         >
           Bỏ
         </button>
@@ -221,7 +236,7 @@ function RulesEditor({
           disabled={problems.size > 0 || save.isPending}
           onClick={submit}
         >
-          {save.isPending ? "Đang lưu..." : "Lưu"} <kbd>Ctrl S</kbd>
+          {save.isPending ? "Đang lưu…" : "Lưu"} <kbd>{shortcut("S")}</kbd>
         </button>
       </div>
       {confirmProd && (

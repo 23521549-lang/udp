@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import type { AttributeCondition } from "@udp/shared-types/condition";
 import type {
   CreateSegmentFields,
@@ -9,7 +9,7 @@ import type {
   SegmentDetailWire,
   SegmentListResponseWire,
 } from "@udp/shared-types/wire";
-import { Pencil, Plus, Trash2, Users, X } from "lucide-react";
+import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Dialog } from "../../components/Dialog";
@@ -17,7 +17,13 @@ import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
-import { formatBytes, formatNumber, relativeTime } from "../../lib/format";
+import {
+  formatBytes,
+  formatDateTime,
+  formatNumber,
+  formatPercent,
+  relativeTime,
+} from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { AttributeConditions, TagInput } from "../flag/RuleEditor";
 import { ProjectBar } from "../project/ProjectBar";
@@ -25,6 +31,7 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { segmentApi } from "./segment-api";
 import { quotaVerdict, segmentSizeOf } from "./segment-quota";
+import { PageHead } from "../../components/PageHead";
 
 /**
  * Segment (§2.2, v4.9): nhóm người dùng dùng lại ở nhiều rule. Thuộc PROJECT — một bản
@@ -80,34 +87,28 @@ export function SegmentsPage() {
       />
       <div className="body">
         <div className="scroll">
-          <div className="mhead">
-            <span className="tile xl">
-              <Icon of={Users} size={21} />
-            </span>
-            <div>
-              <h1>Segment</h1>
-              <p>Nhóm người dùng dùng chung cho rule ở mọi environment.</p>
-            </div>
-            {quota !== undefined && (
-              <div className="minis">
-                <div>
-                  <b>
-                    {quota.segmentCount}/{quota.maxSegments}
-                  </b>
-                  <span>segment</span>
-                </div>
-                <div>
-                  <b>
-                    {Math.round(
-                      (quota.payloadBytes / quota.maxPayloadBytes) * 100,
-                    )}
-                    %
-                  </b>
-                  <span>dung lượng</span>
-                </div>
-              </div>
-            )}
-          </div>
+          <PageHead
+            title="Segment"
+            lead="Nhóm người dùng dùng chung cho rule ở mọi environment."
+            {...(quota === undefined
+              ? {}
+              : {
+                  minis: [
+                    {
+                      value: `${formatNumber(quota.segmentCount)}/${formatNumber(quota.maxSegments)}`,
+                      label: "segment",
+                    },
+                    {
+                      value: formatPercent(
+                        Math.round(
+                          (quota.payloadBytes / quota.maxPayloadBytes) * 100,
+                        ),
+                      ),
+                      label: "dung lượng",
+                    },
+                  ],
+                })}
+          />
           <div className="page">
             {segments.isPending ? (
               <Loading />
@@ -119,26 +120,33 @@ export function SegmentsPage() {
             ) : segments.data.segments.length === 0 ? (
               <Empty title="Chưa có segment nào" />
             ) : (
-              <div className="lst" role="list">
+              <div className="lst" role="list" aria-label="Danh sách segment">
                 {segments.data.segments.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    role="listitem"
-                    className="it rowbtn"
-                    aria-current={s.id === search.segment ? "true" : undefined}
-                    onClick={() => open(s.id)}
-                  >
-                    <b style={{ fontWeight: 500 }}>{s.name}</b>
-                    <span className="c3">
-                      {s.summary.conditionCount} điều kiện ·{" "}
-                      {formatNumber(s.summary.userIdCount)} người dùng
-                    </span>
-                    <span className="c3" style={{ marginLeft: "auto" }}>
-                      {s.usage.flagCount} flag dùng
-                    </span>
-                    <span className="c3">{relativeTime(s.updatedAt)}</span>
-                  </button>
+                  <div role="listitem" key={s.id}>
+                    {/* Link tới `?segment=<id>`: Ctrl-click mở đúng segment ở tab mới (Plan #53 QĐ-9) */}
+                    <Link
+                      to="."
+                      search={(prev: Record<string, unknown>) => ({
+                        ...prev,
+                        segment: s.id,
+                      })}
+                      aria-current={
+                        s.id === search.segment ? "true" : undefined
+                      }
+                    >
+                      <b className="lst-name">{s.name}</b>
+                      <span className="c3">
+                        {s.summary.conditionCount} điều kiện,{" "}
+                        {formatNumber(s.summary.userIdCount)} người dùng
+                      </span>
+                      <span className="c3 lst-end">
+                        {s.usage.flagCount} flag dùng
+                      </span>
+                      <span className="c3" title={formatDateTime(s.updatedAt)}>
+                        {relativeTime(s.updatedAt)}
+                      </span>
+                    </Link>
+                  </div>
                 ))}
               </div>
             )}
@@ -400,7 +408,7 @@ function SegmentDialog({
             }
             onClick={() => save.mutate()}
           >
-            {save.isPending ? "Đang lưu..." : "Lưu"}
+            {save.isPending ? "Đang lưu…" : "Lưu"}
           </button>
         </>
       }
