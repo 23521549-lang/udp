@@ -4,16 +4,19 @@ import type { ResourceQuotaWire } from "@udp/shared-types/wire";
 import { useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { toast } from "../../../components/Toast";
+import { useMessages } from "../../../i18n";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
 import { formatDateTime } from "../../../lib/format";
 import { qk, qkPrefix } from "../../../lib/query-keys";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
 import { can } from "../roles";
+import { settingsMessages } from "./settings.messages";
 
 const NODE_SIZES = ["small", "medium", "large"] as const;
 
 export function ProjectTab() {
+  const m = useMessages(settingsMessages).project;
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -38,7 +41,7 @@ export function ProjectTab() {
   const saveQuota = useMutation({
     mutationFn: () => projectApi.updateQuota(project.id, quota),
     onSuccess: async () => {
-      toast.info("Đã lưu trần tài nguyên");
+      toast.info(m.quotaSaved);
       await refresh();
     },
   });
@@ -50,7 +53,7 @@ export function ProjectTab() {
         expires === "" ? null : new Date(`${expires}T23:59:59`).toISOString(),
       ),
     onSuccess: async () => {
-      toast.info("Đã lưu hạn dùng");
+      toast.info(m.ttlSaved);
       await refresh();
     },
   });
@@ -59,7 +62,7 @@ export function ProjectTab() {
     onSuccess: async () => {
       queryClient.removeQueries({ queryKey: qk.project(project.id) });
       await queryClient.invalidateQueries({ queryKey: qkPrefix.projectsAll() });
-      toast.info("Đã xoá project");
+      toast.info(m.deleted);
       await navigate({ to: "/app/projects" });
     },
   });
@@ -89,25 +92,22 @@ export function ProjectTab() {
   );
 
   return (
-    <section aria-label="Project">
+    <section aria-label={m.label}>
       <dl className="props">
-        <dt>Tên</dt>
+        <dt>{m.name}</dt>
         <dd>{project.name}</dd>
-        <dt>Runtime</dt>
+        <dt>{m.runtime}</dt>
         <dd className="mono">{project.languageRuntime}</dd>
-        <dt>Tạo lúc</dt>
+        <dt>{m.createdAt}</dt>
         <dd>{formatDateTime(project.createdAt)}</dd>
       </dl>
 
-      <h2 className="h2">Trần tài nguyên</h2>
-      <p className="c3">
-        Cưỡng chế chứ không phải gợi ý: provisioning vượt trần bị từ chối
-        (§4.4).
-      </p>
+      <h2 className="h2">{m.quota}</h2>
+      <p className="c3">{m.quotaNote}</p>
       <div className="grid-f">
-        {num("maxNodes", "Số node tối đa")}
+        {num("maxNodes", m.maxNodes)}
         <div className="f">
-          <label htmlFor="q-size">Cỡ node tối đa</label>
+          <label htmlFor="q-size">{m.maxNodeSize}</label>
           <select
             id="q-size"
             className="sel"
@@ -124,9 +124,9 @@ export function ProjectTab() {
             ))}
           </select>
         </div>
-        {num("maxDatabases", "Số database tối đa")}
-        {num("maxStorageGb", "Dung lượng tối đa (GB)")}
-        {num("maxLoadBalancers", "Số load balancer tối đa")}
+        {num("maxDatabases", m.maxDatabases)}
+        {num("maxStorageGb", m.maxStorageGb)}
+        {num("maxLoadBalancers", m.maxLoadBalancers)}
       </div>
       {isOwner && (
         <button
@@ -135,7 +135,7 @@ export function ProjectTab() {
           disabled={saveQuota.isPending}
           onClick={() => saveQuota.mutate()}
         >
-          Lưu trần
+          {m.saveQuota}
         </button>
       )}
       {saveQuota.isError && Object.keys(quotaErrors).length === 0 && (
@@ -143,17 +143,14 @@ export function ProjectTab() {
       )}
 
       <h2 className="h2" style={{ marginTop: 22 }}>
-        Hạn dùng
+        {m.ttl}
       </h2>
-      <p className="c3">
-        Hết hạn thì chỉ cảnh báo chủ sở hữu, không tự xoá tài nguyên của bạn
-        (§4.4).
-      </p>
+      <p className="c3">{m.ttlNote}</p>
       <div className="line">
         <input
           className="inp"
           type="date"
-          aria-label="Ngày hết hạn"
+          aria-label={m.expiryDate}
           disabled={!isOwner}
           value={expires}
           onChange={(e) => setExpires(e.target.value)}
@@ -166,7 +163,7 @@ export function ProjectTab() {
               disabled={saveTtl.isPending}
               onClick={() => saveTtl.mutate()}
             >
-              Lưu hạn
+              {m.saveTtl}
             </button>
             {expires !== "" && (
               <button
@@ -174,7 +171,7 @@ export function ProjectTab() {
                 className="btn"
                 onClick={() => setExpires("")}
               >
-                Bỏ hạn
+                {m.clearTtl}
               </button>
             )}
           </>
@@ -187,22 +184,22 @@ export function ProjectTab() {
       {isOwner && (
         <>
           <h2 className="h2" style={{ marginTop: 22 }}>
-            Vùng nguy hiểm
+            {m.danger}
           </h2>
           <button
             type="button"
             className="btn danger"
             onClick={() => setDeleting(true)}
           >
-            Xoá project
+            {m.deleteProject}
           </button>
         </>
       )}
       {deleting && (
         <ConfirmDialog
-          title={`Xoá ${project.name}?`}
-          description="UDP dừng lượt triển khai đang chạy (nếu có) rồi xoá mọi tài nguyên đã dựng trên cloud của bạn. Nhật ký kiểm toán được giữ."
-          confirmLabel="Xoá project"
+          title={m.deleteTitle(project.name)}
+          description={m.deleteBody}
+          confirmLabel={m.deleteProject}
           danger
           typeToConfirm={project.name}
           busy={remove.isPending}

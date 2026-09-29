@@ -4,6 +4,7 @@ import { CircleAlert, CircleCheck, Info } from "lucide-react";
 import { CodeBlock } from "../../components/CodeBlock";
 import { Icon } from "../../components/Icon";
 import { ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
@@ -12,6 +13,7 @@ import { CicdPanel } from "./CicdPanel";
 import { domainApi } from "./domain-api";
 import { DomainActions } from "./DomainActions";
 import { domainStatusLabel, driftLabel } from "./domain-labels";
+import { domainMessages } from "./domain.messages";
 
 /**
  * Chi tiết một domain (§10.13): trạng thái đã lưu và kết quả quét drift gần nhất — câu
@@ -31,10 +33,11 @@ export function DomainDetailPage() {
     queryKey: qk.domainDrift(project.id, type),
     queryFn: () => domainApi.drift(project.id, type),
   });
+  const m = useMessages(domainMessages).detail;
 
   return (
     <>
-      <ProjectBar title={`Domain ${type}`} envScoped={false} />
+      <ProjectBar title={m.title(type)} envScoped={false} />
       <div className="scroll">
         <div className="page">
           <h1 className="title">{type}</h1>
@@ -42,20 +45,20 @@ export function DomainDetailPage() {
           {domain.isError && <ErrorState error={domain.error} />}
           {domain.data !== undefined && (
             <dl className="props">
-              <dt>Công cụ</dt>
-              <dd>{domain.data.domain.selectedTool ?? "Chưa chọn"}</dd>
-              <dt>Phiên bản</dt>
+              <dt>{m.tool}</dt>
+              <dd>{domain.data.domain.selectedTool ?? m.noTool}</dd>
+              <dt>{m.version}</dt>
               <dd className="mono">
                 {domain.data.domain.adapterVersion ?? "–"}
               </dd>
-              <dt>Trạng thái</dt>
+              <dt>{m.status}</dt>
               <dd>
                 {domain.data.domain.status === null
-                  ? "Chưa cấu hình"
+                  ? m.notConfigured
                   : domainStatusLabel(domain.data.domain.status)}
-                {!domain.data.domain.isEnabled && " (đang tắt)"}
+                {!domain.data.domain.isEnabled && m.disabled}
               </dd>
-              <dt>Cập nhật</dt>
+              <dt>{m.updated}</dt>
               <dd>
                 {domain.data.domain.updatedAt === null
                   ? "–"
@@ -72,22 +75,22 @@ export function DomainDetailPage() {
           {domain.data?.domain.toolConfig !== null &&
             domain.data?.domain.toolConfig !== undefined && (
               <>
-                <h2 className="h2">Cấu hình mong muốn</h2>
+                <h2 className="h2">{m.desired}</h2>
                 <CodeBlock
                   code={JSON.stringify(domain.data.domain.toolConfig, null, 2)}
-                  label="Cấu hình mong muốn"
+                  label={m.desired}
                 />
               </>
             )}
 
-          <h2 className="h2">Drift</h2>
+          <h2 className="h2">{m.drift}</h2>
           {drift.isPending && <Loading />}
           {drift.isError && <ErrorState error={drift.error} />}
           {drift.data !== undefined && (
             <div
               className="check-result"
               role="status"
-              aria-label="Kết quả drift"
+              aria-label={m.driftResult}
             >
               <span>
                 <Icon
@@ -102,11 +105,11 @@ export function DomainDetailPage() {
                 {driftLabel(drift.data.drift.verdict)}
               </span>
               {drift.data.drift.message !== null && (
-                <CodeBlock code={drift.data.drift.message} label="Chỗ trôi" />
+                <CodeBlock code={drift.data.drift.message} label={m.driftAt} />
               )}
               {drift.data.drift.at !== null && (
                 <span className="c3">
-                  Quét lúc {formatDateTime(drift.data.drift.at)}
+                  {m.scannedAt(formatDateTime(drift.data.drift.at))}
                 </span>
               )}
             </div>

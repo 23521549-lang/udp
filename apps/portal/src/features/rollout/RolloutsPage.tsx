@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { formatDateTime, formatPercent, relativeTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
@@ -11,17 +12,13 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { CreateRolloutDialog } from "./CreateRolloutDialog";
 import { rolloutApi } from "./rollout-api";
-import { RolloutStatusIcon, ROLLOUT_STATUS_LABEL } from "./rollout-status";
+import { RolloutStatusIcon } from "./rollout-status";
+import { rolloutMessages } from "./rollout.messages";
 import { PageHead } from "../../components/PageHead";
-
-const STRATEGY_LABEL = {
-  CANARY: "Canary",
-  ATTRIBUTE_SPLIT: "Chia theo thuộc tính",
-  BLUE_GREEN: "Blue-Green",
-} as const;
 
 /** Danh sách rollout của env đang chọn (§10.9, query key có `envId`) */
 export function RolloutsPage() {
+  const m = useMessages(rolloutMessages);
   const { project, env } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/rollouts" });
   const navigate = useNavigate();
@@ -54,7 +51,7 @@ export function RolloutsPage() {
   return (
     <>
       <ProjectBar
-        title="Rollout"
+        title={m.list.title}
         actions={
           canCreate && (
             <button
@@ -63,21 +60,13 @@ export function RolloutsPage() {
               onClick={() => setCreating(true)}
             >
               <Icon of={Plus} />
-              Tạo rollout
+              {m.list.create}
             </button>
           )
         }
       />
       <div className="scroll">
-        <PageHead
-          title="Rollout"
-          lead={
-            <>
-              Tăng dần một variant, tự rollback khi metric vượt ngưỡng. Đang xem{" "}
-              {env.name}.
-            </>
-          }
-        />
+        <PageHead title={m.list.title} lead={m.list.lead(env.name)} />
         {rollouts.isPending ? (
           <Loading />
         ) : rollouts.isError ? (
@@ -86,9 +75,9 @@ export function RolloutsPage() {
             onRetry={() => void rollouts.refetch()}
           />
         ) : rollouts.data.rollouts.length === 0 ? (
-          <Empty title={`Chưa có rollout nào ở ${env.name}`} />
+          <Empty title={m.list.empty(env.name)} />
         ) : (
-          <div role="list" aria-label="Danh sách rollout">
+          <div role="list" aria-label={m.list.label}>
             {rollouts.data.rollouts.map((r) => (
               <div role="listitem" key={r.id}>
                 <Link
@@ -105,11 +94,10 @@ export function RolloutsPage() {
                     {r.flagKey ?? r.workloadName ?? r.id.slice(0, 8)}
                   </span>
                   <span className="k">
-                    {STRATEGY_LABEL[r.strategy]} ·{" "}
-                    {r.scope === "FLAG_LEVEL" ? "theo flag" : "theo phiên bản"}
+                    {m.list.strategy[r.strategy]} · {m.list.scope[r.scope]}
                     {r.workloadName !== null ? ` · ${r.workloadName}` : ""}
                   </span>
-                  <span>{ROLLOUT_STATUS_LABEL[r.status]}</span>
+                  <span>{m.status[r.status]}</span>
                   <span className="num">
                     {formatPercent(r.currentTrafficPercentage)}
                   </span>

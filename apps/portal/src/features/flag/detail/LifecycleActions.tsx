@@ -5,13 +5,16 @@ import { useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Icon } from "../../../components/Icon";
 import { toast } from "../../../components/Toast";
+import { useMessages } from "../../../i18n";
 import { messageOf } from "../../../lib/errors";
 import { qkPrefix } from "../../../lib/query-keys";
 import { flagApi } from "../flag-api";
 import { useProjectContext } from "../../project/ProjectLayout";
 import { can } from "../../project/roles";
+import { detailMessages } from "./detail.messages";
 
 export function LifecycleActions({ flag }: { flag: FlagDetailWire }) {
+  const m = useMessages(detailMessages).lifecycle;
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [confirm, setConfirm] = useState<"ACTIVE" | "ARCHIVED" | null>(null);
@@ -31,7 +34,7 @@ export function LifecycleActions({ flag }: { flag: FlagDetailWire }) {
       }),
     onSuccess: async (_d, { lifecycleStatus: status }) => {
       setConfirm(null);
-      toast.info(status === "ACTIVE" ? "Đã kích hoạt flag" : "Đã lưu trữ flag");
+      toast.info(status === "ACTIVE" ? m.activated : m.archived);
       await queryClient.invalidateQueries({
         queryKey: qkPrefix.flagOf(project.id, flag.id),
       });
@@ -57,7 +60,7 @@ export function LifecycleActions({ flag }: { flag: FlagDetailWire }) {
           onClick={() => setConfirm("ACTIVE")}
         >
           <Icon of={Play} />
-          Kích hoạt
+          {m.activate}
         </button>
       )}
       <button
@@ -66,17 +69,15 @@ export function LifecycleActions({ flag }: { flag: FlagDetailWire }) {
         onClick={() => setConfirm("ARCHIVED")}
       >
         <Icon of={Archive} />
-        Lưu trữ
+        {m.archive}
       </button>
       {confirm !== null && (
         <ConfirmDialog
-          title={confirm === "ACTIVE" ? "Kích hoạt flag?" : "Lưu trữ flag?"}
+          title={confirm === "ACTIVE" ? m.activateTitle : m.archiveTitle}
           description={
-            confirm === "ACTIVE"
-              ? "SDK sẽ bắt đầu nhận flag này ở mọi environment."
-              : "SDK sẽ không còn nhận flag này. Flag đang có rollout chạy thì không lưu trữ được."
+            confirm === "ACTIVE" ? m.activateDescription : m.archiveDescription
           }
-          confirmLabel={confirm === "ACTIVE" ? "Kích hoạt" : "Lưu trữ"}
+          confirmLabel={confirm === "ACTIVE" ? m.activate : m.archive}
           danger={confirm === "ARCHIVED"}
           typeToConfirm={flag.key}
           busy={update.isPending}

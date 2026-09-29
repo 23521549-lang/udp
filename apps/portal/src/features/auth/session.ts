@@ -1,8 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { AnyRouter } from "@tanstack/react-router";
+import { messagesOf } from "../../i18n";
 import { isApiError, setSessionExpiredHandler } from "../../lib/http";
 import { authApi } from "./auth-api";
 import { useAuthStore } from "./auth-store";
+import { sessionMessages } from "./session.messages";
 
 /**
  * Nối lớp HTTP với router và store: phiên hết hạn (refresh thất bại) ⇒ xoá người dùng,
@@ -28,7 +30,9 @@ export async function bootstrapAuth(
     store.setUser(user);
   } catch (e) {
     // 401 = chưa đăng nhập: bình thường. Lỗi khác: vẫn vào được trang đăng nhập.
-    if (!isApiError(e) || e.status !== 401) console.warn("auth/me thất bại", e);
+    if (!isApiError(e) || e.status !== 401) {
+      console.warn(messagesOf(sessionMessages).meFailed, e);
+    }
     store.clearUser();
   } finally {
     store.setInitializing(false);

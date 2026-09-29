@@ -4,11 +4,13 @@ import type { AuditEntryWire } from "@udp/shared-types/wire";
 import { useCallback, useState } from "react";
 import { Pager } from "../../../components/Pager";
 import { Empty, ErrorState, Loading } from "../../../components/States";
+import { useMessages } from "../../../i18n";
 import { formatDateTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { useSearchInput } from "../../../lib/use-search-input";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
+import { settingsMessages } from "./settings.messages";
 
 const AUDIT_PAGE_SIZE = 50;
 
@@ -18,6 +20,7 @@ const AUDIT_PAGE_SIZE = 50;
  * "Đang tải…" theo từng phím. Máy chủ trả `total`, nên dòng thứ 101 trở đi đọc được bằng trang sau.
  */
 export function AuditTab() {
+  const m = useMessages(settingsMessages).audit;
   const { project, envs } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/settings" });
   const navigate = useNavigate();
@@ -62,7 +65,7 @@ export function AuditTab() {
     id === null ? "" : (envs.find((e) => e.id === id)?.name ?? "");
 
   return (
-    <section aria-label="Nhật ký kiểm toán">
+    <section aria-label={m.label}>
       <div className="filters flush">
         <input
           className="inp"
@@ -70,8 +73,8 @@ export function AuditTab() {
           name="action"
           autoComplete="off"
           spellCheck={false}
-          aria-label="Lọc theo hành động"
-          placeholder="Hành động, ví dụ flag.update…"
+          aria-label={m.filter}
+          placeholder={m.filterPlaceholder}
           value={action}
           onChange={(e) => setAction(e.target.value)}
         />
@@ -81,12 +84,12 @@ export function AuditTab() {
       ) : audit.isError ? (
         <ErrorState error={audit.error} onRetry={() => void audit.refetch()} />
       ) : audit.data.entries.length === 0 ? (
-        <Empty title="Không có dòng nào" />
+        <Empty title={m.empty} />
       ) : (
         <div
           className="lst"
           role="list"
-          aria-label="Nhật ký"
+          aria-label={m.list}
           aria-busy={audit.isFetching}
         >
           {audit.data.entries.map((e) => (
@@ -101,7 +104,7 @@ export function AuditTab() {
         </div>
       )}
       <Pager
-        label="Trang của nhật ký"
+        label={m.pages}
         offset={offset}
         pageSize={AUDIT_PAGE_SIZE}
         total={audit.data?.total ?? 0}
@@ -122,6 +125,7 @@ function AuditRow({
   open: boolean;
   onToggle: () => void;
 }) {
+  const m = useMessages(settingsMessages).audit;
   return (
     <div className="it" role="listitem" style={{ flexWrap: "wrap" }}>
       <button
@@ -140,7 +144,7 @@ function AuditRow({
       {open && (
         <div className="diff">
           <div>
-            <div className="c3">Trước</div>
+            <div className="c3">{m.before}</div>
             <pre className="mono">
               {entry.before === undefined || entry.before === null
                 ? "–"
@@ -148,7 +152,7 @@ function AuditRow({
             </pre>
           </div>
           <div>
-            <div className="c3">Sau</div>
+            <div className="c3">{m.after}</div>
             <pre className="mono">
               {entry.after === undefined || entry.after === null
                 ? "–"

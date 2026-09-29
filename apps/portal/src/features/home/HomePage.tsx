@@ -23,12 +23,16 @@ import { useMessages } from "../../i18n";
 import { jobTypeLabel } from "../provisioning/provisioning-labels";
 import { RolloutStatusLabel } from "../rollout/rollout-status";
 import { homeApi } from "./home-api";
+import { homeMessages } from "./home.messages";
+
+type AttentionCopy = (typeof homeMessages)["vi"]["attention"];
 
 /**
  * Trang chủ developer (Plan #53 QĐ-5, QĐ-7): việc cần xử lý của MỌI project đứng đầu — mỗi dòng dẫn
  * thẳng tới chỗ sửa — rồi rollout đang chạy, thẻ project và deploy 14 ngày. Một lời gọi `GET /home`.
  */
 export function HomePage() {
+  const m = useMessages(homeMessages);
   const user = useAuthStore((s) => s.user);
   const home = useQuery({
     queryKey: qk.home(),
@@ -42,26 +46,35 @@ export function HomePage() {
     <>
       <div className="bar">
         <div className="crumbs">
-          <b>Trang chủ</b>
+          <b>{m.home}</b>
         </div>
         <div className="r">
           <Link to="/app/projects/new" className="btn pri">
             <Icon of={Plus} />
-            Tạo project
+            {m.createProject}
           </Link>
         </div>
       </div>
       <div className="scroll">
         <PageHead
-          title={user === null ? "Trang chủ" : `Chào ${firstNameOf(user.name)}`}
-          lead="Việc cần xử lý, rollout đang chạy và deploy của mọi project bạn tham gia."
+          title={user === null ? m.home : m.hello(firstNameOf(user.name))}
+          lead={m.lead}
           minis={
             h === undefined
               ? undefined
               : [
-                  { value: h.projects.length, label: "project" },
-                  { value: h.rollouts.length, label: "rollout đang chạy" },
-                  { value: h.attention.length, label: "việc cần xử lý" },
+                  {
+                    value: h.projects.length,
+                    label: m.minis.projects(h.projects.length),
+                  },
+                  {
+                    value: h.rollouts.length,
+                    label: m.minis.rollouts(h.rollouts.length),
+                  },
+                  {
+                    value: h.attention.length,
+                    label: m.minis.attention(h.attention.length),
+                  },
                 ]
           }
         />
@@ -74,9 +87,9 @@ export function HomePage() {
               onRetry={() => void home.refetch()}
             />
           ) : home.data.home.projects.length === 0 ? (
-            <Empty title="Bạn chưa tham gia project nào">
+            <Empty title={m.noProjects}>
               <Link to="/app/projects/new" className="btn pri">
-                Tạo project đầu tiên
+                {m.createFirst}
               </Link>
             </Empty>
           ) : (
@@ -94,14 +107,15 @@ export const firstNameOf = (name: string): string =>
 
 function HomeBody({ home }: { home: HomeWire }) {
   const roles = useMessages(rolesMessages).role;
+  const m = useMessages(homeMessages);
   return (
     <>
       <section aria-labelledby="home-attention">
         <div className="sect">
-          <h2 id="home-attention">Việc cần xử lý</h2>
+          <h2 id="home-attention">{m.attentionTitle}</h2>
         </div>
         {home.attention.length === 0 ? (
-          <p className="c3">Không có gì cần xử lý. Mọi project đều ổn.</p>
+          <p className="c3">{m.attentionNone}</p>
         ) : (
           <ul className="lst" aria-labelledby="home-attention">
             {home.attention.map((a) => (
@@ -117,10 +131,10 @@ function HomeBody({ home }: { home: HomeWire }) {
 
       <section aria-labelledby="home-rollouts">
         <div className="sect">
-          <h2 id="home-rollouts">Rollout đang chạy</h2>
+          <h2 id="home-rollouts">{m.rolloutsTitle}</h2>
         </div>
         {home.rollouts.length === 0 ? (
-          <p className="c3">Không có rollout nào đang chạy.</p>
+          <p className="c3">{m.rolloutsNone}</p>
         ) : (
           <ul className="lst" aria-labelledby="home-rollouts">
             {home.rollouts.map((r) => (
@@ -154,10 +168,10 @@ function HomeBody({ home }: { home: HomeWire }) {
 
       <section aria-labelledby="home-projects">
         <div className="sect">
-          <h2 id="home-projects">Project</h2>
+          <h2 id="home-projects">{m.projectsTitle}</h2>
           <div className="r">
             <Link to="/app/projects" className="btn">
-              Mọi project
+              {m.allProjects}
             </Link>
           </div>
         </div>
@@ -180,14 +194,20 @@ function HomeBody({ home }: { home: HomeWire }) {
                   {roles[p.myRole]}
                   {p.cloudProvider !== null &&
                     `, ${PROVIDER_LABEL[p.cloudProvider]}`}
-                  , {p.environmentCount} environment
+                  , {m.card.environments(p.environmentCount)}
                 </span>
                 <span className="home-card-n">
                   <span>
-                    <b className="num">{p.activeRollouts}</b> rollout
+                    {m.card.rollouts(
+                      <b className="num">{p.activeRollouts}</b>,
+                      p.activeRollouts,
+                    )}
                   </span>
                   <span>
-                    <b className="num">{p.attention}</b> việc cần xử lý
+                    {m.card.attention(
+                      <b className="num">{p.attention}</b>,
+                      p.attention,
+                    )}
                   </span>
                 </span>
               </Link>
@@ -196,9 +216,9 @@ function HomeBody({ home }: { home: HomeWire }) {
         </ul>
       </section>
 
-      <section aria-label="Deploy 14 ngày">
+      <section aria-label={m.deploys}>
         <BarChart
-          title="Deploy 14 ngày"
+          title={m.deploys}
           level={2}
           format={formatNumber}
           data={home.deploys.map((d) => {
@@ -208,8 +228,8 @@ function HomeBody({ home }: { home: HomeWire }) {
               short: label.short,
               full: label.full,
               parts: [
-                { label: "Thành công", value: d.success, tone: "neutral" },
-                { label: "Thất bại", value: d.failure, tone: "error" },
+                { label: m.succeeded, value: d.success, tone: "neutral" },
+                { label: m.failed, value: d.failure, tone: "error" },
               ],
             };
           })}
@@ -221,37 +241,38 @@ function HomeBody({ home }: { home: HomeWire }) {
 
 const ATTENTION: Record<
   HomeAttentionWire["kind"],
-  { tone: Tone; text: (a: HomeAttentionWire) => string }
+  { tone: Tone; text: (a: HomeAttentionWire, t: AttentionCopy) => string }
 > = {
   DEPLOY_PENDING: {
     tone: "warn",
-    text: (a) => `Deploy ${a.subject} chờ duyệt`,
+    text: (a, t) => t.deployPending(a.subject),
   },
-  DOMAIN_ERROR: { tone: "error", text: (a) => `Domain ${a.subject} lỗi` },
+  DOMAIN_ERROR: { tone: "error", text: (a, t) => t.domainError(a.subject) },
   DOMAIN_DRIFTED: {
     tone: "warn",
-    text: (a) => `Domain ${a.subject} lệch cấu hình`,
+    text: (a, t) => t.domainDrifted(a.subject),
   },
   JOB_FAILED: {
     tone: "error",
-    text: (a) => `${jobTypeLabel(a.subject)} thất bại`,
+    text: (a, t) => t.jobFailed(jobTypeLabel(a.subject)),
   },
   PROJECT_EXPIRING: {
     tone: "warn",
-    text: () => "Project hết hạn trong 48 giờ",
+    text: (_a, t) => t.projectExpiring,
   },
   ROLLOUT_PAUSED: {
     tone: "warn",
-    text: (a) => `Rollout ${a.subject} đang tạm dừng`,
+    text: (a, t) => t.rolloutPaused(a.subject),
   },
 };
 
 /** Một việc cần xử lý: câu, project/env, lúc — và link tới ĐÚNG chỗ sửa */
 function AttentionRow({ item: a }: { item: HomeAttentionWire }) {
+  const copy = useMessages(homeMessages).attention;
   const kind = ATTENTION[a.kind];
   const body = (
     <>
-      <StatusLabel tone={kind.tone}>{kind.text(a)}</StatusLabel>
+      <StatusLabel tone={kind.tone}>{kind.text(a, copy)}</StatusLabel>
       <span className="c3">
         {a.projectName}
         {a.environment !== null && ` / ${a.environment.name}`}

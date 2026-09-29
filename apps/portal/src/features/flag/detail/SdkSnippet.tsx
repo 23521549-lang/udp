@@ -1,8 +1,11 @@
 import type { FlagDetailWire } from "@udp/shared-types/wire";
 import { useState } from "react";
 import { CodeBlock } from "../../../components/CodeBlock";
+import { useMessages } from "../../../i18n";
+import { detailMessages } from "./detail.messages";
 
 export function SdkSnippet({ flag }: { flag: FlagDetailWire }) {
+  const m = useMessages(detailMessages).sdk;
   const [lang, setLang] = useState<"node" | "python">("node");
   const method: Record<FlagDetailWire["flagType"], [string, string, string]> = {
     BOOLEAN: ["getBooleanValue", "get_boolean_value", "false"],
@@ -17,23 +20,23 @@ export function SdkSnippet({ flag }: { flag: FlagDetailWire }) {
       : `value = client.${py}("${flag.key}", ${fallback === "false" ? "False" : fallback}, EvaluationContext(user.id))`;
 
   return (
-    <section aria-label="Dùng trong mã">
+    <section aria-label={m.title}>
       <div className="sect">
-        <h3>Dùng trong mã</h3>
-        <div className="r seg" role="group" aria-label="Ngôn ngữ">
+        <h3>{m.title}</h3>
+        <div className="r seg" role="group" aria-label={m.language}>
           <button
             type="button"
             aria-pressed={lang === "node"}
             onClick={() => setLang("node")}
           >
-            Node.js
+            {m.node}
           </button>
           <button
             type="button"
             aria-pressed={lang === "python"}
             onClick={() => setLang("python")}
           >
-            Python
+            {m.python}
           </button>
         </div>
       </div>

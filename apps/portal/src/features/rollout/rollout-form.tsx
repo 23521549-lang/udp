@@ -1,5 +1,7 @@
 import { CircleAlert } from "lucide-react";
 import { Icon } from "../../components/Icon";
+import { useMessages } from "../../i18n";
+import { rolloutMessages } from "./rollout.messages";
 
 /** Hai mảnh dùng chung của hai hộp tạo rollout (FLAG_LEVEL, SERVICE_LEVEL — Plan #51) */
 
@@ -53,6 +55,7 @@ export function MetricsSetupGuide({
   workload: string;
   onRetry: () => void;
 }) {
+  const m = useMessages(rolloutMessages).form.metricsGuide;
   // [Plan #47] Provider Python có middleware ASGI (và WSGI: UDPMetricsWSGIMiddleware), §6.8
   const python = runtime.toLowerCase().startsWith("python");
   const code = python
@@ -62,10 +65,9 @@ export function MetricsSetupGuide({
     <div className="alert amber" role="alert">
       <Icon of={CircleAlert} />
       <div>
-        <b>Workload {workload} chưa xuất metric HTTP</b>
+        <b>{m.title(workload)}</b>
         <p className="c2" style={{ margin: "4px 0 8px" }}>
-          Rollout cần so tỉ lệ lỗi giữa hai nhánh (flag hay phiên bản). Thêm
-          middleware sau vào ứng dụng, deploy lại, rồi kiểm tra lại.
+          {m.body}
         </p>
         <div className="code">
           <pre>{code}</pre>
@@ -76,7 +78,7 @@ export function MetricsSetupGuide({
           style={{ marginTop: 8 }}
           onClick={onRetry}
         >
-          Kiểm tra lại
+          {m.recheck}
         </button>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { Pager } from "../../components/Pager";
 import { ProgressRing } from "../../components/ProgressRing";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { Sparkline } from "../../components/Sparkline";
+import { useMessages } from "../../i18n";
 import {
   browserTimeZone,
   compactNumber,
@@ -22,7 +23,8 @@ import { can } from "../project/roles";
 import { CreateFlagDialog } from "./CreateFlagDialog";
 import { FLAG_PAGE_SIZE, flagApi } from "./flag-api";
 import { useFlagCounts } from "./flag-counts";
-import { LIFECYCLE_LABEL, LIFECYCLE_ORDER } from "./flag-labels";
+import { LIFECYCLE_ORDER, lifecycleLabel } from "./flag-labels";
+import { flagMessages } from "./flag.messages";
 import { FlagDetail } from "./FlagDetail";
 import { PageHead } from "../../components/PageHead";
 
@@ -35,6 +37,7 @@ import { PageHead } from "../../components/PageHead";
  * đọc ba con số `total` — project vài trăm flag không bao giờ bị tải trọn.
  */
 export function FlagsPage() {
+  const m = useMessages(flagMessages).list;
   const { project, env } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/flags" });
   const navigate = useNavigate();
@@ -165,7 +168,7 @@ export function FlagsPage() {
   return (
     <>
       <ProjectBar
-        title="Flag"
+        title={m.title}
         actions={
           <>
             <Link
@@ -175,7 +178,7 @@ export function FlagsPage() {
               className="btn"
             >
               <Icon of={Brush} />
-              Dọn dẹp
+              {m.cleanUp}
             </Link>
             {canCreate && (
               <button
@@ -184,7 +187,7 @@ export function FlagsPage() {
                 onClick={() => setCreating(true)}
               >
                 <Icon of={Plus} />
-                Tạo flag <kbd>C</kbd>
+                {m.createFlag} <kbd>C</kbd>
               </button>
             )}
           </>
@@ -193,12 +196,12 @@ export function FlagsPage() {
       <div className="body">
         <div className="scroll">
           <PageHead
-            title="Flag"
-            lead={<>Bật, tắt và phân phối tính năng ở {env.name}.</>}
+            title={m.title}
+            lead={m.lead(env.name)}
             minis={[
-              { value: counts.total ?? "–", label: "flag" },
-              { value: counts.enabled ?? "–", label: "đang bật" },
-              { value: counts.drafts ?? "–", label: "nháp" },
+              { value: counts.total ?? "–", label: m.miniFlags },
+              { value: counts.enabled ?? "–", label: m.miniEnabled },
+              { value: counts.drafts ?? "–", label: m.miniDrafts },
             ]}
           />
           <div className="filters">
@@ -207,8 +210,8 @@ export function FlagsPage() {
               <input
                 type="search"
                 name="q"
-                aria-label="Tìm flag"
-                placeholder="Tìm theo key hoặc mô tả…"
+                aria-label={m.search}
+                placeholder={m.searchPlaceholder}
                 autoComplete="off"
                 spellCheck={false}
                 value={q}
@@ -224,30 +227,30 @@ export function FlagsPage() {
               onRetry={() => void flags.refetch()}
             />
           ) : total === 0 && term === "" ? (
-            <Empty title="Chưa có flag nào">
+            <Empty title={m.empty}>
               {canCreate && (
                 <button
                   type="button"
                   className="btn pri"
                   onClick={() => setCreating(true)}
                 >
-                  Tạo flag đầu tiên
+                  {m.createFirst}
                 </button>
               )}
             </Empty>
           ) : ordered.length === 0 ? (
-            <Empty title="Không flag nào khớp">Thử từ khoá khác.</Empty>
+            <Empty title={m.noMatch}>{m.tryAnother}</Empty>
           ) : (
             <>
-              <div role="region" aria-label="Danh sách flag">
+              <div role="region" aria-label={m.region}>
                 <div className="row row-h" aria-hidden="true">
                   <span />
-                  <span>Key</span>
-                  <span className="k">Mô tả</span>
-                  <span className="envs">Ở {env.name}</span>
-                  <span className="spark-h">14 ngày</span>
-                  <span className="when">Lượt 7 ngày</span>
-                  <span className="when">Cập nhật</span>
+                  <span>{m.colKey}</span>
+                  <span className="k">{m.colDescription}</span>
+                  <span className="envs">{m.colEnv(env.name)}</span>
+                  <span className="spark-h">{m.col14Days}</span>
+                  <span className="when">{m.col7DayEvals}</span>
+                  <span className="when">{m.colUpdated}</span>
                 </div>
                 {LIFECYCLE_ORDER.map((status) => {
                   const group = ordered.filter(
@@ -258,7 +261,7 @@ export function FlagsPage() {
                   return (
                     <section key={status} aria-labelledby={headId}>
                       <h2 className="gh" id={headId}>
-                        {LIFECYCLE_LABEL[status]}
+                        {lifecycleLabel(status)}
                         <span className="n">{group.length}</span>
                       </h2>
                       <div role="list">
@@ -273,7 +276,7 @@ export function FlagsPage() {
                 })}
               </div>
               <Pager
-                label="Trang của danh sách flag"
+                label={m.pager}
                 offset={offset}
                 pageSize={FLAG_PAGE_SIZE}
                 total={matched}
@@ -310,6 +313,7 @@ function FlagRow({
   flag: FlagSummaryWire;
   selected: boolean;
 }) {
+  const m = useMessages(flagMessages).list;
   const on = flag.env?.isEnabled === true;
   return (
     <Link
@@ -330,7 +334,7 @@ function FlagRow({
       <span className="envs">
         <span>
           <i className={on ? "pip on" : "pip"} aria-hidden />
-          {on ? "Bật" : "Tắt"}
+          {on ? m.on : m.off}
         </span>
       </span>
       <Sparkline values={flag.stats?.daily14 ?? []} />

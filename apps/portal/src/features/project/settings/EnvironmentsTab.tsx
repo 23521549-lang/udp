@@ -4,11 +4,13 @@ import type { PublicEnvironmentWire } from "@udp/shared-types/wire";
 import { useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { toast } from "../../../components/Toast";
+import { useMessages } from "../../../i18n";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
 import { qk, qkPrefix } from "../../../lib/query-keys";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
 import { can } from "../roles";
+import { settingsMessages } from "./settings.messages";
 
 /**
  * [Plan #40] Environment của project (§9): thêm, bật tắt production và tự deploy, xoá.
@@ -19,6 +21,8 @@ import { can } from "../roles";
  * đã có lịch sử) hiện ĐÚNG lý do server trả.
  */
 export function EnvironmentsTab() {
+  const t = useMessages(settingsMessages);
+  const m = t.environments;
   const { project, envs } = useProjectContext();
   const queryClient = useQueryClient();
   const isOwner = can(project.myRole, "OWNER");
@@ -42,11 +46,7 @@ export function EnvironmentsTab() {
     await queryClient.invalidateQueries({ queryKey: qk.jobs(project.id) });
   };
   const jobNotice = (job: { id: string } | null, done: string) => {
-    toast.info(
-      job === null
-        ? done
-        : `${done}. Đang áp lên cluster, xem tiến độ ở trang Hạ tầng.`,
-    );
+    toast.info(job === null ? done : m.applying(done));
   };
 
   const create = useMutation({
@@ -60,7 +60,7 @@ export function EnvironmentsTab() {
     onSuccess: async ({ environment, job }) => {
       setName("");
       setIsProduction(false);
-      jobNotice(job, `Đã thêm environment ${environment.name}`);
+      jobNotice(job, m.added(environment.name));
       await refresh();
     },
   });
@@ -82,7 +82,7 @@ export function EnvironmentsTab() {
     mutationFn: (envId: string) =>
       projectApi.deleteEnvironment(project.id, envId),
     onSuccess: async ({ job }) => {
-      jobNotice(job, `Đã xoá environment ${removing?.name ?? ""}`);
+      jobNotice(job, m.removed(removing?.name ?? ""));
       setRemoving(null);
       await refresh();
     },
@@ -91,7 +91,7 @@ export function EnvironmentsTab() {
   const full = envs.length >= ENVIRONMENT.maxPerProject;
 
   return (
-    <section aria-label="Environment">
+    <section aria-label={m.label}>
       {isOwner && (
         <form
           className="line"
@@ -104,8 +104,8 @@ export function EnvironmentsTab() {
           <input
             className="inp mono"
             name="name"
-            aria-label="Tên environment mới"
-            placeholder="qa…"
+            aria-label={m.newName}
+            placeholder={m.newNamePlaceholder}
             autoComplete="off"
             spellCheck={false}
             maxLength={ENVIRONMENT.nameMaxLength}
@@ -121,19 +121,17 @@ export function EnvironmentsTab() {
               checked={isProduction}
               onChange={(e) => setIsProduction(e.target.checked)}
             />
-            Production
+            {t.production}
           </label>
           <button
             type="submit"
             className="btn pri"
             disabled={name === "" || full || create.isPending}
           >
-            Thêm
+            {m.add}
           </button>
           {full && (
-            <span className="c3">
-              Đã đủ {ENVIRONMENT.maxPerProject} environment
-            </span>
+            <span className="c3">{m.full(ENVIRONMENT.maxPerProject)}</span>
           )}
           {create.isError && (
             <span id="env-add-err" className="field-error" role="alert">
@@ -142,13 +140,8 @@ export function EnvironmentsTab() {
           )}
         </form>
       )}
-      <p className="c3">
-        Tên là nhãn DNS (chữ thường, số, gạch ngang; tối đa{" "}
-        {ENVIRONMENT.nameMaxLength} ký tự) và KHÔNG đổi được: namespace, tiền tố
-        SDK key đều suy từ nó. Environment đã có lịch sử (SDK key, deploy, bật
-        tắt flag) giữ lại cùng lịch sử, không xoá được.
-      </p>
-      <div className="lst" role="list" aria-label="Environment của project">
+      <p className="c3">{m.rules(ENVIRONMENT.nameMaxLength)}</p>
+      <div className="lst" role="list" aria-label={m.list}>
         {envs.map((e) => (
           <div key={e.id} className="it" role="listitem">
             <b className="mono lst-name" translate="no">
@@ -160,7 +153,7 @@ export function EnvironmentsTab() {
             <label className="line check lst-end">
               <input
                 type="checkbox"
-                aria-label={`${e.name} là production`}
+                aria-label={m.isProduction(e.name)}
                 checked={e.isProduction}
                 disabled={!isOwner || update.isPending}
                 onChange={(ev) => {
@@ -175,12 +168,12 @@ export function EnvironmentsTab() {
                   }
                 }}
               />
-              Production
+              {t.production}
             </label>
             <label className="line check">
               <input
                 type="checkbox"
-                aria-label={`${e.name} tự deploy từ webhook`}
+                aria-label={m.autoDeployOf(e.name)}
                 checked={e.autoDeploy}
                 disabled={!isOwner || update.isPending}
                 onChange={(ev) =>
@@ -190,20 +183,20 @@ export function EnvironmentsTab() {
                   })
                 }
               />
-              Tự deploy
+              {t.autoDeploy}
             </label>
             {isOwner && (
               <button
                 type="button"
                 className="btn danger"
-                aria-label={`Xoá environment ${e.name}`}
+                aria-label={m.deleteOf(e.name)}
                 disabled={envs.length <= 1}
                 onClick={() => {
                   remove.reset();
                   setRemoving(e);
                 }}
               >
-                Xoá
+                {t.delete}
               </button>
             )}
           </div>
@@ -212,9 +205,9 @@ export function EnvironmentsTab() {
 
       {demoting !== null && (
         <ConfirmDialog
-          title={`Bỏ đánh dấu production của ${demoting.name}?`}
-          description="Environment này sẽ không còn cần xác nhận khi bật tắt flag, không còn cần gõ lại khi rollback, và DEVELOPER sửa được cấu hình của nó."
-          confirmLabel="Bỏ đánh dấu production"
+          title={m.demoteTitle(demoting.name)}
+          description={m.demoteBody}
+          confirmLabel={m.demote}
           danger
           typeToConfirm={demoting.name}
           busy={update.isPending}
@@ -229,9 +222,9 @@ export function EnvironmentsTab() {
       )}
       {removing !== null && (
         <ConfirmDialog
-          title={`Xoá environment ${removing.name}?`}
-          description="Cấu hình flag của environment này bị xoá theo. Environment đã có lịch sử thì server từ chối và giữ nguyên."
-          confirmLabel="Xoá environment"
+          title={m.deleteTitle(removing.name)}
+          description={m.deleteBody}
+          confirmLabel={m.deleteConfirm}
           danger
           typeToConfirm={removing.name}
           busy={remove.isPending}

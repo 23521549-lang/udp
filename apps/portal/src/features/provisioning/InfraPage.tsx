@@ -3,6 +3,7 @@ import type { ProvisioningJobWire } from "@udp/shared-types/wire";
 
 import { useState } from "react";
 import { ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
@@ -12,6 +13,7 @@ import { CostPanel } from "./CostPanel";
 import { JobLog } from "./JobLog";
 import { PreviewPanel } from "./PreviewPanel";
 import { provisioningApi } from "./provisioning-api";
+import { provisioningMessages } from "./provisioning.messages";
 import { jobStateLabel, TERMINAL_STATES } from "./provisioning-labels";
 import { PageHead } from "../../components/PageHead";
 
@@ -24,6 +26,7 @@ const STARTABLE = ["DRAFT", "ERROR"];
  */
 export function InfraPage() {
   const { project } = useProjectContext();
+  const m = useMessages(provisioningMessages).infra;
   const [picked, setPicked] = useState<string | null>(null);
   const jobs = useQuery({
     queryKey: qk.jobs(project.id),
@@ -37,12 +40,9 @@ export function InfraPage() {
 
   return (
     <>
-      <ProjectBar title="Hạ tầng" envScoped={false} />
+      <ProjectBar title={m.title} envScoped={false} />
       <div className="scroll">
-        <PageHead
-          title="Hạ tầng"
-          lead="Mạng, cluster và domain của project trên tài khoản cloud của bạn. Một cluster phục vụ mọi environment."
-        />
+        <PageHead title={m.title} lead={m.lead} />
         <div className="page">
           {jobs.isPending && <Loading />}
           {jobs.isError && (
@@ -86,13 +86,14 @@ function History({
   selected: string | null;
   onPick: (id: string) => void;
 }) {
+  const m = useMessages(provisioningMessages).infra;
   return (
     <div className="table-wrap">
-      <table className="dtable" aria-label="Các lượt triển khai">
+      <table className="dtable" aria-label={m.history}>
         <thead>
           <tr>
-            <th scope="col">Bắt đầu</th>
-            <th scope="col">Trạng thái</th>
+            <th scope="col">{m.started}</th>
+            <th scope="col">{m.status}</th>
             <th scope="col" />
           </tr>
         </thead>
@@ -108,7 +109,7 @@ function History({
                   disabled={j.id === selected}
                   onClick={() => onPick(j.id)}
                 >
-                  Xem
+                  {m.view}
                 </button>
               </td>
             </tr>

@@ -8,6 +8,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { canaryPairOf } from "@udp/shared-types/rollout";
 import { useEffect, useState, type ReactNode } from "react";
 import { Dialog } from "../../components/Dialog";
+import { messagesOf, useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { browserTimeZone } from "../../lib/format";
 import { isApiError } from "../../lib/http";
@@ -16,6 +17,7 @@ import { flagApi } from "../flag/flag-api";
 import { useProjectContext } from "../project/ProjectLayout";
 import { rolloutApi, type CreateFlagRolloutInput } from "./rollout-api";
 import { MetricsSetupGuide, NumberField } from "./rollout-form";
+import { rolloutMessages } from "./rollout.messages";
 import { ServiceRolloutDialog } from "./ServiceRolloutDialog";
 
 const DNS_1123 =
@@ -59,23 +61,19 @@ function ScopePicker({
   value: Scope;
   onChange: (scope: Scope) => void;
 }) {
+  const m = useMessages(rolloutMessages).form;
   return (
     <div className="f">
-      <span className="lbl">Phạm vi</span>
-      <div className="seg" role="group" aria-label="Phạm vi">
-        {(
-          [
-            ["FLAG_LEVEL", "Theo flag"],
-            ["SERVICE_LEVEL", "Theo phiên bản"],
-          ] as const
-        ).map(([scope, label]) => (
+      <span className="lbl">{m.scope}</span>
+      <div className="seg" role="group" aria-label={m.scope}>
+        {(["FLAG_LEVEL", "SERVICE_LEVEL"] as const).map((scope) => (
           <button
             key={scope}
             type="button"
             aria-pressed={value === scope}
             onClick={() => onChange(scope)}
           >
-            {label}
+            {m.scopeOption[scope]}
           </button>
         ))}
       </div>
@@ -92,6 +90,7 @@ function FlagRolloutDialog({
   onClose: () => void;
   scopePicker: ReactNode;
 }) {
+  const { form, flag: copy } = useMessages(rolloutMessages);
   const { project, env } = useProjectContext();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -161,7 +160,7 @@ function FlagRolloutDialog({
   const create = useMutation({
     mutationFn: () => {
       if (envState === undefined)
-        throw new Error("Flag chưa có cấu hình ở env này");
+        throw new Error(messagesOf(rolloutMessages).flag.missingConfig);
       const body: CreateFlagRolloutInput = {
         scope: "FLAG_LEVEL",
         envId: env.id,
@@ -213,18 +212,14 @@ function FlagRolloutDialog({
 
   return (
     <Dialog
-      title={`Tạo rollout ở ${env.name}`}
-      description={
-        split
-          ? "Chia theo thuộc tính: nhóm khớp một rule theo thuộc tính hay segment nhận variant mới; bạn quyết promote hay rollback."
-          : "Canary theo flag: tăng dần tỉ lệ của một variant trong một rule phân phối, cùng một phiên bản mã."
-      }
+      title={form.title(env.name)}
+      description={split ? copy.descriptionSplit : copy.descriptionCanary}
       onClose={onClose}
       wide
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>
-            Huỷ
+            {form.cancel}
           </button>
           <button
             type="button"
@@ -232,21 +227,16 @@ function FlagRolloutDialog({
             disabled={!ready}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Đang tạo…" : "Tạo rollout"}
+            {create.isPending ? form.creating : form.create}
           </button>
         </>
       }
     >
       {scopePicker}
       <div className="f">
-        <span className="lbl">Chiến lược</span>
-        <div className="seg" role="group" aria-label="Chiến lược">
-          {(
-            [
-              ["CANARY", "Canary"],
-              ["ATTRIBUTE_SPLIT", "Theo thuộc tính"],
-            ] as const
-          ).map(([value, label]) => (
+        <span className="lbl">{form.strategy}</span>
+        <div className="seg" role="group" aria-label={form.strategy}>
+          {(["CANARY", "ATTRIBUTE_SPLIT"] as const).map((value) => (
             <button
               key={value}
               type="button"
@@ -257,17 +247,17 @@ function FlagRolloutDialog({
                 setVariantId("");
               }}
             >
-              {label}
+              {copy.strategy[value]}
             </button>
           ))}
         </div>
       </div>
       <div className="f">
-        <label htmlFor="ro-flag">Flag (đang dùng)</label>
+        <label htmlFor="ro-flag">{copy.flag}</label>
         <input
           className="inp"
-          aria-label="Tìm flag đang dùng"
-          placeholder="Tìm theo key…"
+          aria-label={copy.search}
+          placeholder={copy.searchPlaceholder}
           value={flagSearch}
           onChange={(e) => setFlagSearch(e.target.value)}
         />
@@ -281,7 +271,7 @@ function FlagRolloutDialog({
             setVariantId("");
           }}
         >
-          <option value="">Chọn flag</option>
+          <option value="">{copy.chooseFlag}</option>
           {activeFlags.map((f) => (
             <option key={f.id} value={f.id}>
               {f.key}
@@ -289,15 +279,13 @@ function FlagRolloutDialog({
           ))}
         </select>
         {flagOff && (
-          <span className="field-error">
-            Flag đang tắt ở {env.name}: bật trước khi rollout.
-          </span>
+          <span className="field-error">{copy.flagOff(env.name)}</span>
         )}
       </div>
       {flagId !== "" && (
         <div className="f">
           <label htmlFor="ro-rule">
-            {split ? "Rule theo thuộc tính" : "Rule sẽ ramp"}
+            {split ? copy.ruleSplit : copy.ruleRamp}
           </label>
           <select
             id="ro-rule"
@@ -308,14 +296,16 @@ function FlagRolloutDialog({
               setVariantId("");
             }}
           >
-            <option value="">Chọn rule</option>
+            <option value="">{copy.chooseRule}</option>
             {rules.data?.rules
               .filter((r) => !split || SPLIT_RULE_TYPES.has(r.ruleType))
               .map((r, i) => (
                 <option key={r.id} value={r.id}>
-                  Rule {i + 1}
-                  {r.description === null ? "" : `: ${r.description}`}
-                  {r.serve.kind === "distribution" ? "" : " (một variant)"}
+                  {copy.ruleOption(
+                    i + 1,
+                    r.description,
+                    r.serve.kind !== "distribution",
+                  )}
                 </option>
               ))}
           </select>
@@ -324,7 +314,7 @@ function FlagRolloutDialog({
       {rule !== undefined && rule.serve.kind === "distribution" && (
         <div className="f">
           <label htmlFor="ro-variant">
-            {split ? "Variant mới cho nhóm khớp" : "Variant tăng dần"}
+            {split ? copy.variantSplit : copy.variantRamp}
           </label>
           <select
             id="ro-variant"
@@ -332,10 +322,10 @@ function FlagRolloutDialog({
             value={variantId}
             onChange={(e) => setVariantId(e.target.value)}
           >
-            <option value="">Chọn variant</option>
+            <option value="">{copy.chooseVariant}</option>
             {rule.serve.weights.map((w) => (
               <option key={w.variantId} value={w.variantId}>
-                {variantKey(w.variantId)} (đang {w.weight / 1000}%)
+                {copy.variantOption(variantKey(w.variantId), w.weight / 1000)}
               </option>
             ))}
           </select>
@@ -343,23 +333,21 @@ function FlagRolloutDialog({
       )}
       {pair?.kind === "invalid" && (
         <p className="field-error" role="alert">
-          Không ramp được: {pair.reason}
+          {copy.cannotRamp(copy.rampReason(pair.code, pair.branches))}
         </p>
       )}
       {rule !== undefined && rule.serve.kind === "variant" && (
         <p className="field-error" role="alert">
-          Rule này phục vụ thẳng một variant; chỉ ramp được rule chia tỉ lệ.
+          {copy.singleVariantRule}
         </p>
       )}
       <div className="f">
-        <label htmlFor="ro-workload">
-          Workload (tên service trong cluster)
-        </label>
+        <label htmlFor="ro-workload">{form.workload}</label>
         <div className="line">
           <input
             id="ro-workload"
             className="inp mono"
-            placeholder="checkout-api…"
+            placeholder={form.workloadPlaceholder}
             value={workloadName}
             onChange={(e) => {
               setWorkloadName(e.target.value.trim());
@@ -372,24 +360,24 @@ function FlagRolloutDialog({
             disabled={!workloadOk || probe.isPending}
             onClick={() => probe.mutate()}
           >
-            {probe.isPending ? "Đang kiểm tra…" : "Kiểm tra metric"}
+            {probe.isPending ? form.checking : form.checkMetrics}
           </button>
         </div>
         {workloadName !== "" && !workloadOk && (
-          <span className="field-error">
-            Tên chỉ gồm chữ thường, số, "-" và "." (DNS-1123).
-          </span>
+          <span className="field-error">{copy.workloadInvalid}</span>
         )}
         {probed?.hasSeries === true && (
           <span className="c3">
-            Có metric. Scrape mỗi {probed.scrapeIntervalSec}s; cửa sổ đo tối
-            thiểu {probed.minMetricWindowSeconds}s.
+            {copy.hasMetrics(
+              probed.scrapeIntervalSec,
+              probed.minMetricWindowSeconds,
+            )}
           </span>
         )}
         {probe.isError && (
           <span className="field-error">
             {isApiError(probe.error) && probe.error.status === 503
-              ? "Không tới được nguồn metrics của project. Rollout cần một Prometheus đang chạy."
+              ? copy.metricsUnreachable
               : messageOf(probe.error)}
           </span>
         )}
@@ -404,11 +392,11 @@ function FlagRolloutDialog({
       {!split && (
         <>
           <fieldset className="fs">
-            <legend>Nhịp</legend>
+            <legend>{form.cadence}</legend>
             <div className="grid-f">
               <NumberField
                 id="ro-step"
-                label="Mỗi bậc tăng (%)"
+                label={form.stepPercent}
                 value={stepPercent}
                 onChange={setStepPercent}
                 min={0.01}
@@ -417,23 +405,23 @@ function FlagRolloutDialog({
               />
               <NumberField
                 id="ro-dwell"
-                label="Giữ mỗi bậc (giây)"
-                hint="Đủ thời gian này mới lên bậc tiếp."
+                label={form.dwell}
+                hint={copy.dwellHint}
                 value={stepInterval}
                 onChange={setStepInterval}
                 min={1}
               />
               <NumberField
                 id="ro-analysis"
-                label="Đo lại mỗi (giây)"
-                hint="Vẫn đo trong lúc chờ lên bậc: vượt ngưỡng là rollback ngay."
+                label={form.analysis}
+                hint={copy.analysisHint}
                 value={analysisInterval}
                 onChange={setAnalysisInterval}
                 min={1}
               />
               <NumberField
                 id="ro-warm"
-                label="Số request tối thiểu trước khi đánh giá"
+                label={form.warmUp}
                 value={warmUp}
                 onChange={setWarmUp}
                 min={1}
@@ -441,11 +429,11 @@ function FlagRolloutDialog({
             </div>
           </fieldset>
           <fieldset className="fs">
-            <legend>Ngưỡng rollback</legend>
+            <legend>{form.thresholds}</legend>
             <div className="grid-f">
               <NumberField
                 id="ro-err"
-                label="Tỉ lệ lỗi tối đa (%)"
+                label={form.errorRate}
                 value={errorRate}
                 onChange={setErrorRate}
                 min={0}
@@ -454,21 +442,22 @@ function FlagRolloutDialog({
               />
               <NumberField
                 id="ro-lat"
-                label="Latency P99 tối đa (ms)"
+                label={form.latency}
                 value={latency}
                 onChange={setLatency}
                 min={1}
               />
               <NumberField
                 id="ro-minerr"
-                label="Số lỗi tối thiểu để tính vượt"
+                label={form.minErrors}
                 value={minErrors}
                 onChange={setMinErrors}
                 min={1}
               />
               <NumberField
                 id="ro-breach"
-                label="Vượt liên tiếp mấy lần thì rollback"
+                label={form.breaches}
+
                 value={breaches}
                 onChange={setBreaches}
                 min={1}

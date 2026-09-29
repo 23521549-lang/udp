@@ -2,10 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { DOMAIN_ERROR_SLUGS } from "@udp/shared-types/domain-api";
 import { useState } from "react";
 import { Empty, ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { problemSlugOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
 import { useProjectContext } from "../project/ProjectLayout";
 import { provisioningApi } from "./provisioning-api";
+import { provisioningMessages } from "./provisioning.messages";
 import { formatUsd } from "../../lib/format";
 
 const WINDOWS = [7, 30] as const;
@@ -17,6 +19,7 @@ const WINDOWS = [7, 30] as const;
  */
 export function CostPanel() {
   const { project } = useProjectContext();
+  const m = useMessages(provisioningMessages).cost;
   const [days, setDays] = useState<(typeof WINDOWS)[number]>(7);
   const cost = useQuery({
     queryKey: qk.cost(project.id, days),
@@ -28,9 +31,9 @@ export function CostPanel() {
     problemSlugOf(cost.error) === DOMAIN_ERROR_SLUGS.costNotEnabled;
 
   return (
-    <section aria-label="Chi phí thực tế">
-      <h2 className="h2">Chi phí thực tế</h2>
-      <div className="seg" role="group" aria-label="Cửa sổ chi phí">
+    <section aria-label={m.title}>
+      <h2 className="h2">{m.title}</h2>
+      <div className="seg" role="group" aria-label={m.window}>
         {WINDOWS.map((d) => (
           <button
             key={d}
@@ -38,39 +41,34 @@ export function CostPanel() {
             aria-pressed={days === d}
             onClick={() => setDays(d)}
           >
-            {d} ngày
+            {m.days(d)}
           </button>
         ))}
       </div>
       {cost.isPending && <Loading />}
-      {notEnabled && (
-        <Empty title="Chưa bật Cost Management">
-          Bật OpenCost hay Kubecost ở trang Domain để thấy chi phí theo
-          environment.
-        </Empty>
-      )}
+      {notEnabled && <Empty title={m.notEnabled}>{m.notEnabledHint}</Empty>}
       {cost.isError && !notEnabled && (
         <ErrorState error={cost.error} onRetry={() => void cost.refetch()} />
       )}
       {cost.data !== undefined && (
-        <table className="dtable" aria-label="Chi phí theo environment">
+        <table className="dtable" aria-label={m.table}>
           <thead>
             <tr>
-              <th scope="col">Environment</th>
+              <th scope="col">{m.environment}</th>
               <th scope="col" className="num">
-                CPU
+                {m.cpu}
               </th>
               <th scope="col" className="num">
-                RAM
+                {m.ram}
               </th>
               <th scope="col" className="num">
-                Lưu trữ
+                {m.storage}
               </th>
               <th scope="col" className="num">
-                Mạng
+                {m.network}
               </th>
               <th scope="col" className="num">
-                Tổng
+                {m.total}
               </th>
             </tr>
           </thead>
@@ -89,7 +87,7 @@ export function CostPanel() {
           <tfoot>
             <tr>
               <td colSpan={5}>
-                Tổng {cost.data.cost.days} ngày, nguồn {cost.data.cost.provider}
+                {m.footer(cost.data.cost.days, cost.data.cost.provider)}
               </td>
               <td className="num">
                 <b>{formatUsd(cost.data.cost.totalUsd)}</b>

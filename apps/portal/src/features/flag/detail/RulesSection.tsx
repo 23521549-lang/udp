@@ -11,6 +11,7 @@ import { Icon } from "../../../components/Icon";
 import { ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
 import { UnsavedGuard } from "../../../components/UnsavedGuard";
+import { useMessages } from "../../../i18n";
 import { shortcut } from "../../../lib/keys";
 import { messageOf } from "../../../lib/errors";
 import { isApiError } from "../../../lib/http";
@@ -29,6 +30,7 @@ import {
   toReplaceBody,
   type RuleDraft,
 } from "../rules-model";
+import { detailMessages } from "./detail.messages";
 
 export function RulesSection({
   flag,
@@ -39,6 +41,7 @@ export function RulesSection({
   env: PublicEnvironmentWire;
   canEdit: boolean;
 }) {
+  const m = useMessages(detailMessages).rules;
   const { project } = useProjectContext();
   const rules = useQuery({
     queryKey: qk.flagRules(project.id, flag.id, env.id),
@@ -46,7 +49,7 @@ export function RulesSection({
     staleTime: 10_000,
   });
 
-  if (rules.isPending) return <Loading label="Đang tải rule…" />;
+  if (rules.isPending) return <Loading label={m.loading} />;
   if (rules.isError) {
     return (
       <ErrorState error={rules.error} onRetry={() => void rules.refetch()} />
@@ -78,6 +81,8 @@ function RulesEditor({
   server: RulesResponseWire;
   canEdit: boolean;
 }) {
+  const all = useMessages(detailMessages);
+  const m = all.rules;
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [drafts, setDrafts] = useState<RuleDraft[]>(() =>
@@ -87,9 +92,10 @@ function RulesEditor({
   const [promoting, setPromoting] = useState(false);
 
   const changes = changeCount(drafts, server.rules);
+  // `m` trong danh sách phụ thuộc: đổi ngôn ngữ thì câu lỗi của rule dựng lại theo ngôn ngữ mới
   const problems = useMemo(
     () => ruleProblems(drafts, flag.variants),
-    [drafts, flag.variants],
+    [drafts, flag.variants, m],
   );
 
   const save = useMutation({
@@ -109,7 +115,7 @@ function RulesEditor({
       await queryClient.invalidateQueries({
         queryKey: qkPrefix.flagsOf(project.id),
       });
-      toast.info(`Đã lưu rule ở ${env.name}`);
+      toast.info(m.savedIn(env.name));
     },
     onError: async (e) => {
       setConfirmProd(false);
@@ -143,33 +149,26 @@ function RulesEditor({
   const discard = () => {
     const before = drafts;
     setDrafts(draftsFromWire(server.rules));
-    toast.info(`Đã bỏ ${String(changes)} thay đổi`, () => setDrafts(before));
+    toast.info(m.discarded(changes), () => setDrafts(before));
   };
 
   return (
-    <section aria-label="Rule">
-      <UnsavedGuard
-        dirty={changes > 0}
-        what={`${String(changes)} thay đổi rule ở ${env.name}`}
-      />
+    <section aria-label={m.section}>
+      <UnsavedGuard dirty={changes > 0} what={m.unsaved(changes, env.name)} />
       <div className="sect">
-        <h3>Rule ở {env.name}</h3>
-        <span className="c3">xét từ trên xuống</span>
+        <h3>{m.rulesIn(env.name)}</h3>
+        <span className="c3">{m.topDown}</span>
         <div className="r">
           {can(project.myRole, "DEVELOPER") && (
             <button
               type="button"
               className="btn"
               disabled={changes > 0}
-              title={
-                changes > 0
-                  ? "Lưu hoặc bỏ thay đổi trước khi sao chép"
-                  : undefined
-              }
+              title={changes > 0 ? m.saveFirst : undefined}
               onClick={() => setPromoting(true)}
             >
               <Icon of={CopyPlus} />
-              Sao chép sang…
+              {m.copyTo}
             </button>
           )}
           {canEdit && (
@@ -179,7 +178,7 @@ function RulesEditor({
               onClick={() => setDrafts([...drafts, newRule(flag.variants)])}
             >
               <Icon of={Plus} />
-              Thêm rule
+              {m.addRule}
             </button>
           )}
         </div>
@@ -192,11 +191,7 @@ function RulesEditor({
           onClose={() => setPromoting(false)}
         />
       )}
-      {drafts.length === 0 && (
-        <p className="c3">
-          Chưa có rule. Mọi người dùng nhận variant mặc định.
-        </p>
-      )}
+      {drafts.length === 0 && <p className="c3">{m.none}</p>}
       {drafts.map((rule, i) => (
         <RuleCard
           key={rule.localKey}
@@ -218,16 +213,14 @@ function RulesEditor({
         className={changes > 0 ? "savebar on" : "savebar"}
         aria-hidden={changes === 0}
       >
-        <span>
-          {changes} thay đổi ở {env.name}
-        </span>
+        <span>{m.pending(changes, env.name)}</span>
         <button
           type="button"
           className="btn"
           tabIndex={changes === 0 ? -1 : 0}
           onClick={discard}
         >
-          Bỏ
+          {m.discard}
         </button>
         <button
           type="button"
@@ -236,14 +229,14 @@ function RulesEditor({
           disabled={problems.size > 0 || save.isPending}
           onClick={submit}
         >
-          {save.isPending ? "Đang lưu…" : "Lưu"} <kbd>{shortcut("S")}</kbd>
+          {save.isPending ? all.saving : all.save} <kbd>{shortcut("S")}</kbd>
         </button>
       </div>
       {confirmProd && (
         <ConfirmDialog
-          title="Lưu rule ở production?"
-          description={`${String(changes)} thay đổi sẽ áp cho người dùng thật.`}
-          confirmLabel="Lưu"
+          title={m.confirmTitle}
+          description={m.confirmDescription(changes)}
+          confirmLabel={all.save}
           busy={save.isPending}
           onConfirm={() => save.mutate()}
           onClose={() => setConfirmProd(false)}

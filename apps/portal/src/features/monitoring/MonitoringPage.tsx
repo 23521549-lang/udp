@@ -15,6 +15,7 @@ import { LineChart } from "../../components/LineChart";
 import { PageHead } from "../../components/PageHead";
 import { Sparkline } from "../../components/Sparkline";
 import { Empty, ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { problemSlugOf } from "../../lib/errors";
 import {
   browserTimeZone,
@@ -38,15 +39,9 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { provisioningApi } from "../provisioning/provisioning-api";
 import { monitoringApi } from "./monitoring-api";
+import { monitoringMessages } from "./monitoring.messages";
 
 export const DEFAULT_RED_RANGE: RedRange = "6h";
-
-const RANGE_LABEL: Record<RedRange, string> = {
-  "1h": "1 giờ",
-  "6h": "6 giờ",
-  "24h": "24 giờ",
-  "7d": "7 ngày",
-};
 
 /** DORA và chi phí đọc cửa sổ 30 ngày — cùng khoá cache với mặc định của trang Deploy và Hạ tầng */
 const DORA_DAYS = 30;
@@ -60,6 +55,7 @@ const TOP_FLAGS = 5;
  * lượt đánh giá flag.
  */
 export function MonitoringPage() {
+  const m = useMessages(monitoringMessages);
   const { project, env } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/monitoring" });
   const navigate = useNavigate({ from: "/app/projects/$projectId/monitoring" });
@@ -77,18 +73,13 @@ export function MonitoringPage() {
 
   return (
     <>
-      <ProjectBar title="Giám sát" />
+      <ProjectBar title={m.title} />
       <div className="scroll">
         <PageHead
-          title="Giám sát"
-          lead={
-            <>
-              Request, lỗi và độ trễ của workload ở {env.name}, cùng lượt đánh
-              giá flag, sức khoẻ domain và chỉ số deploy.
-            </>
-          }
+          title={m.title}
+          lead={m.lead(env.name)}
           actions={
-            <div className="seg" role="group" aria-label="Khoảng thời gian">
+            <div className="seg" role="group" aria-label={m.rangeLabel}>
               {RED_RANGES.map((r) => (
                 <button
                   key={r}
@@ -96,7 +87,7 @@ export function MonitoringPage() {
                   aria-pressed={range === r}
                   onClick={() => setRange(r)}
                 >
-                  {RANGE_LABEL[r]}
+                  {m.range[r]}
                 </button>
               ))}
             </div>
@@ -108,7 +99,7 @@ export function MonitoringPage() {
           <HealthSection projectId={project.id} envId={env.id} />
           <section aria-labelledby="mon-dora">
             <div className="sect">
-              <h2 id="mon-dora">Deploy {DORA_DAYS} ngày</h2>
+              <h2 id="mon-dora">{m.doraTitle(DORA_DAYS)}</h2>
               <div className="r">
                 <Link
                   to="/app/projects/$projectId/deployments"
@@ -116,7 +107,7 @@ export function MonitoringPage() {
                   search={{ env: env.id }}
                   className="btn"
                 >
-                  Lịch sử deploy
+                  {m.deployHistory}
                 </Link>
               </div>
             </div>
@@ -142,6 +133,7 @@ function RedSection({
   envId: string;
   range: RedRange;
 }) {
+  const copy = useMessages(monitoringMessages).red;
   const red = useQuery({
     queryKey: qk.red(projectId, envId, range),
     queryFn: () => monitoringApi.red(projectId, envId, range),
@@ -156,15 +148,16 @@ function RedSection({
   return (
     <section aria-labelledby="mon-red">
       <div className="sect">
-        <h2 id="mon-red">Workload</h2>
+        <h2 id="mon-red">{copy.title}</h2>
         {m !== undefined && (
           <span className="c3">
-            Nguồn{" "}
-            <span className="mono" translate="no">
-              {/* Khoá `<domain>:<tool>` của binding: phần tool là thứ người dùng nhận ra */}
-              {m.source.tool?.split(":")[1] ?? m.source.providerId}
-            </span>
-            , mỗi điểm {formatDuration(m.stepSeconds)}
+            {copy.source(
+              <span className="mono" translate="no">
+                {/* Khoá `<domain>:<tool>` của binding: phần tool là thứ người dùng nhận ra */}
+                {m.source.tool?.split(":")[1] ?? m.source.providerId}
+              </span>,
+              formatDuration(m.stepSeconds),
+            )}
           </span>
         )}
         {m?.console?.kind === "url" && (
@@ -175,7 +168,7 @@ function RedSection({
               target="_blank"
               rel="noreferrer"
             >
-              {m.console.label}
+              {copy.openApp[m.console.app]}
               <Icon of={ExternalLink} />
             </a>
           </div>
@@ -187,20 +180,17 @@ function RedSection({
       {red.isPending ? (
         <Loading />
       ) : notEnabled ? (
-        <Empty title="Chưa có nguồn metrics">
-          Bật domain Giám sát với Prometheus, VictoriaMetrics hay một dịch vụ
-          SaaS (Datadog, New Relic, Dynatrace, Grafana Cloud) để thấy request,
-          lỗi và độ trễ.{" "}
-          <Link to="/app/projects/$projectId/domains" params={{ projectId }}>
-            Tới trang Domain
-          </Link>
+        <Empty title={copy.noMetricsTitle}>
+          {copy.noMetrics(
+            <Link to="/app/projects/$projectId/domains" params={{ projectId }}>
+              {copy.toDomains}
+            </Link>,
+          )}
         </Empty>
       ) : red.isError ? (
         <ErrorState error={red.error} onRetry={() => void red.refetch()} />
       ) : red.data.metrics.workloads.length === 0 ? (
-        <Empty title="Chưa có workload nào">
-          Workload hiện ở đây sau lần deploy đầu tiên qua UDP.
-        </Empty>
+        <Empty title={copy.noWorkloadsTitle}>{copy.noWorkloads}</Empty>
       ) : (
         <RedCharts metrics={red.data.metrics} />
       )}
@@ -213,23 +203,24 @@ function PortForward({
 }: {
   console: Extract<MonitoringConsoleWire, { kind: "portForward" }>;
 }) {
+  const copy = useMessages(monitoringMessages).red;
   return (
     <div className="mon-console">
       <p className="c3">
-        Công cụ giám sát chạy trong cluster và không có địa chỉ công khai. Chạy
-        lệnh dưới đây rồi mở{" "}
-        <span className="mono" translate="no">
-          {c.localUrl}
-        </span>
-        .
+        {copy.portForward(
+          <span className="mono" translate="no">
+            {c.localUrl}
+          </span>,
+        )}
       </p>
-      <CodeBlock code={c.command} label={c.label} />
+      <CodeBlock code={c.command} label={copy.openApp[c.app]} />
     </div>
   );
 }
 
 /** Mỗi workload ba biểu đồ nhỏ — nhiều workload trên một biểu đồ là nhiều hơn bốn chuỗi (DESIGN.md §2) */
 function RedCharts({ metrics }: { metrics: RedMetricsWire }) {
+  const copy = useMessages(monitoringMessages).red;
   const t0 = Date.parse(metrics.start);
   const times = Array.from(
     { length: metrics.points },
@@ -241,21 +232,21 @@ function RedCharts({ metrics }: { metrics: RedMetricsWire }) {
         <section
           key={w.workload}
           className="red-row"
-          aria-label={`Workload ${w.workload}`}
+          aria-label={copy.workload(w.workload)}
         >
           <h3 className="mono" translate="no">
             {w.workload}
           </h3>
           <div className="red-grid">
             <LineChart
-              title="Request mỗi giây"
+              title={copy.requestRate}
               level={4}
               height={130}
               times={times}
               series={[
                 {
                   key: "rps",
-                  label: "Request/giây",
+                  label: copy.requestRateSeries,
                   values: w.requestRate,
                   tone: "v3",
                 },
@@ -263,14 +254,14 @@ function RedCharts({ metrics }: { metrics: RedMetricsWire }) {
               format={formatDecimal}
             />
             <LineChart
-              title="Tỉ lệ lỗi 5xx"
+              title={copy.errorRate}
               level={4}
               height={130}
               times={times}
               series={[
                 {
                   key: "err",
-                  label: "Tỉ lệ lỗi",
+                  label: copy.errorRateSeries,
                   values: w.errorRatio.map((v) =>
                     v === null ? null : v * 100,
                   ),
@@ -280,7 +271,7 @@ function RedCharts({ metrics }: { metrics: RedMetricsWire }) {
               format={formatPercent}
             />
             <LineChart
-              title="Độ trễ p99"
+              title={copy.latency}
               level={4}
               height={130}
               times={times}
@@ -315,6 +306,7 @@ function FlagEvaluations({
   projectId: string;
   envId: string;
 }) {
+  const copy = useMessages(monitoringMessages).flags;
   const tz = browserTimeZone();
   const flags = useQuery({
     queryKey: qk.flags(projectId, envId, "stats", { term: "", offset: 0 }),
@@ -330,7 +322,7 @@ function FlagEvaluations({
   return (
     <section aria-labelledby="mon-flags">
       <div className="sect">
-        <h2 id="mon-flags">Lượt đánh giá flag</h2>
+        <h2 id="mon-flags">{copy.title}</h2>
       </div>
       {flags.isPending ? (
         <Loading />
@@ -359,16 +351,13 @@ function FlagEvalBody({
   flags: Awaited<ReturnType<typeof flagApi.page>>["flags"];
   total: number;
 }) {
+  const copy = useMessages(monitoringMessages).flags;
   const withStats = flags.filter((f) => f.stats !== undefined);
   if (flags.length === 0) {
-    return <p className="c3">Project chưa có flag nào.</p>;
+    return <p className="c3">{copy.none}</p>;
   }
   if (withStats.length === 0) {
-    return (
-      <p className="c3">
-        Chưa đọc được số lượt đánh giá: dịch vụ đánh giá flag không trả lời.
-      </p>
-    );
+    return <p className="c3">{copy.noStats}</p>;
   }
   const days = lastDays(14);
   const perDay = days.map((_, i) =>
@@ -381,7 +370,7 @@ function FlagEvalBody({
   return (
     <div className="mon-flags">
       <BarChart
-        title="Tổng theo ngày, 14 ngày"
+        title={copy.daily}
         level={3}
         format={formatNumber}
         data={days.map((d, i) => {
@@ -392,7 +381,7 @@ function FlagEvalBody({
             full: label.full,
             parts: [
               {
-                label: "Lượt đánh giá",
+                label: copy.evaluations,
                 value: perDay[i] ?? 0,
                 tone: "neutral",
               },
@@ -401,11 +390,11 @@ function FlagEvalBody({
         })}
       />
       <div>
-        <h3 className="mon-sub">Dùng nhiều nhất 7 ngày</h3>
+        <h3 className="mon-sub">{copy.topTitle}</h3>
         {top.length === 0 ? (
-          <p className="c3">Chưa flag nào được đánh giá trong 7 ngày.</p>
+          <p className="c3">{copy.topNone}</p>
         ) : (
-          <ol className="lst" aria-label="Flag dùng nhiều nhất">
+          <ol className="lst" aria-label={copy.topList}>
             {top.map((f) => (
               <li key={f.id} className="it">
                 <Link
@@ -428,9 +417,7 @@ function FlagEvalBody({
           </ol>
         )}
         {total > flags.length && (
-          <p className="c3">
-            Tính trên {flags.length} trong {total} flag.
-          </p>
+          <p className="c3">{copy.basedOn(flags.length, total)}</p>
         )}
       </div>
     </div>
@@ -446,6 +433,7 @@ function HealthSection({
   projectId: string;
   envId: string;
 }) {
+  const copy = useMessages(monitoringMessages).health;
   const arch = useQuery({
     queryKey: qk.architecture(projectId),
     queryFn: () => architectureApi.get(projectId),
@@ -453,14 +441,14 @@ function HealthSection({
   return (
     <section aria-labelledby="mon-health">
       <div className="sect">
-        <h2 id="mon-health">Sức khoẻ domain</h2>
+        <h2 id="mon-health">{copy.title}</h2>
       </div>
       {arch.isPending ? (
         <Loading />
       ) : arch.isError ? (
         <ErrorState error={arch.error} onRetry={() => void arch.refetch()} />
       ) : arch.data.architecture.tools.length === 0 ? (
-        <p className="c3">Project chưa bật domain nào.</p>
+        <p className="c3">{copy.none}</p>
       ) : (
         <DomainHealthGrid
           projectId={projectId}
@@ -493,6 +481,7 @@ function DoraSummary({
 }
 
 function CostTrend({ projectId }: { projectId: string }) {
+  const copy = useMessages(monitoringMessages).cost;
   const cost = useQuery({
     queryKey: qk.cost(projectId, COST_DAYS),
     queryFn: () => provisioningApi.cost(projectId, COST_DAYS),
@@ -504,10 +493,10 @@ function CostTrend({ projectId }: { projectId: string }) {
   return (
     <section aria-labelledby="mon-cost">
       <div className="sect">
-        <h2 id="mon-cost">Chi phí {COST_DAYS} ngày</h2>
+        <h2 id="mon-cost">{copy.title(COST_DAYS)}</h2>
         {cost.data !== undefined && (
           <span className="c3 num">
-            Tổng {formatUsd(cost.data.cost.totalUsd)}
+            {copy.total(formatUsd(cost.data.cost.totalUsd))}
           </span>
         )}
       </div>
@@ -515,16 +504,17 @@ function CostTrend({ projectId }: { projectId: string }) {
         <Loading />
       ) : notEnabled ? (
         <p className="c3">
-          Chưa bật Cost Management.{" "}
-          <Link to="/app/projects/$projectId/domains" params={{ projectId }}>
-            Bật OpenCost hay Kubecost ở trang Domain
-          </Link>
+          {copy.notEnabled(
+            <Link to="/app/projects/$projectId/domains" params={{ projectId }}>
+              {copy.enableLink}
+            </Link>,
+          )}
         </p>
       ) : cost.isError ? (
         <ErrorState error={cost.error} onRetry={() => void cost.refetch()} />
       ) : (
         <LineChart
-          title="Chi phí theo ngày"
+          title={copy.daily}
           level={3}
           times={cost.data.cost.daily.map((d) =>
             Date.parse(`${d.date}T00:00:00Z`),
@@ -532,7 +522,7 @@ function CostTrend({ projectId }: { projectId: string }) {
           series={[
             {
               key: "usd",
-              label: "Chi phí",
+              label: copy.series,
               values: cost.data.cost.daily.map((d) => d.totalUsd),
               tone: "v3",
             },

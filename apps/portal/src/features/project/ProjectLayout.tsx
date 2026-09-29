@@ -14,11 +14,13 @@ import { Check, ChevronsUpDown, Lock } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { ErrorState, Loading } from "../../components/States";
+import { messagesOf, useMessages } from "../../i18n";
 import { qk } from "../../lib/query-keys";
 import { resolveEnv } from "./env";
 import { useRolloutWatcher } from "../rollout/use-rollout-watcher";
 import { ProjectKeyboard } from "./CommandPalette";
 import { projectApi } from "./project-api";
+import { projectMessages } from "./project.messages";
 import { useProjectStream } from "./project-stream";
 
 interface ProjectContextValue {
@@ -37,12 +39,13 @@ const ProjectContext = createContext<ProjectContextValue | null>(null);
 export function useProjectContext(): ProjectContextValue {
   const value = useContext(ProjectContext);
   if (value === null) {
-    throw new Error("useProjectContext ngoài ProjectLayout");
+    throw new Error(messagesOf(projectMessages).layout.outside);
   }
   return value;
 }
 
 export function ProjectLayout() {
+  const m = useMessages(projectMessages).layout;
   const { projectId } = useParams({ from: "/app/projects/$projectId" });
   const search = useSearch({ from: "/app/projects/$projectId" });
   const navigate = useNavigate();
@@ -71,7 +74,7 @@ export function ProjectLayout() {
   if (env === undefined) {
     return (
       <div className="page">
-        <ErrorState error={new Error("Project không có environment nào")} />
+        <ErrorState error={new Error(m.noEnvironments)} />
       </div>
     );
   }
@@ -104,6 +107,7 @@ export function ProjectLayout() {
  * mình đang đứng ở đâu.
  */
 export function EnvSwitcher() {
+  const m = useMessages(projectMessages).layout;
   const { envs, env, setEnv } = useProjectContext();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -141,12 +145,12 @@ export function EnvSwitcher() {
         className="envsw"
         aria-expanded={open}
         aria-controls="env-pop"
-        aria-label={`Environment: ${env.name}`}
+        aria-label={m.environment(env.name)}
         onClick={() => setOpen((v) => !v)}
       >
         {env.name}
         {env.isProduction && (
-          <span className="lk" title="Production: mọi thay đổi cần xác nhận">
+          <span className="lk" title={m.productionLock}>
             <Icon of={Lock} size={12} />
           </span>
         )}
@@ -167,16 +171,16 @@ export function EnvSwitcher() {
               name="env-q"
               autoComplete="off"
               spellCheck={false}
-              placeholder="Tìm environment…"
-              aria-label="Tìm environment"
+              placeholder={m.searchPlaceholder}
+              aria-label={m.search}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </label>
-          <div role="group" aria-label="Environment">
+          <div role="group" aria-label={m.environments}>
             {shown.length === 0 && (
               <p className="c3 envpop-empty" role="status">
-                Không environment nào khớp “{q.trim()}”.
+                {m.noMatch(q.trim())}
               </p>
             )}
             {shown.map((e) => (
@@ -194,9 +198,7 @@ export function EnvSwitcher() {
                 <span className="nm">
                   {e.name} {e.isProduction && <Icon of={Lock} size={12} />}
                   <small>
-                    {e.isProduction
-                      ? "Người dùng thật, cần xác nhận"
-                      : `Namespace ${e.k8sNamespace}`}
+                    {e.isProduction ? m.realUsers : m.namespace(e.k8sNamespace)}
                   </small>
                 </span>
                 <span className="r">

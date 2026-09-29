@@ -5,12 +5,14 @@ import { useState } from "react";
 import { Dialog } from "../../../components/Dialog";
 import { Icon } from "../../../components/Icon";
 import { toast } from "../../../components/Toast";
+import { useMessages } from "../../../i18n";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
 import { qkPrefix } from "../../../lib/query-keys";
 import { useProjectContext } from "../../project/ProjectLayout";
 import { can } from "../../project/roles";
 import { flagApi } from "../flag-api";
 import { formatVariantValue, parseVariantValue } from "../variant-value";
+import { detailMessages } from "./detail.messages";
 
 /**
  * [Plan #44] Sửa danh sách variant (§9 `PUT …/flags/:flagId/variants`). Variant dùng ở MỌI
@@ -18,6 +20,7 @@ import { formatVariantValue, parseVariantValue } from "../variant-value";
  * key (máy chủ đòi cả hai). BOOLEAN có đúng `on`/`off` do hệ thống sinh: không có nút.
  */
 export function VariantsSection({ flag }: { flag: FlagDetailWire }) {
+  const m = useMessages(detailMessages).variants;
   const { project } = useProjectContext();
   const [open, setOpen] = useState(false);
   const minimum = flag.lifecycleStatus === "DRAFT" ? "DEVELOPER" : "MAINTAINER";
@@ -32,7 +35,7 @@ export function VariantsSection({ flag }: { flag: FlagDetailWire }) {
     <div className="sect">
       <button type="button" className="btn" onClick={() => setOpen(true)}>
         <Icon of={Pencil} />
-        Sửa variant
+        {m.edit}
       </button>
       {open && <VariantsDialog flag={flag} onClose={() => setOpen(false)} />}
     </div>
@@ -56,6 +59,8 @@ function VariantsDialog({
   flag: FlagDetailWire;
   onClose: () => void;
 }) {
+  const all = useMessages(detailMessages);
+  const m = all.variants;
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [initial] = useState<Row[]>(() =>
@@ -91,7 +96,7 @@ function VariantsDialog({
         ...(needsKey ? { confirmFlagKey: typed.trim() } : {}),
       }),
     onSuccess: async () => {
-      toast.info("Đã lưu variant");
+      toast.info(m.saved);
       await queryClient.invalidateQueries({
         queryKey: qkPrefix.flagOf(project.id, flag.id),
       });
@@ -113,14 +118,14 @@ function VariantsDialog({
 
   return (
     <Dialog
-      title="Sửa variant"
-      description="Giá trị mới tới SDK ở mọi environment ngay khi lưu. Variant đang được rule hay environment dùng thì không bỏ được."
+      title={m.edit}
+      description={m.description}
       onClose={onClose}
       wide
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>
-            Huỷ
+            {all.cancel}
           </button>
           <button
             type="button"
@@ -128,31 +133,31 @@ function VariantsDialog({
             disabled={!ready}
             onClick={() => save.mutate()}
           >
-            {save.isPending ? "Đang lưu…" : "Lưu"}
+            {save.isPending ? all.saving : all.save}
           </button>
         </>
       }
     >
       <div className="f">
-        <span className="lbl">Variant (chọn một làm mặc định)</span>
+        <span className="lbl">{m.list}</span>
         {rows.map((r, i) => (
           <div key={r.localKey} className="line">
             <input
               type="radio"
               name="variant-default"
-              aria-label={`Mặc định: variant ${String(i + 1)}`}
+              aria-label={m.makeDefault(i + 1)}
               checked={defaultRow === r.localKey}
               onChange={() => setDefaultRow(r.localKey)}
             />
             <input
               className="inp mono"
-              aria-label={`Key variant ${String(i + 1)}`}
+              aria-label={m.key(i + 1)}
               value={r.key}
               onChange={(e) => edit(i, { key: e.target.value })}
             />
             <input
               className="inp mono"
-              aria-label={`Giá trị variant ${String(i + 1)}`}
+              aria-label={m.value(i + 1)}
               placeholder={flag.flagType === "JSON" ? '{"a":1}…' : ""}
               value={r.value}
               onChange={(e) => edit(i, { value: e.target.value })}
@@ -160,7 +165,7 @@ function VariantsDialog({
             <button
               type="button"
               className="ib"
-              aria-label={`Bỏ variant ${String(i + 1)}`}
+              aria-label={m.remove(i + 1)}
               disabled={rows.length <= 2}
               onClick={() => setRows(rows.filter((_, j) => j !== i))}
             >
@@ -180,7 +185,7 @@ function VariantsDialog({
           }}
         >
           <Icon of={Plus} />
-          Thêm variant
+          {m.add}
         </button>
         {Object.entries(fields)
           .filter(([f]) => f.startsWith("variants"))
@@ -193,8 +198,7 @@ function VariantsDialog({
       {needsKey && (
         <div className="f">
           <label htmlFor="variants-key">
-            Gõ <span className="mono">{flag.key}</span> để lưu cho flag đang
-            phục vụ
+            {m.typeToSave(<span className="mono">{flag.key}</span>)}
           </label>
           <input
             id="variants-key"

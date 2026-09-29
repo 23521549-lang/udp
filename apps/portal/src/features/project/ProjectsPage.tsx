@@ -11,9 +11,11 @@ import { ProjectStatus } from "./ProjectStatus";
 import { rolesMessages } from "./roles.messages";
 import { useMessages } from "../../i18n";
 import { PageHead } from "../../components/PageHead";
+import { projectMessages } from "./project.messages";
 
 export function ProjectsPage() {
   const roles = useMessages(rolesMessages).role;
+  const m = useMessages(projectMessages);
   const offset = useSearch({ from: "/app/projects" }).offset ?? 0;
   const navigate = useNavigate();
   const setOffset = (n: number): void => {
@@ -33,17 +35,17 @@ export function ProjectsPage() {
     <>
       <div className="bar">
         <div className="crumbs">
-          <b>Project</b>
+          <b>{m.projects}</b>
         </div>
         <div className="r">
           <Link to="/app/projects/new" className="btn pri">
             <Icon of={Plus} />
-            Tạo project
+            {m.createProject}
           </Link>
         </div>
       </div>
       <div className="scroll">
-        <PageHead title="Project" lead="Mọi project mà bạn là thành viên." />
+        <PageHead title={m.projects} lead={m.list.lead} />
         <div className="page">
           {projects.isPending ? (
             <Loading />
@@ -53,13 +55,13 @@ export function ProjectsPage() {
               onRetry={() => void projects.refetch()}
             />
           ) : projects.data.projects.length === 0 ? (
-            <Empty title="Chưa có project nào">
+            <Empty title={m.list.empty}>
               <Link to="/app/projects/new" className="btn pri">
-                Tạo project đầu tiên
+                {m.list.createFirst}
               </Link>
             </Empty>
           ) : (
-            <div className="lst" role="list" aria-label="Project của bạn">
+            <div className="lst" role="list" aria-label={m.list.label}>
               {projects.data.projects.map((p) => (
                 <div role="listitem" key={p.id}>
                   <Link
@@ -90,7 +92,7 @@ export function ProjectsPage() {
             </div>
           )}
           <Pager
-            label="Trang của danh sách project"
+            label={m.list.pages}
             offset={offset}
             pageSize={PROJECT_PAGE_SIZE}
             total={total}

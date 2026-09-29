@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { ErrorState, Loading } from "../../../components/States";
+import { useMessages } from "../../../i18n";
 import { qk } from "../../../lib/query-keys";
 import { domainApi } from "../../domain/domain-api";
 import { tierLabel } from "../../domain/domain-labels";
+import { adminMessages } from "../admin.messages";
 import { AdminPage } from "../AdminLayout";
 
 /**
@@ -10,16 +12,14 @@ import { AdminPage } from "../AdminLayout";
  * khởi động (I29), không endpoint nào sửa nó. Trang này cho thấy registry đã nạp những gì.
  */
 export function AdminCatalogPage() {
+  const m = useMessages(adminMessages);
   const catalog = useQuery({
     queryKey: qk.catalog(),
     queryFn: domainApi.catalog,
     staleTime: Infinity,
   });
   return (
-    <AdminPage
-      title="Catalog domain"
-      lead="Danh mục domain và công cụ mà máy chủ nạp được từ thư mục adapter. Chỉ đọc."
-    >
+    <AdminPage title={m.catalog.title} lead={m.catalog.lead}>
       {catalog.isPending ? (
         <Loading />
       ) : catalog.isError ? (
@@ -29,13 +29,13 @@ export function AdminCatalogPage() {
         />
       ) : (
         <div className="table-wrap">
-          <table className="dtable" aria-label="Catalog domain">
+          <table className="dtable" aria-label={m.catalog.title}>
             <thead>
               <tr>
-                <th scope="col">Domain</th>
-                <th scope="col">Bậc</th>
-                <th scope="col">Dùng được</th>
-                <th scope="col">Công cụ</th>
+                <th scope="col">{m.domain}</th>
+                <th scope="col">{m.catalog.tier}</th>
+                <th scope="col">{m.catalog.available}</th>
+                <th scope="col">{m.catalog.tools}</th>
               </tr>
             </thead>
             <tbody>
@@ -43,7 +43,7 @@ export function AdminCatalogPage() {
                 <tr key={d.domainType}>
                   <th scope="row">{d.displayName}</th>
                   <td>{tierLabel(d.tier)}</td>
-                  <td>{d.isAvailable ? "Có" : "Đã gỡ"}</td>
+                  <td>{d.isAvailable ? m.yes : m.catalog.removed}</td>
                   <td className="mono">
                     {d.tools.length === 0
                       ? "–"

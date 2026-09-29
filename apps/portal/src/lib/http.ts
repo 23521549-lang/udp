@@ -1,5 +1,7 @@
 import type { ProblemDetails } from "@udp/shared-types/problem";
 import type { ZodType } from "zod";
+import { messagesOf } from "../i18n";
+import { httpMessages } from "./http.messages";
 
 /**
  * Lớp HTTP DUY NHẤT của Portal (§10.4, §10.10).
@@ -277,7 +279,12 @@ async function send(path: string, opts: RequestOptions): Promise<Response> {
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") throw e;
-    throw new ApiError("network", 0, undefined, "Mất kết nối tới máy chủ");
+    throw new ApiError(
+      "network",
+      0,
+      undefined,
+      messagesOf(httpMessages).network,
+    );
   }
 }
 
@@ -327,16 +334,12 @@ export async function api<T>(
   const json: unknown = await res.json();
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
+    const m = messagesOf(httpMessages);
     const where = parsed.error.issues
       .slice(0, 3)
-      .map((i) => i.path.join(".") || "(gốc)")
+      .map((i) => i.path.join(".") || m.root)
       .join(", ");
-    throw new ApiError(
-      "contract",
-      res.status,
-      undefined,
-      `Phản hồi của máy chủ không đúng hợp đồng (${where})`,
-    );
+    throw new ApiError("contract", res.status, undefined, m.contract(where));
   }
   return parsed.data;
 }

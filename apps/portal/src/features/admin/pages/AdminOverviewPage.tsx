@@ -8,10 +8,10 @@ import type { ReactNode } from "react";
 import { Meter } from "../../../components/Meter";
 import { ErrorState, Loading } from "../../../components/States";
 import { StatusLabel } from "../../../components/StatusLabel";
+import { useMessages } from "../../../i18n";
 import {
   formatBytes,
   formatDateTime,
-  formatDecimal,
   formatNumber,
   formatUsd,
   relativeTime,
@@ -21,12 +21,14 @@ import { PROVIDER_LABEL } from "../../project/cloud/cloud-labels";
 import { jobTypeLabel } from "../../provisioning/provisioning-labels";
 import { AdminPage } from "../AdminLayout";
 import { adminApi } from "../admin-api";
+import { adminMessages } from "../admin.messages";
 import {
   backupVerdict,
   certificateVerdict,
   idleRisk,
-  PLATFORM_REASON,
-  SERVICE_STATUS,
+  platformReason,
+  serviceStatus,
+  type PlatformUnavailableReason,
 } from "../platform-model";
 
 const RECENT_FAILED_JOBS = 5;
@@ -37,6 +39,8 @@ const RECENT_FAILED_JOBS = 5;
  * tảng. Ba nguồn tải và báo lỗi riêng: cụm không đọc được không che mất số liệu của database.
  */
 export function AdminOverviewPage() {
+  const t = useMessages(adminMessages);
+  const m = t.overview;
   const overview = useQuery({
     queryKey: qk.adminOverview(),
     queryFn: adminApi.overview,
@@ -56,27 +60,27 @@ export function AdminOverviewPage() {
 
   return (
     <AdminPage
-      title="Tổng quan"
-      lead="Sức khoẻ của máy chạy UDP và số liệu toàn nền tảng."
+      title={m.title}
+      lead={m.lead}
       minis={
         o === undefined
           ? undefined
           : [
-              { value: o.users.total, label: "người dùng" },
-              { value: o.projects.total, label: "project" },
+              { value: o.users.total, label: m.users(o.users.total) },
+              { value: o.projects.total, label: m.projects(o.projects.total) },
               {
                 value: o.jobs.failed + o.jobs.compensationFailed,
-                label: "job lỗi",
+                label: m.failedJobs(o.jobs.failed + o.jobs.compensationFailed),
               },
             ]
       }
     >
       <section aria-labelledby="ad-machine">
         <div className="sect">
-          <h2 id="ad-machine">Máy chạy UDP</h2>
+          <h2 id="ad-machine">{m.machineHeading}</h2>
           {platform.data !== undefined && (
             <span className="c3">
-              Đọc lúc {formatDateTime(platform.data.platform.checkedAt)}
+              {t.readAt(formatDateTime(platform.data.platform.checkedAt))}
             </span>
           )}
         </div>
@@ -93,9 +97,9 @@ export function AdminOverviewPage() {
             databaseBytes={o?.database.sizeBytes ?? null}
           />
         )}
-        <ul className="sig-list" aria-label="Service">
+        <ul className="sig-list" aria-label={m.services}>
           {system.isPending ? (
-            <li className="c3">Đang kiểm service…</li>
+            <li className="c3">{m.checkingServices}</li>
           ) : system.isError ? (
             <li>
               <ErrorState
@@ -107,16 +111,17 @@ export function AdminOverviewPage() {
             [
               ...system.data.services,
               { name: "database", status: system.data.database },
-            ].map((s) => (
-              <li key={s.name} className="sig">
-                <span className="mono" translate="no">
-                  {s.name}
-                </span>
-                <StatusLabel tone={SERVICE_STATUS[s.status].tone}>
-                  {SERVICE_STATUS[s.status].label}
-                </StatusLabel>
-              </li>
-            ))
+            ].map((s) => {
+              const health = serviceStatus(s.status);
+              return (
+                <li key={s.name} className="sig">
+                  <span className="mono" translate="no">
+                    {s.name}
+                  </span>
+                  <StatusLabel tone={health.tone}>{health.label}</StatusLabel>
+                </li>
+              );
+            })
           )}
         </ul>
       </section>
@@ -146,8 +151,8 @@ function Signal({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Unavailable({ reason }: { reason: keyof typeof PLATFORM_REASON }) {
-  return <StatusLabel tone="unknown">{PLATFORM_REASON[reason]}</StatusLabel>;
+function Unavailable({ reason }: { reason: PlatformUnavailableReason }) {
+  return <StatusLabel tone="unknown">{platformReason(reason)}</StatusLabel>;
 }
 
 function PlatformSignals({
@@ -157,9 +162,10 @@ function PlatformSignals({
   platform: AdminPlatformWire;
   databaseBytes: number | null;
 }) {
+  const m = useMessages(adminMessages).overview;
   return (
     <div className="kpis sig-grid">
-      <Signal title="Máy">
+      <Signal title={m.machine}>
         {p.node.state === "unavailable" ? (
           <Unavailable reason={p.node.reason} />
         ) : (
@@ -171,7 +177,7 @@ function PlatformSignals({
               label="CPU"
               value={p.node.cpuUsedCores}
               max={p.node.cpuCores}
-              format={(n) => `${formatDecimal(n)} lõi`}
+              format={m.cores}
             />
             <Meter
               label="RAM"
@@ -184,18 +190,17 @@ function PlatformSignals({
         )}
       </Signal>
 
-      <Signal title="Database">
+      <Signal title={m.database}>
         {p.postgresVolume.state === "unavailable" ? (
           <>
             {databaseBytes !== null && (
-              <span>Dữ liệu {formatBytes(databaseBytes)}</span>
+              <span>{m.dataSize(formatBytes(databaseBytes))}</span>
             )}
             <Unavailable reason={p.postgresVolume.reason} />
           </>
         ) : databaseBytes === null ? (
           <span>
-            Ổ {formatBytes(p.postgresVolume.capacityBytes)}, chưa đọc được dung
-            lượng dữ liệu
+            {m.volumeOnly(formatBytes(p.postgresVolume.capacityBytes))}
           </span>
         ) : (
           <Meter
@@ -207,7 +212,7 @@ function PlatformSignals({
         )}
       </Signal>
 
-      <Signal title="Sao lưu">
+      <Signal title={m.backup}>
         {p.backup.state === "unavailable" ? (
           <Unavailable reason={p.backup.reason} />
         ) : (
@@ -215,7 +220,7 @@ function PlatformSignals({
         )}
       </Signal>
 
-      <Signal title="Chứng chỉ HTTPS">
+      <Signal title={m.certificate}>
         {p.certificate.state === "unavailable" ? (
           <Unavailable reason={p.certificate.reason} />
         ) : (
@@ -223,9 +228,9 @@ function PlatformSignals({
         )}
       </Signal>
 
-      <Signal title="Bản phát hành">
+      <Signal title={m.release}>
         {p.release === null ? (
-          <StatusLabel tone="unknown">Không khai UDP_RELEASE</StatusLabel>
+          <StatusLabel tone="unknown">{m.noRelease}</StatusLabel>
         ) : (
           <span className="mono" translate="no">
             {p.release}
@@ -241,11 +246,12 @@ function IdleRisk({
 }: {
   node: Extract<AdminPlatformWire["node"], { state: "ok" }>;
 }) {
+  const m = useMessages(adminMessages).overview;
   const risk = idleRisk(node);
   return (
     <p className="sig-note">
       <StatusLabel tone={risk.tone}>
-        {risk.tone === "ok" ? "Không rảnh" : "Nguy cơ bị thu hồi"}
+        {risk.tone === "ok" ? m.notIdle : m.idleRisk}
       </StatusLabel>
       <span className="c3">{risk.text}</span>
     </p>
@@ -257,22 +263,23 @@ function BackupBody({
 }: {
   backup: Extract<AdminPlatformWire["backup"], { state: "ok" }>;
 }) {
+  const m = useMessages(adminMessages).overview;
   const verdict = backupVerdict(b);
   return (
     <>
       <StatusLabel tone={verdict.tone}>{verdict.label}</StatusLabel>
       <dl className="props compact">
-        <dt>Lịch</dt>
+        <dt>{m.schedule}</dt>
         <dd className="mono" translate="no">
           {b.schedule}
         </dd>
-        <dt>Thành công</dt>
+        <dt>{m.lastSuccess}</dt>
         <dd>
-          {b.lastSuccessAt === null ? "Chưa có" : relativeTime(b.lastSuccessAt)}
+          {b.lastSuccessAt === null ? m.none : relativeTime(b.lastSuccessAt)}
         </dd>
-        <dt>Thất bại</dt>
+        <dt>{m.lastFailure}</dt>
         <dd>
-          {b.lastFailureAt === null ? "Chưa có" : relativeTime(b.lastFailureAt)}
+          {b.lastFailureAt === null ? m.none : relativeTime(b.lastFailureAt)}
         </dd>
       </dl>
     </>
@@ -284,15 +291,18 @@ function CertificateBody({
 }: {
   certificate: Extract<AdminPlatformWire["certificate"], { state: "ok" }>;
 }) {
+  const m = useMessages(adminMessages).overview;
   const verdict = certificateVerdict(c);
   return (
     <>
       <StatusLabel tone={verdict.tone}>{verdict.label}</StatusLabel>
       <dl className="props compact">
-        <dt>Hết hạn</dt>
-        <dd>{c.notAfter === null ? "Chưa cấp" : formatDateTime(c.notAfter)}</dd>
-        <dt>Nơi cấp</dt>
-        <dd>{c.issuer ?? "Không rõ"}</dd>
+        <dt>{m.expires}</dt>
+        <dd>
+          {c.notAfter === null ? m.notIssued : formatDateTime(c.notAfter)}
+        </dd>
+        <dt>{m.issuer}</dt>
+        <dd>{c.issuer ?? m.unknown}</dd>
       </dl>
     </>
   );
@@ -301,45 +311,49 @@ function CertificateBody({
 // ------------------------------------------------------------------ số liệu nền tảng
 
 function OverviewNumbers({ overview: o }: { overview: AdminOverviewWire }) {
-  const toolMax = Math.max(1, ...o.tools.map((t) => t.projects));
+  const t = useMessages(adminMessages);
+  const m = t.overview;
+  const toolMax = Math.max(1, ...o.tools.map((tool) => tool.projects));
   return (
     <>
       <section aria-labelledby="ad-numbers">
         <div className="sect">
-          <h2 id="ad-numbers">Số liệu nền tảng</h2>
-          <span className="c3">Đọc lúc {formatDateTime(o.generatedAt)}</span>
+          <h2 id="ad-numbers">{m.numbers}</h2>
+          <span className="c3">{t.readAt(formatDateTime(o.generatedAt))}</span>
         </div>
         <div className="stat">
           <div>
-            <div className="l">Người dùng</div>
+            <div className="l">{m.usersStat}</div>
             <div className="v num">{formatNumber(o.users.total)}</div>
             <div className="c3">
-              {o.users.admins} quản trị, {o.users.newLast7d} mới trong 7 ngày
+              {m.usersSub(o.users.admins, o.users.newLast7d)}
             </div>
           </div>
           <div>
-            <div className="l">Project</div>
+            <div className="l">{m.projectsStat}</div>
             <div className="v num">{formatNumber(o.projects.total)}</div>
             <div className="c3">
-              {o.projects.byStatus.ACTIVE} ổn định,{" "}
-              {o.projects.byStatus.PROVISIONING} đang dựng,{" "}
-              {o.projects.byStatus.ERROR} lỗi, {o.projects.byStatus.DRAFT} nháp
+              {m.projectsSub(
+                o.projects.byStatus.ACTIVE,
+                o.projects.byStatus.PROVISIONING,
+                o.projects.byStatus.ERROR,
+                o.projects.byStatus.DRAFT,
+              )}
             </div>
           </div>
           <div>
-            <div className="l">Deploy 7 ngày</div>
+            <div className="l">{m.deploys}</div>
             <div className="v num">
               {formatNumber(o.deploys7d.success + o.deploys7d.failure)}
             </div>
-            <div className="c3">{o.deploys7d.failure} thất bại</div>
+            <div className="c3">{m.deploysFailed(o.deploys7d.failure)}</div>
           </div>
           <div>
-            <div className="l">Tài nguyên mồ côi</div>
+            <div className="l">{m.orphans}</div>
             <div className="v num">{formatNumber(o.orphans.count)}</div>
             <div className="c3">
-              {formatUsd(o.orphans.usdPerHour)}/giờ
-              {o.orphans.unpriced > 0 &&
-                `, ${String(o.orphans.unpriced)} chưa có giá`}
+              {m.perHour(formatUsd(o.orphans.usdPerHour))}
+              {o.orphans.unpriced > 0 && `, ${m.unpriced(o.orphans.unpriced)}`}
             </div>
           </div>
         </div>
@@ -348,21 +362,21 @@ function OverviewNumbers({ overview: o }: { overview: AdminOverviewWire }) {
       <div className="ad-cols">
         <section aria-labelledby="ad-jobs">
           <div className="sect">
-            <h2 id="ad-jobs">Job</h2>
+            <h2 id="ad-jobs">{m.jobs}</h2>
             <div className="r">
               <Link to="/admin/jobs" search={{}} className="btn">
-                Mọi job lỗi
+                {m.allFailedJobs}
               </Link>
             </div>
           </div>
           <dl className="props compact">
-            <dt>Đang chạy</dt>
+            <dt>{m.running}</dt>
             <dd className="num">{o.jobs.running}</dd>
-            <dt>Thất bại</dt>
+            <dt>{m.failed}</dt>
             <dd className="num">{o.jobs.failed}</dd>
-            <dt>Dọn chưa hết</dt>
+            <dt>{m.compensationFailed}</dt>
             <dd className="num">{o.jobs.compensationFailed}</dd>
-            <dt>Đang hủy</dt>
+            <dt>{m.cancelling}</dt>
             <dd className="num">{o.jobs.cancelRequested}</dd>
           </dl>
           <RecentFailedJobs />
@@ -370,10 +384,10 @@ function OverviewNumbers({ overview: o }: { overview: AdminOverviewWire }) {
 
         <section aria-labelledby="ad-clouds">
           <div className="sect">
-            <h2 id="ad-clouds">Project theo cloud</h2>
+            <h2 id="ad-clouds">{m.byCloud}</h2>
           </div>
           {o.clouds.length === 0 ? (
-            <p className="c3">Chưa project nào kết nối cloud.</p>
+            <p className="c3">{m.noCloud}</p>
           ) : (
             o.clouds.map((c) => (
               <Meter
@@ -387,9 +401,11 @@ function OverviewNumbers({ overview: o }: { overview: AdminOverviewWire }) {
           )}
           {o.orphans.count > 0 && (
             <p className="c3">
-              {o.orphans.count} tài nguyên mồ côi đang tốn{" "}
-              {formatUsd(o.orphans.usdPerHour)} mỗi giờ trên cloud của khách.{" "}
-              <Link to="/admin/orphans">Xem tài nguyên mồ côi</Link>
+              {m.orphanCost(
+                o.orphans.count,
+                formatUsd(o.orphans.usdPerHour),
+                <Link to="/admin/orphans">{m.viewOrphans}</Link>,
+              )}
             </p>
           )}
         </section>
@@ -397,43 +413,43 @@ function OverviewNumbers({ overview: o }: { overview: AdminOverviewWire }) {
 
       <section aria-labelledby="ad-tools">
         <div className="sect">
-          <h2 id="ad-tools">Công cụ được bật nhiều nhất</h2>
+          <h2 id="ad-tools">{m.topTools}</h2>
           <div className="r">
             <Link to="/admin/catalog" className="btn">
-              Catalog domain
+              {m.catalog}
             </Link>
           </div>
         </div>
         {o.tools.length === 0 ? (
-          <p className="c3">Chưa project nào bật domain.</p>
+          <p className="c3">{m.noTools}</p>
         ) : (
           <table className="dtable" aria-labelledby="ad-tools">
             <thead>
               <tr>
-                <th scope="col">Công cụ</th>
-                <th scope="col">Domain</th>
+                <th scope="col">{m.tool}</th>
+                <th scope="col">{t.domain}</th>
                 <th scope="col" className="num">
-                  Project
+                  {m.projectsStat}
                 </th>
                 <th scope="col">
-                  <span className="visually-hidden">Tỉ lệ</span>
+                  <span className="visually-hidden">{m.share}</span>
                 </th>
               </tr>
             </thead>
             <tbody>
-              {o.tools.map((t) => (
-                <tr key={`${t.domainType}:${t.toolId}`}>
+              {o.tools.map((tool) => (
+                <tr key={`${tool.domainType}:${tool.toolId}`}>
                   <td className="mono" translate="no">
-                    {t.toolId}
+                    {tool.toolId}
                   </td>
                   <td className="mono c3" translate="no">
-                    {t.domainType}
+                    {tool.domainType}
                   </td>
-                  <td className="num">{t.projects}</td>
+                  <td className="num">{tool.projects}</td>
                   <td className="tool-bar">
                     <i
                       style={{
-                        transform: `scaleX(${String(t.projects / toolMax)})`,
+                        transform: `scaleX(${String(tool.projects / toolMax)})`,
                       }}
                     />
                   </td>
@@ -449,6 +465,7 @@ function OverviewNumbers({ overview: o }: { overview: AdminOverviewWire }) {
 
 /** Năm job lỗi gần nhất — cùng khoá cache với trang Job lỗi, trang 1 */
 function RecentFailedJobs() {
+  const m = useMessages(adminMessages).overview;
   const jobs = useQuery({
     queryKey: qk.adminJobs("FAILED", 0),
     queryFn: () => adminApi.jobs("FAILED", 0),
@@ -460,9 +477,9 @@ function RecentFailedJobs() {
     );
   }
   const recent = jobs.data.jobs.slice(0, RECENT_FAILED_JOBS);
-  if (recent.length === 0) return <p className="c3">Không có job thất bại.</p>;
+  if (recent.length === 0) return <p className="c3">{m.noFailedJobs}</p>;
   return (
-    <ul className="lst" aria-label="Job thất bại gần nhất">
+    <ul className="lst" aria-label={m.recentFailed}>
       {recent.map((j) => (
         <li key={j.id} className="it">
           <span>{jobTypeLabel(j.jobType)}</span>

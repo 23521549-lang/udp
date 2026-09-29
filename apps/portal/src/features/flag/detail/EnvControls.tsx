@@ -7,10 +7,12 @@ import { useCallback, useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Switch } from "../../../components/Switch";
 import { toast } from "../../../components/Toast";
+import { useMessages } from "../../../i18n";
 import { messageOf } from "../../../lib/errors";
 import { qk, qkPrefix } from "../../../lib/query-keys";
 import { flagApi } from "../flag-api";
 import { useProjectContext } from "../../project/ProjectLayout";
+import { detailMessages } from "./detail.messages";
 
 type EnvChange = { isEnabled?: boolean; defaultVariantId?: string | null };
 
@@ -27,6 +29,8 @@ export function EnvControls({
   defaultVariantId: string | null;
   canEdit: boolean;
 }) {
+  const all = useMessages(detailMessages);
+  const m = all.env;
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [pending, setPending] = useState<EnvChange | null>(null);
@@ -70,7 +74,7 @@ export function EnvControls({
       { change },
       {
         onSuccess: () =>
-          toast.info(`Đã lưu ở ${env.name}`, () =>
+          toast.info(m.savedIn(env.name), () =>
             update.mutate({ change: before }),
           ),
         onError: (e) => toast.error(messageOf(e)),
@@ -84,11 +88,11 @@ export function EnvControls({
   return (
     <div className="env-controls">
       <div className="sect">
-        <h3>Bật ở {env.name}</h3>
+        <h3>{m.enabledIn(env.name)}</h3>
         <div className="r">
           <Switch
             checked={isEnabled}
-            label={`Bật flag ở ${env.name}`}
+            label={m.enableFlagIn(env.name)}
             disabled={!canEdit || update.isPending}
             onChange={(next) => request({ isEnabled: next })}
           />
@@ -96,7 +100,7 @@ export function EnvControls({
       </div>
       <div className="line">
         <label htmlFor="default-variant" className="c3">
-          Mặc định khi không rule nào khớp
+          {m.defaultWhenNoMatch}
         </label>
         <select
           id="default-variant"
@@ -109,7 +113,7 @@ export function EnvControls({
             })
           }
         >
-          <option value="">(mặc định của flag)</option>
+          <option value="">{m.flagDefault}</option>
           {flag.variants.map((v) => (
             <option key={v.id} value={v.id}>
               {v.key}
@@ -120,16 +124,10 @@ export function EnvControls({
       {pending !== null && (
         <ConfirmDialog
           title={
-            killSwitch
-              ? `Tắt ${flag.key} ở production?`
-              : `Đổi ${flag.key} ở production?`
+            killSwitch ? m.turnOffTitle(flag.key) : m.changeTitle(flag.key)
           }
-          description={
-            killSwitch
-              ? "Mọi người dùng thật sẽ nhận giá trị khi tắt ngay lập tức."
-              : "Thay đổi áp cho người dùng thật ngay khi lưu."
-          }
-          confirmLabel={killSwitch ? "Tắt ngay" : "Áp dụng"}
+          description={killSwitch ? m.turnOffDescription : m.changeDescription}
+          confirmLabel={killSwitch ? m.turnOffNow : all.apply}
           danger={killSwitch}
           {...(killSwitch ? {} : { typeToConfirm: flag.key })}
           busy={update.isPending}
@@ -143,7 +141,7 @@ export function EnvControls({
               {
                 onSuccess: () => {
                   setPending(null);
-                  toast.info("Đã lưu ở production");
+                  toast.info(m.savedInProduction);
                 },
               },
             )

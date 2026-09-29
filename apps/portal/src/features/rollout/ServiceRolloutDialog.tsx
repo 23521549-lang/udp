@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  serviceLevelIssue,
+  serviceLevelIssueOf,
   type ControlModeWire,
   type ServiceStrategy,
 } from "@udp/shared-types/rollout";
 import { useState, type ReactNode } from "react";
 import { Dialog } from "../../components/Dialog";
+import { useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { isApiError } from "../../lib/http";
 import { qk } from "../../lib/query-keys";
@@ -14,6 +15,7 @@ import { domainApi } from "../domain/domain-api";
 import { useProjectContext } from "../project/ProjectLayout";
 import { rolloutApi, type CreateServiceRolloutInput } from "./rollout-api";
 import { MetricsSetupGuide, NumberField } from "./rollout-form";
+import { rolloutMessages } from "./rollout.messages";
 
 const DNS_1123 =
   /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
@@ -27,10 +29,10 @@ const TOOL_LABEL: Record<string, string> = {
   spinnaker: "Spinnaker",
 };
 
-const STRATEGIES: readonly [ServiceStrategy, string][] = [
-  ["CANARY", "Canary"],
-  ["BLUE_GREEN", "Blue/Green"],
-  ["ATTRIBUTE_SPLIT", "Theo header"],
+const STRATEGIES: readonly ServiceStrategy[] = [
+  "CANARY",
+  "BLUE_GREEN",
+  "ATTRIBUTE_SPLIT",
 ];
 
 /**
@@ -47,6 +49,7 @@ export function ServiceRolloutDialog({
   onClose: () => void;
   scopePicker: ReactNode;
 }) {
+  const { form, service: copy } = useMessages(rolloutMessages);
   const { project, env } = useProjectContext();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -75,8 +78,10 @@ export function ServiceRolloutDialog({
   );
   const tool =
     delivery?.isEnabled === true ? (delivery.selectedTool ?? null) : null;
-  const issueOf = (s: ServiceStrategy, m: ControlModeWire) =>
-    tool === null ? undefined : serviceLevelIssue(tool, m, s);
+  const issueOf = (s: ServiceStrategy, m: ControlModeWire) => {
+    const found = tool === null ? undefined : serviceLevelIssueOf(tool, m, s);
+    return found === undefined ? undefined : copy.issue(found);
+  };
   const issue = issueOf(strategy, mode);
 
   const probe = useMutation({
@@ -138,14 +143,14 @@ export function ServiceRolloutDialog({
 
   return (
     <Dialog
-      title={`Tạo rollout ở ${env.name}`}
-      description="Canary theo phiên bản: phiên bản mới của một workload nhận traffic dần qua công cụ giao hàng của environment."
+      title={form.title(env.name)}
+      description={copy.description}
       onClose={onClose}
       wide
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>
-            Huỷ
+            {form.cancel}
           </button>
           <button
             type="button"
@@ -153,7 +158,7 @@ export function ServiceRolloutDialog({
             disabled={!ready}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Đang tạo…" : "Tạo rollout"}
+            {create.isPending ? form.creating : form.create}
           </button>
         </>
       }
@@ -161,44 +166,34 @@ export function ServiceRolloutDialog({
       {scopePicker}
       {domains.isSuccess && tool === null && (
         <p className="field-error" role="alert">
-          Project chưa bật domain Progressive Delivery (Argo Rollouts hoặc
-          Flagger): rollout theo phiên bản cần một công cụ giữ đường traffic.
+          {copy.noTool}
         </p>
       )}
       {tool !== null && (
         <p className="c3">
-          Công cụ giao hàng: <b>{TOOL_LABEL[tool] ?? tool}</b>
+          {copy.deliveryTool(<b>{TOOL_LABEL[tool] ?? tool}</b>)}
         </p>
       )}
       <div className="f">
-        <span className="lbl">Chế độ</span>
-        <div className="seg" role="group" aria-label="Chế độ">
-          {(
-            [
-              ["tool-driven", "Công cụ tự quyết"],
-              ["udp-driven", "UDP quyết"],
-            ] as const
-          ).map(([value, label]) => (
+        <span className="lbl">{copy.mode}</span>
+        <div className="seg" role="group" aria-label={copy.mode}>
+          {(["tool-driven", "udp-driven"] as const).map((value) => (
             <button
               key={value}
               type="button"
               aria-pressed={mode === value}
               onClick={() => setMode(value)}
             >
-              {label}
+              {copy.modeOption[value]}
             </button>
           ))}
         </div>
-        <span className="help">
-          {mode === "tool-driven"
-            ? "Công cụ tự phân tích và tự promote; UDP hiển thị tiến độ, bạn vẫn promote hay rollback tay được."
-            : "UDP so tỉ lệ lỗi phiên bản mới với phiên bản cũ và cho công cụ đi từng bậc."}
-        </span>
+        <span className="help">{copy.modeHint[mode]}</span>
       </div>
       <div className="f">
-        <span className="lbl">Chiến lược</span>
-        <div className="seg" role="group" aria-label="Chiến lược">
-          {STRATEGIES.map(([value, label]) => (
+        <span className="lbl">{form.strategy}</span>
+        <div className="seg" role="group" aria-label={form.strategy}>
+          {STRATEGIES.map((value) => (
             <button
               key={value}
               type="button"
@@ -207,7 +202,7 @@ export function ServiceRolloutDialog({
               disabled={issueOf(value, mode) !== undefined}
               onClick={() => setStrategy(value)}
             >
-              {label}
+              {copy.strategy[value]}
             </button>
           ))}
         </div>
@@ -218,14 +213,12 @@ export function ServiceRolloutDialog({
         )}
       </div>
       <div className="f">
-        <label htmlFor="sr-workload">
-          Workload (tên service trong cluster)
-        </label>
+        <label htmlFor="sr-workload">{form.workload}</label>
         <div className="line">
           <input
             id="sr-workload"
             className="inp mono"
-            placeholder="checkout-api…"
+            placeholder={form.workloadPlaceholder}
             value={workloadName}
             onChange={(e) => {
               setWorkloadName(e.target.value.trim());
@@ -238,18 +231,18 @@ export function ServiceRolloutDialog({
             disabled={!workloadOk || probe.isPending}
             onClick={() => probe.mutate()}
           >
-            {probe.isPending ? "Đang kiểm tra…" : "Kiểm tra metric"}
+            {probe.isPending ? form.checking : form.checkMetrics}
           </button>
         </div>
         {probed?.hasSeries === true && (
           <span className="c3">
-            Có metric. Cửa sổ đo tối thiểu {probed.minMetricWindowSeconds}s.
+            {copy.hasMetrics(probed.minMetricWindowSeconds)}
           </span>
         )}
         {probe.isError && (
           <span className="field-error">
             {isApiError(probe.error) && probe.error.status === 503
-              ? "Không tới được nguồn metrics của project."
+              ? copy.metricsUnreachable
               : messageOf(probe.error)}
           </span>
         )}
@@ -262,7 +255,7 @@ export function ServiceRolloutDialog({
         />
       )}
       <div className="f">
-        <label htmlFor="sr-tag">Tag image mới</label>
+        <label htmlFor="sr-tag">{copy.tag}</label>
         <input
           id="sr-tag"
           className="inp mono"
@@ -270,27 +263,25 @@ export function ServiceRolloutDialog({
           value={imageTag}
           onChange={(e) => setImageTag(e.target.value.trim())}
         />
-        <span className="help">
-          Cùng repository với image đang chạy; chỉ tag đổi.
-        </span>
+        <span className="help">{copy.tagHint}</span>
         {imageTag !== "" && !tagOk && (
-          <span className="field-error">Tag image không hợp lệ.</span>
+          <span className="field-error">{copy.tagInvalid}</span>
         )}
       </div>
       {ab && (
         <div className="grid-f">
           <div className="f">
-            <label htmlFor="sr-header">Header chọn nhóm</label>
+            <label htmlFor="sr-header">{copy.header}</label>
             <input
               id="sr-header"
               className="inp mono"
-              placeholder="X-Beta…"
+              placeholder={copy.headerPlaceholder}
               value={header}
               onChange={(e) => setHeader(e.target.value.trim())}
             />
           </div>
           <div className="f">
-            <label htmlFor="sr-header-value">Giá trị</label>
+            <label htmlFor="sr-header-value">{copy.headerValue}</label>
             <input
               id="sr-header-value"
               className="inp mono"
@@ -302,12 +293,12 @@ export function ServiceRolloutDialog({
         </div>
       )}
       <fieldset className="fs">
-        <legend>Nhịp</legend>
+        <legend>{form.cadence}</legend>
         <div className="grid-f">
           <NumberField
             id="sr-step"
-            label="Mỗi bậc tăng (%)"
-            hint="Số nguyên: công cụ nhận trọng số nguyên."
+            label={form.stepPercent}
+            hint={copy.stepPercentHint}
             value={stepPercent}
             onChange={setStepPercent}
             min={1}
@@ -315,21 +306,21 @@ export function ServiceRolloutDialog({
           />
           <NumberField
             id="sr-dwell"
-            label="Giữ mỗi bậc (giây)"
+            label={form.dwell}
             value={stepInterval}
             onChange={setStepInterval}
             min={1}
           />
           <NumberField
             id="sr-analysis"
-            label="Đo lại mỗi (giây)"
+            label={form.analysis}
             value={analysisInterval}
             onChange={setAnalysisInterval}
             min={1}
           />
           <NumberField
             id="sr-warm"
-            label="Số request tối thiểu trước khi đánh giá"
+            label={form.warmUp}
             value={warmUp}
             onChange={setWarmUp}
             min={1}
@@ -337,11 +328,11 @@ export function ServiceRolloutDialog({
         </div>
       </fieldset>
       <fieldset className="fs">
-        <legend>Ngưỡng rollback</legend>
+        <legend>{form.thresholds}</legend>
         <div className="grid-f">
           <NumberField
             id="sr-err"
-            label="Tỉ lệ lỗi tối đa (%)"
+            label={form.errorRate}
             value={errorRate}
             onChange={setErrorRate}
             min={0}
@@ -350,21 +341,22 @@ export function ServiceRolloutDialog({
           />
           <NumberField
             id="sr-lat"
-            label="Latency P99 tối đa (ms)"
+            label={form.latency}
             value={latency}
             onChange={setLatency}
             min={1}
           />
           <NumberField
             id="sr-minerr"
-            label="Số lỗi tối thiểu để tính vượt"
+            label={form.minErrors}
             value={minErrors}
             onChange={setMinErrors}
             min={1}
           />
           <NumberField
             id="sr-breach"
-            label="Vượt liên tiếp mấy lần thì rollback"
+            label={form.breaches}
+
             value={breaches}
             onChange={setBreaches}
             min={1}

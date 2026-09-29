@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Icon } from "../../components/Icon";
 import { ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { relativeTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { useProjectContext } from "../project/ProjectLayout";
@@ -23,7 +24,8 @@ import { StatsSection } from "./detail/StatsSection";
 import { Tester } from "./detail/Tester";
 import { VariantsSection } from "./detail/VariantsSection";
 import { flagApi } from "./flag-api";
-import { LIFECYCLE_LABEL } from "./flag-labels";
+import { lifecycleLabel } from "./flag-labels";
+import { flagMessages } from "./flag.messages";
 
 import { variantColor } from "./RuleEditor";
 
@@ -42,6 +44,7 @@ export function FlagDetail({
   flagId: string;
   onClose: () => void;
 }) {
+  const m = useMessages(flagMessages);
   const { project, env, setEnv } = useProjectContext();
   const flag = useQuery({
     queryKey: qk.flag(project.id, flagId, env.id),
@@ -90,7 +93,7 @@ export function FlagDetail({
     <aside
       ref={panel}
       className="peek"
-      aria-label="Chi tiết flag"
+      aria-label={m.detail.label}
       tabIndex={-1}
     >
       <div className="ph">
@@ -100,7 +103,7 @@ export function FlagDetail({
         <button
           type="button"
           className="ib"
-          aria-label="Đóng"
+          aria-label={m.close}
           style={{ marginLeft: "auto" }}
           onClick={onClose}
         >
@@ -129,6 +132,7 @@ function FlagBody({
   env: PublicEnvironmentWire;
   onEnv: (envId: string) => void;
 }) {
+  const m = useMessages(flagMessages);
   const { project } = useProjectContext();
   const envState = flag.envs.find((e) => e.environment.id === env.id);
   const canEditEnv = can(
@@ -168,13 +172,13 @@ function FlagBody({
       <h2 className="title mono" translate="no">
         {flag.key}
       </h2>
-      <p className="lead">{flag.description ?? "Chưa có mô tả."}</p>
+      <p className="lead">{flag.description ?? m.noDescription}</p>
       <dl className="props">
-        <dt>Trạng thái</dt>
-        <dd>{LIFECYCLE_LABEL[flag.lifecycleStatus]}</dd>
-        <dt>Kiểu</dt>
+        <dt>{m.detail.status}</dt>
+        <dd>{lifecycleLabel(flag.lifecycleStatus)}</dd>
+        <dt>{m.detail.type}</dt>
         <dd className="mono">{flag.flagType}</dd>
-        <dt>Variant</dt>
+        <dt>{m.detail.variants}</dt>
         <dd>
           {flag.variants.map((v, i) => (
             <span key={v.id} className="chip">
@@ -183,7 +187,7 @@ function FlagBody({
             </span>
           ))}
         </dd>
-        <dt>Cập nhật</dt>
+        <dt>{m.detail.updated}</dt>
         <dd className="c2">{relativeTime(flag.updatedAt)}</dd>
       </dl>
 
@@ -193,7 +197,7 @@ function FlagBody({
       <div
         className="envtabs"
         role="tablist"
-        aria-label="Environment"
+        aria-label={m.detail.envTabs}
         onKeyDown={onTabKey}
       >
         {tabs.map((e) => (
@@ -211,7 +215,7 @@ function FlagBody({
             {e.environment.isProduction && <Icon of={Lock} size={12} />}
             <span className={e.isEnabled ? "pip on" : "pip"} aria-hidden />
             <span className="visually-hidden">
-              {e.isEnabled ? "đang bật" : "đang tắt"}
+              {e.isEnabled ? m.detail.enabled : m.detail.disabled}
             </span>
           </button>
         ))}
@@ -219,7 +223,7 @@ function FlagBody({
 
       <div id="flag-envpanel" role="tabpanel" aria-labelledby={tabId(env.id)}>
         {envState === undefined ? (
-          <p className="c3">Flag chưa có cấu hình ở environment này.</p>
+          <p className="c3">{m.detail.noEnvConfig}</p>
         ) : (
           <>
             <EnvControls

@@ -21,6 +21,7 @@ import { ProjectBar } from "./ProjectBar";
 import { useProjectContext } from "./ProjectLayout";
 import { ProjectStatus } from "./ProjectStatus";
 import { projectApi } from "./project-api";
+import { projectMessages } from "./project.messages";
 import { rolesMessages } from "./roles.messages";
 import { useMessages } from "../../i18n";
 
@@ -31,6 +32,7 @@ import { useMessages } from "../../i18n";
  */
 export function OverviewPage() {
   const roles = useMessages(rolesMessages).role;
+  const m = useMessages(projectMessages).overview;
   const { project, envs, env, cluster } = useProjectContext();
 
   // [Plan #41] Hai con số bằng `limit=1` — không tải danh sách flag chỉ để đếm
@@ -61,7 +63,7 @@ export function OverviewPage() {
 
   return (
     <>
-      <ProjectBar title="Tổng quan" />
+      <ProjectBar title={m.title} />
       <div className="scroll">
         <PageHead
           title={<span translate="no">{project.name}</span>}
@@ -71,28 +73,28 @@ export function OverviewPage() {
                 status={project.status}
                 expiresAt={project.expiresAt}
               />
-              <span>Vai của bạn: {roles[project.myRole]}</span>
+              <span>{m.yourRole(roles[project.myRole])}</span>
             </span>
           }
           minis={[
             {
               value: flagCounts.enabled ?? "…",
-              label: `flag bật ở ${env.name}`,
+              label: m.flagsOn(env.name),
             },
             {
               value: rollouts.isPending ? "…" : running,
-              label: "rollout đang chạy",
+              label: m.runningRollouts,
             },
             {
               value: members.data?.members.length ?? "…",
-              label: "thành viên",
+              label: m.members,
             },
           ]}
         />
         <div className="page">
           <div className="kpis">
             {arch.data === undefined ? (
-              <div className="kpi" aria-label="Cloud">
+              <div className="kpi" aria-label={m.cloud}>
                 {arch.isError ? (
                   <ErrorState error={arch.error} />
                 ) : (
@@ -106,17 +108,15 @@ export function OverviewPage() {
                 cloud={arch.data.architecture.cloud}
               />
             )}
-            <section className="kpi" aria-label="Cluster">
+            <section className="kpi" aria-label={m.cluster}>
               <div className="l">
                 <span className="tile">
                   <Icon of={Server} />
                 </span>
-                Cluster
+                {m.cluster}
               </div>
               {cluster === null ? (
-                <div className="c3">
-                  Chưa có cluster: project chưa triển khai hạ tầng.
-                </div>
+                <div className="c3">{m.noCluster}</div>
               ) : (
                 <>
                   <div className="mono" translate="no">
@@ -128,19 +128,19 @@ export function OverviewPage() {
                 </>
               )}
             </section>
-            <section className="kpi" aria-label="Deploy gần nhất">
+            <section className="kpi" aria-label={m.latestDeploy}>
               <div className="l">
                 <span className="tile">
                   <Icon of={Rocket} />
                 </span>
-                Deploy gần nhất ở {env.name}
+                {m.latestDeployIn(env.name)}
               </div>
               {latest.isPending ? (
                 <div className="c3">…</div>
               ) : latest.isError ? (
                 <ErrorState error={latest.error} />
               ) : latest.data.deployment === null ? (
-                <div className="c3">Chưa có lần deploy nào.</div>
+                <div className="c3">{m.noDeploy}</div>
               ) : (
                 <>
                   <div className="mono" translate="no">
@@ -159,7 +159,7 @@ export function OverviewPage() {
                     search={{ env: env.id }}
                     className="c3"
                   >
-                    Xem lịch sử deploy
+                    {m.deployHistory}
                   </Link>
                 </>
               )}
@@ -171,7 +171,7 @@ export function OverviewPage() {
 
           <section aria-labelledby="ov-health">
             <div className="sect">
-              <h2 id="ov-health">Sức khoẻ domain</h2>
+              <h2 id="ov-health">{m.health}</h2>
               <div className="r">
                 <Link
                   to="/app/projects/$projectId/domains"
@@ -179,7 +179,7 @@ export function OverviewPage() {
                   search={{ env: env.id }}
                   className="btn"
                 >
-                  Quản lý domain
+                  {m.manageDomains}
                 </Link>
               </div>
             </div>
@@ -191,7 +191,7 @@ export function OverviewPage() {
                 onRetry={() => void arch.refetch()}
               />
             ) : arch.data.architecture.tools.length === 0 ? (
-              <p className="c3">Project chưa bật domain nào.</p>
+              <p className="c3">{m.noDomains}</p>
             ) : (
               <DomainHealthGrid
                 projectId={project.id}
@@ -204,7 +204,7 @@ export function OverviewPage() {
           {arch.data !== undefined && (
             <section aria-labelledby="ov-map">
               <div className="sect">
-                <h2 id="ov-map">Kiến trúc</h2>
+                <h2 id="ov-map">{m.architecture}</h2>
               </div>
               <MiniMap projectId={project.id} arch={arch.data.architecture} />
             </section>
@@ -212,7 +212,7 @@ export function OverviewPage() {
 
           <section aria-labelledby="ov-envs">
             <div className="sect">
-              <h2 id="ov-envs">Environment</h2>
+              <h2 id="ov-envs">{m.environments}</h2>
             </div>
             <ul className="lst" aria-labelledby="ov-envs">
               {[...envs]
@@ -221,16 +221,18 @@ export function OverviewPage() {
                   <li key={e.id} className="it">
                     <b className="lst-name">{e.name}</b>
                     {e.isProduction && (
-                      <span title="Production">
+                      <span title={m.production}>
                         <Icon of={Lock} size={12} />
-                        <span className="visually-hidden">production</span>
+                        <span className="visually-hidden">
+                          {m.productionHidden}
+                        </span>
                       </span>
                     )}
                     <span className="mono c3" translate="no">
                       {e.k8sNamespace}
                     </span>
                     <span className="c3 lst-end">
-                      {e.autoDeploy ? "Tự deploy" : "Deploy thủ công"}
+                      {e.autoDeploy ? m.autoDeploy : m.manualDeploy}
                     </span>
                   </li>
                 ))}
@@ -239,7 +241,7 @@ export function OverviewPage() {
 
           <section aria-labelledby="ov-rollouts">
             <div className="sect">
-              <h2 id="ov-rollouts">Rollout gần đây ở {env.name}</h2>
+              <h2 id="ov-rollouts">{m.recentRollouts(env.name)}</h2>
             </div>
             {rollouts.isPending ? (
               <Loading />
@@ -249,7 +251,7 @@ export function OverviewPage() {
                 onRetry={() => void rollouts.refetch()}
               />
             ) : rollouts.data.rollouts.length === 0 ? (
-              <p className="c3">Chưa có rollout nào ở environment này.</p>
+              <p className="c3">{m.noRollouts}</p>
             ) : (
               <ul className="lst" aria-labelledby="ov-rollouts">
                 {rollouts.data.rollouts.slice(0, 5).map((r) => (
@@ -295,6 +297,7 @@ function MiniMap({
   projectId: string;
   arch: ArchitectureWire;
 }) {
+  const m = useMessages(projectMessages).overview.map;
   const clusterTools = arch.tools.length - namespaceTools(arch.tools).length;
   return (
     <Link
@@ -306,26 +309,24 @@ function MiniMap({
       <span className="mm-cloud">
         <span className="mm-h">
           {arch.cloud === null
-            ? "Chưa kết nối cloud"
+            ? m.noCloud
             : `${PROVIDER_LABEL[arch.cloud.provider]} ${arch.cloud.region}`}
         </span>
         <span className="mm-cluster">
           <span className="mm-h">
-            {arch.cluster === null
-              ? "Chưa có cluster"
-              : `Cluster, ${String(clusterTools)} công cụ dùng chung`}
+            {arch.cluster === null ? m.noCluster : m.cluster(clusterTools)}
           </span>
           <span className="mm-envs">
             {arch.environments.map((e) => (
               <span key={e.id} className="mm-env">
                 <b>{e.name}</b>
-                <span className="c3">{e.workloads.length} workload</span>
+                <span className="c3">{m.workloads(e.workloads.length)}</span>
               </span>
             ))}
           </span>
         </span>
       </span>
-      <span className="mm-go">Mở sơ đồ đầy đủ</span>
+      <span className="mm-go">{m.open}</span>
     </Link>
   );
 }

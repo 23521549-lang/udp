@@ -11,6 +11,7 @@ import { projectApi } from "../project-api";
 import { useMessages } from "../../../i18n";
 import { can, PERMISSIONS } from "../roles";
 import { rolesMessages } from "../roles.messages";
+import { settingsMessages } from "./settings.messages";
 
 const ASSIGNABLE: Exclude<ProjectRoleWire, "OWNER">[] = [
   "MAINTAINER",
@@ -20,6 +21,7 @@ const ASSIGNABLE: Exclude<ProjectRoleWire, "OWNER">[] = [
 
 export function MembersTab() {
   const { role: roles, permission } = useMessages(rolesMessages);
+  const m = useMessages(settingsMessages).members;
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
@@ -47,7 +49,7 @@ export function MembersTab() {
       ),
     onSuccess: async () => {
       setEmail("");
-      toast.info("Đã thêm thành viên");
+      toast.info(m.added);
       await refresh();
     },
   });
@@ -63,15 +65,15 @@ export function MembersTab() {
     onError: (e) => toast.error(messageOf(e)),
   });
   const changeRole = (
-    m: { userId: string; email: string; role: Assignable },
+    member: { userId: string; email: string; role: Assignable },
     next: Assignable,
   ): void => {
     update.mutate(
-      { userId: m.userId, role: next },
+      { userId: member.userId, role: next },
       {
         onSuccess: () =>
-          toast.info(`Đã đổi vai ${m.email} thành ${roles[next]}`, () =>
-            update.mutate({ userId: m.userId, role: m.role }),
+          toast.info(m.roleChanged(member.email, roles[next]), () =>
+            update.mutate({ userId: member.userId, role: member.role }),
           ),
       },
     );
@@ -87,11 +89,11 @@ export function MembersTab() {
     onError: (e) => toast.error(messageOf(e)),
   });
   const remove = useMutation({
-    mutationFn: (m: { userId: string; email: string; role: Assignable }) =>
-      projectApi.removeMember(project.id, m.userId),
-    onSuccess: async (_d, m) => {
-      toast.info(`Đã xoá ${m.email} khỏi project`, () =>
-        reinvite.mutate({ email: m.email, role: m.role }),
+    mutationFn: (member: { userId: string; email: string; role: Assignable }) =>
+      projectApi.removeMember(project.id, member.userId),
+    onSuccess: async (_d, member) => {
+      toast.info(m.removed(member.email), () =>
+        reinvite.mutate({ email: member.email, role: member.role }),
       );
       await refresh();
     },
@@ -102,7 +104,7 @@ export function MembersTab() {
       projectApi.transferOwnership(project.id, userId),
     onSuccess: async () => {
       setTransferTo(null);
-      toast.info("Đã chuyển quyền sở hữu");
+      toast.info(m.transferred);
       await refresh();
       await queryClient.invalidateQueries({ queryKey: qk.project(project.id) });
       await queryClient.invalidateQueries({ queryKey: qkPrefix.projectsAll() });
@@ -112,7 +114,7 @@ export function MembersTab() {
   const addErrors = fieldErrorsOf(add.error);
 
   return (
-    <section aria-label="Thành viên">
+    <section aria-label={m.label}>
       {isOwner && (
         <form
           className="line"
@@ -129,16 +131,16 @@ export function MembersTab() {
             inputMode="email"
             autoComplete="off"
             spellCheck={false}
-            aria-label="Email thành viên mới"
+            aria-label={m.newEmail}
             aria-invalid={addErrors.email !== undefined}
             aria-describedby={add.isError ? "member-add-err" : undefined}
-            placeholder="email@congty.vn…"
+            placeholder={m.newEmailPlaceholder}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
           <select
             className="sel"
-            aria-label="Vai của thành viên mới"
+            aria-label={m.newRole}
             value={role}
             onChange={(e) => setRole(e.target.value as typeof role)}
           >
@@ -153,7 +155,7 @@ export function MembersTab() {
             className="btn pri"
             disabled={email === "" || add.isPending}
           >
-            Mời
+            {m.invite}
           </button>
           {add.isError && (
             <span id="member-add-err" className="field-error" role="alert">
@@ -170,26 +172,26 @@ export function MembersTab() {
           onRetry={() => void members.refetch()}
         />
       ) : (
-        <div className="lst" role="list" aria-label="Thành viên của project">
-          {members.data.members.map((m) => (
-            <div key={m.userId} className="it" role="listitem">
-              <b className="lst-name">{m.user.name}</b>
+        <div className="lst" role="list" aria-label={m.list}>
+          {members.data.members.map((x) => (
+            <div key={x.userId} className="it" role="listitem">
+              <b className="lst-name">{x.user.name}</b>
               <span className="c3" translate="no">
-                {m.user.email}
+                {x.user.email}
               </span>
               <span className="lst-end">
-                {isOwner && m.projectRole !== "OWNER" ? (
+                {isOwner && x.projectRole !== "OWNER" ? (
                   <select
                     className="sel"
-                    aria-label={`Vai của ${m.user.email}`}
-                    value={m.projectRole}
+                    aria-label={m.roleOf(x.user.email)}
+                    value={x.projectRole}
                     disabled={update.isPending}
                     onChange={(e) =>
                       changeRole(
                         {
-                          userId: m.userId,
-                          email: m.user.email,
-                          role: m.projectRole as Assignable,
+                          userId: x.userId,
+                          email: x.user.email,
+                          role: x.projectRole as Assignable,
                         },
                         e.target.value as Assignable,
                       )
@@ -202,35 +204,35 @@ export function MembersTab() {
                     ))}
                   </select>
                 ) : (
-                  roles[m.projectRole]
+                  roles[x.projectRole]
                 )}
               </span>
-              {isOwner && m.projectRole !== "OWNER" && (
+              {isOwner && x.projectRole !== "OWNER" && (
                 <>
                   <button
                     type="button"
                     className="btn"
-                    aria-label={`Chuyển quyền chủ cho ${m.user.email}`}
+                    aria-label={m.transferTo(x.user.email)}
                     onClick={() =>
-                      setTransferTo({ id: m.userId, email: m.user.email })
+                      setTransferTo({ id: x.userId, email: x.user.email })
                     }
                   >
-                    Chuyển chủ
+                    {m.transfer}
                   </button>
                   <button
                     type="button"
                     className="btn danger"
-                    aria-label={`Xoá ${m.user.email} khỏi project`}
+                    aria-label={m.removeOf(x.user.email)}
                     disabled={remove.isPending}
                     onClick={() =>
                       remove.mutate({
-                        userId: m.userId,
-                        email: m.user.email,
-                        role: m.projectRole as Assignable,
+                        userId: x.userId,
+                        email: x.user.email,
+                        role: x.projectRole as Assignable,
                       })
                     }
                   >
-                    Xoá
+                    {m.remove}
                   </button>
                 </>
               )}
@@ -239,12 +241,12 @@ export function MembersTab() {
         </div>
       )}
 
-      <h2 className="h2">Mỗi vai làm được gì</h2>
+      <h2 className="h2">{m.matrix}</h2>
       <div className="table-wrap">
         <table className="matrix">
           <thead>
             <tr>
-              <th scope="col">Việc</th>
+              <th scope="col">{m.action}</th>
               {(["VIEWER", "DEVELOPER", "MAINTAINER", "OWNER"] as const).map(
                 (r) => (
                   <th key={r} scope="col">
@@ -260,7 +262,7 @@ export function MembersTab() {
                 <th scope="row">{permission[p.key]}</th>
                 {(["VIEWER", "DEVELOPER", "MAINTAINER", "OWNER"] as const).map(
                   (r) => (
-                    <td key={r}>{can(r, p.min) ? "Có" : "–"}</td>
+                    <td key={r}>{can(r, p.min) ? m.yes : "–"}</td>
                   ),
                 )}
               </tr>
@@ -271,9 +273,9 @@ export function MembersTab() {
 
       {transferTo !== null && (
         <ConfirmDialog
-          title="Chuyển quyền sở hữu?"
-          description={`${transferTo.email} thành chủ sở hữu; bạn trở thành Người duy trì. Không tự hoàn tác được.`}
-          confirmLabel="Chuyển"
+          title={m.transferTitle}
+          description={m.transferBody(transferTo.email)}
+          confirmLabel={m.transferConfirm}
           danger
           typeToConfirm={transferTo.email}
           busy={transfer.isPending}

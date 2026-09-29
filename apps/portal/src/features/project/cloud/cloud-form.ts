@@ -4,6 +4,8 @@ import {
   type CloudProviderWire,
   type PutCloudBody,
 } from "@udp/shared-types/cloud-api";
+import { messagesOf } from "../../../i18n";
+import { cloudMessages } from "./cloud.messages";
 import { DEFAULT_REGION } from "./cloud-labels";
 
 /**
@@ -65,7 +67,10 @@ export function buildBody(form: CloudForm): BuildResult {
   } else if (form.authKind === "GCP_KEY") {
     const key = gcpKeyOf(form.keyJson);
     if (key === null) {
-      return { ok: false, errors: { keyJson: "Không đọc được khoá JSON." } };
+      return {
+        ok: false,
+        errors: { keyJson: messagesOf(cloudMessages).keyJsonUnreadable },
+      };
     }
     candidate = {
       mode: "BYOC",

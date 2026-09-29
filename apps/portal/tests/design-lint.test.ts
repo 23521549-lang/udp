@@ -286,88 +286,6 @@ const TEXT_ATTRIBUTES = new Set([
   "alt",
 ]);
 
-/**
- * Hàng đợi chuyển chữ của Plan #54 đợt 54b: tệp CHƯA chuyển. Mỗi tệp ở đây phải còn vi phạm thật (một tệp đã
- * chuyển xong mà quên xoá khỏi danh sách là đỏ), nên danh sách chỉ ngắn đi. Đợt 54b kết thúc khi nó rỗng và bị
- * xoá cùng phép kiểm của nó.
- */
-const PENDING = new Set<string>([
-  "features/admin/pages/AdminCatalogPage.tsx",
-  "features/admin/pages/AdminCredentialsPage.tsx",
-  "features/admin/pages/AdminJobsPage.tsx",
-  "features/admin/pages/AdminOrphansPage.tsx",
-  "features/admin/pages/AdminOverviewPage.tsx",
-  "features/admin/pages/AdminProjectsPage.tsx",
-  "features/admin/pages/AdminSystemPage.tsx",
-  "features/admin/pages/AdminUsersPage.tsx",
-  "features/admin/platform-model.ts",
-  "features/architecture/ArchitectureDiagram.tsx",
-  "features/architecture/ArchitecturePage.tsx",
-  "features/architecture/DomainHealthGrid.tsx",
-  "features/architecture/architecture-model.ts",
-  "features/auth/session.ts",
-  "features/code/CodePage.tsx",
-  "features/code/RepoReadinessCard.tsx",
-  "features/deployment/DeploymentsPage.tsx",
-  "features/deployment/DoraCards.tsx",
-  "features/domain/CicdPanel.tsx",
-  "features/domain/ConfigForm.tsx",
-  "features/domain/DomainActions.tsx",
-  "features/domain/DomainDetailPage.tsx",
-  "features/domain/DomainPanel.tsx",
-  "features/domain/DomainRow.tsx",
-  "features/domain/DomainsPage.tsx",
-  "features/domain/ValidationPanel.tsx",
-  "features/domain/config-labels.ts",
-  "features/flag/CleanupPage.tsx",
-  "features/flag/CreateFlagDialog.tsx",
-  "features/flag/FlagDetail.tsx",
-  "features/flag/FlagsPage.tsx",
-  "features/flag/PromoteDialog.tsx",
-  "features/flag/RuleEditor.tsx",
-  "features/flag/detail/EnvControls.tsx",
-  "features/flag/detail/LifecycleActions.tsx",
-  "features/flag/detail/RulesSection.tsx",
-  "features/flag/detail/SdkSnippet.tsx",
-  "features/flag/detail/StatsSection.tsx",
-  "features/flag/detail/Tester.tsx",
-  "features/flag/detail/VariantsSection.tsx",
-  "features/flag/flag-labels.ts",
-  "features/flag/rules-model.ts",
-  "features/home/HomePage.tsx",
-  "features/monitoring/MonitoringPage.tsx",
-  "features/project/CommandPalette.tsx",
-  "features/project/NewProjectPage.tsx",
-  "features/project/OverviewPage.tsx",
-  "features/project/ProjectLayout.tsx",
-  "features/project/ProjectsPage.tsx",
-  "features/project/SettingsPage.tsx",
-  "features/project/cloud/CloudCard.tsx",
-  "features/project/cloud/CloudEditor.tsx",
-  "features/project/cloud/CloudPanel.tsx",
-  "features/project/cloud/CloudStatus.tsx",
-  "features/project/cloud/cloud-form.ts",
-  "features/project/cloud/cloud-labels.ts",
-  "features/project/settings/AuditTab.tsx",
-  "features/project/settings/EnvironmentsTab.tsx",
-  "features/project/settings/MembersTab.tsx",
-  "features/project/settings/ProjectTab.tsx",
-  "features/project/settings/SdkKeysTab.tsx",
-  "features/provisioning/CostPanel.tsx",
-  "features/provisioning/InfraPage.tsx",
-  "features/provisioning/JobLog.tsx",
-  "features/provisioning/PreviewPanel.tsx",
-  "features/rollout/CreateRolloutDialog.tsx",
-  "features/rollout/RolloutDetailPage.tsx",
-  "features/rollout/RolloutsPage.tsx",
-  "features/rollout/ServiceRolloutDialog.tsx",
-  "features/rollout/rollout-form.tsx",
-  "features/rollout/rollout-status.tsx",
-  "features/rollout/use-rollout-watcher.ts",
-  "features/segment/SegmentsPage.tsx",
-  "lib/http.ts",
-]);
-
 interface Violation {
   file: string;
   line: number;
@@ -479,14 +397,8 @@ describe("hai ngôn ngữ (Plan #54 QĐ-2)", () => {
   it("không chữ giao diện viết thẳng ngoài *.messages.ts: không chuỗi có dấu, không chữ JSX, không aria-label/title/placeholder/alt là chuỗi", () => {
     const offenders = [...byFile.values()]
       .flat()
-      .filter((v) => !PENDING.has(v.file))
       .map((v) => `${v.file}:${String(v.line)} ${v.what}`);
     expect(offenders).toEqual([]);
-  });
-
-  it("hàng đợi chuyển chữ chỉ ngắn đi: tệp nào trong đó cũng còn vi phạm thật", () => {
-    const done = [...PENDING].filter((f) => (byFile.get(f) ?? []).length === 0);
-    expect(done).toEqual([]);
   });
 
   it("bản tiếng Anh không còn chữ tiếng Việt (bắt chỗ chép nguyên văn mà quên dịch)", () => {

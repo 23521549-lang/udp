@@ -2,20 +2,15 @@ import type { RolloutStatusWire } from "@udp/shared-types/wire";
 import { CircleCheck, CirclePause, CircleX } from "lucide-react";
 import { Icon } from "../../components/Icon";
 import { ProgressRing } from "../../components/ProgressRing";
+import { useMessages } from "../../i18n";
+import { rolloutMessages } from "./rollout.messages";
 
 /**
  * Trạng thái rollout (DESIGN.md §5): đang chạy là vòng tiến độ màu `--accent`; ba trạng
  * thái kết thúc là icon Lucide trong vòng tròn — tạm dừng (cam), hoàn tất (xanh lá),
- * rollback (đỏ). Luôn kèm CHỮ: màu không bao giờ là kênh duy nhất.
+ * rollback (đỏ). Luôn kèm CHỮ: màu không bao giờ là kênh duy nhất. Chữ của trạng thái ở
+ * `rolloutMessages.status` (Plan #54).
  */
-export const ROLLOUT_STATUS_LABEL: Record<RolloutStatusWire, string> = {
-  PENDING: "Đang chờ",
-  IN_PROGRESS: "Đang chạy",
-  PAUSED: "Tạm dừng",
-  DONE: "Hoàn tất",
-  FAILED: "Đã rollback",
-};
-
 export function RolloutStatusIcon({
   status,
   percent,
@@ -44,10 +39,11 @@ export function RolloutStatusLabel({
   status: RolloutStatusWire;
   percent?: number;
 }) {
+  const m = useMessages(rolloutMessages);
   return (
     <span className="stt">
       <RolloutStatusIcon status={status} percent={percent} />
-      {ROLLOUT_STATUS_LABEL[status]}
+      {m.status[status]}
     </span>
   );
 }

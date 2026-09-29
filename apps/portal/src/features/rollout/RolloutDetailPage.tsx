@@ -12,6 +12,7 @@ import { Icon } from "../../components/Icon";
 import { LineChart } from "../../components/LineChart";
 import { ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
+import { messagesOf, useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import {
   formatDateTime,
@@ -26,6 +27,7 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { rolloutApi } from "./rollout-api";
 import { RolloutStatusLabel } from "./rollout-status";
+import { rolloutMessages } from "./rollout.messages";
 
 /**
  * Nhịp hỏi lại theo trạng thái (§10.9, §10.14): 5s khi đang chạy hay đang chờ nhãn
@@ -45,29 +47,23 @@ export function pollIntervalOf(
   }
 }
 
-const ACTION_LABEL: Record<RolloutIntentActionWire, string> = {
-  PAUSE: "Tạm dừng",
-  RESUME: "Tiếp tục",
-  PROMOTE: "Lên 100%",
-  ROLLBACK: "Rollback",
-};
-
 /**
  * [Plan #46] Nhãn theo chiến lược: PROMOTE của ATTRIBUTE_SPLIT là đổi variant mặc định (§7.2), không
- * phải "lên 100%" của một rule.
+ * phải "lên 100%" của một rule. Chữ đọc theo ngôn ngữ lúc gọi (Plan #54).
  */
 function labelOf(
   action: RolloutIntentActionWire,
   rollout: RolloutDetailWire,
 ): string {
+  const m = messagesOf(rolloutMessages).detail;
   if (
     action === "PROMOTE" &&
     rollout.scope === "FLAG_LEVEL" &&
     rollout.strategy === "ATTRIBUTE_SPLIT"
   ) {
-    return `Đổi mặc định sang ${rollout.flag?.targetVariant ?? "variant mới"}`;
+    return m.makeDefault(rollout.flag?.targetVariant);
   }
-  return ACTION_LABEL[action];
+  return m.action[action];
 }
 
 /**
@@ -95,12 +91,8 @@ export function actionsFor(
     : actions;
 }
 
-const MODE_LABEL: Record<RolloutDetailWire["controlMode"], string> = {
-  "udp-driven": "UDP quyết",
-  "tool-driven": "công cụ tự quyết",
-};
-
 export function RolloutDetailPage() {
+  const m = useMessages(rolloutMessages);
   const { project, env } = useProjectContext();
   const { rolloutId } = useParams({
     from: "/app/projects/$projectId/rollouts/$rolloutId",
@@ -125,7 +117,7 @@ export function RolloutDetailPage() {
               search={{ env: env.id }}
               className="c3"
             >
-              Rollout
+              {m.list.title}
             </Link>
             <span className="sep"> / </span>
             {rollout.data?.rollout.flag?.key ??
@@ -150,7 +142,7 @@ export function RolloutDetailPage() {
                   search={{ env: env.id }}
                   className="btn"
                 >
-                  Về danh sách rollout
+                  {m.detail.back}
                 </Link>
               }
             />
@@ -164,6 +156,7 @@ export function RolloutDetailPage() {
 }
 
 function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
+  const m = useMessages(rolloutMessages).detail;
   const { project } = useProjectContext();
   const snap = rollout.latestMetricSnapshot;
   // [Plan #46] §10.9 AttributeSplitDetail: số KỸ THUẬT của hai nhánh, không tự quyết, không z-score
@@ -179,29 +172,33 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
       <div className="hero">
         <div className="t">
           <h1 className="title mono" translate="no">
-            {rollout.flag?.key ?? rollout.workloadName ?? "rollout"}
+            {rollout.flag?.key ?? rollout.workloadName ?? m.fallbackTitle}
           </h1>
           <p className="lead">
             {rollout.flag !== undefined && (
               <>
-                Tăng variant{" "}
-                <span className="mono">{rollout.flag.targetVariant}</span>
+                {m.rampVariant(
+                  <span className="mono">{rollout.flag.targetVariant}</span>,
+                )}
                 {" · "}
               </>
             )}
             {service && (
               <>
-                Phiên bản{" "}
-                <span className="mono">{rollout.versionOld ?? "?"}</span> →{" "}
-                <span className="mono">{rollout.versionNew ?? "?"}</span>
+                {m.versionChange(
+                  <span className="mono">{rollout.versionOld ?? "?"}</span>,
+                  <span className="mono">{rollout.versionNew ?? "?"}</span>,
+                )}
                 {" · "}
-                {MODE_LABEL[rollout.controlMode]}
+                {m.mode[rollout.controlMode]}
                 {" · "}
               </>
             )}
             {rollout.workloadName !== null && (
               <>
-                workload <span className="mono">{rollout.workloadName}</span>
+                {m.workload(
+                  <span className="mono">{rollout.workloadName}</span>,
+                )}
                 {" · "}
               </>
             )}
@@ -219,8 +216,8 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         <div className="alert" role="alert">
           <Icon of={CircleX} />
           <div>
-            <b>Hệ thống đã tự rollback</b>
-            <div>{decision?.reason ?? "Metric vượt ngưỡng liên tiếp."}</div>
+            <b>{m.autoRollback}</b>
+            <div>{decision?.reason ?? m.autoRollbackReason}</div>
           </div>
         </div>
       )}
@@ -228,37 +225,27 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         <div className="alert" role="alert">
           <Icon of={CircleAlert} />
           <div>
-            <b>
-              {service
-                ? "Không abort được vì không vào được cluster của project"
-                : "Không rollback được vì Flag Service không phản hồi"}
-            </b>
-            <div>
-              {service
-                ? "Kiểm tra ngay Rollout/Canary của workload trong cluster."
-                : "Cơ chế an toàn thất bại: kiểm tra ngay trạng thái của flag."}
-            </div>
+            <b>{service ? m.abortFailed : m.rollbackFailed}</b>
+            <div>{service ? m.abortFailedHint : m.rollbackFailedHint}</div>
           </div>
         </div>
       )}
 
       {service && rollout.trafficMatch !== undefined && (
         <p className="c2">
-          Nhóm đi phiên bản mới: request có header{" "}
-          <span className="mono">
-            {rollout.trafficMatch.header}: {rollout.trafficMatch.value}
-          </span>
+          {m.trafficMatch(
+            <span className="mono">
+              {rollout.trafficMatch.header}: {rollout.trafficMatch.value}
+            </span>,
+          )}
         </p>
       )}
       {service && rollout.controlMode === "tool-driven" && (
         <div className="alert" role="note">
           <Icon of={CircleAlert} />
           <div>
-            <b>Công cụ giao hàng tự phân tích và tự quyết</b>
-            <div>
-              UDP soi gương tiến độ của nó; bạn vẫn promote hay rollback tay
-              được.
-            </div>
+            <b>{m.toolDriven}</b>
+            <div>{m.toolDrivenHint}</div>
           </div>
         </div>
       )}
@@ -266,12 +253,8 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         <div className="alert" role="note">
           <Icon of={CircleAlert} />
           <div>
-            <b>Chia theo thuộc tính: hệ thống không tự promote hay rollback</b>
-            <div>
-              Hai nhóm khác nhau về bản chất, nên chênh lệch dưới đây là số kỹ
-              thuật, không quy được cho nhánh flag. Bạn quyết: đổi variant mặc
-              định sang variant mới, hoặc rollback.
-            </div>
+            <b>{m.splitNote}</b>
+            <div>{m.splitNoteHint}</div>
           </div>
         </div>
       )}
@@ -281,17 +264,17 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         <div>
           <div className="l">
             {service
-              ? "Lưu lượng phiên bản mới"
+              ? m.traffic.service
               : split
-                ? "Nhóm khớp nhận variant mới"
-                : "Lưu lượng variant mới"}
+                ? m.traffic.split
+                : m.traffic.flag}
           </div>
           <div className="v num">
             {formatPercent(rollout.currentTrafficPercentage)}
           </div>
         </div>
         <div>
-          <div className="l">Mốc rollback</div>
+          <div className="l">{m.baseline}</div>
           <div className="v num">
             {rollout.baselinePercentage === null
               ? "–"
@@ -301,10 +284,10 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         <div>
           <div className="l">
             {service
-              ? "Tỉ lệ lỗi phiên bản mới / cũ"
+              ? m.errorRates.service
               : split
-                ? "Tỉ lệ lỗi nhánh mới / nhánh cũ"
-                : "Tỉ lệ lỗi canary / đối chứng"}
+                ? m.errorRates.split
+                : m.errorRates.flag}
           </div>
           <div className="v num">
             {snap === undefined
@@ -318,12 +301,12 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
           </div>
         </div>
         <div>
-          <div className="l">Latency P99 canary</div>
+          <div className="l">{m.latency}</div>
           <div className="v num">
             {snap?.canary.latencyP99Ms === undefined
               ? "–"
               : `${formatNumber(Math.round(snap.canary.latencyP99Ms))}`}
-            <small>ms</small>
+            <small>{m.ms}</small>
           </div>
         </div>
       </div>
@@ -332,7 +315,7 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         <div
           className={rollout.status === "FAILED" ? "seg2 fail" : "seg2"}
           role="progressbar"
-          aria-label="Lưu lượng đã chuyển"
+          aria-label={m.progress}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={rollout.currentTrafficPercentage}
@@ -344,9 +327,11 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
         </div>
         <div className="lb">
           <span>
-            Bậc <b>{formatPercent(rollout.stepPercent)}</b> mỗi{" "}
-            {formatDuration(rollout.stepIntervalSeconds)}, đo lại mỗi{" "}
-            {formatDuration(rollout.analysisIntervalSeconds)}
+            {m.cadence(
+              <b>{formatPercent(rollout.stepPercent)}</b>,
+              formatDuration(rollout.stepIntervalSeconds),
+              formatDuration(rollout.analysisIntervalSeconds),
+            )}
           </span>
           <b>{formatPercent(rollout.currentTrafficPercentage)}</b>
         </div>
@@ -357,21 +342,21 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
           <ErrorChart events={rollout.events} limit={errorLimit} />
           {snap !== undefined && (
             <details className="cardc">
-              <summary>Truy vấn PromQL đã chạy</summary>
+              <summary>{m.promql}</summary>
               <div className="q mono">
                 {[...snap.queries.canary, ...snap.queries.baseline].map((q) => (
                   <div key={q}>{q}</div>
                 ))}
               </div>
               {!split && snap.zScore !== null && (
-                <p className="c3">z-score: {formatDecimal(snap.zScore)}</p>
+                <p className="c3">{m.zScore(formatDecimal(snap.zScore))}</p>
               )}
             </details>
           )}
         </div>
         <div className="panel2">
           <h2 className="h2" style={{ marginTop: 10 }}>
-            Nhật ký
+            {m.log}
           </h2>
           <EventFeed events={rollout.events} />
         </div>
@@ -392,6 +377,7 @@ function WhyStill({
   rollout: RolloutDetailWire;
   maxBreaches: number;
 }) {
+  const m = useMessages(rolloutMessages).detail;
   const [now, setNow] = useState(() => Date.now());
   const active =
     rollout.status === "IN_PROGRESS" || rollout.status === "PENDING";
@@ -437,27 +423,29 @@ function WhyStill({
         <div role="status" aria-live="polite">
           {rollout.pendingIntent !== undefined ? (
             <b>
-              Đang thực hiện: {EVENT_LABEL[rollout.pendingIntent.action]} (yêu
-              cầu bởi {rollout.pendingIntent.byUser || "một thành viên"})
+              {m.inProgressBy(
+                m.event[rollout.pendingIntent.action],
+                rollout.pendingIntent.byUser || m.aMember,
+              )}
             </b>
           ) : (
-            <b>{decision?.reason ?? "Đang chờ lần đo đầu tiên."}</b>
+            <b>{decision?.reason ?? m.waitingFirst}</b>
           )}
           {decision?.breach === true && (
             <div>
-              Vượt ngưỡng {decision.breachStreak}/{maxBreaches}
-              {decision.breachStreak + 1 >= maxBreaches
-                ? ", sẽ rollback nếu lần đo tới vẫn vượt"
-                : ""}
+              {m.breach(
+                decision.breachStreak,
+                maxBreaches,
+                decision.breachStreak + 1 >= maxBreaches,
+              )}
             </div>
           )}
         </div>
         {active && (
           <div className="c2 num">
-            {nextAnalysis !== undefined && (
-              <>Đo lại sau {formatDuration(nextAnalysis)}. </>
-            )}
-            Đủ thời gian giữ bậc sau {formatDuration(dwellLeft)}.
+            {nextAnalysis !== undefined &&
+              m.nextAnalysis(formatDuration(nextAnalysis))}
+            {m.dwellLeft(formatDuration(dwellLeft))}
           </div>
         )}
       </div>
@@ -466,6 +454,7 @@ function WhyStill({
 }
 
 function Actions({ rollout }: { rollout: RolloutDetailWire }) {
+  const m = useMessages(rolloutMessages).detail;
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [confirm, setConfirm] = useState<RolloutIntentActionWire | null>(null);
@@ -476,7 +465,8 @@ function Actions({ rollout }: { rollout: RolloutDetailWire }) {
     onSuccess: async (_d, action) => {
       setConfirm(null);
       // 202: intent đã ghi, CHƯA thực thi (§7.6) — nút chuyển "Đang thực hiện..." qua pendingIntent
-      toast.info(`Đã gửi yêu cầu: ${ACTION_LABEL[action]}`);
+      const copy = messagesOf(rolloutMessages).detail;
+      toast.info(copy.requestSent(copy.action[action]));
       await queryClient.invalidateQueries({
         queryKey: qk.rollout(project.id, rollout.id),
       });
@@ -514,7 +504,7 @@ function Actions({ rollout }: { rollout: RolloutDetailWire }) {
         >
           <Icon of={icon[a]} />
           {pending && rollout.pendingIntent?.action === a
-            ? "Đang thực hiện…"
+            ? m.working
             : labelOf(a, rollout)}
         </button>
       ))}
@@ -522,21 +512,25 @@ function Actions({ rollout }: { rollout: RolloutDetailWire }) {
         <ConfirmDialog
           title={
             confirm === "ROLLBACK"
-              ? "Rollback rollout này?"
+              ? m.confirmRollback
               : !service && rollout.strategy === "ATTRIBUTE_SPLIT"
-                ? "Đổi variant mặc định?"
-                : "Đưa lên 100%?"
+                ? m.confirmMakeDefault
+                : m.confirmPromote
           }
           description={
             service
               ? confirm === "ROLLBACK"
-                ? `Công cụ giao hàng đưa toàn bộ traffic về phiên bản ${rollout.versionOld ?? "cũ"}.`
-                : `Phiên bản ${rollout.versionNew ?? "mới"} nhận 100% traffic.`
+                ? m.serviceRollback(rollout.versionOld)
+                : m.servicePromote(rollout.versionNew)
               : confirm === "ROLLBACK"
-                ? `Lưu lượng về lại mốc ${rollout.baselinePercentage === null ? "ban đầu" : formatPercent(rollout.baselinePercentage)}.`
+                ? m.flagRollback(
+                    rollout.baselinePercentage === null
+                      ? null
+                      : formatPercent(rollout.baselinePercentage),
+                  )
                 : rollout.strategy === "ATTRIBUTE_SPLIT"
-                  ? "Mọi người dùng của environment, không riêng nhóm khớp, sẽ nhận variant mới làm mặc định. Rollout kết thúc."
-                  : "Mọi người dùng khớp rule sẽ nhận variant mới."
+                  ? m.splitPromote
+                  : m.flagPromote
           }
           confirmLabel={labelOf(confirm, rollout)}
           danger={confirm === "ROLLBACK"}
@@ -553,18 +547,9 @@ function Actions({ rollout }: { rollout: RolloutDetailWire }) {
   );
 }
 
-const EVENT_LABEL: Record<RolloutEventWire["action"], string> = {
-  PROMOTE: "Lên bậc",
-  ROLLBACK: "Rollback",
-  PAUSE: "Tạm dừng",
-  RESUME: "Tiếp tục",
-  COMPLETE: "Hoàn tất",
-  EXPIRE: "Hết hạn",
-  DEPENDENCY_DOWN: "Phụ thuộc không phản hồi",
-};
-
 function EventFeed({ events }: { events: RolloutEventWire[] }) {
-  if (events.length === 0) return <p className="c3">Chưa có sự kiện.</p>;
+  const m = useMessages(rolloutMessages).detail;
+  if (events.length === 0) return <p className="c3">{m.noEvents}</p>;
   return (
     <ul className="feed">
       {events.map((e) => (
@@ -572,8 +557,8 @@ function EventFeed({ events }: { events: RolloutEventWire[] }) {
           <span className="ic" />
           <span>
             <b>
-              {e.isIntent ? "Yêu cầu: " : ""}
-              {EVENT_LABEL[e.action]}
+              {e.isIntent ? m.requestPrefix : ""}
+              {m.event[e.action]}
             </b>{" "}
             {formatPercent(e.trafficPercentage)}
             {e.reason !== null && <div className="c3">{e.reason}</div>}
@@ -597,6 +582,7 @@ function ErrorChart({
   events: RolloutEventWire[];
   limit: number;
 }) {
+  const m = useMessages(rolloutMessages).detail;
   const points = events
     .filter((e) => e.metricSnapshot !== null)
     .map((e) => ({
@@ -616,35 +602,35 @@ function ErrorChart({
     return (
       <div className="cardc">
         <div className="hd">
-          <h2>Tỉ lệ lỗi</h2>
+          <h2>{m.errorRate}</h2>
         </div>
-        <p className="c3">Chưa có lần đo nào có số liệu.</p>
+        <p className="c3">{m.noMeasurements}</p>
       </div>
     );
   }
   return (
     <div className="cardc">
       <LineChart
-        title="Tỉ lệ lỗi"
+        title={m.errorRate}
         level={2}
         times={points.map((p) => p.at)}
         series={[
           {
             key: "canary",
-            label: "canary",
+            label: m.canary,
             tone: "accent",
             values: points.map((p) => p.canary),
           },
           {
             key: "baseline",
-            label: "đối chứng",
+            label: m.control,
             tone: "baseline",
             values: points.map((p) => p.baseline),
           },
         ]}
         threshold={{
           value: limit * 100,
-          label: `ngưỡng ${formatPercent(limit * 100)}`,
+          label: m.threshold(formatPercent(limit * 100)),
         }}
         format={formatPercent}
       />

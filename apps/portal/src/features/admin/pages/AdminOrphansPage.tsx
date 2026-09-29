@@ -2,10 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
 import { Icon } from "../../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../../components/States";
+import { useMessages } from "../../../i18n";
 import { formatUsd } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { PROVIDER_LABEL } from "../../project/cloud/cloud-labels";
 import { adminApi } from "../admin-api";
+import { adminMessages } from "../admin.messages";
 import { AdminPage } from "../AdminLayout";
 
 /**
@@ -13,16 +15,15 @@ import { AdminPage } from "../AdminLayout";
  * định giá được — hiện "chưa rõ giá", tuyệt đối không hiện 0.
  */
 export function AdminOrphansPage() {
+  const t = useMessages(adminMessages);
+  const m = t.orphans;
   const orphans = useQuery({
     queryKey: qk.adminOrphans(),
     queryFn: adminApi.orphans,
   });
   const d = orphans.data;
   return (
-    <AdminPage
-      title="Tài nguyên mồ côi"
-      lead="Tài nguyên cloud không dọn được sau teardown, kèm chi phí đang chạy."
-    >
+    <AdminPage title={m.title} lead={m.lead}>
       {orphans.isPending ? (
         <Loading />
       ) : orphans.isError ? (
@@ -34,50 +35,46 @@ export function AdminOrphansPage() {
         <>
           <div className="stat">
             <div>
-              <div className="l">Đang đốt</div>
+              <div className="l">{m.burning}</div>
               <div className="v num">
                 {formatUsd(d.estimatedUsdPerHour)}
-                <small>/giờ</small>
+                <small>{m.perHourUnit}</small>
               </div>
             </div>
             <div>
-              <div className="l">Mỗi ngày</div>
+              <div className="l">{m.perDay}</div>
               <div className="v num">
                 {formatUsd(d.estimatedUsdPerHour * 24)}
               </div>
             </div>
             <div>
-              <div className="l">Tài nguyên</div>
+              <div className="l">{m.resources}</div>
               <div className="v num">{d.resources.length}</div>
             </div>
             <div>
-              <div className="l">Chưa rõ giá</div>
+              <div className="l">{m.unpriced}</div>
               <div className="v num">{d.unpriced.length}</div>
             </div>
           </div>
           {!d.cloudScanned && (
             <div className="alert amber" role="status">
               <Icon of={CircleAlert} />
-              <div>
-                Danh sách theo SỔ tài nguyên. Chưa quét cloud theo tag, nên tài
-                nguyên có tag của UDP mà không có trong sổ chưa hiện ở đây. Bảng
-                giá ngày {d.pricingAsOf}.
-              </div>
+              <div>{m.notScanned(d.pricingAsOf)}</div>
             </div>
           )}
           {d.resources.length === 0 ? (
-            <Empty title="Không có tài nguyên mồ côi nào trong sổ" />
+            <Empty title={m.empty} />
           ) : (
             <div className="table-wrap">
-              <table className="dtable" aria-label="Tài nguyên mồ côi">
+              <table className="dtable" aria-label={m.title}>
                 <thead>
                   <tr>
-                    <th scope="col">Project</th>
-                    <th scope="col">Loại</th>
-                    <th scope="col">Vùng</th>
-                    <th scope="col">Id trên cloud</th>
+                    <th scope="col">{t.project}</th>
+                    <th scope="col">{m.kind}</th>
+                    <th scope="col">{m.region}</th>
+                    <th scope="col">{m.cloudId}</th>
                     <th scope="col" className="num">
-                      USD/giờ
+                      {m.usdPerHour}
                     </th>
                   </tr>
                 </thead>
@@ -95,11 +92,11 @@ export function AdminOrphansPage() {
                         </span>
                       </td>
                       <td className="mono" translate="no">
-                        {r.providerId ?? "Chưa biết"}
+                        {r.providerId ?? m.unknownId}
                       </td>
                       <td className="num">
                         {r.usdPerHour === null
-                          ? "Chưa rõ giá"
+                          ? m.unpriced
                           : formatUsd(r.usdPerHour)}
                       </td>
                     </tr>

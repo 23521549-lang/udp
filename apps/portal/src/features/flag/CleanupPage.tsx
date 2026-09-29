@@ -7,6 +7,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
+import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import { compactNumber, relativeTime } from "../../lib/format";
 import { qk, qkPrefix } from "../../lib/query-keys";
@@ -14,29 +15,19 @@ import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { flagApi } from "./flag-api";
+import { flagMessages } from "./flag.messages";
 import { PageHead } from "../../components/PageHead";
 
 type Category = "UNUSED" | "SETTLED" | "STALE_DRAFT";
 
-const CATEGORY: Record<Category, { label: string; hint: string }> = {
-  UNUSED: {
-    label: "Không dùng",
-    hint: "Không lượt đánh giá nào trong cửa sổ quan sát.",
-  },
-  SETTLED: {
-    label: "Đã ngã ngũ",
-    hint: "Mọi lượt đều nhận cùng một variant: có thể xoá khỏi mã.",
-  },
-  STALE_DRAFT: {
-    label: "Nháp bị bỏ quên",
-    hint: "Nháp lâu ngày chưa kích hoạt.",
-  },
-};
+/** Thứ tự nút lọc; nhãn và gợi ý của mỗi loại ở `flagMessages.cleanup.category` */
+const CATEGORIES: Category[] = ["UNUSED", "SETTLED", "STALE_DRAFT"];
 
 /** §6.7 Flag Cleanup Center: tối đa 20 flag mỗi lô, xác nhận bằng TÊN PROJECT (§10.12) */
 const MAX_BATCH = 20;
 
 export function CleanupPage() {
+  const m = useMessages(flagMessages).cleanup;
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   // Loại đang lọc nằm trên URL: gửi đường dẫn là gửi đúng danh sách đang xem
@@ -79,11 +70,7 @@ export function CleanupPage() {
       const failed = results.length - ok;
       setConfirming(false);
       setPicked(new Set());
-      toast.info(
-        failed === 0
-          ? `Đã lưu trữ ${String(ok)} flag`
-          : `Đã lưu trữ ${String(ok)} flag, ${String(failed)} flag không lưu trữ được`,
-      );
+      toast.info(m.archived(ok, failed));
       await queryClient.invalidateQueries({
         queryKey: qkPrefix.staleFlagsOf(project.id),
       });
@@ -105,7 +92,7 @@ export function CleanupPage() {
   return (
     <>
       <ProjectBar
-        title="Dọn dẹp flag"
+        title={m.title}
         envScoped={false}
         actions={
           canArchive && (
@@ -116,33 +103,30 @@ export function CleanupPage() {
               onClick={() => setConfirming(true)}
             >
               <Icon of={Archive} />
-              Lưu trữ {picked.size > 0 ? picked.size : ""}
+              {m.archive} {picked.size > 0 ? picked.size : ""}
             </button>
           )
         }
       />
       <div className="scroll">
-        <PageHead
-          title="Dọn dẹp flag"
-          lead="Flag không còn tác dụng là nợ trong mã. Gộp mọi environment."
-        />
+        <PageHead title={m.title} lead={m.lead} />
         <div className="filters">
-          <div className="seg" role="group" aria-label="Loại">
+          <div className="seg" role="group" aria-label={m.categoryGroup}>
             <button
               type="button"
               aria-pressed={category === undefined}
               onClick={() => setCategory(undefined)}
             >
-              Tất cả {stale.data ? `(${String(stale.data.total)})` : ""}
+              {m.all} {stale.data ? `(${String(stale.data.total)})` : ""}
             </button>
-            {(Object.keys(CATEGORY) as Category[]).map((c) => (
+            {CATEGORIES.map((c) => (
               <button
                 key={c}
                 type="button"
                 aria-pressed={category === c}
                 onClick={() => setCategory(c)}
               >
-                {CATEGORY[c].label}{" "}
+                {m.category[c].label}{" "}
                 {stale.data ? `(${String(stale.data.counts[c])})` : ""}
               </button>
             ))}
@@ -150,10 +134,7 @@ export function CleanupPage() {
         </div>
         <div className="page">
           {stale.data?.telemetry.firstReportAt === null && (
-            <p className="c3">
-              Project chưa nhận báo cáo telemetry nào từ SDK, nên chưa xét được
-              “Không dùng” và “Đã ngã ngũ”.
-            </p>
+            <p className="c3">{m.noTelemetry}</p>
           )}
           {stale.isPending ? (
             <Loading />
@@ -163,9 +144,9 @@ export function CleanupPage() {
               onRetry={() => void stale.refetch()}
             />
           ) : items.length === 0 ? (
-            <Empty title="Không có flag nào cần dọn" />
+            <Empty title={m.empty} />
           ) : (
-            <div className="lst" role="list" aria-label="Flag cần dọn">
+            <div className="lst" role="list" aria-label={m.list}>
               {items.map((item) => (
                 <StaleRow
                   key={item.flag.id}
@@ -178,15 +159,15 @@ export function CleanupPage() {
             </div>
           )}
           {picked.size >= MAX_BATCH && (
-            <p className="c3">Tối đa {MAX_BATCH} flag mỗi lần lưu trữ.</p>
+            <p className="c3">{m.maxBatch(MAX_BATCH)}</p>
           )}
         </div>
       </div>
       {confirming && (
         <ConfirmDialog
-          title={`Lưu trữ ${String(picked.size)} flag?`}
-          description="SDK sẽ không còn nhận những flag này. Mỗi flag được lưu trữ riêng: flag nào còn lượt đánh giá sẽ được báo lại."
-          confirmLabel="Lưu trữ"
+          title={m.confirmTitle(picked.size)}
+          description={m.confirmDescription}
+          confirmLabel={m.archive}
           danger
           typeToConfirm={project.name}
           busy={archive.isPending}
@@ -213,6 +194,7 @@ function StaleRow({
   disabled: boolean;
   onToggle: () => void;
 }) {
+  const m = useMessages(flagMessages).cleanup;
   // Cả dòng là nhãn của ô chọn: không có khoảng chết giữa ô và chữ (Web Interface Guidelines)
   return (
     <label className="it check-row" role="listitem">
@@ -227,21 +209,21 @@ function StaleRow({
       <span className="mono" translate="no">
         {item.flag.key}
       </span>
-      <span className="chip soft">{CATEGORY[item.category].label}</span>
-      <span className="c3">{CATEGORY[item.category].hint}</span>
+      <span className="chip soft">{m.category[item.category].label}</span>
+      <span className="c3">{m.category[item.category].hint}</span>
       <span className="c3 num" style={{ marginLeft: "auto" }}>
-        {compactNumber(item.evalCount30d)} lượt/30 ngày
+        {m.evals30d(compactNumber(item.evalCount30d), item.evalCount30d)}
       </span>
       <span className="c3">
         {item.lastEvaluatedAt === null
-          ? "chưa từng"
+          ? m.never
           : relativeTime(item.lastEvaluatedAt)}
       </span>
       {!item.archive.allowed && (
         <span className="c3">
           {item.archive.blockedBy === "LIVE_ROLLOUT"
-            ? "đang có rollout"
-            : "còn lượt gần đây"}
+            ? m.liveRollout
+            : m.recentEvals}
         </span>
       )}
     </label>

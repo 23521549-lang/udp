@@ -15,13 +15,16 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
+import { appMessages } from "../../app/app.messages";
 import { useTheme } from "../../app/theme";
 import { Icon } from "../../components/Icon";
+import { useMessages } from "../../i18n";
 import { browserTimeZone } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { flagApi } from "../flag/flag-api";
 import { rolloutApi } from "../rollout/rollout-api";
 import { useProjectContext } from "./ProjectLayout";
+import { projectMessages } from "./project.messages";
 import { can } from "./roles";
 
 /** [Plan #41] Số flag bảng lệnh xin mỗi lần, và thời gian chờ sau phím gõ cuối */
@@ -38,7 +41,8 @@ const PALETTE_SEARCH_DEBOUNCE_MS = 250;
  */
 
 export interface PaletteItem {
-  group: "Flag" | "Rollout" | "Lệnh";
+  /** Tên nhóm đã dịch — các mục liền nhau cùng tên gộp thành một nhóm của listbox */
+  group: string;
   label: string;
   hint: string;
   icon: LucideIcon;
@@ -123,6 +127,8 @@ export function useEnvShortcuts(): void {
 }
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {
+  const m = useMessages(projectMessages).palette;
+  const app = useMessages(appMessages);
   const { project, envs, env, setEnv } = useProjectContext();
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
@@ -163,7 +169,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     const out: PaletteItem[] = [];
     for (const f of flags.data?.flags ?? []) {
       out.push({
-        group: "Flag",
+        group: m.group.flag,
         label: f.key,
         hint: f.description ?? "",
         icon: Flag,
@@ -177,7 +183,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     }
     for (const r of rollouts.data?.rollouts ?? []) {
       out.push({
-        group: "Rollout",
+        group: m.group.rollout,
         label: r.flagKey ?? r.workloadName ?? r.id.slice(0, 8),
         hint: `${String(r.currentTrafficPercentage)}%`,
         icon: ChartNoAxesColumnIncreasing,
@@ -191,8 +197,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     }
     if (can(project.myRole, "DEVELOPER")) {
       out.push({
-        group: "Lệnh",
-        label: "Tạo flag",
+        group: m.group.command,
+        label: m.createFlag,
         hint: "C",
         icon: Plus,
         run: () =>
@@ -205,8 +211,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     }
     if (can(project.myRole, "MAINTAINER")) {
       out.push({
-        group: "Lệnh",
-        label: "Tạo rollout",
+        group: m.group.command,
+        label: m.createRollout,
         hint: "",
         icon: Plus,
         run: () =>
@@ -222,8 +228,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       .forEach((e, i) => {
         if (e.id === env.id) return;
         out.push({
-          group: "Lệnh",
-          label: `Chuyển sang ${e.name}`,
+          group: m.group.command,
+          label: m.switchTo(e.name),
           hint: i < 9 ? String(i + 1) : "",
           icon: e.isProduction ? Lock : Search,
           run: () => setEnv(e.id),
@@ -238,18 +244,18 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         | "/app/projects/$projectId/settings",
     ) =>
       out.push({
-        group: "Lệnh",
+        group: m.group.command,
         label,
         hint: "",
         icon,
         run: () => void navigate({ to, params, search: { env: env.id } }),
       });
-    page("Mở Tổng quan", LayoutDashboard, "/app/projects/$projectId");
-    page("Mở Segment", Users, "/app/projects/$projectId/segments");
-    page("Mở Cài đặt", Settings2, "/app/projects/$projectId/settings");
+    page(m.openOverview, LayoutDashboard, "/app/projects/$projectId");
+    page(m.openSegments, Users, "/app/projects/$projectId/segments");
+    page(m.openSettings, Settings2, "/app/projects/$projectId/settings");
     out.push({
-      group: "Lệnh",
-      label: theme === "dark" ? "Giao diện sáng" : "Giao diện tối",
+      group: m.group.command,
+      label: theme === "dark" ? app.quickLightTheme : app.quickDarkTheme,
       hint: "",
       icon: theme === "dark" ? Sun : Moon,
       run: toggle,
@@ -265,6 +271,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     navigate,
     theme,
     toggle,
+    m,
+    app,
   ]);
 
   const shown = matchItems(items, query);
@@ -314,7 +322,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         className="pal on"
         role="dialog"
         aria-modal="true"
-        aria-label="Tìm nhanh"
+        aria-label={m.title}
         onKeyDown={(e) => {
           if (e.key === "Tab") e.preventDefault();
         }}
@@ -329,8 +337,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
             aria-activedescendant={
               shown.length > 0 ? `pal-${String(current)}` : undefined
             }
-            aria-label="Tìm flag, rollout hoặc gõ lệnh"
-            placeholder="Tìm flag, rollout hoặc gõ lệnh…"
+            aria-label={m.search}
+            placeholder={m.searchPlaceholder}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -352,18 +360,18 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
               }
             }}
           />
-          <kbd>Esc</kbd>
+          <kbd>{m.esc}</kbd>
         </div>
         <div
           className="ls"
           id="palette-list"
           role="listbox"
-          aria-label="Kết quả"
+          aria-label={m.results}
           ref={listRef}
         >
           {shown.length === 0 && (
             <div className="gl" role="status">
-              Không có kết quả
+              {m.noResults}
             </div>
           )}
           {sections.map((section) => {
@@ -408,10 +416,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         <div className="ft">
           <span>
             <kbd>↑</kbd>
-            <kbd>↓</kbd> chọn
+            <kbd>↓</kbd> {m.select}
           </span>
           <span>
-            <kbd>Enter</kbd> mở
+            <kbd>{m.enter}</kbd> {m.open}
           </span>
         </div>
       </div>

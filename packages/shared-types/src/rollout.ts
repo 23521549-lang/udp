@@ -84,31 +84,62 @@ export type ControlModeWire = "udp-driven" | "tool-driven";
 export type ServiceStrategy = "CANARY" | "BLUE_GREEN" | "ATTRIBUTE_SPLIT";
 
 /**
- * Ô nào của ma trận §7.2 chạy được với tool của environment (Plan #51 QĐ-5) — MỘT định nghĩa cho Service 1 (chốt
- * 422) và Portal (chỉ mời chọn ô làm được). `undefined` = được; chuỗi = lý do, đúng câu người dùng cần đọc để đổi
- * lựa chọn. `router` vắng (Portal chưa biết bộ định tuyến) ⇒ bỏ qua phép kiểm chỉ router quyết.
+ * Vì sao một ô của ma trận §7.2 không chạy được — MÃ, không phải câu (I37): Service 1 nói bằng câu tiếng Việt của
+ * nó (`serviceLevelIssue`), Portal nói bằng chữ của ngôn ngữ người dùng đang chọn (Plan #54).
  */
+export type ServiceLevelIssue =
+  | { code: "no-executor"; toolId: string }
+  | { code: "blue-green-needs-argo" }
+  | { code: "ab-needs-flagger" }
+  | { code: "split-needs-istio"; router: string };
+
+/**
+ * Ô nào của ma trận §7.2 chạy được với tool của environment (Plan #51 QĐ-5) — MỘT định nghĩa cho Service 1 (chốt
+ * 422) và Portal (chỉ mời chọn ô làm được). `undefined` = được. `router` vắng (Portal chưa biết bộ định tuyến) ⇒
+ * bỏ qua phép kiểm chỉ router quyết.
+ */
+export function serviceLevelIssueOf(
+  toolId: string,
+  mode: ControlModeWire,
+  strategy: ServiceStrategy,
+  router?: string,
+): ServiceLevelIssue | undefined {
+  if (!isDeliveryTool(toolId)) return { code: "no-executor", toolId };
+  if (toolId === "flagger" && strategy === "BLUE_GREEN") {
+    return { code: "blue-green-needs-argo" };
+  }
+  if (toolId === "argo-rollouts" && strategy === "ATTRIBUTE_SPLIT") {
+    if (mode === "tool-driven") return { code: "ab-needs-flagger" };
+    if (router !== undefined && router !== "istio") {
+      return { code: "split-needs-istio", router };
+    }
+  }
+  return undefined;
+}
+
+/** Câu của máy chủ (422 của Service 1) cho một `ServiceLevelIssue` */
+export function serviceLevelIssueText(issue: ServiceLevelIssue): string {
+  switch (issue.code) {
+    case "no-executor":
+      return `${issue.toolId} chưa có executor SERVICE_LEVEL — §7.2 vẽ Argo Rollouts và Flagger`;
+    case "blue-green-needs-argo":
+      return "BLUE_GREEN ở SERVICE_LEVEL là Rollout blueGreen của Argo Rollouts (§7.2) — environment này dùng Flagger";
+    case "ab-needs-flagger":
+      return "ATTRIBUTE_SPLIT tool-driven là A/B của Flagger (§7.2) — với Argo Rollouts chọn udp-driven";
+    case "split-needs-istio":
+      return `ATTRIBUTE_SPLIT udp-driven định tuyến bằng VirtualService của Istio (§7.2) — router của environment là ${issue.router}`;
+  }
+}
+
+/** `serviceLevelIssueOf` kèm câu của máy chủ: `undefined` = được; chuỗi = lý do */
 export function serviceLevelIssue(
   toolId: string,
   mode: ControlModeWire,
   strategy: ServiceStrategy,
   router?: string,
 ): string | undefined {
-  if (!isDeliveryTool(toolId)) {
-    return `${toolId} chưa có executor SERVICE_LEVEL — §7.2 vẽ Argo Rollouts và Flagger`;
-  }
-  if (toolId === "flagger" && strategy === "BLUE_GREEN") {
-    return "BLUE_GREEN ở SERVICE_LEVEL là Rollout blueGreen của Argo Rollouts (§7.2) — environment này dùng Flagger";
-  }
-  if (toolId === "argo-rollouts" && strategy === "ATTRIBUTE_SPLIT") {
-    if (mode === "tool-driven") {
-      return "ATTRIBUTE_SPLIT tool-driven là A/B của Flagger (§7.2) — với Argo Rollouts chọn udp-driven";
-    }
-    if (router !== undefined && router !== "istio") {
-      return `ATTRIBUTE_SPLIT udp-driven định tuyến bằng VirtualService của Istio (§7.2) — router của environment là ${router}`;
-    }
-  }
-  return undefined;
+  const issue = serviceLevelIssueOf(toolId, mode, strategy, router);
+  return issue === undefined ? undefined : serviceLevelIssueText(issue);
 }
 
 /**
@@ -210,7 +241,18 @@ export type CanaryPair =
        */
       targetPercent: number;
     }
-  | { kind: "invalid"; reason: string };
+  | {
+      kind: "invalid";
+      /** Mã của lý do — Portal nói bằng chữ của nó (I37, Plan #54) */
+      code: CanaryInvalidCode;
+      /** Số nhánh của phân phối — cho `not-two-branches` */
+      branches: number;
+      /** Câu của máy chủ (422 của Service 1, HOLD của Service 3) */
+      reason: string;
+    };
+
+export type CanaryInvalidCode =
+  "not-distribution" | "not-two-branches" | "target-missing" | "already-full";
 
 /**
  * Rule này ramp được cho variant này không (§7.2 canary FLAG_LEVEL, §16).
@@ -231,21 +273,34 @@ export function canaryPairOf(
 ): CanaryPair {
   if (serve.kind !== "distribution") {
     return invalid(
+      "not-distribution",
+      1,
       "rule phục vụ thẳng một variant — chỉ ramp được rule phân phối",
     );
   }
-  if (serve.weights.length !== 2) {
+  const branches = serve.weights.length;
+  if (branches !== 2) {
     return invalid(
-      `rule có ${String(serve.weights.length)} variant — canary FLAG_LEVEL chỉ hỗ trợ hai nhánh (§16)`,
+      "not-two-branches",
+      branches,
+      `rule có ${String(branches)} variant — canary FLAG_LEVEL chỉ hỗ trợ hai nhánh (§16)`,
     );
   }
   const target = serve.weights.find((w) => w.variantId === targetVariantId);
   const other = serve.weights.find((w) => w.variantId !== targetVariantId);
   if (target === undefined || other === undefined) {
-    return invalid("target_variant_id không nằm trong phân phối của rule");
+    return invalid(
+      "target-missing",
+      branches,
+      "target_variant_id không nằm trong phân phối của rule",
+    );
   }
   if (!allowFull && target.weight >= TOTAL_BUCKETS) {
-    return invalid("variant mục tiêu đã phục vụ 100% — không còn gì để ramp");
+    return invalid(
+      "already-full",
+      branches,
+      "variant mục tiêu đã phục vụ 100% — không còn gì để ramp",
+    );
   }
   return {
     kind: "ok",
@@ -260,7 +315,11 @@ export function canaryPairOf(
   };
 }
 
-const invalid = (reason: string): CanaryPair => ({ kind: "invalid", reason });
+const invalid = (
+  code: CanaryInvalidCode,
+  branches: number,
+  reason: string,
+): CanaryPair => ({ kind: "invalid", code, branches, reason });
 
 /**
  * Body 200 của `POST /internal/rollouts/:id/track` và `/internal/flag-envs/:id/untrack`

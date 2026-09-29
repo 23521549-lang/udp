@@ -13,12 +13,14 @@ import { Icon } from "../../../components/Icon";
 import { Pager } from "../../../components/Pager";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
+import { useMessages } from "../../../i18n";
 import { messageOf } from "../../../lib/errors";
 import { formatDateTime } from "../../../lib/format";
 import { qk, qkPrefix } from "../../../lib/query-keys";
 import { useSearchInput } from "../../../lib/use-search-input";
 import { useAuthStore } from "../../auth/auth-store";
 import { ADMIN_PAGE_SIZE, adminApi } from "../admin-api";
+import { adminMessages } from "../admin.messages";
 import { AdminPage } from "../AdminLayout";
 
 /**
@@ -26,6 +28,8 @@ import { AdminPage } from "../AdminLayout";
  * nên người dùng thứ 101 trở đi không còn bị cắt im lặng.
  */
 export function AdminUsersPage() {
+  const t = useMessages(adminMessages);
+  const m = t.users;
   const me = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const search = useSearch({ from: "/admin/users" });
@@ -65,7 +69,7 @@ export function AdminUsersPage() {
       ),
     onSuccess: async () => {
       setPending(null);
-      toast.info("Đã đổi vai");
+      toast.info(m.changed);
       await queryClient.invalidateQueries({
         queryKey: qkPrefix.adminUsersAll(),
       });
@@ -74,15 +78,18 @@ export function AdminUsersPage() {
 
   return (
     <AdminPage
-      title="Người dùng"
-      lead="Vai toàn hệ thống. Quyền trong từng project do chủ project quản lý."
+      title={m.title}
+      lead={m.lead}
       minis={
         users.data === undefined
           ? undefined
           : [
               {
                 value: users.data.total,
-                label: term === "" ? "người dùng" : "khớp",
+                label:
+                  term === ""
+                    ? m.count(users.data.total)
+                    : m.matches(users.data.total),
               },
             ]
       }
@@ -93,8 +100,8 @@ export function AdminUsersPage() {
           <input
             type="search"
             name="q"
-            aria-label="Tìm người dùng"
-            placeholder="Tìm theo email hoặc tên…"
+            aria-label={m.search}
+            placeholder={m.searchPlaceholder}
             autoComplete="off"
             spellCheck={false}
             value={q}
@@ -107,18 +114,18 @@ export function AdminUsersPage() {
       ) : users.isError ? (
         <ErrorState error={users.error} onRetry={() => void users.refetch()} />
       ) : users.data.users.length === 0 ? (
-        <Empty title="Không có ai khớp">Thử từ khoá khác.</Empty>
+        <Empty title={m.empty}>{m.emptyHint}</Empty>
       ) : (
         <div className="table-wrap">
-          <table className="dtable" aria-label="Người dùng">
+          <table className="dtable" aria-label={m.table}>
             <thead>
               <tr>
-                <th scope="col">Email</th>
-                <th scope="col">Tên</th>
-                <th scope="col">Vai</th>
-                <th scope="col">Tạo lúc</th>
+                <th scope="col">{m.email}</th>
+                <th scope="col">{m.name}</th>
+                <th scope="col">{m.role}</th>
+                <th scope="col">{t.created}</th>
                 <th scope="col">
-                  <span className="visually-hidden">Hành động</span>
+                  <span className="visually-hidden">{m.actions}</span>
                 </th>
               </tr>
             </thead>
@@ -130,9 +137,7 @@ export function AdminUsersPage() {
                   </th>
                   <td>{u.name}</td>
                   <td>
-                    {u.platformRole === "PLATFORM_ADMIN"
-                      ? "Quản trị"
-                      : "Người dùng"}
+                    {u.platformRole === "PLATFORM_ADMIN" ? m.admin : m.user}
                   </td>
                   <td className="num">{formatDateTime(u.createdAt)}</td>
                   <td>
@@ -142,8 +147,8 @@ export function AdminUsersPage() {
                       onClick={() => setPending(u)}
                     >
                       {u.platformRole === "PLATFORM_ADMIN"
-                        ? "Hạ quyền"
-                        : "Nâng quản trị"}
+                        ? m.revoke
+                        : m.promote}
                     </button>
                   </td>
                 </tr>
@@ -153,7 +158,7 @@ export function AdminUsersPage() {
         </div>
       )}
       <Pager
-        label="Trang của danh sách người dùng"
+        label={m.pager}
         offset={offset}
         pageSize={ADMIN_PAGE_SIZE}
         total={users.data?.total ?? 0}
@@ -163,15 +168,11 @@ export function AdminUsersPage() {
         <ConfirmDialog
           title={
             pending.platformRole === "PLATFORM_ADMIN"
-              ? `Hạ quyền ${pending.email}?`
-              : `Cho ${pending.email} quyền quản trị?`
+              ? m.confirmRevoke(pending.email)
+              : m.confirmPromote(pending.email)
           }
-          description={
-            pending.id === me?.id
-              ? "Đây là chính bạn: sau khi hạ, bạn không vào lại được Bảng điều khiển."
-              : "Có hiệu lực ngay ở request kế tiếp của người đó."
-          }
-          confirmLabel="Đổi vai"
+          description={pending.id === me?.id ? m.self : m.nextRequest}
+          confirmLabel={m.confirm}
           danger={pending.platformRole === "PLATFORM_ADMIN"}
           typeToConfirm={pending.email}
           busy={setRole.isPending}

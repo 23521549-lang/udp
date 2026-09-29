@@ -396,7 +396,7 @@ function consoleFor(toolId: string): MonitoringConsoleWire | null {
     case "prometheus-grafana":
       return {
         kind: "portForward",
-        label: "Mở Grafana",
+        app: "grafana",
         command:
           "kubectl -n udp-system port-forward svc/udp-prometheus-grafana 3000:80",
         localUrl: "http://localhost:3000",
@@ -404,7 +404,7 @@ function consoleFor(toolId: string): MonitoringConsoleWire | null {
     case "victoria-metrics":
       return {
         kind: "portForward",
-        label: "Mở giao diện truy vấn",
+        app: "query-ui",
         command:
           "kubectl -n udp-system port-forward svc/udp-victoria-metrics 8428:8428",
         localUrl: "http://localhost:8428/vmui",
@@ -412,19 +412,19 @@ function consoleFor(toolId: string): MonitoringConsoleWire | null {
     case "datadog":
       return {
         kind: "url",
-        label: "Mở Datadog",
+        app: "datadog",
         url: "https://app.datadoghq.com",
       };
     case "newrelic":
       return {
         kind: "url",
-        label: "Mở New Relic",
+        app: "newrelic",
         url: "https://one.newrelic.com",
       };
     case "dynatrace":
       return {
         kind: "url",
-        label: "Mở Dynatrace",
+        app: "dynatrace",
         url: "https://abc12345.live.dynatrace.com",
       };
     default:

@@ -5,11 +5,13 @@ import type {
 } from "@udp/shared-types/wire";
 import { CircleCheck, CircleAlert, TriangleAlert } from "lucide-react";
 import { Icon } from "../../../components/Icon";
+import { useMessages } from "../../../i18n";
 import { messageOf } from "../../../lib/errors";
 import { formatDateTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { cloudApi } from "./cloud-api";
-import { AUTH_KIND_LABEL, PROVIDER_LABEL } from "./cloud-labels";
+import { cloudMessages } from "./cloud.messages";
+import { PROVIDER_LABEL } from "./cloud-labels";
 
 /**
  * Cấu hình cloud đang dùng và hai phép kiểm (§4.3): credential còn dùng được không, và
@@ -24,6 +26,7 @@ export function CloudStatus({
   cloud: CloudCredentialWire;
   canCheck: boolean;
 }) {
+  const m = useMessages(cloudMessages);
   const queryClient = useQueryClient();
   const validate = useMutation({
     mutationFn: () => cloudApi.validate(projectId),
@@ -36,35 +39,30 @@ export function CloudStatus({
   });
 
   return (
-    <section aria-label="Cloud đang dùng">
+    <section aria-label={m.status.label}>
       <dl className="props">
-        <dt>Cloud</dt>
+        <dt>{m.cloud}</dt>
         <dd>
           {PROVIDER_LABEL[cloud.provider]}
           <span className="chip soft">{cloud.region}</span>
         </dd>
-        <dt>Xác thực</dt>
+        <dt>{m.auth}</dt>
         <dd>
-          {cloud.mode === "MANAGED"
-            ? "Tài khoản của UDP"
-            : AUTH_KIND_LABEL[cloud.authKind]}
+          {cloud.mode === "MANAGED" ? m.udpAccount : m.authKind[cloud.authKind]}
         </dd>
-        <dt>Fingerprint</dt>
+        <dt>{m.status.fingerprint}</dt>
         <dd className="mono">{cloud.fingerprint}</dd>
-        <dt>Kiểm lần cuối</dt>
+        <dt>{m.lastChecked}</dt>
         <dd>
           {cloud.lastValidatedAt === null
-            ? "Chưa kiểm"
+            ? m.notChecked
             : formatDateTime(cloud.lastValidatedAt)}
         </dd>
       </dl>
       {!cloud.federated && (
         <div className="lock" role="note">
           <Icon of={TriangleAlert} />
-          <span>
-            Đang dùng credential dài hạn. Nên chuyển sang cách federation để UDP
-            không giữ bí mật nào của bạn.
-          </span>
+          <span>{m.status.longLived}</span>
         </div>
       )}
 
@@ -76,7 +74,7 @@ export function CloudStatus({
             disabled={validate.isPending}
             onClick={() => validate.mutate()}
           >
-            {validate.isPending ? "Đang kiểm…" : "Kiểm tra credential"}
+            {validate.isPending ? m.status.checking : m.status.validate}
           </button>
           <button
             type="button"
@@ -84,7 +82,7 @@ export function CloudStatus({
             disabled={preflight.isPending}
             onClick={() => preflight.mutate()}
           >
-            {preflight.isPending ? "Đang kiểm…" : "Kiểm tra quyền"}
+            {preflight.isPending ? m.status.checking : m.status.preflight}
           </button>
         </div>
       )}
@@ -98,12 +96,12 @@ export function CloudStatus({
         <div className="check-result" role="status">
           {validate.data.validation.valid ? (
             <span>
-              <Icon of={CircleCheck} /> Credential dùng được.
+              <Icon of={CircleCheck} /> {m.status.valid}
             </span>
           ) : (
             <span>
-              <Icon of={CircleAlert} /> Credential không dùng được:{" "}
-              {validate.data.validation.reason}
+              <Icon of={CircleAlert} />{" "}
+              {m.status.invalid(validate.data.validation.reason ?? "")}
             </span>
           )}
         </div>
@@ -122,17 +120,18 @@ export function CloudStatus({
 }
 
 function PreflightResult({ report }: { report: CloudPreflightWire }) {
+  const m = useMessages(cloudMessages).status;
   return (
-    <div className="check-result" role="status" aria-label="Kết quả kiểm quyền">
+    <div className="check-result" role="status" aria-label={m.preflightLabel}>
       {report.ok ? (
         <span>
-          <Icon of={CircleCheck} /> Đủ quyền để UDP dựng hạ tầng.
+          <Icon of={CircleCheck} /> {m.preflightOk}
         </span>
       ) : (
         <>
           <span>
-            <Icon of={CircleAlert} /> Còn thiếu{" "}
-            {report.missingPermissions.length} quyền:
+            <Icon of={CircleAlert} />{" "}
+            {m.missing(report.missingPermissions.length)}
           </span>
           <ul>
             {report.missingPermissions.map((p) => (
@@ -147,11 +146,9 @@ function PreflightResult({ report }: { report: CloudPreflightWire }) {
         </span>
       ))}
       <span className="c3">
-        {report.confidence === "exact"
-          ? "Kết quả chính xác: cloud tự mô phỏng quyền."
-          : "Kết quả ước lượng: cloud này không có API mô phỏng quyền."}{" "}
+        {report.confidence === "exact" ? m.exact : m.estimated}{" "}
         <a href={report.docUrl} target="_blank" rel="noreferrer">
-          Hướng dẫn cấp quyền
+          {m.guide}
         </a>
       </span>
     </div>

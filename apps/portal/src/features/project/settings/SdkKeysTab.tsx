@@ -1,28 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SdkKeyWire } from "@udp/shared-types/wire";
 import { KeyRound } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { CodeBlock } from "../../../components/CodeBlock";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Dialog } from "../../../components/Dialog";
 import { Icon } from "../../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
+import { useMessages } from "../../../i18n";
 import { messageOf } from "../../../lib/errors";
 import { relativeTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
 import { can } from "../roles";
+import { settingsMessages } from "./settings.messages";
 
-const KEY_TYPE_HINT = {
-  SERVER:
-    "Đánh giá tại chỗ: nhận toàn bộ rule. Chỉ dùng ở backend, không bao giờ nhúng vào trình duyệt.",
-  CLIENT:
-    "Gửi context lên và nhận kết quả (OFREP): rule không bao giờ rời máy chủ. Dùng được ở trình duyệt.",
-} as const;
+const KEY_TYPES = ["SERVER", "CLIENT"] as const;
 
 export function SdkKeysTab() {
+  const m = useMessages(settingsMessages).keys;
   const { project, env } = useProjectContext();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -36,7 +34,7 @@ export function SdkKeysTab() {
       projectApi.revokeSdkKey(project.id, env.id, keyId),
     onSuccess: async () => {
       setRevoking(null);
-      toast.info("Đã thu hồi key");
+      toast.info(m.revoked);
       await queryClient.invalidateQueries({
         queryKey: qk.sdkKeys(project.id, env.id),
       });
@@ -46,9 +44,9 @@ export function SdkKeysTab() {
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
 
   return (
-    <section aria-label={`SDK key ở ${env.name}`}>
+    <section aria-label={m.inEnv(env.name)}>
       <div className="sect">
-        <h2>SDK key ở {env.name}</h2>
+        <h2>{m.inEnv(env.name)}</h2>
         {isOwner && (
           <div className="r">
             <button
@@ -57,23 +55,25 @@ export function SdkKeysTab() {
               onClick={() => setCreating(true)}
             >
               <Icon of={KeyRound} />
-              Tạo key
+              {m.create}
             </button>
           </div>
         )}
       </div>
       <dl className="props">
-        <dt>SERVER</dt>
-        <dd className="c2">{KEY_TYPE_HINT.SERVER}</dd>
-        <dt>CLIENT</dt>
-        <dd className="c2">{KEY_TYPE_HINT.CLIENT}</dd>
+        {KEY_TYPES.map((t) => (
+          <Fragment key={t}>
+            <dt>{t}</dt>
+            <dd className="c2">{m.typeHint[t]}</dd>
+          </Fragment>
+        ))}
       </dl>
       {keys.isPending ? (
         <Loading />
       ) : keys.isError ? (
         <ErrorState error={keys.error} onRetry={() => void keys.refetch()} />
       ) : keys.data.keys.length === 0 ? (
-        <Empty title="Chưa có key nào ở environment này" />
+        <Empty title={m.empty} />
       ) : (
         <div className="lst">
           {keys.data.keys.map((k) => (
@@ -85,12 +85,14 @@ export function SdkKeysTab() {
               <span className="c3">{k.label ?? ""}</span>
               <span className="c3" style={{ marginLeft: "auto" }}>
                 {k.status === "revoked"
-                  ? `Đã thu hồi ${k.revokedAt === null ? "" : relativeTime(k.revokedAt)}`
+                  ? m.revokedAt(
+                      k.revokedAt === null ? "" : relativeTime(k.revokedAt),
+                    )
                   : k.lastUsedAt === null
                     ? new Date(k.createdAt).getTime() < weekAgo
-                      ? "Chưa dùng sau 7 ngày"
-                      : "Chưa dùng"
-                    : `Dùng ${relativeTime(k.lastUsedAt)}`}
+                      ? m.unusedWeek
+                      : m.unused
+                    : m.usedAt(relativeTime(k.lastUsedAt))}
               </span>
               {isOwner && k.status === "active" && (
                 <button
@@ -98,7 +100,7 @@ export function SdkKeysTab() {
                   className="btn danger"
                   onClick={() => setRevoking(k)}
                 >
-                  Thu hồi
+                  {m.revoke}
                 </button>
               )}
             </div>
@@ -108,9 +110,9 @@ export function SdkKeysTab() {
       {creating && <CreateKeyDialog onClose={() => setCreating(false)} />}
       {revoking !== null && (
         <ConfirmDialog
-          title="Thu hồi key này?"
-          description={`Ứng dụng đang dùng ${revoking.maskedKey} sẽ mất quyền đọc flag ngay.`}
-          confirmLabel="Thu hồi"
+          title={m.revokeTitle}
+          description={m.revokeBody(revoking.maskedKey)}
+          confirmLabel={m.revoke}
           danger
           busy={revoke.isPending}
           error={revoke.isError ? messageOf(revoke.error) : undefined}
@@ -131,6 +133,8 @@ export function SdkKeysTab() {
  * React Query, không vào URL, không vào storage.
  */
 function CreateKeyDialog({ onClose }: { onClose: () => void }) {
+  const t = useMessages(settingsMessages);
+  const m = t.keys;
   const { project, env } = useProjectContext();
   const queryClient = useQueryClient();
   const [keyType, setKeyType] = useState<"SERVER" | "CLIENT">("SERVER");
@@ -154,28 +158,28 @@ function CreateKeyDialog({ onClose }: { onClose: () => void }) {
   if (secret !== null) {
     return (
       <Dialog
-        title="Key đã tạo"
-        description="Sao chép ngay: đây là lần duy nhất key hiện đầy đủ, không xem lại được."
+        title={m.createdTitle}
+        description={m.createdBody}
         onClose={onClose}
         footer={
           <button type="button" className="btn pri" onClick={onClose}>
-            Đã lưu key
+            {m.savedIt}
           </button>
         }
       >
-        <CodeBlock code={secret} label="SDK key" copyLabel="Sao chép key" />
+        <CodeBlock code={secret} label={m.sdkKey} copyLabel={m.copy} />
       </Dialog>
     );
   }
 
   return (
     <Dialog
-      title={`Tạo SDK key ở ${env.name}`}
+      title={m.createTitle(env.name)}
       onClose={onClose}
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>
-            Huỷ
+            {t.cancel}
           </button>
           <button
             type="button"
@@ -183,26 +187,26 @@ function CreateKeyDialog({ onClose }: { onClose: () => void }) {
             disabled={create.isPending}
             onClick={() => create.mutate()}
           >
-            {create.isPending ? "Đang tạo…" : "Tạo key"}
+            {create.isPending ? t.creating : m.create}
           </button>
         </>
       }
     >
-      <div className="opts" role="group" aria-label="Loại key">
-        {(["SERVER", "CLIENT"] as const).map((t) => (
+      <div className="opts" role="group" aria-label={m.type}>
+        {KEY_TYPES.map((type) => (
           <button
-            key={t}
+            key={type}
             type="button"
-            aria-pressed={keyType === t}
-            onClick={() => setKeyType(t)}
+            aria-pressed={keyType === type}
+            onClick={() => setKeyType(type)}
           >
-            <b>{t}</b>
-            {KEY_TYPE_HINT[t]}
+            <b>{type}</b>
+            {m.typeHint[type]}
           </button>
         ))}
       </div>
       <div className="f">
-        <label htmlFor="key-label">Nhãn (tuỳ chọn)</label>
+        <label htmlFor="key-label">{m.label}</label>
         <input
           id="key-label"
           className="inp"

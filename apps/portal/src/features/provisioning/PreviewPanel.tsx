@@ -8,12 +8,14 @@ import { CircleAlert, Rocket } from "lucide-react";
 import { useState } from "react";
 import { Icon } from "../../components/Icon";
 import { ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
 import { can } from "../project/roles";
 import { provisioningApi } from "./provisioning-api";
 import { formatUsd } from "../../lib/format";
 import { blockerLabel, costItemLabel } from "./provisioning-labels";
+import { provisioningMessages } from "./provisioning.messages";
 
 /**
  * Bước xem trước (§10.5 bước 4, §4.4 lớp 2): chi phí theo từng mục (control plane, NAT,
@@ -62,6 +64,7 @@ function Preview({
   onStarted: (job: ProvisioningJobWire) => void;
 }) {
   const queryClient = useQueryClient();
+  const m = useMessages(provisioningMessages).preview;
   const [confirmed, setConfirmed] = useState(false);
   const start = useMutation({
     mutationFn: () =>
@@ -88,31 +91,31 @@ function Preview({
   const ready = !blocked && (!preview.requiresConfirmation || confirmed);
 
   return (
-    <section aria-label="Xem trước triển khai">
+    <section aria-label={m.label}>
       <dl className="props">
-        <dt>Cloud</dt>
+        <dt>{m.cloud}</dt>
         <dd>
           {preview.provider}
           <span className="chip soft">{preview.region}</span>
         </dd>
-        <dt>Cluster</dt>
+        <dt>{m.cluster}</dt>
+        <dd>{m.nodes(preview.cluster.nodeCount, preview.cluster.nodeSize)}</dd>
+        <dt>{m.duration}</dt>
         <dd>
-          {preview.cluster.nodeCount} node cỡ {preview.cluster.nodeSize}
-        </dd>
-        <dt>Thời gian</dt>
-        <dd>
-          Khoảng {preview.estimatedMinutes.min} đến{" "}
-          {preview.estimatedMinutes.max} phút
+          {m.minutes(
+            preview.estimatedMinutes.min,
+            preview.estimatedMinutes.max,
+          )}
         </dd>
       </dl>
 
       <div className="table-wrap">
-        <table className="dtable" aria-label="Chi phí ước tính mỗi tháng">
+        <table className="dtable" aria-label={m.cost}>
           <thead>
             <tr>
-              <th scope="col">Mục</th>
+              <th scope="col">{m.item}</th>
               <th scope="col" className="num">
-                Mỗi tháng
+                {m.perMonth}
               </th>
             </tr>
           </thead>
@@ -124,7 +127,7 @@ function Preview({
               </tr>
             ))}
             <tr>
-              <th scope="row">Tổng</th>
+              <th scope="row">{m.total}</th>
               <td className="num">
                 <b>{formatUsd(preview.cost.monthlyUsd)}</b>
               </td>
@@ -133,13 +136,11 @@ function Preview({
         </table>
       </div>
       <p className="c3">
-        {preview.cost.isEstimate ? "Ước tính" : "Giá"} theo bảng giá ngày{" "}
-        {preview.cost.pricingAsOf}; chi phí thật tính trên tài khoản cloud của
-        bạn.
+        {m.pricing(preview.cost.isEstimate, preview.cost.pricingAsOf)}
       </p>
 
-      <h2 className="h2">Thứ tự dựng</h2>
-      <ol className="plan-list" aria-label="Thứ tự dựng tài nguyên">
+      <h2 className="h2">{m.buildOrder}</h2>
+      <ol className="plan-list" aria-label={m.resourceOrder}>
         {[...preview.steps.network, ...preview.steps.cluster].map((name) => (
           <li key={name} className="mono">
             {name}
@@ -147,21 +148,17 @@ function Preview({
         ))}
       </ol>
       {preview.deployOrder.length > 0 && (
-        <ol className="plan-list" aria-label="Thứ tự cài domain">
+        <ol className="plan-list" aria-label={m.domainOrder}>
           {preview.deployOrder.map((tier, i) => (
             <li key={tier.join(",")}>
-              Bậc {i + 1}: <span className="mono">{tier.join(", ")}</span>
+              {m.stage(i + 1, <span className="mono">{tier.join(", ")}</span>)}
             </li>
           ))}
         </ol>
       )}
 
       {blocked && (
-        <div
-          className="alert amber"
-          role="status"
-          aria-label="Chưa triển khai được"
-        >
+        <div className="alert amber" role="status" aria-label={m.blocked}>
           <Icon of={CircleAlert} />
           <ul>
             {preview.blockers.map((b) => (
@@ -178,8 +175,7 @@ function Preview({
             checked={confirmed}
             onChange={(e) => setConfirmed(e.target.checked)}
           />
-          Tôi đồng ý chi phí ước tính {formatUsd(preview.cost.monthlyUsd)} mỗi
-          tháng trên tài khoản cloud của mình
+          {m.confirmCost(formatUsd(preview.cost.monthlyUsd))}
         </label>
       )}
       {start.isError && (
@@ -196,7 +192,7 @@ function Preview({
             onClick={() => start.mutate()}
           >
             <Icon of={Rocket} />
-            {start.isPending ? "Đang gửi…" : "Bắt đầu triển khai"}
+            {start.isPending ? m.sending : m.start}
           </button>
         </div>
       )}

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
@@ -13,40 +14,23 @@ import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { deploymentApi } from "./deployment-api";
+import { deploymentMessages } from "./deployment.messages";
 import { DoraCards } from "./DoraCards";
 import { PageHead } from "../../components/PageHead";
 
 const RANGES = [7, 30, 90] as const;
 
+/** Icon và màu của mỗi trạng thái; chữ ở `deploymentMessages.status` */
 const STATUS: Record<
   DeploymentWire["status"],
-  { label: string; icon: typeof CircleCheck; tone: string }
+  { icon: typeof CircleCheck; tone: string }
 > = {
-  DEPLOY_PENDING: {
-    label: "Chờ duyệt",
-    icon: CircleAlert,
-    tone: "var(--amber)",
-  },
-  DEPLOY_START: {
-    label: "Đang deploy",
-    icon: CircleAlert,
-    tone: "var(--accent)",
-  },
-  DEPLOY_SUCCESS: {
-    label: "Thành công",
-    icon: CircleCheck,
-    tone: "var(--green)",
-  },
-  DEPLOY_FAILURE: { label: "Thất bại", icon: CircleX, tone: "var(--red)" },
-  FLAG_CHANGE: { label: "Đổi flag", icon: CircleCheck, tone: "var(--ink-3)" },
-  ROLLBACK: { label: "Rollback", icon: CircleX, tone: "var(--red)" },
-};
-
-const TRIGGER: Record<DeploymentWire["triggeredBy"], string> = {
-  WEBHOOK: "CI/CD",
-  MANUAL: "thủ công",
-  ROLLBACK: "rollback",
-  AUTO: "tự động",
+  DEPLOY_PENDING: { icon: CircleAlert, tone: "var(--amber)" },
+  DEPLOY_START: { icon: CircleAlert, tone: "var(--accent)" },
+  DEPLOY_SUCCESS: { icon: CircleCheck, tone: "var(--green)" },
+  DEPLOY_FAILURE: { icon: CircleX, tone: "var(--red)" },
+  FLAG_CHANGE: { icon: CircleCheck, tone: "var(--ink-3)" },
+  ROLLBACK: { icon: CircleX, tone: "var(--red)" },
 };
 
 /**
@@ -58,6 +42,7 @@ const TRIGGER: Record<DeploymentWire["triggeredBy"], string> = {
  * Deploy chờ duyệt (`autoDeploy = false`) có nút duyệt cho MAINTAINER.
  */
 export function DeploymentsPage() {
+  const m = useMessages(deploymentMessages);
   const { project, env } = useProjectContext();
   const [days, setDays] = useState<(typeof RANGES)[number]>(30);
   const dora = useQuery({
@@ -73,13 +58,13 @@ export function DeploymentsPage() {
 
   return (
     <>
-      <ProjectBar title="Deploy" />
+      <ProjectBar title={m.title} />
       <div className="scroll">
         <PageHead
-          title="Deploy"
-          lead={<>Lịch sử triển khai và bốn chỉ số DORA ở {env.name}.</>}
+          title={m.title}
+          lead={m.lead(env.name)}
           actions={
-            <div className="seg" role="group" aria-label="Khoảng thời gian">
+            <div className="seg" role="group" aria-label={m.range}>
               {RANGES.map((d) => (
                 <button
                   key={d}
@@ -87,7 +72,7 @@ export function DeploymentsPage() {
                   aria-pressed={days === d}
                   onClick={() => setDays(d)}
                 >
-                  {d} ngày
+                  {m.days(d)}
                 </button>
               ))}
             </div>
@@ -105,7 +90,7 @@ export function DeploymentsPage() {
             <DoraCards dora={dora.data.dora} />
           )}
 
-          <h2 className="h2">Deployment gần đây</h2>
+          <h2 className="h2">{m.recent}</h2>
           {list.isPending ? (
             <Loading />
           ) : list.isError ? (
@@ -114,12 +99,9 @@ export function DeploymentsPage() {
               onRetry={() => void list.refetch()}
             />
           ) : list.data.deployments.length === 0 ? (
-            <Empty title={`Chưa có deployment nào ở ${env.name}`}>
-              Deploy từ webhook CI/CD và rollback của rollout theo flag sẽ hiện
-              ở đây.
-            </Empty>
+            <Empty title={m.empty(env.name)}>{m.emptyHint}</Empty>
           ) : (
-            <div className="lst" role="list" aria-label="Deployment">
+            <div className="lst" role="list" aria-label={m.list}>
               {list.data.deployments.map((d) => (
                 <DeploymentRow key={d.deploymentId} deployment={d} />
               ))}
@@ -132,6 +114,7 @@ export function DeploymentsPage() {
 }
 
 function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
+  const m = useMessages(deploymentMessages);
   const { project } = useProjectContext();
   const [open, setOpen] = useState(false);
   const s = STATUS[d.status];
@@ -142,7 +125,7 @@ function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
       <div className="it" role="listitem">
         <span className="stt">
           <Icon of={s.icon} style={{ color: s.tone }} />
-          {s.label}
+          {m.status[d.status]}
         </span>
         <span className="mono">
           {d.imageTag ?? d.workloadName ?? d.deploymentId.slice(0, 8)}
@@ -150,14 +133,14 @@ function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
         {d.commitSha !== null && (
           <span className="mono c3">{d.commitSha.slice(0, 7)}</span>
         )}
-        <span className="c3">{TRIGGER[d.triggeredBy]}</span>
+        <span className="c3">{m.trigger[d.triggeredBy]}</span>
         {d.rolloutSessionId !== null && (
           <Link
             to="/app/projects/$projectId/rollouts/$rolloutId"
             params={{ projectId: project.id, rolloutId: d.rolloutSessionId }}
             className="c3"
           >
-            xem rollout
+            {m.viewRollout}
           </Link>
         )}
         <span className="c3" style={{ marginLeft: "auto" }}>
@@ -170,7 +153,7 @@ function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
-          Nhật ký
+          {m.log}
         </button>
       </div>
       {open && <DeploymentLog deploymentId={d.deploymentId} />}
@@ -183,6 +166,7 @@ function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
  * là metadata máy chủ đã che bí mật: lý do lỗi, image khôi phục, repo, ref.
  */
 function DeploymentLog({ deploymentId }: { deploymentId: string }) {
+  const m = useMessages(deploymentMessages);
   const { project } = useProjectContext();
   const logs = useQuery({
     queryKey: qk.deploymentLogs(project.id, deploymentId),
@@ -191,14 +175,11 @@ function DeploymentLog({ deploymentId }: { deploymentId: string }) {
   if (logs.isPending) return <Loading />;
   if (logs.isError) return <ErrorState error={logs.error} />;
   return (
-    <ol
-      className="lst"
-      aria-label={`Nhật ký deploy ${deploymentId.slice(0, 8)}`}
-    >
+    <ol className="lst" aria-label={m.logLabel(deploymentId.slice(0, 8))}>
       {logs.data.events.map((e) => (
         <li key={e.id} className="it">
-          <span className="stt">{STATUS[e.eventType].label}</span>
-          <span className="c3">{TRIGGER[e.triggeredBy]}</span>
+          <span className="stt">{m.status[e.eventType]}</span>
+          <span className="c3">{m.trigger[e.triggeredBy]}</span>
           {e.pipelineId !== null && (
             <span className="mono c3">{e.pipelineId}</span>
           )}
@@ -220,6 +201,7 @@ function DeploymentLog({ deploymentId }: { deploymentId: string }) {
 
 /** Duyệt một deploy chờ (§8.3): máy chủ ghi `DEPLOY_START` rồi áp image ở hàng đợi deploy */
 function ApproveButton({ deployment: d }: { deployment: DeploymentWire }) {
+  const m = useMessages(deploymentMessages);
   const { project, env } = useProjectContext();
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -235,13 +217,17 @@ function ApproveButton({ deployment: d }: { deployment: DeploymentWire }) {
   return (
     <>
       <button type="button" className="btn" onClick={() => setConfirming(true)}>
-        Duyệt deploy
+        {m.approve}
       </button>
       {confirming && (
         <ConfirmDialog
-          title={`Deploy ${d.imageTag ?? d.deploymentId.slice(0, 8)} vào ${env.name}?`}
-          description="UDP áp image vào workload rồi theo dõi; không lên kịp hạn thì tự hoàn tác về bản cũ. Flag vẫn tắt: deploy không phải release."
-          confirmLabel="Duyệt deploy"
+          title={m.approveTitle(
+            d.imageTag ?? d.deploymentId.slice(0, 8),
+            env.name,
+          )}
+          description={m.approveDescription}
+          confirmLabel={m.approve}
+
           busy={approve.isPending}
           error={approve.isError ? messageOf(approve.error) : undefined}
           onConfirm={() => approve.mutate()}

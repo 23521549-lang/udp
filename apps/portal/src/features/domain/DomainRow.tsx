@@ -4,9 +4,11 @@ import type {
   ProjectDomainWire,
 } from "@udp/shared-types/wire";
 import { Switch } from "../../components/Switch";
+import { useMessages } from "../../i18n";
 import { ConfigForm } from "./ConfigForm";
 import type { DraftEntry } from "./domain-model";
 import { domainStatusLabel } from "./domain-labels";
+import { domainMessages } from "./domain.messages";
 
 /**
  * Một domain trong trang cấu hình (§10.7 `DomainRow`): công tắc, chọn tool, trạng thái đã
@@ -34,6 +36,7 @@ export function DomainRow({
   onTool: (toolId: string) => void;
   onConfig: (config: Record<string, unknown>) => void;
 }) {
+  const m = useMessages(domainMessages).row;
   const tool = entry.tools.find((t) => t.toolId === draft.toolId);
   const noTools = entry.tools.length === 0;
   const id = `dom-${entry.domainType}`;
@@ -44,7 +47,7 @@ export function DomainRow({
         <Switch
           checked={draft.enabled}
           onChange={onEnabled}
-          label={`Bật ${entry.displayName}`}
+          label={m.enable(entry.displayName)}
           disabled={!canEdit || noTools || !entry.isAvailable}
         />
         <b>{entry.displayName}</b>
@@ -58,17 +61,17 @@ export function DomainRow({
             search={(prev: Record<string, unknown>) => prev}
             className="c3"
           >
-            Chi tiết
+            {m.details}
             <span className="visually-hidden"> {entry.displayName}</span>
           </Link>
         )}
       </div>
-      {noTools && <p className="c3">Chưa có công cụ nào cho domain này.</p>}
+      {noTools && <p className="c3">{m.noTools}</p>}
       {draft.enabled && tool !== undefined && (
         <div className="form">
           {entry.tools.length > 1 && (
             <div className="f">
-              <label htmlFor={`${id}-tool`}>Công cụ</label>
+              <label htmlFor={`${id}-tool`}>{m.tool}</label>
               <select
                 id={`${id}-tool`}
                 name={`${entry.domainType}-tool`}
@@ -87,7 +90,7 @@ export function DomainRow({
           )}
           {entry.tools.length === 1 && (
             <p className="c3">
-              Công cụ: <b>{tool.toolId}</b> {tool.version}
+              {m.toolLine(<b>{tool.toolId}</b>)} {tool.version}
             </p>
           )}
           <ConfigForm

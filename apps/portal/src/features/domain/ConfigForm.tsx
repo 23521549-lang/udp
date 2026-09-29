@@ -5,7 +5,9 @@ import type {
 } from "@udp/shared-types/wire";
 import { useState, type ReactNode } from "react";
 import { Switch } from "../../components/Switch";
+import { useMessages } from "../../i18n";
 import { configLabel } from "./config-labels";
+import { domainMessages } from "./domain.messages";
 
 /**
  * Form cấu hình một tool, dựng từ `configFields` mà catalog suy từ `configSchema` của adapter
@@ -28,11 +30,12 @@ export function ConfigForm({
   /** Lỗi của máy chủ theo khoá trường (`site`, `apiKey`…) */
   errors: Record<string, string>;
 }) {
+  const m = useMessages(domainMessages).config;
   if (tool.config.kind === "json") {
     return (
       <JsonInput
         id={`${idPrefix}-config`}
-        label="Cấu hình (JSON)"
+        label={m.json}
         value={value}
         onChange={(v) => onChange(v as Record<string, unknown>)}
         disabled={disabled}
@@ -41,7 +44,7 @@ export function ConfigForm({
     );
   }
   if (tool.config.fields.length === 0) {
-    return <p className="c3">Tool này không có gì để cấu hình.</p>;
+    return <p className="c3">{m.nothing}</p>;
   }
   return (
     <div className="grid-f">
@@ -80,6 +83,8 @@ function FieldInput({
   disabled: boolean;
   error: string | undefined;
 }) {
+  // Theo dõi ngôn ngữ: `configLabel` đọc ngôn ngữ lúc gọi
+  const m = useMessages(domainMessages).config;
   const text = configLabel(field.key);
   const label = field.required ? `${text} *` : text;
   /** Khoá gốc cạnh nhãn: thứ người dùng gặp trong tài liệu của tool */
@@ -154,7 +159,7 @@ function FieldInput({
               onChange(e.target.value === "" ? undefined : e.target.value)
             }
           >
-            <option value="">Chọn…</option>
+            <option value="">{m.choose}</option>
             {(field.options ?? []).map((o) => (
               <option key={o} value={o}>
                 {o}
@@ -254,7 +259,7 @@ function SecretInput({
   id: string;
   /** Khoá trường — `name` của ô */
   name: string;
-  /** Nhãn tiếng Việt — tên riêng cho nút "Giữ khoá cũ" khi nhiều ô bí mật cùng mở */
+  /** Nhãn đọc được của trường — tên riêng cho nút "Giữ khoá cũ" khi nhiều ô bí mật cùng mở */
   label: string;
   value: unknown;
   onChange: (v: unknown) => void;
@@ -263,6 +268,7 @@ function SecretInput({
   describedBy: string | undefined;
   required: boolean;
 }) {
+  const m = useMessages(domainMessages).config;
   const saved = isKeptSecret(value);
   const [editing, setEditing] = useState(false);
   const [previous, setPrevious] = useState(value);
@@ -275,7 +281,7 @@ function SecretInput({
   if (saved && !editing) {
     return (
       <div className="secret-row">
-        <span className="chip soft">Đã lưu</span>
+        <span className="chip soft">{m.savedSecret}</span>
         <button
           type="button"
           id={id}
@@ -283,7 +289,7 @@ function SecretInput({
           disabled={disabled}
           onClick={() => setEditing(true)}
         >
-          Đổi
+          {m.change}
         </button>
       </div>
     );
@@ -309,14 +315,14 @@ function SecretInput({
         <button
           type="button"
           className="btn"
-          aria-label={`Giữ khoá cũ của ${label}`}
+          aria-label={m.keepOldOf(label)}
           disabled={disabled}
           onClick={() => {
             onChange({ ...KEPT_SECRET });
             setEditing(false);
           }}
         >
-          Giữ khoá cũ
+          {m.keepOld}
         </button>
       )}
     </div>
@@ -343,11 +349,13 @@ function JsonInput({
   disabled: boolean;
   error: string | undefined;
 }) {
+  const m = useMessages(domainMessages).config;
   const [text, setText] = useState(() =>
     value === undefined ? "" : JSON.stringify(value, null, 2),
   );
-  const [parseError, setParseError] = useState<string | null>(null);
-  const shown = parseError ?? error;
+  // Cờ chứ không phải câu: đổi ngôn ngữ lúc đang báo lỗi thì câu đổi theo
+  const [parseError, setParseError] = useState(false);
+  const shown = parseError ? m.invalidJson : error;
   return (
     <div className="f">
       <div className="f-top">
@@ -368,15 +376,15 @@ function JsonInput({
         onChange={(e) => {
           setText(e.target.value);
           if (e.target.value.trim() === "") {
-            setParseError(null);
+            setParseError(false);
             onChange(undefined);
             return;
           }
           try {
             onChange(JSON.parse(e.target.value) as unknown);
-            setParseError(null);
+            setParseError(false);
           } catch {
-            setParseError("JSON chưa hợp lệ");
+            setParseError(true);
           }
         }}
       />

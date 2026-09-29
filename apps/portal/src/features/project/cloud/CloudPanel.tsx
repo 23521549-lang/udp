@@ -3,9 +3,11 @@ import type { ProjectRoleWire } from "@udp/shared-types/wire";
 import { Lock } from "lucide-react";
 import { Icon } from "../../../components/Icon";
 import { ErrorState, Loading } from "../../../components/States";
+import { useMessages } from "../../../i18n";
 import { qk } from "../../../lib/query-keys";
 import { can } from "../roles";
 import { cloudApi } from "./cloud-api";
+import { cloudMessages } from "./cloud.messages";
 import { CloudEditor } from "./CloudEditor";
 import { CloudStatus } from "./CloudStatus";
 
@@ -23,6 +25,7 @@ export function CloudPanel({
   role: ProjectRoleWire;
   onSaved?: () => void;
 }) {
+  const m = useMessages(cloudMessages).panel;
   const canRead = can(role, "MAINTAINER");
   const isOwner = can(role, "OWNER");
   const current = useQuery({
@@ -35,7 +38,7 @@ export function CloudPanel({
     return (
       <div className="lock" role="note">
         <Icon of={Lock} />
-        <span>Cấu hình cloud chỉ hiện với Maintainer và chủ sở hữu.</span>
+        <span>{m.locked}</span>
       </div>
     );
   }
@@ -46,13 +49,11 @@ export function CloudPanel({
   return (
     <>
       {cloud === null ? (
-        <p className="c3">Project chưa kết nối cloud nào.</p>
+        <p className="c3">{m.none}</p>
       ) : (
         <CloudStatus projectId={projectId} cloud={cloud} canCheck={isOwner} />
       )}
-      <h2 className="h2">
-        {cloud === null ? "Chọn cloud và cách xác thực" : "Đổi cấu hình"}
-      </h2>
+      <h2 className="h2">{cloud === null ? m.choose : m.change}</h2>
       <CloudEditor
         projectId={projectId}
         canEdit={isOwner}

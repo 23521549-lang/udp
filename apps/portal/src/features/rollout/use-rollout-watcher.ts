@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { toast } from "../../components/Toast";
+import { messagesOf } from "../../i18n";
 import { qk } from "../../lib/query-keys";
 import { rolloutApi } from "./rollout-api";
+import { rolloutMessages } from "./rollout.messages";
 
 /**
  * Báo khi một rollout ĐANG CHẠY biến khỏi danh sách đang chạy (§10.9
@@ -32,10 +34,10 @@ export function useRolloutWatcher(projectId: string): void {
     const now = active.data?.rollouts;
     if (now === undefined) return;
     if (prev.current !== null) {
+      // Chữ đọc lúc sự kiện xảy ra: hook này không vẽ gì nên không theo dõi ngôn ngữ
+      const m = messagesOf(rolloutMessages).watcher;
       for (const r of finishedSince(prev.current, now)) {
-        toast.info(
-          `Rollout ${r.flagKey ?? r.id.slice(0, 8)} đã kết thúc. Mở trang Rollout để xem kết quả.`,
-        );
+        toast.info(m.finished(r.flagKey ?? r.id.slice(0, 8)));
       }
     }
     prev.current = now.map((r) => ({ id: r.id, flagKey: r.flagKey }));

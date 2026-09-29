@@ -9,6 +9,7 @@ import type { FlagVariantWire } from "@udp/shared-types/wire";
 import { ArrowDown, ArrowUp, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { Icon } from "../../components/Icon";
+import { useMessages } from "../../i18n";
 import { formatPercent } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { segmentApi } from "../segment/segment-api";
@@ -22,6 +23,7 @@ import {
   withRuleType,
   type RuleDraft,
 } from "./rules-model";
+import { rulesMessages } from "./rules.messages";
 
 /**
  * Một rule = hai nửa TÁCH RỜI (§10.8, v4): "Nếu" (ai khớp) và "Thì" (phục vụ gì). Tách ra
@@ -29,29 +31,13 @@ import {
  * FLAG_LEVEL ramp (§7.7).
  */
 
-const RULE_TYPE_LABEL: Record<RuleType, string> = {
-  ALL: "Mọi người",
-  USER_BASED: "Người dùng cụ thể",
-  ATTRIBUTE_BASED: "Thuộc tính",
-  SEGMENT: "Segment",
-};
-
-const OPERATOR_LABEL: Record<AttributeOperator, string> = {
-  eq: "bằng",
-  neq: "khác",
-  in: "thuộc",
-  nin: "không thuộc",
-  gt: ">",
-  gte: "≥",
-  lt: "<",
-  lte: "≤",
-  contains: "chứa",
-  startsWith: "bắt đầu bằng",
-  endsWith: "kết thúc bằng",
-  semverGt: "semver >",
-  semverLt: "semver <",
-  regex: "khớp regex",
-};
+/** Thứ tự các loại "ai khớp" trong ô chọn; nhãn ở `rulesMessages.ruleType` */
+const RULE_TYPES: RuleType[] = [
+  "ALL",
+  "USER_BASED",
+  "ATTRIBUTE_BASED",
+  "SEGMENT",
+];
 
 const VARIANT_COLORS = ["var(--v1)", "var(--v2)", "var(--v3)", "var(--v4)"];
 export const variantColor = (i: number): string =>
@@ -102,7 +88,8 @@ export function RuleCard({
   onMove: (delta: -1 | 1) => void;
   onRemove: () => void;
 }) {
-  const label = `Rule ${String(index + 1)}`;
+  const m = useMessages(rulesMessages);
+  const label = m.rule(index + 1);
   const problemId = `${rule.localKey}-problem`;
   return (
     <div
@@ -114,8 +101,8 @@ export function RuleCard({
       <div className="rule-h">
         <span className="idx">{index + 1}</span>
         <input
-          aria-label={`Mô tả ${label}`}
-          placeholder="Mô tả rule…"
+          aria-label={m.description(label)}
+          placeholder={m.descriptionPlaceholder}
           value={rule.description ?? ""}
           disabled={readOnly}
           onChange={(e) => onChange({ ...rule, description: e.target.value })}
@@ -123,7 +110,7 @@ export function RuleCard({
         <button
           type="button"
           className="ib"
-          aria-label={`Đưa ${label} lên`}
+          aria-label={m.moveUp(label)}
           disabled={readOnly || index === 0}
           onClick={() => onMove(-1)}
         >
@@ -132,7 +119,7 @@ export function RuleCard({
         <button
           type="button"
           className="ib"
-          aria-label={`Đưa ${label} xuống`}
+          aria-label={m.moveDown(label)}
           disabled={readOnly || index === total - 1}
           onClick={() => onMove(1)}
         >
@@ -141,7 +128,7 @@ export function RuleCard({
         <button
           type="button"
           className="ib"
-          aria-label={`Xoá ${label}`}
+          aria-label={m.remove(label)}
           disabled={readOnly}
           onClick={onRemove}
         >
@@ -149,20 +136,20 @@ export function RuleCard({
         </button>
       </div>
       <div className="rule-b">
-        <span className="w">Nếu</span>
+        <span className="w">{m.if}</span>
         <div className="line">
           <select
             className="sel"
-            aria-label={`Loại điều kiện ${label}`}
+            aria-label={m.conditionType(label)}
             value={rule.ruleType}
             disabled={readOnly}
             onChange={(e) =>
               onChange(withRuleType(rule, e.target.value as RuleType))
             }
           >
-            {(Object.keys(RULE_TYPE_LABEL) as RuleType[]).map((t) => (
+            {RULE_TYPES.map((t) => (
               <option key={t} value={t}>
-                {RULE_TYPE_LABEL[t]}
+                {m.ruleType[t]}
               </option>
             ))}
           </select>
@@ -174,7 +161,7 @@ export function RuleCard({
             onChange={(condition) => onChange({ ...rule, condition })}
           />
         </div>
-        <span className="w">Thì</span>
+        <span className="w">{m.then}</span>
         <ServeEditor
           rule={rule}
           label={label}
@@ -208,14 +195,15 @@ function ConditionEditor({
   readOnly: boolean;
   onChange: (condition: unknown) => void;
 }) {
+  const m = useMessages(rulesMessages);
   switch (rule.ruleType) {
     case "ALL":
-      return <span className="c3">khớp mọi người dùng</span>;
+      return <span className="c3">{m.matchesEveryone}</span>;
     case "USER_BASED": {
       const ids = (rule.condition as { userIds?: string[] }).userIds ?? [];
       return (
         <TagInput
-          label={`Danh sách người dùng ${label}`}
+          label={m.userList(label)}
           values={ids}
           readOnly={readOnly}
           onChange={(userIds) => onChange({ userIds })}
@@ -256,15 +244,16 @@ export function AttributeConditions({
   readOnly: boolean;
   onChange: (next: AttributeCondition[]) => void;
 }) {
+  const m = useMessages(rulesMessages);
   return (
     <div className="conds">
       {all.map((c, i) => (
         <div key={i} className="line">
-          {i > 0 && <span className="c3">và</span>}
+          {i > 0 && <span className="c3">{m.and}</span>}
           <input
             className="inp mono"
-            aria-label={`Thuộc tính ${String(i + 1)} của ${label}`}
-            placeholder="country…"
+            aria-label={m.attribute(i + 1, label)}
+            placeholder={m.attributePlaceholder}
             value={c.attribute}
             disabled={readOnly}
             onChange={(e) =>
@@ -277,7 +266,7 @@ export function AttributeConditions({
           />
           <select
             className="sel"
-            aria-label={`Toán tử ${String(i + 1)} của ${label}`}
+            aria-label={m.operatorOf(i + 1, label)}
             value={c.operator}
             disabled={readOnly}
             onChange={(e) => {
@@ -297,14 +286,18 @@ export function AttributeConditions({
           >
             {ATTRIBUTE_OPERATORS.map((op) => (
               <option key={op} value={op}>
-                {OPERATOR_LABEL[op]}
+                {m.operator[op]}
               </option>
             ))}
           </select>
           <input
             className="inp"
-            aria-label={`Giá trị ${String(i + 1)} của ${label}`}
-            placeholder={LIST_OPS.has(c.operator) ? "VN, TH…" : "VN…"}
+            aria-label={m.value(i + 1, label)}
+            placeholder={
+              LIST_OPS.has(c.operator)
+                ? m.listValuePlaceholder
+                : m.valuePlaceholder
+            }
             value={textOf(c.value)}
             disabled={readOnly}
             onChange={(e) =>
@@ -324,7 +317,7 @@ export function AttributeConditions({
             <button
               type="button"
               className="ib"
-              aria-label={`Bỏ điều kiện ${String(i + 1)} của ${label}`}
+              aria-label={m.removeCondition(i + 1, label)}
               disabled={readOnly}
               onClick={() => set(all.filter((_, j) => j !== i))}
             >
@@ -342,7 +335,7 @@ export function AttributeConditions({
           }
         >
           <Icon of={Plus} />
-          Thêm điều kiện
+          {m.addCondition}
         </button>
       )}
     </div>
@@ -360,6 +353,7 @@ export function TagInput({
   readOnly: boolean;
   onChange: (values: string[]) => void;
 }) {
+  const m = useMessages(rulesMessages);
   const [text, setText] = useState("");
   const commit = () => {
     const parts = text
@@ -377,7 +371,7 @@ export function TagInput({
           {!readOnly && (
             <button
               type="button"
-              aria-label={`Bỏ ${v}`}
+              aria-label={m.removeTag(v)}
               onClick={() => onChange(values.filter((x) => x !== v))}
             >
               <Icon of={X} size={10} />
@@ -387,7 +381,7 @@ export function TagInput({
       ))}
       <input
         aria-label={label}
-        placeholder={values.length === 0 ? "user-1, user-2…" : ""}
+        placeholder={values.length === 0 ? m.tagPlaceholder : ""}
         value={text}
         disabled={readOnly}
         onChange={(e) => setText(e.target.value)}
@@ -416,6 +410,7 @@ function SegmentPicker({
   readOnly: boolean;
   onChange: (segmentId: string) => void;
 }) {
+  const m = useMessages(rulesMessages);
   const segments = useQuery({
     queryKey: qk.segments(projectId),
     queryFn: () => segmentApi.list(projectId),
@@ -423,12 +418,12 @@ function SegmentPicker({
   return (
     <select
       className="sel"
-      aria-label={`Segment của ${label}`}
+      aria-label={m.segmentOf(label)}
       value={value}
       disabled={readOnly}
       onChange={(e) => onChange(e.target.value)}
     >
-      <option value="">Chọn segment</option>
+      <option value="">{m.chooseSegment}</option>
       {segments.data?.segments.map((s) => (
         <option key={s.id} value={s.id}>
           {s.name}
@@ -451,13 +446,14 @@ function ServeEditor({
   readOnly: boolean;
   onChange: (serve: RuleDraft["serve"]) => void;
 }) {
+  const m = useMessages(rulesMessages);
   const serve = rule.serve;
   return (
     <div
       className="line"
       style={{ flexDirection: "column", alignItems: "stretch" }}
     >
-      <div className="seg" role="group" aria-label={`Cách phục vụ ${label}`}>
+      <div className="seg" role="group" aria-label={m.serveMode(label)}>
         <button
           type="button"
           aria-pressed={serve.kind === "variant"}
@@ -466,7 +462,7 @@ function ServeEditor({
             onChange({ kind: "variant", variantId: variants[0]?.id ?? "" })
           }
         >
-          Một variant
+          {m.oneVariant}
         </button>
         <button
           type="button"
@@ -474,20 +470,20 @@ function ServeEditor({
           disabled={readOnly}
           onClick={() => onChange(evenDistribution(variants))}
         >
-          Chia tỉ lệ
+          {m.split}
         </button>
       </div>
       {serve.kind === "variant" ? (
         <select
           className="sel"
-          aria-label={`Variant phục vụ ${label}`}
+          aria-label={m.servedVariant(label)}
           value={serve.variantId}
           disabled={readOnly}
           onChange={(e) =>
             onChange({ kind: "variant", variantId: e.target.value })
           }
         >
-          <option value="">Chọn variant</option>
+          <option value="">{m.chooseVariant}</option>
           {variants.map((v) => (
             <option key={v.id} value={v.id}>
               {v.key}
@@ -520,6 +516,7 @@ function Distribution({
   readOnly: boolean;
   onChange: (serve: RuleDraft["serve"]) => void;
 }) {
+  const m = useMessages(rulesMessages);
   const sum = weightSum(serve);
   const keyOf = (id: string) => variants.find((v) => v.id === id)?.key ?? id;
   return (
@@ -544,7 +541,7 @@ function Distribution({
             min={0}
             max={100}
             step={0.1}
-            aria-label={`Kéo tỉ lệ ${keyOf(w.variantId)} của ${label}`}
+            aria-label={m.dragShare(keyOf(w.variantId), label)}
             value={percentOf(w.weight)}
             disabled={readOnly}
             onChange={(e) =>
@@ -561,7 +558,7 @@ function Distribution({
             min={0}
             max={100}
             step={0.1}
-            aria-label={`Tỉ lệ ${keyOf(w.variantId)} của ${label} (%)`}
+            aria-label={m.share(keyOf(w.variantId), label)}
             value={percentOf(w.weight)}
             disabled={readOnly}
             onChange={(e) =>
@@ -580,7 +577,7 @@ function Distribution({
         className={sum === TOTAL_WEIGHT ? "sum" : "sum bad"}
         role={sum === TOTAL_WEIGHT ? undefined : "alert"}
       >
-        <span>Tổng</span>
+        <span>{m.total}</span>
         <span className="num">{formatPercent(percentOf(sum))}</span>
       </div>
     </div>

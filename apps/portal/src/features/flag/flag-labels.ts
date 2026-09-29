@@ -1,13 +1,14 @@
 import type { FlagDetailWire } from "@udp/shared-types/wire";
+import { messagesOf } from "../../i18n";
+import { flagMessages } from "./flag.messages";
 
-export const LIFECYCLE_LABEL: Record<
-  FlagDetailWire["lifecycleStatus"],
-  string
-> = {
-  DRAFT: "Nháp",
-  ACTIVE: "Đang dùng",
-  ARCHIVED: "Đã lưu trữ",
-};
+/**
+ * Nhãn vòng đời theo ngôn ngữ đang chọn (Plan #54) — đọc ngôn ngữ lúc gọi; component gọi nó đã theo dõi
+ * ngôn ngữ qua chữ của chính nó. Chữ ở `flag.messages.tsx`.
+ */
+export const lifecycleLabel = (
+  status: FlagDetailWire["lifecycleStatus"],
+): string => messagesOf(flagMessages).lifecycle[status];
 
 /** Thứ tự nhóm trong danh sách: đang dùng trước, nháp sau, lưu trữ cuối */
 export const LIFECYCLE_ORDER: FlagDetailWire["lifecycleStatus"][] = [

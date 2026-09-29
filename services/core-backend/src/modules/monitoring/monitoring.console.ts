@@ -21,7 +21,7 @@ export function consoleOf(
     case "datadog":
       return {
         kind: "url",
-        label: "Mở Datadog",
+        app: "datadog",
         // Site vùng (ap1.…) là host của chính nó; site gốc có tiền tố app.
         url:
           source.site.split(".").length > 2
@@ -31,7 +31,7 @@ export function consoleOf(
     case "newrelic":
       return {
         kind: "url",
-        label: "Mở New Relic",
+        app: "newrelic",
         url:
           source.region === "EU"
             ? "https://one.eu.newrelic.com"
@@ -40,7 +40,7 @@ export function consoleOf(
     case "dynatrace":
       return {
         kind: "url",
-        label: "Mở Dynatrace",
+        app: "dynatrace",
         url: source.environmentUrl,
       };
     case "prometheus": {
@@ -54,7 +54,7 @@ export function consoleOf(
         const release = target.service.replace(/-prometheus$/, "");
         return {
           kind: "portForward",
-          label: "Mở Grafana",
+          app: "grafana",
           command: `kubectl -n ${target.namespace} port-forward svc/${release}-grafana 3000:80`,
           localUrl: "http://localhost:3000",
         };
@@ -63,7 +63,7 @@ export function consoleOf(
         providedBy === "monitoring:victoria-metrics" ? "/vmui" : "/graph";
       return {
         kind: "portForward",
-        label: "Mở giao diện truy vấn",
+        app: "query-ui",
         command: `kubectl -n ${target.namespace} port-forward svc/${target.service} ${String(target.port)}:${String(target.port)}`,
         localUrl: `http://localhost:${String(target.port)}${ui}`,
       };

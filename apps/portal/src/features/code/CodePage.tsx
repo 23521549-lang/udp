@@ -15,12 +15,14 @@ import { useState } from "react";
 import { CodeBlock } from "../../components/CodeBlock";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { codeApi } from "./code-api";
+import { codeMessages } from "./code.messages";
 import { download, zip } from "./zip";
 import { PageHead } from "../../components/PageHead";
 
@@ -30,17 +32,16 @@ import { PageHead } from "../../components/PageHead";
  * vào repo của developer.
  */
 export function CodePage() {
+  const m = useMessages(codeMessages);
   const { project } = useProjectContext();
   return (
     <>
-      <ProjectBar title="Mã nguồn" />
+      <ProjectBar title={m.title} />
       <div className="scroll">
         <PageHead
-          title="Mã nguồn"
+          title={m.title}
           lead={
-            project.creationMode === "CREATE_NEW"
-              ? "Golden Path: dự án mẫu đã tích hợp sẵn provider, middleware đo và pipeline của UDP."
-              : "Quét repo có sẵn để biết còn thiếu gì trước khi dùng rollout mức flag."
+            project.creationMode === "CREATE_NEW" ? m.leadCreate : m.leadImport
           }
         />
         <div className="page">
@@ -58,14 +59,10 @@ export function CodePage() {
 // ------------------------------------------------------------- Golden Path
 
 function GoldenPathView() {
+  const m = useMessages(codeMessages);
   const { project } = useProjectContext();
   if (!can(project.myRole, "DEVELOPER")) {
-    return (
-      <Empty title="Cần quyền Lập trình viên">
-        Golden Path là mã để đưa vào repo, nên chỉ Lập trình viên trở lên xem
-        được.
-      </Empty>
-    );
+    return <Empty title={m.needDeveloper}>{m.needDeveloperHint}</Empty>;
   }
   return <GoldenPathFiles />;
 }
@@ -81,6 +78,7 @@ function filesOf(data: GoldenPathResponseWire) {
 }
 
 function GoldenPathFiles() {
+  const m = useMessages(codeMessages);
   const { project } = useProjectContext();
   const tree = useQuery({
     queryKey: qk.goldenPath(project.id),
@@ -106,7 +104,7 @@ function GoldenPathFiles() {
             {tree.data.runtime === "nodejs" ? "Node.js" : "Python"} ·{" "}
             <span className="mono">{tree.data.slug}</span>
           </h2>
-          <span className="c3">{files.length} tệp</span>
+          <span className="c3">{m.fileCount(files.length)}</span>
           <div className="r">
             <button
               type="button"
@@ -120,11 +118,11 @@ function GoldenPathFiles() {
               }}
             >
               <Icon of={Download} />
-              Tải .zip
+              {m.downloadZip}
             </button>
           </div>
         </div>
-        <div className="lst files" aria-label="Tệp của Golden Path">
+        <div className="lst files" aria-label={m.files}>
           {files.map((f) => (
             <button
               key={f.path}
@@ -141,8 +139,8 @@ function GoldenPathFiles() {
       {current !== undefined && (
         <CodeBlock
           code={current.content}
-          label={`Nội dung ${current.path}`}
-          copyLabel={`Sao chép ${current.path}`}
+          label={m.contentOf(current.path)}
+          copyLabel={m.copyOf(current.path)}
         />
       )}
     </>
@@ -152,24 +150,9 @@ function GoldenPathFiles() {
 // ------------------------------------------------------------- Import Existing
 
 const STATUS_ICON = { ok: CircleCheck, missing: CircleX, unknown: CircleHelp };
-const STATUS_LABEL = {
-  ok: "Đã có",
-  missing: "Còn thiếu",
-  unknown: "Chưa xác định",
-};
-
-const FINDING_TITLE: Record<RepoScanWire["findings"][number]["id"], string> = {
-  runtime: "Ngôn ngữ",
-  dockerfile: "Dockerfile",
-  "metrics-endpoint": "Endpoint /metrics",
-  openfeature: "OpenFeature SDK",
-  "udp-provider": "Provider của UDP",
-  "udp-middleware": "Middleware đo của UDP",
-  "service-version": "service.version trong manifest",
-  pipeline: "Pipeline báo deploy về UDP",
-};
 
 function RepoScanView() {
+  const m = useMessages(codeMessages);
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [token, setToken] = useState("");
@@ -206,14 +189,14 @@ function RepoScanView() {
               type="password"
               className="inp"
               autoComplete="off"
-              aria-label="Token đọc repo (tuỳ chọn, cho repo riêng tư)"
-              placeholder="Token cho repo riêng tư (tuỳ chọn)…"
+              aria-label={m.token}
+              placeholder={m.tokenPlaceholder}
               value={token}
               onChange={(e) => setToken(e.target.value)}
             />
             <button type="submit" className="btn pri" disabled={scan.isPending}>
               <Icon of={ScanSearch} />
-              {scan.isPending ? "Đang quét…" : "Quét repo"}
+              {scan.isPending ? m.scanning : m.scan}
             </button>
           </form>
         )}
@@ -224,10 +207,8 @@ function RepoScanView() {
       ) : last.isError ? (
         <ErrorState error={last.error} />
       ) : last.data.scan === null ? (
-        <Empty title="Chưa quét repo lần nào">
-          {canScan
-            ? "Bấm Quét repo: UDP đọc repo qua API công khai của GitHub/GitLab và chỉ đưa ra đề xuất."
-            : "Nhờ Lập trình viên của project quét repo."}
+        <Empty title={m.neverScanned}>
+          {canScan ? m.neverScannedHint : m.askDeveloper}
         </Empty>
       ) : (
         <ScanResult scan={last.data.scan} />
@@ -237,41 +218,38 @@ function RepoScanView() {
 }
 
 function ScanResult({ scan }: { scan: RepoScanWire }) {
+  const m = useMessages(codeMessages);
   const [open, setOpen] = useState<string | null>(null);
   return (
     <>
       <div className="kpis">
         <ReadinessKpi scan={scan} />
         <div className="kpi">
-          <div className="l">Nhận diện</div>
+          <div className="l">{m.detected}</div>
           <div>
-            {scan.runtime ?? "Không rõ ngôn ngữ"}
+            {scan.runtime ?? m.unknownRuntime}
             {scan.framework === null ? "" : ` · ${scan.framework}`}
           </div>
           <div className="c3">
-            CI/CD: {scan.cicdTool ?? "không thấy"} · quét lúc{" "}
-            {formatDateTime(scan.scannedAt)}
+            {m.scanMeta(scan.cicdTool, formatDateTime(scan.scannedAt))}
           </div>
         </div>
       </div>
       {scan.truncated && (
         <div className="alert amber" role="status">
           <Icon of={TriangleAlert} />
-          <div>
-            Repo lớn hơn trần đọc của một lượt quét: mục "Chưa xác định" có thể
-            đã có mà UDP không đọc tới.
-          </div>
+          <div>{m.truncated}</div>
         </div>
       )}
-      <div className="lst" aria-label="Kết quả quét">
+      <div className="lst" aria-label={m.results}>
         {scan.findings.map((f) => (
           <div key={f.id} className="it finding">
             <div className="head">
               <span className={f.status === "ok" ? "stt" : "stt warn"}>
                 <Icon of={STATUS_ICON[f.status]} />
-                {STATUS_LABEL[f.status]}
+                {m.status[f.status]}
               </span>
-              <b style={{ fontWeight: 500 }}>{FINDING_TITLE[f.id]}</b>
+              <b style={{ fontWeight: 500 }}>{m.finding[f.id]}</b>
               <span className="c3">{f.detail}</span>
             </div>
             {f.evidence.length > 0 && (
@@ -279,7 +257,7 @@ function ScanResult({ scan }: { scan: RepoScanWire }) {
             )}
             {f.suggestion !== undefined && (
               <div className="c3">
-                Đề xuất: {f.suggestion.text}
+                {m.suggestion(f.suggestion.text)}
                 {f.suggestion.file !== undefined && (
                   <>
                     {" "}
@@ -289,7 +267,7 @@ function ScanResult({ scan }: { scan: RepoScanWire }) {
                       aria-expanded={open === f.id}
                       onClick={() => setOpen(open === f.id ? null : f.id)}
                     >
-                      {open === f.id ? "Ẩn" : "Xem"} {f.suggestion.file.path}
+                      {m.toggleFile(open === f.id, f.suggestion.file.path)}
                     </button>
                   </>
                 )}
@@ -298,8 +276,8 @@ function ScanResult({ scan }: { scan: RepoScanWire }) {
             {open === f.id && f.suggestion?.file !== undefined && (
               <CodeBlock
                 code={f.suggestion.file.content}
-                label={`Mẫu ${f.suggestion.file.path}`}
-                copyLabel={`Sao chép ${f.suggestion.file.path}`}
+                label={m.templateOf(f.suggestion.file.path)}
+                copyLabel={m.copyOf(f.suggestion.file.path)}
               />
             )}
           </div>
@@ -311,21 +289,22 @@ function ScanResult({ scan }: { scan: RepoScanWire }) {
 
 /** Hai điều kiện C1 phát hiện được từ mã (§6.6): provider UDP và middleware đo */
 export function ReadinessKpi({ scan }: { scan: RepoScanWire }) {
+  const m = useMessages(codeMessages);
   const missing = scan.findings.filter(
     (f) =>
       (f.id === "udp-provider" || f.id === "udp-middleware") &&
       f.status !== "ok",
   );
   return (
-    <div className="kpi" aria-label="Sẵn sàng cho flag-level rollout">
-      <div className="l">Sẵn sàng cho flag-level rollout</div>
+    <div className="kpi" aria-label={m.readiness}>
+      <div className="l">{m.readiness}</div>
       <span className={scan.flagLevelReady ? "stt" : "stt warn"}>
         <Icon of={scan.flagLevelReady ? CircleCheck : CircleX} />
-        {scan.flagLevelReady ? "Sẵn sàng" : "Chưa sẵn sàng"}
+        {scan.flagLevelReady ? m.ready : m.notReady}
       </span>
       {missing.map((f) => (
         <div key={f.id} className="c3">
-          Thiếu: {FINDING_TITLE[f.id]}
+          {m.missing(m.finding[f.id])}
         </div>
       ))}
     </div>

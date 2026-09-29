@@ -2,7 +2,9 @@ import { CAPABILITY_IDS, type CapabilityId } from "@udp/shared-types";
 import type { DomainValidationWire } from "@udp/shared-types/wire";
 import { CircleAlert, CircleCheck, Info } from "lucide-react";
 import { Icon } from "../../components/Icon";
+import { useMessages } from "../../i18n";
 import { issueText } from "./domain-labels";
+import { domainMessages } from "./domain.messages";
 
 /**
  * Kết quả kiểm trạng thái đích (§5.3 bảng thông báo, §10.12): mỗi lỗi là một câu có hành
@@ -22,11 +24,12 @@ export function ValidationPanel({
   onEnable: (domainType: string, toolId: string) => void;
   onChoose: (capabilityId: CapabilityId, providerToolId: string) => void;
 }) {
+  const m = useMessages(domainMessages).validation;
   return (
-    <section className="check-result" aria-label="Kiểm cấu hình" role="status">
+    <section className="check-result" aria-label={m.label} role="status">
       {validation.valid ? (
         <span>
-          <Icon of={CircleCheck} /> Cấu hình hợp lệ.
+          <Icon of={CircleCheck} /> {m.valid}
         </span>
       ) : (
         validation.errors.map((issue) => {
@@ -51,19 +54,20 @@ export function ValidationPanel({
                       onEnable(action.domainType, action.toolId ?? "")
                     }
                   >
-                    {action.type === "SWITCH_TOOL" ? "Đổi sang" : "Bật"}{" "}
-                    {action.toolId}
+                    {action.type === "SWITCH_TOOL"
+                      ? m.switchTo(action.toolId)
+                      : m.enable(action.toolId)}
                   </button>
                 )}
               {canEdit && ambiguousCap !== undefined && (
                 <select
                   className="sel"
-                  aria-label={`Nguồn cho ${issue.subject}`}
+                  aria-label={m.sourceFor(issue.subject)}
                   defaultValue=""
                   onChange={(e) => onChoose(ambiguousCap, e.target.value)}
                 >
                   <option value="" disabled>
-                    Chọn nguồn
+                    {m.chooseSource}
                   </option>
                   {issue.detail.map((key) => (
                     <option key={key} value={key}>
@@ -85,7 +89,7 @@ export function ValidationPanel({
         validation.deployOrder !== null &&
         validation.deployOrder.length > 0 && (
           <div>
-            <span className="lbl">Thứ tự triển khai</span>
+            <span className="lbl">{m.deployOrder}</span>
             <ol>
               {validation.deployOrder.map((tier) => (
                 <li key={tier.join()}>{tier.map(nameOf).join(", ")}</li>

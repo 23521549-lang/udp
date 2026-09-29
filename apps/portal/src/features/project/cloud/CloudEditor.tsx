@@ -11,17 +11,14 @@ import { Icon } from "../../../components/Icon";
 import { ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
 import { UnsavedGuard } from "../../../components/UnsavedGuard";
+import { useMessages } from "../../../i18n";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
 import { qk } from "../../../lib/query-keys";
+import { labelOf } from "../../provisioning/provisioning-labels";
 import { cloudApi } from "./cloud-api";
 import { buildBody, initialForm, type CloudForm } from "./cloud-form";
-import {
-  AUTH_KIND_LABEL,
-  CREDENTIAL_FIELDS,
-  PROVIDER_LABEL,
-  SNIPPET_TITLE,
-  UNAVAILABLE_REASON,
-} from "./cloud-labels";
+import { cloudMessages } from "./cloud.messages";
+import { CREDENTIAL_FIELDS, PROVIDER_LABEL } from "./cloud-labels";
 
 type Method = CloudSetupWire["methods"][number];
 
@@ -42,6 +39,7 @@ export function CloudEditor({
   initialProvider: CloudProviderWire;
   onSaved?: () => void;
 }) {
+  const m = useMessages(cloudMessages);
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CloudForm>(() =>
     initialForm(initialProvider),
@@ -66,7 +64,7 @@ export function CloudEditor({
       queryClient.setQueryData(qk.cloud(projectId), data);
       // Bí mật không ở lại trong bộ nhớ của trang sau khi đã lưu
       setForm((f) => ({ ...f, fields: {}, keyJson: "" }));
-      toast.info("Đã lưu cấu hình cloud");
+      toast.info(m.editor.saved);
       onSaved?.();
     },
   });
@@ -107,14 +105,11 @@ export function CloudEditor({
     Object.values(form.fields).some((v) => v.trim() !== "");
 
   return (
-    <section aria-label="Cấu hình cloud">
-      <UnsavedGuard
-        dirty={typed && !save.isPending}
-        what="Credential cloud đã gõ"
-      />
+    <section aria-label={m.editor.label}>
+      <UnsavedGuard dirty={typed && !save.isPending} what={m.editor.unsaved} />
       <div className="f">
         <span className="lbl" id="cloud-provider">
-          Cloud
+          {m.cloud}
         </span>
         <div
           className="opts three"
@@ -162,7 +157,7 @@ export function CloudEditor({
               disabled={save.isPending}
               onClick={submit}
             >
-              {save.isPending ? "Đang lưu…" : "Lưu cấu hình cloud"}
+              {save.isPending ? m.editor.saving : m.editor.save}
             </button>
           </div>
         </>
@@ -184,12 +179,13 @@ function SetupBody({
   canEdit: boolean;
   errors: Record<string, string>;
 }) {
-  const method = setup.methods.find((m) => m.authKind === form.authKind);
+  const m = useMessages(cloudMessages);
+  const method = setup.methods.find((x) => x.authKind === form.authKind);
   return (
     <div className="form">
       <div className="f">
         <span className="lbl" id="cloud-mode">
-          Chạy trong tài khoản nào
+          {m.editor.mode}
         </span>
         <div className="opts" role="group" aria-labelledby="cloud-mode">
           <button
@@ -197,8 +193,8 @@ function SetupBody({
             aria-pressed={form.mode === "BYOC"}
             onClick={() => setForm({ ...form, mode: "BYOC" })}
           >
-            <b>Tài khoản của tôi</b>
-            UDP dựng hạ tầng trong cloud của bạn
+            <b>{m.editor.myAccount}</b>
+            {m.editor.myAccountHint}
           </button>
           <button
             type="button"
@@ -206,10 +202,10 @@ function SetupBody({
             disabled={!setup.managed.available}
             onClick={() => setForm({ ...form, mode: "MANAGED" })}
           >
-            <b>Tài khoản của UDP</b>
+            <b>{m.udpAccount}</b>
             {setup.managed.unavailableReason === null
-              ? "Không cần nhập credential"
-              : UNAVAILABLE_REASON[setup.managed.unavailableReason]}
+              ? m.editor.noCredential
+              : m.unavailable[setup.managed.unavailableReason]}
           </button>
         </div>
       </div>
@@ -225,7 +221,7 @@ function SetupBody({
         <div className="grid-f">
           <Field
             id="region"
-            label="Region"
+            label={m.editor.region}
             value={form.region}
             error={errors.region}
             onChange={(v) => setForm({ ...form, region: v })}
@@ -248,44 +244,42 @@ function MethodPicker({
   form: CloudForm;
   setForm: (f: CloudForm) => void;
 }) {
-  const chosen = setup.methods.find((m) => m.authKind === form.authKind);
+  const m = useMessages(cloudMessages);
+  const chosen = setup.methods.find((x) => x.authKind === form.authKind);
   return (
     <div className="f">
       <span className="lbl" id="cloud-method">
-        Cách xác thực
+        {m.editor.method}
       </span>
       <div className="opts" role="group" aria-labelledby="cloud-method">
-        {setup.methods.map((m) => (
+        {setup.methods.map((x) => (
           <button
-            key={m.authKind}
+            key={x.authKind}
             type="button"
-            aria-pressed={form.authKind === m.authKind}
-            disabled={!m.available}
+            aria-pressed={form.authKind === x.authKind}
+            disabled={!x.available}
             onClick={() =>
               setForm({
                 ...form,
-                authKind: m.authKind,
+                authKind: x.authKind,
                 fields: {},
                 keyJson: "",
               })
             }
           >
-            <b>{AUTH_KIND_LABEL[m.authKind]}</b>
-            {m.unavailableReason !== null
-              ? UNAVAILABLE_REASON[m.unavailableReason]
-              : m.federated
-                ? "Khuyến nghị: UDP không giữ bí mật nào của bạn"
-                : "Khoá dài hạn, chỉ dùng khi không có cách khác"}
+            <b>{m.authKind[x.authKind]}</b>
+            {x.unavailableReason !== null
+              ? m.unavailable[x.unavailableReason]
+              : x.federated
+                ? m.editor.federatedHint
+                : m.editor.staticHint}
           </button>
         ))}
       </div>
       {chosen !== undefined && !chosen.federated && (
         <div className="lock" role="note">
           <Icon of={TriangleAlert} />
-          <span>
-            Khoá dài hạn sống tới khi bạn tự thu hồi. UDP mã hoá nó khi lưu và
-            chỉ giải mã trong vài phút mỗi lần dùng.
-          </span>
+          <span>{m.editor.staticNote}</span>
         </div>
       )}
     </div>
@@ -293,12 +287,13 @@ function MethodPicker({
 }
 
 function Snippets({ method }: { method: Method }) {
+  const m = useMessages(cloudMessages);
   return (
-    <div className="snips" aria-label="Việc cần làm bên cloud">
+    <div className="snips" aria-label={m.editor.snippets}>
       {method.snippets.map((s) => (
         <div key={s.id}>
-          <h3>{SNIPPET_TITLE[s.id] ?? s.id}</h3>
-          <CodeBlock code={s.content} label={SNIPPET_TITLE[s.id] ?? s.id} />
+          <h3>{labelOf(m.snippet, s.id)}</h3>
+          <CodeBlock code={s.content} label={labelOf(m.snippet, s.id)} />
         </div>
       ))}
     </div>
@@ -314,10 +309,11 @@ function CredentialInputs({
   setForm: (f: CloudForm) => void;
   errors: Record<string, string>;
 }) {
+  const m = useMessages(cloudMessages);
   if (form.authKind === "GCP_KEY") {
     return (
       <div className="f">
-        <label htmlFor="cloud-keyJson">Khoá JSON của service account</label>
+        <label htmlFor="cloud-keyJson">{m.editor.keyJson}</label>
         <textarea
           id="cloud-keyJson"
           className="inp"
@@ -345,7 +341,7 @@ function CredentialInputs({
         <Field
           key={f.key}
           id={f.key}
-          label={f.label}
+          label={m.credentialField[f.key]}
           secret={f.secret}
           placeholder={f.placeholder}
           value={form.fields[f.key] ?? ""}

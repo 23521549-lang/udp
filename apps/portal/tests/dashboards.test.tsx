@@ -298,7 +298,7 @@ describe("Giám sát", () => {
     );
     body.metrics.console = {
       kind: "url",
-      label: "Mở Datadog",
+      app: "datadog",
       url: "https://app.datadoghq.eu",
     };
     server.use(

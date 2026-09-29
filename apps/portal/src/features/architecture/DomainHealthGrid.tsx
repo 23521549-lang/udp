@@ -1,8 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import type { ArchitectureToolWire } from "@udp/shared-types/wire";
 import { StatusLabel } from "../../components/StatusLabel";
+import { useMessages } from "../../i18n";
 import { formatDateTime } from "../../lib/format";
 import { bySeverity, toolHealth } from "./architecture-model";
+import { architectureMessages } from "./architecture.messages";
 
 /**
  * Lưới sức khoẻ domain (§10.6 `DomainHealthGrid`; DESIGN.md §6 "Lưới sức khoẻ"): mỗi ô một domain đang
@@ -19,9 +21,10 @@ export function DomainHealthGrid({
   /** Giữ env đang chọn khi sang trang domain */
   env: string | undefined;
 }) {
+  const m = useMessages(architectureMessages).grid;
   const sorted = [...tools].sort(bySeverity);
   return (
-    <ul className="health-grid" aria-label="Sức khoẻ domain">
+    <ul className="health-grid" aria-label={m.label}>
       {sorted.map((t) => {
         const health = toolHealth(t);
         return (
@@ -40,7 +43,7 @@ export function DomainHealthGrid({
               <StatusLabel tone={health.tone}>{health.label}</StatusLabel>
               {t.drift.verdict === "DRIFTED" && t.drift.at !== null && (
                 <span className="c3 health-note">
-                  Phát hiện lúc {formatDateTime(t.drift.at)}
+                  {m.detectedAt(formatDateTime(t.drift.at))}
                 </span>
               )}
             </Link>

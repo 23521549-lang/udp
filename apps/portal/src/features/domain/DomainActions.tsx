@@ -7,12 +7,14 @@ import { RefreshCw, Rocket, RotateCcw } from "lucide-react";
 import { useCallback, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
+import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { JobLog } from "../provisioning/JobLog";
 import { domainApi } from "./domain-api";
+import { domainMessages } from "./domain.messages";
 
 type Dialog = "upgrade" | "retry" | null;
 
@@ -36,6 +38,7 @@ export function DomainActions({
 }) {
   const { project, envs } = useProjectContext();
   const queryClient = useQueryClient();
+  const m = useMessages(domainMessages).actions;
   const maintainer = can(project.myRole, "MAINTAINER");
   const running = domain.status === "ACTIVE";
   const failed = domain.status === "ERROR" || domain.status === "BLOCKED";
@@ -100,7 +103,7 @@ export function DomainActions({
   };
 
   return (
-    <section aria-label="Thao tác Day-2">
+    <section aria-label={m.label}>
       <div className="form-actions" style={{ justifyContent: "flex-start" }}>
         {running && (
           <button
@@ -110,7 +113,7 @@ export function DomainActions({
             onClick={() => scan.mutate()}
           >
             <Icon of={RefreshCw} />
-            {scan.isPending ? "Đang quét…" : "Quét drift ngay"}
+            {scan.isPending ? m.scanning : m.scan}
           </button>
         )}
         {target !== undefined && (
@@ -120,7 +123,7 @@ export function DomainActions({
             onClick={() => setDialog("upgrade")}
           >
             <Icon of={Rocket} />
-            Nâng cấp lên {target.version}
+            {m.upgradeTo(target.version)}
           </button>
         )}
         {(failed || drifted) && (
@@ -130,7 +133,7 @@ export function DomainActions({
             onClick={() => setDialog("retry")}
           >
             <Icon of={RotateCcw} />
-            {failed ? "Thử lại" : "Áp lại cấu hình mong muốn"}
+            {failed ? m.retry : m.reapply}
           </button>
         )}
       </div>
@@ -141,9 +144,9 @@ export function DomainActions({
       )}
       {dialog === "upgrade" && target !== undefined && (
         <ConfirmDialog
-          title={`Nâng cấp ${type} lên ${target.version}?`}
-          description="Cấu hình capability đã được kiểm lại với bản mới; nâng xong mà không khoẻ thì UDP báo lỗi to thay vì để lửng."
-          confirmLabel="Nâng cấp"
+          title={m.upgradeTitle(type, target.version)}
+          description={m.upgradeDescription}
+          confirmLabel={m.upgrade}
           {...(production ? { typeToConfirm: type } : {})}
           busy={upgrade.isPending}
           disabled={!target.validation.valid}
@@ -161,17 +164,9 @@ export function DomainActions({
       )}
       {dialog === "retry" && (
         <ConfirmDialog
-          title={
-            failed
-              ? `Thử lại ${type}?`
-              : `Áp lại cấu hình mong muốn cho ${type}?`
-          }
-          description={
-            failed
-              ? "UDP triển khai lại domain với đúng cấu hình đang lưu, rồi kiểm khoẻ."
-              : "Chỗ trôi trên cluster sẽ bị ghi đè bằng cấu hình đang lưu. Trôi thường là người vận hành vá nóng: chắc chắn đó không còn cần thiết rồi hãy áp."
-          }
-          confirmLabel={failed ? "Thử lại" : "Áp lại"}
+          title={failed ? m.retryTitle(type) : m.reapplyTitle(type)}
+          description={failed ? m.retryDescription : m.reapplyDescription}
+          confirmLabel={failed ? m.retry : m.reapplyConfirm}
           danger={!failed}
           {...(production ? { typeToConfirm: type } : {})}
           busy={retry.isPending}
@@ -200,32 +195,33 @@ function UpgradeDetails({
   current: string | null;
   target: DomainVersionsWire["available"][number];
 }) {
+  const m = useMessages(domainMessages).actions;
   return (
-    <div className="f" aria-label="Chi tiết nâng cấp">
+    <div className="f" aria-label={m.details}>
       <p className="c3">
-        Bản đang chạy: <span className="mono">{current ?? "chưa rõ"}</span>
+        {m.current(<span className="mono">{current ?? m.unknown}</span>)}
       </p>
       {target.changes.length === 0 ? (
-        <p className="c3">Capability không đổi.</p>
+        <p className="c3">{m.noChanges}</p>
       ) : (
-        <ul aria-label="Capability đổi">
+        <ul aria-label={m.changes}>
           {target.changes.map((c) => (
             <li key={c.capabilityId}>
               <span className="mono">{c.capabilityId}</span>:{" "}
               {c.from === null
-                ? `thêm ${String(c.to)}`
+                ? m.added(String(c.to))
                 : c.to === null
-                  ? `bỏ (đang ${c.from})`
+                  ? m.removed(c.from)
                   : `${c.from} → ${c.to}`}
             </li>
           ))}
         </ul>
       )}
       {target.validation.valid ? (
-        <p className="c3">Validator: tổ hợp domain vẫn hợp lệ với bản mới.</p>
+        <p className="c3">{m.stillValid}</p>
       ) : (
         <div role="alert" className="field-error">
-          Validator từ chối bản mới:
+          {m.rejected}
           <ul>
             {target.validation.errors.map((e) => (
               <li key={`${e.code}-${e.subject}`}>

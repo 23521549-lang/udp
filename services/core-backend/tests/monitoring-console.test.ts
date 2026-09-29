@@ -17,7 +17,7 @@ describe("đường mở công cụ giám sát", () => {
       ),
     ).toEqual({
       kind: "url",
-      label: "Mở Datadog",
+      app: "datadog",
       url: "https://app.datadoghq.eu",
     });
     expect(
@@ -61,7 +61,7 @@ describe("đường mở công cụ giám sát", () => {
       ),
     ).toEqual({
       kind: "portForward",
-      label: "Mở Grafana",
+      app: "grafana",
       command:
         "kubectl -n udp-system port-forward svc/udp-prometheus-grafana 3000:80",
       localUrl: "http://localhost:3000",

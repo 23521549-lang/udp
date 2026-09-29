@@ -1934,18 +1934,31 @@ export const workloadRedWire = z
   .strict();
 
 /** Cách mở công cụ giám sát: một URL xem được từ trình duyệt, hoặc lệnh port-forward */
+/**
+ * [v4.11, Plan #54] Công cụ mà đường mở dẫn tới — MÃ, không phải câu (I37): Portal đặt chữ "Mở Datadog" hay
+ * "Open Datadog" theo ngôn ngữ người dùng chọn. `query-ui` là giao diện truy vấn của Prometheus/VictoriaMetrics.
+ */
+export const CONSOLE_APPS = [
+  "datadog",
+  "newrelic",
+  "dynatrace",
+  "grafana",
+  "query-ui",
+] as const;
+export const consoleAppWire = z.enum(CONSOLE_APPS);
+
 export const monitoringConsoleWire = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("url"),
-      label: z.string(),
+      app: consoleAppWire,
       url: z.string().url(),
     })
     .strict(),
   z
     .object({
       kind: z.literal("portForward"),
-      label: z.string(),
+      app: consoleAppWire,
       command: z.string(),
       localUrl: z.string().url(),
     })

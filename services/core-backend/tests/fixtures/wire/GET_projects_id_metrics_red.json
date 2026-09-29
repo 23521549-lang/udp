@@ -3,10 +3,10 @@
   "status": 200,
   "body": {
     "metrics": {
-      "environmentId": "5375f1c9-3a63-4bf6-9e88-4b03f822d371",
+      "environmentId": "fc72e6fd-71bc-44ac-9c69-eff9afd6df3a",
       "range": "6h",
       "stepSeconds": 300,
-      "start": "2026-09-29T11:40:00.000Z",
+      "start": "2026-09-29T14:30:00.000Z",
       "points": 73,
       "source": {
         "providerId": "fake",
@@ -14,7 +14,7 @@
       },
       "console": {
         "kind": "portForward",
-        "label": "Mở Grafana",
+        "app": "grafana",
         "command": "kubectl -n udp-system port-forward svc/udp-prometheus-grafana 3000:80",
         "localUrl": "http://localhost:3000"
       },

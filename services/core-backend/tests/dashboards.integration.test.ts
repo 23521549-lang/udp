@@ -367,7 +367,7 @@ describe("giám sát RED (AC-2)", () => {
     expect(m.source.tool).toBe("monitoring:prometheus-grafana");
     expect(m.console).toEqual({
       kind: "portForward",
-      label: "Mở Grafana",
+      app: "grafana",
       command:
         "kubectl -n udp-system port-forward svc/udp-prometheus-grafana 3000:80",
       localUrl: "http://localhost:3000",

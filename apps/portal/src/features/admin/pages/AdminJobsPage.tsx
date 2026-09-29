@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Pager } from "../../../components/Pager";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { StatusLabel } from "../../../components/StatusLabel";
+import { useMessages } from "../../../i18n";
 import { formatDateTime, relativeTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import {
@@ -10,6 +11,7 @@ import {
   jobTypeLabel,
 } from "../../provisioning/provisioning-labels";
 import { ADMIN_PAGE_SIZE, adminApi } from "../admin-api";
+import { adminMessages } from "../admin.messages";
 import { AdminPage } from "../AdminLayout";
 
 export const ADMIN_JOB_STATES = [
@@ -39,6 +41,7 @@ export function readableJobError(
 
 /** Job hỏng hoặc kẹt trên toàn hệ thống (§10.11). Trạng thái và trang trên URL (Plan #53 QĐ-9) */
 export function AdminJobsPage() {
+  const m = useMessages(adminMessages).jobs;
   const search = useSearch({ from: "/admin/jobs" });
   const navigate = useNavigate({ from: "/admin/jobs" });
   const state = search.state ?? DEFAULT_ADMIN_JOB_STATE;
@@ -64,8 +67,8 @@ export function AdminJobsPage() {
 
   return (
     <AdminPage
-      title="Job lỗi"
-      lead="Job provisioning hỏng hoặc kẹt trên toàn hệ thống."
+      title={m.title}
+      lead={m.lead}
       minis={
         jobs.data === undefined
           ? undefined
@@ -78,7 +81,7 @@ export function AdminJobsPage() {
       }
     >
       <div className="filters flush">
-        <div className="seg" role="group" aria-label="Trạng thái job">
+        <div className="seg" role="group" aria-label={m.stateFilter}>
           {ADMIN_JOB_STATES.map((s) => (
             <button
               key={s}
@@ -96,9 +99,9 @@ export function AdminJobsPage() {
       ) : jobs.isError ? (
         <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} />
       ) : jobs.data.jobs.length === 0 ? (
-        <Empty title={`Không có job nào "${jobStateLabel(state)}"`} />
+        <Empty title={m.empty(jobStateLabel(state))} />
       ) : (
-        <ul className="lst job-list" aria-label="Job">
+        <ul className="lst job-list" aria-label={m.list}>
           {jobs.data.jobs.map((j) => {
             const err = readableJobError(j.lastError);
             return (
@@ -111,7 +114,7 @@ export function AdminJobsPage() {
                   >
                     {jobStateLabel(j.state)}
                   </StatusLabel>
-                  <span className="c3">lần {j.attempt}</span>
+                  <span className="c3">{m.attempt(j.attempt)}</span>
                   <span
                     className="c3 num lst-end"
                     title={formatDateTime(j.updatedAt)}
@@ -121,23 +124,19 @@ export function AdminJobsPage() {
                 </div>
                 {err !== null && (
                   <p className="job-err">
-                    {err.step !== "" && (
-                      <>
-                        Bước{" "}
+                    {err.step !== "" &&
+                      m.step(
                         <span className="mono" translate="no">
                           {err.step}
-                        </span>
-                        :{" "}
-                      </>
-                    )}
+                        </span>,
+                      )}
                     {err.message}
-                    {err.orphans > 0 &&
-                      ` Còn ${String(err.orphans)} tài nguyên chưa dọn.`}
+                    {err.orphans > 0 && ` ${m.leftover(err.orphans)}`}
                   </p>
                 )}
                 {j.lastError !== null && (
                   <details className="job-raw">
-                    <summary>Chi tiết kỹ thuật</summary>
+                    <summary>{m.details}</summary>
                     <pre className="mono">
                       {JSON.stringify(j.lastError, null, 2)}
                     </pre>
@@ -149,7 +148,7 @@ export function AdminJobsPage() {
         </ul>
       )}
       <Pager
-        label="Trang của danh sách job"
+        label={m.pager}
         offset={offset}
         pageSize={ADMIN_PAGE_SIZE}
         total={jobs.data?.total ?? 0}

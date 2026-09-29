@@ -4,9 +4,11 @@ import type {
   PublicEnvironmentWire,
 } from "@udp/shared-types/wire";
 import { useState } from "react";
+import { useMessages } from "../../../i18n";
 import { messageOf } from "../../../lib/errors";
 import { flagApi } from "../flag-api";
 import { useProjectContext } from "../../project/ProjectLayout";
+import { detailMessages } from "./detail.messages";
 
 /**
  * Flag Evaluation Tester (§10.12): context giả → value, variant, reason, rule đã khớp.
@@ -19,6 +21,7 @@ export function Tester({
   flag: FlagDetailWire;
   env: PublicEnvironmentWire;
 }) {
+  const m = useMessages(detailMessages).tester;
   const { project } = useProjectContext();
   const [targetingKey, setTargetingKey] = useState("user-1");
   const [attrs, setAttrs] = useState("country=VN");
@@ -38,13 +41,13 @@ export function Tester({
   const variantKey = result?.evaluation.variant;
 
   return (
-    <section aria-label="Thử đánh giá">
+    <section aria-label={m.title}>
       <div className="sect">
-        <h3>Thử đánh giá</h3>
+        <h3>{m.title}</h3>
       </div>
       <div className="tester">
         <div className="f">
-          <label htmlFor="t-key">targetingKey</label>
+          <label htmlFor="t-key">{m.targetingKey}</label>
           <input
             id="t-key"
             name="targetingKey"
@@ -56,7 +59,7 @@ export function Tester({
           />
         </div>
         <div className="f">
-          <label htmlFor="t-attrs">Thuộc tính (mỗi dòng key=value)</label>
+          <label htmlFor="t-attrs">{m.attributes}</label>
           <textarea
             id="t-attrs"
             name="attributes"
@@ -74,30 +77,30 @@ export function Tester({
           disabled={run.isPending}
           onClick={() => run.mutate()}
         >
-          {run.isPending ? "Đang đánh giá…" : "Đánh giá"}
+          {run.isPending ? m.evaluating : m.evaluate}
         </button>
       </div>
       {/* Kết quả và lỗi được đọc lên khi có: người dùng bàn phím không phải tự dò xuống */}
       <div aria-live="polite">
         {run.isError && <p className="field-error">{messageOf(run.error)}</p>}
         {result !== undefined && (
-          <dl className="props" aria-label="Kết quả đánh giá">
-            <dt>Giá trị</dt>
+          <dl className="props" aria-label={m.result}>
+            <dt>{m.value}</dt>
             <dd className="mono">{JSON.stringify(result.evaluation.value)}</dd>
-            <dt>Variant</dt>
-            <dd className="mono">{variantKey ?? "(không có)"}</dd>
-            <dt>Lý do</dt>
+            <dt>{m.variant}</dt>
+            <dd className="mono">{variantKey ?? m.none}</dd>
+            <dt>{m.reason}</dt>
             <dd className="mono">{result.evaluation.reason}</dd>
-            <dt>Rule khớp</dt>
+            <dt>{m.matchedRule}</dt>
             <dd>
               {result.rule === undefined
-                ? "Không rule nào"
-                : `Rule ưu tiên ${String(result.rule.priority)} (${result.rule.ruleType})`}
+                ? m.noRule
+                : m.rule(result.rule.priority, result.rule.ruleType)}
             </dd>
             {result.draft && (
               <>
-                <dt>Lưu ý</dt>
-                <dd className="c3">Flag còn nháp: SDK chưa thấy nó.</dd>
+                <dt>{m.note}</dt>
+                <dd className="c3">{m.draft}</dd>
               </>
             )}
           </dl>

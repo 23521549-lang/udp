@@ -4,11 +4,13 @@ import type {
   PublicEnvironmentWire,
 } from "@udp/shared-types/wire";
 import { ErrorState, Loading } from "../../../components/States";
+import { useMessages } from "../../../i18n";
 import { browserTimeZone, compactNumber } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { flagApi } from "../flag-api";
 import { useProjectContext } from "../../project/ProjectLayout";
 import { variantColor } from "../RuleEditor";
+import { detailMessages } from "./detail.messages";
 
 export function StatsSection({
   flag,
@@ -17,6 +19,7 @@ export function StatsSection({
   flag: FlagDetailWire;
   env: PublicEnvironmentWire;
 }) {
+  const m = useMessages(detailMessages).stats;
   const { project } = useProjectContext();
   const tz = browserTimeZone();
   const days = 7;
@@ -27,16 +30,16 @@ export function StatsSection({
   const byEnv = stats.data?.byEnv.find((b) => b.environment.id === env.id);
 
   return (
-    <section aria-label="Thống kê">
+    <section aria-label={m.section}>
       <div className="sect">
-        <h3>7 ngày qua ở {env.name}</h3>
+        <h3>{m.last7Days(env.name)}</h3>
       </div>
       {stats.isPending ? (
         <Loading />
       ) : stats.isError ? (
         <ErrorState error={stats.error} />
       ) : byEnv === undefined || byEnv.evalCount === 0 ? (
-        <p className="c3">Chưa có lượt đánh giá nào được báo về.</p>
+        <p className="c3">{m.none}</p>
       ) : (
         <div className="dist">
           <div className="bar2" aria-hidden="true">
@@ -54,7 +57,9 @@ export function StatsSection({
             <div key={v.variantKey} className="dr">
               <span className="vd" style={{ background: variantColor(i) }} />
               <span className="mono">{v.variantKey}</span>
-              <span className="num c3">{compactNumber(v.count)} lượt</span>
+              <span className="num c3">
+                {m.evals(compactNumber(v.count), v.count)}
+              </span>
               <span className="pct">{Math.round(v.share * 100)}%</span>
             </div>
           ))}

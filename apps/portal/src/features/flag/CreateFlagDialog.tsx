@@ -4,10 +4,12 @@ import { Plus, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { Dialog } from "../../components/Dialog";
 import { Icon } from "../../components/Icon";
+import { useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { useProjectContext } from "../project/ProjectLayout";
 import { qkPrefix } from "../../lib/query-keys";
 import { flagApi } from "./flag-api";
+import { flagMessages } from "./flag.messages";
 import { parseVariantValue } from "./variant-value";
 
 type FlagType = CreateFlagFields["flagType"];
@@ -36,12 +38,8 @@ const SDK_CALL: Record<FlagType, string> = {
   JSON: "getObjectValue",
 };
 
-const TYPE_LABEL: Record<FlagType, string> = {
-  BOOLEAN: "Boolean",
-  STRING: "Chuỗi",
-  NUMBER: "Số",
-  JSON: "JSON",
-};
+/** Thứ tự nút chọn kiểu; nhãn ở `flagMessages.create.typeLabel` */
+const FLAG_TYPES: FlagType[] = ["BOOLEAN", "STRING", "NUMBER", "JSON"];
 
 /**
  * Tạo flag (§10.8 FlagCreateSheet): key tự định dạng, xem trước cách gọi SDK, variant
@@ -54,6 +52,8 @@ export function CreateFlagDialog({
   onClose: () => void;
   onCreated: (flagId: string) => void;
 }) {
+  const all = useMessages(flagMessages);
+  const m = all.create;
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [key, setKey] = useState("");
@@ -95,7 +95,7 @@ export function CreateFlagDialog({
   const keyInput = useRef<HTMLInputElement>(null);
   const fields = {
     ...fieldErrorsOf(create.error),
-    ...(keyMissing ? { key: "Nhập key cho flag." } : {}),
+    ...(keyMissing ? { key: m.keyMissing } : {}),
   };
   const variantError = Object.entries(fields).find(([f]) =>
     f.startsWith("variants"),
@@ -111,14 +111,14 @@ export function CreateFlagDialog({
 
   return (
     <Dialog
-      title="Tạo flag"
-      description="Flag mới ở trạng thái nháp: SDK chưa thấy nó cho tới khi kích hoạt."
+      title={m.title}
+      description={m.description}
       onClose={onClose}
       wide
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>
-            Huỷ
+            {all.cancel}
           </button>
           <button
             type="button"
@@ -126,13 +126,13 @@ export function CreateFlagDialog({
             disabled={create.isPending}
             onClick={submit}
           >
-            {create.isPending ? "Đang tạo…" : "Tạo flag"}
+            {create.isPending ? m.creating : m.submit}
           </button>
         </>
       }
     >
       <div className="f">
-        <label htmlFor="flag-key">Key</label>
+        <label htmlFor="flag-key">{m.key}</label>
         <input
           ref={keyInput}
           id="flag-key"
@@ -141,7 +141,7 @@ export function CreateFlagDialog({
           autoComplete="off"
           spellCheck={false}
           translate="no"
-          placeholder="new-checkout…"
+          placeholder={m.keyPlaceholder}
           value={key}
           aria-invalid={fields.key !== undefined}
           aria-describedby={
@@ -158,34 +158,34 @@ export function CreateFlagDialog({
           </span>
         ) : (
           <span className="help mono">
-            client.{SDK_CALL[flagType]}("{key === "" ? "key" : key}", …)
+            {`client.${SDK_CALL[flagType]}("${key === "" ? "key" : key}", …)`}
           </span>
         )}
       </div>
       <div className="f">
-        <span className="lbl">Kiểu</span>
-        <div className="seg" role="group" aria-label="Kiểu flag">
-          {(Object.keys(TYPE_LABEL) as FlagType[]).map((t) => (
+        <span className="lbl">{m.type}</span>
+        <div className="seg" role="group" aria-label={m.typeGroup}>
+          {FLAG_TYPES.map((t) => (
             <button
               key={t}
               type="button"
               aria-pressed={flagType === t}
               onClick={() => setFlagType(t)}
             >
-              {TYPE_LABEL[t]}
+              {m.typeLabel[t]}
             </button>
           ))}
         </div>
       </div>
       {flagType !== "BOOLEAN" && (
         <div className="f">
-          <span className="lbl">Variant</span>
+          <span className="lbl">{m.variants}</span>
           {variants.map((v, i) => (
             <div key={i} className="line">
               <input
                 className="inp mono"
                 spellCheck={false}
-                aria-label={`Key variant ${String(i + 1)}`}
+                aria-label={m.variantKey(i + 1)}
                 value={v.key}
                 onChange={(e) =>
                   setVariants(
@@ -198,7 +198,7 @@ export function CreateFlagDialog({
               <input
                 className="inp mono"
                 spellCheck={false}
-                aria-label={`Giá trị variant ${String(i + 1)}`}
+                aria-label={m.variantValue(i + 1)}
                 placeholder={flagType === "JSON" ? '{"a":1}…' : ""}
                 value={v.value}
                 onChange={(e) =>
@@ -213,7 +213,7 @@ export function CreateFlagDialog({
                 <button
                   type="button"
                   className="ib"
-                  aria-label={`Bỏ variant ${String(i + 1)}`}
+                  aria-label={m.removeVariant(i + 1)}
                   onClick={() =>
                     setVariants(variants.filter((_, j) => j !== i))
                   }
@@ -229,7 +229,7 @@ export function CreateFlagDialog({
             onClick={() => setVariants([...variants, { key: "", value: "" }])}
           >
             <Icon of={Plus} />
-            Thêm variant
+            {m.addVariant}
           </button>
           {variantError !== undefined && (
             <span className="field-error">{variantError}</span>
@@ -237,7 +237,7 @@ export function CreateFlagDialog({
         </div>
       )}
       <div className="f">
-        <label htmlFor="flag-desc">Mô tả (tuỳ chọn)</label>
+        <label htmlFor="flag-desc">{m.descriptionOptional}</label>
         <textarea
           id="flag-desc"
           className="inp"

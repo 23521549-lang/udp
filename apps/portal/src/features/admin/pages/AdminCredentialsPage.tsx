@@ -1,37 +1,37 @@
 import { useQuery } from "@tanstack/react-query";
 import { Empty, ErrorState, Loading } from "../../../components/States";
+import { useMessages } from "../../../i18n";
 import { formatDateTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { adminApi } from "../admin-api";
+import { adminMessages } from "../admin.messages";
 
 import { AdminPage } from "../AdminLayout";
 export function AdminCredentialsPage() {
+  const m = useMessages(adminMessages);
   const creds = useQuery({
     queryKey: qk.adminCredentials(),
     queryFn: adminApi.credentials,
   });
   return (
-    <AdminPage
-      title="Credential"
-      lead="Chỉ siêu dữ liệu và một đoạn dấu vân tay. Nội dung credential không bao giờ được giải mã để hiển thị."
-    >
+    <AdminPage title={m.credentials.title} lead={m.credentials.lead}>
       {creds.isPending ? (
         <Loading />
       ) : creds.isError ? (
         <ErrorState error={creds.error} onRetry={() => void creds.refetch()} />
       ) : creds.data.credentials.length === 0 ? (
-        <Empty title="Chưa có credential nào" />
+        <Empty title={m.credentials.empty} />
       ) : (
         <div className="table-wrap">
-          <table className="dtable" aria-label="Credential">
+          <table className="dtable" aria-label={m.credentials.title}>
             <thead>
               <tr>
-                <th scope="col">Project</th>
-                <th scope="col">Cloud</th>
-                <th scope="col">Chế độ</th>
-                <th scope="col">Dấu vân tay</th>
-                <th scope="col">Đang dùng</th>
-                <th scope="col">Kiểm lần cuối</th>
+                <th scope="col">{m.project}</th>
+                <th scope="col">{m.cloud}</th>
+                <th scope="col">{m.credentials.mode}</th>
+                <th scope="col">{m.credentials.fingerprint}</th>
+                <th scope="col">{m.credentials.active}</th>
+                <th scope="col">{m.credentials.lastValidated}</th>
               </tr>
             </thead>
             <tbody>
@@ -41,10 +41,10 @@ export function AdminCredentialsPage() {
                   <td>{c.provider}</td>
                   <td>{c.mode}</td>
                   <td className="mono">{c.fingerprint}…</td>
-                  <td>{c.isActive ? "Có" : "–"}</td>
+                  <td>{c.isActive ? m.yes : "–"}</td>
                   <td>
                     {c.lastValidatedAt === null
-                      ? "chưa"
+                      ? m.credentials.never
                       : formatDateTime(c.lastValidatedAt)}
                   </td>
                 </tr>

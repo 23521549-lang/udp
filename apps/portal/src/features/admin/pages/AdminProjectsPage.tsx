@@ -7,6 +7,7 @@ import { qk } from "../../../lib/query-keys";
 import { PROVIDER_LABEL } from "../../project/cloud/cloud-labels";
 import { useMessages } from "../../../i18n";
 import { projectStatusMessages } from "../../project/project-status.messages";
+import { adminMessages } from "../admin.messages";
 import { ProjectStatus } from "../../project/ProjectStatus";
 import { ADMIN_PAGE_SIZE, adminApi } from "../admin-api";
 import { AdminPage } from "../AdminLayout";
@@ -23,6 +24,8 @@ export type AdminProjectStatus = (typeof ADMIN_PROJECT_STATUSES)[number];
 /** Mọi project (§10.11). Bộ lọc và trang trên URL (Plan #53 QĐ-9) */
 export function AdminProjectsPage() {
   const statusLabel = useMessages(projectStatusMessages).status;
+  const t = useMessages(adminMessages);
+  const m = t.projects;
   const search = useSearch({ from: "/admin/projects" });
   const navigate = useNavigate({ from: "/admin/projects" });
   const status = search.status;
@@ -46,25 +49,30 @@ export function AdminProjectsPage() {
 
   return (
     <AdminPage
-      title="Project"
-      lead="Mọi project trên nền tảng, kể cả đã xoá mềm."
+      title={m.title}
+      lead={m.lead}
       minis={
         projects.data === undefined
           ? undefined
-          : [{ value: projects.data.total, label: "project" }]
+          : [
+              {
+                value: projects.data.total,
+                label: m.count(projects.data.total),
+              },
+            ]
       }
     >
       <div className="filters flush">
         <select
           className="sel"
           name="status"
-          aria-label="Lọc theo trạng thái"
+          aria-label={m.statusFilter}
           value={status ?? ""}
           onChange={(e) =>
             setStatus(ADMIN_PROJECT_STATUSES.find((s) => s === e.target.value))
           }
         >
-          <option value="">Mọi trạng thái</option>
+          <option value="">{m.allStatuses}</option>
           {ADMIN_PROJECT_STATUSES.map((s) => (
             <option key={s} value={s}>
               {statusLabel[s]}
@@ -80,20 +88,20 @@ export function AdminProjectsPage() {
           onRetry={() => void projects.refetch()}
         />
       ) : projects.data.projects.length === 0 ? (
-        <Empty title="Không có project nào" />
+        <Empty title={m.empty} />
       ) : (
         <div className="table-wrap">
-          <table className="dtable" aria-label="Project">
+          <table className="dtable" aria-label={m.table}>
             <thead>
               <tr>
-                <th scope="col">Tên</th>
-                <th scope="col">Chủ</th>
-                <th scope="col">Trạng thái</th>
-                <th scope="col">Cloud</th>
+                <th scope="col">{m.name}</th>
+                <th scope="col">{m.owner}</th>
+                <th scope="col">{m.status}</th>
+                <th scope="col">{t.cloud}</th>
                 <th scope="col" className="num">
-                  Thành viên
+                  {m.members}
                 </th>
-                <th scope="col">Tạo lúc</th>
+                <th scope="col">{t.created}</th>
               </tr>
             </thead>
             <tbody>
@@ -108,7 +116,7 @@ export function AdminProjectsPage() {
                   </td>
                   <td>
                     {p.cloudProvider === null
-                      ? "Chưa kết nối"
+                      ? m.notConnected
                       : PROVIDER_LABEL[p.cloudProvider]}
                   </td>
                   <td className="num">{p.memberCount}</td>
@@ -120,7 +128,7 @@ export function AdminProjectsPage() {
         </div>
       )}
       <Pager
-        label="Trang của danh sách project"
+        label={m.pager}
         offset={offset}
         pageSize={ADMIN_PAGE_SIZE}
         total={projects.data?.total ?? 0}

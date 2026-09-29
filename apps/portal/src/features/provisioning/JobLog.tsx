@@ -5,12 +5,14 @@ import { useEffect, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
 import { ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { domainStatusLabel } from "../domain/domain-labels";
 import { can } from "../project/roles";
 import { provisioningApi } from "./provisioning-api";
+import { provisioningMessages } from "./provisioning.messages";
 import {
   jobStateLabel,
   PHASES,
@@ -102,6 +104,7 @@ function JobView({
 }) {
   const queryClient = useQueryClient();
   const { job } = detail;
+  const m = useMessages(provisioningMessages).job;
   const [confirming, setConfirming] = useState(false);
   const cancel = useMutation({
     mutationFn: () => provisioningApi.cancel(projectId, job.id),
@@ -115,20 +118,20 @@ function JobView({
   const reached = PHASES.indexOf(job.state as (typeof PHASES)[number]);
 
   return (
-    <section aria-label="Tiến độ triển khai">
+    <section aria-label={m.progress}>
       <dl className="props">
-        <dt>Trạng thái</dt>
+        <dt>{m.status}</dt>
         {/* Đổi pha được đọc lên: job chạy nhiều phút, người dùng không ngồi nhìn màn hình */}
         <dd aria-live="polite">
           <span className="chip soft">{jobStateLabel(job.state)}</span>
         </dd>
-        <dt>Bắt đầu</dt>
+        <dt>{m.started}</dt>
         <dd>{formatDateTime(job.createdAt)}</dd>
-        <dt>Cập nhật</dt>
+        <dt>{m.updated}</dt>
         <dd>{formatDateTime(job.updatedAt)}</dd>
       </dl>
 
-      <ol className="phase-list" aria-label="Các pha">
+      <ol className="phase-list" aria-label={m.phases}>
         {PHASES.map((phase, i) => (
           <li
             key={phase}
@@ -140,7 +143,7 @@ function JobView({
             {job.state === "DONE" || (reached >= 0 && i < reached) ? (
               <>
                 <Icon of={CircleCheck} />
-                <span className="visually-hidden">Xong: </span>
+                <span className="visually-hidden">{m.phaseDone}</span>
               </>
             ) : null}
             {jobStateLabel(phase)}
@@ -155,8 +158,10 @@ function JobView({
             {job.lastError.message}
             {job.lastError.orphans.length > 0 && (
               <div className="q">
-                Còn {job.lastError.orphans.length} tài nguyên chưa dọn được:{" "}
-                {job.lastError.orphans.join(", ")}
+                {m.orphans(
+                  job.lastError.orphans.length,
+                  job.lastError.orphans.join(", "),
+                )}
               </div>
             )}
           </div>
@@ -165,12 +170,12 @@ function JobView({
 
       {detail.resources.length > 0 && (
         <div className="table-wrap">
-          <table className="dtable" aria-label="Tài nguyên cloud">
+          <table className="dtable" aria-label={m.resources}>
             <thead>
               <tr>
-                <th scope="col">Tên</th>
-                <th scope="col">Loại</th>
-                <th scope="col">Trạng thái</th>
+                <th scope="col">{m.name}</th>
+                <th scope="col">{m.kind}</th>
+                <th scope="col">{m.status}</th>
               </tr>
             </thead>
             <tbody>
@@ -189,7 +194,7 @@ function JobView({
       )}
 
       {detail.domains.length > 0 && (
-        <ul className="plan-list" aria-label="Domain">
+        <ul className="plan-list" aria-label={m.domains}>
           {detail.domains.map((d) => (
             <li key={d.domainType}>
               {d.domainType}: {domainStatusLabel(d.status)}
@@ -206,15 +211,15 @@ function JobView({
             className="btn"
             onClick={() => setConfirming(true)}
           >
-            Hủy triển khai
+            {m.cancel}
           </button>
         </div>
       )}
       {confirming && (
         <ConfirmDialog
-          title="Hủy lượt triển khai này?"
-          description="UDP dừng ở bước kế tiếp rồi xoá mọi tài nguyên đã dựng trên cloud của bạn."
-          confirmLabel="Hủy và dọn"
+          title={m.cancelTitle}
+          description={m.cancelDescription}
+          confirmLabel={m.cancelConfirm}
           danger
           busy={cancel.isPending}
           error={cancel.isError ? messageOf(cancel.error) : undefined}

@@ -3,10 +3,13 @@ import type {
   ArchitectureWire,
 } from "@udp/shared-types/wire";
 import type { Tone } from "../../components/StatusLabel";
+import { messagesOf } from "../../i18n";
 import { domainStatusLabel } from "../domain/domain-labels";
+import { architectureMessages } from "./architecture.messages";
 
 /**
  * [Plan #53] Mô hình của sơ đồ kiến trúc và lưới sức khoẻ — THUẦN, test được không cần DOM.
+ * [Plan #54] Nhãn đọc theo ngôn ngữ LÚC GỌI (`messagesOf`), chữ ở `architecture.messages.tsx`.
  */
 
 /**
@@ -18,21 +21,22 @@ export function toolHealth(tool: ArchitectureToolWire): {
   tone: Tone;
   label: string;
 } {
+  const copy = messagesOf(architectureMessages).health;
   switch (tool.status) {
     case null:
-      return { tone: "unknown", label: "Chưa triển khai" };
+      return { tone: "unknown", label: copy.notDeployed };
     case "ERROR":
       return { tone: "error", label: domainStatusLabel("ERROR") };
     case "BLOCKED":
       return { tone: "warn", label: domainStatusLabel("BLOCKED") };
     case "ACTIVE":
       if (tool.drift.verdict === "DRIFTED") {
-        return { tone: "warn", label: "Lệch cấu hình" };
+        return { tone: "warn", label: copy.drifted };
       }
       if (tool.drift.verdict === "SCAN_FAILED") {
-        return { tone: "warn", label: "Chưa quét được drift" };
+        return { tone: "warn", label: copy.scanFailed };
       }
-      return { tone: "ok", label: "Ổn định" };
+      return { tone: "ok", label: copy.healthy };
     default:
       return { tone: "running", label: domainStatusLabel(tool.status) };
   }

@@ -1,8 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  planPromotion,
-  type PromotionDiffKind,
-} from "@udp/shared-types/promote";
+import { planPromotion } from "@udp/shared-types/promote";
 import type {
   FlagDetailWire,
   PublicEnvironmentWire,
@@ -11,26 +8,15 @@ import type {
 import { useState } from "react";
 import { Dialog } from "../../components/Dialog";
 import { toast } from "../../components/Toast";
+import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import { isApiError } from "../../lib/http";
 import { qk, qkPrefix } from "../../lib/query-keys";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { flagApi } from "./flag-api";
-
-const KIND_LABEL: Record<PromotionDiffKind, string> = {
-  same: "Giữ nguyên",
-  changed: "Đổi",
-  added: "Thêm",
-  removed: "Bỏ",
-};
-
-const TYPE_LABEL: Record<string, string> = {
-  ALL: "Mọi người",
-  USER_BASED: "Người dùng cụ thể",
-  ATTRIBUTE_BASED: "Thuộc tính",
-  SEGMENT: "Segment",
-};
+import { flagMessages } from "./flag.messages";
+import { rulesMessages } from "./rules.messages";
 
 /**
  * Sao chép rule của env đang xem sang một env khác (§10.12). Diff hiện TRƯỚC khi áp, dựng bằng
@@ -49,6 +35,9 @@ export function PromoteDialog({
   sourceRules: RulesResponseWire;
   onClose: () => void;
 }) {
+  const all = useMessages(flagMessages);
+  const m = all.promote;
+  const ruleType = useMessages(rulesMessages).ruleType;
   const { project, envs } = useProjectContext();
   const queryClient = useQueryClient();
   const targets = [...envs]
@@ -81,7 +70,7 @@ export function PromoteDialog({
 
   const apply = useMutation({
     mutationFn: () => {
-      if (targetRules.data === undefined) throw new Error("chưa có kế hoạch");
+      if (targetRules.data === undefined) throw new Error(m.noPlan);
       return flagApi.promote(project.id, flag.id, {
         fromEnvId: source.id,
         toEnvId: targetId,
@@ -101,7 +90,7 @@ export function PromoteDialog({
       await queryClient.invalidateQueries({
         queryKey: qkPrefix.flagsOf(project.id),
       });
-      toast.info(`Đã sao chép rule sang ${target?.name ?? ""}`);
+      toast.info(m.copied(target?.name ?? ""));
       onClose();
     },
     onError: async (e) => {
@@ -122,14 +111,14 @@ export function PromoteDialog({
 
   return (
     <Dialog
-      title={`Sao chép rule từ ${source.name}`}
-      description="Chỉ rule được chép. Bật/tắt và variant mặc định giữ nguyên ở env đích."
+      title={m.title(source.name)}
+      description={m.description}
       onClose={onClose}
       wide
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>
-            Huỷ
+            {all.cancel}
           </button>
           <button
             type="button"
@@ -137,16 +126,16 @@ export function PromoteDialog({
             disabled={!ready}
             onClick={() => apply.mutate()}
           >
-            {apply.isPending ? "Đang áp…" : "Áp dụng"}
+            {apply.isPending ? m.applying : m.apply}
           </button>
         </>
       }
     >
       {targets.length === 0 ? (
-        <p className="c3">Bạn không có quyền sửa env nào khác.</p>
+        <p className="c3">{m.noTargets}</p>
       ) : (
         <div className="f">
-          <label htmlFor="promote-target">Sang environment</label>
+          <label htmlFor="promote-target">{m.target}</label>
           <select
             id="promote-target"
             className="sel"
@@ -166,37 +155,35 @@ export function PromoteDialog({
         </div>
       )}
       {targetRules.isPending && targetId !== "" && (
-        <p className="c3">Đang đọc rule ở env đích…</p>
+        <p className="c3">{m.reading}</p>
       )}
       {plan !== undefined && (
         <>
           {plan.changes === 0 ? (
-            <p className="c3">
-              Rule ở {target?.name} đã giống hệt, không có gì để chép.
-            </p>
+            <p className="c3">{m.identical(target?.name ?? "")}</p>
           ) : (
             <div className="table-wrap">
-              <table className="matrix" aria-label="Thay đổi sẽ áp">
+              <table className="matrix" aria-label={m.table}>
                 <thead>
                   <tr>
-                    <th scope="col">Thay đổi</th>
-                    <th scope="col">Rule</th>
-                    <th scope="col">Nhóm người dùng ở đích</th>
+                    <th scope="col">{m.colChange}</th>
+                    <th scope="col">{m.colRule}</th>
+                    <th scope="col">{m.colGroup}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {plan.diff.map((d, i) => (
                     <tr key={`${d.kind}-${String(i)}`} data-kind={d.kind}>
-                      <th scope="row">{KIND_LABEL[d.kind]}</th>
+                      <th scope="row">{m.kind[d.kind]}</th>
                       <td style={{ textAlign: "left" }}>
-                        {TYPE_LABEL[d.ruleType] ?? d.ruleType}
+                        {ruleType[d.ruleType]}
                         {d.description === null ? "" : `: ${d.description}`}
                       </td>
                       <td>
                         {d.keptId !== undefined
-                          ? "giữ nguyên"
+                          ? m.kept
                           : d.kind === "added"
-                            ? "nhóm mới"
+                            ? m.newGroup
                             : "–"}
                       </td>
                     </tr>
@@ -210,7 +197,7 @@ export function PromoteDialog({
       {needsKey && plan !== undefined && plan.changes > 0 && (
         <div className="f">
           <label htmlFor="promote-key">
-            Gõ <span className="mono">{flag.key}</span> để áp ở production
+            {m.typeToApply(<span className="mono">{flag.key}</span>)}
           </label>
           <input
             id="promote-key"
@@ -224,7 +211,7 @@ export function PromoteDialog({
       {apply.isError && (
         <p role="alert" className="field-error">
           {isApiError(apply.error) && apply.error.status === 409
-            ? `Rule ở ${source.name} hoặc ${target?.name ?? "env đích"} vừa được người khác sửa. Đã tải lại, hãy xem lại diff rồi áp.`
+            ? m.conflict(source.name, target?.name)
             : messageOf(apply.error)}
         </p>
       )}

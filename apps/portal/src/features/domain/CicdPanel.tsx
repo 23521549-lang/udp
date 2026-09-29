@@ -5,11 +5,13 @@ import { CodeBlock } from "../../components/CodeBlock";
 import { Dialog } from "../../components/Dialog";
 import { Icon } from "../../components/Icon";
 import { ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { domainApi } from "./domain-api";
+import { domainMessages } from "./domain.messages";
 
 /**
  * Webhook CI/CD (§8.3, Plan #36 QĐ-2, QĐ-6): đường để dán vào CI, secret ký webhook và pipeline
@@ -24,6 +26,7 @@ export function CicdPanel() {
   });
   const [showTemplate, setShowTemplate] = useState(false);
   const [secretOpen, setSecretOpen] = useState(false);
+  const m = useMessages(domainMessages).cicd;
 
   if (status.isPending) return <Loading />;
   if (status.isError) return <ErrorState error={status.error} />;
@@ -31,24 +34,17 @@ export function CicdPanel() {
   if (cicd.provider === null || cicd.webhookPath === null) return null;
 
   return (
-    <section aria-label="Webhook CI/CD">
-      <h2 className="h2">Webhook CI/CD</h2>
-      <p className="c3">
-        Bước cuối của pipeline gọi địa chỉ này, ký thân bằng secret webhook.
-        Deploy xong flag vẫn tắt: deploy không phải release.
-      </p>
+    <section aria-label={m.title}>
+      <h2 className="h2">{m.title}</h2>
+      <p className="c3">{m.lead}</p>
       <CodeBlock
         code={`${window.location.origin}${cicd.webhookPath}`}
-        label="Địa chỉ webhook"
-        copyLabel="Sao chép địa chỉ"
+        label={m.url}
+        copyLabel={m.copyUrl}
       />
       <dl className="props">
-        <dt>Secret webhook</dt>
-        <dd>
-          {cicd.secretSet
-            ? "Đã sinh (không xem lại được)"
-            : "Chưa sinh: mọi webhook đều bị từ chối"}
-        </dd>
+        <dt>{m.secret}</dt>
+        <dd>{cicd.secretSet ? m.secretSet : m.secretUnset}</dd>
       </dl>
       <div className="form-actions" style={{ justifyContent: "flex-start" }}>
         {can(project.myRole, "MAINTAINER") && (
@@ -58,7 +54,7 @@ export function CicdPanel() {
             onClick={() => setSecretOpen(true)}
           >
             <Icon of={KeyRound} />
-            {cicd.secretSet ? "Xoay secret" : "Sinh secret"}
+            {cicd.secretSet ? m.rotate : m.generate}
           </button>
         )}
         {can(project.myRole, "DEVELOPER") && (
@@ -69,7 +65,7 @@ export function CicdPanel() {
             onClick={() => setShowTemplate((v) => !v)}
           >
             <Icon of={Workflow} />
-            {showTemplate ? "Ẩn template pipeline" : "Xem template pipeline"}
+            {showTemplate ? m.hideTemplate : m.showTemplate}
           </button>
         )}
       </div>
@@ -90,13 +86,14 @@ function PipelineTemplate() {
     queryKey: qk.pipelineTemplate(project.id),
     queryFn: () => domainApi.pipelineTemplate(project.id),
   });
+  const m = useMessages(domainMessages).cicd;
   if (template.isPending) return <Loading />;
   if (template.isError) return <ErrorState error={template.error} />;
   return (
     <CodeBlock
       code={template.data.content}
-      label={`Template pipeline ${template.data.provider}`}
-      copyLabel="Sao chép template"
+      label={m.template(template.data.provider)}
+      copyLabel={m.copyTemplate}
     />
   );
 }
@@ -116,6 +113,7 @@ function SecretDialog({
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [secret, setSecret] = useState<string | null>(null);
+  const m = useMessages(domainMessages).cicd;
   const rotate = useMutation({
     mutationFn: () => domainApi.rotateWebhookSecret(project.id),
     onSuccess: async (data) => {
@@ -127,37 +125,29 @@ function SecretDialog({
   if (secret !== null) {
     return (
       <Dialog
-        title="Secret webhook"
-        description="Sao chép ngay vào biến UDP_WEBHOOK_SECRET của CI: đây là lần duy nhất secret hiện đầy đủ."
+        title={m.secret}
+        description={m.shownOnce}
         onClose={onClose}
         footer={
           <button type="button" className="btn pri" onClick={onClose}>
-            Đã lưu secret
+            {m.savedIt}
           </button>
         }
       >
-        <CodeBlock
-          code={secret}
-          label="Giá trị secret webhook"
-          copyLabel="Sao chép secret"
-        />
+        <CodeBlock code={secret} label={m.value} copyLabel={m.copySecret} />
       </Dialog>
     );
   }
 
   return (
     <Dialog
-      title={rotating ? "Xoay secret webhook?" : "Sinh secret webhook"}
-      description={
-        rotating
-          ? "Secret cũ hết hiệu lực ngay: CI còn dùng nó nhận 401 tới khi bạn dán secret mới."
-          : "Secret ký mọi webhook của project; UDP chỉ hiện nó một lần."
-      }
+      title={rotating ? m.rotateTitle : m.generateTitle}
+      description={rotating ? m.rotateDescription : m.generateDescription}
       onClose={onClose}
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>
-            Huỷ
+            {m.cancel}
           </button>
           <button
             type="button"
@@ -165,11 +155,7 @@ function SecretDialog({
             disabled={rotate.isPending}
             onClick={() => rotate.mutate()}
           >
-            {rotate.isPending
-              ? "Đang sinh…"
-              : rotating
-                ? "Xoay secret"
-                : "Sinh secret"}
+            {rotate.isPending ? m.generating : rotating ? m.rotate : m.generate}
           </button>
         </>
       }

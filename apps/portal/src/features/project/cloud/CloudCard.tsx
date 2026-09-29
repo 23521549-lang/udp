@@ -3,9 +3,11 @@ import type { ArchitectureWire, ProjectRoleWire } from "@udp/shared-types/wire";
 import { Cloud } from "lucide-react";
 import { Icon } from "../../../components/Icon";
 import { StatusLabel } from "../../../components/StatusLabel";
+import { useMessages } from "../../../i18n";
 import { relativeTime } from "../../../lib/format";
 import { can } from "../roles";
-import { AUTH_KIND_LABEL, PROVIDER_LABEL } from "./cloud-labels";
+import { cloudMessages } from "./cloud.messages";
+import { PROVIDER_LABEL } from "./cloud-labels";
 
 /**
  * Thẻ Cloud ở Tổng quan (§10.6 "Cloud badge", Plan #53 QĐ-7): cloud đang dùng hiện ngay ở trang đầu
@@ -21,21 +23,19 @@ export function CloudCard({
   role: ProjectRoleWire;
   cloud: ArchitectureWire["cloud"];
 }) {
+  const m = useMessages(cloudMessages);
   const owner = can(role, "OWNER");
   return (
-    <section className="kpi cloud-card" aria-label="Cloud">
+    <section className="kpi cloud-card" aria-label={m.cloud}>
       <div className="l">
         <span className="tile">
           <Icon of={Cloud} />
         </span>
-        Cloud
+        {m.cloud}
       </div>
       {cloud === null ? (
         <>
-          <p className="c3">
-            Chưa kết nối cloud. Project dựng hạ tầng trên tài khoản cloud của
-            bạn (BYOC).
-          </p>
+          <p className="c3">{m.card.notConnected}</p>
           {owner && (
             <Link
               to="/app/projects/$projectId/settings"
@@ -43,7 +43,7 @@ export function CloudCard({
               search={{ tab: "cloud" }}
               className="btn pri"
             >
-              Kết nối cloud
+              {m.card.connect}
             </Link>
           )}
         </>
@@ -57,12 +57,12 @@ export function CloudCard({
             <span className="chip soft">{cloud.mode}</span>
           </div>
           <dl className="props compact">
-            <dt>Xác thực</dt>
-            <dd>{AUTH_KIND_LABEL[cloud.authKind]}</dd>
-            <dt>Kiểm lần cuối</dt>
+            <dt>{m.auth}</dt>
+            <dd>{m.authKind[cloud.authKind]}</dd>
+            <dt>{m.lastChecked}</dt>
             <dd>
               {cloud.lastValidatedAt === null ? (
-                <StatusLabel tone="warn">Chưa kiểm</StatusLabel>
+                <StatusLabel tone="warn">{m.notChecked}</StatusLabel>
               ) : (
                 <StatusLabel tone="ok">
                   {relativeTime(cloud.lastValidatedAt)}
@@ -78,7 +78,7 @@ export function CloudCard({
               search={{ tab: "cloud" }}
               className="btn"
             >
-              {owner ? "Đổi cloud" : "Xem cấu hình cloud"}
+              {owner ? m.card.change : m.card.view}
             </Link>
           )}
         </>

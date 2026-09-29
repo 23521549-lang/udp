@@ -5,6 +5,8 @@ import {
 } from "@udp/shared-types/condition";
 import type { ReplaceRulesFields } from "@udp/shared-types/flag-api";
 import type { FlagVariantWire, RuleWire } from "@udp/shared-types/wire";
+import { messagesOf } from "../../i18n";
+import { rulesMessages } from "./rules.messages";
 
 /**
  * Mô hình của trình sửa rule — hàm thuần, để phần dễ sai nhất (thứ tự, phân phối, danh
@@ -143,31 +145,29 @@ export const weightSum = (serve: Serve): number =>
 
 // ------------------------------------------------------------- kiểm và gửi
 
-/** Lỗi theo từng rule (chỉ số → câu), rỗng là lưu được */
+/** Lỗi theo từng rule (chỉ số → câu theo ngôn ngữ đang chọn), rỗng là lưu được */
 export function ruleProblems(
   drafts: readonly RuleDraft[],
   variants: readonly FlagVariantWire[],
 ): Map<number, string> {
+  const m = messagesOf(rulesMessages).problem;
   const known = new Set(variants.map((v) => v.id));
   const out = new Map<number, string>();
   drafts.forEach((rule, i) => {
     const issue = conditionIssue(rule.ruleType, rule.condition);
     if (issue !== undefined) {
-      out.set(i, `Điều kiện chưa hợp lệ: ${issue}`);
+      out.set(i, m.invalidCondition(issue));
       return;
     }
     if (rule.serve.kind === "variant") {
-      if (!known.has(rule.serve.variantId)) out.set(i, "Chưa chọn variant");
+      if (!known.has(rule.serve.variantId)) out.set(i, m.noVariant);
       return;
     }
     const sum = weightSum(rule.serve);
     if (sum !== TOTAL_WEIGHT) {
-      out.set(
-        i,
-        `Tổng phân phối phải bằng 100%, đang là ${String(percentOf(sum))}%`,
-      );
+      out.set(i, m.sum(String(percentOf(sum))));
     } else if (rule.serve.weights.some((w) => !known.has(w.variantId))) {
-      out.set(i, "Phân phối trỏ tới variant không còn tồn tại");
+      out.set(i, m.unknownVariant);
     }
   });
   return out;

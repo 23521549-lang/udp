@@ -16,6 +16,7 @@ import { Dialog } from "../../components/Dialog";
 import { Icon } from "../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
+import { useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import {
   formatBytes,
@@ -31,6 +32,7 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { segmentApi } from "./segment-api";
 import { quotaVerdict, segmentSizeOf } from "./segment-quota";
+import { segmentMessages } from "./segment.messages";
 import { PageHead } from "../../components/PageHead";
 
 /**
@@ -42,6 +44,7 @@ import { PageHead } from "../../components/PageHead";
  * cảnh báo trước khi lưu là cảnh báo gần đúng (sổ nợ `portal-segment-quota`).
  */
 export function SegmentsPage() {
+  const m = useMessages(segmentMessages);
   const { project } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/segments" });
   const navigate = useNavigate();
@@ -70,7 +73,7 @@ export function SegmentsPage() {
   return (
     <>
       <ProjectBar
-        title="Segment"
+        title={m.title}
         envScoped={false}
         actions={
           canWrite && (
@@ -80,7 +83,7 @@ export function SegmentsPage() {
               onClick={() => setEditing("new")}
             >
               <Icon of={Plus} />
-              Tạo segment
+              {m.create}
             </button>
           )
         }
@@ -88,15 +91,15 @@ export function SegmentsPage() {
       <div className="body">
         <div className="scroll">
           <PageHead
-            title="Segment"
-            lead="Nhóm người dùng dùng chung cho rule ở mọi environment."
+            title={m.title}
+            lead={m.lead}
             {...(quota === undefined
               ? {}
               : {
                   minis: [
                     {
                       value: `${formatNumber(quota.segmentCount)}/${formatNumber(quota.maxSegments)}`,
-                      label: "segment",
+                      label: m.miniSegments,
                     },
                     {
                       value: formatPercent(
@@ -104,7 +107,7 @@ export function SegmentsPage() {
                           (quota.payloadBytes / quota.maxPayloadBytes) * 100,
                         ),
                       ),
-                      label: "dung lượng",
+                      label: m.miniStorage,
                     },
                   ],
                 })}
@@ -118,9 +121,9 @@ export function SegmentsPage() {
                 onRetry={() => void segments.refetch()}
               />
             ) : segments.data.segments.length === 0 ? (
-              <Empty title="Chưa có segment nào" />
+              <Empty title={m.empty} />
             ) : (
-              <div className="lst" role="list" aria-label="Danh sách segment">
+              <div className="lst" role="list" aria-label={m.list}>
                 {segments.data.segments.map((s) => (
                   <div role="listitem" key={s.id}>
                     {/* Link tới `?segment=<id>`: Ctrl-click mở đúng segment ở tab mới (Plan #53 QĐ-9) */}
@@ -136,11 +139,13 @@ export function SegmentsPage() {
                     >
                       <b className="lst-name">{s.name}</b>
                       <span className="c3">
-                        {s.summary.conditionCount} điều kiện,{" "}
-                        {formatNumber(s.summary.userIdCount)} người dùng
+                        {m.summary(
+                          s.summary.conditionCount,
+                          s.summary.userIdCount,
+                        )}
                       </span>
                       <span className="c3 lst-end">
-                        {s.usage.flagCount} flag dùng
+                        {m.usedBy(s.usage.flagCount)}
                       </span>
                       <span className="c3" title={formatDateTime(s.updatedAt)}>
                         {relativeTime(s.updatedAt)}
@@ -187,6 +192,7 @@ function SegmentPeek({
   onEdit: (segment: SegmentDetailWire) => void;
   onClose: () => void;
 }) {
+  const m = useMessages(segmentMessages);
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [deleting, setDeleting] = useState(false);
@@ -198,7 +204,7 @@ function SegmentPeek({
     mutationFn: () => segmentApi.remove(project.id, segmentId),
     onSuccess: async () => {
       setDeleting(false);
-      toast.info("Đã xoá segment");
+      toast.info(m.deleted);
       onClose();
       await queryClient.invalidateQueries({
         queryKey: qk.segments(project.id),
@@ -208,7 +214,7 @@ function SegmentPeek({
 
   const s = segment.data?.segment;
   return (
-    <aside className="peek" aria-label="Chi tiết segment">
+    <aside className="peek" aria-label={m.details}>
       <div className="ph">
         <b>{s?.name ?? "…"}</b>
         <div
@@ -220,7 +226,7 @@ function SegmentPeek({
               <button
                 type="button"
                 className="ib"
-                aria-label="Sửa segment"
+                aria-label={m.edit}
                 onClick={() => onEdit(s)}
               >
                 <Icon of={Pencil} />
@@ -228,7 +234,7 @@ function SegmentPeek({
               <button
                 type="button"
                 className="ib"
-                aria-label="Xoá segment"
+                aria-label={m.delete}
                 onClick={() => setDeleting(true)}
               >
                 <Icon of={Trash2} />
@@ -238,7 +244,7 @@ function SegmentPeek({
           <button
             type="button"
             className="ib"
-            aria-label="Đóng"
+            aria-label={m.close}
             onClick={onClose}
           >
             <Icon of={X} />
@@ -253,17 +259,18 @@ function SegmentPeek({
         ) : s === undefined ? null : (
           <>
             <h2 className="title">{s.name}</h2>
-            <p className="lead">{s.description ?? "Chưa có mô tả."}</p>
+            <p className="lead">{s.description ?? m.noDescription}</p>
             <div className="sect">
-              <h3>Khớp khi</h3>
+              <h3>{m.matchesWhen}</h3>
             </div>
             {s.conditions.userIds.length > 0 && (
               <p>
-                targetingKey thuộc{" "}
-                <span className="mono">
-                  {s.conditions.userIds.slice(0, 10).join(", ")}
-                  {s.conditions.userIds.length > 10 ? ", …" : ""}
-                </span>
+                {m.keyIn(
+                  <span className="mono">
+                    {s.conditions.userIds.slice(0, 10).join(", ")}
+                    {s.conditions.userIds.length > 10 ? ", …" : ""}
+                  </span>,
+                )}
               </p>
             )}
             {s.conditions.all.length > 0 && (
@@ -276,10 +283,10 @@ function SegmentPeek({
               </ul>
             )}
             <div className="sect">
-              <h3>Flag đang dùng</h3>
+              <h3>{m.flagsUsing}</h3>
             </div>
             {s.usage.flags.length === 0 ? (
-              <p className="c3">Chưa rule nào dùng segment này.</p>
+              <p className="c3">{m.unused}</p>
             ) : (
               <ul className="feed">
                 {s.usage.flags.map((f) => (
@@ -298,9 +305,9 @@ function SegmentPeek({
       </div>
       {deleting && s !== undefined && (
         <ConfirmDialog
-          title={`Xoá segment ${s.name}?`}
-          description="Segment đang được rule dùng thì không xoá được."
-          confirmLabel="Xoá"
+          title={m.deleteTitle(s.name)}
+          description={m.deleteDescription}
+          confirmLabel={m.deleteConfirm}
           danger
           busy={remove.isPending}
           error={remove.isError ? messageOf(remove.error) : undefined}
@@ -326,6 +333,7 @@ function SegmentDialog({
   onClose: () => void;
   onSaved: (segmentId: string) => void;
 }) {
+  const m = useMessages(segmentMessages);
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [name, setName] = useState(segment?.name ?? "");
@@ -359,7 +367,7 @@ function SegmentDialog({
       return segmentApi.update(project.id, segment.id, body);
     },
     onSuccess: async ({ segment: saved }) => {
-      toast.info("Đã lưu segment");
+      toast.info(m.saved);
       await queryClient.invalidateQueries({
         queryKey: qk.segments(project.id),
       });
@@ -389,14 +397,14 @@ function SegmentDialog({
 
   return (
     <Dialog
-      title={segment === undefined ? "Tạo segment" : `Sửa ${segment.name}`}
-      description="Khớp khi targetingKey nằm trong danh sách, HOẶC mọi điều kiện thuộc tính đều đúng."
+      title={segment === undefined ? m.create : m.editTitle(segment.name)}
+      description={m.dialogDescription}
       onClose={onClose}
       wide
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>
-            Huỷ
+            {m.cancel}
           </button>
           <button
             type="button"
@@ -408,13 +416,13 @@ function SegmentDialog({
             }
             onClick={() => save.mutate()}
           >
-            {save.isPending ? "Đang lưu…" : "Lưu"}
+            {save.isPending ? m.saving : m.save}
           </button>
         </>
       }
     >
       <div className="f">
-        <label htmlFor="seg-name">Tên</label>
+        <label htmlFor="seg-name">{m.name}</label>
         <input
           id="seg-name"
           className="inp"
@@ -427,7 +435,7 @@ function SegmentDialog({
         )}
       </div>
       <div className="f">
-        <label htmlFor="seg-desc">Mô tả</label>
+        <label htmlFor="seg-desc">{m.description}</label>
         <input
           id="seg-desc"
           className="inp"
@@ -436,18 +444,18 @@ function SegmentDialog({
         />
       </div>
       <div className="f">
-        <span className="lbl">targetingKey thuộc</span>
+        <span className="lbl">{m.keyInLabel}</span>
         <TagInput
-          label="Danh sách targetingKey"
+          label={m.keyList}
           values={userIds}
           readOnly={false}
           onChange={setUserIds}
         />
       </div>
       <div className="f">
-        <span className="lbl">Hoặc mọi điều kiện sau đều đúng</span>
+        <span className="lbl">{m.orAll}</span>
         <AttributeConditions
-          label="segment"
+          label={m.conditionsOf}
           value={all}
           readOnly={false}
           onChange={setAll}
@@ -459,16 +467,24 @@ function SegmentDialog({
           role={verdict.verdict === "ok" ? undefined : "alert"}
         >
           {verdict.verdict === "over"
-            ? `Vượt trần dung lượng của project: sau khi lưu ít nhất ${formatBytes(verdict.projectedLower)} trên ${formatBytes(quota.maxPayloadBytes)}. Máy chủ sẽ từ chối.`
+            ? m.over(
+                formatBytes(verdict.projectedLower),
+                formatBytes(quota.maxPayloadBytes),
+              )
             : verdict.verdict === "maybe"
-              ? `Sát trần dung lượng của project (khoảng ${formatBytes(verdict.projectedLower)} trên ${formatBytes(quota.maxPayloadBytes)}); có thể bị từ chối.`
-              : `Dung lượng sau khi lưu: khoảng ${formatBytes(verdict.projectedLower)} trên ${formatBytes(quota.maxPayloadBytes)}.`}
+              ? m.maybe(
+                  formatBytes(verdict.projectedLower),
+                  formatBytes(quota.maxPayloadBytes),
+                )
+              : m.ok(
+                  formatBytes(verdict.projectedLower),
+                  formatBytes(quota.maxPayloadBytes),
+                )}
         </p>
       )}
       {countFull && (
         <p className="field-error" role="alert">
-          Project đã có {quota?.segmentCount}/{quota?.maxSegments} segment: tạo
-          thêm sẽ bị từ chối.
+          {m.countFull(quota?.segmentCount, quota?.maxSegments)}
         </p>
       )}
       {save.isError && (

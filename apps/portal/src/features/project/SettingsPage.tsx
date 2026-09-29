@@ -1,6 +1,7 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 
 import type { SettingsSearch } from "../../app/router";
+import { useMessages } from "../../i18n";
 import { ProjectBar } from "./ProjectBar";
 import { CloudPanel } from "./cloud/CloudPanel";
 import { useProjectContext } from "./ProjectLayout";
@@ -10,18 +11,21 @@ import { MembersTab } from "./settings/MembersTab";
 import { ProjectTab } from "./settings/ProjectTab";
 import { SdkKeysTab } from "./settings/SdkKeysTab";
 import { PageHead } from "../../components/PageHead";
+import { projectMessages } from "./project.messages";
 
 type Tab = NonNullable<SettingsSearch["tab"]>;
-const TAB_LABEL: Record<Tab, string> = {
-  keys: "SDK key",
-  environments: "Environment",
-  members: "Thành viên",
-  audit: "Nhật ký",
-  cloud: "Cloud",
-  project: "Project",
-};
+/** Thứ tự tab; nhãn ở `projectMessages.settings.tab` */
+const TABS: readonly Tab[] = [
+  "keys",
+  "environments",
+  "members",
+  "audit",
+  "cloud",
+  "project",
+];
 
 export function SettingsPage() {
+  const m = useMessages(projectMessages).settings;
   const search = useSearch({ from: "/app/projects/$projectId/settings" });
   const navigate = useNavigate();
   const tab: Tab = search.tab ?? "keys";
@@ -29,15 +33,12 @@ export function SettingsPage() {
 
   return (
     <>
-      <ProjectBar title="Cài đặt" envScoped={tab === "keys"} />
+      <ProjectBar title={m.title} envScoped={tab === "keys"} />
       <div className="scroll">
-        <PageHead
-          title="Cài đặt"
-          lead="SDK key, environment, thành viên, nhật ký, cloud và trần tài nguyên."
-        />
+        <PageHead title={m.title} lead={m.lead} />
         <div className="page">
-          <div className="envtabs" role="tablist" aria-label="Mục cài đặt">
-            {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (
+          <div className="envtabs" role="tablist" aria-label={m.sections}>
+            {TABS.map((t) => (
               <button
                 key={t}
                 type="button"
@@ -53,7 +54,7 @@ export function SettingsPage() {
                   })
                 }
               >
-                {TAB_LABEL[t]}
+                {m.tab[t]}
               </button>
             ))}
           </div>

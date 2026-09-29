@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import type { NewProjectSearch } from "../../app/router";
 import { Icon } from "../../components/Icon";
 import { ErrorState, Loading } from "../../components/States";
+import { useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { qk, qkPrefix } from "../../lib/query-keys";
 import type { PublicProjectWire } from "@udp/shared-types/wire";
@@ -13,6 +14,7 @@ import { JobLog } from "../provisioning/JobLog";
 import { PreviewPanel } from "../provisioning/PreviewPanel";
 import { CloudPanel } from "./cloud/CloudPanel";
 import { projectApi, type CreateProjectInput } from "./project-api";
+import { projectMessages } from "./project.messages";
 
 const RUNTIMES = [
   { id: "nodejs", label: "Node.js" },
@@ -28,6 +30,7 @@ const RUNTIMES = [
  * tầng.
  */
 export function NewProjectPage() {
+  const m = useMessages(projectMessages);
   const search = useSearch({ from: "/app/projects/new" });
   const navigate = useNavigate();
   const go = (next: NewProjectSearch): void => {
@@ -48,7 +51,7 @@ export function NewProjectPage() {
   if (detail.isPending || detail.isError) {
     return (
       <>
-        <WizardBar step="Tạo project" />
+        <WizardBar step={m.createProject} />
         <div className="page">
           {detail.isPending ? (
             <Loading />
@@ -58,7 +61,7 @@ export function NewProjectPage() {
               onRetry={() => void detail.refetch()}
               back={
                 <Link to="/app/projects/new" search={{}} className="btn">
-                  Tạo project mới
+                  {m.wizard.createNewProject}
                 </Link>
               }
             />
@@ -107,12 +110,13 @@ function useOpenProject(project: PublicProjectWire) {
 }
 
 function WizardBar({ step }: { step: string }) {
+  const m = useMessages(projectMessages);
   return (
     <div className="bar">
       <div className="crumbs">
-        <Link to="/app/projects">Project</Link>
+        <Link to="/app/projects">{m.projects}</Link>
         <span className="sep">/</span>
-        <b>Tạo project</b>
+        <b>{m.createProject}</b>
         <span className="sep">/</span>
         <span>{step}</span>
       </div>
@@ -127,17 +131,15 @@ function CloudStep({
   project: PublicProjectWire;
   onNext: () => void;
 }) {
+  const m = useMessages(projectMessages).wizard;
   const [saved, setSaved] = useState(false);
   return (
     <>
-      <WizardBar step="Bước 2/5: Cloud" />
+      <WizardBar step={m.step2} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
-          <h1 className="title">Kết nối cloud</h1>
-          <p className="lead">
-            Project {project.name} đã tạo. Chọn nơi UDP dựng hạ tầng; có thể làm
-            sau ở Cài đặt, thẻ Cloud.
-          </p>
+          <h1 className="title">{m.cloudTitle}</h1>
+          <p className="lead">{m.cloudLead(project.name)}</p>
           <CloudPanel
             projectId={project.id}
             role={project.myRole}
@@ -149,7 +151,7 @@ function CloudStep({
               className={saved ? "btn pri" : "btn"}
               onClick={onNext}
             >
-              {saved ? "Tiếp tục" : "Để sau"}
+              {saved ? m.next : m.later}
             </button>
           </div>
         </div>
@@ -165,17 +167,15 @@ function DomainStep({
   project: PublicProjectWire;
   onNext: () => void;
 }) {
+  const m = useMessages(projectMessages).wizard;
   const [saved, setSaved] = useState(false);
   return (
     <>
-      <WizardBar step="Bước 3/5: Domain" />
+      <WizardBar step={m.step3} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
-          <h1 className="title">Chọn domain</h1>
-          <p className="lead">
-            Bật những công cụ hạ tầng project cần. Cấu hình được kiểm trước khi
-            lưu; có thể đổi sau ở trang Domain.
-          </p>
+          <h1 className="title">{m.domainTitle}</h1>
+          <p className="lead">{m.domainLead}</p>
           <DomainPanel
             projectId={project.id}
             role={project.myRole}
@@ -189,7 +189,7 @@ function DomainStep({
               className={saved ? "btn pri" : "btn"}
               onClick={onNext}
             >
-              {saved ? "Tiếp tục" : "Để sau"}
+              {saved ? m.next : m.later}
             </button>
           </div>
         </div>
@@ -205,17 +205,15 @@ function PreviewStep({
   project: PublicProjectWire;
   onStarted: (jobId: string) => void;
 }) {
+  const m = useMessages(projectMessages).wizard;
   const open = useOpenProject(project);
   return (
     <>
-      <WizardBar step="Bước 4/5: Xem trước" />
+      <WizardBar step={m.step4} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
-          <h1 className="title">Xem trước và triển khai</h1>
-          <p className="lead">
-            Chi phí ước tính và thứ tự UDP dựng hạ tầng trên tài khoản cloud của
-            bạn. Có thể triển khai sau ở trang Hạ tầng.
-          </p>
+          <h1 className="title">{m.previewTitle}</h1>
+          <p className="lead">{m.previewLead}</p>
           <PreviewPanel
             projectId={project.id}
             role={project.myRole}
@@ -223,7 +221,7 @@ function PreviewStep({
           />
           <div className="form-actions">
             <button type="button" className="btn" onClick={open}>
-              Để sau
+              {m.later}
             </button>
           </div>
         </div>
@@ -239,21 +237,19 @@ function JobStep({
   project: PublicProjectWire;
   jobId: string;
 }) {
+  const m = useMessages(projectMessages).wizard;
   const open = useOpenProject(project);
   return (
     <>
-      <WizardBar step="Bước 5/5: Triển khai" />
+      <WizardBar step={m.step5} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
-          <h1 className="title">Đang triển khai</h1>
-          <p className="lead">
-            Tiến độ cập nhật trực tiếp. Rời trang không dừng việc triển khai;
-            theo dõi tiếp ở trang Hạ tầng.
-          </p>
+          <h1 className="title">{m.jobTitle}</h1>
+          <p className="lead">{m.jobLead}</p>
           <JobLog projectId={project.id} jobId={jobId} role={project.myRole} />
           <div className="form-actions">
             <button type="button" className="btn pri" onClick={open}>
-              Mở project
+              {m.openProject}
             </button>
           </div>
         </div>
@@ -267,6 +263,8 @@ function CreateStep({
 }: {
   onCreated: (project: PublicProjectWire) => void;
 }) {
+  const t = useMessages(projectMessages);
+  const m = t.wizard;
   const queryClient = useQueryClient();
   const [form, setForm] = useState<CreateProjectInput>({
     name: "",
@@ -301,7 +299,7 @@ function CreateStep({
   const fields = { ...fieldErrorsOf(create.error), ...clientErrors };
   const submit = (): void => {
     if (form.name.trim() === "") {
-      setClientErrors({ name: "Nhập tên project." });
+      setClientErrors({ name: m.nameRequired });
       nameInput.current?.focus();
       return;
     }
@@ -311,19 +309,14 @@ function CreateStep({
 
   return (
     <>
-      <WizardBar step="Bước 1/5: Project" />
+      <WizardBar step={m.step1} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 640 }}>
-          <h1 className="title">Tạo project</h1>
-          <p className="lead">
-            Project sinh sẵn ba environment: dev, staging và production.
-          </p>
+          <h1 className="title">{t.createProject}</h1>
+          <p className="lead">{m.createLead}</p>
           <div className="lock">
             <Icon of={Info} />
-            <span>
-              Project mới đứng ở trạng thái Nháp cho tới khi triển khai; flag,
-              segment, rollout và SDK key dùng được ngay.
-            </span>
+            <span>{m.draftNote}</span>
           </div>
           <form
             className="form"
@@ -334,7 +327,7 @@ function CreateStep({
             }}
           >
             <div className="f">
-              <label htmlFor="p-name">Tên project</label>
+              <label htmlFor="p-name">{m.name}</label>
               <input
                 ref={nameInput}
                 id="p-name"
@@ -359,7 +352,7 @@ function CreateStep({
             </div>
             <div className="f">
               <span className="lbl" id="p-mode">
-                Cách tạo
+                {m.mode}
               </span>
               <div className="opts" role="group" aria-labelledby="p-mode">
                 <button
@@ -369,8 +362,8 @@ function CreateStep({
                     setForm({ ...form, creationMode: "CREATE_NEW" })
                   }
                 >
-                  <b>Tạo mới</b>
-                  Dựng từ mẫu Golden Path
+                  <b>{m.createNew}</b>
+                  {m.createNewHint}
                 </button>
                 <button
                   type="button"
@@ -379,14 +372,14 @@ function CreateStep({
                     setForm({ ...form, creationMode: "IMPORT_EXISTING" })
                   }
                 >
-                  <b>Nhập kho có sẵn</b>
-                  Dùng repo đã có
+                  <b>{m.importExisting}</b>
+                  {m.importExistingHint}
                 </button>
               </div>
             </div>
             {form.creationMode === "IMPORT_EXISTING" && (
               <div className="f">
-                <label htmlFor="p-repo">URL kho mã</label>
+                <label htmlFor="p-repo">{m.repoUrl}</label>
                 <input
                   id="p-repo"
                   name="repoUrl"
@@ -395,7 +388,7 @@ function CreateStep({
                   inputMode="url"
                   autoComplete="off"
                   spellCheck={false}
-                  placeholder="https://github.com/org/repo…"
+                  placeholder={m.repoUrlPlaceholder}
                   value={form.repoUrl ?? ""}
                   aria-invalid={fields.repoUrl !== undefined}
                   aria-describedby={
@@ -413,7 +406,7 @@ function CreateStep({
               </div>
             )}
             <div className="f">
-              <label htmlFor="p-runtime">Runtime</label>
+              <label htmlFor="p-runtime">{m.runtime}</label>
               <select
                 id="p-runtime"
                 name="languageRuntime"
@@ -437,14 +430,14 @@ function CreateStep({
             )}
             <div className="form-actions">
               <Link to="/app/projects" className="btn">
-                Huỷ
+                {t.cancel}
               </Link>
               <button
                 type="submit"
                 className="btn pri"
                 disabled={create.isPending}
               >
-                {create.isPending ? "Đang tạo…" : "Tạo project"}
+                {create.isPending ? t.creating : t.createProject}
               </button>
             </div>
           </form>
