@@ -55,6 +55,14 @@ const SCREENS: Screen[] = [
   ["domain", (i) => `/app/projects/${i.checkout}/domains/MONITORING`],
   ["infra", (i) => `/app/projects/${i.checkout}/infra`],
   ["settings", (i) => `/app/projects/${i.checkout}/settings`],
+  ...(["environments", "members", "audit", "cloud", "project"] as const).map(
+    (tab): Screen => [
+      `settings-${tab}`,
+      (i) => `/app/projects/${i.checkout}/settings?tab=${tab}`,
+    ],
+  ),
+  ["login", () => "/login"],
+  ["register", () => "/register"],
   ["admin-overview", () => "/admin/overview", "[role=meter]"],
   ["admin-users", () => "/admin/users"],
   ["admin-projects", () => "/admin/projects"],

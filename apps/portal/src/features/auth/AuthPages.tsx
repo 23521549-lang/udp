@@ -32,8 +32,9 @@ function AuthFrame({
   title: string;
   children: React.ReactNode;
 }) {
+  // `main`: trang đăng nhập cũng có vùng nội dung chính cho trình đọc màn hình (không nằm trong khung nào)
   return (
-    <div className="auth">
+    <main className="auth">
       <div className="auth-card">
         <div className="auth-brand">
           <Logo />
@@ -42,7 +43,7 @@ function AuthFrame({
         <h1>{title}</h1>
         {children}
       </div>
-    </div>
+    </main>
   );
 }
 

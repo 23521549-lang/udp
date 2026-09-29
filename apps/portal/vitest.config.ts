@@ -9,7 +9,7 @@ export default defineConfig({
     setupFiles: ["tests/setup.ts"],
     /**
      * `css: false` — jsdom không chạy layout, nên CSS không đổi kết quả của bất kỳ phép
-     * kiểm nào ở đây (xem `portal-responsive` trong sổ nợ); nạp nó chỉ tốn thời gian.
+     * kiểm nào ở đây; layout thật đo ở cổng Playwright `portal-demo` (`demo/screens.pw.ts`, Plan #53).
      */
     css: false,
     testTimeout: 15_000,

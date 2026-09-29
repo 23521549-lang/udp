@@ -5676,10 +5676,35 @@ GET    /api/v1/projects/:id/metrics/dora              [v4] 5 chỉ số DORA t�
                                                       change failure rate, failed deployment
                                                       recovery time, và MTTR tách riêng cho
                                                       auto-rollback của C1 (rollout_session_id)
+GET    /api/v1/projects/:id/metrics/red?envId&range   [v4.11, Plan #53, D-P44] VIEWER. range 1h|6h|24h|7d
+                                                      (bước 60s|5m|15m|1h, ≤ 169 điểm). Request/giây,
+                                                      tỉ lệ lỗi 5xx và p99 của từng workload (≤ 12) qua
+                                                      binding metrics.query của env (MetricsSeriesProvider,
+                                                      khuôn PromQL §7.4); null = không có dữ liệu (I7);
+                                                      console: URL SaaS hoặc lệnh port-forward. Không
+                                                      nguồn ⇒ 409 metrics-not-enabled; cluster không tới
+                                                      được ⇒ 503
+GET    /api/v1/projects/:id/architecture              [v4.11, Plan #53, D-P43] VIEWER. Hệ thống đã dựng:
+                                                      cloud, cluster, tài nguyên chưa DELETED, env +
+                                                      workload (bản gần nhất theo deployment_events),
+                                                      công cụ đang bật (bậc deploy, trạng thái, drift) và
+                                                      cạnh tiêu thụ → cung cấp theo `chosen` của resolver
+GET    /api/v1/projects/:id/cost?days=                [v4.11, Plan #38] MAINTAINER. Chi phí ĐO được theo
+                                                      env; [Plan #53] thêm daily[] (tổng các ngày = totalUsd)
+
+Trang chủ developer                                           [v4.11, Plan #53]
+────────────────────────────────────────────────────────────────
+GET    /api/v1/home                                   requireAuth. Project của người gọi (lọc theo
+                                                      membership trong truy vấn, PLATFORM_ADMIN không có
+                                                      đặc quyền), rollout đang chạy (≤ 20), việc cần xử lý
+                                                      (deploy chờ duyệt, domain lỗi hay lệch, job gần nhất
+                                                      lỗi, project hết hạn trong 48 giờ, rollout tạm dừng),
+                                                      deploy 14 ngày
 
 Audit                                                         [NEW]
 ────────────────────────────────────────────────────────────────
-GET    /api/v1/projects/:id/audit?action=&actor=&from=&to=&limit=
+GET    /api/v1/projects/:id/audit?action=&actor=&from=&to=&limit=&offset=
+                                                      [v4.11, Plan #53] trả kèm total (theo bộ lọc)
 
 Webhooks
 ────────────────────────────────────────────────────────────────
@@ -5718,11 +5743,21 @@ POST   /internal/environments/:envId/metrics   [v4.11, D-P30] MỘT phép đo (e
 
 Admin (platform_role = PLATFORM_ADMIN)
 ────────────────────────────────────────────────────────────────
-GET    /api/v1/admin/users
+GET    /api/v1/admin/overview                 [v4.11, Plan #53, D-P42] số liệu nền tảng từ database:
+                                              người dùng, project theo trạng thái và cloud, job lỗi,
+                                              tài nguyên mồ côi + USD/giờ, 10 công cụ bật nhiều nhất,
+                                              deploy 7 ngày, pg_database_size
+GET    /api/v1/admin/platform                 [v4.11, Plan #53, D-P42] cụm chạy UDP, đọc bằng
+                                              ServiceAccount CHỈ-ĐỌC: node (CPU, RAM qua
+                                              metrics-server), PVC của PostgreSQL, CronJob sao lưu,
+                                              Certificate, UDP_RELEASE; mỗi tín hiệu độc lập, đọc
+                                              không được ⇒ unavailable kèm lý do (NOT_IN_CLUSTER,
+                                              NOT_CONFIGURED, FORBIDDEN, UNAVAILABLE)
+GET    /api/v1/admin/users?search=&limit=&offset=   [Plan #53] kèm total
 PATCH  /api/v1/admin/users/:id/platform-role
-GET    /api/v1/admin/projects
+GET    /api/v1/admin/projects?status=&limit=&offset= [Plan #53] kèm total
 GET    /api/v1/admin/credentials              chỉ metadata + fingerprint, không giải mã
-GET    /api/v1/admin/jobs?state=FAILED        [NEW] job hỏng toàn hệ thống
+GET    /api/v1/admin/jobs?state=&limit=&offset=      [NEW] job hỏng toàn hệ thống; [Plan #53] total
 GET    /api/v1/admin/orphan-resources         [NEW] quét theo tag udp.project
 GET    /api/v1/admin/system/health
 ```
@@ -6620,6 +6655,20 @@ staleTime: 30_000; // latest deployment — refetchOnWindowFocus: true
 staleTime: 0; // active rollout — always fresh
 ```
 
+> **[v4.11, Plan #53] Tổng quan như đã dựng.** Đầu trang là `PageHead` (tên, trạng thái, vai) với ba chỉ số
+> nhanh: flag đang bật ở env đang chọn, rollout đang chạy, thành viên. Hàng thẻ: **Cloud** (provider, vùng,
+> mode, cách xác thực, lần kiểm; "Đổi cloud" tới Cài đặt → Cloud cho OWNER, "Xem cấu hình cloud" cho
+> MAINTAINER — Cloud badge của sơ đồ trên, trước đây nằm ở tab thứ năm của Cài đặt), **Cluster**, **Deploy
+> gần nhất**. Dưới đó: **DomainHealthGrid** (mỗi ô một domain đang bật: tên, tool, trạng thái bằng icon và
+> chữ, drift; ô lỗi đứng trước; bấm tới `/domains/:type`), **sơ đồ thu nhỏ** cloud ⊃ cluster ⊃ environment
+> (số workload) dẫn sang trang Kiến trúc, rồi environment và rollout gần đây. Thẻ Cloud, lưới và sơ đồ thu
+> nhỏ đọc CÙNG `GET /architecture` với trang Kiến trúc: một nguồn, không hai. Hai phân hệ mới cạnh Tổng
+> quan: **Kiến trúc** (`/architecture?tool=`) — khung lồng nhau cloud ⊃ mạng ⊃ cluster ⊃ (công cụ cấp cluster
+> theo bậc deploy) và (mỗi environment ⊃ workload và công cụ cấp namespace), cạnh là lớp SVG vẽ SAU layout,
+> panel kể quan hệ bằng chữ, dưới 860px cạnh ẩn; **Giám sát** (`/monitoring?range=`) — mỗi workload ba biểu
+> đồ nhỏ (request, lỗi, p99), lượt đánh giá flag, sức khoẻ domain, DORA, chi phí theo ngày (MAINTAINER), lối
+> sang công cụ giám sát. Ngoài project: **Trang chủ** `/app/home` là nơi `/app` và đăng nhập dẫn tới.
+
 ### 10.7 Domain Config UI
 
 ```mermaid
@@ -6957,6 +7006,16 @@ Inline error:         form validation — always near the field, never toast
   Auto-refresh every 30s
 ```
 
+> **[v4.11, Plan #53, D-P42] Bảng điều khiển nền tảng.** `/admin` là một KHUNG riêng của nhà phát hành (thanh
+> bên tối bằng token `--console-*`, nhãn "Nhà phát hành", crumb "Bảng điều khiển"), dùng chung `Shell` với
+> Portal (menu điện thoại, bỏ qua tới nội dung, khu tài khoản). Lối vào là menu tài khoản, chỉ hiện với
+> PLATFORM_ADMIN. `/admin` về **`/admin/overview`**: hàng tín hiệu của máy chạy UDP (CPU và RAM so với dung
+> lượng, kèm "nguy cơ bị thu hồi khi rảnh" so mức LÚC NÀY với ngưỡng 20% của Oracle; dữ liệu PostgreSQL so với
+> ổ; sao lưu gần nhất; hạn chứng chỉ; bản phát hành; ba service và database), rồi số liệu nền tảng, job,
+> project theo cloud, tài nguyên mồ côi và mười công cụ bật nhiều nhất. Người dùng, Project, Job lỗi có trang
+> (`offset`, `total` từ máy chủ) và bộ lọc trên URL; lỗi của job đọc được (`bước: câu`), JSON thô trong "Chi
+> tiết kỹ thuật".
+
 ---
 
 ### 10.12 Bổ sung v3 — các màn hình phát sinh từ thiết kế mới
@@ -7001,6 +7060,10 @@ Inline error:         form validation — always near the field, never toast
 
 **Ảnh hưởng tới routing:** thêm `/app/projects/:id/domains/:type` (chi tiết một domain: drift, version, binding đang cung cấp) và `/admin/catalog`.
 
+> **[v4.11, Plan #53] Màn thêm.** `/app/home` (Trang chủ), `/app/projects/:id/architecture` (Kiến trúc),
+> `/app/projects/:id/monitoring` (Giám sát), `/admin/overview` (Tổng quan của Bảng điều khiển). Thanh bên của
+> project thêm "Kiến trúc" (`network`) và "Giám sát" (`activity`) ngay sau Tổng quan.
+
 ### 10.14 Bản đồ màn hình, endpoint, query key và quy tắc invalidate [NEW v4]
 
 §10.12 đã cảnh báo bằng chữ: *"query key của mọi query liên quan flag/rollout phải chứa `envId`, nếu không dữ liệu của `dev` sẽ bị cache lẫn sang `prod`"*. Một cảnh báo bằng chữ sẽ bị quên ở màn hình thứ mười. Bảng này biến nó thành hợp đồng, và **hai cột cuối mới là phần quan trọng** — đó là nơi bug "bấm xong không thấy gì đổi" và bug lẫn cache giữa environment sinh ra.
@@ -7028,6 +7091,12 @@ Inline error:         form validation — always near the field, never toast
 | Audit Log | `GET /projects/:id/audit` | `["audit", projectId, filters]` | Đổi bộ lọc |
 | SDK Keys | `GET /.../environments/:envId/keys` | `["sdkKeys", projectId, envId]` | Tạo hoặc thu hồi key |
 | Admin Orphan | `GET /admin/orphan-resources` | `["orphans"]` | Dọn một tài nguyên |
+| **[v4.11, Plan #53] Trang chủ** | `GET /home` | `["home"]` — khai miễn trừ I38: gom mọi project, env nằm trong từng dòng | `staleTime` 30 giây, làm mới khi quay lại tab |
+| **[v4.11, Plan #53] Kiến trúc**, thẻ Cloud, lưới sức khoẻ | `GET /projects/:id/architecture` | `["architecture", projectId]` — miễn trừ I38: sơ đồ cả project | Đổi domain, job xong (qua polling của trang) |
+| **[v4.11, Plan #53] Giám sát RED** | `GET /projects/:id/metrics/red?envId&range` | `["red", projectId, **envId**, range]` | Mỗi 60 giây, đổi khoảng |
+| **[v4.11, Plan #53] Chi phí theo ngày** | `GET /projects/:id/cost?days=` | `["cost", projectId, days]` | Đổi cửa sổ |
+| **[v4.11, Plan #53] Admin Tổng quan** | `GET /admin/overview`, `GET /admin/platform` | `["admin", "overview"]`, `["admin", "platform"]` | Mỗi 60 giây |
+| **[v4.11, Plan #53] Admin danh sách** | `GET /admin/users`, `/admin/projects`, `/admin/jobs` với `offset` | `["admin", …, bộ lọc, offset]` | Đổi vai (người dùng) |
 
 **Quy tắc, và cách cưỡng chế:**
 
@@ -7072,6 +7141,10 @@ Plan #25 dựng Portal theo §10 và theo bản mẫu đã duyệt (`docs/design
 | D-P39 | §12.2 hàng `udp-traffic`, §9 `POST /internal/clusters/:clusterId/token`, ADR-06 | `udp-traffic` có subresource `rollouts/promote`/`abort`/`retry`; route token phân biệt bên gọi bằng TokenReview và cấp đúng SA của bên đó; `:clusterId` là id cluster | [v4.11, Plan #51] `udp-traffic` có `rollouts/status: patch` (và vẫn KHÔNG `patch` spec); `udp-workload` thêm `analysistemplates`, `canaries`; route cấp CHỈ `traffic`, `:clusterId` là id project; S1 và S3 dùng chung `@udp/cluster-access` | CRD của Argo Rollouts không có subresource promote/abort/retry — `kubectl argo rollouts` patch `status`; RBAC cũ làm S3 không promote được trên cụm thật. Xác thực nội bộ là bí mật dùng chung (§16) nên S1 không phân biệt được S2 với S3: giữ luật "S3 chỉ lấy `traffic`" bằng cấu trúc — không ai lấy được SA khác. UDP không có bảng cluster; mỗi project BYOC có đúng một cluster |
 | D-P40 | ADR-01 "Service 3 sinh CR", §7.3, §9 SERVICE_LEVEL | Service 3 sinh Rollout/Canary CR và điều khiển nó; tool SERVICE_LEVEL không nói lấy từ đâu; không nói deploy thường tương tác thế nào với CR của session | [v4.11, Plan #51] Service 1 ghi SPEC (strategy + image trong một merge patch; Canary rồi image của Deployment), Service 3 chỉ ghi `rollouts/status` và route header; tool từ binding `traffic.control` của environment; strategy dựng từ bản gốc lưu ở `udp.io/previous-strategy`; Luồng 3 từ chối deploy khi workload có session sống và trả strategy về bản gốc sau session; Flagger udp-driven qua gate của Service 3 chỉ đọc database | §12.2 không cho `udp-traffic` sửa spec (I25) — "S3 sinh CR" không thực hiện được mà không phá chính bất biến ADR-01 dựa vào. Strategy `pause: {}` của một session udp-driven sẽ treo vĩnh viễn lần deploy kế tiếp nếu không ai trả nó về. Gate chỉ đọc giữ đúng một control loop |
 | D-P41 | §15.1 ba môi trường, §15.3, §13.5 | UDP chạy ở Local (kind), CI và Cloud thật bật theo phiên; không có nơi chạy công khai lâu dài, không có bước deploy trong CI | [v4.11, Plan #52] Thêm hàng "Máy công khai": máy ảo Oracle Cloud Always Free (A1 arm64) + k3s một node, CÙNG base Kustomize với kind (overlay `vm`), PostgreSQL trong cụm, Traefik + cert-manager, một host với đúng bề mặt công khai của §9, image build trên máy theo tag commit, sao lưu hằng ngày ra Object Storage Always Free; workflow `Deploy` sau CI xanh; job `vm` diễn tập chính các script đó trên runner | Người dùng: hạ tầng không chạy trên máy của họ và đúng 0 đồng. Ba service chạy liên tục nên máy ảo chạy nguyên thiết kế — Vercel/Lambda đòi viết lại serverless, Lambda chỉ 0 đồng trong 6 tháng. Supabase free đã dùng hết hai project (dev, CI). Chạy trên máy thật: sổ nợ `vm-oracle-real` |
+| D-P42 | §10.3, §10.11 | Khu `/admin` là bốn bảng dữ liệu trong cùng khung với Portal, lối vào là một mục giữa menu project; "Hệ thống" chỉ có bốn dòng up/down | [v4.11, Plan #53] Hai khung trong MỘT ứng dụng (`Shell` chung): Portal và Bảng điều khiển nền tảng (token `--console-*`); lối vào ở menu tài khoản; `/admin/overview` + `GET /admin/overview` (database) và `GET /admin/platform` (cụm chạy UDP, ServiceAccount CHỈ-ĐỌC: get/list nodes và nodes.metrics.k8s.io, CronJob, Job; get PVC, Certificate; không secret, không exec); danh sách quản trị có `offset` + `total` | Chủ nền tảng cần biết nền tảng có khoẻ và có còn 0 đồng (hạn mức A1, sao lưu, chứng chỉ, tài nguyên mồ côi) mà không SSH vào máy. Tách hai bản build là nhân đôi auth và CSRF mà không được gì. Mỗi tín hiệu độc lập và `unavailable` kèm lý do: không bao giờ đoán |
+| D-P43 | §10.6 Cloud badge, DomainHealthGrid; §5.3 | Hai thành phần của Tổng quan chưa làm; thứ tự deploy chỉ in dạng chữ ở màn xem trước | [v4.11, Plan #53] `GET /projects/:id/architecture` ghép từ dữ liệu đã có (credential, `clusterAccess`, `provisioned_resources`, `deployment_events`, domain đang bật) — không bảng mới; cạnh từ hàm thuần `capabilityEdges(adapters, chosen)` cạnh `validateAndOrder`, bậc là chỉ số trong `order`; trang Kiến trúc, thẻ Cloud, lưới sức khoẻ, sơ đồ thu nhỏ đọc cùng API | Một đồ thị vừa chặn cấu hình sai vừa được vẽ ra: cạnh là CHÍNH quan hệ `chosen` (kể cả `anyOf` và preference), không một danh sách tay có thể trôi khỏi resolver. Workload lấy từ Event Store vì §2.2 không có bảng workload |
+| D-P44 | §7.4, §10.9, §5.4 `MetricsProvider` | Số rời rạc: canary, DORA, lượt đánh giá; không chuỗi thời gian nào của thứ đang chạy | [v4.11, Plan #53] `MetricsSeriesProvider extends MetricsProvider` với `series(kind, target, {rangeSec, stepSec})` (Prometheus `query_range` với CHÍNH khuôn §7.4; Datadog, New Relic, Dynatrace qua API chuỗi của từng nhà; điểm rỗng là `null`); `GET /metrics/red` đi qua binding `metrics.query` như gate canary; `console` chỉ cách mở công cụ (port-forward cho Grafana trong cụm) | Interface tách: Service 3 chỉ cần `snapshot`, bắt nó hiện thực `series` là ép một hàm không bao giờ gọi. Grafana của tenant không có địa chỉ công khai và UDP cố ý không mở (§12.2), nên lệnh port-forward thay cho một link hỏng. Chạy trên cụm thật: sổ nợ `monitoring-real-cluster`, `monitoring-saas-real` |
+| D-P45 | §13 Testing, §10.15 D-P1 | Portal kiểm bằng jsdom; không phép kiểm nào chạy layout thật | [v4.11, Plan #53] Bản xem thử (`apps/portal/demo`, lớp giả lập trong trang, dữ liệu tất định: 130 người dùng, 24 project trên ba cloud) và job CI `portal-demo`: Playwright qua 34 màn ở 1440×900 và 375×812 — không lỗi console, không tràn ngang, một `main`, một `h1`, không 404, không "...", mỗi màn có phần chính; ảnh chụp là artifact; máy dev chạy bằng Edge sẵn có | jsdom không có layout: một phép "không tràn ngang" trong jsdom xanh với mọi layout. Cổng này trả mục nợ `portal-responsive` và ngay lần đầu bắt hai lỗi mà jsdom không thể thấy (lớp cạnh không vẽ vì đo trước khi ref của khung cha được gắn; trang đăng nhập thiếu `main`). Không so pixel: font khác máy làm đỏ giả |
 | D-P36 | §11.1, §11.2, §8.3 áp image, §5.2 `PipelineTemplateParams`, §9 Project | Template §11.1 là khối mã trong tài liệu, không nói giao cho developer thế nào; "CI ghi image tag lúc render" trong khi luồng áp image §8.3 chỉ đổi `image`; §11.2 "quét repo" không nói quét bằng gì, lưu ở đâu; pipeline Golden Path không nói test theo runtime | [v4.11, Plan #48] Template là dự án chạy được trong monorepo (`packages/golden-path`), sinh qua `GET /golden-path`; patch áp image gắn nhãn pod `app.kubernetes.io/version`, manifest đọc nhãn vào `service.version`; quét qua API công khai GitHub/GitLab ở S1, kết quả ở `projects.repo_scan`; `PipelineTemplateParams.languageRuntime` ⇒ lệnh và image test theo runtime | Mã developer chép nguyên văn phải là mã đã chạy — v3 từng phát tán một cơ chế không chạy. Không có nhãn thì `service.version` đứng yên ở giá trị lúc apply đầu, canary SERVICE_LEVEL so hai phiên bản mang cùng nhãn. Quét cục bộ đòi developer cài công cụ; API công khai không tốn gì và không nhận host lạ. `npm test` trên project Python là pipeline luôn đỏ |
 | D-P35 | §6.5 toán tử `regex`, §6.6 đoạn mã Python, §6.8 "Bản Python" | Regex "cờ `u`, không backreference/lookaround" — mọi pattern V8 nhận là hợp lệ; bản Python "dùng lại vector test hash/delta" và nhận `picks=_picks` ở cả provider lẫn middleware | [v4.11, Plan #47] Ngữ pháp regex KHẢ CHUYỂN: `regexSyntaxIssue` từ chối thêm `\p{…}`, cờ nội tuyến và tên nhóm không phải định danh ASCII hoặc trùng — ở đường ghi của S1/S2 lẫn schema đọc của mọi SDK; vector dùng chung mở rộng sang regex (639 pattern) và giá trị mặc định của provider; phép so chéo ngôn ngữ với Service 2 thật; store theo request là MỘT `ContextVar` của module, không có tham số `picks` | Tập ký tự của `\p{…}` đổi theo phiên bản Unicode của runtime (ICU của V8 và bảng của Python không cùng nhịp): hai SDK không thể cho cùng kết quả, I26 vỡ bằng dữ liệu hợp lệ. Cờ nội tuyến và luật trùng tên đổi theo phiên bản V8 — cho phép chúng là để kết quả phụ thuộc bản Node của server. Vector hash/delta không phủ toán tử khó nhất; `picks` là cấu hình developer phải khai hai lần và có thể khai lệch |
 | D-P34 | §7.2 ATTRIBUTE_SPLIT (FLAG_LEVEL), §9 Internal S2, §10.9 | "Rule ATTRIBUTE_BASED/SEGMENT serve variant mới; promote = đổi default variant" — không nói rule có hình gì, ai đổi default, bằng quyền nào | [v4.11, Plan #46] Rule là phân phối HAI variant như canary (`canaryPairOf`), bậc duy nhất đưa nhóm khớp sang 100%; chiến lược mang `autoDecide`, `finish`, `ruleIssue` — reconciler không rẽ theo tên; không tự quyết thì mỗi nhịp vẫn đo và ghi HOLD kèm số; PROMOTE tay: S3 gọi `PATCH /internal/flag-envs/:id {defaultVariantId}` mang người bấm (audit I40) rồi đóng DONE; `canaryPairOf(…, allowFull)` nhận 100% khi "lên 100%" chưa phải xong | `PATCH /internal/rules/:id` chỉ đổi TRỌNG SỐ, không đổi tập variant — rule một variant thì rollout không có gì để đổi mà không nới quyền ghi của S3. Đổi default cần người làm thật: một thay đổi cấu hình production không được ẩn danh. Rẽ theo tên chiến lược là một `if` nữa mỗi lần thêm chiến lược |
@@ -7913,6 +7986,7 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | `POST /projects/:id/members` đòi người được mời **đã có tài khoản** | §9 gọi đây là "mời theo email", nhưng cùng lý do với mục đăng ký ở đầu §16: chưa có hạ tầng mail. Một lời mời treo mà không đường nào gửi đi thì tệ hơn một lỗi 404 rõ ràng, và không bảng nào lưu nó | Khi có mail: thêm bảng lời mời, gửi thư kèm token, và cho phép mời địa chỉ chưa đăng ký |
 | **[v4.11, Plan #50] Không đo được E2, và E9 mới có hai pha** | E2 (provisioning time) cần ba cloud thật — tính tiền theo giờ, trái yêu cầu chi phí 0 (D-P37). E9 chạy mỗi đêm trên cụm kind của CI (rỗi và 1 000 SDK nối SSE); nhánh 100 rollout đồng thời cần ≥ 34 environment có workload vì trần 3 flag track mỗi env (§6.6), quá sức runner miễn phí; hai pha ADR-05 (CPU `config_hash` ở env nghìn flag, khoá `NOTIFY` dưới tải ghi) cần env lớn và tải ghi. Sổ nợ: `E2`, `E9` | Commit artifact E9 của lượt đêm đầu tiên; E2 và các pha còn lại khi có hạ tầng được phép tốn tiền |
 | **[v4.11, Plan #50] Dựng cụm, E2E rút gọn và E9 chỉ chạy được ở CI** | Máy dev (7,7 GiB RAM) không chạy được Docker engine; `pnpm deploy:up` lần đầu chạy thật là ở job `kind` sau lần push đầu tiên. Manifest, cấu hình cụm (qua schema env) và nối dây CI đã có test tại chỗ; phần còn lại chỉ lộ trên cụm thật | Job `kind` in trạng thái cụm (`pnpm --filter @udp/deploy diagnose`) khi đỏ |
+| **[v4.11, Plan #53] Chuỗi RED mới kiểm bằng provider giả và response mẫu** | `series` của Prometheus kiểm khuôn `query_range` và bước trên fetch giả; ba nhà SaaS parse response mẫu theo tài liệu của họ; route và Portal chạy trên provider giả. Số đo thật cần một cụm có Prometheus và workload xuất metric (middleware §7.4), và khoá API trả phí của Datadog, New Relic, Dynatrace. Sổ nợ: `monitoring-real-cluster`, `monitoring-saas-real` | Chạy hai lượt đó khi có cụm và khoá |
 
 ---
 

@@ -93,7 +93,10 @@ không bao giờ là "khoẻ".
 
   | Phân hệ   | Icon Lucide                       |
   | --------- | --------------------------------- |
+  | Trang chủ | `house`                           |
   | Tổng quan | `layout-dashboard`                |
+  | Kiến trúc | `network`                         |
+  | Giám sát  | `activity`                        |
   | Flag      | `flag`                            |
   | Rollout   | `chart-no-axes-column-increasing` |
   | Deploy    | `rocket`                          |

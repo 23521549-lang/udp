@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 43.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 44.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1022,6 +1022,42 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > route gửi qua `sendJson` thiếu dòng trong bảng — đã thử đột biến (bỏ dòng `GET /cost` ⇒ đỏ đúng
 > route đó). Bốn route còn lại trả 204 không thân; hai luồng SSE không phải JSON.
 
+## monitoring-real-cluster — chuỗi RED và tín hiệu nền tảng trên cụm thật
+
+- **Vì sao nợ:** [Plan #53] `GET /projects/:id/metrics/red` đọc chuỗi thời gian qua binding `metrics.query`
+  (Prometheus trong cụm qua proxy của API server, cùng đường với gate canary §7.4). Máy dev không có cụm, nên
+  `series` của Prometheus được kiểm bằng fetch giả (đúng khuôn `query_range`, đúng bước), route và Portal chạy
+  trên provider giả và mẫu golden. Chưa có lượt nào đọc số từ một Prometheus thật với workload xuất metric thật.
+  Tín hiệu nền tảng (`GET /admin/platform`) có E2E trên kind và k3s của job `vm`, nhưng ở kind không có
+  metrics-server nên node là `unavailable`.
+- **Tiền đề:** một cụm có Prometheus (domain Monitoring `prometheus-grafana` hay `victoria-metrics` đã triển
+  khai), một workload deploy qua UDP có middleware §7.4 xuất `http_requests_total` và histogram độ trễ, có tải.
+- **Lệnh:** mở Portal, trang Giám sát của env đó, khoảng 1 giờ; song song chạy PromQL của §7.4 bằng tay qua
+  `kubectl port-forward` (lệnh mà thẻ "Mở Grafana" in ra) và so từng điểm.
+- **Đạt:** ba biểu đồ của mỗi workload khớp PromQL tay (sai khác ≤ một bước); điểm không có dữ liệu là đường
+  đứt, không phải 0; lệnh port-forward mở đúng Grafana. **Không đạt:** chuỗi rỗng khi PromQL tay có số (nhãn
+  lệch §7.4), hay bước lệch làm điểm dịch.
+- **Tài nguyên:** cụm có Prometheus (~2,5 GiB) và một workload có tải — cùng tiền đề với `portal-rollout-create`.
+- **Ảnh hưởng tới kết luận:** câu "Portal cho thấy thứ đang chạy" (Plan #53 QĐ-4) mới được chứng minh ở mức
+  hợp đồng và provider giả, chưa ở mức số đo thật.
+
+## monitoring-saas-real — chuỗi thời gian của Datadog, New Relic, Dynatrace thật
+
+- **Vì sao nợ:** [Plan #53] Ba provider SaaS parse response mẫu viết theo tài liệu công khai của từng nhà
+  (`/api/v1/query` của Datadog, NRQL `TIMESERIES` của New Relic, `/api/v2/metrics/query` của Dynatrace); điểm
+  rỗng là `null`. Gọi thật cần khoá API của tài khoản trả phí — trái yêu cầu chi phí 0 của hạ tầng UDP. Khác
+  `saas-metrics-real`: mục đó đo `snapshot` (phân tích canary), mục này đo `series` (trang Giám sát) — hai API
+  chuỗi khác nhau của cùng nhà cung cấp; chạy CHUNG một lượt vì cùng tiền đề.
+- **Tiền đề:** như `saas-metrics-real` — tài khoản dùng thử của ba nhà, một cluster chạy sample-app với agent
+  tương ứng, khoá API đặt vào cấu hình domain Monitoring của project qua Portal.
+- **Lệnh:** trang Giám sát của project đó, bốn khoảng 1h / 6h / 24h / 7d; so với biểu đồ cùng truy vấn trên
+  giao diện của nhà cung cấp (nút "Mở Datadog" / "Mở New Relic" / "Mở Dynatrace").
+- **Đạt:** hình và số khớp giao diện của nhà cung cấp ở cả bốn khoảng; điểm trống hiện là trống.
+  **Không đạt:** 4xx do khuôn truy vấn, hay bucket lệch múi giờ.
+- **Tài nguyên:** cluster (~3 GiB) + ba tài khoản SaaS dùng thử — dùng lại của lượt `saas-metrics-real`.
+- **Ảnh hưởng tới kết luận:** câu "mọi tool Monitoring của §5.5 cho được chuỗi RED" — hiện đúng cho nhánh
+  PromQL ở mức hợp đồng, đúng cho ba nhà SaaS ở mức response mẫu.
+
 ## vm-oracle-real — UDP trên máy ảo Oracle Cloud Always Free thật
 
 - **Vì sao nợ:** [Plan #52] Máy công khai (§15.1, D-P41) có mã và test: bản phát hành dựng bằng kustomize
@@ -1049,20 +1085,12 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   (§15.1, D-P41) — hôm nay là bảo đảm của mã, test và lượt diễn tập trên runner x86, chưa phải của một
   lần chạy trên Oracle.
 
-## portal-responsive — đo thật ở 375px trên trình duyệt
-
-- **Vì sao nợ:** jsdom **không chạy layout**: `scrollWidth`, `clientWidth`,
-  `getBoundingClientRect()` đều trả 0, và media query không đổi gì. Một phép kiểm
-  "không tràn ngang" trong jsdom xanh với **mọi** layout, kể cả một bảng rộng 1600px.
-- **Tiền đề:** trình duyệt thật (chung điều kiện với `portal-e2e`).
-- **Lệnh:** mở từng route ở 375×812 và 1440×900, khẳng định `document.scrollingElement`
-  không tràn ngang.
-- **Đạt:** 0 route tràn ngang ở 375px. **Không đạt:** một route tràn ⇒ rail chưa đổi thành
-  thanh trên, hoặc một bảng thiếu wrapper.
-- **Tài nguyên:** ~500 MB browser + RAM.
-- **Ảnh hưởng tới kết luận:** câu "Portal dùng được trên điện thoại". Quét tĩnh (cấm chiều
-  rộng cố định, bắt buộc wrapper cho bảng) **không** thay được phép đo này, và Plan #25 ghi
-  rõ như vậy.
+> **Đã trả (30/09/2026, Plan #53):** `portal-responsive` — job CI `portal-demo` (Playwright) mở bản xem thử
+> tĩnh và đi qua 34 màn của hai khung (mọi route của Portal và Bảng điều khiển, kể cả đăng nhập, đăng ký và năm
+> tab Cài đặt) ở 1440×900 VÀ 375×812, khẳng định `document.documentElement.scrollWidth - innerWidth ≤ 1` cùng
+> không lỗi console, đúng một `main` và một `h1`, không 404, không "...". 0 màn tràn ngang ở 375px (máy dev,
+> Edge, 30/09/2026); ảnh chụp là artifact của mỗi lượt CI. Cổng bắt ngay hai lỗi jsdom không thấy được: lớp cạnh
+> của sơ đồ kiến trúc không vẽ (đo trước khi ref của khung cha được gắn) và trang đăng nhập thiếu `main`.
 
 ## portal-rollout-create — tạo rollout khi project chưa có cluster và Prometheus
 

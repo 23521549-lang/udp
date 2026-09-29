@@ -355,7 +355,10 @@ sách tay. `contract.check.ts` gọi mọi hàm API mới.
 Job `portal-demo`:
 
 1. Build bản xem thử.
-2. Chạy Playwright (Chromium) qua ~18 màn ở 1440×900 và 390×844.
+2. Chạy Playwright (Chromium) qua ~18 màn ở 1440×900 và 390×844. **[Khi làm]** 34 màn (mọi route của hai khung,
+   kể cả đăng nhập, đăng ký và năm tab Cài đặt), khung điện thoại 375×812 — hẹp hơn 390 và đúng tiêu chí của mục
+   nợ `portal-responsive`, nên cổng trả luôn mục đó; mỗi màn thêm một locator phải có (bằng chứng màn đã vẽ phần
+   chính của nó).
 3. Kiểm từng màn:
    - không lỗi console;
    - không tràn ngang;
