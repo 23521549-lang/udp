@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 42.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 43.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1021,6 +1021,33 @@ chạy được, và mỗi màn hình bị hoãn nằm ở đây kèm điều ki
 > mã" của `wire-golden.test.ts` đọc route KHAI TRONG MÃ (tiền tố lấy từ các lệnh mount) và đỏ khi một
 > route gửi qua `sendJson` thiếu dòng trong bảng — đã thử đột biến (bỏ dòng `GET /cost` ⇒ đỏ đúng
 > route đó). Bốn route còn lại trả 204 không thân; hai luồng SSE không phải JSON.
+
+## vm-oracle-real — UDP trên máy ảo Oracle Cloud Always Free thật
+
+- **Vì sao nợ:** [Plan #52] Máy công khai (§15.1, D-P41) có mã và test: bản phát hành dựng bằng kustomize
+  thật và parse bằng `envSchema`, script qua `bash -n`, nối dây workflow; job `vm` của CI diễn tập CHÍNH
+  `bootstrap.sh` + `release.sh` trên runner rồi E2E qua HTTPS. Runner KHÔNG thay được máy thật ở năm chỗ:
+  kiến trúc arm64 (image build trên Ampere A1), iptables và security list của image Oracle, chứng chỉ Let's
+  Encrypt thật qua HTTP-01 (runner không có DNS công khai — lượt CI dùng CA tự ký), IP của khách tới được
+  S1/S2 qua ServiceLB với `externalTrafficPolicy: Local` (rate limit theo IP), và workflow `Deploy` qua SSH
+  thật. Chưa có máy: tài khoản Oracle cần thẻ để xác minh, do người dùng tự tạo.
+- **Tiền đề:** tài khoản Oracle Cloud Free Tier (KHÔNG nâng lên Pay As You Go); máy ảo A1 Ubuntu 24.04 theo
+  `deploy/README.md`; tên DuckDNS trỏ về IP của máy; bucket + PAR chỉ-ghi; bốn secret của environment `vm`.
+- **Runbook:** (1) `bash udp/deploy/vm/bootstrap.sh` trên máy, điền `~/udp/vm.env` với
+  `TLS_ISSUER=letsencrypt-staging`; (2) chạy tay workflow `Deploy`; (3) đổi sang `letsencrypt`, chạy lại;
+  (4) từ một máy khác: đăng ký, đăng nhập, tạo project + khoá SDK, `curl -N` vào `/sdk/stream` 5 phút;
+  (5) đọc log của Service 1 (`kubectl --kubeconfig ~/.kube/udp-vm.yaml --context udp-vm -n udp logs
+deployment/core-backend`) xem `ip` của request là IP thật của máy gọi; (6) `kubectl create job --from=cronjob/udp-backup`
+  rồi thấy `udp-<thứ>.dump` trong bucket; (7) tải bản dump về máy ảo và `pnpm --filter @udp/deploy
+vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nhớ dùng có trên 20% không.
+- **Đạt:** trình duyệt tin chứng chỉ của host; HTTP chuyển sang HTTPS; stream SSE sống qua 5 phút; IP trong
+  log là IP của máy gọi; bản sao lưu nằm trong bucket và khôi phục được; bộ nhớ dùng > 20% (máy không bị
+  coi là rảnh). **Không đạt:** build arm64 hỏng, cert-manager kẹt ở challenge (security list, iptables),
+  IP trong log là IP nội bộ của cụm (rate limit gộp mọi khách), hay Oracle gửi thư báo máy rảnh.
+- **Tài nguyên:** một máy A1 2 OCPU / 12 GB Always Free, boot volume 100 GB, bucket Object Storage — 0 đồng.
+- **Ảnh hưởng tới kết luận:** câu "UDP có một bản chạy công khai, chi phí 0, không trên máy người dùng"
+  (§15.1, D-P41) — hôm nay là bảo đảm của mã, test và lượt diễn tập trên runner x86, chưa phải của một
+  lần chạy trên Oracle.
 
 ## portal-responsive — đo thật ở 375px trên trình duyệt
 

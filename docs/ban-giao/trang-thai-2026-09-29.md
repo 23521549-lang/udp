@@ -5,22 +5,24 @@ Tài liệu này đọc được mà không cần phiên làm việc nào. Nó t
 thiết kế là `docs/UDP_design.md`; của phép đo là `docs/measurements/` (số thô trong `raw/`, nợ trong
 `kiem-chung-con-no.md`); của từng plan là `docs/plans/planNN-spec.md` + `planNN-plan.md`.
 
-**Trạng thái một câu:** mọi thứ thiết kế hứa mà làm được bằng mã đã có mã và test; phần còn lại là 42 mục nợ
-kiểm chứng, mỗi mục cần hạ tầng (cluster thật, cloud, SaaS, runner) hay người thật — không mục nào chỉ cần viết
-mã. Hạ tầng của dự án tốn đúng 0 đồng (D-P37, yêu cầu cứng).
+**Trạng thái một câu:** mọi thứ thiết kế hứa mà làm được bằng mã đã có mã và test; phần còn lại là 43 mục nợ
+kiểm chứng, mỗi mục cần hạ tầng (cluster thật, cloud, SaaS, runner, máy Oracle) hay người thật — không mục nào chỉ
+cần viết mã. Hạ tầng của dự án tốn đúng 0 đồng và không chạy trên máy người dùng (D-P37, D-P41, yêu cầu cứng):
+cụm kind ở máy dev/CI, và một máy ảo Oracle Cloud Always Free cho bản công khai.
 
 ## 1. Đã làm — theo nhóm
 
-| Nhóm              | Plan    | Nội dung                                                                                                                                                                                                      | Commit tiêu biểu                |
-| ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| Nền → hoàn thiện  | #1–#42  | Xem `trang-thai-2026-09-27.md` §1: monorepo, ba service, 72/72 tool của §5.5, Portal, provisioning thật, E1/E8                                                                                                | `354fcee` … `ab13620`           |
-| Khoảng trống §9   | #43–#45 | Định dạng xanh lại; Luồng 4 đủ route (PUT variants, promote); route còn thiếu của Domain/Deployment, Tổng quan đủ §10.6 (D-P33)                                                                               | `e5cc139`, `1d2e210`, `5d14ba7` |
-| Luồng 5 mức flag  | #46     | ATTRIBUTE_SPLIT ở FLAG_LEVEL: không tự quyết, PROMOTE đổi default variant (D-P34)                                                                                                                             | `985d8b7`                       |
-| SDK Python        | #47     | `sdks/python` (`udp-openfeature`): lõi đánh giá viết lại, tương đương với Node qua vector + 20k probe + Service 2 thật; middleware ASGI/WSGI; ngữ pháp regex khả chuyển (D-P35)                               | `e2c3512`                       |
-| Golden Path       | #48     | Template Node/Python là dự án chạy được; quét repo Import Existing; `service.version` theo image (D-P36)                                                                                                      | `02254c8`                       |
-| Hạ tầng chi phí 0 | #49     | `deploy/`: Dockerfile (service chạy `tsx`), Kustomize base + overlay kind, `pnpm deploy:up/down`; cấu hình cụm kiểm bằng schema env (D-P37)                                                                   | `2b300b6`                       |
-| CI/CD §13.5       | #50     | Job `i28` (cổng git-diff), job `kind` (`deploy:up` + E2E rút gọn 7 kiểm tra), E9 ở làn đêm thành artifact, chẩn đoán cụm khi đỏ; kubectl ghim `kind-udp` (D-P38)                                              | `8b94101`                       |
-| SERVICE_LEVEL     | #51     | `@udp/cluster-access` dùng chung; route token cho S3 (chỉ `traffic`, I24c); RBAC `rollouts/status` (D-P39); S1 ghi Rollout/Canary theo ma trận §7.2 (I4); S3 promote/abort, gate Flagger (I5); Portal (D-P40) | `75adb5d`, `e55c1e1`, `db01b7f` |
+| Nhóm              | Plan    | Nội dung                                                                                                                                                                                                                | Commit tiêu biểu                |
+| ----------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Nền → hoàn thiện  | #1–#42  | Xem `trang-thai-2026-09-27.md` §1: monorepo, ba service, 72/72 tool của §5.5, Portal, provisioning thật, E1/E8                                                                                                          | `354fcee` … `ab13620`           |
+| Khoảng trống §9   | #43–#45 | Định dạng xanh lại; Luồng 4 đủ route (PUT variants, promote); route còn thiếu của Domain/Deployment, Tổng quan đủ §10.6 (D-P33)                                                                                         | `e5cc139`, `1d2e210`, `5d14ba7` |
+| Luồng 5 mức flag  | #46     | ATTRIBUTE_SPLIT ở FLAG_LEVEL: không tự quyết, PROMOTE đổi default variant (D-P34)                                                                                                                                       | `985d8b7`                       |
+| SDK Python        | #47     | `sdks/python` (`udp-openfeature`): lõi đánh giá viết lại, tương đương với Node qua vector + 20k probe + Service 2 thật; middleware ASGI/WSGI; ngữ pháp regex khả chuyển (D-P35)                                         | `e2c3512`                       |
+| Golden Path       | #48     | Template Node/Python là dự án chạy được; quét repo Import Existing; `service.version` theo image (D-P36)                                                                                                                | `02254c8`                       |
+| Hạ tầng chi phí 0 | #49     | `deploy/`: Dockerfile (service chạy `tsx`), Kustomize base + overlay kind, `pnpm deploy:up/down`; cấu hình cụm kiểm bằng schema env (D-P37)                                                                             | `2b300b6`                       |
+| CI/CD §13.5       | #50     | Job `i28` (cổng git-diff), job `kind` (`deploy:up` + E2E rút gọn 7 kiểm tra), E9 ở làn đêm thành artifact, chẩn đoán cụm khi đỏ; kubectl ghim `kind-udp` (D-P38)                                                        | `8b94101`                       |
+| SERVICE_LEVEL     | #51     | `@udp/cluster-access` dùng chung; route token cho S3 (chỉ `traffic`, I24c); RBAC `rollouts/status` (D-P39); S1 ghi Rollout/Canary theo ma trận §7.2 (I4); S3 promote/abort, gate Flagger (I5); Portal (D-P40)           | `75adb5d`, `e55c1e1`, `db01b7f` |
+| Máy công khai     | #52     | Máy ảo Oracle Always Free + k3s, overlay `vm` (HTTPS, cert-manager, đúng bề mặt công khai của §9), sao lưu ra Object Storage + khôi phục, `bootstrap.sh`, workflow `Deploy` sau CI xanh, job `vm` diễn tập ở CI (D-P41) | `5a92dc1`, `523a7f0`            |
 
 ## 2. Cưỡng chế
 
@@ -28,24 +30,30 @@ Bất biến đánh số (I1…I40) ở §13.3, mỗi dòng nêu phép kiểm. C
 tệp, đỏ là build đỏ) — bảng đầy đủ ở `trang-thai-2026-09-27.md` §2; thêm từ #50: `i28-gate` (cổng git-diff
 trên repo git thật tạm). Chốt đáng nhớ trong mã ứng dụng:
 
-| Chốt                                                   | Ở đâu                                                                    |
-| ------------------------------------------------------ | ------------------------------------------------------------------------ |
-| Mọi route JSON có schema `.strict()` + mẫu thật        | `services/core-backend/tests/wire-golden.test.ts`                        |
-| I4 — udp-driven không `analysis` (sau merge patch)     | `services/core-backend/tests/delivery.test.ts`                           |
-| I5 — tool-driven: 0 lời ghi của S3 qua 10 vòng         | `services/pd-controller/tests/service-level.integration.test.ts`         |
-| I24c — token cho S3 ≤ 1 giờ; chỉ `traffic`             | `services/core-backend/tests/internal-cluster-token.integration.test.ts` |
-| I28 — thêm adapter không chạm tệp ngoài thư mục của nó | job CI `i28` + `packages/design-lint/tests/i28-gate.test.ts`             |
-| Nối dây CI (thứ tự bước, làn đêm, artifact)            | `deploy/tests/ci-workflow.test.ts`                                       |
-| Cấu hình cụm qua CHÍNH schema env                      | `deploy/tests/manifests.test.ts`                                         |
+| Chốt                                                                              | Ở đâu                                                                    |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Mọi route JSON có schema `.strict()` + mẫu thật                                   | `services/core-backend/tests/wire-golden.test.ts`                        |
+| I4 — udp-driven không `analysis` (sau merge patch)                                | `services/core-backend/tests/delivery.test.ts`                           |
+| I5 — tool-driven: 0 lời ghi của S3 qua 10 vòng                                    | `services/pd-controller/tests/service-level.integration.test.ts`         |
+| I24c — token cho S3 ≤ 1 giờ; chỉ `traffic`                                        | `services/core-backend/tests/internal-cluster-token.integration.test.ts` |
+| I28 — thêm adapter không chạm tệp ngoài thư mục của nó                            | job CI `i28` + `packages/design-lint/tests/i28-gate.test.ts`             |
+| Nối dây CI (thứ tự bước, làn đêm, artifact)                                       | `deploy/tests/ci-workflow.test.ts`                                       |
+| Cấu hình cụm qua CHÍNH schema env                                                 | `deploy/tests/manifests.test.ts`                                         |
+| Máy công khai: từng service qua `envSchema`, route công khai/nội bộ, TLS, sao lưu | `deploy/tests/vm.test.ts`                                                |
+| Secret đang chạy chỉ được BỔ SUNG, không ghi đè                                   | `deploy/tests/install.test.ts`                                           |
 
 ## 3. CI và lượt đẩy đầu tiên
 
-`.github/workflows/ci.yml` có năm job: `check` (typecheck, lint, format), `python` (ruff, mypy, pytest + template
-Golden Path), `test` (bộ test đầy đủ trên database dùng-một-lần — cần secret của project Supabase CI), `i28`, và
-`kind`. Làn đêm (18:00 UTC) chạy lại tất cả và thêm E9.
+`.github/workflows/ci.yml` có sáu job: `check` (typecheck, lint, format), `python` (ruff, mypy, pytest + template
+Golden Path), `test` (bộ test đầy đủ trên database dùng-một-lần — cần secret của project Supabase CI), `i28`,
+`kind`, và [#52] `vm` (CHÍNH `deploy/vm/bootstrap.sh` + `release.sh` trên runner, rồi E2E qua HTTPS). Làn đêm
+(18:00 UTC) chạy lại tất cả và thêm E9. [#52] `.github/workflows/deploy.yml` phát hành lên máy ảo sau khi CI xanh
+cho một lần push lên `main` — thiếu secret của environment `vm` thì bỏ qua.
 
 **Chưa từng chạy thật — lượt đẩy đầu tiên sẽ là lần đầu:** dựng image (Dockerfile của #49), `kind` +
-`pnpm deploy:up`, E2E rút gọn, E9. Máy dev (7,7 GiB RAM, thường trống < 1 GiB) không chạy được Docker, nên các
+`pnpm deploy:up`, E2E rút gọn, E9, và [#52] job `vm`. #52 đã sửa một lỗi sẽ làm job `kind` đỏ ngay lượt đầu:
+bước kiểm công cụ gọi `kubectl version`, lệnh này thoát mã 1 khi chưa có cụm nào (runner mới) — nay hỏi
+`kubectl version --client` (`deploy/tests/shell.test.ts`). Máy dev (7,7 GiB RAM, thường trống < 1 GiB) không chạy được Docker, nên các
 bước này chỉ có test tại chỗ cho phần tĩnh (manifest, cấu hình, nối dây). Khi job `kind` đỏ, bước
 `pnpm --filter @udp/deploy diagnose` in pod, sự kiện, `describe` và log — đọc nó trước khi đoán. Cổng `i28`
 trên khoảng `origin/main..HEAD` hiện tại: 99+ commit, 11 lô adapter cũ được liệt kê là "trước cổng", 0 vi phạm.
@@ -53,10 +61,14 @@ trên khoảng `origin/main..HEAD` hiện tại: 99+ commit, 11 lô adapter cũ 
 **E9:** artifact `E9-<run_id>` của lượt đêm (hoặc chạy tay `workflow_dispatch`) → `gh run download <run_id> -n
 E9-<run_id> -D docs/measurements/raw` → commit; khi đó số E9 mới tính là "đã đo" (luật của sổ nợ).
 
-**Chi phí 0:** runner GitHub (miễn phí cho repo public; repo private trong hạn mức, hạn chi tiêu mặc định $0 làm
-job DỪNG chứ không tính tiền), không registry, không cloud.
+**Chi phí 0:** runner GitHub (repo public — miễn phí), không registry; máy công khai là Oracle Always Free trên tài
+khoản Free Tier không nâng lên trả phí (bảng chi phí ở `docs/plans/plan52-spec.md` QĐ-12).
 
-## 4. Còn nợ — 42 mục
+**Việc của người dùng để có bản công khai** (làm bằng trình duyệt, `deploy/README.md` §2.1): tạo tài khoản
+Oracle Free Tier, máy ảo A1, mở 80/443 ở security list, tên DuckDNS, bucket + PAR chỉ-ghi, chạy `bootstrap.sh`,
+điền `~/udp/vm.env`, bốn secret của environment `vm`, chạy workflow `Deploy`, rồi cất `UDP_KEK_V1`.
+
+## 4. Còn nợ — 43 mục
 
 Chi tiết từng mục (vì sao, tiền đề, lệnh, đạt/không đạt, ảnh hưởng tới kết luận):
 `docs/measurements/kiem-chung-con-no.md`.
@@ -69,6 +81,7 @@ Chi tiết từng mục (vì sao, tiền đề, lệnh, đạt/không đạt, �
 | Runner CI                         | `E4-ci`, `E4-segment`, `stale-perf`, `segment-cap-perf`, `portal-pagination`, `E9`                                                                                                                                              |
 | Máy rảnh / Prometheus / Docker    | `E3-quiet`, `E3-stats`, `E5`, `E6`, `E14-prometheus`, `I31-localstack`, `upgrade-rollback-that`                                                                                                                                 |
 | Trình duyệt thật, người thật      | `portal-e2e`, `portal-responsive`, `portal-dx`                                                                                                                                                                                  |
+| Máy Oracle Free Tier (0 đồng)     | `vm-oracle-real`                                                                                                                                                                                                                |
 
 Cụm kind của CI KHÔNG trả được nhóm đầu: route token và `ClusterAccess` của S1 cần một cluster do Cloud Adapter
 dựng (có credential cloud). Một "cloud adapter cho kind" là đường rẻ nhất để trả nhóm đó mà vẫn giữ chi phí 0 —

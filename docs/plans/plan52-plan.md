@@ -1,4 +1,4 @@
-# Plan #52 — PLAN (theo `plan52-spec.md` v1)
+# Plan #52 — PLAN (theo `plan52-spec.md` v1) — XONG 29/09/2026
 
 Ba đợt, mỗi đợt một commit xanh.
 
