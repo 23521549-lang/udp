@@ -125,13 +125,13 @@ describe("Deploy + DORA", () => {
 });
 
 describe("khu quản trị", () => {
-  it("USER mở /admin ⇒ về /app/projects, không thấy trang quản trị", async () => {
+  it("USER mở /admin ⇒ về trang chủ, không thấy trang quản trị", async () => {
     server.use(
-      http.get(`${API}/projects`, () => HttpResponse.json({ projects: [] })),
+      http.get(`${API}/home`, () => HttpResponse.json(golden("GET /home"))),
     );
     const { router } = renderApp("/admin/users");
     await waitFor(() =>
-      expect(router.state.location.pathname).toBe("/app/projects"),
+      expect(router.state.location.pathname).toBe("/app/home"),
     );
     expect(screen.queryByRole("navigation", { name: "Quản trị" })).toBeNull();
   });
@@ -170,7 +170,7 @@ describe("khu quản trị", () => {
     await waitFor(() => expect(patches).toHaveLength(1));
   });
 
-  it("orphan: giá null hiện 'chưa rõ giá', và nói rõ chưa quét cloud", async () => {
+  it("orphan: giá null hiện 'Chưa rõ giá', và nói rõ chưa quét cloud", async () => {
     const body = golden<{
       resources: { usdPerHour: number | null }[];
       cloudScanned: boolean;
@@ -196,7 +196,10 @@ describe("khu quản trị", () => {
     renderApp("/admin/orphans", {
       user: { ...USER, platformRole: "PLATFORM_ADMIN" },
     });
-    expect(await screen.findByText("chưa rõ giá")).toBeInTheDocument();
+    const table = await screen.findByRole("table", {
+      name: "Tài nguyên mồ côi",
+    });
+    expect(within(table).getByText("Chưa rõ giá")).toBeInTheDocument();
     expect(screen.getByText(/Chưa quét cloud theo tag/)).toBeInTheDocument();
   });
 });

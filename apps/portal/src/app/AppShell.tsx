@@ -1,12 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import {
+  Activity,
   Blocks,
   ChartNoAxesColumnIncreasing,
   FileCode2,
   Flag,
   FolderKanban,
+  House,
   LayoutDashboard,
+  Network,
   Rocket,
   Search,
   Server,
@@ -35,6 +38,9 @@ export function AppShell() {
       nav={
         projectId === undefined ? (
           <nav aria-label="Phân hệ">
+            <Link {...NAV} to="/app/home">
+              <NavBody icon={House}>Trang chủ</NavBody>
+            </Link>
             <Link {...NAV} to="/app/projects" activeOptions={{ exact: true }}>
               <NavBody icon={FolderKanban}>Project</NavBody>
             </Link>
@@ -59,6 +65,9 @@ function ProjectNav({ projectId }: { projectId: string }) {
   const sub = { includeSearch: false } as const;
   return (
     <nav aria-label="Phân hệ của project">
+      <Link to="/app/home" className="nv">
+        <NavBody icon={House}>Trang chủ</NavBody>
+      </Link>
       <Link to="/app/projects" className="nv">
         <NavBody icon={FolderKanban}>Mọi project</NavBody>
       </Link>
@@ -82,6 +91,24 @@ function ProjectNav({ projectId }: { projectId: string }) {
         activeOptions={{ exact: true, includeSearch: false }}
       >
         <NavBody icon={LayoutDashboard}>Tổng quan</NavBody>
+      </Link>
+      <Link
+        {...NAV}
+        to="/app/projects/$projectId/architecture"
+        params={params}
+        search={keep}
+        activeOptions={sub}
+      >
+        <NavBody icon={Network}>Kiến trúc</NavBody>
+      </Link>
+      <Link
+        {...NAV}
+        to="/app/projects/$projectId/monitoring"
+        params={params}
+        search={keep}
+        activeOptions={sub}
+      >
+        <NavBody icon={Activity}>Giám sát</NavBody>
       </Link>
       <Link
         {...NAV}

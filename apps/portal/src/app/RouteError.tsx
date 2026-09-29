@@ -37,12 +37,12 @@ export function NotFound() {
           không có trong {inConsole ? "Bảng điều khiển nền tảng" : "Portal"}.
         </p>
         {inConsole ? (
-          <Link to="/admin/users" className="btn">
+          <Link to="/admin/overview" className="btn">
             Về Bảng điều khiển
           </Link>
         ) : (
-          <Link to="/app/projects" className="btn">
-            Về danh sách project
+          <Link to="/app/home" className="btn">
+            Về trang chủ
           </Link>
         )}
       </div>

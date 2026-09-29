@@ -15,6 +15,7 @@ import {
   relativeTime,
 } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
+import { useSearchInput } from "../../lib/use-search-input";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
@@ -33,8 +34,6 @@ import { PageHead } from "../../components/PageHead";
  * (`FLAG_PAGE_SIZE`): tìm kiếm gửi lên máy chủ sau khi ngừng gõ `SEARCH_DEBOUNCE_MS`, thanh số
  * đọc ba con số `total` — project vài trăm flag không bao giờ bị tải trọn.
  */
-const SEARCH_DEBOUNCE_MS = 300;
-
 export function FlagsPage() {
   const { project, env } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/flags" });
@@ -54,18 +53,11 @@ export function FlagsPage() {
       },
     });
   }, [search.new, navigate]);
-  /*
-   * Từ khoá và trang nằm trên URL (Plan #53 QĐ-9): gửi đường dẫn là gửi đúng thứ đang xem. Ô tìm giữ
-   * chữ đang gõ ở state; chỉ khi ngừng gõ `SEARCH_DEBOUNCE_MS` từ khoá mới lên URL (thay, không đẩy
-   * thêm một mục Back cho mỗi phím), và một lần tìm mới luôn bắt đầu từ trang đầu.
-   */
-  const [q, setQ] = useState(search.q ?? "");
+  // Từ khoá và trang nằm trên URL (Plan #53 QĐ-9); một lần tìm mới luôn bắt đầu từ trang đầu
   const term = (search.q ?? "").trim();
   const offset = search.offset ?? 0;
-  useEffect(() => {
-    const next = q.trim();
-    if (next === term) return;
-    const t = setTimeout(() => {
+  const commitTerm = useCallback(
+    (next: string) => {
       void navigate({
         to: ".",
         replace: true,
@@ -74,9 +66,10 @@ export function FlagsPage() {
           return next === "" ? rest : { ...rest, q: next };
         },
       });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(t);
-  }, [q, term, navigate]);
+    },
+    [navigate],
+  );
+  const [q, setQ] = useSearchInput(term, commitTerm);
   const setOffset = useCallback(
     (n: number) => {
       void navigate({

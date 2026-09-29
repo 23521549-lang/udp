@@ -1,25 +1,61 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { AdminUserWire } from "@udp/shared-types/wire";
-import { useState } from "react";
+import { Search } from "lucide-react";
+import { useCallback, useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
+import { Icon } from "../../../components/Icon";
+import { Pager } from "../../../components/Pager";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
 import { messageOf } from "../../../lib/errors";
 import { formatDateTime } from "../../../lib/format";
 import { qk, qkPrefix } from "../../../lib/query-keys";
+import { useSearchInput } from "../../../lib/use-search-input";
 import { useAuthStore } from "../../auth/auth-store";
-import { adminApi } from "../admin-api";
-
+import { ADMIN_PAGE_SIZE, adminApi } from "../admin-api";
 import { AdminPage } from "../AdminLayout";
+
+/**
+ * Người dùng (§10.11). Từ khoá và trang trên URL (Plan #53 QĐ-9); theo trang ở máy chủ với `total`,
+ * nên người dùng thứ 101 trở đi không còn bị cắt im lặng.
+ */
 export function AdminUsersPage() {
   const me = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
+  const search = useSearch({ from: "/admin/users" });
+  const navigate = useNavigate({ from: "/admin/users" });
+  const term = (search.q ?? "").trim();
+  const offset = search.offset ?? 0;
+  const commitTerm = useCallback(
+    (next: string) => {
+      void navigate({
+        replace: true,
+        search: next === "" ? {} : { q: next },
+      });
+    },
+    [navigate],
+  );
+  const [q, setQ] = useSearchInput(term, commitTerm);
+  const setOffset = (n: number): void => {
+    void navigate({
+      search: (prev) => {
+        const { offset: _o, ...rest } = prev;
+        return n === 0 ? rest : { ...rest, offset: n };
+      },
+    });
+  };
+
   const [pending, setPending] = useState<AdminUserWire | null>(null);
   const users = useQuery({
-    queryKey: qk.adminUsers(search.trim()),
-    queryFn: () =>
-      adminApi.users(search.trim() === "" ? undefined : search.trim()),
+    queryKey: qk.adminUsers(term, offset),
+    queryFn: () => adminApi.users(term === "" ? undefined : term, offset),
+    placeholderData: keepPreviousData,
   });
   const setRole = useMutation({
     mutationFn: (u: AdminUserWire) =>
@@ -40,22 +76,38 @@ export function AdminUsersPage() {
     <AdminPage
       title="Người dùng"
       lead="Vai toàn hệ thống. Quyền trong từng project do chủ project quản lý."
+      minis={
+        users.data === undefined
+          ? undefined
+          : [
+              {
+                value: users.data.total,
+                label: term === "" ? "người dùng" : "khớp",
+              },
+            ]
+      }
     >
-      <div className="filters" style={{ padding: "0 0 10px" }}>
-        <input
-          className="inp"
-          aria-label="Tìm người dùng"
-          placeholder="Tìm theo email hoặc tên…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="filters flush">
+        <label className="q">
+          <Icon of={Search} />
+          <input
+            type="search"
+            name="q"
+            aria-label="Tìm người dùng"
+            placeholder="Tìm theo email hoặc tên…"
+            autoComplete="off"
+            spellCheck={false}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </label>
       </div>
       {users.isPending ? (
         <Loading />
       ) : users.isError ? (
         <ErrorState error={users.error} onRetry={() => void users.refetch()} />
       ) : users.data.users.length === 0 ? (
-        <Empty title="Không có ai khớp" />
+        <Empty title="Không có ai khớp">Thử từ khoá khác.</Empty>
       ) : (
         <div className="table-wrap">
           <table className="dtable" aria-label="Người dùng">
@@ -73,14 +125,16 @@ export function AdminUsersPage() {
             <tbody>
               {users.data.users.map((u) => (
                 <tr key={u.id}>
-                  <th scope="row">{u.email}</th>
+                  <th scope="row" translate="no">
+                    {u.email}
+                  </th>
                   <td>{u.name}</td>
                   <td>
                     {u.platformRole === "PLATFORM_ADMIN"
                       ? "Quản trị"
                       : "Người dùng"}
                   </td>
-                  <td>{formatDateTime(u.createdAt)}</td>
+                  <td className="num">{formatDateTime(u.createdAt)}</td>
                   <td>
                     <button
                       type="button"
@@ -98,6 +152,13 @@ export function AdminUsersPage() {
           </table>
         </div>
       )}
+      <Pager
+        label="Trang của danh sách người dùng"
+        offset={offset}
+        pageSize={ADMIN_PAGE_SIZE}
+        total={users.data?.total ?? 0}
+        onChange={setOffset}
+      />
       {pending !== null && (
         <ConfirmDialog
           title={
@@ -107,7 +168,7 @@ export function AdminUsersPage() {
           }
           description={
             pending.id === me?.id
-              ? "Đây là chính bạn: sau khi hạ, bạn không vào lại được khu quản trị."
+              ? "Đây là chính bạn: sau khi hạ, bạn không vào lại được Bảng điều khiển."
               : "Có hiệu lực ngay ở request kế tiếp của người đó."
           }
           confirmLabel="Đổi vai"

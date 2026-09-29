@@ -41,14 +41,12 @@ describe("đăng nhập và guard", () => {
     });
   });
 
-  it("đăng nhập đúng ⇒ vào danh sách project", async () => {
+  it("đăng nhập đúng ⇒ vào trang chủ", async () => {
     server.use(
       http.post(`${API}/auth/login`, () =>
         HttpResponse.json(golden("POST /auth/login")),
       ),
-      http.get(`${API}/projects`, () =>
-        HttpResponse.json(golden("GET /projects")),
-      ),
+      http.get(`${API}/home`, () => HttpResponse.json(golden("GET /home"))),
     );
     const { router } = renderApp("/login", { user: null });
     const user = userEvent.setup();
@@ -56,7 +54,7 @@ describe("đăng nhập và guard", () => {
     await user.type(screen.getByLabelText("Mật khẩu"), "secret-123");
     await user.click(screen.getByRole("button", { name: "Đăng nhập" }));
     await waitFor(() =>
-      expect(router.state.location.pathname).toBe("/app/projects"),
+      expect(router.state.location.pathname).toBe("/app/home"),
     );
   });
 
@@ -85,12 +83,17 @@ describe("đăng nhập và guard", () => {
     expect(screen.getByText("Email không hợp lệ")).toBeInTheDocument();
   });
 
-  it("redirectTo sang origin khác hay ngoài /app bị bỏ (chặn open redirect)", () => {
-    expect(safeRedirect("https://evil.example/app")).toBe("/app/projects");
-    expect(safeRedirect("//evil.example/app")).toBe("/app/projects");
-    expect(safeRedirect("/login")).toBe("/app/projects");
+  it("redirectTo sang origin khác hay ngoài hai khung bị bỏ (chặn open redirect)", () => {
+    expect(safeRedirect("https://evil.example/app")).toBe("/app/home");
+    expect(safeRedirect("//evil.example/app")).toBe("/app/home");
+    expect(safeRedirect("/login")).toBe("/app/home");
+    expect(safeRedirect("/apple")).toBe("/app/home");
     expect(safeRedirect("/app/projects/x?env=1")).toBe("/app/projects/x?env=1");
-    expect(safeRedirect(undefined)).toBe("/app/projects");
+    // Quản trị viên mở link Bảng điều khiển khi chưa đăng nhập: về đúng trang đó sau khi đăng nhập
+    expect(safeRedirect("/admin/jobs?state=CANCEL_REQUESTED")).toBe(
+      "/admin/jobs?state=CANCEL_REQUESTED",
+    );
+    expect(safeRedirect(undefined)).toBe("/app/home");
   });
 });
 

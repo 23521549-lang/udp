@@ -1,42 +1,35 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import {
-  ChartNoAxesColumnIncreasing,
-  Flag,
-  Lock,
-  Rocket,
-  Server,
-  Users,
-} from "lucide-react";
+import type { ArchitectureWire } from "@udp/shared-types/wire";
+import { Lock, Rocket, Server } from "lucide-react";
 import { Icon } from "../../components/Icon";
+import { PageHead } from "../../components/PageHead";
 import { ErrorState, Loading } from "../../components/States";
-import {
-  browserTimeZone,
-  formatDateTime,
-  formatPercent,
-} from "../../lib/format";
+import { formatDateTime, formatPercent } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
+import { architectureApi } from "../architecture/architecture-api";
+import { namespaceTools } from "../architecture/architecture-model";
+import { DomainHealthGrid } from "../architecture/DomainHealthGrid";
+import { RepoReadinessCard } from "../code/RepoReadinessCard";
 import { deploymentApi } from "../deployment/deployment-api";
 import { useFlagCounts } from "../flag/flag-counts";
 import { rolloutApi } from "../rollout/rollout-api";
 import { RolloutStatusLabel } from "../rollout/rollout-status";
-import { ProjectStatus } from "./ProjectsPage";
+import { CloudCard } from "./cloud/CloudCard";
+import { PROVIDER_LABEL } from "./cloud/cloud-labels";
 import { ProjectBar } from "./ProjectBar";
-import { RepoReadinessCard } from "../code/RepoReadinessCard";
 import { useProjectContext } from "./ProjectLayout";
+import { ProjectStatus } from "./ProjectsPage";
 import { projectApi } from "./project-api";
 import { ROLE_LABEL } from "./roles";
-import { PageHead } from "../../components/PageHead";
 
 /**
- * Tổng quan (§10.6): trạng thái project, ba chỉ số nhanh (flag đang bật ở env đang chọn, rollout
- * đang chạy, thành viên), [Plan #45] thẻ Cluster (địa chỉ từ phong bì chi tiết project) và thẻ
- * Deploy gần nhất của env đang chọn (`staleTime` 30 giây, làm mới khi quay lại tab — §10.6),
- * environment, và rollout gần nhất.
+ * Tổng quan (§10.6, Plan #53 QĐ-7): trạng thái project và ba chỉ số nhanh ở đầu trang; thẻ Cloud (đổi
+ * cloud ở ngay đây), Cluster và Deploy gần nhất; lưới sức khoẻ domain và sơ đồ thu nhỏ — cả hai từ
+ * CHÍNH `GET /architecture` của trang Kiến trúc (một nguồn); environment và rollout gần đây.
  */
 export function OverviewPage() {
   const { project, envs, env, cluster } = useProjectContext();
-  const tz = browserTimeZone();
 
   // [Plan #41] Hai con số bằng `limit=1` — không tải danh sách flag chỉ để đếm
   const flagCounts = useFlagCounts(project.id, env.id);
@@ -53,6 +46,10 @@ export function OverviewPage() {
   const members = useQuery({
     queryKey: qk.members(project.id),
     queryFn: () => projectApi.members(project.id),
+  });
+  const arch = useQuery({
+    queryKey: qk.architecture(project.id),
+    queryFn: () => architectureApi.get(project.id),
   });
 
   const running =
@@ -75,43 +72,39 @@ export function OverviewPage() {
               <span>Vai của bạn: {ROLE_LABEL[project.myRole]}</span>
             </span>
           }
+          minis={[
+            {
+              value: flagCounts.enabled ?? "…",
+              label: `flag bật ở ${env.name}`,
+            },
+            {
+              value: rollouts.isPending ? "…" : running,
+              label: "rollout đang chạy",
+            },
+            {
+              value: members.data?.members.length ?? "…",
+              label: "thành viên",
+            },
+          ]}
         />
         <div className="page">
           <div className="kpis">
-            <Kpi
-              icon={Flag}
-              label={`Flag đang bật ở ${env.name}`}
-              value={
-                flagCounts.enabled === undefined
-                  ? "…"
-                  : String(flagCounts.enabled)
-              }
-              sub={
-                flagCounts.total === undefined
-                  ? ""
-                  : `trên ${String(flagCounts.total)} flag`
-              }
-            />
-            <Kpi
-              icon={ChartNoAxesColumnIncreasing}
-              label={`Rollout đang chạy ở ${env.name}`}
-              value={rollouts.isPending ? "…" : String(running)}
-              sub=""
-            />
-            <Kpi
-              icon={Users}
-              label="Thành viên"
-              value={
-                members.isPending
-                  ? "…"
-                  : String(members.data?.members.length ?? 0)
-              }
-              sub=""
-            />
-          </div>
-
-          <div className="kpis">
-            <div className="kpi" aria-label="Cluster">
+            {arch.data === undefined ? (
+              <div className="kpi" aria-label="Cloud">
+                {arch.isError ? (
+                  <ErrorState error={arch.error} />
+                ) : (
+                  <div className="c3">…</div>
+                )}
+              </div>
+            ) : (
+              <CloudCard
+                projectId={project.id}
+                role={project.myRole}
+                cloud={arch.data.architecture.cloud}
+              />
+            )}
+            <section className="kpi" aria-label="Cluster">
               <div className="l">
                 <span className="tile">
                   <Icon of={Server} />
@@ -124,15 +117,16 @@ export function OverviewPage() {
                 </div>
               ) : (
                 <>
-                  <div className="mono">{cluster.clusterId}</div>
-                  <div className="c3 mono">{cluster.apiEndpoint}</div>
-                  <div className="c3">
-                    {cluster.provider} · {cluster.region}
+                  <div className="mono" translate="no">
+                    {cluster.clusterId}
+                  </div>
+                  <div className="c3 mono ellipsis" translate="no">
+                    {cluster.apiEndpoint}
                   </div>
                 </>
               )}
-            </div>
-            <div className="kpi" aria-label="Deploy gần nhất">
+            </section>
+            <section className="kpi" aria-label="Deploy gần nhất">
               <div className="l">
                 <span className="tile">
                   <Icon of={Rocket} />
@@ -147,14 +141,14 @@ export function OverviewPage() {
                 <div className="c3">Chưa có lần deploy nào.</div>
               ) : (
                 <>
-                  <div className="mono">
+                  <div className="mono" translate="no">
                     {latest.data.deployment.imageTag ??
                       latest.data.deployment.deploymentId.slice(0, 8)}
                   </div>
                   <div className="c3">
                     {latest.data.deployment.commitSha === null
                       ? ""
-                      : `${latest.data.deployment.commitSha.slice(0, 7)} · `}
+                      : `${latest.data.deployment.commitSha.slice(0, 7)}, `}
                     {formatDateTime(latest.data.deployment.lastEventAt)}
                   </div>
                   <Link
@@ -163,89 +157,173 @@ export function OverviewPage() {
                     search={{ env: env.id }}
                     className="c3"
                   >
-                    xem lịch sử deploy
+                    Xem lịch sử deploy
                   </Link>
                 </>
               )}
-            </div>
+            </section>
             {project.creationMode === "IMPORT_EXISTING" && (
               <RepoReadinessCard />
             )}
           </div>
 
-          <h2 className="h2">Environment</h2>
-          <div className="lst">
-            {[...envs]
-              .sort((a, b) => a.rank - b.rank)
-              .map((e) => (
-                <div key={e.id} className="it">
-                  <b style={{ fontWeight: 500 }}>{e.name}</b>
-                  {e.isProduction && <Icon of={Lock} size={12} />}
-                  <span className="mono c3">{e.k8sNamespace}</span>
-                  <span className="c3" style={{ marginLeft: "auto" }}>
-                    {e.autoDeploy ? "Tự deploy" : "Deploy thủ công"}
-                  </span>
-                </div>
-              ))}
-          </div>
-
-          <h2 className="h2">Rollout gần đây ở {env.name}</h2>
-          {rollouts.isPending ? (
-            <Loading />
-          ) : rollouts.isError ? (
-            <ErrorState error={rollouts.error} />
-          ) : rollouts.data.rollouts.length === 0 ? (
-            <p className="c3">Chưa có rollout nào ở environment này.</p>
-          ) : (
-            <div className="lst">
-              {rollouts.data.rollouts.slice(0, 5).map((r) => (
+          <section aria-labelledby="ov-health">
+            <div className="sect">
+              <h2 id="ov-health">Sức khoẻ domain</h2>
+              <div className="r">
                 <Link
-                  key={r.id}
-                  to="/app/projects/$projectId/rollouts/$rolloutId"
-                  params={{ projectId: project.id, rolloutId: r.id }}
+                  to="/app/projects/$projectId/domains"
+                  params={{ projectId: project.id }}
                   search={{ env: env.id }}
+                  className="btn"
                 >
-                  <span className="mono">
-                    {r.flagKey ?? r.workloadName ?? r.id.slice(0, 8)}
-                  </span>
-                  <RolloutStatusLabel status={r.status} />
-                  <span className="num c3">
-                    {formatPercent(r.currentTrafficPercentage)}
-                  </span>
-                  <span className="c3" style={{ marginLeft: "auto" }}>
-                    {formatDateTime(r.updatedAt)}
-                  </span>
+                  Quản lý domain
                 </Link>
-              ))}
+              </div>
             </div>
+            {arch.isPending ? (
+              <Loading />
+            ) : arch.isError ? (
+              <ErrorState
+                error={arch.error}
+                onRetry={() => void arch.refetch()}
+              />
+            ) : arch.data.architecture.tools.length === 0 ? (
+              <p className="c3">Project chưa bật domain nào.</p>
+            ) : (
+              <DomainHealthGrid
+                projectId={project.id}
+                tools={arch.data.architecture.tools}
+                env={env.id}
+              />
+            )}
+          </section>
+
+          {arch.data !== undefined && (
+            <section aria-labelledby="ov-map">
+              <div className="sect">
+                <h2 id="ov-map">Kiến trúc</h2>
+              </div>
+              <MiniMap projectId={project.id} arch={arch.data.architecture} />
+            </section>
           )}
+
+          <section aria-labelledby="ov-envs">
+            <div className="sect">
+              <h2 id="ov-envs">Environment</h2>
+            </div>
+            <ul className="lst" aria-labelledby="ov-envs">
+              {[...envs]
+                .sort((a, b) => a.rank - b.rank)
+                .map((e) => (
+                  <li key={e.id} className="it">
+                    <b className="lst-name">{e.name}</b>
+                    {e.isProduction && (
+                      <span title="Production">
+                        <Icon of={Lock} size={12} />
+                        <span className="visually-hidden">production</span>
+                      </span>
+                    )}
+                    <span className="mono c3" translate="no">
+                      {e.k8sNamespace}
+                    </span>
+                    <span className="c3 lst-end">
+                      {e.autoDeploy ? "Tự deploy" : "Deploy thủ công"}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          </section>
+
+          <section aria-labelledby="ov-rollouts">
+            <div className="sect">
+              <h2 id="ov-rollouts">Rollout gần đây ở {env.name}</h2>
+            </div>
+            {rollouts.isPending ? (
+              <Loading />
+            ) : rollouts.isError ? (
+              <ErrorState
+                error={rollouts.error}
+                onRetry={() => void rollouts.refetch()}
+              />
+            ) : rollouts.data.rollouts.length === 0 ? (
+              <p className="c3">Chưa có rollout nào ở environment này.</p>
+            ) : (
+              <ul className="lst" aria-labelledby="ov-rollouts">
+                {rollouts.data.rollouts.slice(0, 5).map((r) => (
+                  <li key={r.id}>
+                    <Link
+                      to="/app/projects/$projectId/rollouts/$rolloutId"
+                      params={{ projectId: project.id, rolloutId: r.id }}
+                      search={{ env: env.id }}
+                    >
+                      <span className="mono" translate="no">
+                        {r.flagKey ?? r.workloadName ?? r.id.slice(0, 8)}
+                      </span>
+                      <RolloutStatusLabel
+                        status={r.status}
+                        percent={r.currentTrafficPercentage}
+                      />
+                      <span className="num c3">
+                        {formatPercent(r.currentTrafficPercentage)}
+                      </span>
+                      <span className="c3 lst-end">
+                        {formatDateTime(r.updatedAt)}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
       </div>
     </>
   );
 }
 
-function Kpi({
-  icon,
-  label,
-  value,
-  sub,
+/**
+ * Sơ đồ thu nhỏ (QĐ-7): cloud ⊃ cluster ⊃ environment, mỗi hộp kèm số workload — cùng cách lồng của
+ * trang Kiến trúc, gọn trong một khối bấm được để sang đó. Là MỘT link: nội dung đọc thành một câu.
+ */
+function MiniMap({
+  projectId,
+  arch,
 }: {
-  icon: typeof Flag;
-  label: string;
-  value: string;
-  sub: string;
+  projectId: string;
+  arch: ArchitectureWire;
 }) {
+  const clusterTools = arch.tools.length - namespaceTools(arch.tools).length;
   return (
-    <div className="kpi">
-      <div className="l">
-        <span className="tile">
-          <Icon of={icon} />
+    <Link
+      to="/app/projects/$projectId/architecture"
+      params={{ projectId }}
+      search={{}}
+      className="minimap"
+    >
+      <span className="mm-cloud">
+        <span className="mm-h">
+          {arch.cloud === null
+            ? "Chưa kết nối cloud"
+            : `${PROVIDER_LABEL[arch.cloud.provider]} ${arch.cloud.region}`}
         </span>
-        {label}
-      </div>
-      <div className="v num">{value}</div>
-      {sub !== "" && <div className="c3">{sub}</div>}
-    </div>
+        <span className="mm-cluster">
+          <span className="mm-h">
+            {arch.cluster === null
+              ? "Chưa có cluster"
+              : `Cluster, ${String(clusterTools)} công cụ dùng chung`}
+          </span>
+          <span className="mm-envs">
+            {arch.environments.map((e) => (
+              <span key={e.id} className="mm-env">
+                <b>{e.name}</b>
+                <span className="c3">{e.workloads.length} workload</span>
+              </span>
+            ))}
+          </span>
+        </span>
+      </span>
+      <span className="mm-go">Mở sơ đồ đầy đủ</span>
+    </Link>
   );
 }

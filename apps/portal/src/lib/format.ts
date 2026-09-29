@@ -7,8 +7,9 @@ const nf = new Intl.NumberFormat("vi-VN");
 const pf = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 2 });
 
 export const formatNumber = (n: number): string => nf.format(n);
-/** Byte theo đơn vị nhị phân — trần segment là 4 MiB, không phải 4 MB */
+/** Byte theo đơn vị nhị phân — trần segment là 4 MiB, không phải 4 MB; ổ đĩa là GiB */
 export function formatBytes(n: number): string {
+  if (n >= 1024 ** 3) return `${pf.format(n / 1024 ** 3)} GiB`;
   if (n >= 1024 * 1024) return `${pf.format(n / (1024 * 1024))} MiB`;
   if (n >= 1024) return `${pf.format(n / 1024)} KiB`;
   return `${nf.format(n)} B`;
@@ -108,4 +109,36 @@ export function graphemeLength(text: string): number {
   let n = 0;
   for (const _ of new Intl.Segmenter("vi").segment(text)) n += 1;
   return n;
+}
+
+const dayShort = new Intl.DateTimeFormat("vi-VN", {
+  day: "numeric",
+  month: "numeric",
+  timeZone: "UTC",
+});
+const dayFull = new Intl.DateTimeFormat("vi-VN", {
+  weekday: "long",
+  day: "numeric",
+  month: "numeric",
+  timeZone: "UTC",
+});
+/**
+ * Nhãn của MỘT ngày lịch `YYYY-MM-DD` cho biểu đồ theo ngày: "29/9" dưới cột, "Thứ Hai, 29/9" cho
+ * tooltip và trình đọc màn hình. Ngày lịch không có giờ, nên đọc và in ở UTC: không có múi giờ nào
+ * đẩy nó sang ngày bên cạnh.
+ */
+export function dayLabel(date: string): { short: string; full: string } {
+  const d = new Date(`${date}T00:00:00Z`);
+  return { short: dayShort.format(d), full: dayFull.format(d) };
+}
+
+/** `n` ngày lịch gần nhất theo giờ của trình duyệt, cũ nhất trước, dạng `YYYY-MM-DD` */
+export function lastDays(n: number, now: Date = new Date()): string[] {
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - (n - 1 - i));
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${String(d.getFullYear())}-${mm}-${dd}`;
+  });
 }

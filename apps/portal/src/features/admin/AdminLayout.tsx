@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import {
   Blocks,
   FolderKanban,
+  Gauge,
   KeyRound,
   ListX,
   PiggyBank,
@@ -26,6 +27,9 @@ export function AdminLayout() {
       nav={
         <nav aria-label="Bảng điều khiển">
           <div className="grp">Nền tảng</div>
+          <Link {...NAV} to="/admin/overview">
+            <NavBody icon={Gauge}>Tổng quan</NavBody>
+          </Link>
           <Link {...NAV} to="/admin/users">
             <NavBody icon={Users}>Người dùng</NavBody>
           </Link>
@@ -63,7 +67,8 @@ export function AdminPage({
 }: {
   title: string;
   lead: string;
-  minis?: readonly Mini[];
+  /** `undefined` khi số liệu chưa tải — ô chỉ số chưa hiện */
+  minis?: readonly Mini[] | undefined;
   actions?: ReactNode;
   children: ReactNode;
 }) {

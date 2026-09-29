@@ -92,7 +92,7 @@ describe("hai khung: Portal và Bảng điều khiển nền tảng", () => {
       await screen.findByRole("heading", { name: "Không tìm thấy trang" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Về danh sách project" }),
+      screen.getByRole("link", { name: "Về trang chủ" }),
     ).toBeInTheDocument();
     // Vẫn trong khung Portal: thanh bên còn đó
     expect(

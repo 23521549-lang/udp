@@ -6,20 +6,22 @@ import { fieldErrorsOf, messageOf } from "../../lib/errors";
 import { authApi } from "./auth-api";
 import { useAuthStore } from "./auth-store";
 
+const HOME = "/app/home";
+
 /**
- * Chỉ chấp nhận đường dẫn NỘI BỘ làm đích quay lại. `redirectTo` đến từ URL, nên nhận
- * nguyên văn là một open redirect: `/login?redirectTo=https://evil.example` sẽ đưa người
- * vừa đăng nhập sang trang lạ.
+ * Chỉ chấp nhận đường dẫn NỘI BỘ của hai khung (`/app`, `/admin`) làm đích quay lại. `redirectTo`
+ * đến từ URL, nên nhận nguyên văn là một open redirect: `/login?redirectTo=https://evil.example` sẽ
+ * đưa người vừa đăng nhập sang trang lạ. `/admin` vẫn qua guard vai của route đó.
  */
 export function safeRedirect(target: string | undefined): string {
-  if (target === undefined) return "/app/projects";
+  if (target === undefined) return HOME;
   try {
     const url = new URL(target, window.location.origin);
-    if (url.origin !== window.location.origin) return "/app/projects";
-    if (!url.pathname.startsWith("/app")) return "/app/projects";
+    if (url.origin !== window.location.origin) return HOME;
+    if (!/^\/(app|admin)(\/|$)/.test(url.pathname)) return HOME;
     return `${url.pathname}${url.search}`;
   } catch {
-    return "/app/projects";
+    return HOME;
   }
 }
 
@@ -145,7 +147,7 @@ export function RegisterPage() {
     mutationFn: () => authApi.register({ name, email, password }),
     onSuccess: async ({ user }) => {
       setUser(user);
-      await navigate({ to: "/app/projects" });
+      await navigate({ to: HOME });
     },
   });
   const fields = fieldErrorsOf(register.error);

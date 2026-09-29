@@ -1,26 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  CircleAlert,
-  CircleCheck,
-  CircleHelp,
-  type LucideIcon,
-} from "lucide-react";
-import { Icon } from "../../../components/Icon";
 import { ErrorState, Loading } from "../../../components/States";
+import { StatusLabel } from "../../../components/StatusLabel";
 import { formatDateTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { adminApi } from "../admin-api";
-
 import { AdminPage } from "../AdminLayout";
-const STATUS_VIEW: Record<
-  "up" | "down" | "unknown",
-  { label: string; icon: LucideIcon; tone: string }
-> = {
-  up: { label: "Ổn định", icon: CircleCheck, tone: "var(--green)" },
-  down: { label: "Không phản hồi", icon: CircleAlert, tone: "var(--red)" },
-  unknown: { label: "Không rõ", icon: CircleHelp, tone: "var(--ink-3)" },
-};
+import { SERVICE_STATUS } from "../platform-model";
 
+/** Sức khoẻ ba service và database (§10.11), tự cập nhật mỗi 30 giây */
 export function AdminSystemPage() {
   const system = useQuery({
     queryKey: qk.adminSystem(),
@@ -40,26 +27,26 @@ export function AdminSystemPage() {
           onRetry={() => void system.refetch()}
         />
       ) : (
-        <div className="lst" aria-label="Sức khoẻ">
+        <ul className="lst" aria-label="Sức khoẻ">
           {[
             ...system.data.services,
             { name: "database", status: system.data.database },
-          ].map((s) => {
-            const v = STATUS_VIEW[s.status];
-            return (
-              <div key={s.name} className="it">
-                <span className="mono">{s.name}</span>
-                <span className="stt" style={{ marginLeft: "auto" }}>
-                  <Icon of={v.icon} style={{ color: v.tone }} />
-                  {v.label}
-                </span>
-              </div>
-            );
-          })}
-          <div className="it c3">
+          ].map((s) => (
+            <li key={s.name} className="it">
+              <span className="mono" translate="no">
+                {s.name}
+              </span>
+              <span className="lst-end">
+                <StatusLabel tone={SERVICE_STATUS[s.status].tone}>
+                  {SERVICE_STATUS[s.status].label}
+                </StatusLabel>
+              </span>
+            </li>
+          ))}
+          <li className="it c3">
             Kiểm lúc {formatDateTime(system.data.checkedAt)}
-          </div>
-        </div>
+          </li>
+        </ul>
       )}
     </AdminPage>
   );

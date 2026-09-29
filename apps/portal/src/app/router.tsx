@@ -8,14 +8,26 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { Toaster } from "../components/Toast";
+import { RED_RANGES, type RedRange } from "@udp/shared-types/wire";
 import { AdminLayout } from "../features/admin/AdminLayout";
 import { AdminCredentialsPage } from "../features/admin/pages/AdminCredentialsPage";
-import { AdminJobsPage } from "../features/admin/pages/AdminJobsPage";
+import {
+  ADMIN_JOB_STATES,
+  AdminJobsPage,
+  DEFAULT_ADMIN_JOB_STATE,
+  type AdminJobState,
+} from "../features/admin/pages/AdminJobsPage";
 import { AdminOrphansPage } from "../features/admin/pages/AdminOrphansPage";
-import { AdminProjectsPage } from "../features/admin/pages/AdminProjectsPage";
+import { AdminOverviewPage } from "../features/admin/pages/AdminOverviewPage";
+import {
+  ADMIN_PROJECT_STATUSES,
+  AdminProjectsPage,
+  type AdminProjectStatus,
+} from "../features/admin/pages/AdminProjectsPage";
 import { AdminSystemPage } from "../features/admin/pages/AdminSystemPage";
 import { AdminCatalogPage } from "../features/admin/pages/AdminCatalogPage";
 import { AdminUsersPage } from "../features/admin/pages/AdminUsersPage";
+import { ArchitecturePage } from "../features/architecture/ArchitecturePage";
 import { useAuthStore } from "../features/auth/auth-store";
 import { LoginPage, RegisterPage } from "../features/auth/AuthPages";
 import { DeploymentsPage } from "../features/deployment/DeploymentsPage";
@@ -25,6 +37,11 @@ import { DomainsPage } from "../features/domain/DomainsPage";
 import { InfraPage } from "../features/provisioning/InfraPage";
 import { CleanupPage } from "../features/flag/CleanupPage";
 import { FlagsPage } from "../features/flag/FlagsPage";
+import { HomePage } from "../features/home/HomePage";
+import {
+  DEFAULT_RED_RANGE,
+  MonitoringPage,
+} from "../features/monitoring/MonitoringPage";
 import { NewProjectPage } from "../features/project/NewProjectPage";
 import { OverviewPage } from "../features/project/OverviewPage";
 import { ProjectLayout } from "../features/project/ProjectLayout";
@@ -80,7 +97,7 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/app/projects" });
+    throw redirect({ to: "/app/home" });
   },
 });
 
@@ -123,8 +140,15 @@ const appIndexRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/app/projects" });
+    throw redirect({ to: "/app/home" });
   },
+});
+
+/** [Plan #53 QĐ-5] Trang chủ developer: việc cần xử lý của mọi project */
+const homeRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "home",
+  component: HomePage,
 });
 
 const projectsRoute = createRoute({
@@ -256,6 +280,28 @@ export const rolloutDetailRoute = createRoute({
   component: RolloutDetailPage,
 });
 
+/** [Plan #53 QĐ-7] Công cụ đang chọn trên URL: gửi link là gửi đúng chỗ đang xem */
+export const architectureRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "architecture",
+  validateSearch: (s: Record<string, unknown>): { tool?: string } => {
+    const tool = str(s.tool);
+    return tool === undefined ? {} : { tool };
+  },
+  component: ArchitecturePage,
+});
+
+/** [Plan #53 QĐ-4] Khoảng thời gian trên URL; mặc định (6 giờ) không ghi ra */
+const monitoringRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "monitoring",
+  validateSearch: (s: Record<string, unknown>): { range?: RedRange } => {
+    const range = RED_RANGES.find((r) => r === s.range);
+    return range === undefined || range === DEFAULT_RED_RANGE ? {} : { range };
+  },
+  component: MonitoringPage,
+});
+
 const deploymentsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "deployments",
@@ -330,7 +376,7 @@ const adminRoute = createRoute({
       throw redirect({ to: "/login", search: { redirectTo: location.href } });
     }
     if (user.platformRole !== "PLATFORM_ADMIN") {
-      throw redirect({ to: "/app/projects" });
+      throw redirect({ to: "/app/home" });
     }
   },
   component: AdminLayout,
@@ -339,17 +385,44 @@ const adminIndexRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/admin/users" });
+    throw redirect({ to: "/admin/overview" });
   },
 });
+/** [Plan #53 QĐ-6] Nền tảng có khoẻ, có còn 0 đồng */
+const adminOverviewRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "overview",
+  component: AdminOverviewPage,
+});
+/** Danh sách quản trị: bộ lọc và trang trên URL (Plan #53 QĐ-9) */
 const adminUsersRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "users",
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { q?: string; offset?: number } => {
+    const q = str(s.q);
+    const offset = offsetOf(s.offset);
+    return {
+      ...(q === undefined ? {} : { q }),
+      ...(offset === undefined ? {} : { offset }),
+    };
+  },
   component: AdminUsersPage,
 });
 const adminProjectsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "projects",
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { status?: AdminProjectStatus; offset?: number } => {
+    const status = ADMIN_PROJECT_STATUSES.find((v) => v === s.status);
+    const offset = offsetOf(s.offset);
+    return {
+      ...(status === undefined ? {} : { status }),
+      ...(offset === undefined ? {} : { offset }),
+    };
+  },
   component: AdminProjectsPage,
 });
 const adminCredentialsRoute = createRoute({
@@ -360,6 +433,18 @@ const adminCredentialsRoute = createRoute({
 const adminJobsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "jobs",
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { state?: AdminJobState; offset?: number } => {
+    const state = ADMIN_JOB_STATES.find((v) => v === s.state);
+    const offset = offsetOf(s.offset);
+    return {
+      ...(state === undefined || state === DEFAULT_ADMIN_JOB_STATE
+        ? {}
+        : { state }),
+      ...(offset === undefined ? {} : { offset }),
+    };
+  },
   component: AdminJobsPage,
 });
 const adminOrphansRoute = createRoute({
@@ -385,6 +470,7 @@ export const routeTree = rootRoute.addChildren([
   registerRoute,
   adminRoute.addChildren([
     adminIndexRoute,
+    adminOverviewRoute,
     adminUsersRoute,
     adminProjectsRoute,
     adminCredentialsRoute,
@@ -395,6 +481,7 @@ export const routeTree = rootRoute.addChildren([
   ]),
   appRoute.addChildren([
     appIndexRoute,
+    homeRoute,
     projectsRoute,
     newProjectRoute,
     projectRoute.addChildren([
@@ -404,6 +491,8 @@ export const routeTree = rootRoute.addChildren([
       segmentsRoute,
       rolloutsRoute,
       rolloutDetailRoute,
+      architectureRoute,
+      monitoringRoute,
       deploymentsRoute,
       codeRoute,
       domainsRoute,

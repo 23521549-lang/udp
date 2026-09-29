@@ -1,31 +1,31 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { AuditEntryWire } from "@udp/shared-types/wire";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { Pager } from "../../../components/Pager";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { formatDateTime } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
+import { useSearchInput } from "../../../lib/use-search-input";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
 
-const FILTER_DEBOUNCE_MS = 300;
+const AUDIT_PAGE_SIZE = 50;
 
 /**
- * Nhật ký kiểm toán của project. Bộ lọc nằm trên URL (`?tab=audit&action=…`) và chỉ gửi đi khi ngừng
- * gõ; trong lúc tải lại danh sách cũ vẫn hiện (Plan #53 QĐ-9) — không nháy "Đang tải…" theo từng phím.
+ * Nhật ký kiểm toán của project. Bộ lọc và trang nằm trên URL (`?tab=audit&action=…&offset=…`), bộ
+ * lọc chỉ gửi đi khi ngừng gõ; trong lúc tải lại danh sách cũ vẫn hiện (Plan #53 QĐ-9) — không nháy
+ * "Đang tải…" theo từng phím. Máy chủ trả `total`, nên dòng thứ 101 trở đi đọc được bằng trang sau.
  */
 export function AuditTab() {
   const { project, envs } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/settings" });
   const navigate = useNavigate();
   const applied = search.action ?? "";
-  const [action, setAction] = useState(applied);
+  const offset = search.offset ?? 0;
   const [open, setOpen] = useState<string | null>(null);
-
-  useEffect(() => {
-    const next = action.trim();
-    if (next === applied) return;
-    const t = setTimeout(() => {
+  const commitAction = useCallback(
+    (next: string) => {
       void navigate({
         to: ".",
         replace: true,
@@ -34,13 +34,24 @@ export function AuditTab() {
           return next === "" ? rest : { ...rest, action: next };
         },
       });
-    }, FILTER_DEBOUNCE_MS);
-    return () => clearTimeout(t);
-  }, [action, applied, navigate]);
+    },
+    [navigate],
+  );
+  const [action, setAction] = useSearchInput(applied, commitAction);
+  const setOffset = (n: number): void => {
+    void navigate({
+      to: ".",
+      search: (prev: Record<string, unknown>) => {
+        const { offset: _o, ...rest } = prev;
+        return n === 0 ? rest : { ...rest, offset: n };
+      },
+    });
+  };
 
   const filters = {
     action: applied === "" ? undefined : applied,
-    limit: "100",
+    limit: String(AUDIT_PAGE_SIZE),
+    offset: offset === 0 ? undefined : String(offset),
   };
   const audit = useQuery({
     queryKey: qk.audit(project.id, filters),
@@ -52,7 +63,7 @@ export function AuditTab() {
 
   return (
     <section aria-label="Nhật ký kiểm toán">
-      <div className="filters" style={{ padding: "0 0 10px" }}>
+      <div className="filters flush">
         <input
           className="inp"
           type="search"
@@ -89,6 +100,13 @@ export function AuditTab() {
           ))}
         </div>
       )}
+      <Pager
+        label="Trang của nhật ký"
+        offset={offset}
+        pageSize={AUDIT_PAGE_SIZE}
+        total={audit.data?.total ?? 0}
+        onChange={setOffset}
+      />
     </section>
   );
 }

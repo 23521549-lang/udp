@@ -48,6 +48,13 @@ function setup(tool: string | null) {
       HttpResponse.json({ rollouts: [] }),
     ),
     http.get(`${API}/projects/:id/domains`, () => HttpResponse.json(domains)),
+    // Danh sách flag của hộp tạo rollout và lưới sức khoẻ của Tổng quan — không phải thứ test này kiểm
+    http.get(`${API}/projects/:id/flags`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/flags")),
+    ),
+    http.get(`${API}/projects/:id/architecture`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/architecture")),
+    ),
     http.post(`${API}/projects/:id/rollouts/probe`, () => {
       const probe = golden<{ probe: { hasSeries: boolean } }>(
         "POST /projects/{id}/rollouts/probe",

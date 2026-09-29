@@ -35,6 +35,10 @@ function setup() {
     http.get(`${API}/projects/:id/deployments/latest`, () =>
       HttpResponse.json(golden("GET /projects/{id}/deployments/latest")),
     ),
+    // [Plan #53] Thẻ Cloud và lưới sức khoẻ của Tổng quan
+    http.get(`${API}/projects/:id/architecture`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/architecture")),
+    ),
     // Mở flag từ bảng lệnh nạp panel xem nhanh — trả 404 là đủ, test chỉ xét URL
     http.get(`${API}/projects/:id/flags/:flagId`, () =>
       HttpResponse.json(

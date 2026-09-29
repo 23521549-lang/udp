@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
 import { Icon } from "../../../components/Icon";
 import { Empty, ErrorState, Loading } from "../../../components/States";
-import { formatNumber } from "../../../lib/format";
+import { formatUsd } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
+import { PROVIDER_LABEL } from "../../project/cloud/cloud-labels";
 import { adminApi } from "../admin-api";
-
 import { AdminPage } from "../AdminLayout";
+
 /**
  * Màn hình DUY NHẤT nhìn thấy tiền đang bị đốt (§10.13). `null` USD/giờ nghĩa là không
  * định giá được — hiện "chưa rõ giá", tuyệt đối không hiện 0.
@@ -35,17 +36,14 @@ export function AdminOrphansPage() {
             <div>
               <div className="l">Đang đốt</div>
               <div className="v num">
-                ${formatNumber(d.estimatedUsdPerHour)}
+                {formatUsd(d.estimatedUsdPerHour)}
                 <small>/giờ</small>
               </div>
             </div>
             <div>
               <div className="l">Mỗi ngày</div>
               <div className="v num">
-                $
-                {formatNumber(
-                  Math.round(d.estimatedUsdPerHour * 24 * 100) / 100,
-                )}
+                {formatUsd(d.estimatedUsdPerHour * 24)}
               </div>
             </div>
             <div>
@@ -78,22 +76,31 @@ export function AdminOrphansPage() {
                     <th scope="col">Loại</th>
                     <th scope="col">Vùng</th>
                     <th scope="col">Id trên cloud</th>
-                    <th scope="col">USD/giờ</th>
+                    <th scope="col" className="num">
+                      USD/giờ
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {d.resources.map((r) => (
                     <tr key={r.id}>
                       <th scope="row">{r.projectName}</th>
-                      <td className="mono">{r.kind}</td>
-                      <td>
-                        {r.provider} {r.region}
+                      <td className="mono" translate="no">
+                        {r.kind}
                       </td>
-                      <td className="mono">{r.providerId ?? "chưa biết"}</td>
+                      <td>
+                        {PROVIDER_LABEL[r.provider]}{" "}
+                        <span className="mono" translate="no">
+                          {r.region}
+                        </span>
+                      </td>
+                      <td className="mono" translate="no">
+                        {r.providerId ?? "Chưa biết"}
+                      </td>
                       <td className="num">
                         {r.usdPerHour === null
-                          ? "chưa rõ giá"
-                          : `$${String(r.usdPerHour)}`}
+                          ? "Chưa rõ giá"
+                          : formatUsd(r.usdPerHour)}
                       </td>
                     </tr>
                   ))}

@@ -42,7 +42,7 @@ describe("Tổng quan: thẻ Cluster và Deploy gần nhất", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      within(deploy).getByRole("link", { name: "xem lịch sử deploy" }),
+      within(deploy).getByRole("link", { name: "Xem lịch sử deploy" }),
     ).toBeInTheDocument();
   });
 

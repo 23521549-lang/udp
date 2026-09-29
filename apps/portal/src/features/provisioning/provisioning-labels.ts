@@ -22,6 +22,24 @@ export const JOB_STATE_LABEL: Record<ProvisioningJobWire["state"], string> = {
   FAILED: "Thất bại, đã dọn",
 };
 
+export const JOB_TYPE_LABEL: Record<ProvisioningJobWire["jobType"], string> = {
+  PROVISION: "Dựng hạ tầng",
+  TEARDOWN: "Gỡ hạ tầng",
+  DOMAIN_APPLY: "Áp domain",
+  ENVIRONMENT_APPLY: "Áp environment",
+};
+
+/**
+ * Tra chữ từ một mã dây kiểu `string` (danh sách quản trị, trang chủ): mã lạ — máy chủ mới hơn Portal —
+ * hiện nguyên mã thay vì một ô trống.
+ */
+export function labelOf<K extends string>(
+  table: Record<K, string>,
+  code: string,
+): string {
+  return code in table ? table[code as K] : code;
+}
+
 /** Bốn pha tiến về phía trước, theo thứ tự chạy (§8.1) */
 export const PHASES = [
   "NETWORK",

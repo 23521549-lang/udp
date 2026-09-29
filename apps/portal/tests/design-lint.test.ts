@@ -96,6 +96,8 @@ describe("lint thiết kế của Portal", () => {
       join("components", "ProgressRing.tsx"),
       join("components", "Sparkline.tsx"),
       join("components", "LineChart.tsx"),
+      // Lớp cạnh của sơ đồ kiến trúc: nét nối giữa các nút HTML, vẽ sau layout (Plan #53 QĐ-7)
+      join("features", "architecture", "EdgeLayer.tsx"),
     ]);
     const offenders = tsxFiles
       .map((f) => relative(SRC, f))

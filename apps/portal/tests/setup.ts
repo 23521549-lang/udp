@@ -15,6 +15,12 @@ import { usePaletteStore } from "../src/features/project/CommandPalette";
 configure({ asyncUtilTimeout: 5_000 });
 
 /**
+ * jsdom không có cuộn trang: `scrollRestoration` của router gọi `window.scrollTo` sau mỗi lần điều hướng
+ * và jsdom in một lỗi "Not implemented" cho từng lần — hàng trăm dòng che mất cảnh báo thật trong log.
+ */
+window.scrollTo = () => undefined;
+
+/**
  * `onUnhandledRequest: "error"`: một request mà không handler nào khai là một request
  * test không biết tới — để nó trôi qua im lặng là để test xanh trên một đường không ai
  * kiểm.

@@ -71,13 +71,13 @@ export function Shell({
         }}
       >
         {kind === "console" ? (
-          <Link to="/admin/users" className="ws">
+          <Link to="/admin/overview" className="ws">
             <Logo />
             <b>udp</b>
             <span className="ws-tag">Nhà phát hành</span>
           </Link>
         ) : (
-          <Link to="/app/projects" className="ws">
+          <Link to="/app/home" className="ws">
             <Logo />
             <b>udp</b>
           </Link>
@@ -210,12 +210,12 @@ function AccountMenu({ kind }: { kind: "portal" | "console" }) {
           </div>
           {isAdmin &&
             (kind === "portal" ? (
-              <Link to="/admin/users" className="acct-it">
+              <Link to="/admin/overview" className="acct-it">
                 <Icon of={ShieldCheck} />
                 Bảng điều khiển nền tảng
               </Link>
             ) : (
-              <Link to="/app/projects" className="acct-it">
+              <Link to="/app/home" className="acct-it">
                 <Icon of={LayoutGrid} />
                 Về Portal
               </Link>

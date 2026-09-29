@@ -29,6 +29,13 @@ export function useProjectHandlers(detail: ProjectDetailResponseWire): void {
     http.get(`${API}/projects/:id/deployments/latest`, () =>
       HttpResponse.json(golden("GET /projects/{id}/deployments/latest")),
     ),
+    // [Plan #53] Thẻ Cloud, lưới sức khoẻ và sơ đồ thu nhỏ của Tổng quan; ba con số flag ở đầu trang
+    http.get(`${API}/projects/:id/architecture`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/architecture")),
+    ),
+    http.get(`${API}/projects/:id/flags`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/flags")),
+    ),
   );
 }
 

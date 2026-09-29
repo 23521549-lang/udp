@@ -19,7 +19,8 @@ export function PageHead({
 }: {
   title: ReactNode;
   lead?: ReactNode;
-  minis?: readonly Mini[];
+  /** `undefined` khi số liệu chưa tải — ô chỉ số chưa hiện */
+  minis?: readonly Mini[] | undefined;
   actions?: ReactNode;
 }) {
   return (

@@ -15,6 +15,8 @@
  */
 export const qk = {
   me: () => ["me"] as const,
+  /** [Plan #53] Trang chủ của người đang đăng nhập — mọi project của họ trong một lời gọi */
+  home: () => ["home"] as const,
   /** [Plan #41] Một trang danh sách project */
   projects: (offset: number) => ["projects", offset] as const,
   project: (projectId: string) => ["project", projectId] as const,
@@ -93,6 +95,11 @@ export const qk = {
   repoScan: (projectId: string) => ["repoScan", projectId] as const,
   /** Plan #38: chi phí THỰC của project; `days` trong key — đổi cửa sổ mà số không đổi là thiếu nó */
   cost: (projectId: string, days: number) => ["cost", projectId, days] as const,
+  /** [Plan #53] Sơ đồ kiến trúc — cũng là nguồn của lưới sức khoẻ domain ở Tổng quan */
+  architecture: (projectId: string) => ["architecture", projectId] as const,
+  /** [Plan #53] Request, lỗi, độ trễ của MỘT env; `range` trong key như `dora` */
+  red: (projectId: string, envId: string, range: string) =>
+    ["red", projectId, envId, range] as const,
   cloud: (projectId: string) => ["cloud", projectId] as const,
   cloudSetup: (projectId: string, provider: string) =>
     ["cloudSetup", projectId, provider] as const,
@@ -101,10 +108,16 @@ export const qk = {
   jobs: (projectId: string) => ["jobs", projectId] as const,
   job: (projectId: string, jobId: string) => ["job", projectId, jobId] as const,
 
-  adminUsers: (search: string) => ["admin", "users", search] as const,
-  adminProjects: (status: string) => ["admin", "projects", status] as const,
+  /** [Plan #53] Theo trang: `offset` trong key — mỗi trang một mục cache */
+  adminUsers: (search: string, offset: number) =>
+    ["admin", "users", search, offset] as const,
+  adminProjects: (status: string, offset: number) =>
+    ["admin", "projects", status, offset] as const,
   adminCredentials: () => ["admin", "credentials"] as const,
-  adminJobs: (state: string) => ["admin", "jobs", state] as const,
+  adminJobs: (state: string, offset: number) =>
+    ["admin", "jobs", state, offset] as const,
+  adminOverview: () => ["admin", "overview"] as const,
+  adminPlatform: () => ["admin", "platform"] as const,
   /** §10.14: `["orphans"]` — invalidate khi dọn một tài nguyên */
   adminOrphans: () => ["admin", "orphans"] as const,
   adminSystem: () => ["admin", "system"] as const,
@@ -123,6 +136,7 @@ export const ENV_SCOPED = [
   "deployments",
   "deploymentLatest",
   "dora",
+  "red",
 ] as const satisfies readonly QueryKeyName[];
 
 /**
@@ -133,6 +147,7 @@ export const ENV_SCOPED = [
  */
 export const NOT_ENV_SCOPED = {
   me: "người dùng hiện tại",
+  home: "gom mọi project của người dùng; env nằm trong từng dòng của response",
   projects: "danh sách project",
   project: "project và danh sách env của nó",
   members: "thành viên thuộc project",
@@ -155,6 +170,8 @@ export const NOT_ENV_SCOPED = {
   goldenPath: "mã nguồn của project, một repo cho mọi env",
   repoScan: "repo của project, một lần quét cho mọi env",
   cost: "chi phí cả project, chia theo environment ngay trong response",
+  architecture:
+    "sơ đồ của cả project: một cluster cho mọi env, env là các khung bên trong",
   cloud: "credential cloud thuộc project, một bản cho mọi env (§4.3)",
   cloudSetup: "dữ liệu setup theo project và cloud, không theo env",
   provisionPreview: "hạ tầng của cả project: một cluster cho mọi env (§8.1)",
@@ -166,6 +183,8 @@ export const NOT_ENV_SCOPED = {
   adminJobs: "toàn hệ thống",
   adminOrphans: "toàn hệ thống",
   adminSystem: "toàn hệ thống",
+  adminOverview: "toàn hệ thống",
+  adminPlatform: "cụm chạy UDP, không thuộc project nào",
 } as const satisfies Partial<Record<QueryKeyName, string>>;
 
 /**

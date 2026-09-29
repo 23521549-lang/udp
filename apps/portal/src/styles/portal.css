@@ -1071,3 +1071,495 @@ h2.gh {
   border-top: 1px solid var(--line);
   border-bottom: 0;
 }
+
+/* ------------------------------------------------------------------ Plan #53 đợt d: màn mới */
+
+/* Hàng bộ lọc nằm trong nội dung trang (không phải thanh dưới đầu trang) */
+.filters.flush {
+  padding: 0 0 10px;
+  border-bottom: 0;
+}
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Nút trông như link: chọn một công cụ khác từ panel quan hệ */
+.linkbtn {
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.linkbtn:hover {
+  color: var(--accent-2);
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+.props.compact {
+  grid-template-columns: max-content 1fr;
+  margin-bottom: 8px;
+}
+.props.compact dt,
+.props.compact dd {
+  height: 24px;
+}
+
+/* Thẻ Cloud ở Tổng quan */
+.cloud-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.cloud-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Lưới sức khoẻ domain (DESIGN.md §6): ô không nền màu, lỗi đứng trước */
+.health-grid {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+.health-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line);
+  background: var(--raised);
+  color: var(--ink);
+}
+.health-cell:hover {
+  box-shadow: 0 0 0 1px var(--line-2);
+  background: var(--hover);
+}
+.health-name {
+  font-weight: 550;
+}
+.health-note {
+  font-size: 12px;
+}
+
+/* Sơ đồ thu nhỏ ở Tổng quan: cùng cách lồng của trang Kiến trúc */
+.minimap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 22px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--sunk);
+  color: var(--ink);
+}
+.minimap:hover .mm-go {
+  text-decoration: underline;
+}
+.mm-cloud,
+.mm-cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.mm-cloud {
+  background: var(--panel);
+}
+.mm-cluster {
+  background: var(--raised);
+}
+.mm-h {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--ink-2);
+}
+.mm-envs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+.mm-env {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--sunk);
+}
+.mm-go {
+  font-size: 12.5px;
+  color: var(--accent);
+}
+
+/* Sơ đồ kiến trúc (DESIGN.md §6): khung lồng nhau, mỗi tầng một sắc nền; cạnh là lớp SVG phủ lên */
+.arch {
+  position: relative;
+  margin-bottom: 18px;
+}
+.arch-sum {
+  margin: 0 0 12px;
+}
+.arch-cloud,
+.arch-net,
+.arch-cluster,
+.arch-env {
+  border-radius: 10px;
+  padding: 12px;
+}
+.arch-cloud {
+  background: var(--sunk);
+}
+.arch-net {
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.arch-cluster {
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.arch-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  color: var(--ink-2);
+}
+.arch-h h2,
+.arch-h h3,
+.arch-h h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.arch-kinds {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.arch-ns {
+  margin-left: auto;
+}
+.arch-tiers {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(170px, 1fr);
+  gap: 28px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.arch-tier ul,
+.arch-workloads,
+.arch-nstools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.arch-tier-h {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.arch-envs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.arch-env {
+  background: var(--sunk);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.arch-env .arch-h {
+  margin-bottom: 0;
+}
+.arch-workload {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.arch-workload .stt {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+.arch-empty {
+  margin: 0;
+}
+.arch-nstools {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+/* Nút công cụ: HTML thường trong lưới CSS; chọn bằng aria-pressed */
+.arch-tool {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-2);
+  text-align: left;
+  color: var(--ink);
+}
+.arch-nstools .arch-tool {
+  width: auto;
+}
+.arch-tool:hover {
+  background: var(--hover);
+}
+.arch-tool[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.arch-tool .stt {
+  font-size: 12px;
+}
+.arch-edges {
+  position: absolute;
+  inset: 0 auto auto 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.arch-edges path {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 1.25;
+  transition: opacity 0.15s var(--ease);
+}
+.arch-edges path.on {
+  stroke: var(--accent);
+  stroke-width: 1.75;
+}
+.arch-edges path.dim {
+  opacity: 0.35;
+}
+.arch-list {
+  margin-top: 8px;
+}
+.arch-list summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.arch-list ul,
+.rel-list {
+  margin: 8px 0 14px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* Dưới 860px: cạnh ẩn, quan hệ vẫn đủ ở panel và danh sách (QĐ-7) */
+@media (max-width: 860px) {
+  .arch-edges {
+    display: none;
+  }
+  .arch-tiers {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    gap: 14px;
+  }
+}
+
+/* Giám sát: mỗi workload ba biểu đồ nhỏ */
+.red-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.red-row h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.red-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.red-grid .lc {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line);
+  background: var(--raised);
+}
+.mon-console {
+  margin-bottom: 14px;
+}
+.mon-flags {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 20px;
+  margin-bottom: 22px;
+}
+.mon-sub {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+@media (max-width: 1100px) {
+  .red-grid,
+  .mon-flags {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Trang chủ */
+.home-projects {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+.home-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 14px 16px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line);
+  background: var(--raised);
+  color: var(--ink);
+}
+.home-card:hover {
+  box-shadow: 0 0 0 1px var(--line-2);
+  background: var(--hover);
+}
+.home-card-st {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.home-card-n {
+  display: flex;
+  gap: 14px;
+  margin-top: auto;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+/* Bảng điều khiển: tín hiệu nền tảng */
+.sig-grid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.sig-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.sig-card h3.l {
+  margin: 0;
+}
+.sig-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: 12.5px;
+}
+.sig-list {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+}
+.sig {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ad-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.ad-cols .meter {
+  margin-bottom: 10px;
+}
+@media (max-width: 860px) {
+  .ad-cols {
+    grid-template-columns: 1fr;
+  }
+}
+/* Cột tỉ lệ của bảng công cụ: thanh trung tính, số nằm ở cột bên cạnh */
+.tool-bar {
+  width: 30%;
+}
+.tool-bar i {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ink-4);
+  transform-origin: left center;
+}
+.job-it {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  height: auto;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.job-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.job-err {
+  margin: 0;
+  color: var(--ink-2);
+}
+.job-raw summary {
+  cursor: pointer;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.job-raw pre {
+  margin: 6px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--sunk);
+  font-size: 12px;
+  overflow-x: auto;
+}
