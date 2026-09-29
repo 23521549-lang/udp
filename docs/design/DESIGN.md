@@ -67,6 +67,13 @@ không bao giờ là "khoẻ".
 - **Độ đậm:** tiêu đề 650, nhãn 500. Không dùng 800/900, không chữ nghiêng ở tiêu đề.
 - **Khoảng chữ:** tiêu đề khít `-.02em` đến `-.025em`.
 - **Con số:** mọi con số trong bảng hoặc thẻ dùng `font-variant-numeric: tabular-nums`.
+- **Hai ngôn ngữ (Plan #54):** Tiếng Việt và English. Mọi chữ giao diện nằm ở tệp `*.messages.ts(x)` cạnh component,
+  với hai bản; bản tiếng Anh thiếu hay thừa một câu là lỗi biên dịch. Chọn: lựa chọn tay › ngôn ngữ của trình
+  duyệt › tiếng Việt; bộ chọn ở menu tài khoản và ở trang đăng nhập, tên mỗi ngôn ngữ viết bằng chính ngôn ngữ đó.
+  `<html lang>` theo ngôn ngữ. Số, tiền, ngày giờ, "… trước" theo quy ước của ngôn ngữ (`vi-VN` / `en-US`).
+- **Văn phong tiếng Anh:** câu ngắn, viết hoa đầu câu (sentence case), không chấm cuối nhãn và nút. Thuật ngữ sản
+  phẩm giữ nguyên ở cả hai ngôn ngữ (Flag, Rollout, Deploy, Domain, Environment…); bảng thuật ngữ ở
+  `docs/plans/plan54-plan.md`. Dữ liệu người dùng (tên project, mô tả flag) không dịch.
 
 ## 4. Khung và khoảng cách
 
@@ -169,7 +176,9 @@ không bao giờ là "khoẻ".
 
 - **Hoàn tác thay vì hỏi lại** cho thao tác đảo ngược được: lưu, xoá rule, tạm dừng, kích hoạt.
 - **Chuyển động:** ngắn (120–220 ms), `cubic-bezier(.2,.8,.2,1)`. Tôn trọng `prefers-reduced-motion`.
-- **Chế độ tối:** có đủ bộ token tối. Chỉ đổi độ sáng, giữ nguyên sắc độ.
+- **Chế độ tối:** có đủ bộ token tối. Chỉ đổi độ sáng, giữ nguyên sắc độ. Ba lựa chọn ở menu tài khoản: **Sáng**,
+  **Tối**, **Theo hệ thống** (mặc định; đổi ngay khi hệ điều hành đổi, không cần tải lại). Bảng lệnh giữ lệnh đổi
+  nhanh sáng ↔ tối. Chữ đạt 4.5:1 ở cả hai chế độ (§2 "Tương phản chữ"); cổng `portal-demo` đo điều đó trên mọi màn.
 
 ## 8. Logo
 

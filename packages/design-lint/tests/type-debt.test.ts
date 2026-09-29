@@ -62,8 +62,12 @@ const SELF = "packages/design-lint/tests/type-debt.test.ts";
  * Sáu chỉ thị: TSX-01..03 ở `@udp/cluster-access` `tests/direct.test.ts` (ba SA của §12.2, và
  * `ReadOnlyKubernetesClient` không có `write`), TSX-04 ở `day2-drift.test.ts` (tầng kiểu
  * của I32 chiều c), TSX-05/06 ở `openfeature-provider` (kiểu của host và của constructor).
+ *
+ * [Plan #54] Chín: TSX-07..09 ở Portal `tests/i18n-theme.test.tsx` — ba khẳng định kiểu-âm của
+ * `defineMessages` (bản `en` thiếu khoá, thừa khoá, sai tham số là lỗi biên dịch): chính tính chất
+ * mà tầng hai ngôn ngữ dựa vào, nên nó phải được canh bởi `tsc` chứ không chỉ được hứa.
  */
-const TS_EXPECT_ERROR_BASELINE = 6;
+const TS_EXPECT_ERROR_BASELINE = 9;
 
 /** Lệnh gọi `git` đọc danh sách tệp được theo dõi — không quét `node_modules` */
 function trackedSources(): string[] {

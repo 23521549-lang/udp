@@ -100,3 +100,18 @@ của repo public.
 - **AC-5** Không thoái cấp: mọi test cũ của Portal xanh ở tiếng Việt (mặc định của test), hợp đồng bản xem thử,
   typecheck, lint, format, design-lint.
 - **AC-6** Tài liệu: DESIGN.md (mục ngôn ngữ và giao diện), `UDP_design.md` §10 + D-P46/D-P47, bàn giao.
+
+## 5. Khi làm (30/09/2026)
+
+- **Thêm vào phạm vi, theo I37:** ba câu mà máy chủ và Portal dùng chung được đổi sang MÃ — `serviceLevelIssueOf`
+  (ô của ma trận §7.2), `canaryPairOf` (`code` + `branches` bên cạnh `reason` của máy chủ) và đường mở công cụ
+  giám sát (`app` thay cho câu `label` trên dây; golden `GET_projects_id_metrics_red` chụp lại). Máy chủ vẫn nói
+  câu của nó; Portal nói bằng ngôn ngữ người dùng chọn.
+- **Bảng nhãn dùng chung** giữa nhiều phân hệ là hàm tra đọc ngôn ngữ lúc gọi (`jobStateLabel`, `domainStatusLabel`,
+  `tierLabel`…), như `formatNumber` — nơi gọi đổi từ `BẢNG[x]` sang `hàm(x)`, không phải thêm hook ở từng chỗ.
+- **Chuyển chữ song song:** năm nhóm phân hệ, mỗi nhóm một bản hướng dẫn chung (API, luật, bảng thuật ngữ); hàng
+  đợi `PENDING` của design-lint chỉ ngắn đi và được xoá khi rỗng. Một chỗ thuật ngữ lệch giữa hai nhóm ("Bậc N" của
+  thứ tự deploy: Tier/Stage) thống nhất thành "Stage".
+- **Tương phản:** lượt đầu của axe-core tìm đúng một gốc cho mọi chỗ thiếu — `--ink-3` 60% ở cả hai chế độ
+  (3.5–4.3:1); sửa ở nguồn thành 52% (sáng) và 67% (tối), thấp nhất 4.8:1 và 4.9:1.
+- **Nợ kiểu:** ba khẳng định kiểu-âm của `defineMessages` mang mã TSX-07..09; baseline G-03 từ 6 lên 9.

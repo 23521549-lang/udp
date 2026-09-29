@@ -35,13 +35,13 @@ const setLocale = (l: "vi" | "en") =>
 
 describe("tầng i18n", () => {
   it("bản en thiếu khoá, thừa khoá hay sai tham số là lỗi biên dịch", () => {
-    // @ts-expect-error bản en thiếu `b`
+    // @ts-expect-error TSX-07: bản en thiếu `b` — thiếu một câu là lỗi biên dịch
     defineMessages({ vi: { a: "x", b: "y" }, en: { a: "x" } });
-    // @ts-expect-error bản en thừa `c`
+    // @ts-expect-error TSX-08: bản en thừa `c` — khoá lạ không lọt
     defineMessages({ vi: { a: "x" }, en: { a: "x", c: "z" } });
     defineMessages({
       vi: { f: (n: number) => String(n) },
-      // @ts-expect-error tham số sai kiểu
+      // @ts-expect-error TSX-09: tham số của chữ có tham số sai kiểu
       en: { f: (n: string) => n },
     });
     const ok = defineMessages({ vi: { a: "x" }, en: { a: "y" } });
