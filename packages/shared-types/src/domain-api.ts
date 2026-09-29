@@ -123,6 +123,12 @@ export const DOMAIN_ERROR_SLUGS = {
   versionUnavailable: "domain-version-unavailable",
   /** [v4.11, Plan #38] Chi phí: project chưa bật Cost Management (không có `cost.query`) */
   costNotEnabled: "cost-not-enabled",
+  /**
+   * [v4.11, Plan #53 QĐ-4] Giám sát: project chưa có nguồn `metrics.query` (chưa bật domain
+   * Monitoring). KHÔNG lặng lẽ đọc Prometheus của nền tảng — nó không thấy cluster của khách, và
+   * một biểu đồ rỗng nói sai rằng "không có lưu lượng".
+   */
+  metricsNotEnabled: "metrics-not-enabled",
 } as const;
 
 /** `GET /projects/:id/cost?days=` — cửa sổ 1–30 ngày (Plan #38 QĐ-8) */
@@ -130,3 +136,12 @@ export const costQuerySchema = z
   .object({ days: z.coerce.number().int().min(1).max(30).default(7) })
   .strict();
 export type CostQuery = z.infer<typeof costQuerySchema>;
+
+/** [v4.11, Plan #53] `GET /projects/:id/metrics/red?envId&range` */
+export const redQuerySchema = z
+  .object({
+    envId: z.string().uuid(),
+    range: z.enum(["1h", "6h", "24h", "7d"]).default("6h"),
+  })
+  .strict();
+export type RedQuery = z.infer<typeof redQuerySchema>;

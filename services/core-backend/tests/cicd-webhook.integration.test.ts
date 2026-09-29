@@ -16,7 +16,11 @@ import {
   type ProjectEnv,
   type TestWorld,
 } from "./helpers/api.js";
-import { noRepoSource, inertCloudPlatform } from "./helpers/inert-deps.js";
+import {
+  noRepoSource,
+  inertCloudPlatform,
+  outsidePlatform,
+} from "./helpers/inert-deps.js";
 
 /**
  * Plan #36 AC-3, AC-5 qua HTTP thật, adapter GitHub Actions THẬT của registry sản phẩm, database
@@ -41,6 +45,7 @@ const app = createApp({
   oidcIssuer: null,
   cloud: inertCloudPlatform,
   repoSource: noRepoSource,
+  platform: outsidePlatform,
   domainRegistry: (() => {
     const loaded = createRegistry({
       root: resolve(import.meta.dirname, "../src/modules"),

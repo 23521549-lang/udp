@@ -24,6 +24,7 @@ import {
   noRepoSource,
   inertCloudPlatform,
   inertProvisioning,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -47,6 +48,7 @@ const appWith = (registry: DomainAdapterRegistry) =>
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
+    platform: outsidePlatform,
     domainRegistry: () => Promise.resolve(registry),
     provisioning: inertProvisioning,
   });

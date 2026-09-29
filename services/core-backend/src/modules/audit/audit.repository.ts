@@ -28,26 +28,36 @@ const AUDIT_FIELDS = {
  * **`to` là mốc loại trừ.** Với `lte`, một khoảng `[from, to]` của hai lần gọi
  * liên tiếp sẽ chồng lấn đúng một mốc và trả trùng bản ghi biên.
  */
-export const list = (
+function whereOf(
   projectId: string,
   query: AuditQuery,
-): Promise<PublicAuditEntry[]> => {
+): Prisma.AuditLogWhereInput {
   const occurredAt: Prisma.DateTimeFilter = {
     ...(query.from === undefined ? {} : { gte: new Date(query.from) }),
     ...(query.to === undefined ? {} : { lt: new Date(query.to) }),
   };
+  return {
+    projectId,
+    ...(query.action === undefined ? {} : { action: query.action }),
+    ...(query.actor === undefined ? {} : { actorUserId: query.actor }),
+    ...(query.from === undefined && query.to === undefined
+      ? {}
+      : { occurredAt }),
+  };
+}
 
-  return prisma.auditLog.findMany({
-    where: {
-      projectId,
-      ...(query.action === undefined ? {} : { action: query.action }),
-      ...(query.actor === undefined ? {} : { actorUserId: query.actor }),
-      ...(query.from === undefined && query.to === undefined
-        ? {}
-        : { occurredAt }),
-    },
+export const list = (
+  projectId: string,
+  query: AuditQuery,
+): Promise<PublicAuditEntry[]> =>
+  prisma.auditLog.findMany({
+    where: whereOf(projectId, query),
     select: AUDIT_FIELDS,
     orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
     take: query.limit,
+    skip: query.offset,
   });
-};
+
+/** [v4.11, Plan #53] Số dòng khớp CÙNG bộ lọc với `list` — `total` của trang */
+export const count = (projectId: string, query: AuditQuery): Promise<number> =>
+  prisma.auditLog.count({ where: whereOf(projectId, query) });

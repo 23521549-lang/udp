@@ -14,6 +14,7 @@ import { generalRateLimiter } from "./core/http/middlewares/rate-limit.middlewar
 import { healthRouter } from "./modules/health/health.controller.js";
 import { metricsRouter } from "./modules/health/metrics.controller.js";
 import { authRouter } from "./modules/auth/auth.controller.js";
+import { homeRouter } from "./modules/home/home.controller.js";
 import { projectRouter } from "./modules/project/project.controller.js";
 import { adminRouter } from "./modules/admin/admin.controller.js";
 import { createOidcRouter } from "./modules/oidc/oidc.controller.js";
@@ -131,6 +132,7 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
 
   app.use(`${API_PREFIX}/auth`, authRouter);
   app.use(`${API_PREFIX}/projects`, projectRouter);
+  app.use(`${API_PREFIX}/home`, homeRouter);
   app.use(`${API_PREFIX}/admin`, adminRouter);
   app.use(`${API_PREFIX}/domains`, domainCatalogRouter);
 

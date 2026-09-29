@@ -4,20 +4,20 @@
   "body": {
     "entries": [
       {
-        "id": "01a0d4e9-032a-7362-86e2-b0546c7404af",
-        "action": "project.create",
+        "id": "01a0ee44-5abe-77e8-b757-030f526865fe",
+        "action": "member.add",
         "actorType": "USER",
-        "actorUserId": "5dec1846-d3fb-4d72-8b3d-9ddbff66db2e",
-        "targetType": "Project",
-        "targetId": "4db65052-2eaf-418e-b43b-f9c91fe5a253",
+        "actorUserId": "b35db5c7-19da-4f51-a697-f6fc4677ba3b",
+        "targetType": "ProjectMember",
+        "targetId": "58789d74-5320-4d48-a35c-2ccbbdfb0db8",
         "environmentId": null,
         "before": null,
         "after": {
-          "name": "proj-1f95a5ad",
-          "creationMode": "CREATE_NEW"
+          "projectRole": "VIEWER"
         },
-        "occurredAt": "2026-09-24T19:33:55.460Z"
+        "occurredAt": "2026-09-29T17:44:12.222Z"
       }
-    ]
+    ],
+    "total": 2
   }
 }

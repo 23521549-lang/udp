@@ -20,8 +20,14 @@ const iso = (d: Date | null): string | null =>
   d === null ? null : d.toISOString();
 
 export async function users(query: ListUsersQuery) {
-  const rows = await repository.listUsers(query.search, query.limit);
-  return rows.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() }));
+  const [rows, total] = await Promise.all([
+    repository.listUsers(query.search, query.limit, query.offset),
+    repository.countUsers(query.search),
+  ]);
+  return {
+    users: rows.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })),
+    total,
+  };
 }
 
 /**
@@ -56,8 +62,11 @@ export async function setPlatformRole(
 }
 
 export async function projects(query: AdminProjectsQuery) {
-  const rows = await repository.listProjects(query.status, query.limit);
-  return rows.map((p) => ({
+  const [rows, total] = await Promise.all([
+    repository.listProjects(query.status, query.limit, query.offset),
+    repository.countProjects(query.status),
+  ]);
+  const projects = rows.map((p) => ({
     id: p.id,
     name: p.name,
     status: p.status,
@@ -66,6 +75,7 @@ export async function projects(query: AdminProjectsQuery) {
     cloudProvider: p.credentials[0]?.provider ?? null,
     createdAt: p.createdAt.toISOString(),
   }));
+  return { projects, total };
 }
 
 export async function credentials() {
@@ -80,13 +90,19 @@ export async function credentials() {
 }
 
 export async function jobs(query: AdminJobsQuery) {
-  const rows = await repository.listJobs(query.state, query.limit);
-  return rows.map((j) => ({
-    ...j,
-    lastError: j.lastError ?? null,
-    createdAt: j.createdAt.toISOString(),
-    updatedAt: j.updatedAt.toISOString(),
-  }));
+  const [rows, total] = await Promise.all([
+    repository.listJobs(query.state, query.limit, query.offset),
+    repository.countJobs(query.state),
+  ]);
+  return {
+    jobs: rows.map((j) => ({
+      ...j,
+      lastError: j.lastError ?? null,
+      createdAt: j.createdAt.toISOString(),
+      updatedAt: j.updatedAt.toISOString(),
+    })),
+    total,
+  };
 }
 
 /**

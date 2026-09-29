@@ -7,6 +7,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import type { WithCluster } from "../src/core/app-deps.js";
+import { apportionCents } from "../src/modules/cost/cost.service.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import {
   API,
@@ -21,6 +22,7 @@ import {
   inertCloudPlatform,
   inertProvisioning,
   noDomainAdapters,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -56,6 +58,7 @@ const appWith = (cluster: WithCluster | null) =>
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
+    platform: outsidePlatform,
     domainRegistry: noDomainAdapters,
     provisioning: { ...inertProvisioning, withCluster: cluster },
   });
@@ -120,23 +123,44 @@ describe("GET /projects/:id/cost (Plan #38 AC-4)", () => {
     reply = () =>
       Response.json({
         code: 200,
+        // [Plan #53] Một tập mỗi ngày (`accumulate=false&step=1d`), ngày ở `window.start`
         data: [
           {
             [dev.k8sNamespace]: {
-              totalCost: 1.234,
-              cpuCost: 1,
+              totalCost: 1,
+              cpuCost: 0.8,
               ramCost: 0.2,
-              pvCost: 0.034,
+              pvCost: 0,
               networkCost: 0,
+              window: { start: "2026-09-28T00:00:00Z" },
             },
             [prod.k8sNamespace]: {
-              totalCost: 10.5,
-              cpuCost: 6,
-              ramCost: 3,
-              pvCost: 1,
+              totalCost: 4,
+              cpuCost: 2,
+              ramCost: 1,
+              pvCost: 0.5,
               networkCost: 0.5,
+              window: { start: "2026-09-28T00:00:00Z" },
             },
             "kube-system": { totalCost: 99 },
+          },
+          {
+            [dev.k8sNamespace]: {
+              totalCost: 0.234,
+              cpuCost: 0.2,
+              ramCost: 0,
+              pvCost: 0.034,
+              networkCost: 0,
+              window: { start: "2026-09-29T00:00:00Z" },
+            },
+            [prod.k8sNamespace]: {
+              totalCost: 6.5,
+              cpuCost: 4,
+              ramCost: 2,
+              pvCost: 0.5,
+              networkCost: 0,
+              window: { start: "2026-09-29T00:00:00Z" },
+            },
           },
         ],
       });
@@ -149,12 +173,13 @@ describe("GET /projects/:id/cost (Plan #38 AC-4)", () => {
         port: 9003,
         scheme: "http",
       },
-      path: "/allocation/compute?window=7d&aggregate=namespace&accumulate=true",
+      path: "/allocation/compute?window=7d&aggregate=namespace&accumulate=false&step=1d",
     });
     const cost = res.body.cost as {
       provider: string;
       totalUsd: number;
       environments: { name: string; totalUsd: number; storageUsd: number }[];
+      daily: { date: string; totalUsd: number }[];
     };
     expect(cost.provider).toBe("opencost");
     expect(cost.totalUsd).toBe(11.73);
@@ -164,6 +189,18 @@ describe("GET /projects/:id/cost (Plan #38 AC-4)", () => {
     expect(cost.environments.find((e) => e.name === "dev")?.storageUsd).toBe(
       0.03,
     );
+    // Theo ngày: chỉ namespace của project, và tổng các ngày ĐÚNG BẰNG tổng (chia phần dư lớn nhất)
+    expect(cost.daily).toEqual([
+      { date: "2026-09-28", totalUsd: 5 },
+      { date: "2026-09-29", totalUsd: 6.73 },
+    ]);
+  });
+
+  it("apportionCents: các phần là xu nguyên và cộng lại đúng tổng", () => {
+    expect(apportionCents([5, 6.734], 1173)).toEqual([500, 673]);
+    expect(apportionCents([1, 1, 1], 100)).toEqual([34, 33, 33]);
+    expect(apportionCents([0, 0], 0)).toEqual([0, 0]);
+    expect(apportionCents([2, -1, 2], 3)).toEqual([2, 0, 1]);
   });
 
   it("VIEWER không xem được tiền; cửa sổ ngoài 1–30 ngày ⇒ 400", async () => {

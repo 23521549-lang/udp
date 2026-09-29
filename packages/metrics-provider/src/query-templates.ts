@@ -1,6 +1,7 @@
 import { PROMETHEUS_METRIC_NAME } from "@udp/shared-types";
-import type { MetricTarget } from "./provider.js";
+import type { MetricTarget, SeriesKind } from "./provider.js";
 import { quoteLabelValue, quoteRegexPrefix, windowOf } from "./promql.js";
+import { seriesRateWindowSec } from "./series.js";
 
 /**
  * Truy vấn mẫu theo OpenTelemetry semantic conventions (§7.4), khớp nhãn của
@@ -99,6 +100,12 @@ export interface QueryTemplates {
    * mọi target trong Prometheus.
    */
   scrapeSamples(t: MetricTarget, windowSec: number): string;
+  /**
+   * [Plan #53] Truy vấn của `query_range` cho một chuỗi RED — CHÍNH khuôn §7.4 ở trên, cửa sổ
+   * rate là `seriesRateWindowSec(stepSec)`. Mọi truy vấn đều gộp (`sum`, `histogram_quantile`
+   * trên `sum by (le)`) nên kết quả là MỘT series. `latencyP99` ra giây — provider đổi ms.
+   */
+  series(kind: SeriesKind, t: MetricTarget, stepSec: number): string;
 }
 
 export function queryTemplates(
@@ -115,18 +122,20 @@ export function queryTemplates(
     total: `sum(${fn}(${count}${analysisMatchers(t)}${windowOf(w)}))`,
     errors: `sum(${fn}(${count}${analysisMatchers(t, [ERROR_STATUS])}${windowOf(w)}))`,
   });
+  const errorRate = (t: MetricTarget, w: number): string => {
+    const q = over("rate", t, w);
+    return `${zeroWhenTraffic(q.errors, q.total)} / ${q.total}`;
+  };
+  const latencyP99 = (t: MetricTarget, w: number): string =>
+    `histogram_quantile(0.99, sum by (le) (rate(${bucket}${analysisMatchers(t)}${windowOf(w)})))`;
   return {
     requestCount: (t, w) => over("increase", t, w).total,
     errorCount: (t, w) => {
       const q = over("increase", t, w);
       return zeroWhenTraffic(q.errors, q.total);
     },
-    errorRate: (t, w) => {
-      const q = over("rate", t, w);
-      return `${zeroWhenTraffic(q.errors, q.total)} / ${q.total}`;
-    },
-    latencyP99: (t, w) =>
-      `histogram_quantile(0.99, sum by (le) (rate(${bucket}${analysisMatchers(t)}${windowOf(w)})))`,
+    errorRate,
+    latencyP99,
     probeSeries: (t, w) => {
       const base = {
         namespace: t.namespace,
@@ -141,5 +150,17 @@ export function queryTemplates(
     },
     scrapeSamples: (t, w) =>
       `max(count_over_time(${count}${matchersOf({ namespace: t.namespace, workloadName: t.workloadName })}${windowOf(w)}))`,
+    series: (kind, t, stepSec) => {
+      const w = seriesRateWindowSec(stepSec);
+      switch (kind) {
+        case "requestRate":
+          return over("rate", t, w).total;
+        // 0 request ⇒ 0/0 = NaN ⇒ `null`: không lưu lượng không phải "không lỗi"
+        case "errorRatio":
+          return errorRate(t, w);
+        case "latencyP99":
+          return latencyP99(t, w);
+      }
+    },
   };
 }

@@ -2,18 +2,33 @@
  * `@udp/metrics-provider` — nguồn metrics cho progressive delivery (§5.4).
  *
  * Service 1 gọi `probe()` khi tạo rollout; Service 3 gọi phần còn lại ở mỗi
- * vòng phân tích (§7.1). Bốn hiện thực: Prometheus (PromQL — cả VictoriaMetrics,
+ * vòng phân tích (§7.1); [Plan #53] `series()` cho trang Giám sát. Bốn hiện thực: Prometheus (PromQL — cả VictoriaMetrics,
  * Grafana Cloud), Datadog, New Relic, Dynatrace (Plan #31), dựng từ một
  * `MetricsSource` bằng `createMetricsProvider`; nguồn giả cho test ở
  * `@udp/metrics-provider/testing`.
  */
 export type {
   MetricSample,
+  MetricSeries,
   MetricTarget,
   MetricsProvider,
+  MetricsSeriesProvider,
   ProbeOutcome,
   ScrapeIntervalSource,
+  SeriesKind,
+  SeriesPoint,
+  SeriesWindow,
 } from "./provider.js";
+export {
+  alignSeries,
+  MAX_SERIES_STEPS,
+  MetricsQueryError,
+  MIN_SERIES_RATE_WINDOW_SEC,
+  SERIES_UNIT,
+  seriesGrid,
+  seriesRateWindowSec,
+} from "./series.js";
+export type { SeriesGrid } from "./series.js";
 export {
   DEFAULT_METRIC_BASE,
   ffLabel,

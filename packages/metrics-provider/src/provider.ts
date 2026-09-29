@@ -35,6 +35,36 @@ export interface MetricSample {
 }
 
 /**
+ * [Plan #53] Ba chuỗi RED của trang Giám sát: lưu lượng (request/giây), tỉ lệ lỗi 5xx (0..1),
+ * p99 độ trễ (mili giây).
+ */
+export type SeriesKind = "requestRate" | "errorRatio" | "latencyP99";
+
+export interface SeriesWindow {
+  /** Độ dài khoảng nhìn lại, giây */
+  rangeSec: number;
+  /** Bước giữa hai điểm, giây */
+  stepSec: number;
+  /** Mốc cuối (mặc định: bây giờ) — test truyền vào để tất định */
+  end?: Date;
+}
+
+export interface SeriesPoint {
+  /** Epoch giây, chia hết cho bước */
+  t: number;
+  /** `null` = KHÔNG có dữ liệu ở mốc này — không bao giờ được đọc là 0 (I7) */
+  v: number | null;
+}
+
+export interface MetricSeries {
+  kind: SeriesKind;
+  unit: "rps" | "ratio" | "ms";
+  points: SeriesPoint[];
+  /** Truy vấn thật đã chạy — để tái lập, như `MetricSample.query` */
+  query: string;
+}
+
+/**
  * Scrape interval đo từ đâu: từ chính series của workload (tốt nhất), từ
  * `/api/v1/targets` (lớn nhất trên MỌI target — thường bi quan: một exporter 60s
  * kéo cả cụm lên 60s), hay không đo được (bên gọi rơi về mặc định).
@@ -93,4 +123,39 @@ export interface MetricsProvider {
    *     `track` thì không bao giờ thấy gì.
    */
   probe(t: MetricTarget): Promise<AdapterResult<ProbeOutcome>>;
+}
+
+/**
+ * [Plan #53 QĐ-4] Provider trả được CHUỖI THỜI GIAN — mọi nguồn thật của gói (Prometheus, Datadog,
+ * New Relic, Dynatrace) và bản giả. Tách khỏi `MetricsProvider` (phân tách interface): Service 3 chỉ
+ * cần phép đo tức thời cho gate canary và đo nhờ qua Service 1 (`RemoteMetricsProvider`), nên nó
+ * không phải hiện thực một hàm nó không bao giờ gọi.
+ */
+export interface MetricsSeriesProvider extends MetricsProvider {
+  /**
+   * Chuỗi thời gian RED của một target — trang Giám sát của Service 1.
+   *
+   *  - **Lưới:** `points` phủ ĐÚNG các mốc từ `⌊(end − rangeSec)/stepSec⌋·stepSec` tới
+   *    `⌊end/stepSec⌋·stepSec`, mỗi bước một điểm, tăng dần (`seriesGrid`). Mốc nguồn không
+   *    trả là `v: null`.
+   *  - **`null` là KHÔNG có dữ liệu** (I7: "không dữ liệu ⇒ không bao giờ là 0"). `requestRate`
+   *    là 0 chỉ khi nguồn THẬT trả 0; `errorRatio` ở bước không có request là `null` (0/0),
+   *    không phải 0; `NaN`/`±Inf` của nguồn thành `null`. Không có series lỗi nào KHI có lưu
+   *    lượng là tỉ lệ 0 — cùng luật với `errorRate`.
+   *  - **Đơn vị:** `requestRate` request/giây (`rps`), `errorRatio` 0..1 (`ratio`),
+   *    `latencyP99` mili giây (`ms`) — nguồn trả giây thì provider đổi, như `latencyP99`.
+   *  - **Mỗi điểm nhìn LÙI:** điểm ở mốc `t` đo khoảng ngay trước `t` — PromQL `rate(…[w])`
+   *    với `w = max(stepSec, 60)` (`seriesRateWindowSec`); nguồn SaaS lấy ô `(t − step, t]`.
+   *  - **Lọc:** cùng matcher với các truy vấn tức thời §7.4 (namespace + workload, `version`
+   *    nếu có, series tổng `ff=""` khi không nhắm nhánh flag).
+   *  - **Hàng rào:** `RangeError` khi quá `MAX_SERIES_STEPS` bước hay cửa sổ không phải số
+   *    giây nguyên dương.
+   *  - **Hỏng** (HTTP lỗi, hết giờ, trả sai hình): ném `MetricsQueryError` — Service 1 trả
+   *    503. KHÔNG bao giờ trả một chuỗi toàn 0 thay cho lỗi.
+   */
+  series(
+    kind: SeriesKind,
+    target: MetricTarget,
+    window: SeriesWindow,
+  ): Promise<MetricSeries>;
 }

@@ -20,6 +20,7 @@ import {
   inertCloudPlatform,
   inertProvisioning,
   noDomainAdapters,
+  outsidePlatform,
 } from "../tests/helpers/inert-deps.js";
 
 /**
@@ -70,6 +71,7 @@ async function main(): Promise<void> {
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
     repoSource: noRepoSource,
+    platform: outsidePlatform,
   });
   const world = testWorld(app, admin);
   try {

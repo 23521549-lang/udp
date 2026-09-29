@@ -1,19 +1,33 @@
 import type { JobState, PlatformRole, Prisma, ProjectStatus } from "@udp/db";
 import { prisma } from "../../core/db.js";
 
-export const listUsers = (search: string | undefined, take: number) =>
+/**
+ * [v4.11, Plan #53] Mọi danh sách admin theo trang: `take`/`skip` cho trang, và `count` trên CÙNG
+ * điều kiện cho `total` — một nguồn điều kiện, để tổng không lệch với trang.
+ */
+const userWhere = (search: string | undefined): Prisma.UserWhereInput =>
+  search === undefined
+    ? {}
+    : {
+        OR: [
+          { email: { contains: search, mode: "insensitive" } },
+          { name: { contains: search, mode: "insensitive" } },
+        ],
+      };
+
+export const countUsers = (search: string | undefined) =>
+  prisma.user.count({ where: userWhere(search) });
+
+export const listUsers = (
+  search: string | undefined,
+  take: number,
+  skip: number,
+) =>
   prisma.user.findMany({
-    where:
-      search === undefined
-        ? {}
-        : {
-            OR: [
-              { email: { contains: search, mode: "insensitive" } },
-              { name: { contains: search, mode: "insensitive" } },
-            ],
-          },
-    orderBy: { createdAt: "desc" },
+    where: userWhere(search),
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
     take,
+    skip,
     select: {
       id: true,
       email: true,
@@ -86,11 +100,23 @@ export async function setPlatformRole(
   });
 }
 
-export const listProjects = (status: ProjectStatus | undefined, take: number) =>
+const projectWhere = (
+  status: ProjectStatus | undefined,
+): Prisma.ProjectWhereInput => (status === undefined ? {} : { status });
+
+export const countProjects = (status: ProjectStatus | undefined) =>
+  prisma.project.count({ where: projectWhere(status) });
+
+export const listProjects = (
+  status: ProjectStatus | undefined,
+  take: number,
+  skip: number,
+) =>
   prisma.project.findMany({
-    where: status === undefined ? {} : { status },
-    orderBy: { createdAt: "desc" },
+    where: projectWhere(status),
+    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
     take,
+    skip,
     select: {
       id: true,
       name: true,
@@ -127,11 +153,15 @@ export const listCredentials = (take: number) =>
     },
   });
 
-export const listJobs = (state: JobState, take: number) =>
+export const countJobs = (state: JobState) =>
+  prisma.provisioningJob.count({ where: { state } });
+
+export const listJobs = (state: JobState, take: number, skip: number) =>
   prisma.provisioningJob.findMany({
     where: { state },
-    orderBy: { updatedAt: "desc" },
+    orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
     take,
+    skip,
     select: {
       id: true,
       jobType: true,

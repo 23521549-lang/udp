@@ -4,16 +4,412 @@
   "body": {
     "projects": [
       {
-        "id": "b6355ec7-e24b-42cd-8e0e-87de3d268294",
-        "name": "p-ba22c04a",
+        "id": "7c282847-da4d-4274-a1e3-538425032590",
+        "name": "p-d794130f",
         "status": "DRAFT",
         "owner": {
-          "id": "f57c51dd-2b32-415b-96d3-e5e17ec74c15",
-          "email": "admin-plain-40d2696c-2d02-44f0-b391-d7e1160d2164@udp.local"
+          "id": "70a4f768-f250-4201-bbaf-3694978c0f48",
+          "email": "admin-plain-c5beea52-f1bf-4ad8-9a07-4e79e78cded4@udp.local"
         },
         "memberCount": 1,
         "cloudProvider": null,
-        "createdAt": "2026-09-25T03:16:29.201Z"
+        "createdAt": "2026-09-29T17:45:02.558Z"
+      },
+      {
+        "id": "3b883359-3712-4906-a7cb-52693e3cd80f",
+        "name": "pdtest-b998710e",
+        "status": "DRAFT",
+        "owner": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "email": "dev@udp.local"
+        },
+        "memberCount": 0,
+        "cloudProvider": null,
+        "createdAt": "2026-09-28T15:08:43.444Z"
+      },
+      {
+        "id": "023ee7de-3372-42a3-8efc-89cda1a5b6d2",
+        "name": "pdtest-6ecce847",
+        "status": "DRAFT",
+        "owner": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "email": "dev@udp.local"
+        },
+        "memberCount": 0,
+        "cloudProvider": null,
+        "createdAt": "2026-09-28T15:08:10.581Z"
+      },
+      {
+        "id": "106c28c3-cf89-4c3c-93ba-a80a1930900f",
+        "name": "p-98406d4e",
+        "status": "DRAFT",
+        "owner": {
+          "id": "99dcf06d-97ed-4d8e-9591-ecd8cd883cd2",
+          "email": "rollout-acf44147-a59f-496b-a02f-d9df32467392@udp.local"
+        },
+        "memberCount": 2,
+        "cloudProvider": null,
+        "createdAt": "2026-09-26T14:04:01.681Z"
+      },
+      {
+        "id": "468d52bf-be14-4e53-a337-dbc8f7e3e174",
+        "name": "p-7c39c6b7",
+        "status": "DRAFT",
+        "owner": {
+          "id": "58ac2d14-cae3-42a9-9256-974737f408d7",
+          "email": "res-owner-a258cac7-3ca5-4613-9749-18c2b1503356@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": null,
+        "createdAt": "2026-09-26T13:49:59.830Z"
+      },
+      {
+        "id": "62c5c773-43c8-4ed7-929d-c852bea3be73",
+        "name": "p-28fb36c3",
+        "status": "DRAFT",
+        "owner": {
+          "id": "58ac2d14-cae3-42a9-9256-974737f408d7",
+          "email": "res-owner-a258cac7-3ca5-4613-9749-18c2b1503356@udp.local"
+        },
+        "memberCount": 4,
+        "cloudProvider": null,
+        "createdAt": "2026-09-26T13:49:59.169Z"
+      },
+      {
+        "id": "bb771985-5caa-4771-b59b-341edc278e44",
+        "name": "p-2050c518",
+        "status": "DRAFT",
+        "owner": {
+          "id": "7cb34e09-6f2d-4202-8dcb-74791bc91b5b",
+          "email": "res-owner-8435ac9e-0c4d-4514-bea1-96ae4d7eda24@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": null,
+        "createdAt": "2026-09-26T12:25:28.976Z"
+      },
+      {
+        "id": "e76b10c8-745d-4b02-adba-357b8b94a779",
+        "name": "p-f2aaa937",
+        "status": "DRAFT",
+        "owner": {
+          "id": "7cb34e09-6f2d-4202-8dcb-74791bc91b5b",
+          "email": "res-owner-8435ac9e-0c4d-4514-bea1-96ae4d7eda24@udp.local"
+        },
+        "memberCount": 4,
+        "cloudProvider": null,
+        "createdAt": "2026-09-26T12:25:28.390Z"
+      },
+      {
+        "id": "7c195105-3c60-46d4-a7bf-202b9ce39562",
+        "name": "p-53f8881b",
+        "status": "PROVISIONING",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:55:40.517Z"
+      },
+      {
+        "id": "9f64f989-7995-4016-9a49-f7199c127a25",
+        "name": "p-3914a67c",
+        "status": "ERROR",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:55:19.590Z"
+      },
+      {
+        "id": "0843cf80-4fce-4a36-beb6-e9cde963184e",
+        "name": "p-f625fcd7",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:54:59.073Z"
+      },
+      {
+        "id": "1038f4d9-5eb8-4ec9-a950-d33406f2ed77",
+        "name": "p-a5785bb9",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:54:39.528Z"
+      },
+      {
+        "id": "2541d89c-cb4c-4050-af15-fafacfdc01db",
+        "name": "p-0bc45f82",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:54:21.189Z"
+      },
+      {
+        "id": "45235af8-5d3e-461f-8ca0-66951d69ea95",
+        "name": "p-e472ecc5",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:54:03.342Z"
+      },
+      {
+        "id": "a7f2942e-2dac-4158-a024-8293050b9161",
+        "name": "p-4daa8f6d",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:53:45.280Z"
+      },
+      {
+        "id": "2fd81410-07bb-4462-a1ac-82faef3139ab",
+        "name": "p-31c2ac64",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:53:26.862Z"
+      },
+      {
+        "id": "7bf1951b-2f6c-4723-8ba8-d05fbc4f3e1e",
+        "name": "p-ffab8238",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:53:09.092Z"
+      },
+      {
+        "id": "2aab347a-998e-4fbf-897f-567cb3cb58f7",
+        "name": "p-aaf55e28",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:52:52.996Z"
+      },
+      {
+        "id": "5eccb41b-264a-4226-a98d-52e12c97bb75",
+        "name": "p-2fc3ac49",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:52:32.909Z"
+      },
+      {
+        "id": "6a0056b7-31fd-46b2-94a7-73393237f921",
+        "name": "p-5a1e3300",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:52:13.342Z"
+      },
+      {
+        "id": "a6ef7d90-aebe-43a8-aed1-9a501edc289a",
+        "name": "p-c13f6770",
+        "status": "ERROR",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:51:54.958Z"
+      },
+      {
+        "id": "08028469-e231-4105-be49-fab27877e940",
+        "name": "p-1e4aca56",
+        "status": "DRAFT",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:51:50.987Z"
+      },
+      {
+        "id": "3e2f91be-9134-4cd6-9cc5-5e0a124b3a66",
+        "name": "p-32d36731",
+        "status": "DELETED",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:51:33.589Z"
+      },
+      {
+        "id": "e5a46672-f2cd-4fd1-8178-0132426c83ee",
+        "name": "p-18efc076",
+        "status": "DRAFT",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:51:17.578Z"
+      },
+      {
+        "id": "d88462f3-92e9-402f-8d72-368b6ace6db5",
+        "name": "p-6bd40549",
+        "status": "ERROR",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:50:58.382Z"
+      },
+      {
+        "id": "3c2b400d-cfa1-4776-8cc5-451ef7eb6932",
+        "name": "p-18705dbf",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:50:38.834Z"
+      },
+      {
+        "id": "2f1ef685-98f9-490a-9dfb-c4d9534280af",
+        "name": "p-3697c5a2",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:50:22.729Z"
+      },
+      {
+        "id": "0e6baff8-0cda-4f19-8b42-67a43164285e",
+        "name": "p-62672347",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:49:51.885Z"
+      },
+      {
+        "id": "4f4bfae9-1714-4187-a1eb-ef3c1201247d",
+        "name": "p-23bbd12e",
+        "status": "ERROR",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:49:34.769Z"
+      },
+      {
+        "id": "1c54cd42-b83b-4afc-8b56-33dbc10758c9",
+        "name": "p-2e2f09bf",
+        "status": "ACTIVE",
+        "owner": {
+          "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+          "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T22:49:18.702Z"
+      },
+      {
+        "id": "be70053a-2a26-4f9b-9782-e3911e1d8f4c",
+        "name": "p-b7d81728",
+        "status": "DRAFT",
+        "owner": {
+          "id": "e8a62c12-d449-483a-b9e2-213e1c0c3550",
+          "email": "prov-owner-59398b54-9d39-4d36-b602-e60d4f7569a3@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": null,
+        "createdAt": "2026-09-25T09:03:19.491Z"
+      },
+      {
+        "id": "7eb537c8-1cd7-4638-88d6-b296da29a41d",
+        "name": "p-ba96f5aa",
+        "status": "DRAFT",
+        "owner": {
+          "id": "e8a62c12-d449-483a-b9e2-213e1c0c3550",
+          "email": "prov-owner-59398b54-9d39-4d36-b602-e60d4f7569a3@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T09:03:13.534Z"
+      },
+      {
+        "id": "51bb2d6a-d1c8-459d-837e-33c49460b7f7",
+        "name": "p-ab4ec928",
+        "status": "PROVISIONING",
+        "owner": {
+          "id": "e8a62c12-d449-483a-b9e2-213e1c0c3550",
+          "email": "prov-owner-59398b54-9d39-4d36-b602-e60d4f7569a3@udp.local"
+        },
+        "memberCount": 3,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T09:03:09.892Z"
+      },
+      {
+        "id": "2d9da20e-a9ca-4222-9fcd-0d49eab42603",
+        "name": "p-4cd215ca",
+        "status": "ERROR",
+        "owner": {
+          "id": "f7a25065-1b1f-43a8-be47-9c50bad0f0d0",
+          "email": "provision-owner-90d8e5f7-b2e4-4f78-83c2-53412214e93c@udp.local"
+        },
+        "memberCount": 1,
+        "cloudProvider": "AWS",
+        "createdAt": "2026-09-25T08:56:28.960Z"
       },
       {
         "id": "073e95c5-86fb-447b-9539-b2f907e03e1b",
@@ -111,6 +507,7 @@
         "cloudProvider": null,
         "createdAt": "2026-09-08T04:27:30.686Z"
       }
-    ]
+    ],
+    "total": 42
   }
 }

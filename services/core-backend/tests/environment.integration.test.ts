@@ -23,6 +23,7 @@ import {
   inertCloudPlatform,
   inertProvisioning,
   noDomainAdapters,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -48,6 +49,7 @@ const appWith = (flagService: FlagServiceClient) =>
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
+    platform: outsidePlatform,
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
     flagService,

@@ -1,5 +1,5 @@
 import { parseJson, timedRequest } from "../http.js";
-import type { MetricTarget } from "../provider.js";
+import type { MetricTarget, SeriesPoint } from "../provider.js";
 import { DEFAULT_METRIC_BASE, ffLabel } from "../query-templates.js";
 import {
   finiteOf,
@@ -7,6 +7,7 @@ import {
   type SaaSProviderOptions,
   type SaaSQueryLanguage,
   type Scalar,
+  type SeriesSpan,
 } from "./base.js";
 
 /**
@@ -19,6 +20,12 @@ import {
  *
  * NRQL đi qua BIẾN GraphQL (`$nrql`), không ghép vào thân GraphQL; giá trị người dùng trong
  * NRQL là chuỗi `'…'` đã escape.
+ *
+ * **Chuỗi thời gian** (Plan #53): CHÍNH các truy vấn trên với `TIMESERIES <bước> seconds SINCE
+ * <ms> UNTIL <ms>` thay cho `SINCE … ago`. NRQL dựng các ô tính từ mốc CUỐI của khoảng (tài
+ * liệu "query time range"), và mốc đó là mốc cuối của lưới — nên `endTimeSeconds` của mỗi hàng
+ * rơi đúng lên lưới. Tối đa 366 ô mỗi truy vấn: lưới dày hơn thì New Relic trả lỗi, và lỗi đó
+ * là `MetricsQueryError`, không phải một chuỗi rỗng.
  */
 
 export const NEW_RELIC_REGIONS = ["US", "EU"] as const;
@@ -68,15 +75,25 @@ function language(metricBase: string): SaaSQueryLanguage {
     t.flagKey !== undefined && t.variantKey !== undefined
       ? `ff = ${nrqlString(ffLabel(t.flagKey, t.variantKey))}`
       : "(ff IS NULL OR ff = '')";
+  /** Mệnh đề thời gian: cửa sổ gần nhất cho truy vấn tức thời, khoảng tuyệt đối cho chuỗi */
   const since = (w: number) => `SINCE ${String(w)} seconds ago`;
-  const count = (filter: string, w: number) =>
-    `SELECT sum(${metricBase}_count) AS value FROM Metric WHERE ${filter} ${since(w)}`;
+  const timeseries = (span: SeriesSpan) =>
+    `TIMESERIES ${String(span.stepSec)} seconds SINCE ${String(span.fromSec * 1000)} UNTIL ${String(span.toSec * 1000)}`;
+  const count = (filter: string, time: string) =>
+    `SELECT sum(${metricBase}_count) AS value FROM Metric WHERE ${filter} ${time}`;
+  const requests = (t: MetricTarget, time: string) =>
+    count(where(t, branchOf(t)), time);
+  const errors = (t: MetricTarget, time: string) =>
+    count(where(t, branchOf(t), "http_response_status_code LIKE '5%'"), time);
+  const p99 = (t: MetricTarget, time: string) =>
+    `SELECT bucketPercentile(${metricBase}_bucket, 99) AS value FROM Metric WHERE ${where(t, branchOf(t))} ${time}`;
   return {
-    requests: (t, w) => count(where(t, branchOf(t)), w),
-    errors: (t, w) =>
-      count(where(t, branchOf(t), "http_response_status_code LIKE '5%'"), w),
-    p99: (t, w) =>
-      `SELECT bucketPercentile(${metricBase}_bucket, 99) AS value FROM Metric WHERE ${where(t, branchOf(t))} ${since(w)}`,
+    requests: (t, w) => requests(t, since(w)),
+    errors: (t, w) => errors(t, since(w)),
+    p99: (t, w) => p99(t, since(w)),
+    seriesRequests: (t, span) => requests(t, timeseries(span)),
+    seriesErrors: (t, span) => errors(t, timeseries(span)),
+    seriesP99: (t, span) => p99(t, timeseries(span)),
     probe: (t, w) => {
       const base = { namespace: t.namespace, workloadName: t.workloadName };
       return count(
@@ -86,7 +103,7 @@ function language(metricBase: string): SaaSQueryLanguage {
             ? null
             : `ff LIKE ${nrqlString(`${t.flagKey}=%`)}`,
         ),
-        w,
+        since(w),
       );
     },
   };
@@ -118,21 +135,41 @@ export class NewRelicMetricsProvider extends SaaSMetricsProvider {
   }
 
   protected async run(nrql: string): Promise<Scalar> {
-    const parsed = await this.graphql({
-      query: NRQL_QUERY,
-      variables: { accountId: this.accountId, nrql },
-    });
-    const results = parsed?.data?.actor?.account?.nrql?.results;
-    if (parsed === undefined || parsed.errors !== undefined || !results) {
-      return { kind: "failed" };
-    }
+    const results = await this.nrql(nrql);
+    if (results === undefined) return { kind: "failed" };
     const value = valueOf(results[0]);
     return value === undefined ? { kind: "ok" } : { kind: "ok", value };
+  }
+
+  /** Mỗi hàng `TIMESERIES` là một ô; `endTimeSeconds` đã là mốc CUỐI ô, theo giây */
+  protected async runSeries(nrql: string): Promise<SeriesPoint[] | undefined> {
+    const results = await this.nrql(nrql);
+    if (results === undefined) return undefined;
+    return results.flatMap((row) => {
+      const t = finiteOf(row.endTimeSeconds);
+      return t === undefined ? [] : [{ t, v: valueOf(row) ?? null }];
+    });
   }
 
   protected async ping(): Promise<boolean> {
     const parsed = await this.graphql({ query: "{ actor { user { id } } }" });
     return typeof parsed?.data?.actor?.user?.id === "number";
+  }
+
+  /** Các hàng của một NRQL; hỏng, GraphQL báo `errors` hay thiếu `results` ⇒ `undefined` */
+  private async nrql(
+    nrql: string,
+  ): Promise<Record<string, unknown>[] | undefined> {
+    const parsed = await this.graphql({
+      query: NRQL_QUERY,
+      variables: { accountId: this.accountId, nrql },
+    });
+    const results = parsed?.data?.actor?.account?.nrql?.results;
+    return parsed === undefined ||
+      parsed.errors !== undefined ||
+      !Array.isArray(results)
+      ? undefined
+      : results;
   }
 
   private async graphql(

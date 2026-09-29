@@ -390,6 +390,45 @@ export function validateAndOrder(
   return { valid: true, errors: [], warnings, chosen, order };
 }
 
+/** Một cạnh của đồ thị capability: `from` tiêu thụ `capabilityId` do `to` cung cấp */
+export interface CapabilityEdge {
+  from: string;
+  to: string;
+  capabilityId: CapabilityId;
+}
+
+/**
+ * [v4.11, Plan #53 QĐ-3] Các cạnh của đồ thị capability trên tổ hợp ĐÃ CHỌN — tool tiêu thụ → tool
+ * cung cấp mà `chosen` chọn cho capability đó, kể cả qua một nhánh `anyOf` và theo preference.
+ *
+ * CÙNG quan hệ mà `topoSort` sắp bậc (hàm đó dựng phụ thuộc từ đây): sơ đồ kiến trúc vẽ đúng đồ thị
+ * đã chặn cấu hình sai và đã sinh thứ tự deploy, không một bản vẽ lại. Tự-vòng (tool tự cung cấp thứ
+ * nó cần) và provider không nằm trong tổ hợp bị bỏ, như ở `topoSort`. Thứ tự theo khoá đã sắp.
+ */
+export function capabilityEdges(
+  adapters: readonly ResolvableAdapter[],
+  chosen: Readonly<Record<string, string>>,
+): CapabilityEdge[] {
+  const known = new Set(adapters.map(adapterKey));
+  const out: CapabilityEdge[] = [];
+  const seen = new Set<string>();
+  for (const a of [...adapters].sort((x, y) =>
+    adapterKey(x).localeCompare(adapterKey(y)),
+  )) {
+    const self = adapterKey(a);
+    for (const r of flatRequirements(a)) {
+      const provider = chosen[r.id];
+      if (provider === undefined || provider === self) continue;
+      if (!known.has(provider)) continue;
+      const id = `${self}>${provider}>${r.id}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ from: self, to: provider, capabilityId: r.id });
+    }
+  }
+  return out;
+}
+
 /**
  * Sắp thứ tự deploy theo BẬC, trên đồ thị capability của TỔ HỢP ĐÃ CHỌN (D-11).
  *
@@ -408,17 +447,9 @@ export function topoSort(
   chosen: Readonly<Record<string, string>>,
 ): string[][] | null {
   const keys = adapters.map(adapterKey);
-  const known = new Set(keys);
   const deps = new Map<string, Set<string>>(keys.map((k) => [k, new Set()]));
-
-  for (const a of adapters) {
-    const self = adapterKey(a);
-    for (const r of flatRequirements(a)) {
-      const provider = chosen[r.id];
-      if (provider === undefined || provider === self) continue;
-      if (!known.has(provider)) continue;
-      deps.get(self)?.add(provider);
-    }
+  for (const e of capabilityEdges(adapters, chosen)) {
+    deps.get(e.from)?.add(e.to);
   }
 
   const done = new Set<string>();

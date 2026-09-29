@@ -23,7 +23,9 @@ import { deploymentRouter } from "../deployment/deployment.controller.js";
 import { projectDomainRouter } from "../domain/project-domain.controller.js";
 import { projectCicdRouter } from "../cicd/cicd.controller.js";
 import { projectGoldenPathRouter } from "../golden-path/golden-path.controller.js";
+import { architectureRouter } from "../architecture/architecture.controller.js";
 import { costRouter } from "../cost/cost.controller.js";
+import { monitoringRouter } from "../monitoring/monitoring.controller.js";
 import { provisioningRouter } from "../provisioning/provisioning.controller.js";
 import { environmentRouter } from "../environment/environment.controller.js";
 import { memberRouter } from "../member/member.controller.js";
@@ -191,12 +193,15 @@ projectRouter.get(
   requireMinProjectRole("VIEWER"),
   validateQuery(auditQuerySchema),
   asyncHandler(async (req, res) => {
-    const entries = await auditRepository.list(
-      projectIdParam(req),
-      req.query as unknown as AuditQuery,
-    );
+    const projectId = projectIdParam(req);
+    const query = req.query as unknown as AuditQuery;
+    const [entries, total] = await Promise.all([
+      auditRepository.list(projectId, query),
+      auditRepository.count(projectId, query),
+    ]);
     sendJson(res, auditListResponseWire, {
       entries: entries.map(auditEntryWireOf),
+      total,
     });
   }),
 );
@@ -218,5 +223,7 @@ projectRouter.use("/:id", projectDomainRouter);
 projectRouter.use("/:id", projectCicdRouter);
 projectRouter.use("/:id", projectGoldenPathRouter);
 projectRouter.use("/:id", costRouter);
+projectRouter.use("/:id", architectureRouter);
+projectRouter.use("/:id", monitoringRouter);
 projectRouter.use("/:id", provisioningRouter);
 projectRouter.use("/:id", configStreamRouter);

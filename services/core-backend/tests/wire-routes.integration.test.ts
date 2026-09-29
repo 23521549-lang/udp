@@ -20,6 +20,7 @@ import {
   inertCloudPlatform,
   noDomainAdapters,
   inertProvisioning,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -51,6 +52,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
+    platform: outsidePlatform,
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
     flagService: createFlagServiceClient({

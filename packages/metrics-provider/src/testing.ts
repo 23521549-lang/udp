@@ -6,4 +6,4 @@
  * trong review bằng chính đường dẫn.
  */
 export { FakeMetricsProvider, branchKeyOf } from "./fake.js";
-export type { FakeBranch, FakeCall } from "./fake.js";
+export type { FakeBranch, FakeCall, FakeSeriesFn } from "./fake.js";

@@ -21,7 +21,11 @@ import {
   type Actor,
   type TestWorld,
 } from "./helpers/api.js";
-import { inertCloudPlatform, inertProvisioning } from "./helpers/inert-deps.js";
+import {
+  inertCloudPlatform,
+  inertProvisioning,
+  outsidePlatform,
+} from "./helpers/inert-deps.js";
 
 /**
  * Plan #48 qua HTTP thật và database thật: cây Golden Path theo runtime (kèm pipeline của tool CI/CD
@@ -65,6 +69,7 @@ const app = createApp({
   oidcIssuer: null,
   cloud: inertCloudPlatform,
   repoSource: memoryRepos,
+  platform: outsidePlatform,
   domainRegistry: () => registry,
   provisioning: inertProvisioning,
 });

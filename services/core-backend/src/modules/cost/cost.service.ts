@@ -23,7 +23,10 @@ const costBinding = z.object({
   allocationPath: z.string().regex(/^\/[a-z/]+$/),
 });
 
-/** Hình chung của `/allocation/compute` (OpenCost) và `/model/allocation` (Kubecost) */
+/**
+ * Hình chung của `/allocation/compute` (OpenCost) và `/model/allocation` (Kubecost). Với
+ * `accumulate=false&step=1d` mỗi phần tử của `data` là MỘT ngày; `window.start` nói ngày nào.
+ */
 const allocationResponse = z.object({
   data: z.array(
     z.record(
@@ -34,6 +37,10 @@ const allocationResponse = z.object({
           ramCost: z.number().default(0),
           pvCost: z.number().default(0),
           networkCost: z.number().default(0),
+          window: z
+            .object({ start: z.string().optional() })
+            .passthrough()
+            .optional(),
         })
         .passthrough(),
     ),
@@ -42,6 +49,34 @@ const allocationResponse = z.object({
 
 /** Làm tròn tới xu — số trên dây không mang nhiễu dấu phẩy động */
 const cents = (v: number): number => Math.round(v * 100) / 100;
+
+const DAY_MS = 86_400_000;
+const isoDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * Chia `totalCents` cho các phần theo tỉ lệ số thật `exact` (phần dư lớn nhất): mỗi phần là số xu
+ * nguyên và tổng các phần ĐÚNG BẰNG `totalCents` — làm tròn từng ngày riêng rẽ sẽ lệch tổng vài xu,
+ * và một biểu đồ mà cộng lại không ra con số bên cạnh là một biểu đồ người ta thôi tin.
+ */
+export function apportionCents(
+  exact: readonly number[],
+  totalCents: number,
+): number[] {
+  const sum = exact.reduce((s, v) => s + Math.max(0, v), 0);
+  if (sum <= 0 || totalCents <= 0) return exact.map(() => 0);
+  const shares = exact.map((v) => (Math.max(0, v) / sum) * totalCents);
+  const base = shares.map((s) => Math.floor(s));
+  let left = totalCents - base.reduce((s, v) => s + v, 0);
+  const order = shares
+    .map((s, i) => ({ i, frac: s - Math.floor(s) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    base[i] = (base[i] ?? 0) + 1;
+    left -= 1;
+  }
+  return base;
+}
 
 export async function projectCost(
   projectId: string,
@@ -71,7 +106,7 @@ export async function projectCost(
   const body = await withCluster(projectId, async (access) => {
     const res = await access.proxyService(
       { namespace, service, port, scheme: "http" },
-      `${allocationPath}?window=${String(days)}d&aggregate=namespace&accumulate=true`,
+      `${allocationPath}?window=${String(days)}d&aggregate=namespace&accumulate=false&step=1d`,
     );
     if (!res.ok) {
       throw new ServiceUnavailableError(
@@ -127,11 +162,45 @@ export async function projectCost(
       networkUsd: cents(a?.networkCost ?? 0),
     };
   });
+  const totalUsd = cents(
+    perEnvironment.reduce((sum, e) => sum + e.totalUsd, 0),
+  );
+  const namespaces = new Set(environments.map((e) => e.k8sNamespace));
+  /**
+   * Một ngày = một tập của bộ tính; ngày của tập lấy từ `window.start`, thiếu thì đếm lùi từ hôm
+   * nay (tập cuối là hôm nay). Chỉ namespace của project được cộng — như tổng ở trên.
+   */
+  const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+  const sets = parsed.data.data;
+  const perDay = sets.map((set, i) => {
+    const allocations = Object.entries(set);
+    const start = allocations.find(
+      ([, a]) => a.window?.start !== undefined,
+    )?.[1].window?.start;
+    const at =
+      start === undefined || Number.isNaN(Date.parse(start))
+        ? today - (sets.length - 1 - i) * DAY_MS
+        : Date.parse(start);
+    return {
+      date: isoDay(at),
+      exact: allocations
+        .filter(([ns]) => namespaces.has(ns))
+        .reduce((s, [, a]) => s + a.totalCost, 0),
+    };
+  });
+  const dailyCents = apportionCents(
+    perDay.map((d) => d.exact),
+    Math.round(totalUsd * 100),
+  );
   return {
     provider,
     days,
     currency: "USD",
-    totalUsd: cents(perEnvironment.reduce((sum, e) => sum + e.totalUsd, 0)),
+    totalUsd,
     environments: perEnvironment,
+    daily: perDay.map((d, i) => ({
+      date: d.date,
+      totalUsd: (dailyCents[i] ?? 0) / 100,
+    })),
   };
 }

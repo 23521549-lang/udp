@@ -2,13 +2,23 @@ import { METRICS_PROVIDER } from "@udp/config/constants";
 import type { AdapterResult } from "@udp/shared-types";
 import type {
   MetricSample,
+  MetricSeries,
   MetricTarget,
-  MetricsProvider,
+  MetricsSeriesProvider,
   ProbeOutcome,
   ScrapeIntervalSource,
+  SeriesKind,
+  SeriesPoint,
+  SeriesWindow,
 } from "./provider.js";
-import { timedRequest } from "./http.js";
+import { parseJson, timedRequest } from "./http.js";
 import { queryTemplates, type QueryTemplates } from "./query-templates.js";
+import {
+  alignSeries,
+  MetricsQueryError,
+  SERIES_UNIT,
+  seriesGrid,
+} from "./series.js";
 
 /**
  * `MetricsProvider` cho Prometheus HTTP API (§5.4, §7.4).
@@ -58,6 +68,46 @@ interface InstantVector {
   data?: { resultType?: string; result?: { value?: [number, string] }[] };
 }
 
+/** Ma trận của `query_range` — kiểu `unknown` vì hình của nó là thứ phải KIỂM, không phải tin */
+interface RangeMatrix {
+  status?: unknown;
+  data?: { resultType?: unknown; result?: unknown };
+}
+
+/**
+ * Điểm của series ĐẦU của ma trận: `[[<giây unix>, "<số dạng chuỗi>"], …]`. Mọi truy vấn chuỗi
+ * đều gộp nên chỉ có một series; ma trận rỗng là "không có dữ liệu" (mọi điểm `null`), còn sai
+ * hình là `undefined` — bên gọi ném `MetricsQueryError`.
+ */
+function matrixPoints(body: string | undefined): SeriesPoint[] | undefined {
+  const parsed = parseJson<RangeMatrix>(body);
+  if (
+    parsed?.status !== "success" ||
+    parsed.data?.resultType !== "matrix" ||
+    !Array.isArray(parsed.data.result)
+  ) {
+    return undefined;
+  }
+  const first: unknown = parsed.data.result[0];
+  if (first === undefined) return [];
+  const values: unknown =
+    typeof first === "object" && first !== null && "values" in first
+      ? first.values
+      : undefined;
+  if (!Array.isArray(values)) return undefined;
+  const rows: readonly unknown[] = values;
+  const points: SeriesPoint[] = [];
+  for (const pair of rows) {
+    if (!Array.isArray(pair)) return undefined;
+    const [ts, raw]: readonly unknown[] = pair;
+    if (typeof ts !== "number" || typeof raw !== "string") return undefined;
+    // "NaN", "+Inf" là CHUỖI của Prometheus — `Number` đọc ra NaN/Infinity, `alignSeries` bỏ
+    const v = Number(raw);
+    points.push({ t: ts, v: Number.isFinite(v) ? v : null });
+  }
+  return points;
+}
+
 interface TargetsResponse {
   status: string;
   data?: { activeTargets?: { scrapeInterval?: string; health?: string }[] };
@@ -74,7 +124,7 @@ export function parseDurationSeconds(text: string): number | undefined {
   return n * factor;
 }
 
-export class PrometheusMetricsProvider implements MetricsProvider {
+export class PrometheusMetricsProvider implements MetricsSeriesProvider {
   readonly providerId = "prometheus";
   readonly capabilityVersion = "2.x";
   private lagSeconds: number;
@@ -139,6 +189,39 @@ export class PrometheusMetricsProvider implements MetricsProvider {
 
   custom(query: string, _t: MetricTarget, w: number): Promise<MetricSample> {
     return this.instant(query, w);
+  }
+
+  /**
+   * `query_range` trên đúng lưới của `seriesGrid` — `start`/`end` đã chia hết cho bước nên
+   * Prometheus (và VictoriaMetrics) đánh giá ở CHÍNH các mốc đó. Đường dẫn ghép sau `baseUrl`
+   * như mọi lời gọi khác: tiền tố của service proxy (`…/services/x:9090/proxy`) giữ nguyên.
+   */
+  async series(
+    kind: SeriesKind,
+    t: MetricTarget,
+    window: SeriesWindow,
+  ): Promise<MetricSeries> {
+    const grid = seriesGrid(window);
+    const query = this.templates.series(kind, t, grid.stepSec);
+    const raw = matrixPoints(
+      await this.get(
+        `/api/v1/query_range?query=${encodeURIComponent(query)}` +
+          `&start=${String(grid.startSec)}&end=${String(grid.endSec)}` +
+          `&step=${String(grid.stepSec)}s`,
+      ),
+    );
+    if (raw === undefined) throw new MetricsQueryError(this.providerId, query);
+    // histogram_quantile trả giây; trang Giám sát vẽ mili giây như ngưỡng §7.4
+    const scale = kind === "latencyP99" ? 1000 : 1;
+    return {
+      kind,
+      unit: SERIES_UNIT[kind],
+      points: alignSeries(
+        grid,
+        raw.map((p) => ({ t: p.t, v: p.v === null ? null : p.v * scale })),
+      ),
+      query,
+    };
   }
 
   async probe(t: MetricTarget): Promise<AdapterResult<ProbeOutcome>> {

@@ -4,18 +4,137 @@
   "body": {
     "users": [
       {
-        "id": "f57c51dd-2b32-415b-96d3-e5e17ec74c15",
-        "email": "admin-plain-40d2696c-2d02-44f0-b391-d7e1160d2164@udp.local",
+        "id": "70a4f768-f250-4201-bbaf-3694978c0f48",
+        "email": "admin-plain-c5beea52-f1bf-4ad8-9a07-4e79e78cded4@udp.local",
         "name": "Test User",
         "platformRole": "USER",
-        "createdAt": "2026-09-25T03:16:28.532Z"
+        "createdAt": "2026-09-29T17:45:01.758Z"
       },
       {
-        "id": "5f824aec-b65a-4065-8392-377768a6b189",
-        "email": "admin-root-16ecdcf8-3756-4edc-8621-622ad16237d4@udp.local",
+        "id": "6ba790eb-ff54-4389-a1d6-a892b60a4917",
+        "email": "admin-root-5353ed3b-387d-4d9c-9450-3f4ba8c09ecd@udp.local",
         "name": "Test User",
         "platformRole": "PLATFORM_ADMIN",
-        "createdAt": "2026-09-25T03:16:28.102Z"
+        "createdAt": "2026-09-29T17:45:01.243Z"
+      },
+      {
+        "id": "faec5db0-0acd-4669-92db-5df00e70af68",
+        "email": "rollout-7583e7bc-1dcd-4d44-aa72-85eeba85409c@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T14:04:01.452Z"
+      },
+      {
+        "id": "99dcf06d-97ed-4d8e-9591-ecd8cd883cd2",
+        "email": "rollout-acf44147-a59f-496b-a02f-d9df32467392@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T14:04:00.646Z"
+      },
+      {
+        "id": "84a1355f-a9bd-462d-8bf2-981cd4b0e60f",
+        "email": "res-outsider-a5360f05-0428-492e-86f9-46a6941535e6@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T13:49:58.962Z"
+      },
+      {
+        "id": "5d64c41d-7d53-48a2-b965-be9286a3510e",
+        "email": "res-viewer-f99f2134-e0a4-4291-a3bd-a57c858db7e1@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T13:49:58.485Z"
+      },
+      {
+        "id": "0efe0767-a2f1-48ff-93ff-bca3e2d39da2",
+        "email": "res-dev-59b70d69-1b7d-47c6-9e7b-2c745040fef2@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T13:49:57.987Z"
+      },
+      {
+        "id": "4153c782-70fd-438c-a6eb-8fc219146857",
+        "email": "res-maint-a150b567-ca1c-4e41-ae9d-79c657c7a546@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T13:49:57.461Z"
+      },
+      {
+        "id": "58ac2d14-cae3-42a9-9256-974737f408d7",
+        "email": "res-owner-a258cac7-3ca5-4613-9749-18c2b1503356@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T13:49:56.754Z"
+      },
+      {
+        "id": "6993f586-08ca-456e-9bc1-bbb8af23677f",
+        "email": "res-outsider-aad26419-cd40-44b0-bd8b-cc3a1453095c@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T12:25:28.097Z"
+      },
+      {
+        "id": "3b3bd267-1374-4640-921e-be83a8b6cef7",
+        "email": "res-viewer-8590bf20-5c9d-40b9-8803-eae384d30797@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T12:25:27.396Z"
+      },
+      {
+        "id": "b9f76004-d49e-4382-a44a-f60a264b8c31",
+        "email": "res-dev-609aaf89-096d-4314-9db3-0abd98ced3c8@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T12:25:26.595Z"
+      },
+      {
+        "id": "d72d366d-eeba-4a28-80fa-47aba8919994",
+        "email": "res-maint-a5941c2a-7e69-4422-b1d5-c209c7e01661@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T12:25:25.750Z"
+      },
+      {
+        "id": "7cb34e09-6f2d-4202-8dcb-74791bc91b5b",
+        "email": "res-owner-8435ac9e-0c4d-4514-bea1-96ae4d7eda24@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-26T12:25:24.892Z"
+      },
+      {
+        "id": "fb8f031c-7537-4580-a5b5-5bb9d544caa4",
+        "email": "provision-owner-0ec3eb89-1d98-4060-b065-2a3016cdabca@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-25T22:49:18.434Z"
+      },
+      {
+        "id": "853f34df-7c6d-49f1-88e1-cf94006124fe",
+        "email": "prov-viewer-52bb439c-68fb-4701-aca5-b7155aa1109a@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-25T09:03:09.699Z"
+      },
+      {
+        "id": "be92435f-d0ec-4f31-8245-cc30e2c4fed7",
+        "email": "prov-maint-b87ab4f6-9eaf-4166-a295-8807e7f60581@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-25T09:03:09.224Z"
+      },
+      {
+        "id": "e8a62c12-d449-483a-b9e2-213e1c0c3550",
+        "email": "prov-owner-59398b54-9d39-4d36-b602-e60d4f7569a3@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-25T09:03:08.711Z"
+      },
+      {
+        "id": "f7a25065-1b1f-43a8-be47-9c50bad0f0d0",
+        "email": "provision-owner-90d8e5f7-b2e4-4f78-83c2-53412214e93c@udp.local",
+        "name": "Test User",
+        "platformRole": "USER",
+        "createdAt": "2026-09-25T08:56:28.633Z"
       },
       {
         "id": "61f39c18-93a8-4410-896e-03bfa3579c45",
@@ -233,14 +352,8 @@
         "name": "Platform Admin",
         "platformRole": "PLATFORM_ADMIN",
         "createdAt": "2026-09-08T04:27:30.247Z"
-      },
-      {
-        "id": "00000000-0000-4000-8000-000000000001",
-        "email": "dev@udp.local",
-        "name": "Dev User",
-        "platformRole": "USER",
-        "createdAt": "2026-09-08T04:27:29.906Z"
       }
-    ]
+    ],
+    "total": 51
   }
 }

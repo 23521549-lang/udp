@@ -12,6 +12,8 @@ import {
   adminCredentialsResponseWire,
   adminJobsResponseWire,
   adminOrphansResponseWire,
+  adminOverviewResponseWire,
+  adminPlatformResponseWire,
   adminProjectsResponseWire,
   adminSystemResponseWire,
   adminUserResponseWire,
@@ -21,6 +23,8 @@ import {
   requireAuth,
   requirePlatformAdmin,
 } from "../../core/http/middlewares/auth.middleware.js";
+import { appDepsOf } from "../../core/app-deps.js";
+import * as adminOverview from "./admin.overview.js";
 import * as adminService from "./admin.service.js";
 import {
   listJobsQuerySchema,
@@ -45,6 +49,28 @@ import {
 export const adminRouter: Router = Router();
 adminRouter.use(requireAuth, requirePlatformAdmin);
 
+/**
+ * [v4.11, Plan #53 QĐ-6] Trang tổng quan của Bảng điều khiển nền tảng: số liệu từ database và tín
+ * hiệu của cụm đang chạy UDP — hai route, vì nửa sau có thể vắng mà không được làm hỏng nửa đầu.
+ */
+adminRouter.get(
+  "/overview",
+  asyncHandler(async (_req, res) => {
+    sendJson(res, adminOverviewResponseWire, {
+      overview: await adminOverview.overview(),
+    });
+  }),
+);
+
+adminRouter.get(
+  "/platform",
+  asyncHandler(async (req, res) => {
+    sendJson(res, adminPlatformResponseWire, {
+      platform: await adminOverview.platform(await appDepsOf(req).platform()),
+    });
+  }),
+);
+
 const userIdOf = (req: Request): string =>
   uuidParam(req, "userId", "Mã người dùng không hợp lệ");
 
@@ -52,9 +78,11 @@ adminRouter.get(
   "/users",
   validateQuery(listUsersQuerySchema),
   asyncHandler(async (req, res) => {
-    sendJson(res, adminUsersResponseWire, {
-      users: await adminService.users(req.query as unknown as ListUsersQuery),
-    });
+    sendJson(
+      res,
+      adminUsersResponseWire,
+      await adminService.users(req.query as unknown as ListUsersQuery),
+    );
   }),
 );
 
@@ -76,11 +104,11 @@ adminRouter.get(
   "/projects",
   validateQuery(listProjectsQuerySchema),
   asyncHandler(async (req, res) => {
-    sendJson(res, adminProjectsResponseWire, {
-      projects: await adminService.projects(
-        req.query as unknown as AdminProjectsQuery,
-      ),
-    });
+    sendJson(
+      res,
+      adminProjectsResponseWire,
+      await adminService.projects(req.query as unknown as AdminProjectsQuery),
+    );
   }),
 );
 
@@ -97,9 +125,11 @@ adminRouter.get(
   "/jobs",
   validateQuery(listJobsQuerySchema),
   asyncHandler(async (req, res) => {
-    sendJson(res, adminJobsResponseWire, {
-      jobs: await adminService.jobs(req.query as unknown as AdminJobsQuery),
-    });
+    sendJson(
+      res,
+      adminJobsResponseWire,
+      await adminService.jobs(req.query as unknown as AdminJobsQuery),
+    );
   }),
 );
 

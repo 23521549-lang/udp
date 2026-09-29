@@ -318,6 +318,14 @@ export const envSchema = z
      */
     PD_CONTROLLER_WEBHOOK_URL: z.string().url().optional(),
     PROMETHEUS_URL: z.string().url(),
+    /**
+     * [v4.11, Plan #53 QĐ-6] Bản phát hành đang chạy — tag commit mà `release.sh` build trên máy ảo,
+     * `local` với kind. Bảng điều khiển nền tảng hiện nó; thiếu thì nói "không khai", không đoán.
+     */
+    UDP_RELEASE: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9._-]{0,63}$/)
+      .optional(),
 
     // ---------- CORS / Cookie ----------
     CORS_ORIGIN: z.string().url(),

@@ -128,6 +128,13 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "GET /admin/jobs": wire.adminJobsResponseWire,
   "GET /admin/orphan-resources": wire.adminOrphansResponseWire,
   "GET /admin/system/health": wire.adminSystemResponseWire,
+
+  // [v4.11, Plan #53] Hai không gian, trang chủ, sơ đồ kiến trúc, giám sát, Bảng điều khiển nền tảng
+  "GET /home": wire.homeResponseWire,
+  "GET /projects/{id}/architecture": wire.architectureResponseWire,
+  "GET /projects/{id}/metrics/red": wire.redMetricsResponseWire,
+  "GET /admin/overview": wire.adminOverviewResponseWire,
+  "GET /admin/platform": wire.adminPlatformResponseWire,
 };
 
 /**
@@ -250,6 +257,10 @@ const PORTAL_MODULES = [
   "admin",
   "cicd",
   "cost",
+  // [v4.11, Plan #53]
+  "home",
+  "architecture",
+  "monitoring",
 ];
 
 describe("cổng gọi: controller Portal tiêu thụ gửi qua sendJson", () => {

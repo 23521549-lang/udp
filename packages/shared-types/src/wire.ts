@@ -230,8 +230,12 @@ export const auditEntryWire = z
   .strict();
 
 /** `GET /projects/:id/audit` */
+/** [v4.11, Plan #53] Theo trang: `total` là mọi dòng khớp bộ lọc */
 export const auditListResponseWire = z
-  .object({ entries: z.array(auditEntryWire) })
+  .object({
+    entries: z.array(auditEntryWire),
+    total: z.number().int().nonnegative(),
+  })
   .strict();
 
 // ------------------------------------------------------------- SDK key
@@ -842,8 +846,12 @@ export const adminUserWire = z
   })
   .strict();
 
+/** [v4.11, Plan #53] Theo trang: `total` là mọi người dùng khớp bộ lọc — không còn cắt im lặng ở 100 */
 export const adminUsersResponseWire = z
-  .object({ users: z.array(adminUserWire) })
+  .object({
+    users: z.array(adminUserWire),
+    total: z.number().int().nonnegative(),
+  })
   .strict();
 export const adminUserResponseWire = z.object({ user: adminUserWire }).strict();
 
@@ -864,6 +872,7 @@ export const adminProjectsResponseWire = z
         })
         .strict(),
     ),
+    total: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -904,6 +913,7 @@ export const adminJobsResponseWire = z
         })
         .strict(),
     ),
+    total: z.number().int().nonnegative(),
   })
   .strict();
 
@@ -1613,6 +1623,18 @@ export const costResponseWire = z
             })
             .strict(),
         ),
+        /**
+         * [v4.11, Plan #53 QĐ-4] Theo ngày (UTC), cũ nhất trước — cùng một lần hỏi bộ tính với
+         * `totalUsd`, nên tổng các ngày BẰNG `totalUsd` (một nguồn, không hai con số lệch nhau).
+         */
+        daily: z.array(
+          z
+            .object({
+              date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+              totalUsd: usd,
+            })
+            .strict(),
+        ),
       })
       .strict(),
   })
@@ -1773,3 +1795,398 @@ export const environmentResponseWire = z
 export const environmentDeletedResponseWire = z
   .object({ job: provisioningJobWire.nullable() })
   .strict();
+
+// ------------------------------------------------------------- Plan #53: sơ đồ kiến trúc (QĐ-3)
+
+const resourceStepWire = z.enum([
+  "NETWORK",
+  "CLUSTER",
+  "DOMAINS",
+  "K8S_MANAGED",
+]);
+
+/** Một tài nguyên CÒN SỐNG trên cloud của khách (hàng `DELETED` không lên sơ đồ) */
+export const architectureResourceWire = z
+  .object({
+    step: resourceStepWire,
+    kind: z.string(),
+    /** Đoạn cuối của `idempotencyKey` — tên UDP đặt cho tài nguyên */
+    name: z.string(),
+    status: z.enum([
+      "CREATING",
+      "CREATED",
+      "READY",
+      "DELETING",
+      "ORPHAN_SUSPECTED",
+    ]),
+  })
+  .strict();
+
+/** Bản gần nhất của một workload ở một environment — theo `deployment_events` (không bảng workload nào khác) */
+export const architectureWorkloadWire = z
+  .object({
+    name: z.string(),
+    imageTag: z.string().nullable(),
+    commitSha: z.string().nullable(),
+    lastEvent: z.enum([
+      "DEPLOY_PENDING",
+      "DEPLOY_START",
+      "DEPLOY_SUCCESS",
+      "DEPLOY_FAILURE",
+      "ROLLBACK",
+    ]),
+    at: isoDateTime,
+  })
+  .strict();
+
+export const architectureEnvironmentWire = z
+  .object({
+    id: uuid,
+    name: z.string(),
+    namespace: z.string(),
+    isProduction: z.boolean(),
+    workloads: z.array(architectureWorkloadWire),
+  })
+  .strict();
+
+export const driftVerdictWire = z.enum([
+  "NOT_DEPLOYED",
+  "CLEAN",
+  "DRIFTED",
+  "SCAN_FAILED",
+]);
+
+/** Một công cụ đang bật — nút của sơ đồ và ô của lưới sức khoẻ (§10.6 DomainHealthGrid) */
+export const architectureToolWire = z
+  .object({
+    /** `"<domaintype>:<toolid>"` viết thường — cùng khoá với `chosen`/`order` của resolver */
+    key: z.string(),
+    domainType: z.string(),
+    displayName: z.string(),
+    toolId: z.string(),
+    adapterVersion: z.string().nullable(),
+    /** `null` khi máy chủ không còn nạp tool này (gỡ khỏi registry) — nút không có cạnh */
+    scope: z.enum(["cluster", "namespace"]).nullable(),
+    /** Bậc trong thứ tự deploy; `null` khi tổ hợp không hợp lệ */
+    tier: z.number().int().nonnegative().nullable(),
+    status: domainStatusWire.nullable(),
+    drift: z
+      .object({ verdict: driftVerdictWire, at: isoDateTime.nullable() })
+      .strict(),
+    provides: z.array(z.string()),
+  })
+  .strict();
+
+/** Tool tiêu thụ → tool cung cấp ĐÃ CHỌN cho capability đó (cùng quan hệ mà `topoSort` dùng) */
+export const architectureEdgeWire = z
+  .object({ from: z.string(), to: z.string(), capabilityId: z.string() })
+  .strict();
+
+/** `GET /projects/:id/architecture` */
+export const architectureResponseWire = z
+  .object({
+    architecture: z
+      .object({
+        cloud: z
+          .object({
+            provider: cloudProviderWire,
+            region: z.string(),
+            mode: z.enum(["BYOC", "MANAGED"]),
+            authKind: cloudAuthKindSchema,
+            lastValidatedAt: isoDateTime.nullable(),
+          })
+          .strict()
+          .nullable(),
+        cluster: z
+          .object({ clusterId: z.string(), apiEndpoint: z.string() })
+          .strict()
+          .nullable(),
+        resources: z.array(architectureResourceWire),
+        environments: z.array(architectureEnvironmentWire),
+        tools: z.array(architectureToolWire),
+        edges: z.array(architectureEdgeWire),
+        /** Tổ hợp đang bật có qua validator không — sai thì không có bậc và không có cạnh */
+        valid: z.boolean(),
+        generatedAt: isoDateTime,
+      })
+      .strict(),
+  })
+  .strict();
+
+// ------------------------------------------------------------- Plan #53: giám sát RED (QĐ-4)
+
+export const RED_RANGES = ["1h", "6h", "24h", "7d"] as const;
+export const redRangeWire = z.enum(RED_RANGES);
+export type RedRange = z.infer<typeof redRangeWire>;
+
+/** Điểm của một chuỗi; `null` = KHÔNG CÓ DỮ LIỆU (I7), khác 0 */
+const seriesValuesWire = z.array(z.number().nullable());
+
+export const workloadRedWire = z
+  .object({
+    workload: z.string(),
+    /** Request mỗi giây */
+    requestRate: seriesValuesWire,
+    /** 0..1 — lỗi 5xx trên tổng request */
+    errorRatio: seriesValuesWire,
+    latencyP99Ms: seriesValuesWire,
+  })
+  .strict();
+
+/** Cách mở công cụ giám sát: một URL xem được từ trình duyệt, hoặc lệnh port-forward */
+export const monitoringConsoleWire = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("url"),
+      label: z.string(),
+      url: z.string().url(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("portForward"),
+      label: z.string(),
+      command: z.string(),
+      localUrl: z.string().url(),
+    })
+    .strict(),
+]);
+
+/** `GET /projects/:id/metrics/red?envId&range` */
+export const redMetricsResponseWire = z
+  .object({
+    metrics: z
+      .object({
+        environmentId: uuid,
+        range: redRangeWire,
+        stepSeconds: z.number().int().positive(),
+        /** Mốc của điểm đầu; điểm thứ i ở `start + i * stepSeconds` */
+        start: isoDateTime,
+        points: z.number().int().nonnegative(),
+        source: z
+          .object({ providerId: z.string(), tool: z.string().nullable() })
+          .strict(),
+        console: monitoringConsoleWire.nullable(),
+        workloads: z.array(workloadRedWire),
+      })
+      .strict(),
+  })
+  .strict();
+
+// ------------------------------------------------------------- Plan #53: trang chủ developer (QĐ-5)
+
+export const homeProjectWire = z
+  .object({
+    id: uuid,
+    name: z.string(),
+    status: projectStatusWire,
+    myRole: projectRoleWire,
+    cloudProvider: cloudProviderWire.nullable(),
+    environmentCount: z.number().int().nonnegative(),
+    expiresAt: isoDateTime.nullable(),
+    activeRollouts: z.number().int().nonnegative(),
+    /** Số việc cần xử lý của project này (cùng tập với `attention`) */
+    attention: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const homeRolloutWire = z
+  .object({
+    id: uuid,
+    projectId: uuid,
+    projectName: z.string(),
+    environment: envRefWire,
+    /** Key flag, hoặc tên workload với rollout mức service */
+    subject: z.string(),
+    scope: z.enum(["FLAG_LEVEL", "SERVICE_LEVEL"]),
+    status: z.enum(["PENDING", "IN_PROGRESS", "PAUSED"]),
+    trafficPercentage: z.number().min(0).max(100),
+    updatedAt: isoDateTime,
+  })
+  .strict();
+
+export const HOME_ATTENTION_KINDS = [
+  "DEPLOY_PENDING",
+  "DOMAIN_ERROR",
+  "DOMAIN_DRIFTED",
+  "JOB_FAILED",
+  "PROJECT_EXPIRING",
+  "ROLLOUT_PAUSED",
+] as const;
+
+/** Một việc cần xử lý — mỗi loại dẫn thẳng tới chỗ sửa nó */
+export const homeAttentionWire = z
+  .object({
+    kind: z.enum(HOME_ATTENTION_KINDS),
+    projectId: uuid,
+    projectName: z.string(),
+    /** Domain, workload, loại job, key flag… — tuỳ loại */
+    subject: z.string(),
+    environment: envRefWire.nullable(),
+    /** Id để dẫn link: deployment, rollout, job */
+    refId: uuid.nullable(),
+    at: isoDateTime,
+  })
+  .strict();
+
+export const deployDayWire = z
+  .object({
+    /** `YYYY-MM-DD` theo UTC */
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    success: z.number().int().nonnegative(),
+    failure: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/** `GET /home` — mọi thứ lọc theo membership của người gọi */
+export const homeResponseWire = z
+  .object({
+    home: z
+      .object({
+        projects: z.array(homeProjectWire),
+        rollouts: z.array(homeRolloutWire),
+        attention: z.array(homeAttentionWire),
+        /** 14 ngày, cũ nhất trước, đủ mọi ngày (ngày không deploy là 0/0) */
+        deploys: z.array(deployDayWire),
+        generatedAt: isoDateTime,
+      })
+      .strict(),
+  })
+  .strict();
+
+// ------------------------------------------------------------- Plan #53: Bảng điều khiển nền tảng (QĐ-6)
+
+const countWire = z.number().int().nonnegative();
+
+/** `GET /admin/overview` — số liệu nền tảng từ database */
+export const adminOverviewResponseWire = z
+  .object({
+    overview: z
+      .object({
+        users: z
+          .object({ total: countWire, admins: countWire, newLast7d: countWire })
+          .strict(),
+        projects: z
+          .object({
+            total: countWire,
+            byStatus: z
+              .object({
+                DRAFT: countWire,
+                PROVISIONING: countWire,
+                ACTIVE: countWire,
+                ERROR: countWire,
+              })
+              .strict(),
+          })
+          .strict(),
+        clouds: z.array(
+          z
+            .object({ provider: cloudProviderWire, projects: countWire })
+            .strict(),
+        ),
+        jobs: z
+          .object({
+            running: countWire,
+            failed: countWire,
+            compensationFailed: countWire,
+            cancelRequested: countWire,
+          })
+          .strict(),
+        orphans: z
+          .object({
+            count: countWire,
+            usdPerHour: z.number().nonnegative(),
+            unpriced: countWire,
+          })
+          .strict(),
+        /** Mười công cụ được bật ở nhiều project nhất */
+        tools: z.array(
+          z
+            .object({
+              domainType: z.string(),
+              toolId: z.string(),
+              projects: countWire,
+            })
+            .strict(),
+        ),
+        deploys7d: z
+          .object({ success: countWire, failure: countWire })
+          .strict(),
+        database: z
+          .object({ sizeBytes: z.number().int().nonnegative().nullable() })
+          .strict(),
+        generatedAt: isoDateTime,
+      })
+      .strict(),
+  })
+  .strict();
+
+/** Vì sao một tín hiệu nền tảng không đọc được — không bao giờ đoán thay */
+export const PLATFORM_UNAVAILABLE = [
+  "NOT_IN_CLUSTER",
+  "NOT_CONFIGURED",
+  "FORBIDDEN",
+  "UNAVAILABLE",
+] as const;
+const unavailableWire = z
+  .object({
+    state: z.literal("unavailable"),
+    reason: z.enum(PLATFORM_UNAVAILABLE),
+  })
+  .strict();
+
+const signal = <T extends z.ZodRawShape>(shape: T) =>
+  z.discriminatedUnion("state", [
+    z.object({ state: z.literal("ok"), ...shape }).strict(),
+    unavailableWire,
+  ]);
+
+/** `GET /admin/platform` — tín hiệu của chính cụm đang chạy UDP (máy ảo Oracle, kind…) */
+export const adminPlatformResponseWire = z
+  .object({
+    platform: z
+      .object({
+        /** Tag commit của bản đang chạy (`UDP_RELEASE`); `null` khi không khai */
+        release: z.string().nullable(),
+        node: signal({
+          name: z.string(),
+          cpuCores: z.number().positive(),
+          cpuUsedCores: z.number().nonnegative(),
+          memoryBytes: z.number().int().positive(),
+          memoryUsedBytes: z.number().int().nonnegative(),
+        }),
+        postgresVolume: signal({
+          capacityBytes: z.number().int().positive(),
+        }),
+        backup: signal({
+          schedule: z.string(),
+          lastScheduleAt: isoDateTime.nullable(),
+          lastSuccessAt: isoDateTime.nullable(),
+          lastFailureAt: isoDateTime.nullable(),
+        }),
+        certificate: signal({
+          name: z.string(),
+          ready: z.boolean(),
+          notAfter: isoDateTime.nullable(),
+          issuer: z.string().nullable(),
+        }),
+        checkedAt: isoDateTime,
+      })
+      .strict(),
+  })
+  .strict();
+
+export type ArchitectureWire = z.infer<
+  typeof architectureResponseWire
+>["architecture"];
+export type ArchitectureToolWire = z.infer<typeof architectureToolWire>;
+export type RedMetricsWire = z.infer<typeof redMetricsResponseWire>["metrics"];
+export type MonitoringConsoleWire = z.infer<typeof monitoringConsoleWire>;
+export type HomeWire = z.infer<typeof homeResponseWire>["home"];
+export type HomeAttentionWire = z.infer<typeof homeAttentionWire>;
+export type AdminOverviewWire = z.infer<
+  typeof adminOverviewResponseWire
+>["overview"];
+export type AdminPlatformWire = z.infer<
+  typeof adminPlatformResponseWire
+>["platform"];

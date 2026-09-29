@@ -3,6 +3,7 @@ import { satisfies as semverSatisfies } from "semver";
 import { describe, expect, it } from "vitest";
 import {
   adapterKey,
+  capabilityEdges,
   assertDeclarationValid,
   InvalidCapabilityDeclarationError,
   OrphanPreferenceError,
@@ -811,4 +812,74 @@ describe("meta — hằng số và trần thời gian", () => {
      */
     expect(ms).toBeLessThan(10_000);
   }, 30_000);
+});
+
+describe("[v4.11, Plan #53] cạnh của sơ đồ kiến trúc — CÙNG quan hệ với thứ tự deploy", () => {
+  it("cạnh là tool tiêu thụ → provider ĐÃ CHỌN, theo preference và qua nhánh anyOf", () => {
+    const adapters = [
+      A("prom", {
+        provides: [{ id: "metrics.query", version: "2.0.0" }],
+        requires: [{ id: "registry.oci" }],
+      }),
+      A("vm", {
+        provides: [{ id: "metrics.query", version: "2.1.0" }],
+        requires: [],
+      }),
+      A("reg", {
+        provides: [{ id: "registry.oci", version: "1.0.0" }],
+        requires: [],
+      }),
+      A("flagger", {
+        provides: [],
+        requires: [
+          { id: "metrics.query", constraint: "^2" },
+          { anyOf: [{ id: "logs.sink" }, { id: "registry.oci" }] },
+        ],
+      }),
+    ];
+    const prefs = [
+      { capabilityId: "metrics.query" as const, providerToolId: "d:vm" },
+    ];
+    const res = validateAndOrder(adapters, prefs);
+    expect(res.valid).toBe(true);
+    expect(capabilityEdges(adapters, res.chosen)).toEqual([
+      { from: "d:flagger", to: "d:vm", capabilityId: "metrics.query" },
+      { from: "d:flagger", to: "d:reg", capabilityId: "registry.oci" },
+      { from: "d:prom", to: "d:reg", capabilityId: "registry.oci" },
+    ]);
+  });
+
+  it("mọi cạnh đi từ bậc sau về bậc trước: provider luôn deploy trước tool tiêu thụ", () => {
+    const r = rng(0x5353);
+    let checked = 0;
+    for (let i = 0; i < DIFFERENTIAL_SAMPLES; i += 1) {
+      const { adapters, prefs } = sampleOf(r);
+      let res;
+      try {
+        res = validateAndOrder(adapters, prefs);
+      } catch {
+        continue;
+      }
+      if (!res.valid || res.order === null) continue;
+      const tierOf = new Map(
+        res.order.flatMap((tier, i2) => tier.map((k) => [k, i2] as const)),
+      );
+      for (const e of capabilityEdges(adapters, res.chosen)) {
+        expect(tierOf.get(e.to) ?? -1).toBeLessThan(tierOf.get(e.from) ?? -1);
+        checked += 1;
+      }
+    }
+    // Phần lớn tổ hợp ngẫu nhiên không hợp lệ; đếm để chắc phép kiểm đã chạm đủ cạnh
+    expect(checked).toBeGreaterThan(200);
+  });
+
+  it("tự-vòng và provider ngoài tổ hợp không thành cạnh", () => {
+    const self = A("self", {
+      provides: [{ id: "logs.sink", version: "1.0.0" }],
+      requires: [{ id: "logs.sink" }],
+    });
+    expect(
+      capabilityEdges([self], { "logs.sink": "d:self", "x.y": "d:ghost" }),
+    ).toEqual([]);
+  });
 });

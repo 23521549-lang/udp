@@ -1,7 +1,10 @@
 import { fileURLToPath } from "node:url";
 import type { Request } from "express";
 import { env } from "@udp/config";
-import type { MetricsProvider, MetricsSource } from "@udp/metrics-provider";
+import type {
+  MetricsSeriesProvider,
+  MetricsSource,
+} from "@udp/metrics-provider";
 import type { MetricQueries } from "@udp/shared-types";
 import {
   createFlagServiceClient,
@@ -28,6 +31,7 @@ import {
   type RepoSourceFactory,
 } from "../modules/golden-path/repo-source.js";
 import type { ClusterTokenIssuer } from "../modules/cluster/cluster-token.js";
+import { platformProbeFromEnv, type PlatformProbe } from "./platform-probe.js";
 
 /**
  * Phụ thuộc RA NGOÀI tiến trình của Service 1 — thứ test phải thay được mà không
@@ -53,7 +57,7 @@ export interface AppDeps {
     source: MetricsSource | null,
     metricQueries: MetricQueries | undefined,
     scope: { projectId: string },
-  ): MetricsProvider;
+  ): MetricsSeriesProvider;
   flagService: FlagServiceClient;
   /**
    * [v4.11] UDP là OIDC issuer (Plan #26 QĐ-5) — `null` khi chưa cấu hình: federation
@@ -80,6 +84,11 @@ export interface AppDeps {
    * tiêm nguồn trong bộ nhớ, không bao giờ gọi mạng thật.
    */
   repoSource: RepoSourceFactory;
+  /**
+   * [v4.11, Plan #53 QĐ-6] Tín hiệu của CHÍNH cụm đang chạy UDP cho Bảng điều khiển nền tảng (node,
+   * PVC PostgreSQL, CronJob sao lưu, Certificate) — nạp một lần theo môi trường chạy; test tiêm bản giả.
+   */
+  platform: () => Promise<PlatformProbe>;
 }
 
 export type WithCluster = <T>(
@@ -146,6 +155,7 @@ export function defaultAppDeps(): AppDeps {
       flaggerGateBaseUrl: env.PD_CONTROLLER_WEBHOOK_URL ?? null,
     },
     repoSource: createRepoSourceFactory(),
+    platform: memoized(() => platformProbeFromEnv()),
   };
 }
 

@@ -1,5 +1,5 @@
 import { PrometheusMetricsProvider } from "./prometheus.js";
-import type { MetricsProvider } from "./provider.js";
+import type { MetricsSeriesProvider } from "./provider.js";
 import { DatadogMetricsProvider, type DatadogSite } from "./saas/datadog.js";
 import { DynatraceMetricsProvider } from "./saas/dynatrace.js";
 import {
@@ -73,7 +73,7 @@ export interface CreateProviderOptions {
 export function createMetricsProvider(
   source: MetricsSource,
   options: CreateProviderOptions = {},
-): MetricsProvider {
+): MetricsSeriesProvider {
   switch (source.kind) {
     case "prometheus":
       return new PrometheusMetricsProvider({

@@ -31,6 +31,8 @@ export const auditQuerySchema = z.object({
     .datetime({ offset: true, message: "to phải là ISO-8601 kèm offset" })
     .optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  /** [v4.11, Plan #53] Theo trang: bỏ qua bấy nhiêu dòng đầu (mới nhất trước) */
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 export type AuditQuery = z.infer<typeof auditQuerySchema>;

@@ -22,6 +22,18 @@ export async function metricsSourceFor(args: {
   environmentId: string;
   registry: DomainAdapterRegistry;
 }): Promise<MetricsSource | null> {
+  return (await metricsBindingFor(args))?.source ?? null;
+}
+
+/**
+ * [v4.11, Plan #53] Như `metricsSourceFor`, kèm KHOÁ của tool cung cấp nguồn (`providedBy`,
+ * `"monitoring:prometheus-grafana"`) — trang Giám sát cần biết tool nào để chỉ đường mở nó.
+ */
+export async function metricsBindingFor(args: {
+  projectId: string;
+  environmentId: string;
+  registry: DomainAdapterRegistry;
+}): Promise<{ source: MetricsSource; providedBy: string } | null> {
   const { projectId, environmentId } = args;
   const [bindings, preference] = await Promise.all([
     bindingsOfProject(prisma, projectId),
@@ -79,8 +91,11 @@ export async function metricsSourceFor(args: {
     );
   }
   const endpoint = chosen.endpoint ?? undefined;
-  return loaded.metricsSource.of(
-    parsed.data as Record<string, unknown>,
-    endpoint === undefined ? {} : { endpoint },
-  );
+  return {
+    source: loaded.metricsSource.of(
+      parsed.data as Record<string, unknown>,
+      endpoint === undefined ? {} : { endpoint },
+    ),
+    providedBy: chosen.providedBy,
+  };
 }

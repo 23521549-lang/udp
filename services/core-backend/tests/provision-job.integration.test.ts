@@ -44,7 +44,11 @@ import {
   type Actor,
   type TestWorld,
 } from "./helpers/api.js";
-import { noRepoSource, inertProvisioning } from "./helpers/inert-deps.js";
+import {
+  noRepoSource,
+  inertProvisioning,
+  outsidePlatform,
+} from "./helpers/inert-deps.js";
 import {
   simCloudPlatform,
   type SimCloudPlatform,
@@ -446,6 +450,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: platform,
     repoSource: noRepoSource,
+    platform: outsidePlatform,
     domainRegistry: () => Promise.resolve(domainsWith().registry),
     provisioning: inertProvisioning,
   });
@@ -1303,6 +1308,7 @@ function appFor(
     oidcIssuer: null,
     cloud: platform,
     repoSource: noRepoSource,
+    platform: outsidePlatform,
     domainRegistry: () => Promise.resolve(registry),
     provisioning: {
       egressCidrs: ["203.0.113.0/24"],

@@ -2,11 +2,20 @@ import { METRICS_PROVIDER } from "@udp/config/constants";
 import type { AdapterResult } from "@udp/shared-types";
 import type {
   MetricSample,
+  MetricSeries,
   MetricTarget,
-  MetricsProvider,
+  MetricsSeriesProvider,
   ProbeOutcome,
+  SeriesKind,
+  SeriesWindow,
 } from "./provider.js";
 import { ffLabel } from "./query-templates.js";
+import {
+  finiteOrNull,
+  MetricsQueryError,
+  SERIES_UNIT,
+  seriesGrid,
+} from "./series.js";
 
 /**
  * Nguồn metrics giả, có kịch bản — cho test của Service 3 và cho kịch bản bơm
@@ -24,10 +33,44 @@ export interface FakeBranch {
 }
 
 export interface FakeCall {
-  kind: "requestCount" | "errorCount" | "errorRate" | "latencyP99" | "custom";
+  kind:
+    | "requestCount"
+    | "errorCount"
+    | "errorRate"
+    | "latencyP99"
+    | "custom"
+    | "series";
   key: string;
+  /** Cửa sổ của phép đo; với `series` là `rangeSec` */
   windowSec: number;
+  /** Chỉ lời gọi `series`: loại chuỗi */
+  series?: SeriesKind;
+  /** Chỉ lời gọi `series`: bước */
+  stepSec?: number;
 }
+
+/**
+ * [Plan #53] Kịch bản chuỗi thời gian: giá trị cho từng mốc của lưới, theo thứ tự. Thiếu mốc
+ * hay `NaN` ⇒ `null` (không dữ liệu), thừa ⇒ bỏ — cùng luật với nguồn thật.
+ */
+export type FakeSeriesFn = (
+  kind: SeriesKind,
+  target: MetricTarget,
+  window: SeriesWindow,
+) => readonly (number | null)[];
+
+/**
+ * Mẫu mặc định: tất định, theo chỉ số mốc — lưu lượng 10..14 rps, lỗi 0..3 %, p99 120..140 ms.
+ * Đủ hình để Portal vẽ, không đủ "thật" để ai nhầm là số đo.
+ */
+const defaultSeries: FakeSeriesFn = (kind, _t, window) =>
+  seriesGrid(window).times.map((_at, i) =>
+    kind === "requestRate"
+      ? 10 + (i % 5)
+      : kind === "errorRatio"
+        ? (i % 4) / 100
+        : 120 + 10 * (i % 3),
+  );
 
 export function branchKeyOf(t: MetricTarget): string {
   if (t.flagKey !== undefined && t.variantKey !== undefined) {
@@ -36,7 +79,7 @@ export function branchKeyOf(t: MetricTarget): string {
   return t.version ?? "*";
 }
 
-export class FakeMetricsProvider implements MetricsProvider {
+export class FakeMetricsProvider implements MetricsSeriesProvider {
   readonly providerId = "fake";
   readonly capabilityVersion = "0.0";
   readonly scrapeLagSeconds: number;
@@ -46,6 +89,7 @@ export class FakeMetricsProvider implements MetricsProvider {
   private readonly workloads = new Map<string, number>();
   private reachable = true;
   private queryFailing = false;
+  private seriesFn: FakeSeriesFn = defaultSeries;
 
   constructor(options: { scrapeLagSeconds?: number } = {}) {
     this.scrapeLagSeconds =
@@ -76,9 +120,15 @@ export class FakeMetricsProvider implements MetricsProvider {
     return this;
   }
 
-  /** Nguồn sống nhưng truy vấn hỏng — `probe()` báo `queryFailed` */
+  /** Nguồn sống nhưng truy vấn hỏng — `probe()` báo `queryFailed`, `series()` ném */
   setQueryFailing(failing: boolean): this {
     this.queryFailing = failing;
+    return this;
+  }
+
+  /** Kịch bản của `series()`; `undefined` ⇒ về mẫu mặc định */
+  setSeries(fn: FakeSeriesFn | undefined): this {
+    this.seriesFn = fn ?? defaultSeries;
     return this;
   }
 
@@ -126,6 +176,40 @@ export class FakeMetricsProvider implements MetricsProvider {
       windowSeconds: w,
       hasData: false,
     });
+  }
+
+  /**
+   * Cùng lưới và cùng hàng rào với nguồn thật (`seriesGrid`); nguồn không tới được hay truy vấn
+   * hỏng ⇒ `MetricsQueryError`, không bao giờ một chuỗi toàn 0.
+   */
+  async series(
+    kind: SeriesKind,
+    t: MetricTarget,
+    window: SeriesWindow,
+  ): Promise<MetricSeries> {
+    const grid = seriesGrid(window);
+    const key = branchKeyOf(t);
+    this.calls.push({
+      kind: "series",
+      key,
+      windowSec: window.rangeSec,
+      series: kind,
+      stepSec: window.stepSec,
+    });
+    const query = `fake:${kind}{${key}}`;
+    if (!this.reachable || this.queryFailing) {
+      throw new MetricsQueryError(this.providerId, query);
+    }
+    const values = this.seriesFn(kind, t, window);
+    return {
+      kind,
+      unit: SERIES_UNIT[kind],
+      points: grid.times.map((at, i) => ({
+        t: at,
+        v: finiteOrNull(values[i]),
+      })),
+      query,
+    };
   }
 
   /**

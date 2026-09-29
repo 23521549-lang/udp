@@ -9,7 +9,7 @@
       "totalUsd": 11.73,
       "environments": [
         {
-          "environmentId": "78225033-f5ae-4fb9-b61e-869940165616",
+          "environmentId": "a4e6fa12-15b3-4bdf-a44b-4b50207f4c17",
           "name": "dev",
           "totalUsd": 1.23,
           "cpuUsd": 1,
@@ -18,7 +18,7 @@
           "networkUsd": 0
         },
         {
-          "environmentId": "fab98034-56df-4985-81d9-3a5b14544abf",
+          "environmentId": "dac47eed-3a15-4500-8b79-a530524e83d8",
           "name": "staging",
           "totalUsd": 0,
           "cpuUsd": 0,
@@ -27,13 +27,23 @@
           "networkUsd": 0
         },
         {
-          "environmentId": "e8863dc1-7490-4085-a4e4-f2cbad2e0dff",
+          "environmentId": "9529fc14-ae60-477b-a8ff-04c3d1e77dd1",
           "name": "prod",
           "totalUsd": 10.5,
           "cpuUsd": 6,
           "ramUsd": 3,
           "storageUsd": 1,
           "networkUsd": 0.5
+        }
+      ],
+      "daily": [
+        {
+          "date": "2026-09-28",
+          "totalUsd": 5
+        },
+        {
+          "date": "2026-09-29",
+          "totalUsd": 6.73
         }
       ]
     }

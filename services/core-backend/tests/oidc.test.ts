@@ -16,6 +16,7 @@ import {
   inertCloudPlatform,
   noDomainAdapters,
   inertProvisioning,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -124,6 +125,7 @@ describe("endpoint công khai", () => {
       oidcIssuer,
       cloud: inertCloudPlatform,
       repoSource: noRepoSource,
+      platform: outsidePlatform,
       domainRegistry: noDomainAdapters,
       provisioning: inertProvisioning,
     });

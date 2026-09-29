@@ -1,5 +1,5 @@
 import { timedRequest, parseJson } from "../http.js";
-import type { MetricTarget } from "../provider.js";
+import type { MetricTarget, SeriesPoint } from "../provider.js";
 import { DEFAULT_METRIC_BASE, ffLabel } from "../query-templates.js";
 import {
   finiteOf,
@@ -7,6 +7,7 @@ import {
   type SaaSProviderOptions,
   type SaaSQueryLanguage,
   type Scalar,
+  type SeriesSpan,
 } from "./base.js";
 
 /**
@@ -18,6 +19,10 @@ import {
  * `udp.<metricBase>`, nhãn Prometheus thành tag, namespace do autodiscovery gắn
  * (`kube_namespace`). Nhãn rỗng theo ngữ nghĩa Prometheus là KHÔNG có nhãn, nên series
  * tổng (`ff=""`) là series không có tag `ff`.
+ *
+ * **Chuỗi thời gian** (Plan #53) dùng CHÍNH các truy vấn đếm/p99 ở trên với `.rollup(…, bước)`:
+ * mỗi điểm là một ô rollup. Ô rollup chia hết theo giờ unix và điểm mang mốc ĐẦU ô (nợ
+ * `monitoring-saas-real`: chỉ kiểm bằng response mẫu).
  */
 
 export const DATADOG_SITES = [
@@ -74,12 +79,20 @@ function language(metricBase: string): SaaSQueryLanguage {
       : "!ff:*";
   const count = (filter: string, w: number) =>
     `count:${metric}{${filter}}.as_count().rollup(sum, ${String(w)})`;
+  const requests = (t: MetricTarget, w: number): string =>
+    count(scope(t, branchOf(t)), w);
+  const errors = (t: MetricTarget, w: number): string =>
+    count(scope(t, branchOf(t), ["http_response_status_code:5*"]), w);
+  const p99 = (t: MetricTarget, w: number): string =>
+    `p99:${metric}{${scope(t, branchOf(t))}}.rollup(max, ${String(w)})`;
   return {
-    requests: (t, w) => count(scope(t, branchOf(t)), w),
-    errors: (t, w) =>
-      count(scope(t, branchOf(t), ["http_response_status_code:5*"]), w),
-    p99: (t, w) =>
-      `p99:${metric}{${scope(t, branchOf(t))}}.rollup(max, ${String(w)})`,
+    requests,
+    errors,
+    p99,
+    // Chuỗi: cùng truy vấn, ô rollup = bước; khoảng thời gian đi trên URL (`from`/`to`)
+    seriesRequests: (t, span) => requests(t, span.stepSec),
+    seriesErrors: (t, span) => errors(t, span.stepSec),
+    seriesP99: (t, span) => p99(t, span.stepSec),
     probe: (t, w) => {
       const base = { namespace: t.namespace, workloadName: t.workloadName };
       return count(
@@ -122,21 +135,9 @@ export class DatadogMetricsProvider extends SaaSMetricsProvider {
 
   protected async run(query: string, windowSec: number): Promise<Scalar> {
     const to = Math.floor(Date.now() / 1000);
-    const url =
-      `https://${this.host}/api/v1/query?from=${String(to - windowSec)}` +
-      `&to=${String(to)}&query=${encodeURIComponent(query)}`;
-    const parsed = parseJson<QueryResponse>(
-      await timedRequest(
-        this.fetchImpl,
-        url,
-        { headers: this.headers },
-        this.timeoutMs,
-      ),
-    );
-    if (parsed?.status !== "ok" || !Array.isArray(parsed.series)) {
-      return { kind: "failed" };
-    }
-    const points = parsed.series.flatMap((s) =>
+    const series = await this.query(query, to - windowSec, to);
+    if (series === undefined) return { kind: "failed" };
+    const points = series.flatMap((s) =>
       (s.pointlist ?? []).flatMap(([, v]) => {
         const value = finiteOf(v);
         return value === undefined ? [] : [value];
@@ -144,6 +145,31 @@ export class DatadogMetricsProvider extends SaaSMetricsProvider {
     );
     const value = reduce(query, points);
     return value === undefined ? { kind: "ok" } : { kind: "ok", value };
+  }
+
+  /**
+   * Mỗi điểm `[<ms mốc đầu ô>, <số|null>]` thành mốc CUỐI ô (giây) — cộng một bước. Nhiều
+   * series cùng mốc thì gộp bằng hàm của `.rollup()` như `run`: đếm thì cộng, p99 thì lấy lớn.
+   */
+  protected async runSeries(
+    query: string,
+    span: SeriesSpan,
+  ): Promise<SeriesPoint[] | undefined> {
+    const series = await this.query(query, span.fromSec, span.toSec);
+    if (series === undefined) return undefined;
+    const byTime = new Map<number, number[]>();
+    for (const s of series) {
+      for (const [ms, v] of s.pointlist ?? []) {
+        const value = finiteOf(v);
+        if (value === undefined) continue;
+        const t = ms / 1000 + span.stepSec;
+        byTime.set(t, [...(byTime.get(t) ?? []), value]);
+      }
+    }
+    return [...byTime].map(([t, values]) => ({
+      t,
+      v: reduce(query, values) ?? null,
+    }));
   }
 
   protected async ping(): Promise<boolean> {
@@ -156,5 +182,27 @@ export class DatadogMetricsProvider extends SaaSMetricsProvider {
       ),
     );
     return parsed?.valid === true;
+  }
+
+  /** `GET /api/v1/query` trên `[from, to]` (giây unix); hỏng hay sai hình ⇒ `undefined` */
+  private async query(
+    query: string,
+    fromSec: number,
+    toSec: number,
+  ): Promise<NonNullable<QueryResponse["series"]> | undefined> {
+    const url =
+      `https://${this.host}/api/v1/query?from=${String(fromSec)}` +
+      `&to=${String(toSec)}&query=${encodeURIComponent(query)}`;
+    const parsed = parseJson<QueryResponse>(
+      await timedRequest(
+        this.fetchImpl,
+        url,
+        { headers: this.headers },
+        this.timeoutMs,
+      ),
+    );
+    return parsed?.status === "ok" && Array.isArray(parsed.series)
+      ? parsed.series
+      : undefined;
   }
 }

@@ -21,6 +21,7 @@ import {
   noRepoSource,
   inertProvisioning,
   noDomainAdapters,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -58,6 +59,7 @@ const appWith = (runtime: ProvisioningRuntime) =>
     oidcIssuer: null,
     cloud: simCloudPlatform(),
     repoSource: noRepoSource,
+    platform: outsidePlatform,
     domainRegistry: noDomainAdapters,
     provisioning: runtime,
   });

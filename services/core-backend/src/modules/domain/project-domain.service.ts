@@ -75,7 +75,18 @@ export async function drift(
   domainType: string,
 ): Promise<DomainDriftWire> {
   const { view, lastError } = await rowOrNotFound(projectId, domainType);
-  if (view.status === null || view.status === "PENDING") {
+  return driftVerdictOf(view.status, lastError);
+}
+
+/**
+ * Phán quyết drift từ trạng thái domain và `last_error` — THUẦN, dùng chung cho trang một domain và
+ * [v4.11, Plan #53] sơ đồ kiến trúc / lưới sức khoẻ (một luật, không hai bản đọc cột lệch nhau).
+ */
+export function driftVerdictOf(
+  status: string | null,
+  lastError: unknown,
+): DomainDriftWire {
+  if (status === null || status === "PENDING") {
     return { verdict: "NOT_DEPLOYED", message: null, at: null };
   }
   const record = driftRecordOf(lastError);

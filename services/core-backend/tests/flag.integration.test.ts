@@ -30,6 +30,7 @@ import {
   inertCloudPlatform,
   noDomainAdapters,
   inertProvisioning,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -84,6 +85,7 @@ beforeAll(async () => {
       oidcIssuer: null,
       cloud: inertCloudPlatform,
       repoSource: noRepoSource,
+      platform: outsidePlatform,
       domainRegistry: noDomainAdapters,
       provisioning: inertProvisioning,
       flagService: createFlagServiceClient({
@@ -1038,6 +1040,7 @@ describe("lỗi cấu hình giữa hai service KHÔNG tới Portal như lỗi c�
       oidcIssuer: null,
       cloud: inertCloudPlatform,
       repoSource: noRepoSource,
+      platform: outsidePlatform,
       domainRegistry: noDomainAdapters,
       provisioning: inertProvisioning,
       flagService: createFlagServiceClient({
