@@ -4,6 +4,7 @@ import {
   dailyOutcomes,
   groupDeployments,
   median,
+  utcDayWindow,
   type DeploymentEventRow,
   type DoraEvent,
 } from "../src/modules/deployment/deployment.dora.js";
@@ -168,6 +169,27 @@ describe("kết cục theo ngày (Plan #56, E10 trên trang Bằng chứng)", ()
   it("sự kiện ngoài cửa sổ không rơi vào ngày nào", () => {
     const days = dailyOutcomes([ev("x", "DEPLOY_SUCCESS", -5)], WINDOW);
     expect(days.every((d) => d.success === 0)).toBe(true);
+  });
+
+  it("gộp nhiều env (Plan #57): cùng deploymentId ở hai env là HAI lần deploy, như Deployment Frequency của §2.2", () => {
+    const days = dailyOutcomes(
+      [
+        { ...ev("p", "DEPLOY_SUCCESS", 1), environmentId: "dev" },
+        { ...ev("p", "DEPLOY_SUCCESS", 2), environmentId: "prod" },
+        { ...ev("p", "DEPLOY_FAILURE", 3), environmentId: "prod" },
+      ],
+      WINDOW,
+    );
+    expect(days[0]).toEqual({ date: "2026-09-01", success: 1, failure: 1 });
+  });
+
+  it("cửa sổ ngày UTC (Plan #57): `days` ngày lịch tới hết hôm nay, không phải cửa sổ cuộn `days + 1` ngày", () => {
+    const window = utcDayWindow(14, new Date("2026-09-30T11:05:00.000Z"));
+    expect(window.from.toISOString()).toBe("2026-09-17T00:00:00.000Z");
+    expect(window.to.toISOString()).toBe("2026-10-01T00:00:00.000Z");
+    const days = dailyOutcomes([], window);
+    expect(days).toHaveLength(14);
+    expect(days.at(-1)?.date).toBe("2026-09-30");
   });
 });
 

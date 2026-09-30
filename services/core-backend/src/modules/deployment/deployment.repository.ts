@@ -80,6 +80,19 @@ export async function eventsBetween(
   });
 }
 
+/** [v4.11, Plan #57] Sự kiện của MỌI environment của một project trong cửa sổ — biểu đồ deploy của trang Kiến trúc */
+export async function eventsOfProject(
+  projectId: string,
+  from: Date,
+  to: Date,
+): Promise<(DeploymentEventRow & { environmentId: string })[]> {
+  return prisma.deploymentEvent.findMany({
+    where: { projectId, occurredAt: { gte: from, lt: to } },
+    orderBy: { occurredAt: "asc" },
+    select: { ...EVENT_FIELDS, environmentId: true },
+  });
+}
+
 /** Mốc DEPLOY_SUCCESS của những deployment bị khôi phục — có thể trước cửa sổ */
 /**
  * [v4.11, Plan #56] Env production ĐẦU TIÊN (theo rank) của mọi project còn sống — cùng quy tắc `productionEnvOf`,

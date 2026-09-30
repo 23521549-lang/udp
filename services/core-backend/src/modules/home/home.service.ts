@@ -6,6 +6,11 @@ import {
   roleSourcesOf,
 } from "../../core/access/project-access.js";
 import { prisma } from "../../core/db.js";
+import {
+  DAY_MS,
+  dailyOutcomes,
+  utcDayWindow,
+} from "../deployment/deployment.dora.js";
 import { driftVerdictOf } from "../domain/project-domain.service.js";
 
 /**
@@ -20,7 +25,6 @@ import { driftVerdictOf } from "../domain/project-domain.service.js";
 
 const ACTIVE_ROLLOUT = ["PENDING", "IN_PROGRESS"] as const;
 const OPEN_ROLLOUT = ["PENDING", "IN_PROGRESS", "PAUSED"] as const;
-const DAY_MS = 86_400_000;
 export const HOME_DEPLOY_DAYS = 14;
 /** Deploy chờ duyệt cũ hơn thế này không còn là "việc cần làm" — pipeline đã đi đường khác */
 const PENDING_WINDOW_DAYS = 30;
@@ -80,7 +84,9 @@ export async function homeOf(
   }));
   const ids = accessible.map((m) => m.project.id);
   const nameOf = new Map(accessible.map((m) => [m.project.id, m.project.name]));
-  const deploys = emptyDays(now);
+  const deployWindow = utcDayWindow(HOME_DEPLOY_DAYS, now);
+  // Đủ mọi ngày của cửa sổ, cũ nhất trước — ngày không deploy vẫn có mặt với 0/0
+  const deploys = dailyOutcomes([], deployWindow);
   if (ids.length === 0) {
     return {
       projects: [],
@@ -91,10 +97,6 @@ export async function homeOf(
     };
   }
 
-  const since = new Date(
-    Math.floor(now.getTime() / DAY_MS) * DAY_MS -
-      (HOME_DEPLOY_DAYS - 1) * DAY_MS,
-  );
   const [
     rollouts,
     activeCounts,
@@ -168,7 +170,7 @@ export async function homeOf(
                event_type::text AS "eventType", count(*)::int AS count
         FROM deployment_events
         WHERE project_id IN (${idList(ids)})
-          AND occurred_at >= ${since}
+          AND occurred_at >= ${deployWindow.from}
           AND event_type IN ('DEPLOY_SUCCESS', 'DEPLOY_FAILURE')
         GROUP BY 1, 2`),
     prisma.environment.findMany({
@@ -304,18 +306,4 @@ function subjectOf(r: {
   flagEnvConfig: { flag: { key: string } } | null;
 }): string {
   return r.flagEnvConfig?.flag.key ?? r.workloadName ?? "rollout";
-}
-
-/** Đủ `HOME_DEPLOY_DAYS` ngày (UTC), cũ nhất trước — ngày không deploy vẫn có mặt với 0/0 */
-function emptyDays(
-  now: Date,
-): { date: string; success: number; failure: number }[] {
-  const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS;
-  return Array.from({ length: HOME_DEPLOY_DAYS }, (_, i) => ({
-    date: new Date(today - (HOME_DEPLOY_DAYS - 1 - i) * DAY_MS)
-      .toISOString()
-      .slice(0, 10),
-    success: 0,
-    failure: 0,
-  }));
 }

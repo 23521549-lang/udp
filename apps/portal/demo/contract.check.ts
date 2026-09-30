@@ -1,5 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { EVIDENCE_DORA_DAYS, RED_RANGES } from "@udp/shared-types/wire";
+import {
+  ARCHITECTURE_DEPLOY_DAYS,
+  EVIDENCE_DORA_DAYS,
+  RED_RANGES,
+} from "@udp/shared-types/wire";
 import { ADMIN_PAGE_SIZE, adminApi } from "../src/features/admin/admin-api";
 import { architectureApi } from "../src/features/architecture/architecture-api";
 import { authApi } from "../src/features/auth/auth-api";
@@ -170,6 +174,11 @@ describe("mọi project người xem thấy", () => {
       const { environments, cluster } = await projectApi.get(project.id);
       const { architecture } = await architectureApi.get(project.id);
       expect(architecture.environments.length).toBe(environments.length);
+      // [Plan #57] Đủ 14 ngày UTC tới hết hôm nay, như Service 1
+      expect(architecture.deploys).toHaveLength(ARCHITECTURE_DEPLOY_DAYS);
+      expect(architecture.deploys.at(-1)?.date).toBe(
+        new Date().toISOString().slice(0, 10),
+      );
       const monitored = architecture.tools.some(
         (t) => t.domainType === "MONITORING",
       );

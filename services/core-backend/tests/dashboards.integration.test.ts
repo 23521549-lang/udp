@@ -343,6 +343,15 @@ describe("sơ đồ kiến trúc (AC-1)", () => {
     expect(tool("container_registry:ghcr")?.tier ?? -1).toBeLessThan(
       tool("monitoring:prometheus-grafana")?.tier ?? -1,
     );
+
+    // [Plan #57] Deploy 14 ngày UTC trên MỌI env: cùng deploymentId ở dev và prod là hai lần deploy
+    expect(a.deploys).toHaveLength(14);
+    expect(a.deploys.at(-1)?.date).toBe(
+      new Date(NOW).toISOString().slice(0, 10),
+    );
+    const sum = (k: "success" | "failure") =>
+      a.deploys.reduce((n, d) => n + d[k], 0);
+    expect([sum("success"), sum("failure")]).toEqual([3, 1]);
   });
 });
 

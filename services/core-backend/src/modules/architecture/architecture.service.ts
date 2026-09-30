@@ -1,6 +1,9 @@
 import { Prisma } from "@udp/db";
 import type { CapabilityId } from "@udp/shared-types";
-import type { ArchitectureWire } from "@udp/shared-types/wire";
+import {
+  ARCHITECTURE_DEPLOY_DAYS,
+  type ArchitectureWire,
+} from "@udp/shared-types/wire";
 import { z } from "zod";
 import { prisma } from "../../core/db.js";
 import {
@@ -12,6 +15,8 @@ import {
   type ValidationResult,
 } from "../capability/capability.resolver.js";
 import { activeMeta } from "../cloud/cloud.repository.js";
+import { dailyOutcomes, utcDayWindow } from "../deployment/deployment.dora.js";
+import { eventsOfProject } from "../deployment/deployment.repository.js";
 import type { DomainAdapterRegistry } from "../domain/domain-adapter.registry.js";
 import { driftVerdictOf } from "../domain/project-domain.service.js";
 import { clusterAccessOf } from "../project/project.repository.js";
@@ -25,7 +30,8 @@ import { clusterAccessOf } from "../project/project.repository.js";
  *   `deployment_events` (§2.2 không có bảng workload nào khác — một workload tồn tại vì nó đã được
  *   deploy qua UDP);
  * - công cụ và cạnh: domain đang bật, qua CHÍNH `validateAndOrder` (bậc) và `capabilityEdges`
- *   (cạnh) — sơ đồ vẽ đúng đồ thị đã chặn cấu hình sai và đã sinh thứ tự deploy.
+ *   (cạnh) — sơ đồ vẽ đúng đồ thị đã chặn cấu hình sai và đã sinh thứ tự deploy;
+ * - deploy theo ngày [Plan #57]: CÙNG `dailyOutcomes` với E10 của trang Bằng chứng, trên mọi env.
  *
  * Chỉ ĐỌC database và registry trong bộ nhớ: không chạm cluster, không mở bí mật nào.
  */
@@ -84,6 +90,7 @@ export async function projectArchitecture(
   registry: DomainAdapterRegistry,
   now: Date = new Date(),
 ): Promise<ArchitectureWire> {
+  const deployWindow = utcDayWindow(ARCHITECTURE_DEPLOY_DAYS, now);
   const [
     meta,
     access,
@@ -93,6 +100,7 @@ export async function projectArchitecture(
     configs,
     catalog,
     prefs,
+    events,
   ] = await Promise.all([
     activeMeta(projectId),
     clusterAccessOf(projectId),
@@ -124,6 +132,7 @@ export async function projectArchitecture(
       where: { projectId },
       select: { capabilityId: true, providerToolId: true },
     }),
+    eventsOfProject(projectId, deployWindow.from, deployWindow.to),
   ]);
 
   const catalogOf = new Map(catalog.map((c) => [c.domainType, c]));
@@ -231,6 +240,7 @@ export async function projectArchitecture(
       };
     }),
     edges: result === null ? [] : capabilityEdges(resolvable, result.chosen),
+    deploys: dailyOutcomes(events, deployWindow),
     valid: result !== null,
     generatedAt: now.toISOString(),
   };

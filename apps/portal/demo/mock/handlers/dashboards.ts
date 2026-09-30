@@ -3,6 +3,7 @@ import type {
   AdminPlatformWire,
   ArchitectureToolWire,
   ArchitectureWire,
+  DeployDayWire,
   DomainCatalogEntryWire,
   HomeWire,
   MonitoringConsoleWire,
@@ -10,7 +11,11 @@ import type {
   RedMetricsWire,
   RedRange,
 } from "@udp/shared-types/wire";
-import { EVIDENCE_DORA_DAYS, RED_RANGES } from "@udp/shared-types/wire";
+import {
+  ARCHITECTURE_DEPLOY_DAYS,
+  EVIDENCE_DORA_DAYS,
+  RED_RANGES,
+} from "@udp/shared-types/wire";
 import { iso, nowIso, OPENED_AT } from "../clock";
 import type { Db, ProjectRecord } from "../db";
 import { golden } from "../goldens";
@@ -32,6 +37,34 @@ const DAY = 24 * HOUR;
 const CATALOG = golden<{ domains: DomainCatalogEntryWire[] }>(
   "GET /domains/catalog",
 ).domains;
+
+type Deployment = ProjectRecord["deployments"][string][number];
+
+/**
+ * Kết cục deploy theo ngày UTC, `days` ngày tới hết hôm nay, cũ nhất trước, đủ mọi ngày — cùng cửa sổ
+ * `utcDayWindow` và cùng cách đếm `dailyOutcomes` của Service 1 (một bản ghi deployment của một env là một lần).
+ * Dùng chung cho trang chủ, E10 của trang Bằng chứng và biểu đồ deploy của trang Kiến trúc.
+ */
+function deployDays(
+  deployments: Iterable<readonly Deployment[]>,
+  days: number,
+): DeployDayWire[] {
+  const from = Math.floor(Date.now() / DAY) * DAY - (days - 1) * DAY;
+  const out = Array.from({ length: days }, (_, i) => ({
+    date: iso(from + i * DAY).slice(0, 10),
+    success: 0,
+    failure: 0,
+  }));
+  for (const list of deployments) {
+    for (const d of list) {
+      const day = out[Math.floor((Date.parse(d.lastEventAt) - from) / DAY)];
+      if (day === undefined) continue;
+      if (d.status === "DEPLOY_SUCCESS") day.success += 1;
+      if (d.status === "DEPLOY_FAILURE") day.failure += 1;
+    }
+  }
+  return out;
+}
 
 /** Project người xem là thành viên — cùng tập với `GET /projects` */
 const mine = (db: Db): ProjectRecord[] =>
@@ -164,22 +197,6 @@ function homeOf(db: Db): HomeWire {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, 20);
 
-  const today = Date.parse(`${nowIso().slice(0, 10)}T00:00:00Z`);
-  const days = Array.from({ length: HOME_DEPLOY_DAYS }, (_, i) =>
-    iso(today - (HOME_DEPLOY_DAYS - 1 - i) * DAY).slice(0, 10),
-  );
-  const count = new Map(days.map((d) => [d, { success: 0, failure: 0 }]));
-  for (const p of projects) {
-    for (const list of Object.values(p.deployments)) {
-      for (const d of list) {
-        const slot = count.get(d.lastEventAt.slice(0, 10));
-        if (slot === undefined) continue;
-        if (d.status === "DEPLOY_SUCCESS") slot.success += 1;
-        if (d.status === "DEPLOY_FAILURE") slot.failure += 1;
-      }
-    }
-  }
-
   return {
     projects: projects.map((p) => ({
       id: p.project.id,
@@ -196,10 +213,10 @@ function homeOf(db: Db): HomeWire {
     })),
     rollouts,
     attention,
-    deploys: days.map((date) => ({
-      date,
-      ...(count.get(date) ?? { success: 0, failure: 0 }),
-    })),
+    deploys: deployDays(
+      projects.flatMap((p) => Object.values(p.deployments)),
+      HOME_DEPLOY_DAYS,
+    ),
     generatedAt: nowIso(),
   };
 }
@@ -356,6 +373,7 @@ function architectureOf(p: ProjectRecord): ArchitectureWire {
       provides: t.tool.provides.map((c) => c.id),
     })),
     edges,
+    deploys: deployDays(Object.values(p.deployments), ARCHITECTURE_DEPLOY_DAYS),
     valid: true,
     generatedAt: nowIso(),
   };
@@ -711,7 +729,6 @@ export function registerDashboardRoutes(router: Router, db: Db): void {
  * người xem không vào được, như Service 1 — và kết cục deploy theo ngày UTC trên đúng những env đó.
  */
 function platformDoraOf(db: Db, days: number): PlatformDoraWire {
-  const DAY = 86_400_000;
   const today = Math.floor(Date.now() / DAY) * DAY;
   const from = today - (days - 1) * DAY;
   const envs = db.projects
@@ -722,19 +739,6 @@ function platformDoraOf(db: Db, days: number): PlatformDoraWire {
         .sort((a, b) => a.rank - b.rank)[0];
       return env === undefined ? [] : [{ p, env }];
     });
-  const daily = Array.from({ length: days }, (_, i) => ({
-    date: iso(from + i * DAY).slice(0, 10),
-    success: 0,
-    failure: 0,
-  }));
-  for (const { p, env } of envs) {
-    for (const d of p.deployments[env.id] ?? []) {
-      const day = daily[Math.floor((Date.parse(d.lastEventAt) - from) / DAY)];
-      if (day === undefined) continue;
-      if (d.status === "DEPLOY_SUCCESS") day.success += 1;
-      if (d.status === "DEPLOY_FAILURE") day.failure += 1;
-    }
-  }
   const projects = envs
     .map(({ p, env }) => ({
       projectId: p.project.id,
@@ -750,6 +754,9 @@ function platformDoraOf(db: Db, days: number): PlatformDoraWire {
   return {
     window: { from: iso(from), to: iso(today + DAY), days },
     projects,
-    daily,
+    daily: deployDays(
+      envs.map(({ p, env }) => p.deployments[env.id] ?? []),
+      days,
+    ),
   };
 }

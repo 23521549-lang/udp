@@ -1015,6 +1015,19 @@ export const doraWire = z
 
 export const doraResponseWire = z.object({ dora: doraWire }).strict();
 
+/**
+ * Kết cục deploy của MỘT ngày UTC — một hình cho trang chủ (Plan #53), E10 của trang Bằng chứng (Plan #56) và biểu đồ
+ * deploy của trang Kiến trúc (Plan #57).
+ */
+export const deployDayWire = z
+  .object({
+    /** `YYYY-MM-DD` theo UTC */
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    success: z.number().int().nonnegative(),
+    failure: z.number().int().nonnegative(),
+  })
+  .strict();
+
 /** [v4.11, Plan #56] Cửa sổ (ngày) của E10 trên trang Bằng chứng */
 export const EVIDENCE_DORA_DAYS = [7, 30, 90] as const;
 export type EvidenceDoraDays = (typeof EVIDENCE_DORA_DAYS)[number];
@@ -1038,15 +1051,7 @@ export const platformDoraWire = z
         })
         .strict(),
     ),
-    daily: z.array(
-      z
-        .object({
-          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-          success: z.number().int().nonnegative(),
-          failure: z.number().int().nonnegative(),
-        })
-        .strict(),
-    ),
+    daily: z.array(deployDayWire),
   })
   .strict();
 
@@ -1656,6 +1661,7 @@ export type TeamDetailWire = z.infer<typeof teamDetailWire>;
 export type ProjectTeamWire = z.infer<typeof projectTeamWire>;
 export type AuditEntryWire = z.infer<typeof auditEntryWire>;
 export type PlatformDoraWire = z.infer<typeof platformDoraWire>;
+export type DeployDayWire = z.infer<typeof deployDayWire>;
 export type SdkKeyWire = z.infer<typeof sdkKeyWire>;
 export type FlagEnvStateWire = z.infer<typeof flagEnvStateWire>;
 export type FlagVariantWire = z.infer<typeof flagVariantWire>;
@@ -2116,6 +2122,9 @@ export const architectureEdgeWire = z
   .object({ from: z.string(), to: z.string(), capabilityId: z.string() })
   .strict();
 
+/** [v4.11, Plan #57] Số ngày UTC của biểu đồ deploy trên trang Kiến trúc */
+export const ARCHITECTURE_DEPLOY_DAYS = 14;
+
 /** `GET /projects/:id/architecture` */
 export const architectureResponseWire = z
   .object({
@@ -2139,6 +2148,11 @@ export const architectureResponseWire = z
         environments: z.array(architectureEnvironmentWire),
         tools: z.array(architectureToolWire),
         edges: z.array(architectureEdgeWire),
+        /**
+         * [v4.11, Plan #57] Kết cục deploy theo ngày UTC trên MỌI env của project, `ARCHITECTURE_DEPLOY_DAYS` ngày tới
+         * hết hôm nay, cũ nhất trước — mọi ngày có mặt (ngày không deploy là 0).
+         */
+        deploys: z.array(deployDayWire),
         /** Tổ hợp đang bật có qua validator không — sai thì không có bậc và không có cạnh */
         valid: z.boolean(),
         generatedAt: isoDateTime,
@@ -2273,15 +2287,6 @@ export const homeAttentionWire = z
     /** Id để dẫn link: deployment, rollout, job */
     refId: uuid.nullable(),
     at: isoDateTime,
-  })
-  .strict();
-
-export const deployDayWire = z
-  .object({
-    /** `YYYY-MM-DD` theo UTC */
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    success: z.number().int().nonnegative(),
-    failure: z.number().int().nonnegative(),
   })
   .strict();
 

@@ -8,7 +8,7 @@
         "region": "ap-southeast-1",
         "mode": "BYOC",
         "authKind": "AWS_ROLE",
-        "lastValidatedAt": "2026-09-29T15:44:07.229Z"
+        "lastValidatedAt": "2026-09-30T04:50:59.733Z"
       },
       "cluster": {
         "clusterId": "udp-dash",
@@ -48,46 +48,46 @@
       ],
       "environments": [
         {
-          "id": "5375f1c9-3a63-4bf6-9e88-4b03f822d371",
+          "id": "c9702404-87d4-4de6-b0b8-9c720f0dcff5",
           "name": "dev",
-          "namespace": "udp-p-afdb5c24-105e3f-dev",
+          "namespace": "udp-p-c313b302-69a10a-dev",
           "isProduction": false,
           "workloads": [
             {
               "name": "checkout-api",
               "imageTag": "v1.2.0",
-              "commitSha": "7ef741ec0ad74da2a14f7407be1ea6eb",
+              "commitSha": "45863244d7064235a7ba07a6ae67a3be",
               "lastEvent": "DEPLOY_SUCCESS",
-              "at": "2026-09-29T15:44:07.229Z"
+              "at": "2026-09-30T04:50:59.733Z"
             },
             {
               "name": "checkout-worker",
               "imageTag": "v1.5.0",
-              "commitSha": "b66752fe805149419d0c08f901404fb9",
+              "commitSha": "7fea844077524830bfdaf22ffa63d8b0",
               "lastEvent": "DEPLOY_FAILURE",
-              "at": "2026-09-29T12:44:07.229Z"
+              "at": "2026-09-30T01:50:59.733Z"
             }
           ]
         },
         {
-          "id": "a95769a3-ff9d-4ee1-a53c-43f040b83ff3",
+          "id": "40c4f341-281b-4605-a3ba-57550b840b7b",
           "name": "staging",
-          "namespace": "udp-p-afdb5c24-105e3f-staging",
+          "namespace": "udp-p-c313b302-69a10a-staging",
           "isProduction": false,
           "workloads": []
         },
         {
-          "id": "8158d4fd-96bb-4418-adba-44ef0c13f4d1",
+          "id": "8e204eb5-16d2-4ef4-8237-8039bc93a712",
           "name": "prod",
-          "namespace": "udp-p-afdb5c24-105e3f-prod",
+          "namespace": "udp-p-c313b302-69a10a-prod",
           "isProduction": true,
           "workloads": [
             {
               "name": "checkout-api",
               "imageTag": "v1.1.0",
-              "commitSha": "2e2b23186cff4b49a804a17f7657cf14",
+              "commitSha": "2a871f4e98734ab6971973e3c8aac380",
               "lastEvent": "DEPLOY_PENDING",
-              "at": "2026-09-29T16:44:07.229Z"
+              "at": "2026-09-30T05:50:59.733Z"
             }
           ]
         }
@@ -121,7 +121,7 @@
           "status": "ACTIVE",
           "drift": {
             "verdict": "DRIFTED",
-            "at": "2026-09-29T14:44:07.229Z"
+            "at": "2026-09-30T03:50:59.733Z"
           },
           "provides": [
             "metrics.query",
@@ -153,8 +153,80 @@
           "capabilityId": "registry.oci"
         }
       ],
+      "deploys": [
+        {
+          "date": "2026-09-17",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-18",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-19",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-20",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-21",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-22",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-23",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-24",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-25",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-26",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-27",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-28",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-29",
+          "success": 2,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-30",
+          "success": 1,
+          "failure": 1
+        }
+      ],
       "valid": true,
-      "generatedAt": "2026-09-29T17:44:13.998Z"
+      "generatedAt": "2026-09-30T06:51:07.038Z"
     }
   }
 }

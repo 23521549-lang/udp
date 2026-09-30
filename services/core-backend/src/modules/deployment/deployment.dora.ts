@@ -138,7 +138,23 @@ export function computeDora(
   };
 }
 
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
+
+/**
+ * [v4.11, Plan #56/#57] Cửa sổ `days` NGÀY LỊCH UTC: từ đầu ngày cách hôm nay `days − 1` ngày tới hết hôm nay. Cửa sổ
+ * cuộn (`now − days`) chạm `days + 1` ngày lịch — biểu đồ "7 ngày" thành 8 cột, hai cột đầu cuối là nửa ngày. Một
+ * định nghĩa cho E10 của trang Bằng chứng và biểu đồ deploy của trang Kiến trúc.
+ */
+export function utcDayWindow(
+  days: number,
+  now: Date,
+): { from: Date; to: Date } {
+  const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS;
+  return {
+    from: new Date(today - (days - 1) * DAY_MS),
+    to: new Date(today + DAY_MS),
+  };
+}
 
 /**
  * [v4.11, Plan #56] Kết cục deploy theo NGÀY (UTC) trong cửa sổ — trục thời gian của E10 trên trang Bằng chứng.
@@ -146,18 +162,22 @@ const DAY_MS = 86_400_000;
  * Cùng định nghĩa "một deployment" với `computeDora`: một `deploymentId` có kết cục, FAILURE thắng SUCCESS của cùng
  * lần deploy; ngày là ngày của sự kiện kết cục. Mọi ngày của cửa sổ đều có mặt (ngày không deploy là 0, không bị
  * bỏ) — biểu đồ thiếu ngày là biểu đồ nói dối về tần suất.
+ *
+ * [Plan #57] Khi sự kiện mang `environmentId` (gộp nhiều env), một deployment là cặp (env, `deploymentId`) như
+ * Deployment Frequency của §2.2: provisioning ghi CÙNG `deploymentId` cho mỗi env, đó là nhiều lần deploy.
  */
 export function dailyOutcomes(
-  events: readonly DoraEvent[],
+  events: readonly (DoraEvent & { environmentId?: string })[],
   window: { from: Date; to: Date },
 ): { date: string; success: number; failure: number }[] {
   const outcome = new Map<string, DoraEvent>();
   for (const e of events) {
     if (e.eventType !== "DEPLOY_SUCCESS" && e.eventType !== "DEPLOY_FAILURE")
       continue;
-    const prev = outcome.get(e.deploymentId);
+    const key = `${e.environmentId ?? ""}/${e.deploymentId}`;
+    const prev = outcome.get(key);
     if (prev === undefined || e.eventType === "DEPLOY_FAILURE") {
-      outcome.set(e.deploymentId, e);
+      outcome.set(key, e);
     }
   }
   const days = new Map<string, { success: number; failure: number }>();

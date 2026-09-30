@@ -5,8 +5,10 @@ import type {
 } from "@udp/shared-types/wire";
 import {
   computeDora,
+  DAY_MS,
   dailyOutcomes,
   groupDeployments,
+  utcDayWindow,
   type DeploymentView,
   type DoraResult,
 } from "./deployment.dora.js";
@@ -97,24 +99,19 @@ export async function logs(
   };
 }
 
-const DAY_MS = 86_400_000;
-
 /**
  * [v4.11, Plan #56] E10 (§14) của CẢ nền tảng — trang Bằng chứng của Bảng điều khiển. Mỗi project: env production
  * đầu tiên, năm chỉ số qua CÙNG `computeDora` với `/metrics/dora` (không định nghĩa thứ hai); cộng kết cục deploy
  * theo ngày trên mọi env production. Hai truy vấn cho cả nền tảng, cộng một truy vấn cho mỗi project có ROLLBACK.
  *
- * Cửa sổ canh theo NGÀY UTC: từ đầu ngày cách hôm nay `days − 1` ngày tới hết hôm nay. Cửa sổ cuộn (`now − days`)
- * chạm `days + 1` ngày lịch — biểu đồ "7 ngày" thành 8 cột, hai cột đầu cuối là nửa ngày — và `computeDora` chia tần
- * suất cho đúng độ dài cửa sổ, nên canh ở đây giữ hai con số khớp nhau.
+ * Cửa sổ canh theo NGÀY UTC (`utcDayWindow`): `computeDora` chia tần suất cho đúng độ dài cửa sổ, nên biểu đồ theo
+ * ngày và năm chỉ số khớp nhau.
  */
 export async function platformDora(
   days: number,
   now: Date = new Date(),
 ): Promise<PlatformDoraWire> {
-  const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS;
-  const from = new Date(today - (days - 1) * DAY_MS);
-  const window = { from, to: new Date(today + DAY_MS) };
+  const window = utcDayWindow(days, now);
   const envs = await repository.productionEnvironments();
   const events = await repository.eventsInEnvironments(
     envs.map((e) => e.id),
