@@ -123,6 +123,8 @@ const SCREENS: Screen[] = [
   ["admin-credentials", () => "/admin/credentials"],
   ["admin-system", () => "/admin/system"],
   ["admin-catalog", () => "/admin/catalog"],
+  // [Plan #56] Bằng chứng thực nghiệm: biểu đồ đọc từ tệp thô, E10 từ lớp giả lập
+  ["admin-evidence", () => "/admin/evidence", "figure.cc"],
 ];
 
 /** Font từ Google không tải được (máy không mạng) không phải lỗi của Portal */

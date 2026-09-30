@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { RED_RANGES } from "@udp/shared-types/wire";
+import { EVIDENCE_DORA_DAYS, RED_RANGES } from "@udp/shared-types/wire";
 import { ADMIN_PAGE_SIZE, adminApi } from "../src/features/admin/admin-api";
 import { architectureApi } from "../src/features/architecture/architecture-api";
 import { authApi } from "../src/features/auth/auth-api";
@@ -120,6 +120,13 @@ describe("đăng nhập và quản trị", () => {
       (await adminApi.system()).services.every((s) => s.status === "up"),
     ).toBe(true);
     expect((await domainApi.catalog()).domains.length).toBe(16);
+
+    // [Plan #56] E10 của cả nền tảng: đúng số ngày lịch, có project đã deploy vào production
+    for (const days of EVIDENCE_DORA_DAYS) {
+      const { evidence } = await adminApi.evidenceDora(days);
+      expect(evidence.daily).toHaveLength(days);
+      expect(evidence.projects.some((p) => p.dora.deployments > 0)).toBe(true);
+    }
   });
 });
 

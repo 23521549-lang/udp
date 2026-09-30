@@ -6,16 +6,18 @@ import type {
   DomainCatalogEntryWire,
   HomeWire,
   MonitoringConsoleWire,
+  PlatformDoraWire,
   RedMetricsWire,
   RedRange,
 } from "@udp/shared-types/wire";
-import { RED_RANGES } from "@udp/shared-types/wire";
+import { EVIDENCE_DORA_DAYS, RED_RANGES } from "@udp/shared-types/wire";
 import { iso, nowIso, OPENED_AT } from "../clock";
 import type { Db, ProjectRecord } from "../db";
 import { golden } from "../goldens";
 import { prng, type Rng } from "../random";
 import { found, HttpProblem, ok, projectOf, type Router } from "../router";
 import { orphansOf } from "./auth-admin";
+import { doraOf } from "./delivery";
 
 /**
  * [Plan #53] Các màn tổng hợp: trang chủ developer (QĐ-5), sơ đồ kiến trúc (QĐ-3), request/lỗi/độ trễ theo
@@ -688,5 +690,66 @@ export function registerDashboardRoutes(router: Router, db: Db): void {
       }),
     )
     .on("GET", "/admin/overview", () => ok({ overview: adminOverviewOf(db) }))
-    .on("GET", "/admin/platform", () => ok({ platform: platformOf() }));
+    .on("GET", "/admin/platform", () => ok({ platform: platformOf() }))
+    .on("GET", "/admin/evidence/dora", (req) => {
+      const days = EVIDENCE_DORA_DAYS.find(
+        (d) => d === Number(req.query.get("days") ?? "30"),
+      );
+      if (days === undefined) {
+        throw new HttpProblem(
+          400,
+          "VALIDATION_ERROR",
+          "days phải là 7, 30 hoặc 90",
+        );
+      }
+      return ok({ evidence: platformDoraOf(db, days) });
+    });
+}
+
+/**
+ * [Plan #56] E10 của cả nền tảng: env production đầu tiên (theo rank) của MỌI project còn sống — kể cả project
+ * người xem không vào được, như Service 1 — và kết cục deploy theo ngày UTC trên đúng những env đó.
+ */
+function platformDoraOf(db: Db, days: number): PlatformDoraWire {
+  const DAY = 86_400_000;
+  const today = Math.floor(Date.now() / DAY) * DAY;
+  const from = today - (days - 1) * DAY;
+  const envs = db.projects
+    .filter((p) => p.project.status !== "DELETED")
+    .flatMap((p) => {
+      const env = [...p.environments]
+        .filter((e) => e.isProduction)
+        .sort((a, b) => a.rank - b.rank)[0];
+      return env === undefined ? [] : [{ p, env }];
+    });
+  const daily = Array.from({ length: days }, (_, i) => ({
+    date: iso(from + i * DAY).slice(0, 10),
+    success: 0,
+    failure: 0,
+  }));
+  for (const { p, env } of envs) {
+    for (const d of p.deployments[env.id] ?? []) {
+      const day = daily[Math.floor((Date.parse(d.lastEventAt) - from) / DAY)];
+      if (day === undefined) continue;
+      if (d.status === "DEPLOY_SUCCESS") day.success += 1;
+      if (d.status === "DEPLOY_FAILURE") day.failure += 1;
+    }
+  }
+  const projects = envs
+    .map(({ p, env }) => ({
+      projectId: p.project.id,
+      projectName: p.project.name,
+      environmentName: env.name,
+      dora: doraOf(p.deployments[env.id] ?? [], env.id, days),
+    }))
+    .sort(
+      (a, b) =>
+        b.dora.deployments - a.dora.deployments ||
+        a.projectName.localeCompare(b.projectName),
+    );
+  return {
+    window: { from: iso(from), to: iso(today + DAY), days },
+    projects,
+    daily,
+  };
 }

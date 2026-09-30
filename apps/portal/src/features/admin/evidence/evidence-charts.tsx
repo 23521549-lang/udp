@@ -357,7 +357,7 @@ export function E14Chart({ data }: { data: E14Data }) {
         scale="log"
         categories={cells.map((c) => ({
           key: `${String(c.T)}-${String(c.V)}`,
-          short: `${String(c.T)},${String(c.V)}`,
+          short: `T${String(c.T)}·V${String(c.V)}`,
           label: `T = ${String(c.T)}, V = ${String(c.V)}`,
         }))}
         series={[

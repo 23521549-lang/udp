@@ -74,27 +74,53 @@ Bốn điều người tiếp theo cần biết:
   lúc đăng ký, nên ai cầm đường dẫn và đăng ký TRƯỚC bằng đúng email đó nhận được lời mời.
 - `POST /projects/:id/invitations` KHÔNG dùng `Idempotency-Key`: lớp đó lưu nguyên thân response, tức lưu token.
 
+## 1d. Plan #56 — trang "Bằng chứng thực nghiệm" trong Bảng điều khiển nền tảng
+
+Người dùng (30/09/2026): "ở chỗ portal nhà phát hành, bạn thêm cho mình các tính năng để theo dõi các dữ liệu làm
+thành biểu đồ để phục vụ cho bằng chứng của nckh nha, các cái benmark, các cái metric mà mình nói mình sẽ đo trong
+file thiết kế .md á". Spec: `docs/plans/plan56-spec.md`; kế hoạch: `plan56-plan.md`; quyết định D-P49.
+
+| Đợt | Commit       | Nội dung                                                                                                                                                                 |
+| --- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 56a | `0e410f5`    | Schema chung của tệp kết quả đo (`@udp/shared-types/measurements`), test parse mọi tệp thô; E7 chuyển sang `@udp/experiments` và ghi `raw/E7-20260930-1118.json`         |
+| 56b | `8c23e33`    | `GET /admin/evidence/dora?days=7\|30\|90`: DORA của env production mỗi project (cùng `computeDora`) + kết cục deploy theo ngày UTC                                       |
+| 56c | `c2d8ae4`    | Trang `/admin/evidence`: thẻ cho 18 phép đo, trạng thái suy ra, biểu đồ từ tệp thô (`CategoryChart`, thang log), E10 sống, nguồn + tải tệp thô/CSV, phép kiểm không trôi |
+| 56d | (commit này) | Bản xem thử (E10 giả), `contract.check`, màn mới trong cổng năm lượt; §9, §10.11, §10.14, §14, D-P49, DESIGN.md                                                          |
+
+Cho người tiếp theo:
+
+- **Thêm một phép đo có số:** harness ghi `raw/<EXP>-<YYYYMMDD-HHmm>.json` qua `writeResult`; thêm schema `data` vào
+  `MEASUREMENT_DATA_SCHEMAS` (test của shared-types đỏ nếu tệp không qua); thêm một hàm biểu đồ ở
+  `features/admin/evidence/evidence-charts.tsx`. Chưa kịp vẽ thì trang vẫn hiện thẻ với nguồn và nút tải tệp.
+- **Trạng thái không khai tay:** có tệp thô ⇒ "Đã đo" hay "Đo một phần" (khi `debts` của phép đo trong
+  `experiments.ts` còn mục); đóng một mục nợ là xoá mã đó khỏi `debts`.
+- Trang hiện đúng cả ô thua (danh sách flag 839,5 ms so với 500 ms) và chỉ số "đóng góp có ≥ 2 phép đo có số"
+  hiện là 1/3 (chỉ C2): đó là số thật, không phải lỗi hiển thị.
+
 ## 2. Cưỡng chế thêm
 
-| Chốt                                                                                           | Ở đâu                                                             |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Cạnh của sơ đồ bằng đúng quan hệ `chosen` (kể cả `anyOf`, preference); provider trước consumer | `services/core-backend/tests/capability-resolver.test.ts`         |
-| Route mới: 401/403/404, VIEWER, lọc theo membership, `unavailable` kèm lý do                   | `services/core-backend/tests/dashboards.integration.test.ts`      |
-| RBAC của `/admin/platform` chỉ đọc (không `secrets`, không verb ghi)                           | `deploy/tests/manifests.test.ts`                                  |
-| Mỗi màn mới của Portal (msw + mẫu golden), mô hình thuần của tín hiệu nền tảng                 | `apps/portal/tests/dashboards.test.tsx`                           |
-| Không em-dash trong chữ giao diện VÀ trong dữ liệu mẫu; `<svg>` chỉ ở tệp đã khai              | `apps/portal/tests/design-lint.test.ts`                           |
-| Mọi API của Portal qua lớp giả lập, số liệu khớp nhau (tổng quan = danh sách)                  | `apps/portal/demo/contract.check.ts`                              |
-| 34 màn × 2 khung: không lỗi console, không tràn ngang, một `main`, một `h1`…                   | `apps/portal/demo/screens.pw.ts` (job CI `portal-demo`)           |
-| Nối dây job `portal-demo` (build → Chromium → chụp; artifact kể cả khi đỏ; không secret)       | `deploy/tests/ci-workflow.test.ts`                                |
-| [#54] Không chữ giao diện viết thẳng ngoài `*.messages`; bản `en` không còn tiếng Việt         | `apps/portal/tests/design-lint.test.ts`                           |
-| [#54] Bản `en` thiếu/thừa khoá, sai tham số là lỗi biên dịch (TSX-07..09)                      | `apps/portal/tests/i18n-theme.test.tsx`                           |
-| [#54] Năm lượt × 34 màn: tương phản WCAG AA, `lang`/`data-theme` đúng, khung tiếng Anh sạch    | `apps/portal/demo/screens.pw.ts` (job CI `portal-demo`)           |
-| [#55] Ràng buộc của nhóm và lời mời trong database (không OWNER, đúng một đích, một lời chờ)   | `packages/db/tests/invariants/teams-invitations.test.ts`          |
-| [#55] Bốn bảng mới trong ma trận writer; `traffic_match` có UPDATE của S1                      | `packages/db/tests/invariants/i22-writer-matrix.test.ts`          |
-| [#55] Lời mời (một lần, hết hạn, thu hồi, sai email, cùng 404), nhóm, vai hiệu lực, rời nhóm   | `services/core-backend/tests/team-invitation.integration.test.ts` |
-| [#55] Mọi route có `:teamId` qua `requireTeamRole` (sau `requireAuth`)                         | `packages/design-lint/tests/team-route-guard.test.ts`             |
-| [#55] Vai của nhóm và vai cấp được trên dây khớp enum database                                 | `packages/design-lint/tests/enum-mirrors.test.ts`                 |
-| [#55] Màn Nhóm, trang `/invite` (token rời URL), tab Thành viên mới                            | `apps/portal/tests/team-invitation.test.tsx`                      |
+| Chốt                                                                                            | Ở đâu                                                                   |
+| ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Cạnh của sơ đồ bằng đúng quan hệ `chosen` (kể cả `anyOf`, preference); provider trước consumer  | `services/core-backend/tests/capability-resolver.test.ts`               |
+| Route mới: 401/403/404, VIEWER, lọc theo membership, `unavailable` kèm lý do                    | `services/core-backend/tests/dashboards.integration.test.ts`            |
+| RBAC của `/admin/platform` chỉ đọc (không `secrets`, không verb ghi)                            | `deploy/tests/manifests.test.ts`                                        |
+| Mỗi màn mới của Portal (msw + mẫu golden), mô hình thuần của tín hiệu nền tảng                  | `apps/portal/tests/dashboards.test.tsx`                                 |
+| Không em-dash trong chữ giao diện VÀ trong dữ liệu mẫu; `<svg>` chỉ ở tệp đã khai               | `apps/portal/tests/design-lint.test.ts`                                 |
+| Mọi API của Portal qua lớp giả lập, số liệu khớp nhau (tổng quan = danh sách)                   | `apps/portal/demo/contract.check.ts`                                    |
+| 34 màn × 2 khung: không lỗi console, không tràn ngang, một `main`, một `h1`…                    | `apps/portal/demo/screens.pw.ts` (job CI `portal-demo`)                 |
+| Nối dây job `portal-demo` (build → Chromium → chụp; artifact kể cả khi đỏ; không secret)        | `deploy/tests/ci-workflow.test.ts`                                      |
+| [#54] Không chữ giao diện viết thẳng ngoài `*.messages`; bản `en` không còn tiếng Việt          | `apps/portal/tests/design-lint.test.ts`                                 |
+| [#54] Bản `en` thiếu/thừa khoá, sai tham số là lỗi biên dịch (TSX-07..09)                       | `apps/portal/tests/i18n-theme.test.tsx`                                 |
+| [#54] Năm lượt × 34 màn: tương phản WCAG AA, `lang`/`data-theme` đúng, khung tiếng Anh sạch     | `apps/portal/demo/screens.pw.ts` (job CI `portal-demo`)                 |
+| [#55] Ràng buộc của nhóm và lời mời trong database (không OWNER, đúng một đích, một lời chờ)    | `packages/db/tests/invariants/teams-invitations.test.ts`                |
+| [#55] Bốn bảng mới trong ma trận writer; `traffic_match` có UPDATE của S1                       | `packages/db/tests/invariants/i22-writer-matrix.test.ts`                |
+| [#55] Lời mời (một lần, hết hạn, thu hồi, sai email, cùng 404), nhóm, vai hiệu lực, rời nhóm    | `services/core-backend/tests/team-invitation.integration.test.ts`       |
+| [#55] Mọi route có `:teamId` qua `requireTeamRole` (sau `requireAuth`)                          | `packages/design-lint/tests/team-route-guard.test.ts`                   |
+| [#55] Vai của nhóm và vai cấp được trên dây khớp enum database                                  | `packages/design-lint/tests/enum-mirrors.test.ts`                       |
+| [#55] Màn Nhóm, trang `/invite` (token rời URL), tab Thành viên mới                             | `apps/portal/tests/team-invitation.test.tsx`                            |
+| [#56] Mọi tệp `docs/measurements/raw/*.json` qua schema chung                                   | `packages/shared-types/tests/measurements.test.ts`                      |
+| [#56] Sổ thí nghiệm = bảng §14; tiền tố tệp thô có thẻ; mã nợ có thật; trang, E10, hai ngôn ngữ | `apps/portal/tests/evidence.test.tsx`                                   |
+| [#56] E10 của cả nền tảng: 403, số khớp `/metrics/dora`, cửa sổ ngày lịch                       | `services/core-backend/tests/admin.integration.test.ts`, `dora.test.ts` |
 
 Cổng Playwright bắt được ngay hai lỗi mà jsdom không thể thấy, đã sửa: lớp cạnh của sơ đồ không vẽ (đo trong
 layout effect của con, trước khi ref của khung cha được gắn — nay nhận khung qua callback ref) và trang đăng
