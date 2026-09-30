@@ -138,6 +138,46 @@ export function computeDora(
   };
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * [v4.11, Plan #56] Kết cục deploy theo NGÀY (UTC) trong cửa sổ — trục thời gian của E10 trên trang Bằng chứng.
+ *
+ * Cùng định nghĩa "một deployment" với `computeDora`: một `deploymentId` có kết cục, FAILURE thắng SUCCESS của cùng
+ * lần deploy; ngày là ngày của sự kiện kết cục. Mọi ngày của cửa sổ đều có mặt (ngày không deploy là 0, không bị
+ * bỏ) — biểu đồ thiếu ngày là biểu đồ nói dối về tần suất.
+ */
+export function dailyOutcomes(
+  events: readonly DoraEvent[],
+  window: { from: Date; to: Date },
+): { date: string; success: number; failure: number }[] {
+  const outcome = new Map<string, DoraEvent>();
+  for (const e of events) {
+    if (e.eventType !== "DEPLOY_SUCCESS" && e.eventType !== "DEPLOY_FAILURE")
+      continue;
+    const prev = outcome.get(e.deploymentId);
+    if (prev === undefined || e.eventType === "DEPLOY_FAILURE") {
+      outcome.set(e.deploymentId, e);
+    }
+  }
+  const days = new Map<string, { success: number; failure: number }>();
+  const first = Math.floor(window.from.getTime() / DAY_MS);
+  const last = Math.floor((window.to.getTime() - 1) / DAY_MS);
+  for (let d = first; d <= last; d += 1) {
+    days.set(new Date(d * DAY_MS).toISOString().slice(0, 10), {
+      success: 0,
+      failure: 0,
+    });
+  }
+  for (const e of outcome.values()) {
+    const day = days.get(e.occurredAt.toISOString().slice(0, 10));
+    if (day === undefined) continue;
+    if (e.eventType === "DEPLOY_SUCCESS") day.success += 1;
+    else day.failure += 1;
+  }
+  return [...days].map(([date, n]) => ({ date, ...n }));
+}
+
 // ------------------------------------------------------------- danh sách deployment
 
 export interface DeploymentEventRow extends DoraEvent {

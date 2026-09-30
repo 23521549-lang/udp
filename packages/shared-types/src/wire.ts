@@ -1015,6 +1015,45 @@ export const doraWire = z
 
 export const doraResponseWire = z.object({ dora: doraWire }).strict();
 
+/** [v4.11, Plan #56] Cửa sổ (ngày) của E10 trên trang Bằng chứng */
+export const EVIDENCE_DORA_DAYS = [7, 30, 90] as const;
+export type EvidenceDoraDays = (typeof EVIDENCE_DORA_DAYS)[number];
+
+/**
+ * [v4.11, Plan #56] `GET /admin/evidence/dora` — E10 (§14) của CẢ nền tảng: DORA của env production mỗi project
+ * (cùng hàm `computeDora` của `/metrics/dora`), và kết cục deploy theo ngày trên mọi env production.
+ */
+export const platformDoraWire = z
+  .object({
+    window: z
+      .object({ from: isoDateTime, to: isoDateTime, days: z.number().int() })
+      .strict(),
+    projects: z.array(
+      z
+        .object({
+          projectId: uuid,
+          projectName: z.string(),
+          environmentName: z.string(),
+          dora: doraWire,
+        })
+        .strict(),
+    ),
+    daily: z.array(
+      z
+        .object({
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          success: z.number().int().nonnegative(),
+          failure: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export const adminEvidenceDoraResponseWire = z
+  .object({ evidence: platformDoraWire })
+  .strict();
+
 // ------------------------------------------------------------- admin (§9, §10.11)
 
 export const adminUserWire = z
@@ -1616,6 +1655,7 @@ export type TeamProjectWire = z.infer<typeof teamProjectWire>;
 export type TeamDetailWire = z.infer<typeof teamDetailWire>;
 export type ProjectTeamWire = z.infer<typeof projectTeamWire>;
 export type AuditEntryWire = z.infer<typeof auditEntryWire>;
+export type PlatformDoraWire = z.infer<typeof platformDoraWire>;
 export type SdkKeyWire = z.infer<typeof sdkKeyWire>;
 export type FlagEnvStateWire = z.infer<typeof flagEnvStateWire>;
 export type FlagVariantWire = z.infer<typeof flagVariantWire>;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeDora,
+  dailyOutcomes,
   groupDeployments,
   median,
   type DeploymentEventRow,
@@ -142,6 +143,31 @@ describe("DORA: định nghĩa §2.2", () => {
   it("median số chẵn phần tử là trung bình hai phần tử giữa", () => {
     expect(median([4, 1, 3, 2])).toBe(2.5);
     expect(median([])).toBeNull();
+  });
+});
+
+describe("kết cục theo ngày (Plan #56, E10 trên trang Bằng chứng)", () => {
+  it("mọi ngày của cửa sổ có mặt; một deployment đếm MỘT lần, FAILURE thắng SUCCESS", () => {
+    const days = dailyOutcomes(
+      [
+        ev("a", "DEPLOY_START", 1),
+        ev("a", "DEPLOY_SUCCESS", 2),
+        ev("b", "DEPLOY_SUCCESS", 3),
+        ev("b", "DEPLOY_FAILURE", 4),
+        ev("c", "DEPLOY_SUCCESS", 24 * 3 + 5),
+        ev("d", "ROLLBACK", 24 * 3 + 6),
+      ],
+      WINDOW,
+    );
+    expect(days).toHaveLength(7);
+    expect(days[0]).toEqual({ date: "2026-09-01", success: 1, failure: 1 });
+    expect(days[3]).toEqual({ date: "2026-09-04", success: 1, failure: 0 });
+    expect(days.filter((d) => d.success + d.failure === 0)).toHaveLength(5);
+  });
+
+  it("sự kiện ngoài cửa sổ không rơi vào ngày nào", () => {
+    const days = dailyOutcomes([ev("x", "DEPLOY_SUCCESS", -5)], WINDOW);
+    expect(days.every((d) => d.success === 0)).toBe(true);
   });
 });
 

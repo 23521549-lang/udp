@@ -81,6 +81,50 @@ export async function eventsBetween(
 }
 
 /** Mốc DEPLOY_SUCCESS của những deployment bị khôi phục — có thể trước cửa sổ */
+/**
+ * [v4.11, Plan #56] Env production ĐẦU TIÊN (theo rank) của mọi project còn sống — cùng quy tắc `productionEnvOf`,
+ * một truy vấn cho cả nền tảng thay vì một cho mỗi project.
+ */
+export async function productionEnvironments(): Promise<
+  { id: string; name: string; projectId: string; projectName: string }[]
+> {
+  const rows = await prisma.environment.findMany({
+    where: { isProduction: true, project: { status: { not: "DELETED" } } },
+    orderBy: [{ projectId: "asc" }, { rank: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      projectId: true,
+      project: { select: { name: true } },
+    },
+  });
+  const first = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) if (!first.has(r.projectId)) first.set(r.projectId, r);
+  return [...first.values()].map((r) => ({
+    id: r.id,
+    name: r.name,
+    projectId: r.projectId,
+    projectName: r.project.name,
+  }));
+}
+
+/** [v4.11, Plan #56] Sự kiện trong cửa sổ của nhiều environment, kèm env của từng sự kiện */
+export async function eventsInEnvironments(
+  environmentIds: readonly string[],
+  from: Date,
+  to: Date,
+): Promise<(DeploymentEventRow & { environmentId: string })[]> {
+  if (environmentIds.length === 0) return [];
+  return prisma.deploymentEvent.findMany({
+    where: {
+      environmentId: { in: [...environmentIds] },
+      occurredAt: { gte: from, lt: to },
+    },
+    orderBy: { occurredAt: "asc" },
+    select: { ...EVENT_FIELDS, environmentId: true },
+  });
+}
+
 export async function successTimesOf(
   projectId: string,
   deploymentIds: readonly string[],

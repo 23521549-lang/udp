@@ -1,7 +1,11 @@
 import { NotFoundError, redact } from "@udp/http";
-import type { DeploymentLogsWire } from "@udp/shared-types/wire";
+import type {
+  DeploymentLogsWire,
+  PlatformDoraWire,
+} from "@udp/shared-types/wire";
 import {
   computeDora,
+  dailyOutcomes,
   groupDeployments,
   type DeploymentView,
   type DoraResult,
@@ -93,6 +97,74 @@ export async function logs(
   };
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * [v4.11, Plan #56] E10 (§14) của CẢ nền tảng — trang Bằng chứng của Bảng điều khiển. Mỗi project: env production
+ * đầu tiên, năm chỉ số qua CÙNG `computeDora` với `/metrics/dora` (không định nghĩa thứ hai); cộng kết cục deploy
+ * theo ngày trên mọi env production. Hai truy vấn cho cả nền tảng, cộng một truy vấn cho mỗi project có ROLLBACK.
+ *
+ * Cửa sổ canh theo NGÀY UTC: từ đầu ngày cách hôm nay `days − 1` ngày tới hết hôm nay. Cửa sổ cuộn (`now − days`)
+ * chạm `days + 1` ngày lịch — biểu đồ "7 ngày" thành 8 cột, hai cột đầu cuối là nửa ngày — và `computeDora` chia tần
+ * suất cho đúng độ dài cửa sổ, nên canh ở đây giữ hai con số khớp nhau.
+ */
+export async function platformDora(
+  days: number,
+  now: Date = new Date(),
+): Promise<PlatformDoraWire> {
+  const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS;
+  const from = new Date(today - (days - 1) * DAY_MS);
+  const window = { from, to: new Date(today + DAY_MS) };
+  const envs = await repository.productionEnvironments();
+  const events = await repository.eventsInEnvironments(
+    envs.map((e) => e.id),
+    window.from,
+    window.to,
+  );
+  const byEnv = new Map<string, typeof events>();
+  for (const e of events) {
+    const list = byEnv.get(e.environmentId) ?? [];
+    list.push(e);
+    byEnv.set(e.environmentId, list);
+  }
+  const projects = await Promise.all(
+    envs.map(async (env) => {
+      const own = byEnv.get(env.id) ?? [];
+      const restored = own.flatMap((e) =>
+        e.eventType === "ROLLBACK" && e.restoresDeploymentId !== null
+          ? [e.restoresDeploymentId]
+          : [],
+      );
+      const successAt = await repository.successTimesOf(
+        env.projectId,
+        restored,
+      );
+      return {
+        projectId: env.projectId,
+        projectName: env.projectName,
+        environmentName: env.name,
+        dora: {
+          ...computeDora(own, window, successAt),
+          environmentId: env.id,
+        },
+      };
+    }),
+  );
+  return {
+    window: {
+      from: window.from.toISOString(),
+      to: window.to.toISOString(),
+      days,
+    },
+    projects: projects.sort(
+      (a, b) =>
+        b.dora.deployments - a.dora.deployments ||
+        a.projectName.localeCompare(b.projectName),
+    ),
+    daily: dailyOutcomes(events, window),
+  };
+}
+
 export async function dora(
   projectId: string,
   query: DoraQuery,
@@ -106,7 +178,7 @@ export async function dora(
   } else {
     envId = (await repository.productionEnvOf(projectId))?.id;
   }
-  const from = new Date(now.getTime() - query.days * 86_400_000);
+  const from = new Date(now.getTime() - query.days * DAY_MS);
   if (envId === undefined) {
     return {
       ...computeDora([], { from, to: now }, new Map()),

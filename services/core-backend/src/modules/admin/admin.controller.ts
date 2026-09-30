@@ -10,6 +10,7 @@ import {
 } from "@udp/http";
 import {
   adminCredentialsResponseWire,
+  adminEvidenceDoraResponseWire,
   adminJobsResponseWire,
   adminOrphansResponseWire,
   adminOverviewResponseWire,
@@ -24,15 +25,18 @@ import {
   requirePlatformAdmin,
 } from "../../core/http/middlewares/auth.middleware.js";
 import { appDepsOf } from "../../core/app-deps.js";
+import { platformDora } from "../deployment/deployment.service.js";
 import * as adminOverview from "./admin.overview.js";
 import * as adminService from "./admin.service.js";
 import {
+  evidenceDoraQuerySchema,
   listJobsQuerySchema,
   listProjectsQuerySchema,
   listUsersQuerySchema,
   updatePlatformRoleSchema,
   type AdminJobsQuery,
   type AdminProjectsQuery,
+  type EvidenceDoraQuery,
   type ListUsersQuery,
   type UpdatePlatformRoleInput,
 } from "./admin.types.js";
@@ -67,6 +71,21 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     sendJson(res, adminPlatformResponseWire, {
       platform: await adminOverview.platform(await appDepsOf(req).platform()),
+    });
+  }),
+);
+
+/**
+ * [v4.11, Plan #56] E10 của cả nền tảng cho trang "Bằng chứng" — DORA của env production mỗi project và kết cục
+ * deploy theo ngày. Số tĩnh của các phép đo khác (E1, E3…) không qua đây: Portal đọc thẳng tệp thô lúc build.
+ */
+adminRouter.get(
+  "/evidence/dora",
+  validateQuery(evidenceDoraQuerySchema),
+  asyncHandler(async (req, res) => {
+    const { days } = req.query as unknown as EvidenceDoraQuery;
+    sendJson(res, adminEvidenceDoraResponseWire, {
+      evidence: await platformDora(days),
     });
   }),
 );

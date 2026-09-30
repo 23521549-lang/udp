@@ -152,6 +152,8 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "GET /projects/{id}/metrics/red": wire.redMetricsResponseWire,
   "GET /admin/overview": wire.adminOverviewResponseWire,
   "GET /admin/platform": wire.adminPlatformResponseWire,
+  // [v4.11, Plan #56] E10 của cả nền tảng cho trang Bằng chứng
+  "GET /admin/evidence/dora": wire.adminEvidenceDoraResponseWire,
 };
 
 /**

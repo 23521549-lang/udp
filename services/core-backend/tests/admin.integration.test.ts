@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { env } from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import request from "supertest";
@@ -9,6 +10,7 @@ import {
   as,
   testWorld,
   type Actor,
+  type ProjectEnv,
   type TestWorld,
 } from "./helpers/api.js";
 
@@ -27,6 +29,7 @@ const app = createApp();
 let world: TestWorld;
 let root: Actor;
 let plain: Actor;
+let plainProject: { projectId: string; envs: Record<string, ProjectEnv> };
 
 const ROUTES: [string, string][] = [
   ["get", "/admin/users"],
@@ -35,6 +38,8 @@ const ROUTES: [string, string][] = [
   ["get", "/admin/jobs"],
   ["get", "/admin/orphan-resources"],
   ["get", "/admin/system/health"],
+  // [Plan #56] E10 của cả nền tảng cho trang Bằng chứng
+  ["get", "/admin/evidence/dora"],
 ];
 
 beforeAll(async () => {
@@ -45,10 +50,14 @@ beforeAll(async () => {
     where: { id: root.userId },
     data: { platformRole: "PLATFORM_ADMIN" },
   });
-  await world.newProject(plain);
+  plainProject = await world.newProject(plain);
 }, 60_000);
 
 afterAll(async () => {
+  // deployment_events giữ project bằng RESTRICT (append-only, §2.3) — dọn bằng quyền owner trước
+  await admin.deploymentEvent.deleteMany({
+    where: { projectId: plainProject.projectId },
+  });
   await admin.auditLog.deleteMany({
     where: {
       targetType: "User",
@@ -134,6 +143,86 @@ describe("dữ liệu /admin", () => {
       name: "udp-core-backend",
       status: "up",
     });
+  });
+});
+
+describe("E10 của cả nền tảng — /admin/evidence/dora (Plan #56)", () => {
+  it("DORA của env production mỗi project, cùng định nghĩa với /metrics/dora; kết cục theo ngày", async () => {
+    const prod = Object.values(plainProject.envs).find((e) => e.isProduction);
+    if (prod === undefined) throw new Error("project mẫu thiếu env production");
+    const now = Date.now();
+    const event = (
+      deploymentId: string,
+      eventType: "DEPLOY_START" | "DEPLOY_SUCCESS" | "DEPLOY_FAILURE",
+      minutesAgo: number,
+    ) => ({
+      projectId: plainProject.projectId,
+      environmentId: prod.id,
+      deploymentId,
+      eventType,
+      triggeredBy: "WEBHOOK" as const,
+      commitTimestamp: new Date(now - (minutesAgo + 30) * 60_000),
+      occurredAt: new Date(now - minutesAgo * 60_000),
+    });
+    const ok = randomUUID();
+    const bad = randomUUID();
+    await admin.deploymentEvent.createMany({
+      data: [
+        event(ok, "DEPLOY_START", 20),
+        event(ok, "DEPLOY_SUCCESS", 15),
+        event(bad, "DEPLOY_START", 10),
+        event(bad, "DEPLOY_FAILURE", 5),
+      ],
+    });
+
+    const res = await call(root, "get", "/admin/evidence/dora?days=7").expect(
+      200,
+    );
+    const row = (
+      res.body.evidence.projects as {
+        projectId: string;
+        environmentName: string;
+        dora: {
+          deployments: number;
+          changeFailureRate: { failed: number; total: number };
+          leadTimeSeconds: { median: number | null };
+        };
+      }[]
+    ).find((p) => p.projectId === plainProject.projectId);
+    expect(row?.environmentName).toBe(prod.name);
+    expect(row?.dora.deployments).toBe(1);
+    expect(row?.dora.changeFailureRate).toMatchObject({ failed: 1, total: 2 });
+    expect(row?.dora.leadTimeSeconds.median).toBe(1800);
+
+    const perProject = await call(
+      plain,
+      "get",
+      `/projects/${plainProject.projectId}/metrics/dora?days=7`,
+    ).expect(200);
+    expect(row?.dora).toEqual(
+      expect.objectContaining({
+        deployments: perProject.body.dora.deployments,
+        changeFailureRate: perProject.body.dora.changeFailureRate,
+      }),
+    );
+
+    const daily = res.body.evidence.daily as {
+      date: string;
+      success: number;
+      failure: number;
+    }[];
+    expect(daily).toHaveLength(7);
+    const today = daily.find(
+      (d) => d.date === new Date(now - 15 * 60_000).toISOString().slice(0, 10),
+    );
+    expect(today?.success).toBeGreaterThanOrEqual(1);
+    expect(today?.failure).toBeGreaterThanOrEqual(1);
+  });
+
+  it("cửa sổ chỉ nhận 7, 30, 90 ngày", async () => {
+    await call(root, "get", "/admin/evidence/dora?days=5").expect(400);
+    const res = await call(root, "get", "/admin/evidence/dora").expect(200);
+    expect(res.body.evidence.window.days).toBe(30);
   });
 });
 

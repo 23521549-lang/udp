@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  EVIDENCE_DORA_DAYS,
+  type EvidenceDoraDays,
+} from "@udp/shared-types/wire";
 
 export const listUsersQuerySchema = z
   .object({
@@ -46,3 +50,17 @@ export const listJobsQuerySchema = z
   })
   .strict();
 export type AdminJobsQuery = z.infer<typeof listJobsQuerySchema>;
+
+const isEvidenceWindow = (days: number): days is EvidenceDoraDays =>
+  EVIDENCE_DORA_DAYS.some((w) => w === days);
+
+/** [v4.11, Plan #56] Cửa sổ của E10 trên trang Bằng chứng — ba lựa chọn cố định, mặc định 30 ngày */
+export const evidenceDoraQuerySchema = z
+  .object({
+    days: z.coerce
+      .number()
+      .refine(isEvidenceWindow, "days phải là 7, 30 hoặc 90")
+      .default(30),
+  })
+  .strict();
+export type EvidenceDoraQuery = z.infer<typeof evidenceDoraQuerySchema>;
