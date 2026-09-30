@@ -11,6 +11,7 @@ import { MembersTab } from "./settings/MembersTab";
 import { ProjectTab } from "./settings/ProjectTab";
 import { SdkKeysTab } from "./settings/SdkKeysTab";
 import { PageHead } from "../../components/PageHead";
+import { Tabs } from "../../components/Tabs";
 import { projectMessages } from "./project.messages";
 
 type Tab = NonNullable<SettingsSearch["tab"]>;
@@ -37,28 +38,21 @@ export function SettingsPage() {
       <div className="scroll">
         <PageHead title={m.title} lead={m.lead} />
         <div className="page">
-          <div className="envtabs" role="tablist" aria-label={m.sections}>
-            {TABS.map((t) => (
-              <button
-                key={t}
-                type="button"
-                role="tab"
-                aria-selected={t === tab}
-                onClick={() =>
-                  void navigate({
-                    to: ".",
-                    search: (prev: Record<string, unknown>) => {
-                      // `new` là lệnh một lần của tab đang mở, không đi theo sang tab khác
-                      const { new: _once, ...rest } = prev;
-                      return { ...rest, tab: t };
-                    },
-                  })
-                }
-              >
-                {m.tab[t]}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            label={m.sections}
+            value={tab}
+            options={TABS.map((t) => ({ value: t, label: m.tab[t] }))}
+            onChange={(t) =>
+              void navigate({
+                to: ".",
+                search: (prev: Record<string, unknown>) => {
+                  // `new` là lệnh một lần của tab đang mở, không đi theo sang tab khác
+                  const { new: _once, ...rest } = prev;
+                  return { ...rest, tab: t };
+                },
+              })
+            }
+          />
           {tab === "keys" && <SdkKeysTab />}
           {tab === "environments" && <EnvironmentsTab />}
           {tab === "members" && <MembersTab />}

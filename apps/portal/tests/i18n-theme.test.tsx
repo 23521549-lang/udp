@@ -279,7 +279,7 @@ describe("màn chính bằng tiếng Anh", () => {
       screen.getByRole("navigation", { name: "Platform console" }),
     ).toHaveTextContent("Orphaned resources");
     expect(
-      await screen.findByRole("heading", { name: "Machine running UDP" }),
+      await screen.findByRole("heading", { name: "Host VM" }),
     ).toBeInTheDocument();
   });
 

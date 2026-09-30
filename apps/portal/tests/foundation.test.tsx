@@ -28,6 +28,8 @@ describe("hai khung: Portal và Bảng điều khiển nền tảng", () => {
       http.get(`${API}/projects`, () =>
         HttpResponse.json({ projects: [], total: 0 }),
       ),
+      // [Plan #58 UX-5] Danh sách project đọc số việc cần xử lý của mỗi project từ trang chủ
+      http.get(`${API}/home`, () => HttpResponse.json(golden("GET /home"))),
     );
     const user = userEvent.setup();
     const view = renderApp("/app/projects", { user: ADMIN });
@@ -61,6 +63,10 @@ describe("hai khung: Portal và Bảng điều khiển nền tảng", () => {
     server.use(
       http.get(`${API}/admin/users`, () =>
         HttpResponse.json(golden("GET /admin/users")),
+      ),
+      // [Plan #58 UX-26] Huy hiệu số của menu Bảng điều khiển
+      http.get(`${API}/admin/overview`, () =>
+        HttpResponse.json(golden("GET /admin/overview")),
       ),
     );
     const user = userEvent.setup();
@@ -247,6 +253,13 @@ describe("không tác động ngay mà không có đường lui", () => {
     const invites: unknown[] = [];
     server.use(
       http.get(`${API}/projects/:id/members`, () => HttpResponse.json(members)),
+      http.get(`${API}/projects/:id/invitations`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/invitations")),
+      ),
+      http.get(`${API}/projects/:id/teams`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/teams")),
+      ),
+      http.get(`${API}/teams`, () => HttpResponse.json(golden("GET /teams"))),
       http.delete(
         `${API}/projects/:id/members/:userId`,
         () => new HttpResponse(null, { status: 204 }),

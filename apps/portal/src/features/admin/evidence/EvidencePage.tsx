@@ -20,6 +20,7 @@ import { componentsMessages } from "../../../components/components.messages";
 import { ErrorState, Loading } from "../../../components/States";
 import { InfoTip } from "../../../components/InfoTip";
 import { StatusLabel, type Tone } from "../../../components/StatusLabel";
+import { Tabs } from "../../../components/Tabs";
 import { useMessages } from "../../../i18n";
 import { downloadText, toCsv } from "../../../lib/download";
 import {
@@ -293,26 +294,22 @@ function DoraEvidence() {
   });
   return (
     <>
-      <div className="envtabs" role="tablist" aria-label={m.window}>
-        {EVIDENCE_DORA_DAYS.map((d) => (
-          <button
-            key={d}
-            type="button"
-            role="tab"
-            aria-selected={d === days}
-            onClick={() =>
-              void navigate({
-                to: "/admin/evidence",
-                search: d === 30 ? {} : { days: d },
-                replace: true,
-                resetScroll: false,
-              })
-            }
-          >
-            {m.days(d)}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        label={m.window}
+        value={days}
+        options={EVIDENCE_DORA_DAYS.map((d) => ({
+          value: d,
+          label: m.days(d),
+        }))}
+        onChange={(d) =>
+          void navigate({
+            to: "/admin/evidence",
+            search: d === 30 ? {} : { days: d },
+            replace: true,
+            resetScroll: false,
+          })
+        }
+      />
       {dora.isPending ? (
         <Loading />
       ) : dora.isError ? (

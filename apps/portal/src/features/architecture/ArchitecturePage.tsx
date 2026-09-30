@@ -8,6 +8,7 @@ import { CircleAlert, X } from "lucide-react";
 import { useRef, type RefObject } from "react";
 import { Icon } from "../../components/Icon";
 import { PageHead } from "../../components/PageHead";
+import { Tabs } from "../../components/Tabs";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { StatusLabel } from "../../components/StatusLabel";
 import { useMessages } from "../../i18n";
@@ -102,23 +103,12 @@ export function ArchitecturePage() {
             }
           />
           <div className="page">
-            <div
-              className="envtabs"
-              role="tablist"
-              aria-label={views.views.label}
-            >
-              {VIEWS.map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  role="tab"
-                  aria-selected={v === view}
-                  onClick={() => show(v)}
-                >
-                  {views.views[v]}
-                </button>
-              ))}
-            </div>
+            <Tabs
+              label={views.views.label}
+              value={view}
+              options={VIEWS.map((v) => ({ value: v, label: views.views[v] }))}
+              onChange={show}
+            />
             {arch.isPending ? (
               <Loading />
             ) : arch.isError ? (

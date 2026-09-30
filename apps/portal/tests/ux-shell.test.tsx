@@ -7,6 +7,7 @@ import { ConfirmDialog } from "../src/components/ConfirmDialog";
 import { Dialog } from "../src/components/Dialog";
 import { Field } from "../src/components/Field";
 import { InfoTip } from "../src/components/InfoTip";
+import { Tabs } from "../src/components/Tabs";
 import { useLocaleStore } from "../src/i18n";
 import { useShortcutStore } from "../src/lib/shortcuts";
 import { API, golden, server } from "./msw";
@@ -78,6 +79,45 @@ describe("giải thích thuật ngữ (UX-19)", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("note")).toBeNull();
     expect(button).toHaveFocus();
+  });
+});
+
+describe("nhóm tab (UX-40)", () => {
+  it("chỉ tab đang chọn nhận Tab; mũi tên và End chuyển và chọn", async () => {
+    function View() {
+      const [v, setV] = useState<"a" | "b" | "c">("a");
+      return (
+        <Tabs
+          label="Góc nhìn"
+          value={v}
+          options={[
+            { value: "a", label: "Một" },
+            { value: "b", label: "Hai" },
+            { value: "c", label: "Ba" },
+          ]}
+          onChange={setV}
+        />
+      );
+    }
+    render(<View />);
+    const user = userEvent.setup();
+    await user.tab();
+    expect(screen.getByRole("tab", { name: "Một" })).toHaveFocus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tab", { name: "Hai" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Hai" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await user.keyboard("{End}");
+    expect(screen.getByRole("tab", { name: "Ba" })).toHaveAttribute(
+      "tabindex",
+      "0",
+    );
+    expect(screen.getByRole("tab", { name: "Một" })).toHaveAttribute(
+      "tabindex",
+      "-1",
+    );
   });
 });
 

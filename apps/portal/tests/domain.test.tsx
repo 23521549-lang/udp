@@ -688,6 +688,10 @@ describe("catalog quản trị", () => {
       http.get(`${API}/domains/catalog`, () =>
         HttpResponse.json(golden("GET /domains/catalog")),
       ),
+      // [Plan #58 UX-26] Huy hiệu số của menu Bảng điều khiển
+      http.get(`${API}/admin/overview`, () =>
+        HttpResponse.json(golden("GET /admin/overview")),
+      ),
     );
     renderApp("/admin/catalog", {
       user: {

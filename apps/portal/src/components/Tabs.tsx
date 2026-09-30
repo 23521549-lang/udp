@@ -5,12 +5,12 @@ import { useRef, type KeyboardEvent } from "react";
  * mũi tên trái/phải và Home/End chuyển tab và chọn luôn (kích hoạt tự động — nội dung đổi nhẹ, không tải nặng).
  * Cùng khuôn `.envtabs` với các nhóm tab cũ. Đổi trang (URL khác hẳn) thì dùng link điều hướng, không dùng tab.
  */
-export interface TabOption<V extends string> {
+export interface TabOption<V extends string | number> {
   value: V;
   label: string;
 }
 
-export function Tabs<V extends string>({
+export function Tabs<V extends string | number>({
   label,
   value,
   options,
@@ -55,7 +55,7 @@ export function Tabs<V extends string>({
     <div className="envtabs" role="tablist" aria-label={label} ref={list}>
       {options.map((o, i) => (
         <button
-          key={o.value}
+          key={String(o.value)}
           type="button"
           role="tab"
           aria-selected={o.value === value}
