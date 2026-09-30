@@ -318,9 +318,15 @@ export const rolloutDetailRoute = createRoute({
 export const architectureRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "architecture",
-  validateSearch: (s: Record<string, unknown>): { tool?: string } => {
+  // [Plan #57 QĐ-1] Góc nhìn: mặc định "Tổng quan hệ thống" không ghi ra, `view=infra` là sơ đồ hạ tầng
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { tool?: string; view?: "infra" } => {
     const tool = str(s.tool);
-    return tool === undefined ? {} : { tool };
+    return {
+      ...(tool === undefined ? {} : { tool }),
+      ...(s.view === "infra" ? { view: "infra" as const } : {}),
+    };
   },
   component: ArchitecturePage,
 });

@@ -8,7 +8,6 @@ import { PageHead } from "../../components/PageHead";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { StatusLabel, type Tone } from "../../components/StatusLabel";
 import {
-  dayLabel,
   formatDateTime,
   formatNumber,
   formatPercent,
@@ -16,6 +15,7 @@ import {
 } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { useAuthStore } from "../auth/auth-store";
+import { deployBars } from "../deployment/deploy-bars";
 import { PROVIDER_LABEL } from "../project/cloud/cloud-labels";
 import { ProjectStatus } from "../project/ProjectStatus";
 import { rolesMessages } from "../project/roles.messages";
@@ -221,17 +221,9 @@ function HomeBody({ home }: { home: HomeWire }) {
           title={m.deploys}
           level={2}
           format={formatNumber}
-          data={home.deploys.map((d) => {
-            const label = dayLabel(d.date);
-            return {
-              key: d.date,
-              short: label.short,
-              full: label.full,
-              parts: [
-                { label: m.succeeded, value: d.success, tone: "neutral" },
-                { label: m.failed, value: d.failure, tone: "error" },
-              ],
-            };
+          data={deployBars(home.deploys, {
+            success: m.succeeded,
+            failure: m.failed,
           })}
         />
       </section>

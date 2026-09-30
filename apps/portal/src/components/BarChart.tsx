@@ -33,6 +33,7 @@ export function BarChart({
   format,
   height = 120,
   aside,
+  captionHidden = false,
 }: {
   title: string;
   level: 2 | 3 | 4;
@@ -40,6 +41,8 @@ export function BarChart({
   format: (n: number) => string;
   height?: number;
   aside?: ReactNode;
+  /** Ẩn tiêu đề và chú giải khỏi mắt (vẫn là tên của hình cho trình đọc màn hình) — khi thẻ bao quanh đã nói đủ */
+  captionHidden?: boolean;
 }) {
   const totals = data.map((d) => d.parts.reduce((s, p) => s + p.value, 0));
   const max = Math.max(1, ...totals);
@@ -47,7 +50,7 @@ export function BarChart({
   const legend = data[0]?.parts ?? [];
   return (
     <figure className="bc">
-      <figcaption className="lc-h">
+      <figcaption className={captionHidden ? "visually-hidden" : "lc-h"}>
         <Heading>{title}</Heading>
         <span className="lc-lg">
           {legend.map((p) => (

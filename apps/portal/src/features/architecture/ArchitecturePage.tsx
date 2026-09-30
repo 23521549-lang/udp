@@ -20,14 +20,22 @@ import { ArchitectureDiagram } from "./ArchitectureDiagram";
 import { architectureApi } from "./architecture-api";
 import { healthSummary, relationsOf, toolHealth } from "./architecture-model";
 import { architectureMessages } from "./architecture.messages";
+import { SystemOverview } from "./SystemOverview";
+import { systemMessages } from "./system.messages";
+
+type View = "system" | "infra";
+const VIEWS: readonly View[] = ["system", "infra"];
 
 /**
  * Kiến trúc (Plan #53 QĐ-7): hệ thống UDP đã dựng cho project — cloud, mạng, cluster, environment,
  * workload và công cụ — cùng cạnh phụ thuộc tính bởi CHÍNH resolver đã chặn cấu hình sai (QĐ-3).
- * Công cụ đang chọn nằm trên URL (`?tool=`): gửi link là gửi đúng chỗ đang xem.
+ * [Plan #57 QĐ-1] Hai góc nhìn: "Tổng quan hệ thống" (mặc định, C4 theo vai trò) và "Hạ tầng & công cụ"
+ * (sơ đồ lồng nhau). Góc nhìn và công cụ đang chọn nằm trên URL (`?view=`, `?tool=`): gửi link là gửi đúng
+ * chỗ đang xem.
  */
 export function ArchitecturePage() {
   const m = useMessages(architectureMessages).page;
+  const views = useMessages(systemMessages);
   const { project } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/architecture" });
   const navigate = useNavigate({
@@ -37,6 +45,17 @@ export function ArchitecturePage() {
     queryKey: qk.architecture(project.id),
     queryFn: () => architectureApi.get(project.id),
   });
+
+  const view: View = search.view ?? "system";
+  const show = (next: View): void => {
+    void navigate({
+      search: (prev) => {
+        const { view: _drop, ...rest } = prev;
+        return next === "system" ? rest : { ...rest, view: next };
+      },
+      replace: true,
+    });
+  };
 
   const select = (tool: string | undefined): void => {
     void navigate({
@@ -63,9 +82,9 @@ export function ArchitecturePage() {
         <div className="scroll">
           <PageHead
             title={m.title}
-            lead={m.lead}
+            lead={view === "system" ? views.lead : m.lead}
             minis={
-              a === undefined
+              a === undefined || view === "system"
                 ? undefined
                 : [
                     { value: a.tools.length, label: m.tools(a.tools.length) },
@@ -78,6 +97,23 @@ export function ArchitecturePage() {
             }
           />
           <div className="page">
+            <div
+              className="envtabs"
+              role="tablist"
+              aria-label={views.views.label}
+            >
+              {VIEWS.map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="tab"
+                  aria-selected={v === view}
+                  onClick={() => show(v)}
+                >
+                  {views.views[v]}
+                </button>
+              ))}
+            </div>
             {arch.isPending ? (
               <Loading />
             ) : arch.isError ? (
@@ -89,6 +125,7 @@ export function ArchitecturePage() {
               <ArchitectureBody
                 arch={arch.data.architecture}
                 projectId={project.id}
+                view={view}
                 selected={search.tool}
                 onSelect={select}
               />
@@ -111,11 +148,13 @@ export function ArchitecturePage() {
 function ArchitectureBody({
   arch,
   projectId,
+  view,
   selected,
   onSelect,
 }: {
   arch: ArchitectureWire;
   projectId: string;
+  view: View;
   selected: string | undefined;
   onSelect: (key: string | undefined) => void;
 }) {
@@ -126,6 +165,7 @@ function ArchitectureBody({
   const health = healthSummary(arch.tools);
   const byKey = new Map(arch.tools.map((t) => [t.key, t]));
   const nameOf = (key: string): string => byKey.get(key)?.displayName ?? key;
+  const toggle = (key: string) => onSelect(key === selected ? undefined : key);
   return (
     <>
       {!arch.valid && (
@@ -143,16 +183,31 @@ function ArchitectureBody({
           </div>
         </div>
       )}
-      <p className="c3 arch-sum">
-        {m.summary(arch.tools.length, health, formatDateTime(arch.generatedAt))}
-      </p>
-      <ArchitectureDiagram
-        arch={arch}
-        projectId={projectId}
-        selected={selected}
-        onSelect={(key) => onSelect(key === selected ? undefined : key)}
-      />
-      {arch.edges.length > 0 && (
+      {view === "system" ? (
+        <SystemOverview
+          arch={arch}
+          projectId={projectId}
+          selected={selected}
+          onSelect={toggle}
+        />
+      ) : (
+        <>
+          <p className="c3 arch-sum">
+            {m.summary(
+              arch.tools.length,
+              health,
+              formatDateTime(arch.generatedAt),
+            )}
+          </p>
+          <ArchitectureDiagram
+            arch={arch}
+            projectId={projectId}
+            selected={selected}
+            onSelect={toggle}
+          />
+        </>
+      )}
+      {view === "infra" && arch.edges.length > 0 && (
         <details className="arch-list">
           <summary>{m.edgeList(arch.edges.length)}</summary>
           <ul>

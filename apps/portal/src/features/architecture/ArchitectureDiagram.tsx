@@ -6,7 +6,8 @@ import type {
 import { Cloud, Lock, Network, Server } from "lucide-react";
 import { useState } from "react";
 import { Icon } from "../../components/Icon";
-import { StatusLabel, type Tone } from "../../components/StatusLabel";
+import { LinkLayer } from "../../components/LinkLayer";
+import { StatusLabel } from "../../components/StatusLabel";
 import { useMessages } from "../../i18n";
 import { relativeTime } from "../../lib/format";
 import { PROVIDER_LABEL } from "../project/cloud/cloud-labels";
@@ -15,14 +16,15 @@ import {
   resourceKinds,
   tiersOf,
   toolHealth,
+  WORKLOAD_TONE,
 } from "./architecture-model";
 import { architectureMessages } from "./architecture.messages";
-import { EdgeLayer } from "./EdgeLayer";
 
 /**
  * Sơ đồ kiến trúc (Plan #53 QĐ-7; DESIGN.md §6 "Sơ đồ kiến trúc"): khung LỒNG NHAU theo chứa đựng —
  * cloud ⊃ mạng ⊃ cluster ⊃ (công cụ cấp cluster theo bậc deploy) và (mỗi environment ⊃ workload và
- * công cụ cấp namespace). Mỗi tầng một sắc nền; cạnh phụ thuộc vẽ ở `EdgeLayer`.
+ * công cụ cấp namespace). Mỗi tầng một sắc nền; cạnh phụ thuộc vẽ ở `LinkLayer`: nét mảnh từ công cụ tiêu
+ * thụ tới công cụ cung cấp (mũi tên chỉ vào bên cung cấp: "cần").
  *
  * Cấu trúc là danh sách có tiêu đề — trình đọc màn hình đi qua nó như một cây; mỗi công cụ là một nút
  * (bàn phím chọn được), quan hệ bằng chữ ở panel. Không thư viện đồ thị: cấu trúc là một cây, cạnh chỉ
@@ -40,7 +42,7 @@ export function ArchitectureDiagram({
   onSelect: (key: string) => void;
 }) {
   const m = useMessages(architectureMessages).diagram;
-  // Callback ref qua state: lớp cạnh đo SAU khi khung đã gắn (xem `EdgeLayer`)
+  // Callback ref qua state: lớp cạnh đo SAU khi khung đã gắn (xem `LinkLayer`)
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [hover, setHover] = useState<string | undefined>(undefined);
   const tiers = tiersOf(arch.tools);
@@ -186,26 +188,21 @@ export function ArchitectureDiagram({
           </section>
         </section>
       </section>
-      <EdgeLayer
+      <LinkLayer
         container={root}
-        edges={arch.edges}
+        links={arch.edges.map((e) => ({
+          id: `${e.from}>${e.to}>${e.capabilityId}`,
+          from: e.from,
+          to: e.to,
+        }))}
         active={hover ?? selected}
         version={`${arch.generatedAt}:${String(arch.tools.length)}`}
+        attr="tool"
+        className="arch-edges"
       />
     </div>
   );
 }
-
-const WORKLOAD_TONE: Record<
-  ArchitectureWire["environments"][number]["workloads"][number]["lastEvent"],
-  Tone
-> = {
-  DEPLOY_PENDING: "warn",
-  DEPLOY_START: "running",
-  DEPLOY_SUCCESS: "ok",
-  DEPLOY_FAILURE: "error",
-  ROLLBACK: "warn",
-};
 
 function Kinds({ kinds, empty }: { kinds: [string, number][]; empty: string }) {
   if (kinds.length === 0) {

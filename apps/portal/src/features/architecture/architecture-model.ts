@@ -42,6 +42,18 @@ export function toolHealth(tool: ArchitectureToolWire): {
   }
 }
 
+/** Tone của sự kiện deploy cuối của một workload — một bảng cho hai sơ đồ của trang Kiến trúc */
+export const WORKLOAD_TONE: Record<
+  ArchitectureWire["environments"][number]["workloads"][number]["lastEvent"],
+  Tone
+> = {
+  DEPLOY_PENDING: "warn",
+  DEPLOY_START: "running",
+  DEPLOY_SUCCESS: "ok",
+  DEPLOY_FAILURE: "error",
+  ROLLBACK: "warn",
+};
+
 /** Mức nghiêm trọng để sắp: lỗi trước, rồi cảnh báo, đang chạy, không rõ, ổn */
 const SEVERITY: Record<Tone, number> = {
   error: 0,

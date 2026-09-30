@@ -1488,6 +1488,7 @@ ol.lst {
   inset: 0 auto auto 0;
   pointer-events: none;
   overflow: visible;
+  color: var(--line-2);
 }
 .arch-edges path {
   fill: none;
@@ -1526,6 +1527,378 @@ ol.lst {
     grid-auto-flow: row;
     grid-auto-columns: auto;
     gap: 14px;
+  }
+}
+
+/*
+ * [Plan #57] Tổng quan hệ thống (DESIGN.md §6): bố cục C4 CỐ ĐỊNH theo vai trò — giao hàng trên, người dùng và lưu
+ * lượng trái, environment giữa, dữ liệu phải, quan sát dưới, quản trị phải dưới. Khoảng cách giữa các thẻ đủ cho
+ * nhãn cạnh (lớp nhãn nằm TRÊN thẻ, đè lên thẻ là che chữ).
+ */
+.sys-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+.sys-kpis .kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sys-kpis .kpi .v {
+  font-size: 24px;
+  margin: 2px 0;
+}
+.sys-kpis .kpi p {
+  margin: 4px 0 0;
+}
+.sys-kpis .bc {
+  margin: 8px 0 0;
+}
+.sys-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 12px;
+}
+.sys-legend {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-right: auto;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.sys-legend .lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sys-line {
+  display: inline-block;
+  width: 22px;
+  border-top: 1.5px solid var(--ink-4);
+}
+.sys-line.dash {
+  border-top-style: dashed;
+}
+.sys-scroll {
+  overflow-x: auto;
+  margin-bottom: 18px;
+}
+.sys-map {
+  position: relative;
+  display: grid;
+  grid-template-columns: 112px 164px minmax(440px, 1fr) 164px;
+  grid-template-areas:
+    "delivery delivery delivery delivery"
+    "users traffic envs data"
+    ". observe observe govern";
+  gap: 44px 48px;
+  min-width: 1060px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--sunk);
+}
+.sys-delivery {
+  grid-area: delivery;
+}
+/* Người dùng ngang hàng thẻ đầu của cột Lưu lượng (dưới tiêu đề vùng): cạnh HTTPS ngắn, không chéo cả khung */
+.sys-users {
+  grid-area: users;
+  align-self: start;
+  margin-top: 24px;
+}
+.sys-traffic {
+  grid-area: traffic;
+}
+.sys-envs {
+  grid-area: envs;
+}
+.sys-data {
+  grid-area: data;
+}
+.sys-observe {
+  grid-area: observe;
+}
+.sys-govern {
+  grid-area: govern;
+}
+/* Mỗi vùng cao đúng nội dung của nó — dải Quan sát không giãn theo cột Quản trị */
+.sys-zone {
+  align-self: start;
+}
+.sys-delivery,
+.sys-observe {
+  padding: 10px 12px 12px;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+/*
+ * Cạnh telemetry đi vào MÉP TRÊN thẻ của dải Quan sát: tiêu đề của dải xuống dưới các thẻ để cạnh không chạy đè lên
+ * chữ. Chỉ đổi thứ tự hiển thị — trong DOM tiêu đề vẫn đứng trước, trình đọc màn hình đọc đúng thứ tự.
+ */
+.sys-observe {
+  display: flex;
+  flex-direction: column-reverse;
+}
+.sys-observe .sys-zone-h {
+  margin: 8px 0 0;
+}
+.sys-zone-h {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sys-zone-b {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+}
+.sys-delivery .sys-zone-b,
+.sys-observe .sys-zone-b {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px 56px;
+}
+.sys-govern .sys-zone-b {
+  gap: 10px;
+}
+.sys-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.sys-actor {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 112px;
+  padding: 10px 8px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-2);
+  text-align: center;
+  font-size: 12.5px;
+}
+.sys-actor .i {
+  color: var(--ink-2);
+}
+.sys-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-2);
+  text-align: left;
+  color: var(--ink);
+}
+.sys-delivery .sys-card,
+.sys-observe .sys-card {
+  width: 150px;
+}
+.sys-card-h {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sys-card-h .i {
+  flex: none;
+  color: var(--ink-2);
+}
+.sys-card .mono {
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.sys-card .sl {
+  font-size: 12px;
+}
+.sys-card:hover {
+  background: var(--hover);
+}
+/* Sức khoẻ: viền đỏ/cam CỘNG biểu tượng và chữ của StatusLabel — không chỉ màu (QĐ-4) */
+.sys-card.tone-error {
+  box-shadow: 0 0 0 1.5px var(--red);
+}
+.sys-card.tone-warn {
+  box-shadow: 0 0 0 1.5px var(--amber);
+}
+.sys-card[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.sys-envs {
+  position: relative;
+  z-index: 1;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.sys-env-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px;
+}
+.sys-env {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--sunk);
+}
+.sys-env[data-env-production] {
+  box-shadow: inset 0 0 0 1px var(--env-production);
+}
+.sys-env h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.sys-ns {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.sys-wls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sys-wl {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--ink);
+}
+.sys-wl:hover {
+  background: var(--hover);
+}
+.sys-wl b {
+  font-size: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.sys-wl .mono.c3 {
+  font-size: 11.5px;
+}
+.sys-wl .sl {
+  font-size: 12px;
+}
+.sys-empty {
+  margin: 0;
+  font-size: 12.5px;
+}
+.sys-links {
+  position: absolute;
+  inset: 0 auto auto 0;
+  pointer-events: none;
+  overflow: visible;
+  color: var(--ink-4);
+}
+.sys-links path {
+  fill: none;
+  stroke: var(--ink-4);
+  stroke-width: 1.5;
+  transition: opacity 0.15s var(--ease);
+}
+.sys-links path.dash {
+  stroke-dasharray: 5 4;
+}
+.sys-links path.on {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.sys-links path.dim {
+  opacity: 0.3;
+}
+/* Nhãn cạnh (LinkLayer): lớp HTML trên thẻ, không bắt chuột */
+.link-labels {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.link-labels span {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-2);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  transition: opacity 0.15s var(--ease);
+}
+.link-labels span.on {
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.link-labels span.dim {
+  opacity: 0.35;
+}
+.sys-tables {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.sys-tables caption {
+  padding: 10px 12px 6px;
+  text-align: left;
+  font-weight: 600;
+}
+@media (max-width: 1100px) {
+  .sys-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* Dưới 860px: một cột theo thứ tự đọc, lớp cạnh ẩn — bản bảng mang đủ quan hệ (QĐ-6) */
+@media (max-width: 860px) {
+  .sys-map {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "delivery" "users" "traffic" "envs" "data" "observe" "govern";
+    gap: 18px;
+    min-width: 0;
+  }
+  .sys-zone-b,
+  .sys-delivery .sys-zone-b,
+  .sys-observe .sys-zone-b {
+    gap: 10px;
+  }
+  .sys-links,
+  .link-labels {
+    display: none;
+  }
+  .sys-kpis {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

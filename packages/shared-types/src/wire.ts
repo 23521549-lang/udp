@@ -2433,6 +2433,7 @@ export type ArchitectureWire = z.infer<
 >["architecture"];
 export type ArchitectureToolWire = z.infer<typeof architectureToolWire>;
 export type RedMetricsWire = z.infer<typeof redMetricsResponseWire>["metrics"];
+export type WorkloadRedWire = z.infer<typeof workloadRedWire>;
 export type MonitoringConsoleWire = z.infer<typeof monitoringConsoleWire>;
 export type HomeWire = z.infer<typeof homeResponseWire>["home"];
 export type HomeAttentionWire = z.infer<typeof homeAttentionWire>;

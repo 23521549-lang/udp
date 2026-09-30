@@ -108,8 +108,8 @@ describe("lint thiết kế của Portal", () => {
       join("components", "LineChart.tsx"),
       // Biểu đồ cột theo nhóm của trang Bằng chứng, thang tuyến tính hoặc log (Plan #56 QĐ-5)
       join("components", "CategoryChart.tsx"),
-      // Lớp cạnh của sơ đồ kiến trúc: nét nối giữa các nút HTML, vẽ sau layout (Plan #53 QĐ-7)
-      join("features", "architecture", "EdgeLayer.tsx"),
+      // Lớp cạnh chung của các sơ đồ: nét nối giữa các nút HTML, vẽ sau layout (Plan #53 QĐ-7, Plan #57 QĐ-8)
+      join("components", "LinkLayer.tsx"),
     ]);
     const offenders = tsxFiles
       .map((f) => relative(SRC, f))

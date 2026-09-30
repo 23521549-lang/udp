@@ -30,6 +30,7 @@ import {
   formatPercent,
 } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
+import { deployBars } from "../../deployment/deploy-bars";
 import { AdminPage } from "../AdminLayout";
 import { adminApi } from "../admin-api";
 import {
@@ -352,17 +353,9 @@ function DoraBody({ evidence }: { evidence: PlatformDoraWire }) {
       <BarChart
         title={m.daily}
         level={4}
-        data={evidence.daily.map((d) => {
-          const at = Date.parse(`${d.date}T00:00:00Z`);
-          return {
-            key: d.date,
-            short: formatDayMonth(at),
-            full: formatDateTime(`${d.date}T00:00:00Z`),
-            parts: [
-              { label: m.success, value: d.success, tone: "neutral" as const },
-              { label: m.failure, value: d.failure, tone: "error" as const },
-            ],
-          };
+        data={deployBars(evidence.daily, {
+          success: m.success,
+          failure: m.failure,
         })}
         format={formatNumber}
       />

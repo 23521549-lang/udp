@@ -152,7 +152,7 @@ async function chromeTexts(page: Page): Promise<string[]> {
       for (const data of copy.querySelectorAll('[translate="no"]')) {
         data.remove();
       }
-      return copy.textContent ?? "";
+      return copy.textContent;
     }),
   );
 }

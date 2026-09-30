@@ -143,12 +143,12 @@ describe("Tổng quan project: thẻ Cloud, lưới sức khoẻ, sơ đồ thu 
   });
 });
 
-describe("Kiến trúc", () => {
+describe("Kiến trúc: góc Hạ tầng & công cụ (?view=infra)", () => {
   it("khung lồng nhau đọc được; bấm công cụ ⇒ panel kể quan hệ bằng chữ, URL giữ ?tool=", async () => {
     const detail = projectFixture("VIEWER");
     useProjectHandlers(detail);
     const { router } = renderApp(
-      `/app/projects/${detail.project.id}/architecture`,
+      `/app/projects/${detail.project.id}/architecture?view=infra`,
     );
 
     expect(
@@ -167,6 +167,7 @@ describe("Kiến trúc", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Monitoring/ }));
     expect(router.state.location.search).toMatchObject({
+      view: "infra",
       tool: "monitoring:prometheus-grafana",
     });
     const panel = screen.getByRole("complementary", {
@@ -200,7 +201,9 @@ describe("Kiến trúc", () => {
         HttpResponse.json(body),
       ),
     );
-    renderApp(`/app/projects/${detail.project.id}/architecture?tool=nope`);
+    renderApp(
+      `/app/projects/${detail.project.id}/architecture?view=infra&tool=nope`,
+    );
     expect(
       await screen.findByText(/chưa qua kiểm tra, nên chưa có thứ tự deploy/),
     ).toBeInTheDocument();
