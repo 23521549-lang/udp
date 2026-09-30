@@ -104,12 +104,12 @@ sao … tham khảo các nền tảng tương tự khác đi". Quy trình: nghi�
 Backstage, Grafana, W3C WAI), bản mẫu bốn góc nhìn chạy ở máy, người dùng duyệt góc 1 và 4 ("tui chọn 1 và 4
 nha"), rồi mới sửa mã. Spec: `docs/plans/plan57-spec.md`; kế hoạch: `plan57-plan.md`; quyết định D-P50.
 
-| Đợt | Commit       | Nội dung                                                                                                                                                                                              |
-| --- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 57a | `08e3c3c`    | `architecture.deploys` (14 ngày UTC, mọi env, cùng `dailyOutcomes`); `utcDayWindow` một định nghĩa cho E10, trang chủ, Kiến trúc; deployment khi gộp env là cặp (env, `deployment_id`)                |
-| 57b | `52d3188`    | Trang Kiến trúc hai góc nhìn, "Tổng quan hệ thống" mặc định (C4 theo vai trò, cạnh vai trò nối qua domain vắng, bốn con số, bản bảng); `LinkLayer` thay `EdgeLayer`; sơ đồ cũ ở `?view=infra`         |
-| 57c | `1623be0`    | `/admin/architecture`: máy ảo Oracle Always Free với sáu khối, tám hệ bên ngoài, cạnh theo lời gọi có thật trong mã, sức khoẻ sống từ ba route sẵn có, ba thanh ngân sách; `DiagramBar`, `StackedBar` |
-| 57d | (commit này) | Cổng `portal-demo` năm lượt có màn `architecture`, `architecture-infra`, `admin-architecture`; §10.6, §10.11, §10.14, D-P50, DESIGN.md                                                                |
+| Đợt | Commit    | Nội dung                                                                                                                                                                                                                                          |
+| --- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 57a | `08e3c3c` | `architecture.deploys` (14 ngày UTC, mọi env, cùng `dailyOutcomes`); `utcDayWindow` một định nghĩa cho E10, trang chủ, Kiến trúc; deployment khi gộp env là cặp (env, `deployment_id`)                                                            |
+| 57b | `52d3188` | Trang Kiến trúc hai góc nhìn, "Tổng quan hệ thống" mặc định (C4 theo vai trò, cạnh vai trò nối qua domain vắng, bốn con số, bản bảng); `LinkLayer` thay `EdgeLayer`; sơ đồ cũ ở `?view=infra`                                                     |
+| 57c | `1623be0` | `/admin/architecture`: máy ảo Oracle Always Free với sáu khối, tám hệ bên ngoài, cạnh theo lời gọi có thật trong mã, sức khoẻ sống từ ba route sẵn có, ba thanh ngân sách; `DiagramBar`, `StackedBar`                                             |
+| 57d | `b11d3bf` | Cổng `portal-demo` có màn `architecture`, `architecture-infra`, `admin-architecture`: lượt desktop và mobile ĐẠT, ba lượt còn lại (tối, tối di động, tiếng Anh) chưa chạy xong lúc tắt máy, cần chạy lại; §10.6, §10.11, §10.14, D-P50, DESIGN.md |
 
 Cho người tiếp theo:
 
