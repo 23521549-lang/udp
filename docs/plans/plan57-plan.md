@@ -392,12 +392,12 @@ TIÊN rời `users`).
 
 ## Kết quả (30/09/2026)
 
-| Đợt | Commit     | Cổng                                                                                                                                                                                                   |
-| --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 57a | `08e3c3c`  | S1: dora, dashboards, admin, wire-golden, wire-routes (162 test) xanh; golden `GET /projects/{id}/architecture` ghi lại; contract                                                                      |
-| 57b | `52d3188`  | Portal 256 test, typecheck (cả demo), eslint, prettier xanh                                                                                                                                            |
-| 57c | `1623be0`  | Portal 263 test, typecheck, eslint, prettier xanh                                                                                                                                                      |
-| 57d | commit này | Cổng `portal-demo`: lượt desktop và mobile ĐẠT với ba màn mới; ba lượt còn lại (tối, tối di động, tiếng Anh) chưa chạy xong lúc người dùng tắt máy — chạy lại `pnpm --filter @udp/portal demo:screens` |
+| Đợt | Commit    | Cổng                                                                                                                              |
+| --- | --------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 57a | `08e3c3c` | S1: dora, dashboards, admin, wire-golden, wire-routes (162 test) xanh; golden `GET /projects/{id}/architecture` ghi lại; contract |
+| 57b | `52d3188` | Portal 256 test, typecheck (cả demo), eslint, prettier xanh                                                                       |
+| 57c | `1623be0` | Portal 263 test, typecheck, eslint, prettier xanh                                                                                 |
+| 57d | `b11d3bf` | Cổng `portal-demo` năm lượt (desktop, mobile, tối, tối di động, tiếng Anh) ĐẠT với ba màn mới, 4,3 phút                           |
 
 Lệch so với kế hoạch, có lý do:
 
