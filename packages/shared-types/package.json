@@ -21,7 +21,8 @@
     "./cloud-api": "./src/cloud-api.ts",
     "./domain-api": "./src/domain-api.ts",
     "./provisioning-api": "./src/provisioning-api.ts",
-    "./environment-api": "./src/environment-api.ts"
+    "./environment-api": "./src/environment-api.ts",
+    "./measurements": "./src/measurements.ts"
   },
   "scripts": {
     "test": "vitest run",

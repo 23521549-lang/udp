@@ -2,12 +2,13 @@
 
 Mọi con số dưới đây sinh từ file JSON trong `raw/` — mỗi file tự mô tả: commit, `sourceDirty`, `sourceDiffSha256` (hash phần mã chưa commit lúc đo — tái tạo được từ commit chứa file), máy, RAM trống lúc bắt đầu, hình học mạng. Phép đo chưa chạy được vì thiếu hạ tầng: [`kiem-chung-con-no.md`](kiem-chung-con-no.md). Đăng ký giả thuyết trước của E5: [`E5-preregistration.md`](E5-preregistration.md).
 
-Chạy lại: `pnpm --filter @udp/experiments <e3|e4|e14|i34>` (E5: xem sổ nợ); danh sách flag của Portal: `pnpm --filter @udp/core-backend measure:flag-list`; E1: `pnpm --filter @udp/experiments e1`; E8: `pnpm --filter @udp/core-backend e8`. Tuỳ chọn `--note "…"` ghi chú vào kết quả; không sửa tay file JSON.
+Chạy lại: `pnpm --filter @udp/experiments <e3|e4|e7|e14|i34>` (E5: xem sổ nợ); danh sách flag của Portal: `pnpm --filter @udp/core-backend measure:flag-list`; E1: `pnpm --filter @udp/experiments e1`; E8: `pnpm --filter @udp/core-backend e8`. Tuỳ chọn `--note "…"` ghi chú vào kết quả; không sửa tay file JSON.
 
 | Phép đo                      | Trạng thái                                                                             | File                                                                               | Hình học                        |
 | ---------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------- |
 | E1 — effort mở rộng adapter  | đo thật từ git (0 phá vỡ, 0 nới lỏng)                                                  | [`E1-20260927-0023.json`](raw/E1-20260927-0023.json)                               | git (không mạng)                |
 | E8 — mutation validator      | đo thật (17/17 bị giết)                                                                | [`E8-20260927-0029.json`](raw/E8-20260927-0029.json)                               | in-process                      |
+| E7 — phân phối hash          | đo thật (χ² dưới tới hạn α = 0,001 ở cả ba kịch bản, N = 1 000 000)                    | [`E7-20260930-1118.json`](raw/E7-20260930-1118.json)                               | in-process                      |
 | E3 — độ trễ đánh giá         | đo thật (số µs chính thức: sổ nợ E3-quiet)                                             | [`E3-20260922-1906.json`](raw/E3-20260922-1906.json)                               | in-process + OFREP dev-geometry |
 | E4 — lan truyền cấu hình     | đo thật, dev-geometry (CI: sổ nợ E4-ci)                                                | [`E4-20260922-1702.json`](raw/E4-20260922-1702.json)                               | máy dev → Supabase Singapore    |
 | E5 — MTTD/MTTR auto-rollback | chưa chạy — sổ nợ E5                                                                   | —                                                                                  | —                               |
@@ -151,3 +152,6 @@ Lần đo đầu tìm ra một lỗ hổng của bộ sinh differential: nó kh�
 "chỉ kiểm một chiều" chỉ bị test viết tay giết. Sau khi vá (cùng commit), differential giết được nó.
 Ba mutant còn lại chỉ bị test viết tay giết là kiểm KHAI BÁO sai dạng (semver hỏng, anyOf một nhánh,
 khoảng semver sai) — ngoài miền của differential theo thiết kế: bộ sinh chỉ tạo khai báo hợp lệ.
+
+Mọi tệp thô parse qua schema chung `@udp/shared-types/measurements` (`packages/shared-types/tests/measurements.test.ts`)
+— và trang **Bằng chứng** của Bảng điều khiển nền tảng (`/admin/evidence`, Plan #56) vẽ biểu đồ thẳng từ chúng.
