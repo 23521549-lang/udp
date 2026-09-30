@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import type { FlagSummaryWire } from "@udp/shared-types/wire";
 import { Brush, Flag, Plus, Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../components/Icon";
 import { Pager } from "../../components/Pager";
 import { ProgressRing } from "../../components/ProgressRing";
@@ -16,6 +16,8 @@ import {
   relativeTime,
 } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
+import { useShortcutsEnabled } from "../../lib/shortcuts";
+import { usePeekFocus } from "../../lib/use-peek-focus";
 import { useSearchInput } from "../../lib/use-search-input";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
@@ -23,9 +25,9 @@ import { can } from "../project/roles";
 import { CreateFlagDialog } from "./CreateFlagDialog";
 import { FLAG_PAGE_SIZE, flagApi } from "./flag-api";
 import { useFlagCounts } from "./flag-counts";
-import { LIFECYCLE_ORDER, lifecycleLabel } from "./flag-labels";
+import { LIFECYCLE_ORDER, lifecycleLabel, servingOf } from "./flag-labels";
 import { flagMessages } from "./flag.messages";
-import { FlagDetail } from "./FlagDetail";
+import { closePeekOnEscape, FlagDetail } from "./FlagDetail";
 import { PageHead } from "../../components/PageHead";
 
 /**
@@ -118,6 +120,15 @@ export function FlagsPage() {
     [navigate],
   );
 
+  /*
+   * [Plan #58 UX-38] Panel xem nhanh: focus vào panel khi mở (trên điện thoại panel phủ cả màn), Esc đóng, đóng xong
+   * focus về dòng đã mở. Hook nằm ở trang vì panel bị gỡ khi đóng. j/k vẫn đi tiếp vì nghe ở document.
+   */
+  const panel = useRef<HTMLElement>(null);
+  usePeekFocus(panel, search.flag, () =>
+    closePeekOnEscape(() => open(undefined)),
+  );
+
   const ordered = useMemo(
     () =>
       LIFECYCLE_ORDER.flatMap((status) =>
@@ -128,9 +139,11 @@ export function FlagsPage() {
   const matched = flags.data?.total ?? 0;
 
   const canCreate = can(project.myRole, "DEVELOPER");
+  const shortcuts = useShortcutsEnabled();
 
-  // Phím tắt (DESIGN.md §7): j/k lên xuống, Enter mở, c tạo flag
+  // Phím tắt (DESIGN.md §7): j/k lên xuống, Enter mở, c tạo flag — [Plan #58 UX-40] tắt được ở menu tài khoản
   useEffect(() => {
+    if (!shortcuts) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (
@@ -161,7 +174,7 @@ export function FlagsPage() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [ordered, search.flag, open, canCreate]);
+  }, [ordered, search.flag, open, canCreate, shortcuts]);
 
   const total = counts.total ?? 0;
 
@@ -187,7 +200,8 @@ export function FlagsPage() {
                 onClick={() => setCreating(true)}
               >
                 <Icon of={Plus} />
-                {m.createFlag} <kbd>C</kbd>
+                {m.createFlag}
+                {shortcuts && <kbd>C</kbd>}
               </button>
             )}
           </>
@@ -286,7 +300,11 @@ export function FlagsPage() {
           )}
         </div>
         {search.flag !== undefined && (
-          <FlagDetail flagId={search.flag} onClose={() => open(undefined)} />
+          <FlagDetail
+            flagId={search.flag}
+            panelRef={panel}
+            onClose={() => open(undefined)}
+          />
         )}
       </div>
       {creating && (
@@ -314,7 +332,8 @@ function FlagRow({
   selected: boolean;
 }) {
   const m = useMessages(flagMessages).list;
-  const on = flag.env?.isEnabled === true;
+  const serving = servingOf(flag);
+  const tracked = flag.env?.isTracked === true;
   return (
     <Link
       to="."
@@ -322,26 +341,36 @@ function FlagRow({
       className="row"
       aria-current={selected ? "true" : undefined}
     >
-      <ProgressRing
-        percent={on ? 100 : 0}
-        tone={flag.env?.isTracked ? "accent" : "muted"}
-        dashed={flag.lifecycleStatus === "DRAFT"}
-      />
+      {/* [Plan #58 D-F25] Vòng màu nhấn = đang phát hành dần: nói ra bằng chữ, không chỉ bằng màu */}
+      <span className="ring" title={tracked ? m.inRollout : undefined}>
+        <ProgressRing
+          percent={serving === "on" ? 100 : 0}
+          tone={tracked ? "accent" : "muted"}
+          dashed={serving === "draft"}
+        />
+        {tracked && <span className="visually-hidden">{m.inRollout}</span>}
+      </span>
       <span className="t mono" translate="no">
         {flag.key}
       </span>
       <span className="k">{flag.description ?? ""}</span>
       <span className="envs">
         <span>
-          <i className={on ? "pip on" : "pip"} aria-hidden />
-          {on ? m.on : m.off}
+          <i className={serving === "on" ? "pip on" : "pip"} aria-hidden />
+          {m[serving]}
         </span>
       </span>
       <Sparkline values={flag.stats?.daily14 ?? []} />
       <span className="when num">
-        {flag.stats === undefined ? "" : compactNumber(flag.stats.evalCount7d)}
+        {flag.stats !== undefined && (
+          <>
+            <span className="visually-hidden">{m.srEvals}</span>
+            {compactNumber(flag.stats.evalCount7d)}
+          </>
+        )}
       </span>
       <span className="when" title={formatDateTime(flag.updatedAt)}>
+        <span className="visually-hidden">{m.srUpdated}</span>
         {relativeTime(flag.updatedAt)}
       </span>
     </Link>

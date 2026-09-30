@@ -5,6 +5,7 @@ import type {
 } from "@udp/shared-types/wire";
 import { useCallback, useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
+import { InfoTip } from "../../../components/InfoTip";
 import { Switch } from "../../../components/Switch";
 import { toast } from "../../../components/Toast";
 import { useMessages } from "../../../i18n";
@@ -89,6 +90,7 @@ export function EnvControls({
     <div className="env-controls">
       <div className="sect">
         <h3>{m.enabledIn(env.name)}</h3>
+        <InfoTip term="killSwitch" />
         <div className="r">
           <Switch
             checked={isEnabled}

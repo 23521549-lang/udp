@@ -5,20 +5,27 @@ import {
   type ControlModeWire,
   type ServiceStrategy,
 } from "@udp/shared-types/rollout";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Dialog } from "../../components/Dialog";
+import { Field, focusFirstInvalid } from "../../components/Field";
+import { InfoTip } from "../../components/InfoTip";
 import { useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
+import { formatDuration } from "../../lib/format";
 import { isApiError } from "../../lib/http";
 import { qk } from "../../lib/query-keys";
 import { domainApi } from "../domain/domain-api";
 import { useProjectContext } from "../project/ProjectLayout";
 import { rolloutApi, type CreateServiceRolloutInput } from "./rollout-api";
-import { MetricsSetupGuide, NumberField } from "./rollout-form";
+import {
+  MetricsSetupGuide,
+  NumberField,
+  unplacedErrors,
+  WORKLOAD_NAME,
+  WorkloadField,
+} from "./rollout-form";
 import { rolloutMessages } from "./rollout.messages";
 
-const DNS_1123 =
-  /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
 /** Tag image theo ngữ pháp Docker — cùng luật với Service 1 */
 const IMAGE_TAG = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,62}$/;
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$/;
@@ -34,6 +41,22 @@ const STRATEGIES: readonly ServiceStrategy[] = [
   "BLUE_GREEN",
   "ATTRIBUTE_SPLIT",
 ];
+
+/** Khoá lỗi theo ô của máy chủ có ô trên form này — phần còn lại hiện ở câu chung */
+const PLACED = [
+  "workloadName",
+  "imageTag",
+  "trafficMatch.header",
+  "trafficMatch.value",
+  "stepPercent",
+  "stepIntervalSeconds",
+  "analysisIntervalSeconds",
+  "warmUpRequests",
+  "thresholds.errorRate",
+  "thresholds.latencyP99Ms",
+  "thresholds.minErrors",
+  "thresholds.maxConsecutiveBreaches",
+] as const;
 
 /**
  * Tạo rollout SERVICE_LEVEL (§10.9 "SERVICE_LEVEL: chọn workload + image tag mới") [Plan #51 QĐ-11].
@@ -126,8 +149,14 @@ export function ServiceRolloutDialog({
     },
   });
   const fields = fieldErrorsOf(create.error);
+  // [Plan #58 UX-39] Gửi hỏng: focus tới ô lỗi đầu tiên (sau khi lỗi đã vẽ dưới ô)
+  useEffect(() => {
+    if (create.error !== null) {
+      focusFirstInvalid(document.querySelector<HTMLElement>("[role=dialog]"));
+    }
+  }, [create.error]);
 
-  const workloadOk = DNS_1123.test(workloadName);
+  const workloadOk = WORKLOAD_NAME.test(workloadName);
   const tagOk = IMAGE_TAG.test(imageTag);
   const matchOk =
     !ab || (HEADER_NAME.test(header) && headerValue.trim() !== "");
@@ -140,6 +169,10 @@ export function ServiceRolloutDialog({
     Number.isInteger(stepPercent) &&
     probed?.hasSeries === true &&
     !create.isPending;
+  const unplaced = unplacedErrors(
+    fields,
+    ab ? PLACED : PLACED.filter((k) => !k.startsWith("trafficMatch")),
+  );
 
   return (
     <Dialog
@@ -191,7 +224,10 @@ export function ServiceRolloutDialog({
         <span className="help">{copy.modeHint[mode]}</span>
       </div>
       <div className="f">
-        <span className="lbl">{form.strategy}</span>
+        <span className="lbl">
+          {form.strategy}
+          <InfoTip term="canary" />
+        </span>
         <div className="seg" role="group" aria-label={form.strategy}>
           {STRATEGIES.map((value) => (
             <button
@@ -212,41 +248,28 @@ export function ServiceRolloutDialog({
           </span>
         )}
       </div>
-      <div className="f">
-        <label htmlFor="sr-workload">{form.workload}</label>
-        <div className="line">
-          <input
-            id="sr-workload"
-            className="inp mono"
-            placeholder={form.workloadPlaceholder}
-            value={workloadName}
-            onChange={(e) => {
-              setWorkloadName(e.target.value.trim());
-              probe.reset();
-            }}
-          />
-          <button
-            type="button"
-            className="btn"
-            disabled={!workloadOk || probe.isPending}
-            onClick={() => probe.mutate()}
-          >
-            {probe.isPending ? form.checking : form.checkMetrics}
-          </button>
-        </div>
-        {probed?.hasSeries === true && (
-          <span className="c3">
-            {copy.hasMetrics(probed.minMetricWindowSeconds)}
-          </span>
-        )}
-        {probe.isError && (
-          <span className="field-error">
-            {isApiError(probe.error) && probe.error.status === 503
+      <WorkloadField
+        id="sr-workload"
+        value={workloadName}
+        onChange={(name) => {
+          setWorkloadName(name);
+          probe.reset();
+        }}
+        checking={probe.isPending}
+        onCheck={() => probe.mutate()}
+        hint={
+          probed?.hasSeries === true
+            ? copy.hasMetrics(formatDuration(probed.minMetricWindowSeconds))
+            : undefined
+        }
+        error={
+          probe.isError
+            ? isApiError(probe.error) && probe.error.status === 503
               ? copy.metricsUnreachable
-              : messageOf(probe.error)}
-          </span>
-        )}
-      </div>
+              : messageOf(probe.error)
+            : fields.workloadName
+        }
+      />
       {probed?.hasSeries === false && (
         <MetricsSetupGuide
           runtime={project.languageRuntime}
@@ -254,51 +277,67 @@ export function ServiceRolloutDialog({
           onRetry={() => probe.mutate()}
         />
       )}
-      <div className="f">
-        <label htmlFor="sr-tag">{copy.tag}</label>
-        <input
-          id="sr-tag"
-          className="inp mono"
-          placeholder="1.4.2…"
-          value={imageTag}
-          onChange={(e) => setImageTag(e.target.value.trim())}
-        />
-        <span className="help">{copy.tagHint}</span>
-        {imageTag !== "" && !tagOk && (
-          <span className="field-error">{copy.tagInvalid}</span>
+      <Field
+        id="sr-tag"
+        label={copy.tag}
+        hint={copy.tagHint}
+        error={imageTag !== "" && !tagOk ? copy.tagInvalid : fields.imageTag}
+      >
+        {(p) => (
+          <input
+            {...p}
+            className="inp mono"
+            placeholder="1.4.2…"
+            value={imageTag}
+            onChange={(e) => setImageTag(e.target.value.trim())}
+          />
         )}
-      </div>
+      </Field>
       {ab && (
         <div className="grid-f">
-          <div className="f">
-            <label htmlFor="sr-header">{copy.header}</label>
-            <input
-              id="sr-header"
-              className="inp mono"
-              placeholder={copy.headerPlaceholder}
-              value={header}
-              onChange={(e) => setHeader(e.target.value.trim())}
-            />
-          </div>
-          <div className="f">
-            <label htmlFor="sr-header-value">{copy.headerValue}</label>
-            <input
-              id="sr-header-value"
-              className="inp mono"
-              placeholder="1…"
-              value={headerValue}
-              onChange={(e) => setHeaderValue(e.target.value)}
-            />
-          </div>
+          <Field
+            id="sr-header"
+            label={copy.header}
+            error={fields["trafficMatch.header"]}
+          >
+            {(p) => (
+              <input
+                {...p}
+                className="inp mono"
+                placeholder={copy.headerPlaceholder}
+                value={header}
+                onChange={(e) => setHeader(e.target.value.trim())}
+              />
+            )}
+          </Field>
+          <Field
+            id="sr-header-value"
+            label={copy.headerValue}
+            error={fields["trafficMatch.value"]}
+          >
+            {(p) => (
+              <input
+                {...p}
+                className="inp mono"
+                placeholder="1…"
+                value={headerValue}
+                onChange={(e) => setHeaderValue(e.target.value)}
+              />
+            )}
+          </Field>
         </div>
       )}
       <fieldset className="fs">
-        <legend>{form.cadence}</legend>
+        <legend>
+          {form.cadence}
+          <InfoTip term="step" />
+        </legend>
         <div className="grid-f">
           <NumberField
             id="sr-step"
             label={form.stepPercent}
             hint={copy.stepPercentHint}
+            error={fields.stepPercent}
             value={stepPercent}
             onChange={setStepPercent}
             min={1}
@@ -307,6 +346,8 @@ export function ServiceRolloutDialog({
           <NumberField
             id="sr-dwell"
             label={form.dwell}
+            hint={form.dwellHint}
+            error={fields.stepIntervalSeconds}
             value={stepInterval}
             onChange={setStepInterval}
             min={1}
@@ -314,6 +355,7 @@ export function ServiceRolloutDialog({
           <NumberField
             id="sr-analysis"
             label={form.analysis}
+            error={fields.analysisIntervalSeconds}
             value={analysisInterval}
             onChange={setAnalysisInterval}
             min={1}
@@ -321,6 +363,7 @@ export function ServiceRolloutDialog({
           <NumberField
             id="sr-warm"
             label={form.warmUp}
+            error={fields.warmUpRequests}
             value={warmUp}
             onChange={setWarmUp}
             min={1}
@@ -328,11 +371,15 @@ export function ServiceRolloutDialog({
         </div>
       </fieldset>
       <fieldset className="fs">
-        <legend>{form.thresholds}</legend>
+        <legend>
+          {form.thresholds}
+          <InfoTip term="autoRollback" />
+        </legend>
         <div className="grid-f">
           <NumberField
             id="sr-err"
             label={form.errorRate}
+            error={fields["thresholds.errorRate"]}
             value={errorRate}
             onChange={setErrorRate}
             min={0}
@@ -342,6 +389,8 @@ export function ServiceRolloutDialog({
           <NumberField
             id="sr-lat"
             label={form.latency}
+            hint={form.latencyHint}
+            error={fields["thresholds.latencyP99Ms"]}
             value={latency}
             onChange={setLatency}
             min={1}
@@ -349,6 +398,7 @@ export function ServiceRolloutDialog({
           <NumberField
             id="sr-minerr"
             label={form.minErrors}
+            error={fields["thresholds.minErrors"]}
             value={minErrors}
             onChange={setMinErrors}
             min={1}
@@ -356,7 +406,7 @@ export function ServiceRolloutDialog({
           <NumberField
             id="sr-breach"
             label={form.breaches}
-
+            error={fields["thresholds.maxConsecutiveBreaches"]}
             value={breaches}
             onChange={setBreaches}
             min={1}
@@ -365,7 +415,9 @@ export function ServiceRolloutDialog({
       </fieldset>
       {create.isError && (
         <p role="alert" className="field-error">
-          {Object.values(fields)[0] ?? messageOf(create.error)}
+          {Object.keys(fields).length > 0
+            ? [form.fixFields, ...unplaced].join(" ")
+            : messageOf(create.error)}
         </p>
       )}
     </Dialog>

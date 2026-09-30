@@ -5,6 +5,7 @@ import type {
   PublicEnvironmentWire,
   SdkKeyWire,
 } from "@udp/shared-types/wire";
+import { cloudCredentialId } from "../audit";
 import { nowIso } from "../clock";
 import type { Db, ProjectRecord } from "../db";
 import { golden } from "../goldens";
@@ -203,7 +204,7 @@ export function registerProjectRoutes(router: Router, db: Db): void {
           `Đã có project tên "${body.name}"`,
         );
       }
-      const record = createDraftProject(body);
+      const record = createDraftProject(body, db.me);
       db.projects.unshift(record);
       audit(db, record, "project.create", "Project", record.project.id, null, {
         name: body.name,
@@ -323,7 +324,7 @@ export function registerProjectRoutes(router: Router, db: Db): void {
         audit(
           db,
           p,
-          "member.update",
+          "member.role.update",
           "ProjectMember",
           userId,
           { projectRole: member.projectRole },
@@ -356,7 +357,7 @@ export function registerProjectRoutes(router: Router, db: Db): void {
       next.projectRole = "OWNER";
       p.project.ownerId = userId;
       p.project.myRole = userId === db.me.id ? "OWNER" : "MAINTAINER";
-      audit(db, p, "project.transfer", "Project", p.project.id, null, {
+      audit(db, p, "member.ownership.transfer", "Project", p.project.id, null, {
         ownerId: userId,
       });
       return ok({ member: next });
@@ -491,11 +492,11 @@ export function registerProjectRoutes(router: Router, db: Db): void {
         audit(
           db,
           p,
-          "sdk_key.create",
+          "sdkkey.create",
           "SdkKey",
           key.id,
           null,
-          { keyType: key.keyType, label: key.label },
+          { keyType: key.keyType, keySuffix: key.keySuffix, label: key.label },
           env.id,
         );
         return ok({ key, secretKey: `${prefix}_${env.name}_${secret}` }, 201);
@@ -515,10 +516,10 @@ export function registerProjectRoutes(router: Router, db: Db): void {
         audit(
           db,
           p,
-          "sdk_key.revoke",
+          "sdkkey.revoke",
           "SdkKey",
           key.id,
-          { status: "active" },
+          { keySuffix: key.keySuffix, status: "active" },
           { status: "revoked" },
           envId,
         );
@@ -550,6 +551,13 @@ export function registerProjectRoutes(router: Router, db: Db): void {
         (
           { AWS: "AWS_ROLE", GCP: "GCP_WIF", AZURE: "AZURE_FEDERATED" } as const
         )[body.provider];
+      // Như Service 1: credential cũ không bị xoá, chỉ thôi dùng (trang Credential của quản trị vẫn thấy)
+      if (p.cloud !== null) {
+        p.retiredClouds.push({
+          id: crypto.randomUUID(),
+          cloud: p.cloud,
+        });
+      }
       p.cloud = {
         provider: body.provider,
         mode: body.mode,
@@ -567,10 +575,21 @@ export function registerProjectRoutes(router: Router, db: Db): void {
       p.preview.provider = body.provider;
       p.preview.region = body.region;
       p.preview.blockers = ["cloud-not-validated"];
-      audit(db, p, "cloud.update", "CloudCredential", p.project.id, null, {
-        provider: body.provider,
-        region: body.region,
-      });
+      audit(
+        db,
+        p,
+        "cloud.credential.set",
+        "CloudCredential",
+        cloudCredentialId(p.project.id),
+        null,
+        {
+          provider: body.provider,
+          mode: body.mode,
+          authKind,
+          region: body.region,
+          fingerprint: p.cloud.fingerprint,
+        },
+      );
       return ok({ cloud: p.cloud });
     })
     .on("POST", "/projects/:id/cloud/validate", (_req, [id = ""]) => {

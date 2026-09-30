@@ -14,7 +14,7 @@
   --ink:oklch(21% .012 275); --ink-2:oklch(44% .012 275); --ink-3:oklch(52% .01 275); --ink-4:oklch(72% .008 275);
   --accent:oklch(54% .2 262); --accent-2:oklch(48% .2 262); --accent-soft:oklch(95.6% .028 262); --accent-tint:oklch(97.6% .014 262); --on-accent:oklch(99% .005 262);
   --green:oklch(60% .14 152); --amber:oklch(72% .15 72); --red:oklch(58% .19 25); --red-soft:oklch(96.5% .02 25); --amber-soft:oklch(96.8% .035 80); --green-soft:oklch(96.5% .03 152); --green-ink:oklch(44% .12 152); --amber-ink:oklch(50% .12 62); --red-ink:oklch(48% .17 25);
-  --v1:oklch(54% .2 262); --v2:oklch(78% .02 275); --v3:oklch(60% .12 185); --v4:oklch(68% .16 325);
+  --v1:oklch(54% .2 262); --v2:oklch(78% .02 275); --v3:oklch(70% .13 200); --v4:oklch(62% .14 310);
   --console-bg:oklch(21% .03 262); --console-raised:oklch(26% .035 262); --console-line:oklch(31% .035 262); --console-ink:oklch(95% .01 262); --console-ink-2:oklch(72% .025 262); --console-active:oklch(34% .07 262);
   --shadow-panel:0 0 0 1px var(--line),0 1px 2px oklch(20% .01 275 / .04),0 6px 16px oklch(20% .01 275 / .03);
   --shadow-pop:0 0 0 1px var(--line),0 8px 24px oklch(20% .01 275 / .12),0 2px 6px oklch(20% .01 275 / .06);
@@ -28,7 +28,7 @@
   --ink:oklch(95% .004 275); --ink-2:oklch(76% .008 275); --ink-3:oklch(67% .008 275); --ink-4:oklch(46% .008 275);
   --accent:oklch(66% .17 258); --accent-2:oklch(72% .15 258); --accent-soft:oklch(28% .07 260); --accent-tint:oklch(23% .04 260); --on-accent:oklch(15% .03 262);
   --green:oklch(72% .15 152); --amber:oklch(80% .14 75); --red:oklch(68% .18 25); --red-soft:oklch(27% .05 25); --amber-soft:oklch(28% .04 75); --green-soft:oklch(27% .04 152); --green-ink:oklch(84% .12 152); --amber-ink:oklch(87% .11 80); --red-ink:oklch(82% .12 25);
-  --v1:oklch(66% .17 258); --v2:oklch(45% .01 275); --v3:oklch(66% .12 190); --v4:oklch(58% .18 335);
+  --v1:oklch(66% .17 258); --v2:oklch(45% .01 275); --v3:oklch(72% .12 200); --v4:oklch(72% .12 310);
   --shadow-panel:0 0 0 1px var(--line),0 1px 2px oklch(0% 0 0 / .3);
   --shadow-pop:0 0 0 1px var(--line-2),0 12px 32px oklch(0% 0 0 / .5);
   color-scheme:dark;

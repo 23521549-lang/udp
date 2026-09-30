@@ -19,12 +19,15 @@ export interface FieldControlProps {
 
 export function Field({
   label,
+  labelAside,
   hint,
   error,
   id,
   children,
 }: {
   label: ReactNode;
+  /** Nằm cạnh nhãn nhưng NGOÀI `<label>` (ví dụ `InfoTip`): nút trong nhãn làm sai tên của ô */
+  labelAside?: ReactNode;
   hint?: ReactNode;
   error?: string | undefined;
   /** Id cố định khi nơi khác cần trỏ tới ô (focus ô lỗi đầu tiên); mặc định tự sinh */
@@ -41,7 +44,14 @@ export function Field({
       .join(" ") || undefined;
   return (
     <div className="f">
-      <label htmlFor={controlId}>{label}</label>
+      {labelAside === undefined ? (
+        <label htmlFor={controlId}>{label}</label>
+      ) : (
+        <span className="f-l">
+          <label htmlFor={controlId}>{label}</label>
+          {labelAside}
+        </span>
+      )}
       {children({
         id: controlId,
         "aria-invalid": error !== undefined,

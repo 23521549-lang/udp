@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import type { RolloutSummaryWire } from "@udp/shared-types/wire";
 import { useEffect, useRef } from "react";
 import { toast } from "../../components/Toast";
 import { messagesOf } from "../../i18n";
@@ -14,16 +16,27 @@ import { rolloutMessages } from "./rollout.messages";
  *
  * Hàm so sánh tách riêng để test được không cần hẹn giờ.
  */
+type Watched = Pick<
+  RolloutSummaryWire,
+  "id" | "flagKey" | "workloadName" | "environmentId"
+>;
+
 export function finishedSince(
-  previous: readonly { id: string; flagKey: string | null }[],
+  previous: readonly Watched[],
   current: readonly { id: string }[],
-): { id: string; flagKey: string | null }[] {
+): Watched[] {
   const still = new Set(current.map((r) => r.id));
   return previous.filter((r) => !still.has(r.id));
 }
 
+/** [Plan #58 UX-9] Tên người đọc được: key flag, hoặc workload với rollout theo phiên bản; mã chỉ là đường lui cuối */
+export const watchedName = (r: Watched): string =>
+  r.flagKey ?? r.workloadName ?? r.id.slice(0, 8);
+
 export function useRolloutWatcher(projectId: string): void {
-  const prev = useRef<{ id: string; flagKey: string | null }[] | null>(null);
+  const navigate = useNavigate();
+  // Nhớ kèm project: sang project khác thì danh sách cũ không được coi là "vừa kết thúc"
+  const prev = useRef<{ projectId: string; list: Watched[] } | null>(null);
   const active = useQuery({
     queryKey: qk.activeRollouts(projectId),
     queryFn: () => rolloutApi.active(projectId),
@@ -33,13 +46,30 @@ export function useRolloutWatcher(projectId: string): void {
   useEffect(() => {
     const now = active.data?.rollouts;
     if (now === undefined) return;
-    if (prev.current !== null) {
+    if (prev.current?.projectId === projectId) {
       // Chữ đọc lúc sự kiện xảy ra: hook này không vẽ gì nên không theo dõi ngôn ngữ
       const m = messagesOf(rolloutMessages).watcher;
-      for (const r of finishedSince(prev.current, now)) {
-        toast.info(m.finished(r.flagKey ?? r.id.slice(0, 8)));
+      for (const r of finishedSince(prev.current.list, now)) {
+        // [Plan #58 UX-9] Nút "Xem kết quả" mở đúng rollout đó, ở đúng environment của nó
+        toast.action(m.finished(watchedName(r)), {
+          label: m.view,
+          run: () =>
+            void navigate({
+              to: "/app/projects/$projectId/rollouts/$rolloutId",
+              params: { projectId, rolloutId: r.id },
+              search: { env: r.environmentId },
+            }),
+        });
       }
     }
-    prev.current = now.map((r) => ({ id: r.id, flagKey: r.flagKey }));
-  }, [active.data]);
+    prev.current = {
+      projectId,
+      list: now.map((r) => ({
+        id: r.id,
+        flagKey: r.flagKey,
+        workloadName: r.workloadName,
+        environmentId: r.environmentId,
+      })),
+    };
+  }, [active.data, navigate, projectId]);
 }

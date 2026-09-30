@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { DEMO_INVITE_TOKEN } from "./mock/demo-invite";
+import { PERSONA_KEY, type PersonaId } from "./mock/persona";
 
 /**
  * [Plan #53 QĐ-11, Plan #54 QĐ-4] Mọi màn của hai khung qua NĂM lượt: máy tính (1440×900) và điện thoại
@@ -11,6 +12,9 @@ import { DEMO_INVITE_TOKEN } from "./mock/demo-invite";
  * chính của nó, và **đủ tương phản chữ WCAG AA** (axe-core `color-contrast`) — thứ quyết định một giao diện tối
  * "dùng được". Lượt tiếng Anh thêm: `<html lang="en">` và khung (thanh bên, tiêu đề, đầu bảng, nhãn) không còn
  * chữ tiếng Việt. Ảnh chụp cả trang nằm ở `demo/screens/<lượt>/` để người xem; không so pixel.
+ *
+ * [Plan #58] Mỗi lượt thêm bốn màn LẦN ĐẦU DÙNG, xem bằng vai "Người mới" của dải Bản xem thử (chưa project, chưa
+ * nhóm): khoá vai đặt vào `sessionStorage` trước khi trang chạy, lớp giả lập dựng dữ liệu cho đúng người đó.
  */
 
 type Locale = "vi" | "en";
@@ -223,6 +227,105 @@ async function contrastProblems(page: Page): Promise<string[]> {
   );
 }
 
+/**
+ * Mở MỘT màn và kiểm mọi luật của cổng; chụp ảnh cả trang. Trả các vấn đề tìm thấy (rỗng là đạt). `errors` là lỗi
+ * console gom từ lúc mở màn này.
+ */
+async function checkScreen(
+  page: Page,
+  pass: Pass,
+  errors: string[],
+  name: string,
+  url: string,
+  must: string | undefined,
+): Promise<string[]> {
+  errors.length = 0;
+  await page.goto(`./#${url}`);
+  await expect(page.locator("h1").first()).toBeVisible();
+  await expect(page.getByText(TEXT[pass.locale].loading)).toHaveCount(0, {
+    timeout: 15_000,
+  });
+  // Biểu đồ đo khung bằng ResizeObserver; lớp cạnh của sơ đồ vẽ sau layout
+  await page.waitForTimeout(250);
+
+  const problems: string[] = [];
+  const h1 = await page.locator("h1").count();
+  if (h1 !== 1) problems.push(`${String(h1)} thẻ h1`);
+  const mains = await page.locator("main").count();
+  if (mains !== 1) problems.push(`${String(mains)} thẻ main`);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth,
+  );
+  if (overflow > 1) problems.push(`tràn ngang ${String(overflow)}px`);
+  const loadErrors = await page.locator(".state[role='alert']").count();
+  if (loadErrors > 0) problems.push(`${String(loadErrors)} lỗi tải`);
+  const text = await page.locator("body").innerText();
+  if (text.includes(TEXT[pass.locale].notFound))
+    problems.push("trang Không tìm thấy");
+  if (text.includes("Bản xem thử chưa có")) problems.push("route giả chưa có");
+  if (text.includes("...")) problems.push('chữ có "..."');
+  if (must !== undefined && (await page.locator(must).count()) === 0)
+    problems.push(`thiếu ${must}`);
+
+  const root = await page.evaluate(() => ({
+    lang: document.documentElement.lang,
+    theme: document.documentElement.dataset.theme,
+  }));
+  if (root.lang !== pass.locale) problems.push(`lang="${root.lang}"`);
+  if (root.theme !== pass.theme) problems.push(`theme="${String(root.theme)}"`);
+  if (pass.locale === "en") {
+    const chrome = await chromeTexts(page);
+    const vi = chrome.filter((t) => VI.test(t));
+    if (vi.length > 0)
+      problems.push(`khung còn tiếng Việt: ${vi.slice(0, 3).join(" | ")}`);
+  }
+  problems.push(...(await contrastProblems(page)));
+  if (errors.length > 0) problems.push(`console: ${errors.join(" | ")}`);
+
+  await page.screenshot({
+    path: fileURLToPath(
+      new URL(`./screens/${pass.name}/${name}.png`, import.meta.url),
+    ),
+    fullPage: true,
+  });
+  return problems;
+}
+
+/**
+ * Chuẩn bị trang cho một lượt: lựa chọn tay của người dùng (và vai người xem của bản xem thử) đặt TRƯỚC khi trang
+ * chạy — theme-boot.js, store ngôn ngữ và lớp giả lập đọc lúc khởi động. Trả mảng gom lỗi console.
+ */
+async function prepare(
+  page: Page,
+  pass: Pass,
+  persona: PersonaId,
+): Promise<string[]> {
+  await page.addInitScript(
+    ([locale, theme, key, who]) => {
+      localStorage.setItem("udp_locale", locale);
+      localStorage.setItem("udp_theme", theme);
+      sessionStorage.setItem(key, who);
+    },
+    [pass.locale, pass.theme, PERSONA_KEY, persona] as const,
+  );
+  const errors: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error" && !IGNORED_CONSOLE.test(msg.text())) {
+      errors.push(msg.text());
+    }
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  return errors;
+}
+
+/** [Plan #58 UX-11] Lần đầu dùng: người mới, chưa project, chưa nhóm (vai "Người mới" của dải Bản xem thử) */
+const NEWCOMER_SCREENS: [name: string, path: string][] = [
+  ["home-newcomer", "/app/home"],
+  ["projects-newcomer", "/app/projects"],
+  ["teams-newcomer", "/app/teams"],
+  ["new-project-newcomer", "/app/projects/new"],
+];
+
 for (const pass of PASSES) {
   test.describe(`${pass.name} ${String(pass.width)}×${String(pass.height)}`, () => {
     test.use({
@@ -232,83 +335,39 @@ for (const pass of PASSES) {
     test.setTimeout(600_000);
 
     test("mọi màn đạt", async ({ page }) => {
-      // Lựa chọn tay của người dùng, đặt TRƯỚC khi trang chạy: theme-boot.js và store ngôn ngữ đọc lúc khởi động
-      await page.addInitScript(
-        ([locale, theme]) => {
-          localStorage.setItem("udp_locale", locale);
-          localStorage.setItem("udp_theme", theme);
-        },
-        [pass.locale, pass.theme] as const,
-      );
-      const errors: string[] = [];
-      page.on("console", (msg) => {
-        if (msg.type() === "error" && !IGNORED_CONSOLE.test(msg.text())) {
-          errors.push(msg.text());
-        }
-      });
-      page.on("pageerror", (e) => errors.push(e.message));
-
+      const errors = await prepare(page, pass, "admin");
       const ids = await discover(page);
       const failures: string[] = [];
-
       for (const [name, path, must] of SCREENS) {
-        errors.length = 0;
-        await page.goto(`./#${path(ids)}`);
-        await expect(page.locator("h1").first()).toBeVisible();
-        await expect(page.getByText(TEXT[pass.locale].loading)).toHaveCount(0, {
-          timeout: 15_000,
-        });
-        // Biểu đồ đo khung bằng ResizeObserver; lớp cạnh của sơ đồ vẽ sau layout
-        await page.waitForTimeout(250);
-
-        const problems: string[] = [];
-        const h1 = await page.locator("h1").count();
-        if (h1 !== 1) problems.push(`${String(h1)} thẻ h1`);
-        const mains = await page.locator("main").count();
-        if (mains !== 1) problems.push(`${String(mains)} thẻ main`);
-        const overflow = await page.evaluate(
-          () => document.documentElement.scrollWidth - window.innerWidth,
+        const problems = await checkScreen(
+          page,
+          pass,
+          errors,
+          name,
+          path(ids),
+          must,
         );
-        if (overflow > 1) problems.push(`tràn ngang ${String(overflow)}px`);
-        const loadErrors = await page.locator(".state[role='alert']").count();
-        if (loadErrors > 0) problems.push(`${String(loadErrors)} lỗi tải`);
-        const text = await page.locator("body").innerText();
-        if (text.includes(TEXT[pass.locale].notFound))
-          problems.push("trang Không tìm thấy");
-        if (text.includes("Bản xem thử chưa có"))
-          problems.push("route giả chưa có");
-        if (text.includes("...")) problems.push('chữ có "..."');
-        if (must !== undefined && (await page.locator(must).count()) === 0)
-          problems.push(`thiếu ${must}`);
-
-        const root = await page.evaluate(() => ({
-          lang: document.documentElement.lang,
-          theme: document.documentElement.dataset.theme,
-        }));
-        if (root.lang !== pass.locale) problems.push(`lang="${root.lang}"`);
-        if (root.theme !== pass.theme)
-          problems.push(`theme="${String(root.theme)}"`);
-        if (pass.locale === "en") {
-          const chrome = await chromeTexts(page);
-          const vi = chrome.filter((t) => VI.test(t));
-          if (vi.length > 0)
-            problems.push(
-              `khung còn tiếng Việt: ${vi.slice(0, 3).join(" | ")}`,
-            );
-        }
-        problems.push(...(await contrastProblems(page)));
-        if (errors.length > 0) problems.push(`console: ${errors.join(" | ")}`);
-
-        await page.screenshot({
-          path: fileURLToPath(
-            new URL(`./screens/${pass.name}/${name}.png`, import.meta.url),
-          ),
-          fullPage: true,
-        });
         if (problems.length > 0)
           failures.push(`${name}: ${problems.join("; ")}`);
       }
+      expect(failures).toEqual([]);
+    });
 
+    test("người mới: mọi màn lần đầu dùng đạt", async ({ page }) => {
+      const errors = await prepare(page, pass, "newcomer");
+      const failures: string[] = [];
+      for (const [name, path] of NEWCOMER_SCREENS) {
+        const problems = await checkScreen(
+          page,
+          pass,
+          errors,
+          name,
+          path,
+          undefined,
+        );
+        if (problems.length > 0)
+          failures.push(`${name}: ${problems.join("; ")}`);
+      }
       expect(failures).toEqual([]);
     });
   });

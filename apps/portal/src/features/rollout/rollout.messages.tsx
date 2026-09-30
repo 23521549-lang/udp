@@ -11,7 +11,8 @@ import type {
   RolloutSummaryWire,
 } from "@udp/shared-types/wire";
 import type { ReactNode } from "react";
-import { defineMessages } from "../../i18n";
+import { count, defineMessages } from "../../i18n";
+import { formatNumber } from "../../lib/format";
 
 /**
  * Chữ của phân hệ Rollout: danh sách, hai hộp tạo (theo flag, theo phiên bản), trang chi tiết, nhãn trạng thái
@@ -26,15 +27,22 @@ const vi = {
     FAILED: "Đã rollback",
   } satisfies Record<RolloutStatusWire, string>,
   watcher: {
-    finished: (name: string) =>
-      `Rollout ${name} đã kết thúc. Mở trang Rollout để xem kết quả.`,
+    finished: (name: string) => `Rollout ${name} đã kết thúc.`,
+    view: "Xem kết quả",
   },
   list: {
     title: "Rollout",
     create: "Tạo rollout",
     lead: (env: string) =>
-      `Tăng dần một variant, tự rollback khi metric vượt ngưỡng. Đang xem ${env}.`,
+      `Tăng dần một variant, tự lùi lại khi số đo vượt ngưỡng. Đang xem ${env}.`,
     empty: (env: string) => `Chưa có rollout nào ở ${env}`,
+    /** [Plan #58 UX-17] Trạng thái trống: vì sao trống, cần gì trước, một nút */
+    emptyWhy:
+      "Phát hành dần đưa một variant của flag, hay một phiên bản mới của service, tới người dùng từng phần trăm; số đo xấu thì tự lùi lại.",
+    emptyNeed:
+      "Cần có trước: một flag đang dùng với rule chia tỉ lệ (hoặc một workload đã deploy), và workload đó xuất metric HTTP.",
+    emptyRole: (role: string) => `Vai ${role} trở lên mới tạo được rollout.`,
+    createFirst: "Tạo rollout đầu tiên",
     label: "Danh sách rollout",
     strategy: {
       CANARY: "Canary",
@@ -60,18 +68,28 @@ const vi = {
     strategy: "Chiến lược",
     workload: "Workload (tên service trong cluster)",
     workloadPlaceholder: "checkout-api…",
+    /** [Plan #58 UX-29] Workload lấy từ lịch sử deploy của environment; vẫn gõ tay được */
+    workloadKnown: (n: number, env: string) =>
+      `${formatNumber(n)} workload đã deploy ở ${env}: chọn trong danh sách hoặc gõ tên.`,
+    /** [Plan #58 UX-22] Luật đặt tên bằng lời thường, không dẫn tên chuẩn */
+    workloadInvalid:
+      "Tên chỉ gồm chữ thường, số, dấu gạch ngang và dấu chấm; bắt đầu và kết thúc bằng chữ hoặc số.",
     checking: "Đang kiểm tra…",
     checkMetrics: "Kiểm tra metric",
-    cadence: "Nhịp",
+    cadence: "Nhịp lên bậc",
     stepPercent: "Mỗi bậc tăng (%)",
     dwell: "Giữ mỗi bậc (giây)",
+    dwellHint: "Đủ thời gian này mới lên bậc tiếp.",
     analysis: "Đo lại mỗi (giây)",
     warmUp: "Số request tối thiểu trước khi đánh giá",
-    thresholds: "Ngưỡng rollback",
+    thresholds: "Ngưỡng tự lùi lại",
     errorRate: "Tỉ lệ lỗi tối đa (%)",
-    latency: "Latency P99 tối đa (ms)",
+    latency: "Độ trễ p99 tối đa (ms)",
+    latencyHint: "99% request phải nhanh hơn số này.",
     minErrors: "Số lỗi tối thiểu để tính vượt",
-    breaches: "Vượt liên tiếp mấy lần thì rollback",
+    breaches: "Vượt liên tiếp mấy lần thì tự lùi lại",
+    /** [Plan #58 UX-39] Máy chủ trả lỗi theo ô: câu chung ở cuối, lỗi cụ thể nằm dưới từng ô */
+    fixFields: "Chưa tạo được rollout: sửa các ô được đánh dấu.",
     metricsGuide: {
       title: (workload: string) => `Workload ${workload} chưa xuất metric HTTP`,
       body: "Rollout cần so tỉ lệ lỗi giữa hai nhánh (flag hay phiên bản). Thêm middleware sau vào ứng dụng, deploy lại, rồi kiểm tra lại.",
@@ -120,12 +138,10 @@ const vi = {
     },
     singleVariantRule:
       "Rule này phục vụ thẳng một variant; chỉ ramp được rule chia tỉ lệ.",
-    workloadInvalid: 'Tên chỉ gồm chữ thường, số, "-" và "." (DNS-1123).',
-    hasMetrics: (scrapeSeconds: number, windowSeconds: number) =>
-      `Có metric. Scrape mỗi ${String(scrapeSeconds)}s; cửa sổ đo tối thiểu ${String(windowSeconds)}s.`,
+    hasMetrics: (scrape: string, window: string) =>
+      `Có metric. Số đo được đọc mỗi ${scrape}; mỗi lần đánh giá cần ít nhất ${window} số đo.`,
     metricsUnreachable:
       "Không tới được nguồn metrics của project. Rollout cần một Prometheus đang chạy.",
-    dwellHint: "Đủ thời gian này mới lên bậc tiếp.",
     analysisHint: "Vẫn đo trong lúc chờ lên bậc: vượt ngưỡng là rollback ngay.",
   },
   /** Hộp tạo rollout SERVICE_LEVEL */
@@ -164,8 +180,8 @@ const vi = {
       "udp-driven":
         "UDP so tỉ lệ lỗi phiên bản mới với phiên bản cũ và cho công cụ đi từng bậc.",
     } satisfies Record<ControlModeWire, string>,
-    hasMetrics: (windowSeconds: number) =>
-      `Có metric. Cửa sổ đo tối thiểu ${String(windowSeconds)}s.`,
+    hasMetrics: (window: string) =>
+      `Có metric. Mỗi lần đánh giá cần ít nhất ${window} số đo.`,
     metricsUnreachable: "Không tới được nguồn metrics của project.",
     tag: "Tag image mới",
     tagHint: "Cùng repository với image đang chạy; chỉ tag đổi.",
@@ -219,13 +235,14 @@ const vi = {
       split: "Nhóm khớp nhận variant mới",
       flag: "Lưu lượng variant mới",
     },
-    baseline: "Mốc rollback",
+    /** [Plan #58 UX-20] Lời thường thay "Mốc rollback": lưu lượng của nhánh mới nếu lùi lại */
+    baseline: "Lưu lượng khi lùi lại",
     errorRates: {
       service: "Tỉ lệ lỗi phiên bản mới / cũ",
       split: "Tỉ lệ lỗi nhánh mới / nhánh cũ",
-      flag: "Tỉ lệ lỗi canary / đối chứng",
+      flag: "Tỉ lệ lỗi bản thử / nhóm đối chứng",
     },
-    latency: "Latency P99 canary",
+    latency: "Độ trễ p99 của bản thử",
     ms: "ms",
     progress: "Lưu lượng đã chuyển",
     cadence: (step: ReactNode, every: string, analysis: string) => (
@@ -241,9 +258,12 @@ const vi = {
     aMember: "một thành viên",
     waitingFirst: "Đang chờ lần đo đầu tiên.",
     breach: (streak: number, max: number, last: boolean) =>
-      `Vượt ngưỡng ${String(streak)}/${String(max)}${last ? ", sẽ rollback nếu lần đo tới vẫn vượt" : ""}`,
+      `Vượt ngưỡng ${String(streak)}/${String(max)}${last ? ", sẽ tự lùi lại nếu lần đo tới vẫn vượt" : ""}`,
     nextAnalysis: (after: string) => `Đo lại sau ${after}. `,
+    nextAnalysisNow: "Sắp đo lại. ",
     dwellLeft: (after: string) => `Đủ thời gian giữ bậc sau ${after}.`,
+    /** [Plan #58 UX-6] Hết thời gian giữ bậc: nói việc tiếp theo, không nói "sau 0 giây" */
+    dwellDone: "Có thể lên bậc tiếp.",
     working: "Đang thực hiện…",
     requestSent: (action: string) => `Đã gửi yêu cầu: ${action}`,
     confirmRollback: "Rollback rollout này?",
@@ -254,7 +274,7 @@ const vi = {
     servicePromote: (newVersion: string | undefined) =>
       `Phiên bản ${newVersion ?? "mới"} nhận 100% traffic.`,
     flagRollback: (baseline: string | null) =>
-      `Lưu lượng về lại mốc ${baseline ?? "ban đầu"}.`,
+      `Lưu lượng của variant mới trở về ${baseline ?? "mức ban đầu"}.`,
     splitPromote:
       "Mọi người dùng của environment, không riêng nhóm khớp, sẽ nhận variant mới làm mặc định. Rollout kết thúc.",
     flagPromote: "Mọi người dùng khớp rule sẽ nhận variant mới.",
@@ -271,8 +291,8 @@ const vi = {
     requestPrefix: "Yêu cầu: ",
     errorRate: "Tỉ lệ lỗi",
     noMeasurements: "Chưa có lần đo nào có số liệu.",
-    canary: "canary",
-    control: "đối chứng",
+    canary: "bản thử (canary)",
+    control: "nhóm đối chứng (baseline)",
     threshold: (value: string) => `ngưỡng ${value}`,
   },
 };
@@ -288,8 +308,8 @@ export const rolloutMessages = defineMessages({
       FAILED: "Rolled back",
     },
     watcher: {
-      finished: (name: string) =>
-        `Rollout ${name} has finished. Open the Rollouts page to see the result.`,
+      finished: (name: string) => `Rollout ${name} has finished.`,
+      view: "View result",
     },
     list: {
       title: "Rollouts",
@@ -297,6 +317,13 @@ export const rolloutMessages = defineMessages({
       lead: (env: string) =>
         `Ramp up a variant gradually and roll back automatically when metrics cross a threshold. Viewing ${env}.`,
       empty: (env: string) => `No rollouts in ${env} yet`,
+      emptyWhy:
+        "A rollout delivers a flag variant, or a new version of a service, to users a percentage at a time, and rolls back automatically when metrics look bad.",
+      emptyNeed:
+        "First you need an active flag with a percentage split rule (or a deployed workload), and that workload must export HTTP metrics.",
+      emptyRole: (role: string) =>
+        `Only the ${role} role or higher can create rollouts.`,
+      createFirst: "Create the first rollout",
       label: "Rollout list",
       strategy: {
         CANARY: "Canary",
@@ -321,18 +348,25 @@ export const rolloutMessages = defineMessages({
       strategy: "Strategy",
       workload: "Workload (service name in the cluster)",
       workloadPlaceholder: "checkout-api…",
+      workloadKnown: (n: number, env: string) =>
+        `${count(n, "workload", "workloads")} deployed in ${env}: pick one from the list or type a name.`,
+      workloadInvalid:
+        "Use only lowercase letters, digits, hyphens and dots, starting and ending with a letter or digit.",
       checking: "Checking…",
       checkMetrics: "Check metrics",
-      cadence: "Cadence",
+      cadence: "Step cadence",
       stepPercent: "Step size (%)",
       dwell: "Hold each step (seconds)",
+      dwellHint: "The next step starts only after this much time.",
       analysis: "Measure every (seconds)",
       warmUp: "Minimum requests before evaluating",
-      thresholds: "Rollback thresholds",
+      thresholds: "Automatic rollback thresholds",
       errorRate: "Maximum error rate (%)",
-      latency: "Maximum P99 latency (ms)",
+      latency: "Maximum p99 latency (ms)",
+      latencyHint: "99% of requests must be faster than this.",
       minErrors: "Minimum errors to count a breach",
-      breaches: "Consecutive breaches before rollback",
+      breaches: "Consecutive breaches before automatic rollback",
+      fixFields: "The rollout was not created: fix the marked fields.",
       metricsGuide: {
         title: (workload: string) =>
           `Workload ${workload} does not export HTTP metrics yet`,
@@ -381,13 +415,10 @@ export const rolloutMessages = defineMessages({
       },
       singleVariantRule:
         "This rule serves a single variant directly; only a split rule can be ramped.",
-      workloadInvalid:
-        'Use only lowercase letters, digits, "-" and "." (DNS-1123).',
-      hasMetrics: (scrapeSeconds: number, windowSeconds: number) =>
-        `Metrics found. Scraped every ${String(scrapeSeconds)}s; minimum measurement window ${String(windowSeconds)}s.`,
+      hasMetrics: (scrape: string, window: string) =>
+        `Metrics found. They are read every ${scrape}; each evaluation needs at least ${window} of data.`,
       metricsUnreachable:
         "Cannot reach the project's metrics source. A rollout needs a running Prometheus.",
-      dwellHint: "The next step starts only after this much time.",
       analysisHint:
         "Measurement continues while waiting for the next step: crossing a threshold rolls back immediately.",
     },
@@ -425,8 +456,8 @@ export const rolloutMessages = defineMessages({
         "udp-driven":
           "UDP compares the new version's error rate with the old version's and moves the tool one step at a time.",
       },
-      hasMetrics: (windowSeconds: number) =>
-        `Metrics found. Minimum measurement window ${String(windowSeconds)}s.`,
+      hasMetrics: (window: string) =>
+        `Metrics found. Each evaluation needs at least ${window} of data.`,
       metricsUnreachable: "Cannot reach the project's metrics source.",
       tag: "New image tag",
       tagHint: "Same repository as the running image; only the tag changes.",
@@ -484,13 +515,13 @@ export const rolloutMessages = defineMessages({
         split: "Matching group on the new variant",
         flag: "New variant traffic",
       },
-      baseline: "Rollback baseline",
+      baseline: "Traffic after rollback",
       errorRates: {
         service: "Error rate, new / old version",
         split: "Error rate, new / old branch",
-        flag: "Error rate, canary / control",
+        flag: "Error rate, canary / baseline",
       },
-      latency: "Canary P99 latency",
+      latency: "Canary p99 latency",
       ms: "ms",
       progress: "Traffic shifted",
       cadence: (step: ReactNode, every: string, analysis: string) => (
@@ -506,9 +537,11 @@ export const rolloutMessages = defineMessages({
       aMember: "a member",
       waitingFirst: "Waiting for the first measurement.",
       breach: (streak: number, max: number, last: boolean) =>
-        `Threshold crossed ${String(streak)}/${String(max)}${last ? ", will roll back if the next measurement also crosses it" : ""}`,
+        `Threshold crossed ${String(streak)}/${String(max)}${last ? ", will roll back automatically if the next measurement also crosses it" : ""}`,
       nextAnalysis: (after: string) => `Next measurement in ${after}. `,
+      nextAnalysisNow: "Measuring again shortly. ",
       dwellLeft: (after: string) => `Step hold time ends in ${after}.`,
+      dwellDone: "Ready for the next step.",
       working: "In progress…",
       requestSent: (action: string) => `Request sent: ${action}`,
       confirmRollback: "Roll back this rollout?",
@@ -524,8 +557,8 @@ export const rolloutMessages = defineMessages({
           : `Version ${newVersion} receives 100% of traffic.`,
       flagRollback: (baseline: string | null) =>
         baseline === null
-          ? "Traffic returns to the initial baseline."
-          : `Traffic returns to the ${baseline} baseline.`,
+          ? "New variant traffic returns to its starting level."
+          : `New variant traffic returns to ${baseline}.`,
       splitPromote:
         "Every user in the environment, not just the matching group, gets the new variant as the default. The rollout ends.",
       flagPromote: "Every user matching the rule gets the new variant.",
@@ -543,7 +576,7 @@ export const rolloutMessages = defineMessages({
       errorRate: "Error rate",
       noMeasurements: "No measurements with data yet.",
       canary: "canary",
-      control: "control",
+      control: "baseline",
       threshold: (value: string) => `threshold ${value}`,
     },
   },

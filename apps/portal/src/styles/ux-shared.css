@@ -161,3 +161,25 @@
 .helpbtn + .me {
   margin-top: 0;
 }
+
+/*
+ * [Plan #58 UX-10] Màu chuỗi dữ liệu thứ 3 và 4 của biểu đồ, bước lại bằng bộ kiểm `validate_palette` của skill
+ * dataviz: bản cũ ở giao diện tối lệch ΔE 3,8 với người mù màu đỏ–lục (dưới ngưỡng 6), bản sáng cũ chỉ 2,49:1 trên
+ * nền trắng. Bản này đạt mọi phép kiểm ở cả hai giao diện (ΔE ≥ 8, tương phản ≥ 3:1). Đặt ở đây vì `prototype.css`
+ * phải giữ nguyên văn bản mẫu đã duyệt.
+ */
+:root {
+  --v3: oklch(60% 0.12 185);
+  --v4: oklch(68% 0.16 325);
+}
+:root[data-theme="dark"] {
+  --v3: oklch(66% 0.12 190);
+  --v4: oklch(58% 0.18 335);
+}
+
+/* [Plan #58 UX-39] Nhãn của ô kèm nút giải thích nằm ngoài nhãn */
+.f-l {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}

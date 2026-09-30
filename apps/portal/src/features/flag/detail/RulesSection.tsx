@@ -8,6 +8,7 @@ import { CopyPlus, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Icon } from "../../../components/Icon";
+import { InfoTip } from "../../../components/InfoTip";
 import { ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
 import { UnsavedGuard } from "../../../components/UnsavedGuard";
@@ -157,6 +158,7 @@ function RulesEditor({
       <UnsavedGuard dirty={changes > 0} what={m.unsaved(changes, env.name)} />
       <div className="sect">
         <h3>{m.rulesIn(env.name)}</h3>
+        <InfoTip term="rule" />
         <span className="c3">{m.topDown}</span>
         <div className="r">
           {can(project.myRole, "DEVELOPER") && (

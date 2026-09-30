@@ -19,7 +19,8 @@ import {
 import { iso, nowIso, OPENED_AT } from "../clock";
 import type { Db, ProjectRecord } from "../db";
 import { golden } from "../goldens";
-import { prng, type Rng } from "../random";
+import type { PlatformScenario } from "../persona";
+import { fnv, prng, type Rng } from "../random";
 import { found, HttpProblem, ok, projectOf, type Router } from "../router";
 import { orphansOf } from "./auth-admin";
 import { doraOf } from "./delivery";
@@ -452,16 +453,6 @@ function consoleFor(toolId: string): MonitoringConsoleWire | null {
   }
 }
 
-/** FNV-1a — hạt giống tất định cho chuỗi của một workload */
-function seedOf(text: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-
 /**
  * Chuỗi RED của một workload: lưu lượng theo nhịp ngày (thấp lúc 3 giờ sáng, cao buổi tối), lỗi nền nhỏ cộng một
  * đợt tăng ở workload "không may", độ trễ bám theo tải. Vài điểm KHÔNG CÓ DỮ LIỆU (`null`, I7) — scrape trượt —
@@ -541,7 +532,8 @@ function redOf(
     .slice(0, MAX_RED_WORKLOADS)
     .map((d, index) => {
       const name = d.workloadName ?? "workload";
-      const rng = prng(seedOf(`${p.project.id}:${envId}:${name}:${range}`));
+      // Hạt giống tất định theo workload: mở lại trang vẫn cùng hình
+      const rng = prng(fnv(`${p.project.id}:${envId}:${name}:${range}`));
       return {
         workload: name,
         ...redSeries(
@@ -656,33 +648,40 @@ function adminOverviewOf(db: Db): AdminOverviewWire {
 
 /**
  * Cụm chạy UDP của bản xem thử: máy ảo Oracle Always Free (A1, 2 OCPU, 12 GB) — đúng hình mà Plan #52 dựng.
- * CPU dao động nhẹ theo thời gian mở trang, để thanh mức dùng có sống.
+ * CPU dao động nhẹ theo thời gian mở trang, để thanh mức dùng có sống. Tình huống "có rủi ro" (chọn ở dải "Bản
+ * xem thử"): máy rảnh dưới ngưỡng thu hồi của Oracle, lần sao lưu đêm qua hỏng, chứng chỉ còn 9 ngày.
  */
-function platformOf(): AdminPlatformWire {
+function platformOf(scenario: PlatformScenario): AdminPlatformWire {
+  const risky = scenario === "at-risk";
   const wobble = Math.sin((Date.now() - OPENED_AT) / 20_000) * 0.06;
+  const cpu = risky ? 0.29 + wobble / 4 : 0.62 + wobble;
   return {
     release: "c519f0c",
     node: {
       state: "ok",
       name: "udp-a1-hcm",
       cpuCores: 2,
-      cpuUsedCores: Math.round((0.62 + wobble) * 100) / 100,
+      cpuUsedCores: Math.round(cpu * 100) / 100,
       memoryBytes: 12 * 1024 ** 3,
-      memoryUsedBytes: Math.round(5.3 * 1024 ** 3),
+      memoryUsedBytes: Math.round((risky ? 2.1 : 5.3) * 1024 ** 3),
     },
     postgresVolume: { state: "ok", capacityBytes: 20 * 1024 ** 3 },
     backup: {
       state: "ok",
       schedule: "30 19 * * *",
       lastScheduleAt: iso(OPENED_AT - 7 * HOUR),
-      lastSuccessAt: iso(OPENED_AT - 7 * HOUR + 4 * 60_000),
-      lastFailureAt: iso(OPENED_AT - 9 * DAY),
+      lastSuccessAt: risky
+        ? iso(OPENED_AT - 3 * DAY - 7 * HOUR + 4 * 60_000)
+        : iso(OPENED_AT - 7 * HOUR + 4 * 60_000),
+      lastFailureAt: risky
+        ? iso(OPENED_AT - 7 * HOUR + 11 * 60_000)
+        : iso(OPENED_AT - 9 * DAY),
     },
     certificate: {
       state: "ok",
       name: "udp-tls",
       ready: true,
-      notAfter: iso(OPENED_AT + 54 * DAY),
+      notAfter: iso(OPENED_AT + (risky ? 9 : 54) * DAY),
       issuer: "udp-letsencrypt",
     },
     checkedAt: nowIso(),
@@ -708,7 +707,9 @@ export function registerDashboardRoutes(router: Router, db: Db): void {
       }),
     )
     .on("GET", "/admin/overview", () => ok({ overview: adminOverviewOf(db) }))
-    .on("GET", "/admin/platform", () => ok({ platform: platformOf() }))
+    .on("GET", "/admin/platform", () =>
+      ok({ platform: platformOf(db.demo.platform) }),
+    )
     .on("GET", "/admin/evidence/dora", (req) => {
       const days = EVIDENCE_DORA_DAYS.find(
         (d) => d === Number(req.query.get("days") ?? "30"),

@@ -11,7 +11,8 @@ export const rulesMessages = defineMessages({
       ALL: "Mọi người",
       USER_BASED: "Người dùng cụ thể",
       ATTRIBUTE_BASED: "Thuộc tính",
-      SEGMENT: "Segment",
+      // [Plan #58 UX-20] Lời thường trước, thuật ngữ trong ngoặc
+      SEGMENT: "Nhóm người dùng (segment)",
     } satisfies Record<RuleType, string>,
     operator: {
       eq: "bằng",
@@ -53,7 +54,7 @@ export const rulesMessages = defineMessages({
     removeTag: (value: string) => `Bỏ ${value}`,
     tagPlaceholder: "user-1, user-2…",
     segmentOf: (rule: string) => `Segment của ${rule}`,
-    chooseSegment: "Chọn segment",
+    chooseSegment: "Chọn nhóm người dùng",
     serveMode: (rule: string) => `Cách phục vụ ${rule}`,
     oneVariant: "Một variant",
     split: "Chia tỉ lệ",

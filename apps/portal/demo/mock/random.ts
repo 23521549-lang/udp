@@ -30,6 +30,19 @@ export function uuid(rng: Rng): string {
   return `${hex(rng, 8)}-${hex(rng, 4)}-4${hex(rng, 3)}-${variant}${hex(rng, 3)}-${hex(rng, 12)}`;
 }
 
+/** FNV-1a 32 bit — hạt giống tất định từ một chuỗi */
+export function fnv(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/** UUID ổn định theo một chuỗi: cùng tài nguyên, cùng id qua mọi lần gọi (khoá React không nhảy) */
+export const uuidOf = (text: string): string => uuid(prng(fnv(text)));
+
 export const between = (rng: Rng, min: number, max: number): number =>
   min + Math.floor(rng() * (max - min + 1));
 

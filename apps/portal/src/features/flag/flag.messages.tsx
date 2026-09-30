@@ -48,6 +48,13 @@ export const flagMessages = defineMessages({
       pager: "Trang của danh sách flag",
       on: "Bật",
       off: "Tắt",
+      /** [Plan #58 UX-4] Nháp và lưu trữ: SDK không thấy flag, dù công tắc của environment đang bật */
+      draft: "Nháp, chưa phục vụ",
+      archived: "Đã lưu trữ, không phục vụ",
+      /** Nhãn cho trình đọc màn hình: hàng tiêu đề cột bị ẩn khỏi nó, nên mỗi con số tự nói nó là gì */
+      srEvals: "Lượt đánh giá 7 ngày: ",
+      srUpdated: "Cập nhật ",
+      inRollout: "Đang phát hành dần",
     },
     detail: {
       label: "Chi tiết flag",
@@ -184,6 +191,11 @@ export const flagMessages = defineMessages({
       pager: "Flag list pages",
       on: "On",
       off: "Off",
+      draft: "Draft, not served",
+      archived: "Archived, not served",
+      srEvals: "7-day evaluations: ",
+      srUpdated: "Updated ",
+      inRollout: "Rolling out gradually",
     },
     detail: {
       label: "Flag details",

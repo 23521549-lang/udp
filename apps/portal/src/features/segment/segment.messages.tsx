@@ -11,6 +11,13 @@ export const segmentMessages = defineMessages({
     miniSegments: "segment",
     miniStorage: "dung lượng",
     empty: "Chưa có segment nào",
+    /** [Plan #58 UX-17] Trạng thái trống: vì sao trống, cần gì trước, một nút */
+    emptyWhy:
+      "Segment là một nhóm người dùng đặt tên sẵn, ví dụ khách VIP, để nhiều rule của nhiều flag dùng lại mà không phải gõ lại điều kiện.",
+    emptyNeed:
+      "Tạo một segment theo danh sách khoá người dùng hoặc theo thuộc tính, rồi chọn nó ở rule loại Nhóm người dùng.",
+    emptyRole: (role: string) => `Vai ${role} trở lên mới tạo được segment.`,
+    createFirst: "Tạo segment đầu tiên",
     list: "Danh sách segment",
     summary: (conditions: number, users: number) =>
       `${String(conditions)} điều kiện, ${formatNumber(users)} người dùng`,
@@ -22,7 +29,9 @@ export const segmentMessages = defineMessages({
     close: "Đóng",
     noDescription: "Chưa có mô tả.",
     matchesWhen: "Khớp khi",
-    keyIn: (list: ReactNode) => <>targetingKey thuộc {list}</>,
+    keyIn: (list: ReactNode) => (
+      <>Khoá người dùng (targetingKey) thuộc {list}</>
+    ),
     flagsUsing: "Flag đang dùng",
     unused: "Chưa rule nào dùng segment này.",
     deleteTitle: (name: string) => `Xoá segment ${name}?`,
@@ -31,14 +40,14 @@ export const segmentMessages = defineMessages({
     saved: "Đã lưu segment",
     editTitle: (name: string) => `Sửa ${name}`,
     dialogDescription:
-      "Khớp khi targetingKey nằm trong danh sách, HOẶC mọi điều kiện thuộc tính đều đúng.",
+      "Khớp khi khoá người dùng (targetingKey) nằm trong danh sách, HOẶC mọi điều kiện thuộc tính đều đúng.",
     cancel: "Huỷ",
     saving: "Đang lưu…",
     save: "Lưu",
     name: "Tên",
     description: "Mô tả",
-    keyInLabel: "targetingKey thuộc",
-    keyList: "Danh sách targetingKey",
+    keyInLabel: "Khoá người dùng (targetingKey) thuộc",
+    keyList: "Danh sách khoá người dùng",
     orAll: "Hoặc mọi điều kiện sau đều đúng",
     conditionsOf: "segment",
     over: (lower: string, max: string) =>
@@ -60,6 +69,13 @@ export const segmentMessages = defineMessages({
     miniSegments: "segments",
     miniStorage: "storage",
     empty: "No segments yet",
+    emptyWhy:
+      "A segment is a named group of users, such as VIP customers, that rules in many flags can reuse without retyping the conditions.",
+    emptyNeed:
+      "Create a segment from a list of targeting keys or from attributes, then pick it in a Segment rule.",
+    emptyRole: (role: string) =>
+      `Only the ${role} role or higher can create segments.`,
+    createFirst: "Create the first segment",
     list: "Segment list",
     summary: (conditions: number, users: number) =>
       `${count(conditions, "condition", "conditions")}, ${count(users, "user", "users")}`,
@@ -71,7 +87,7 @@ export const segmentMessages = defineMessages({
     close: "Close",
     noDescription: "No description yet.",
     matchesWhen: "Matches when",
-    keyIn: (list: ReactNode) => <>targetingKey is one of {list}</>,
+    keyIn: (list: ReactNode) => <>Targeting key is one of {list}</>,
     flagsUsing: "Flags using it",
     unused: "No rule uses this segment yet.",
     deleteTitle: (name: string) => `Delete segment ${name}?`,
@@ -80,14 +96,14 @@ export const segmentMessages = defineMessages({
     saved: "Segment saved",
     editTitle: (name: string) => `Edit ${name}`,
     dialogDescription:
-      "Matches when the targetingKey is in the list, OR every attribute condition is true.",
+      "Matches when the targeting key is in the list, OR every attribute condition is true.",
     cancel: "Cancel",
     saving: "Saving…",
     save: "Save",
     name: "Name",
     description: "Description",
-    keyInLabel: "targetingKey is one of",
-    keyList: "targetingKey list",
+    keyInLabel: "Targeting key is one of",
+    keyList: "Targeting key list",
     orAll: "Or all of these conditions are true",
     conditionsOf: "segment",
     over: (lower: string, max: string) =>

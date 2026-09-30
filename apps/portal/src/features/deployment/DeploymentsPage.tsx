@@ -5,6 +5,7 @@ import { CircleAlert, CircleCheck, CircleX } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
@@ -62,7 +63,12 @@ export function DeploymentsPage() {
       <div className="scroll">
         <PageHead
           title={m.title}
-          lead={m.lead(env.name)}
+          lead={
+            <>
+              {m.lead(env.name)}
+              <InfoTip term="dora" />
+            </>
+          }
           actions={
             <div className="seg" role="group" aria-label={m.range}>
               {RANGES.map((d) => (
@@ -127,7 +133,8 @@ function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
           <Icon of={s.icon} style={{ color: s.tone }} />
           {m.status[d.status]}
         </span>
-        <span className="mono">
+        {d.status === "DEPLOY_PENDING" && <InfoTip term="approval" />}
+        <span className="mono" translate="no">
           {d.imageTag ?? d.workloadName ?? d.deploymentId.slice(0, 8)}
         </span>
         {d.commitSha !== null && (

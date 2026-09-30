@@ -389,6 +389,17 @@ function setRules(
   return rules;
 }
 
+type Lifecycle = FlagDetailWire["lifecycleStatus"];
+
+/** Mã audit của một PATCH flag, như Service 2: đổi vòng đời lấy tên của vòng đời */
+function lifecycleAction(from: Lifecycle, to: Lifecycle | undefined): string {
+  if (to === undefined || to === from) return "flag.update";
+  if (to === "ARCHIVED") return "flag.archive";
+  if (to === "ACTIVE")
+    return from === "ARCHIVED" ? "flag.restore" : "flag.activate";
+  return "flag.update";
+}
+
 function archive(flag: FlagRecord): void {
   flag.detail.lifecycleStatus = "ARCHIVED";
   for (const env of flag.detail.envs) env.isEnabled = false;
@@ -494,9 +505,10 @@ export function registerFlagRoutes(router: Router, db: Db): void {
         lastEvaluatedAt: null,
       };
       p.flags.unshift(record);
-      audit(db, p, "flag.create", "Flag", record.detail.id, null, {
+      audit(db, p, "flag.create", "FeatureFlag", record.detail.id, null, {
         key: body.key,
         flagType: body.flagType,
+        description: record.detail.description,
       });
       return ok({ flag: record.detail }, 201);
     })
@@ -547,7 +559,7 @@ export function registerFlagRoutes(router: Router, db: Db): void {
           db,
           p,
           "flag.archive",
-          "Flag",
+          "FeatureFlag",
           flag.detail.id,
           { lifecycleStatus: "ACTIVE" },
           { lifecycleStatus: "ARCHIVED" },
@@ -575,6 +587,10 @@ export function registerFlagRoutes(router: Router, db: Db): void {
           lifecycleStatus: flag.detail.lifecycleStatus,
           description: flag.detail.description,
         };
+        const action = lifecycleAction(
+          flag.detail.lifecycleStatus,
+          body.lifecycleStatus,
+        );
         if (body.description !== undefined)
           flag.detail.description = body.description;
         if (body.permanent !== undefined)
@@ -592,7 +608,7 @@ export function registerFlagRoutes(router: Router, db: Db): void {
           }
         }
         touch(db, flag);
-        audit(db, p, "flag.update", "Flag", flag.detail.id, before, body);
+        audit(db, p, action, "FeatureFlag", flag.detail.id, before, body);
         return ok({ flag: flag.detail });
       },
     )
@@ -626,10 +642,10 @@ export function registerFlagRoutes(router: Router, db: Db): void {
           db,
           p,
           "flag.env.update",
-          "FlagEnvironmentConfig",
-          flag.detail.id,
+          "FlagEnvConfig",
+          env.configId,
           before,
-          body,
+          { ...body, flagKey: flag.detail.key },
           envId,
         );
         return ok({ env });
@@ -654,17 +670,17 @@ export function registerFlagRoutes(router: Router, db: Db): void {
         const p = projectOf(db, id);
         const flag = flagOf(p, flagId);
         const { rules } = bodyOf<{ rules: Partial<RuleWire>[] }>(req);
-        const before = (flag.rules[envId] ?? []).length;
+        const before = flag.rules[envId] ?? [];
         const saved = setRules(p, flag, envId, rules);
         touch(db, flag);
         audit(
           db,
           p,
-          "flag.rules.replace",
-          "Flag",
-          flag.detail.id,
-          { ruleCount: before },
-          { ruleCount: saved.length },
+          "flag.rule.update",
+          "FlagEnvConfig",
+          envStateOf(flag, envId).configId,
+          { rules: before },
+          { rules: saved, flagKey: flag.detail.key },
           envId,
         );
         return ok({ updatedAt: flag.rulesUpdatedAt[envId], rules: saved });
@@ -698,9 +714,15 @@ export function registerFlagRoutes(router: Router, db: Db): void {
           flag.detail.defaultVariantId = flag.detail.variants[0]?.id ?? null;
         }
         touch(db, flag);
-        audit(db, p, "flag.variants.replace", "Flag", flag.detail.id, null, {
-          variants: variants.map((v) => v.key),
-        });
+        audit(
+          db,
+          p,
+          "flag.variants.update",
+          "FeatureFlag",
+          flag.detail.id,
+          null,
+          { variants: variants.map((v) => v.key) },
+        );
         return ok({ flag: flag.detail });
       },
     )
@@ -763,14 +785,19 @@ export function registerFlagRoutes(router: Router, db: Db): void {
           })),
         );
         touch(db, flag);
+        // Promote là một lần ghi rule ở env đích, có ghi env nguồn
         audit(
           db,
           p,
-          "flag.promote",
-          "Flag",
-          flag.detail.id,
-          { fromEnvId },
-          { toEnvId, rules: rules.length },
+          "flag.rule.update",
+          "FlagEnvConfig",
+          envStateOf(flag, toEnvId).configId,
+          { rules: target },
+          {
+            rules,
+            flagKey: flag.detail.key,
+            promotedFromEnvironmentId: fromEnvId,
+          },
           toEnvId,
         );
         return ok({

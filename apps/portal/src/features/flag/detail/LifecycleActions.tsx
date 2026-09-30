@@ -1,6 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { FlagDetailWire } from "@udp/shared-types/wire";
-import { Archive, Play } from "lucide-react";
+import {
+  Archive,
+  ChartNoAxesColumnIncreasing,
+  CircleDashed,
+  Play,
+} from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Icon } from "../../../components/Icon";
@@ -11,13 +16,17 @@ import { qkPrefix } from "../../../lib/query-keys";
 import { flagApi } from "../flag-api";
 import { useProjectContext } from "../../project/ProjectLayout";
 import { can } from "../../project/roles";
+import { rolesMessages } from "../../project/roles.messages";
+import { CreateRolloutDialog } from "../../rollout/CreateRolloutDialog";
 import { detailMessages } from "./detail.messages";
 
 export function LifecycleActions({ flag }: { flag: FlagDetailWire }) {
   const m = useMessages(detailMessages).lifecycle;
+  const roles = useMessages(rolesMessages);
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   const [confirm, setConfirm] = useState<"ACTIVE" | "ARCHIVED" | null>(null);
+  const [rollingOut, setRollingOut] = useState(false);
 
   /**
    * [Plan #44] Đổi vòng đời là thay đổi TOÀN CỤC: máy chủ đòi gõ lại key (428
@@ -44,33 +53,63 @@ export function LifecycleActions({ flag }: { flag: FlagDetailWire }) {
     },
   });
 
-  if (
-    !can(project.myRole, "MAINTAINER") ||
-    flag.lifecycleStatus === "ARCHIVED"
-  ) {
-    return null;
-  }
+  if (flag.lifecycleStatus === "ARCHIVED") return null;
+  const maintainer = can(project.myRole, "MAINTAINER");
+  const draft = flag.lifecycleStatus === "DRAFT";
 
   return (
-    <div className="sect">
-      {flag.lifecycleStatus === "DRAFT" && (
-        <button
-          type="button"
-          className="btn"
-          onClick={() => setConfirm("ACTIVE")}
-        >
-          <Icon of={Play} />
-          {m.activate}
-        </button>
+    <>
+      {/* [Plan #58 UX-4] Nháp: nói rõ SDK chưa thấy flag, ngay trên công tắc environment, kèm lối Kích hoạt */}
+      {draft && (
+        <div className="alert neutral" role="note">
+          <Icon of={CircleDashed} />
+          <div>
+            <b>{m.draftTitle}</b>
+            <div>{m.draftBody}</div>
+            {maintainer ? (
+              <button
+                type="button"
+                className="btn pri alert-act"
+                onClick={() => setConfirm("ACTIVE")}
+              >
+                <Icon of={Play} />
+                {m.activate}
+              </button>
+            ) : (
+              <div className="c3">{m.draftAsk(roles.role.MAINTAINER)}</div>
+            )}
+          </div>
+        </div>
       )}
-      <button
-        type="button"
-        className="btn danger"
-        onClick={() => setConfirm("ARCHIVED")}
-      >
-        <Icon of={Archive} />
-        {m.archive}
-      </button>
+      {maintainer && (
+        <div className="sect">
+          {/* [Plan #58 UX-29] Phát hành dần ngay từ flag: hộp tạo rollout mở với flag này đã chọn */}
+          {!draft && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setRollingOut(true)}
+            >
+              <Icon of={ChartNoAxesColumnIncreasing} />
+              {m.rollOut}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => setConfirm("ARCHIVED")}
+          >
+            <Icon of={Archive} />
+            {m.archive}
+          </button>
+        </div>
+      )}
+      {rollingOut && (
+        <CreateRolloutDialog
+          flag={{ id: flag.id, key: flag.key }}
+          onClose={() => setRollingOut(false)}
+        />
+      )}
       {confirm !== null && (
         <ConfirmDialog
           title={confirm === "ACTIVE" ? m.activateTitle : m.archiveTitle}
@@ -94,6 +133,6 @@ export function LifecycleActions({ flag }: { flag: FlagDetailWire }) {
           }}
         />
       )}
-    </div>
+    </>
   );
 }

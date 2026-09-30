@@ -97,6 +97,10 @@ function setup() {
     http.get(`${API}/projects/:id/flags/:flagId/envs/:envId/rules`, () =>
       HttpResponse.json({ updatedAt: flag.updatedAt, rules }),
     ),
+    // [Plan #58 UX-29] Gợi ý workload của hộp tạo rollout đọc từ sơ đồ Kiến trúc
+    http.get(`${API}/projects/:id/architecture`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/architecture")),
+    ),
     http.post(`${API}/projects/:id/rollouts/probe`, () => {
       // Mẫu golden ghi ca "chưa có metric"; ở đây workload đã có
       const probe = golden<{ probe: { hasSeries: boolean } }>(

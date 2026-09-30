@@ -21,8 +21,14 @@ import { rolloutApi } from "../src/features/rollout/rollout-api";
 import { segmentApi } from "../src/features/segment/segment-api";
 import { projectTeamApi, teamApi } from "../src/features/team/team-api";
 import { isApiError } from "../src/lib/http";
+import {
+  backupVerdict,
+  certificateVerdict,
+  idleRisk,
+} from "../src/features/admin/platform-model";
 import { DEMO_INVITE_TOKEN } from "./mock/demo-invite";
-import { API_PREFIX, createMockBackend } from "./mock/server";
+import { DEFAULT_SETUP, type DemoSetup } from "./mock/persona";
+import { API_PREFIX, createMockBackend, type MockBackend } from "./mock/server";
 
 /**
  * Hợp đồng của bản xem thử: gọi MỌI hàm API của Portal qua lớp giả lập — đúng hàm, đúng schema dây mà các màn
@@ -31,8 +37,11 @@ import { API_PREFIX, createMockBackend } from "./mock/server";
  *   npx vitest run --config demo/vitest.config.ts        (trong apps/portal)
  */
 
+/** Backend đang trả lời: của quản trị viên mặc định, hay của một vai khác trong `as(...)` */
+let backend: MockBackend;
+
 beforeAll(() => {
-  const backend = createMockBackend();
+  backend = createMockBackend();
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
@@ -47,6 +56,20 @@ beforeAll(() => {
     );
   };
 });
+
+/** Chạy `run` với một bản xem thử MỚI của vai hay tình huống khác, rồi trả lại backend cũ */
+async function as<T>(
+  setup: Partial<DemoSetup>,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = backend;
+  backend = createMockBackend({ ...DEFAULT_SETUP, ...setup });
+  try {
+    return await run();
+  } finally {
+    backend = previous;
+  }
+}
 
 const tz = "Asia/Ho_Chi_Minh";
 
@@ -66,56 +89,151 @@ async function expectStatus(promise: Promise<unknown>, status: number) {
   throw new Error(`mong đợi lỗi ${String(status)}, nhận thành công`);
 }
 
+/** Mọi dòng của một danh sách quản trị theo trang */
+async function allPages<T>(
+  load: (offset: number) => Promise<{ total: number; rows: T[] }>,
+): Promise<T[]> {
+  const first = await load(0);
+  const rows = [...first.rows];
+  for (let o = ADMIN_PAGE_SIZE; o < first.total; o += ADMIN_PAGE_SIZE) {
+    rows.push(...(await load(o)).rows);
+  }
+  return rows;
+}
+
+const JOB_STATES = [
+  "QUEUED",
+  "NETWORK",
+  "CLUSTER",
+  "CLUSTER_ACCESS",
+  "DOMAINS",
+  "DONE",
+  "CANCEL_REQUESTED",
+  "COMPENSATING",
+  "COMPENSATION_FAILED",
+  "FAILED",
+] as const;
+
 describe("đăng nhập và quản trị", () => {
   it("phiên, và mọi trang quản trị", async () => {
     expect((await authApi.me()).user.platformRole).toBe("PLATFORM_ADMIN");
     expect(
       (await authApi.login({ email: "a@b.dev", password: "x" })).user,
     ).toBeDefined();
-    // Đủ người cho nhiều trang: trang 1 đầy, trang 3 là phần còn lại
-    const { users, total } = await adminApi.users(undefined, 0);
-    expect(total).toBe(130);
+    // Đủ người cho nhiều trang: trang đầu đầy, trang cuối là phần còn lại; người mới đăng ký lên đầu
+    const { users, total } = await adminApi.users({}, 0);
+    expect(total).toBe(161);
     expect(users.length).toBe(ADMIN_PAGE_SIZE);
-    const last = await adminApi.users(undefined, 2 * ADMIN_PAGE_SIZE);
-    expect(last.users.length).toBe(total - 2 * ADMIN_PAGE_SIZE);
-    expect((await adminApi.users("khánh", 0)).users.length).toBe(1);
+    const lastOffset =
+      Math.floor((total - 1) / ADMIN_PAGE_SIZE) * ADMIN_PAGE_SIZE;
+    const last = await adminApi.users({}, lastOffset);
+    expect(last.users.length).toBe(total - lastOffset);
+    expect(users.map((u) => u.createdAt)).toEqual(
+      users
+        .map((u) => u.createdAt)
+        .sort()
+        .reverse(),
+    );
+    const oldest = await adminApi.users({ order: "asc" }, 0);
+    expect(oldest.users[0]?.createdAt).toBe(last.users.at(-1)?.createdAt);
+    expect((await adminApi.users({ search: "khánh" }, 0)).users.length).toBe(1);
     const target = users.find((u) => u.platformRole === "USER");
     expect(
       (await adminApi.setRole(target?.id ?? "", "PLATFORM_ADMIN")).user
         .platformRole,
     ).toBe("PLATFORM_ADMIN");
-    expect((await adminApi.projects(undefined, 0)).total).toBe(24);
+    const admins = await adminApi.users({ platformRole: "PLATFORM_ADMIN" }, 0);
+    expect(admins.total).toBeGreaterThanOrEqual(5);
+    expect(admins.users.every((u) => u.platformRole === "PLATFORM_ADMIN")).toBe(
+      true,
+    );
+
+    const projects = await adminApi.projects({}, 0);
+    expect(projects.total).toBe(37);
+    const byStatus: Record<string, number> = {};
     for (const status of [
       "DRAFT",
       "PROVISIONING",
       "ACTIVE",
       "ERROR",
       "DELETED",
-    ]) {
-      expect(
-        (await adminApi.projects(status, 0)).projects.length,
-      ).toBeGreaterThan(0);
+    ] as const) {
+      byStatus[status] = (await adminApi.projects({ status }, 0)).total;
+      expect(byStatus[status]).toBeGreaterThan(0);
     }
-    expect((await adminApi.credentials()).credentials.length).toBeGreaterThan(
-      0,
-    );
-    for (const state of ["FAILED", "COMPENSATION_FAILED", "CANCEL_REQUESTED"]) {
-      expect((await adminApi.jobs(state, 0)).total).toBeGreaterThan(0);
+    expect(byStatus["DELETED"]).toBeGreaterThanOrEqual(3);
+    // Tìm theo tên project hay email của chủ
+    expect(
+      (await adminApi.projects({ search: "checkout" }, 0)).projects.map(
+        (p) => p.name,
+      ),
+    ).toEqual(["checkout-service"]);
+    const someOwner = projects.projects[0]?.owner.email ?? "";
+    expect(
+      (await adminApi.projects({ search: someOwner }, 0)).total,
+    ).toBeGreaterThan(0);
+
+    // Credential: đang dùng, chưa kiểm lần nào, đã thôi dùng (bị thay hay project đã xoá)
+    const { credentials } = await adminApi.credentials();
+    expect(
+      credentials.some((c) => c.isActive && c.lastValidatedAt !== null),
+    ).toBe(true);
+    expect(
+      credentials.some((c) => c.isActive && c.lastValidatedAt === null),
+    ).toBe(true);
+    expect(
+      credentials.filter((c) => !c.isActive).length,
+    ).toBeGreaterThanOrEqual(4);
+    expect(new Set(credentials.map((c) => c.id)).size).toBe(credentials.length);
+
+    // Job ở MỌI trạng thái; lỗi có câu đọc được
+    const jobs: Record<string, number> = {};
+    for (const state of JOB_STATES) {
+      jobs[state] = (await adminApi.jobs(state, 0)).total;
+      expect(jobs[state], state).toBeGreaterThan(0);
     }
+    expect(jobs["FAILED"]).toBeGreaterThanOrEqual(5);
+    expect(jobs["COMPENSATION_FAILED"]).toBeGreaterThanOrEqual(5);
+    for (const j of (await adminApi.jobs("COMPENSATION_FAILED", 0)).jobs) {
+      expect((j.lastError as { message?: string }).message).toMatch(/\S{10}/);
+    }
+
+    // Tài nguyên mồ côi ở cả ba cloud, trải nhiều ngày, có loại chưa rõ giá; id ổn định giữa hai lần gọi
     const orphans = await adminApi.orphans();
-    expect(orphans.resources.length).toBe(6);
-    expect(orphans.unpriced.length).toBeGreaterThan(0);
+    expect(orphans.resources.length).toBe(13);
+    expect(new Set(orphans.resources.map((r) => r.provider)).size).toBe(3);
+    expect(orphans.unpriced.length).toBeGreaterThanOrEqual(3);
+    expect(
+      new Set(orphans.resources.map((r) => r.updatedAt.slice(0, 10))).size,
+    ).toBeGreaterThanOrEqual(5);
+    expect((await adminApi.orphans()).resources.map((r) => r.id)).toEqual(
+      orphans.resources.map((r) => r.id),
+    );
 
     // Tổng quan của Bảng điều khiển: số liệu khớp các danh sách, cụm có đủ tín hiệu
     const { overview } = await adminApi.overview();
     expect(overview.users.total).toBe(total);
+    expect(overview.users.admins).toBe(admins.total);
     expect(overview.users.newLast7d).toBeGreaterThan(0);
+    expect(overview.projects.total).toBe(
+      projects.total - (byStatus["DELETED"] ?? 0),
+    );
+    for (const [status, count] of Object.entries(overview.projects.byStatus)) {
+      expect(count, status).toBe(byStatus[status]);
+    }
+    expect(overview.jobs.failed).toBe(jobs["FAILED"]);
+    expect(overview.jobs.compensationFailed).toBe(jobs["COMPENSATION_FAILED"]);
+    expect(overview.jobs.cancelRequested).toBe(jobs["CANCEL_REQUESTED"]);
+    expect(overview.jobs.running).toBe(
+      (await adminApi.jobs("ACTIVE", 0)).total,
+    );
     expect(overview.clouds.map((c) => c.provider).sort()).toEqual([
       "AWS",
       "AZURE",
       "GCP",
     ]);
     expect(overview.orphans.count).toBe(orphans.resources.length);
+    expect(overview.orphans.unpriced).toBe(orphans.unpriced.length);
     expect(overview.tools.length).toBe(10);
     const { platform } = await adminApi.platform();
     expect(platform.node.state).toBe("ok");
@@ -138,7 +256,8 @@ describe("trang chủ", () => {
   it("việc cần xử lý đủ sáu loại, rollout đang chạy, deploy 14 ngày", async () => {
     const { home } = await homeApi.get();
     // [Plan #55] `data-pipeline` vào được qua nhóm "Nền tảng"
-    expect(home.projects.length).toBe(10);
+    expect(home.projects.length).toBe(13);
+    expect(home.projects.length).toBe((await projectApi.list(0)).total);
     expect(new Set(home.attention.map((a) => a.kind))).toEqual(
       new Set([
         "DEPLOY_PENDING",
@@ -169,6 +288,9 @@ describe("mọi project người xem thấy", () => {
       "notification-worker",
       "payment-gateway",
       "search-service",
+      "seller-center",
+      "shipping-fee-api",
+      "voucher-service",
     ]);
     for (const project of projects.values()) {
       const { environments, cluster } = await projectApi.get(project.id);
@@ -263,8 +385,8 @@ describe("mọi project người xem thấy", () => {
     const { environments } = await projectApi.get(p.id);
     const prod = environments.find((e) => e.isProduction);
     if (prod === undefined) throw new Error("thiếu prod");
-    expect((await flagApi.page(p.id, prod.id, tz)).total).toBe(16);
-    expect((await segmentApi.list(p.id)).segments.length).toBe(6);
+    expect((await flagApi.page(p.id, prod.id, tz)).total).toBe(54);
+    expect((await segmentApi.list(p.id)).segments.length).toBe(12);
     expect(
       (await rolloutApi.active(p.id)).rollouts.length,
     ).toBeGreaterThanOrEqual(2);
@@ -288,6 +410,171 @@ describe("mọi project người xem thấy", () => {
     expect(
       (await domainApi.versions(p.id, "MONITORING")).versions.available.length,
     ).toBe(1);
+  });
+
+  it("checkout-service: flag hai trang đủ vòng đời, rule nhiều điều kiện, rollout có tên, nhật ký dày", async () => {
+    const p = (await projectsByName()).get("checkout-service");
+    if (p === undefined) throw new Error("thiếu checkout-service");
+    const { environments } = await projectApi.get(p.id);
+    const [dev, , prod] = environments;
+    if (dev === undefined || prod === undefined) throw new Error("thiếu env");
+
+    // Hơn một trang flag; trang hai là phần còn lại, cùng tổng
+    const page2 = await flagApi.page(p.id, prod.id, tz, { offset: 50 });
+    expect(page2.flags.length).toBe(page2.total - 50);
+    for (const status of ["DRAFT", "ACTIVE", "ARCHIVED"] as const) {
+      expect(await flagApi.count(p.id, prod.id, { status })).toBeGreaterThan(0);
+    }
+    // Flag nháp đã bật ở dev (UX-4 "Nháp, chưa phục vụ")
+    const drafts = await flagApi.page(p.id, dev.id, tz, { status: "DRAFT" });
+    expect(
+      drafts.flags.filter((f) => f.env?.isEnabled === true).length,
+    ).toBeGreaterThanOrEqual(4);
+    // Rule AND nhiều điều kiện ở prod
+    const all = [
+      ...(await flagApi.page(p.id, prod.id, tz)).flags,
+      ...page2.flags,
+    ];
+    let multi = 0;
+    for (const f of all) {
+      for (const r of (await flagApi.rules(p.id, f.id, prod.id)).rules) {
+        const conditions = (r.condition as { all?: unknown[] }).all ?? [];
+        if (conditions.length >= 2) multi += 1;
+      }
+    }
+    expect(multi).toBeGreaterThanOrEqual(8);
+
+    // Rollout: mọi cái có tên workload; đủ trạng thái; một cái tự rollback, một cái người bấm rollback
+    const rollouts = (
+      await Promise.all(environments.map((e) => rolloutApi.list(p.id, e.id)))
+    ).flatMap((r) => r.rollouts);
+    expect(rollouts.every((r) => (r.workloadName ?? "") !== "")).toBe(true);
+    expect(new Set(rollouts.map((r) => r.status))).toEqual(
+      new Set(["PENDING", "IN_PROGRESS", "PAUSED", "DONE", "FAILED"]),
+    );
+    expect(new Set(rollouts.map((r) => r.scope))).toEqual(
+      new Set(["FLAG_LEVEL", "SERVICE_LEVEL"]),
+    );
+    const failed = await Promise.all(
+      rollouts
+        .filter((r) => r.status === "FAILED")
+        .map(async (r) => (await rolloutApi.get(p.id, r.id)).rollout),
+    );
+    const last = failed.map((r) => r.events.at(-1));
+    expect(last.some((e) => e?.triggeredBy === "AUTO")).toBe(true);
+    expect(last.some((e) => e?.triggeredBy === "MANUAL")).toBe(true);
+    expect(failed.every((r) => (r.failReason ?? "").length > 20)).toBe(true);
+
+    // Nhật ký: hơn 200 dòng, mới nhất trước, trải hàng tháng, người làm là thành viên có thật
+    const first = await projectApi.audit(p.id, { limit: "50" });
+    expect(first.total).toBeGreaterThanOrEqual(200);
+    const entries = [...first.entries];
+    for (let o = 50; o < first.total; o += 50) {
+      entries.push(
+        ...(await projectApi.audit(p.id, { limit: "50", offset: String(o) }))
+          .entries,
+      );
+    }
+    expect(entries.map((e) => e.occurredAt)).toEqual(
+      entries
+        .map((e) => e.occurredAt)
+        .sort()
+        .reverse(),
+    );
+    const span =
+      Date.parse(entries[0]?.occurredAt ?? "") -
+      Date.parse(entries.at(-1)?.occurredAt ?? "");
+    expect(span).toBeGreaterThan(60 * 86_400_000);
+    expect(new Set(entries.map((e) => e.action)).size).toBeGreaterThanOrEqual(
+      20,
+    );
+    const { members } = await projectApi.members(p.id);
+    const memberIds = new Set(members.map((m) => m.userId));
+    const humans = entries.filter((e) => e.actorType === "USER");
+    expect(humans.every((e) => memberIds.has(e.actorUserId ?? ""))).toBe(true);
+    expect(
+      new Set(humans.map((e) => e.actorUserId)).size,
+    ).toBeGreaterThanOrEqual(4);
+    const users = await allPages(async (o) => {
+      const r = await adminApi.users({}, o);
+      return { total: r.total, rows: r.users };
+    });
+    const userIds = new Set(users.map((u) => u.id));
+    expect(memberIds.size).toBeGreaterThan(0);
+    expect([...memberIds].every((id) => userIds.has(id))).toBe(true);
+    // Lọc theo nhóm hành động của trang Nhật ký
+    const flagOnly = await projectApi.audit(p.id, {
+      action: "flag.env.update",
+    });
+    expect(flagOnly.total).toBeGreaterThan(20);
+    expect(flagOnly.entries.every((e) => e.action === "flag.env.update")).toBe(
+      true,
+    );
+  });
+
+  it("các project ở từng bước của thẻ Bắt đầu, và trạng thái trống", async () => {
+    const byName = await projectsByName();
+    const facts = async (name: string) => {
+      const p = byName.get(name);
+      if (p === undefined) throw new Error(`thiếu ${name}`);
+      const { environments } = await projectApi.get(p.id);
+      const first = environments[0];
+      if (first === undefined) throw new Error("thiếu env");
+      const keys = (
+        await Promise.all(
+          environments.map((e) => projectApi.sdkKeys(p.id, e.id)),
+        )
+      ).flatMap((k) => k.keys);
+      const { architecture } = await architectureApi.get(p.id);
+      const latest = await Promise.all(
+        environments.map((e) => deploymentApi.latest(p.id, e.id)),
+      );
+      return {
+        sdkKey: keys.some((k) => k.status === "active"),
+        flag: (await flagApi.page(p.id, first.id, tz)).total > 0,
+        cloud: architecture.cloud !== null,
+        domains: architecture.tools.length > 0,
+        deploy: latest.some((l) => l.deployment !== null),
+        segments: (await segmentApi.list(p.id)).segments.length,
+        rollouts: (
+          await Promise.all(
+            environments.map((e) => rolloutApi.list(p.id, e.id)),
+          )
+        ).flatMap((r) => r.rollouts).length,
+      };
+    };
+    expect(await facts("voucher-service")).toEqual({
+      sdkKey: true,
+      flag: false,
+      cloud: false,
+      domains: false,
+      deploy: false,
+      segments: 0,
+      rollouts: 0,
+    });
+    expect(await facts("seller-center")).toMatchObject({
+      sdkKey: true,
+      flag: true,
+      cloud: true,
+      domains: false,
+      deploy: false,
+    });
+    expect(await facts("shipping-fee-api")).toEqual({
+      sdkKey: false,
+      flag: false,
+      cloud: true,
+      domains: true,
+      deploy: true,
+      segments: 0,
+      rollouts: 0,
+    });
+    expect(await facts("checkout-service")).toMatchObject({
+      sdkKey: true,
+      flag: true,
+      cloud: true,
+      domains: true,
+      deploy: true,
+    });
   });
 });
 
@@ -341,7 +628,7 @@ describe("nhóm và lời mời (Plan #55)", () => {
   it("tạo nhóm, thêm, mời, cấp quyền, nhận lời mời, rời, xoá", async () => {
     const projects = await projectsByName();
     const checkout = projects.get("checkout-service");
-    const users = await adminApi.users(undefined, 0);
+    const users = await adminApi.users({}, 0);
     const someone = users.users.find((u) => u.platformRole === "USER");
     if (checkout === undefined || someone === undefined) {
       throw new Error("dữ liệu mẫu thiếu project hoặc người dùng");
@@ -643,5 +930,99 @@ describe("thao tác ghi", () => {
     await projectApi.remove(fresh.project.id);
     await authApi.logout();
     await expectStatus(authApi.me(), 401);
+  });
+});
+
+describe("vai người xem và tình huống nền tảng của dải Bản xem thử", () => {
+  it("cùng hạt giống: hai lần dựng là hai bản sao y hệt", async () => {
+    const snapshot = async () => {
+      const { projects } = await projectApi.list(0);
+      const checkout = projects.find((p) => p.name === "checkout-service");
+      return {
+        ids: projects.map((p) => p.id),
+        audit: (await projectApi.audit(checkout?.id ?? "", { limit: "5" }))
+          .entries,
+      };
+    };
+    const first = await as({}, snapshot);
+    const second = await as({}, snapshot);
+    expect(second).toEqual(first);
+  });
+
+  it("developer: người thường, vài project với vai DEVELOPER/MAINTAINER, không vào được khu quản trị", async () => {
+    await as({ persona: "developer" }, async () => {
+      const { user } = await authApi.me();
+      expect(user.platformRole).toBe("USER");
+      const { projects } = await projectApi.list(0);
+      expect(projects.length).toBeGreaterThanOrEqual(3);
+      expect(new Set(projects.map((p) => p.myRole))).toEqual(
+        new Set(["DEVELOPER", "MAINTAINER", "VIEWER"]),
+      );
+      expect(projects.some((p) => p.myRole === "OWNER")).toBe(false);
+      const { home } = await homeApi.get();
+      expect(home.projects.length).toBe(projects.length);
+      expect((await teamApi.list()).teams.length).toBeGreaterThan(0);
+      await expectStatus(adminApi.overview(), 403);
+      await expectStatus(adminApi.users({}, 0), 403);
+    });
+  });
+
+  it("người mới: không project, không nhóm; tạo project qua wizard rồi thấy nó", async () => {
+    await as({ persona: "newcomer" }, async () => {
+      const { user } = await authApi.me();
+      expect(user.platformRole).toBe("USER");
+      expect((await projectApi.list(0)).total).toBe(0);
+      expect((await teamApi.list()).teams).toEqual([]);
+      const before = (await homeApi.get()).home;
+      expect(before.projects).toEqual([]);
+      expect(before.rollouts).toEqual([]);
+      expect(before.attention).toEqual([]);
+      expect(before.deploys.every((d) => d.success + d.failure === 0)).toBe(
+        true,
+      );
+
+      const created = await projectApi.create({
+        name: "tiem-banh-online",
+        creationMode: "CREATE_NEW",
+        languageRuntime: "nodejs",
+      });
+      expect(created.project.myRole).toBe("OWNER");
+      expect(created.project.ownerId).toBe(user.id);
+      const { projects } = await projectApi.list(0);
+      expect(projects.map((p) => p.name)).toEqual(["tiem-banh-online"]);
+      expect((await homeApi.get()).home.projects.length).toBe(1);
+      const { members } = await projectApi.members(created.project.id);
+      expect(members.map((m) => m.user.email)).toEqual([user.email]);
+      const { entries } = await projectApi.audit(created.project.id, {});
+      expect(entries.map((e) => [e.action, e.actorUserId])).toEqual([
+        ["project.create", user.id],
+      ]);
+      await expectStatus(adminApi.overview(), 403);
+    });
+  });
+
+  it("nền tảng có rủi ro: máy rảnh, sao lưu hỏng, chứng chỉ sắp hết hạn, một service ngừng", async () => {
+    await as({ platform: "at-risk" }, async () => {
+      const { platform } = await adminApi.platform();
+      if (
+        platform.node.state !== "ok" ||
+        platform.backup.state !== "ok" ||
+        platform.certificate.state !== "ok"
+      ) {
+        throw new Error("tín hiệu của cụm phải đọc được");
+      }
+      expect(idleRisk(platform.node).tone).toBe("warn");
+      expect(backupVerdict(platform.backup).tone).toBe("error");
+      expect(certificateVerdict(platform.certificate).tone).toBe("warn");
+      const { services } = await adminApi.system();
+      expect(services.some((s) => s.status === "down")).toBe(true);
+    });
+    // Mặc định: khoẻ
+    const { platform } = await as({}, () => adminApi.platform());
+    if (platform.node.state !== "ok" || platform.certificate.state !== "ok") {
+      throw new Error("tín hiệu của cụm phải đọc được");
+    }
+    expect(idleRisk(platform.node).tone).toBe("ok");
+    expect(certificateVerdict(platform.certificate).tone).toBe("ok");
   });
 });

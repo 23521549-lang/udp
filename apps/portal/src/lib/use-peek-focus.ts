@@ -35,8 +35,15 @@ export function usePeekFocus(
 
   useEffect(() => {
     if (key !== undefined) return;
-    const target = opener.current;
-    opener.current = null;
-    if (target?.isConnected === true) target.focus();
+    restore(opener);
   }, [key]);
+
+  // Panel bị gỡ khỏi trang (component chứa nó unmount khi đóng) — vẫn trả focus về chỗ đã mở
+  useEffect(() => () => restore(opener), []);
+}
+
+function restore(opener: { current: HTMLElement | null }): void {
+  const target = opener.current;
+  opener.current = null;
+  if (target?.isConnected === true) target.focus();
 }

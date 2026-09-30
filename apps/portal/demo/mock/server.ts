@@ -6,6 +6,7 @@ import { registerPlatformRoutes } from "./handlers/platform";
 import { registerProjectRoutes } from "./handlers/project";
 import { registerTeamRoutes } from "./handlers/team";
 import { advance } from "./live";
+import { DEFAULT_SETUP, storedSetup, type DemoSetup } from "./persona";
 import { HttpProblem, problemBody, Router, type Reply } from "./router";
 import { createDb } from "./seed";
 
@@ -42,8 +43,10 @@ export interface MockBackend {
   handle(method: string, url: URL, body: unknown): Response;
 }
 
-export function createMockBackend(): MockBackend {
-  const db = createDb();
+export function createMockBackend(
+  setup: DemoSetup = DEFAULT_SETUP,
+): MockBackend {
+  const db = createDb(setup);
   const router = new Router();
   registerAuthAdminRoutes(router, db);
   registerProjectRoutes(router, db);
@@ -57,6 +60,17 @@ export function createMockBackend(): MockBackend {
       const path = url.pathname.slice(API_PREFIX.length);
       advance(db);
       try {
+        // Như `requirePlatformAdmin` của Service 1: người thường không đọc được khu quản trị
+        if (
+          path.startsWith("/admin/") &&
+          db.me.platformRole !== "PLATFORM_ADMIN"
+        ) {
+          throw new HttpProblem(
+            403,
+            "FORBIDDEN",
+            "Chỉ quản trị viên nền tảng xem được khu này",
+          );
+        }
         const reply = router.handle({
           method,
           path,
@@ -124,7 +138,7 @@ class SilentEventSource extends EventTarget {
 }
 
 export function installMockBackend(): void {
-  const backend = createMockBackend();
+  const backend = createMockBackend(storedSetup());
   const realFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const request = new Request(input, init);

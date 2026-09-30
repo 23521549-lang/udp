@@ -10,10 +10,12 @@ import type {
   SegmentListResponseWire,
 } from "@udp/shared-types/wire";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Dialog } from "../../components/Dialog";
+import { Field, focusFirstInvalid } from "../../components/Field";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
 import { useMessages } from "../../i18n";
@@ -26,10 +28,12 @@ import {
   relativeTime,
 } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
+import { usePeekFocus } from "../../lib/use-peek-focus";
 import { AttributeConditions, TagInput } from "../flag/RuleEditor";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
+import { rolesMessages } from "../project/roles.messages";
 import { segmentApi } from "./segment-api";
 import { quotaVerdict, segmentSizeOf } from "./segment-quota";
 import { segmentMessages } from "./segment.messages";
@@ -45,6 +49,7 @@ import { PageHead } from "../../components/PageHead";
  */
 export function SegmentsPage() {
   const m = useMessages(segmentMessages);
+  const roles = useMessages(rolesMessages);
   const { project } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/segments" });
   const navigate = useNavigate();
@@ -70,6 +75,15 @@ export function SegmentsPage() {
   const canWrite = can(project.myRole, "DEVELOPER");
   const quota = segments.data?.quota;
 
+  /*
+   * [Plan #58 UX-38] Panel segment: focus vào panel khi mở, Esc đóng, đóng xong focus về dòng đã mở. Hook nằm ở
+   * trang vì panel bị gỡ khi đóng. Esc trong hộp thoại (sửa, xoá) chỉ đóng hộp thoại đó.
+   */
+  const panel = useRef<HTMLElement>(null);
+  usePeekFocus(panel, search.segment, () => {
+    if (document.querySelector("[role=dialog]") === null) open(undefined);
+  });
+
   return (
     <>
       <ProjectBar
@@ -92,7 +106,12 @@ export function SegmentsPage() {
         <div className="scroll">
           <PageHead
             title={m.title}
-            lead={m.lead}
+            lead={
+              <>
+                {m.lead}
+                <InfoTip term="segment" />
+              </>
+            }
             {...(quota === undefined
               ? {}
               : {
@@ -121,7 +140,24 @@ export function SegmentsPage() {
                 onRetry={() => void segments.refetch()}
               />
             ) : segments.data.segments.length === 0 ? (
-              <Empty title={m.empty} />
+              // [Plan #58 UX-17] Vì sao trống, cần gì trước, và một nút
+              <Empty title={m.empty}>
+                <div className="empty-body">
+                  <p>{m.emptyWhy}</p>
+                  <p>{m.emptyNeed}</p>
+                  {canWrite ? (
+                    <button
+                      type="button"
+                      className="btn pri"
+                      onClick={() => setEditing("new")}
+                    >
+                      {m.createFirst}
+                    </button>
+                  ) : (
+                    <p>{m.emptyRole(roles.role.DEVELOPER)}</p>
+                  )}
+                </div>
+              </Empty>
             ) : (
               <div className="lst" role="list" aria-label={m.list}>
                 {segments.data.segments.map((s) => (
@@ -137,7 +173,9 @@ export function SegmentsPage() {
                         s.id === search.segment ? "true" : undefined
                       }
                     >
-                      <b className="lst-name">{s.name}</b>
+                      <b className="lst-name" translate="no">
+                        {s.name}
+                      </b>
                       <span className="c3">
                         {m.summary(
                           s.summary.conditionCount,
@@ -160,6 +198,7 @@ export function SegmentsPage() {
         {search.segment !== undefined && (
           <SegmentPeek
             segmentId={search.segment}
+            panelRef={panel}
             canWrite={canWrite}
             onEdit={(s) => setEditing(s)}
             onClose={() => open(undefined)}
@@ -183,11 +222,13 @@ export function SegmentsPage() {
 
 function SegmentPeek({
   segmentId,
+  panelRef,
   canWrite,
   onEdit,
   onClose,
 }: {
   segmentId: string;
+  panelRef: RefObject<HTMLElement>;
   canWrite: boolean;
   onEdit: (segment: SegmentDetailWire) => void;
   onClose: () => void;
@@ -214,9 +255,9 @@ function SegmentPeek({
 
   const s = segment.data?.segment;
   return (
-    <aside className="peek" aria-label={m.details}>
+    <aside ref={panelRef} className="peek" aria-label={m.details} tabIndex={-1}>
       <div className="ph">
-        <b>{s?.name ?? "…"}</b>
+        <b translate="no">{s?.name ?? "…"}</b>
         <div
           className="r"
           style={{ marginLeft: "auto", display: "flex", gap: 6 }}
@@ -258,7 +299,9 @@ function SegmentPeek({
           <ErrorState error={segment.error} />
         ) : s === undefined ? null : (
           <>
-            <h2 className="title">{s.name}</h2>
+            <h2 className="title" translate="no">
+              {s.name}
+            </h2>
             <p className="lead">{s.description ?? m.noDescription}</p>
             <div className="sect">
               <h3>{m.matchesWhen}</h3>
@@ -292,7 +335,9 @@ function SegmentPeek({
                 {s.usage.flags.map((f) => (
                   <li key={f.flagId}>
                     <span />
-                    <span className="mono">{f.flagKey}</span>
+                    <span className="mono" translate="no">
+                      {f.flagKey}
+                    </span>
                     <span className="c3">
                       {f.envs.map((e) => e.name).join(", ")}
                     </span>
@@ -378,6 +423,12 @@ function SegmentDialog({
     },
   });
   const fields = fieldErrorsOf(save.error);
+  // [Plan #58 UX-39] Lưu hỏng: focus tới ô lỗi đầu tiên
+  useEffect(() => {
+    if (save.error !== null) {
+      focusFirstInvalid(document.querySelector<HTMLElement>("[role=dialog]"));
+    }
+  }, [save.error]);
 
   // Cảnh báo TRƯỚC khi gửi (sổ nợ `portal-segment-quota`); server vẫn là nơi quyết
   const size = segmentSizeOf({ all, userIds });
@@ -421,30 +472,31 @@ function SegmentDialog({
         </>
       }
     >
-      <div className="f">
-        <label htmlFor="seg-name">{m.name}</label>
-        <input
-          id="seg-name"
-          className="inp"
-          value={name}
-          aria-invalid={fields.name !== undefined}
-          onChange={(e) => setName(e.target.value)}
-        />
-        {fields.name !== undefined && (
-          <span className="field-error">{fields.name}</span>
+      <Field id="seg-name" label={m.name} error={fields.name}>
+        {(p) => (
+          <input
+            {...p}
+            className="inp"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         )}
-      </div>
+      </Field>
+      <Field id="seg-desc" label={m.description} error={fields.description}>
+        {(p) => (
+          <input
+            {...p}
+            className="inp"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        )}
+      </Field>
       <div className="f">
-        <label htmlFor="seg-desc">{m.description}</label>
-        <input
-          id="seg-desc"
-          className="inp"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-      </div>
-      <div className="f">
-        <span className="lbl">{m.keyInLabel}</span>
+        <span className="lbl">
+          {m.keyInLabel}
+          <InfoTip term="targetingKey" />
+        </span>
         <TagInput
           label={m.keyList}
           values={userIds}
@@ -489,7 +541,9 @@ function SegmentDialog({
       )}
       {save.isError && (
         <p role="alert" className="field-error">
-          {Object.values(fields)[0] ?? messageOf(save.error)}
+          {Object.entries(fields).find(
+            ([key]) => key !== "name" && key !== "description",
+          )?.[1] ?? messageOf(save.error)}
         </p>
       )}
     </Dialog>

@@ -11,6 +11,7 @@ import { ExternalLink } from "lucide-react";
 import { BarChart } from "../../components/BarChart";
 import { CodeBlock } from "../../components/CodeBlock";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { LineChart } from "../../components/LineChart";
 import { PageHead } from "../../components/PageHead";
 import { Sparkline } from "../../components/Sparkline";
@@ -100,6 +101,7 @@ export function MonitoringPage() {
           <section aria-labelledby="mon-dora">
             <div className="sect">
               <h2 id="mon-dora">{m.doraTitle(DORA_DAYS)}</h2>
+              <InfoTip term="dora" />
               <div className="r">
                 <Link
                   to="/app/projects/$projectId/deployments"
@@ -149,6 +151,7 @@ function RedSection({
     <section aria-labelledby="mon-red">
       <div className="sect">
         <h2 id="mon-red">{copy.title}</h2>
+        <InfoTip term="red" />
         {m !== undefined && (
           <span className="c3">
             {copy.source(

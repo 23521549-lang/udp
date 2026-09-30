@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { useMessages } from "../../i18n";
 import { formatDateTime, formatPercent, relativeTime } from "../../lib/format";
@@ -10,6 +11,7 @@ import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
+import { rolesMessages } from "../project/roles.messages";
 import { CreateRolloutDialog } from "./CreateRolloutDialog";
 import { rolloutApi } from "./rollout-api";
 import { RolloutStatusIcon } from "./rollout-status";
@@ -19,6 +21,7 @@ import { PageHead } from "../../components/PageHead";
 /** Danh sách rollout của env đang chọn (§10.9, query key có `envId`) */
 export function RolloutsPage() {
   const m = useMessages(rolloutMessages);
+  const roles = useMessages(rolesMessages);
   const { project, env } = useProjectContext();
   const search = useSearch({ from: "/app/projects/$projectId/rollouts" });
   const navigate = useNavigate();
@@ -66,7 +69,15 @@ export function RolloutsPage() {
         }
       />
       <div className="scroll">
-        <PageHead title={m.list.title} lead={m.list.lead(env.name)} />
+        <PageHead
+          title={m.list.title}
+          lead={
+            <>
+              {m.list.lead(env.name)}
+              <InfoTip term="rollout" />
+            </>
+          }
+        />
         {rollouts.isPending ? (
           <Loading />
         ) : rollouts.isError ? (
@@ -75,7 +86,24 @@ export function RolloutsPage() {
             onRetry={() => void rollouts.refetch()}
           />
         ) : rollouts.data.rollouts.length === 0 ? (
-          <Empty title={m.list.empty(env.name)} />
+          // [Plan #58 UX-17] Vì sao trống, cần gì trước, và một nút — cùng khuôn với trang Deploy và Nhóm
+          <Empty title={m.list.empty(env.name)}>
+            <div className="empty-body">
+              <p>{m.list.emptyWhy}</p>
+              <p>{m.list.emptyNeed}</p>
+              {canCreate ? (
+                <button
+                  type="button"
+                  className="btn pri"
+                  onClick={() => setCreating(true)}
+                >
+                  {m.list.createFirst}
+                </button>
+              ) : (
+                <p>{m.list.emptyRole(roles.role.MAINTAINER)}</p>
+              )}
+            </div>
+          </Empty>
         ) : (
           <div role="list" aria-label={m.list.label}>
             {rollouts.data.rollouts.map((r) => (
@@ -102,7 +130,7 @@ export function RolloutsPage() {
                     {formatPercent(r.currentTrafficPercentage)}
                   </span>
                   {/* Cột 64px để trống; thời gian ở cột cuối — cùng lưới `.row` với danh sách flag */}
-                  <span />
+                  <span className="ro-gap" />
                   <span className="when" title={formatDateTime(r.updatedAt)}>
                     {relativeTime(r.updatedAt)}
                   </span>

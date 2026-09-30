@@ -26,6 +26,7 @@ import type {
   TeamInvitationWire,
   TeamMemberWire,
 } from "@udp/shared-types/wire";
+import type { DemoSetup } from "./persona";
 
 /**
  * Trạng thái của bản xem thử — "database" sống trong trang. Mỗi route của lớp giả lập đọc và ghi ở đây, nên thao
@@ -97,6 +98,8 @@ export interface ProjectRecord {
   domains: DomainState;
   jobs: JobRecord[];
   cloud: CloudCredentialWire | null;
+  /** Credential đã bị thay (xoay khoá, đổi cách xác thực): trang Credential của quản trị hiện "Không dùng" */
+  retiredClouds: RetiredCloud[];
   cost: CostWire | null;
   preview: ProvisionPreviewWire;
   cicd: CicdStatusWire | null;
@@ -109,6 +112,11 @@ export interface ProjectRecord {
   teamGrants: TeamGrant[];
   /** [Plan #55] Lời mời đang chờ vào project */
   invitations: ProjectInvitationWire[];
+}
+
+export interface RetiredCloud {
+  id: string;
+  cloud: CloudCredentialWire;
 }
 
 /** [Plan #55] Một nhóm có vai trên một project — không bao giờ OWNER */
@@ -146,4 +154,6 @@ export interface Db {
   teams: TeamRecord[];
   invitationTokens: InvitationToken[];
   configVersion: number;
+  /** Người đang xem và tình huống nền tảng mà dải "Bản xem thử" chọn */
+  demo: DemoSetup;
 }

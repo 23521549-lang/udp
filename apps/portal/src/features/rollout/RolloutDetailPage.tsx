@@ -5,10 +5,21 @@ import type {
   RolloutEventWire,
   RolloutIntentActionWire,
 } from "@udp/shared-types/wire";
-import { CircleAlert, CircleX, Pause, Play, Undo2, Upload } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleX,
+  LoaderCircle,
+  Pause,
+  Play,
+  Undo2,
+  Upload,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { LineChart } from "../../components/LineChart";
 import { ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
@@ -90,6 +101,32 @@ export function actionsFor(
     ? actions.filter((a) => a !== "PAUSE" && a !== "RESUME")
     : actions;
 }
+
+/**
+ * [Plan #58 UX-6] Sắc của dải "vì sao đang đứng yên" theo ĐÚNG quyết định gần nhất — trước đây luôn cam, kể cả khi
+ * mọi số đo trong ngưỡng. Chờ số đo hay đang thực hiện yêu cầu: trung tính; trong ngưỡng: ổn; vượt ngưỡng: cảnh báo,
+ * và lỗi khi lần vượt tới sẽ tự lùi lại.
+ */
+export type DecisionTone = "neutral" | "ok" | "warn" | "error";
+
+export function decisionTone(
+  rollout: Pick<RolloutDetailWire, "lastDecision" | "pendingIntent">,
+  maxBreaches: number,
+): DecisionTone {
+  const d = rollout.lastDecision;
+  if (rollout.pendingIntent !== undefined || d === undefined) return "neutral";
+  if (d.decision === "ROLLBACK") return "error";
+  if (d.breach) return d.breachStreak + 1 >= maxBreaches ? "error" : "warn";
+  // HOLD không vượt ngưỡng là còn chờ dữ liệu (chưa đủ request), chưa phải "ổn"
+  return d.decision === "PROMOTE" ? "ok" : "neutral";
+}
+
+const TONE: Record<DecisionTone, { className: string; icon: LucideIcon }> = {
+  neutral: { className: "alert neutral", icon: LoaderCircle },
+  ok: { className: "alert ok", icon: CircleCheck },
+  warn: { className: "alert amber", icon: CircleAlert },
+  error: { className: "alert", icon: CircleX },
+};
 
 export function RolloutDetailPage() {
   const m = useMessages(rolloutMessages);
@@ -178,7 +215,9 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
             {rollout.flag !== undefined && (
               <>
                 {m.rampVariant(
-                  <span className="mono">{rollout.flag.targetVariant}</span>,
+                  <span className="mono" translate="no">
+                    {rollout.flag.targetVariant}
+                  </span>,
                 )}
                 {" · "}
               </>
@@ -186,8 +225,12 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
             {service && (
               <>
                 {m.versionChange(
-                  <span className="mono">{rollout.versionOld ?? "?"}</span>,
-                  <span className="mono">{rollout.versionNew ?? "?"}</span>,
+                  <span className="mono" translate="no">
+                    {rollout.versionOld ?? "?"}
+                  </span>,
+                  <span className="mono" translate="no">
+                    {rollout.versionNew ?? "?"}
+                  </span>,
                 )}
                 {" · "}
                 {m.mode[rollout.controlMode]}
@@ -197,7 +240,9 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
             {rollout.workloadName !== null && (
               <>
                 {m.workload(
-                  <span className="mono">{rollout.workloadName}</span>,
+                  <span className="mono" translate="no">
+                    {rollout.workloadName}
+                  </span>,
                 )}
                 {" · "}
               </>
@@ -288,6 +333,12 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
               : split
                 ? m.errorRates.split
                 : m.errorRates.flag}
+            {!split && (
+              <>
+                <InfoTip term="canary" />
+                <InfoTip term="baseline" />
+              </>
+            )}
           </div>
           <div className="v num">
             {snap === undefined
@@ -301,7 +352,10 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
           </div>
         </div>
         <div>
-          <div className="l">{m.latency}</div>
+          <div className="l">
+            {m.latency}
+            <InfoTip term="p99" />
+          </div>
           <div className="v num">
             {snap?.canary.latencyP99Ms === undefined
               ? "–"
@@ -332,6 +386,7 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
               formatDuration(rollout.stepIntervalSeconds),
               formatDuration(rollout.analysisIntervalSeconds),
             )}
+            <InfoTip term="step" />
           </span>
           <b>{formatPercent(rollout.currentTrafficPercentage)}</b>
         </div>
@@ -412,13 +467,14 @@ function WhyStill({
     0,
     Math.round((stepStart + rollout.stepIntervalSeconds * 1000 - now) / 1000),
   );
+  const tone = TONE[decisionTone(rollout, maxBreaches)];
   /*
    * Chỉ LÝ DO (đổi vài phút một lần) nằm trong vùng aria-live; hai đồng hồ đếm từng giây ở ngoài nó —
    * nếu không trình đọc màn hình đọc lại cả khối mỗi giây.
    */
   return (
-    <div className="alert amber">
-      <Icon of={CircleAlert} />
+    <div className={tone.className}>
+      <Icon of={tone.icon} />
       <div>
         <div role="status" aria-live="polite">
           {rollout.pendingIntent !== undefined ? (
@@ -438,14 +494,20 @@ function WhyStill({
                 maxBreaches,
                 decision.breachStreak + 1 >= maxBreaches,
               )}
+              <InfoTip term="autoRollback" />
             </div>
           )}
         </div>
         {active && (
           <div className="c2 num">
             {nextAnalysis !== undefined &&
-              m.nextAnalysis(formatDuration(nextAnalysis))}
-            {m.dwellLeft(formatDuration(dwellLeft))}
+              (nextAnalysis === 0
+                ? m.nextAnalysisNow
+                : m.nextAnalysis(formatDuration(nextAnalysis)))}
+            {dwellLeft === 0
+              ? m.dwellDone
+              : m.dwellLeft(formatDuration(dwellLeft))}
+            <InfoTip term="dwell" />
           </div>
         )}
       </div>

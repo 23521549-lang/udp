@@ -153,17 +153,15 @@ function act(
         `Hành động "${action}" không có`,
       );
   }
+  // Như Service 1: mọi nút của người dùng là MỘT intent ghi vào session
   audit(
     db,
     p,
-    `rollout.${action.toLowerCase()}`,
-    "RolloutSession",
+    "rollout.intent",
+    "rollout_session",
     r.id,
     null,
-    {
-      trafficPercentage: r.currentTrafficPercentage,
-      status: r.status,
-    },
+    { action, trafficPercentage: r.currentTrafficPercentage },
     r.environment.id,
   );
 }
@@ -289,12 +287,14 @@ function create(db: Db, p: ProjectRecord, body: CreateBody): RolloutDetailWire {
     db,
     p,
     "rollout.create",
-    "RolloutSession",
+    "rollout_session",
     rollout.id,
     null,
     {
       scope: body.scope,
       strategy: body.strategy,
+      workloadName: body.workloadName,
+      stepPercent: body.stepPercent,
     },
     env.id,
   );

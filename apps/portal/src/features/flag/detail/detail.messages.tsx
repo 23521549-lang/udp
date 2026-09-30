@@ -32,6 +32,13 @@ export const detailMessages = defineMessages({
       activateDescription: "SDK sẽ bắt đầu nhận flag này ở mọi environment.",
       archiveDescription:
         "SDK sẽ không còn nhận flag này. Flag đang có rollout chạy thì không lưu trữ được.",
+      /** [Plan #58 UX-4] Dải báo của flag nháp trong panel */
+      draftTitle: "Nháp, chưa phục vụ",
+      draftBody:
+        "SDK chưa thấy flag này ở environment nào, kể cả khi công tắc bên dưới đang bật. Kích hoạt để bắt đầu phục vụ.",
+      draftAsk: (role: string) => `Vai ${role} trở lên mới kích hoạt được.`,
+      /** [Plan #58 UX-29] */
+      rollOut: "Phát hành dần",
     },
     rules: {
       loading: "Đang tải rule…",
@@ -66,7 +73,7 @@ export const detailMessages = defineMessages({
     },
     tester: {
       title: "Thử đánh giá",
-      targetingKey: "targetingKey",
+      targetingKey: "Khoá người dùng (targetingKey)",
       attributes: "Thuộc tính (mỗi dòng key=value)",
       evaluating: "Đang đánh giá…",
       evaluate: "Đánh giá",
@@ -128,6 +135,12 @@ export const detailMessages = defineMessages({
         "The SDK will start receiving this flag in every environment.",
       archiveDescription:
         "The SDK will stop receiving this flag. A flag with a running rollout cannot be archived.",
+      draftTitle: "Draft, not served",
+      draftBody:
+        "The SDK does not see this flag in any environment yet, even if the switch below is on. Activate it to start serving.",
+      draftAsk: (role: string) =>
+        `Only the ${role} role or higher can activate it.`,
+      rollOut: "Roll out gradually",
     },
     rules: {
       loading: "Loading rules…",
@@ -164,7 +177,7 @@ export const detailMessages = defineMessages({
     },
     tester: {
       title: "Test an evaluation",
-      targetingKey: "targetingKey",
+      targetingKey: "Targeting key",
       attributes: "Attributes (one key=value per line)",
       evaluating: "Evaluating…",
       evaluate: "Evaluate",

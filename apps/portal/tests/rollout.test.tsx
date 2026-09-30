@@ -1,6 +1,7 @@
 import type {
   ProjectDetailResponseWire,
   RolloutDetailWire,
+  RolloutSummaryWire,
 } from "@udp/shared-types/wire";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -8,9 +9,14 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import {
   actionsFor,
+  decisionTone,
   pollIntervalOf,
 } from "../src/features/rollout/RolloutDetailPage";
-import { finishedSince } from "../src/features/rollout/use-rollout-watcher";
+import {
+  finishedSince,
+  watchedName,
+} from "../src/features/rollout/use-rollout-watcher";
+import { qk } from "../src/lib/query-keys";
 import { API, golden, server } from "./msw";
 import { renderApp } from "./render";
 
@@ -32,14 +38,88 @@ describe("rollout: nhịp hỏi lại tự dừng (§10.14)", () => {
   });
 
   it("watcher: rollout biến khỏi danh sách đang chạy ⇒ báo kết thúc", () => {
-    const prev = [
-      { id: "a", flagKey: "x" },
-      { id: "b", flagKey: null },
-    ];
-    expect(finishedSince(prev, [{ id: "b" }])).toEqual([
-      { id: "a", flagKey: "x" },
-    ]);
-    expect(finishedSince(prev, [{ id: "a" }, { id: "b" }])).toEqual([]);
+    const a = { id: "a", flagKey: "x", workloadName: null, environmentId: "e" };
+    const b = {
+      id: "b",
+      flagKey: null,
+      workloadName: "web",
+      environmentId: "e",
+    };
+    expect(finishedSince([a, b], [{ id: "b" }])).toEqual([a]);
+    expect(finishedSince([a, b], [{ id: "a" }, { id: "b" }])).toEqual([]);
+  });
+
+  it("[Plan #58 UX-9] watcher gọi rollout bằng tên người đọc được, mã chỉ là đường lui cuối", () => {
+    const base = { id: "716f9487-aaaa", environmentId: "e" };
+    expect(
+      watchedName({ ...base, flagKey: "new-checkout", workloadName: "web" }),
+    ).toBe("new-checkout");
+    expect(watchedName({ ...base, flagKey: null, workloadName: "web" })).toBe(
+      "web",
+    );
+    expect(watchedName({ ...base, flagKey: null, workloadName: null })).toBe(
+      "716f9487",
+    );
+  });
+
+  it("[Plan #58 UX-6] sắc của dải quyết định theo đúng quyết định", () => {
+    const d = {
+      reason: "r",
+      breach: false,
+      breachStreak: 0,
+      breachAt: null,
+      at: new Date().toISOString(),
+    };
+    const intent = {
+      id: "i",
+      action: "PAUSE" as const,
+      at: d.at,
+      byUser: "a@b.vn",
+    };
+    expect(decisionTone({}, 2)).toBe("neutral");
+    expect(
+      decisionTone({ lastDecision: { ...d, decision: "PROMOTE" } }, 2),
+    ).toBe("ok");
+    // HOLD không vượt ngưỡng = còn chờ dữ liệu
+    expect(decisionTone({ lastDecision: { ...d, decision: "HOLD" } }, 2)).toBe(
+      "neutral",
+    );
+    expect(
+      decisionTone(
+        {
+          lastDecision: {
+            ...d,
+            decision: "HOLD",
+            breach: true,
+            breachStreak: 1,
+          },
+        },
+        3,
+      ),
+    ).toBe("warn");
+    // Lần vượt tới sẽ tự lùi lại ⇒ lỗi
+    expect(
+      decisionTone(
+        {
+          lastDecision: {
+            ...d,
+            decision: "HOLD",
+            breach: true,
+            breachStreak: 1,
+          },
+        },
+        2,
+      ),
+    ).toBe("error");
+    expect(
+      decisionTone(
+        {
+          lastDecision: { ...d, decision: "PROMOTE" },
+          pendingIntent: intent,
+        },
+        2,
+      ),
+    ).toBe("neutral");
   });
 });
 
@@ -141,5 +221,96 @@ describe("rollout: trang chi tiết", () => {
     renderApp(`/app/projects/${detail.project.id}/rollouts/${rollout.id}`);
     await screen.findByText(/Lưu lượng variant mới/);
     expect(screen.queryByRole("button", { name: "Tạm dừng" })).toBeNull();
+  });
+});
+
+describe("[Plan #58] rollout: dải quyết định và báo kết thúc", () => {
+  it("UX-6: trong ngưỡng ⇒ dải 'ổn', không cam; hết giờ giữ bậc ⇒ 'Có thể lên bậc tiếp', không 'sau 0 giây'", async () => {
+    const { rollout } = golden<{ rollout: RolloutDetailWire }>(
+      "GET /projects/{id}/rollouts/{id}",
+    );
+    rollout.status = "IN_PROGRESS";
+    delete rollout.pendingIntent;
+    rollout.events = [];
+    rollout.createdAt = new Date(Date.now() - 3_600_000).toISOString();
+    rollout.lastDecision = {
+      decision: "PROMOTE",
+      reason: "Không vượt ngưỡng",
+      breach: false,
+      breachStreak: 0,
+      breachAt: null,
+      at: new Date().toISOString(),
+    };
+    const { detail } = setup(rollout);
+    renderApp(`/app/projects/${detail.project.id}/rollouts/${rollout.id}`);
+    const banner = (await screen.findByText("Không vượt ngưỡng")).closest(
+      ".alert",
+    );
+    expect(banner).toHaveClass("ok");
+    expect(banner).not.toHaveClass("amber");
+    expect(screen.getByText(/Có thể lên bậc tiếp/)).toBeInTheDocument();
+    expect(screen.queryByText(/sau 0 giây/)).toBeNull();
+    // Một từ cho nhóm so sánh; "Mốc rollback" thành lời thường
+    expect(screen.queryByText("Mốc rollback")).toBeNull();
+    expect(screen.getByText("Lưu lượng khi lùi lại")).toBeInTheDocument();
+  });
+
+  it("UX-9: rollout kết thúc ⇒ toast gọi bằng tên (không mã) và nút 'Xem kết quả' mở đúng rollout", async () => {
+    const detail = golden<ProjectDetailResponseWire>("GET /projects/{id}");
+    detail.project.myRole = "OWNER";
+    const { rollouts } = golden<{ rollouts: RolloutSummaryWire[] }>(
+      "GET /projects/{id}/rollouts",
+    );
+    const running = {
+      ...rollouts[0]!,
+      scope: "SERVICE_LEVEL" as const,
+      flagKey: null,
+      workloadName: "web",
+    };
+    const { rollout } = golden<{ rollout: RolloutDetailWire }>(
+      "GET /projects/{id}/rollouts/{id}",
+    );
+    rollout.id = running.id;
+    let active = [running];
+    server.use(
+      http.get(`${API}/projects/:id`, () => HttpResponse.json(detail)),
+      http.get(`${API}/projects/:id/rollouts`, ({ request }) =>
+        HttpResponse.json({
+          rollouts:
+            new URL(request.url).searchParams.get("status") === "IN_PROGRESS"
+              ? active
+              : [],
+        }),
+      ),
+      http.get(`${API}/projects/:id/rollouts/:rid`, () =>
+        HttpResponse.json({ rollout }),
+      ),
+    );
+    const { queryClient, router } = renderApp(
+      `/app/projects/${detail.project.id}/rollouts`,
+    );
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData(qk.activeRollouts(detail.project.id)),
+      ).toBeDefined(),
+    );
+    active = [];
+    await queryClient.refetchQueries({
+      queryKey: qk.activeRollouts(detail.project.id),
+    });
+    expect(
+      await screen.findByText("Rollout web đã kết thúc."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/2fed0906/)).toBeNull();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Xem kết quả" }));
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(
+        `/app/projects/${detail.project.id}/rollouts/${running.id}`,
+      ),
+    );
+    expect(router.state.location.search).toMatchObject({
+      env: running.environmentId,
+    });
   });
 });

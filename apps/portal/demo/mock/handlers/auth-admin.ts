@@ -1,5 +1,8 @@
+import type { CloudCredentialWire } from "@udp/shared-types/wire";
+import { cloudCredentialId } from "../audit";
 import { nowIso } from "../clock";
 import type { Db } from "../db";
+import { uuidOf } from "../random";
 import {
   bodyOf,
   found,
@@ -13,7 +16,7 @@ import {
 
 /**
  * Đăng nhập (§10.3) và trang quản trị nền tảng (§10.11). Bản xem thử nhận mọi email/mật khẩu — mọi phiên là
- * người dùng mẫu có quyền PLATFORM_ADMIN, để cả khu `/admin` xem được.
+ * người đang xem mà dải "Bản xem thử" chọn (mặc định quản trị viên nền tảng, để cả khu `/admin` xem được).
  */
 
 const session = (db: Db) => ({ user: db.me, csrfToken: "demo-csrf-token" });
@@ -46,6 +49,14 @@ function pageOf<T>(req: MockRequest, rows: T[]): { rows: T[]; total: number } {
   return { rows: rows.slice(offset, offset + limit), total: rows.length };
 }
 
+/** Như Service 1: mới tạo trước; `order=asc` là cũ nhất trước */
+const byCreated =
+  <T>(req: MockRequest, createdAt: (row: T) => string) =>
+  (a: T, b: T): number =>
+    req.query.get("order") === "asc"
+      ? createdAt(a).localeCompare(createdAt(b))
+      : createdAt(b).localeCompare(createdAt(a));
+
 /** Giá theo giờ của loại tài nguyên hay bị bỏ lại — `null` là chưa định giá được (không bao giờ là 0) */
 const ORPHAN_USD_PER_HOUR: Record<string, number> = {
   NatGateway: 0.059,
@@ -63,7 +74,7 @@ export function orphansOf(db: Db) {
       detail.resources
         .filter((r) => r.status === "ORPHAN_SUSPECTED")
         .map((r) => ({
-          id: crypto.randomUUID(),
+          id: uuidOf(`orphan:${detail.job.id}:${r.name}`),
           projectId: p.project.id,
           projectName: p.project.name,
           kind: r.kind,
@@ -116,14 +127,20 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
     // ---------------------------------------------------------- quản trị
     .on("GET", "/admin/users", (req) => {
       const search = (req.query.get("search") ?? "").toLowerCase();
+      const role = req.query.get("platformRole");
       const { rows, total } = pageOf(
         req,
-        db.users.filter(
-          (u) =>
-            search === "" ||
-            u.email.includes(search) ||
-            u.name.toLowerCase().includes(search),
-        ),
+        db.users
+          .filter(
+            (u) =>
+              search === "" ||
+              u.email.includes(search) ||
+              u.name.toLowerCase().includes(search),
+          )
+          .filter(
+            (u) => role === null || role === "" || u.platformRole === role,
+          )
+          .sort(byCreated(req, (u) => u.createdAt)),
       );
       return ok({ users: rows, total });
     })
@@ -147,12 +164,24 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
     })
     .on("GET", "/admin/projects", (req) => {
       const status = req.query.get("status");
+      const search = (req.query.get("search") ?? "").toLowerCase();
+      const ownerEmail = (p: (typeof db.projects)[number]): string =>
+        db.users.find((u) => u.id === p.project.ownerId)?.email ?? "";
       const { rows, total } = pageOf(
         req,
-        db.projects.filter(
-          (p) =>
-            status === null || status === "" || p.project.status === status,
-        ),
+        db.projects
+          .filter(
+            (p) =>
+              status === null || status === "" || p.project.status === status,
+          )
+          // Tìm theo tên project hay email của chủ
+          .filter(
+            (p) =>
+              search === "" ||
+              p.project.name.includes(search) ||
+              ownerEmail(p).includes(search),
+          )
+          .sort(byCreated(req, (p) => p.project.createdAt)),
       );
       return ok({
         total,
@@ -172,23 +201,39 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
     })
     .on("GET", "/admin/credentials", () =>
       ok({
-        credentials: db.projects.flatMap((p) =>
-          p.cloud === null || p.project.status === "DELETED"
-            ? []
-            : [
-                {
-                  id: crypto.randomUUID(),
-                  provider: p.cloud.provider,
-                  mode: p.cloud.mode,
-                  authKind: p.cloud.authKind,
-                  fingerprint: p.cloud.fingerprint,
-                  isActive: p.cloud.lastValidatedAt !== null,
-                  lastValidatedAt: p.cloud.lastValidatedAt,
-                  createdAt: p.cloud.createdAt,
-                  project: { id: p.project.id, name: p.project.name },
-                },
-              ],
-        ),
+        // Như Service 1: MỌI credential, mới nhất trước; chỉ cái đang dùng của project còn sống là "đang dùng"
+        credentials: db.projects
+          .flatMap((p) => {
+            const project = { id: p.project.id, name: p.project.name };
+            const row = (
+              id: string,
+              cloud: CloudCredentialWire,
+              isActive: boolean,
+            ) => ({
+              id,
+              provider: cloud.provider,
+              mode: cloud.mode,
+              authKind: cloud.authKind,
+              fingerprint: cloud.fingerprint,
+              isActive,
+              lastValidatedAt: cloud.lastValidatedAt,
+              createdAt: cloud.createdAt,
+              project,
+            });
+            return [
+              ...p.retiredClouds.map((r) => row(r.id, r.cloud, false)),
+              ...(p.cloud === null
+                ? []
+                : [
+                    row(
+                      cloudCredentialId(p.project.id),
+                      p.cloud,
+                      p.project.status !== "DELETED",
+                    ),
+                  ]),
+            ];
+          })
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       }),
     )
     .on("GET", "/admin/jobs", (req) => {
@@ -224,7 +269,11 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
         services: [
           { name: "udp-core-backend", status: "up" },
           { name: "udp-feature-flag-service", status: "up" },
-          { name: "udp-pd-controller", status: "up" },
+          {
+            name: "udp-pd-controller",
+            // Tình huống "có rủi ro": bộ điều khiển rollout không trả lời
+            status: db.demo.platform === "at-risk" ? "down" : "up",
+          },
         ],
         database: "up",
         checkedAt: nowIso(),

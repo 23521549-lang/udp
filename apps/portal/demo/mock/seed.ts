@@ -1,6 +1,5 @@
 import type {
   AdminUserWire,
-  AuditEntryWire,
   CloudCredentialWire,
   DeploymentWire,
   DomainCatalogEntryWire,
@@ -15,6 +14,7 @@ import type {
   ProjectStatusWire,
   ProvisionPreviewWire,
   PublicEnvironmentWire,
+  PublicUserWire,
   RolloutDetailWire,
   RolloutEventWire,
   RuleWire,
@@ -24,6 +24,11 @@ import type {
   TeamRoleWire,
 } from "@udp/shared-types/wire";
 import { refreshMyAccess } from "./access";
+import { auditTrail } from "./audit";
+import {
+  EXTRA_CHECKOUT_FLAGS,
+  EXTRA_CHECKOUT_SEGMENTS,
+} from "./checkout-flags";
 import {
   dateDaysAgo,
   daysAgo,
@@ -41,25 +46,31 @@ import type {
   JobRecord,
   LiveRollout,
   ProjectRecord,
+  RetiredCloud,
   TeamRecord,
 } from "./db";
 import { DEMO_INVITE_TOKEN } from "./demo-invite";
 import { golden } from "./goldens";
 import { crowd } from "./people";
-import { between, hex, pick, prng, uuid } from "./random";
+import { DEFAULT_SETUP, type DemoSetup, type PersonaId } from "./persona";
+import { between, hex, pick, prng, uuid, uuidOf } from "./random";
 
 /**
- * Dữ liệu mẫu của bản xem thử: một nền tảng đang được một nhóm thương mại điện tử dùng thật — sáu project ở đủ
- * trạng thái (đang chạy, đang dựng, nháp, lỗi), flag đủ bốn kiểu với rule thật, rollout đang tiến, lịch sử deploy
- * ba mươi ngày cho DORA, domain đang chạy và lệch cấu hình. Mọi con số là MINH HOẠ.
+ * Dữ liệu mẫu của bản xem thử: một nền tảng đang được một nhóm thương mại điện tử dùng thật — project ở đủ trạng
+ * thái (đang chạy, đang dựng, nháp ở từng bước của thẻ "Bắt đầu", lỗi, đã xoá), flag đủ bốn kiểu và ba vòng đời
+ * với rule nhiều điều kiện, rollout đang tiến, tự rollback và bị rollback tay, lịch sử deploy tới chín mươi ngày cho
+ * DORA, domain đang chạy và lệch cấu hình, job ở mọi trạng thái và tài nguyên mồ côi trên cả ba cloud. Người xem
+ * đổi được (`persona.ts`). Mọi con số là MINH HOẠ.
  */
 
-const rng = prng(20260929);
+/** Người có tên sinh một lần lúc nạp; database sinh lại từ `DB_SEED` mỗi lần `createDb` */
+let rng = prng(20260929);
+const DB_SEED = 20260930;
 const newId = (): string => uuid(rng);
 
 // ------------------------------------------------------------- người
 
-interface Person {
+export interface Person {
   id: string;
   name: string;
   email: string;
@@ -84,7 +95,16 @@ const TUNG = person("Bùi Thanh Tùng", "tung.bui@udp.dev", 120);
 const LINH = person("Hoàng Mai Linh", "linh.hoang@udp.dev", 90);
 const PHAT = person("Ngô Tấn Phát", "phat.ngo@udp.dev", 45);
 const YEN = person("Đỗ Hải Yến", "yen.do@udp.dev", 12);
-const PEOPLE = [ANH, BAO, HA, HUY, LAN, KHANH, TUNG, LINH, PHAT, YEN];
+/** Người vừa đăng ký bản miễn phí vài phút trước: chưa project, chưa nhóm, chưa ai mời */
+const HAN = person("Châu Ngọc Hân", "han.chau@banhmihoaian.vn", 0.01);
+const PEOPLE = [ANH, BAO, HA, HUY, LAN, KHANH, TUNG, LINH, PHAT, YEN, HAN];
+
+/** Người đang xem theo vai chọn ở dải "Bản xem thử" */
+const VIEWER: Record<PersonaId, Person> = {
+  admin: ANH,
+  developer: HUY,
+  newcomer: HAN,
+};
 
 // ------------------------------------------------------------- catalog domain
 
@@ -95,7 +115,7 @@ const CATALOG = golden<{ domains: DomainCatalogEntryWire[] }>(
 // ------------------------------------------------------------- khung project
 
 type Provider = "AWS" | "GCP" | "AZURE";
-type EnvName = "dev" | "staging" | "prod";
+export type EnvName = "dev" | "staging" | "prod";
 const ENV_NAMES: readonly EnvName[] = ["dev", "staging", "prod"];
 
 interface ProjectSpec {
@@ -107,13 +127,25 @@ interface ProjectSpec {
   myRole: ProjectRoleWire | null;
   owner: Person;
   members: [Person, Exclude<ProjectRoleWire, "OWNER">][];
-  cloud?: { provider: Provider; region: string; validated: boolean };
+  cloud?: {
+    provider: Provider;
+    region: string;
+    validated: boolean;
+    /** Mặc định là cách liên kết không khoá (role, WIF, federated) */
+    authKind?: AuthKind;
+  };
+  /** Credential cũ đã bị thay cách đây ngần ấy ngày (xoay khoá hay chuyển sang liên kết không khoá) */
+  rotated?: { authKind: AuthKind; daysAgo: number };
   ageDays: number;
   maxNodes?: number;
   expiresInHours?: number;
   /** Mặc định là repo mẫu trên GitHub cùng tên */
   repoUrl?: string | null;
+  /** SDK key: đủ bộ (mặc định khi project chạy), chỉ key đầu tiên chưa dùng, hay chưa có */
+  keys?: "full" | "first" | "none";
 }
+
+type AuthKind = CloudCredentialWire["authKind"];
 
 const AUTH_KIND = {
   AWS: "AWS_ROLE",
@@ -151,7 +183,12 @@ function environmentsOf(
   }));
 }
 
-function sdkKeysOf(env: PublicEnvironmentWire, creator: Person): SdkKeyWire[] {
+function sdkKeysOf(
+  env: PublicEnvironmentWire,
+  creator: Person,
+  plan: "full" | "first" | "none",
+  ageDays: number,
+): SdkKeyWire[] {
   const key = (
     keyType: "SERVER" | "CLIENT",
     label: string | null,
@@ -170,41 +207,79 @@ function sdkKeysOf(env: PublicEnvironmentWire, creator: Person): SdkKeyWire[] {
       createdBy: { id: creator.id, name: creator.name },
       createdAt: daysAgo(createdDaysAgo),
       lastUsedAt:
-        revokedDaysAgo === undefined
-          ? minutesAgo(between(rng, 1, 30))
-          : daysAgo(revokedDaysAgo + 1),
+        plan === "first"
+          ? null
+          : revokedDaysAgo === undefined
+            ? minutesAgo(between(rng, 1, 30))
+            : daysAgo(revokedDaysAgo + 1),
       revokedAt: revokedDaysAgo === undefined ? null : daysAgo(revokedDaysAgo),
     };
   };
-  return [
-    key("SERVER", `${env.name}-backend`, 90),
-    key("CLIENT", `${env.name}-web`, 60),
-    key("SERVER", "ci-smoke-test", 40, 21),
-  ];
+  // Key không cũ hơn project: tuổi theo tỉ lệ đời project
+  const age = (share: number): number => Math.max(0.05, ageDays * share);
+  switch (plan) {
+    case "none":
+      return [];
+    case "first":
+      return env.rank === 0
+        ? [key("SERVER", `${env.name}-backend`, age(0.5))]
+        : [];
+    case "full":
+      return [
+        key("SERVER", `${env.name}-backend`, age(0.75)),
+        key("CLIENT", `${env.name}-web`, age(0.5)),
+        key("SERVER", "ci-smoke-test", age(0.33), age(0.17)),
+      ];
+  }
 }
+
+const FEDERATED: readonly AuthKind[] = Object.values(AUTH_KIND);
 
 function cloudOf(spec: ProjectSpec): CloudCredentialWire | null {
   const { cloud } = spec;
   if (cloud === undefined) return null;
+  const authKind = cloud.authKind ?? AUTH_KIND[cloud.provider];
   return {
     provider: cloud.provider,
     mode: "BYOC",
-    authKind: AUTH_KIND[cloud.provider],
-    federated: true,
+    authKind,
+    federated: FEDERATED.includes(authKind),
     region: cloud.region,
     fingerprint: hex(rng, 12),
     lastValidatedAt: cloud.validated ? hoursAgo(between(rng, 2, 40)) : null,
-    createdAt: daysAgo(spec.ageDays - 1),
+    createdAt: daysAgo(spec.rotated?.daysAgo ?? Math.max(0, spec.ageDays - 1)),
     createdBy: { id: spec.owner.id, email: spec.owner.email },
   };
 }
 
+/** Credential đầu tiên của project, đã bị thay: lần kiểm cuối là ngay trước lúc thay */
+function retiredOf(
+  spec: ProjectSpec,
+  current: CloudCredentialWire | null,
+): RetiredCloud[] {
+  const { rotated } = spec;
+  if (rotated === undefined || current === null) return [];
+  return [
+    {
+      id: uuidOf(`cloud:${spec.name}:${rotated.authKind}`),
+      cloud: {
+        ...current,
+        authKind: rotated.authKind,
+        federated: FEDERATED.includes(rotated.authKind),
+        fingerprint: hex(rng, 12),
+        lastValidatedAt: daysAgo(rotated.daysAgo + 0.4),
+        createdAt: daysAgo(Math.max(0, spec.ageDays - 1)),
+      },
+    },
+  ];
+}
+
 // ------------------------------------------------------------- flag
 
-type FlagValue = boolean | string | number | Record<string, unknown>;
+export type FlagValue = boolean | string | number | Record<string, unknown>;
 type FlagType = FlagDetailWire["flagType"];
 
-interface RuleSpec {
+export interface RuleSpec {
   type: RuleWire["ruleType"];
   when?: { attribute: string; operator: string; value: unknown }[];
   users?: string[];
@@ -214,7 +289,7 @@ interface RuleSpec {
   description?: string;
 }
 
-interface FlagSpec {
+export interface FlagSpec {
   key: string;
   type: FlagType;
   description: string;
@@ -245,12 +320,14 @@ const ENV_TRAFFIC: Record<EnvName, number> = {
   prod: 1,
 };
 
-function seriesOf(base: number): number[] {
+/** 30 ngày lượt đánh giá, cũ → mới; những ngày trước khi flag ra đời là 0 */
+function seriesOf(base: number, ageDays: number): number[] {
   const out: number[] = [];
   for (let d = 29; d >= 0; d--) {
     const weekday = new Date(OPENED_AT - d * 86_400_000).getUTCDay();
     const weekly = weekday === 0 || weekday === 6 ? 0.62 : 1;
-    out.push(Math.round(base * weekly * (0.85 + rng() * 0.3)));
+    const noise = 0.85 + rng() * 0.3;
+    out.push(d > ageDays ? 0 : Math.round(base * weekly * noise));
   }
   return out;
 }
@@ -310,7 +387,10 @@ function buildFlag(
     rules[env.id] = envRules;
     rulesUpdatedAt[env.id] = updatedAt;
     const live = lifecycle !== "ARCHIVED" && spec.traffic > 0;
-    daily[env.id] = seriesOf(live ? spec.traffic * ENV_TRAFFIC[envName] : 0);
+    daily[env.id] = seriesOf(
+      live ? spec.traffic * ENV_TRAFFIC[envName] : 0,
+      spec.ageDays,
+    );
     mix[env.id] = spec.mix ?? { [spec.default]: 1 };
     return {
       environment: {
@@ -337,7 +417,8 @@ function buildFlag(
       stickinessAttribute: "targetingKey",
       defaultVariantId: variantId(spec.default),
       permanent: spec.permanent ?? false,
-      activatedAt: lifecycle === "DRAFT" ? null : daysAgo(spec.ageDays - 1),
+      activatedAt:
+        lifecycle === "DRAFT" ? null : daysAgo(Math.max(0, spec.ageDays - 1)),
       createdAt,
       updatedAt,
       variants,
@@ -767,8 +848,83 @@ function smallFlagSet(
         default: "balanced",
         ageDays: 55,
         enabled: [true, true, true],
+        rules: {
+          prod: [
+            {
+              type: "SEGMENT",
+              segment: "high-risk-merchants",
+              serve: "strict",
+              description: "Merchant có tỉ lệ chargeback cao",
+            },
+          ],
+        },
         traffic: 14_000,
-        mix: { balanced: 1 },
+        mix: { balanced: 0.94, strict: 0.06 },
+      },
+      {
+        key: "vietqr-dynamic",
+        type: "BOOLEAN",
+        description: "Mã VietQR động kèm số tiền và nội dung chuyển khoản",
+        default: "off",
+        ageDays: 27,
+        enabled: [true, true, true],
+        rules: {
+          prod: [
+            {
+              type: "ATTRIBUTE_BASED",
+              when: [
+                {
+                  attribute: "bankCode",
+                  operator: "in",
+                  value: ["VCB", "TCB", "MB", "ACB"],
+                },
+                { attribute: "amount", operator: "lte", value: 50_000_000 },
+              ],
+              serve: "on",
+              description: "Bốn ngân hàng đã ký, giao dịch đến 50 triệu",
+            },
+          ],
+        },
+        traffic: 11_380,
+        mix: { on: 0.63, off: 0.37 },
+      },
+      {
+        key: "refund-auto-approve-limit",
+        type: "NUMBER",
+        description: "Hoàn tiền dưới mức này được duyệt tự động (VND)",
+        variants: [
+          ["500k", 500_000],
+          ["1m", 1_000_000],
+        ],
+        default: "500k",
+        ageDays: 96,
+        enabled: [true, true, true],
+        rules: {
+          prod: [
+            { type: "SEGMENT", segment: "vn-domestic-cards", serve: "1m" },
+          ],
+        },
+        traffic: 2_740,
+        mix: { "500k": 0.71, "1m": 0.29 },
+      },
+      {
+        key: "apple-pay",
+        type: "BOOLEAN",
+        description: "Apple Pay qua cổng quốc tế, chờ đối tác bật merchant ID",
+        default: "off",
+        lifecycle: "DRAFT",
+        ageDays: 9,
+        enabled: [true, false, false],
+        rules: {
+          dev: [
+            {
+              type: "ATTRIBUTE_BASED",
+              when: [{ attribute: "platform", operator: "eq", value: "ios" }],
+              serve: "on",
+            },
+          ],
+        },
+        traffic: 0,
       },
     ],
     mobile: [
@@ -810,6 +966,66 @@ function smallFlagSet(
         enabled: [true, true, true],
         traffic: 52_000,
         mix: { cloudfront: 1 },
+      },
+      {
+        key: "biometric-login",
+        type: "BOOLEAN",
+        description: "Đăng nhập bằng vân tay hoặc khuôn mặt",
+        default: "off",
+        ageDays: 41,
+        enabled: [true, true, true],
+        rules: {
+          prod: [
+            {
+              type: "ATTRIBUTE_BASED",
+              when: [
+                {
+                  attribute: "platform",
+                  operator: "in",
+                  value: ["ios", "android"],
+                },
+                {
+                  attribute: "appVersion",
+                  operator: "semverGt",
+                  value: "3.0.2",
+                },
+                { attribute: "osBiometric", operator: "eq", value: true },
+              ],
+              serve: "on",
+              description: "App mới trên máy có cảm biến",
+            },
+          ],
+        },
+        traffic: 47_600,
+        mix: { on: 0.68, off: 0.32 },
+      },
+      {
+        key: "push-digest",
+        type: "JSON",
+        description: "Gộp thông báo đẩy thành bản tin mỗi ngày",
+        variants: [
+          ["off", { enabled: false }],
+          ["evening", { enabled: true, hour: 20, maxItems: 5 }],
+        ],
+        default: "off",
+        ageDays: 22,
+        enabled: [true, true, true],
+        rules: {
+          prod: [{ type: "SEGMENT", segment: "mobile-beta", serve: "evening" }],
+        },
+        traffic: 8_930,
+        mix: { off: 0.9, evening: 0.1 },
+      },
+      {
+        key: "offline-cart-sync",
+        type: "BOOLEAN",
+        description: "Giữ giỏ hàng khi mất mạng rồi đồng bộ lại",
+        default: "off",
+        lifecycle: "DRAFT",
+        ageDays: 5,
+        enabled: [true, false, false],
+        rules: { dev: [{ type: "ALL", serve: "on" }] },
+        traffic: 0,
       },
     ],
     billing: [
@@ -862,6 +1078,48 @@ function smallFlagSet(
         traffic: 73_000,
         mix: { strict: 1 },
       },
+      {
+        key: "synonym-dictionary",
+        type: "STRING",
+        description: "Bộ từ đồng nghĩa khi tìm (không dấu, viết tắt)",
+        variants: [
+          ["v2025", "vi-2025-12"],
+          ["v2026", "vi-2026-09"],
+        ],
+        default: "v2025",
+        ageDays: 17,
+        enabled: [true, true, true],
+        rules: {
+          staging: [{ type: "ALL", serve: "v2026" }],
+          prod: [
+            {
+              type: "ATTRIBUTE_BASED",
+              when: [
+                { attribute: "locale", operator: "eq", value: "vi" },
+                { attribute: "queryLength", operator: "lte", value: 3 },
+              ],
+              serve: "v2026",
+              description: "Truy vấn ngắn tiếng Việt",
+            },
+          ],
+        },
+        traffic: 61_270,
+        mix: { v2025: 0.58, v2026: 0.42 },
+      },
+      {
+        key: "search-ads-slots",
+        type: "NUMBER",
+        description: "Số ô quảng cáo trên trang kết quả",
+        variants: [
+          ["2", 2],
+          ["4", 4],
+        ],
+        default: "2",
+        ageDays: 64,
+        enabled: [true, true, true],
+        traffic: 70_140,
+        mix: { "2": 1 },
+      },
     ],
     web: [
       {
@@ -897,6 +1155,27 @@ function smallFlagSet(
         traffic: 21_000,
         mix: { off: 0.64, on: 0.36 },
       },
+      {
+        key: "cookie-banner-v2",
+        type: "BOOLEAN",
+        description: "Hộp đồng ý cookie theo Nghị định 13 về dữ liệu cá nhân",
+        default: "on",
+        permanent: true,
+        ageDays: 150,
+        enabled: [true, true, true],
+        traffic: 20_880,
+        mix: { on: 1 },
+      },
+      {
+        key: "blog-comments",
+        type: "BOOLEAN",
+        description: "Bình luận dưới bài blog, đã thay bằng Zalo OA",
+        default: "off",
+        lifecycle: "ARCHIVED",
+        ageDays: 200,
+        enabled: [false, false, false],
+        traffic: 0,
+      },
     ],
     draft: [
       {
@@ -916,7 +1195,7 @@ function smallFlagSet(
 
 // ------------------------------------------------------------- segment
 
-interface SegmentSpec {
+export interface SegmentSpec {
   name: string;
   description: string;
   all?: { attribute: string; operator: string; value: unknown }[];
@@ -976,6 +1255,58 @@ const CHECKOUT_SEGMENTS: SegmentSpec[] = [
     description: "App dưới 3.0, sắp ngừng hỗ trợ",
     all: [{ attribute: "appVersion", operator: "semverLt", value: "3.0.0" }],
     ageDays: 45,
+  },
+];
+
+/** Segment của hai project thanh toán (bộ flag "payment" dùng chung) */
+const PAYMENT_SEGMENTS: SegmentSpec[] = [
+  {
+    name: "high-risk-merchants",
+    description: "Merchant có tỉ lệ chargeback trên 0,9% trong 90 ngày",
+    all: [
+      { attribute: "chargebackRate90d", operator: "gt", value: 0.009 },
+      { attribute: "merchantTier", operator: "neq", value: "enterprise" },
+    ],
+    ageDays: 48,
+  },
+  {
+    name: "vn-domestic-cards",
+    description: "Thẻ nội địa Napas phát hành tại Việt Nam",
+    all: [
+      { attribute: "cardNetwork", operator: "eq", value: "napas" },
+      { attribute: "issuerCountry", operator: "eq", value: "VN" },
+    ],
+    ageDays: 80,
+  },
+  {
+    name: "merchant-pilot",
+    description: "Merchant tham gia thử đối soát theo giờ",
+    userIds: ["mch-1042", "mch-1187", "mch-2210", "mch-2291", "mch-3075"],
+    ageDays: 19,
+  },
+];
+
+const MOBILE_SEGMENTS: SegmentSpec[] = [
+  {
+    name: "mobile-beta",
+    description: "Người dùng TestFlight và Google Play beta",
+    all: [
+      {
+        attribute: "releaseChannel",
+        operator: "in",
+        value: ["testflight", "play-beta"],
+      },
+    ],
+    ageDays: 58,
+  },
+  {
+    name: "ios-17-plus",
+    description: "iPhone chạy iOS 17 trở lên",
+    all: [
+      { attribute: "platform", operator: "eq", value: "ios" },
+      { attribute: "osVersion", operator: "semverGt", value: "17.0.0" },
+    ],
+    ageDays: 33,
   },
 ];
 
@@ -1040,6 +1371,12 @@ export function refreshSegmentUsage(p: ProjectRecord): void {
 
 // ------------------------------------------------------------- deployment + DORA
 
+/** Lịch sử deploy dài nhất: đủ cho DORA 90 ngày của trang Bằng chứng */
+const DEPLOY_HISTORY_DAYS = 90;
+
+/** Minor của lần deploy mới nhất: bản kế là v1.16.0 đang chờ duyệt ở prod */
+const LATEST_MINOR = 15;
+
 function deploymentsFor(
   env: PublicEnvironmentWire,
   workload: string,
@@ -1047,11 +1384,12 @@ function deploymentsFor(
   failRate: number,
   logs: ProjectRecord["deploymentLogs"],
   repo: string,
+  days: number,
 ): DeploymentWire[] {
-  // Lịch 30 ngày: mỗi lần lỗi kéo theo một bản sửa sau 30–80 phút (MTTR của DORA có mẫu thật)
+  // Mỗi lần lỗi kéo theo một bản sửa sau 30–80 phút (MTTR của DORA có mẫu thật)
   const latest = OPENED_AT - 600_000;
   const plan: { at: number; failed: boolean }[] = [];
-  for (let d = 29; d >= 0; d--) {
+  for (let d = days - 1; d >= 0; d--) {
     const count = rng() < perDay % 1 ? Math.ceil(perDay) : Math.floor(perDay);
     for (let i = 0; i < count; i++) {
       const at = OPENED_AT - d * 86_400_000 - between(rng, 1, 20) * 3_600_000;
@@ -1062,18 +1400,15 @@ function deploymentsFor(
       if (failed && fix < latest) plan.push({ at: fix, failed: false });
     }
   }
-  // Phiên bản tăng theo ĐÚNG thứ tự thời gian
+  // Phiên bản tăng theo ĐÚNG thứ tự thời gian, bản mới nhất là v1.15.x (ngay trước v1.16.0 đang chờ duyệt)
   plan.sort((a, b) => a.at - b.at);
 
   const out: DeploymentWire[] = [];
-  let minor = 12;
-  let patch = 0;
-  for (const { at: startMs, failed } of plan) {
-    patch += 1;
-    if (patch > 9) {
-      minor += 1;
-      patch = 0;
-    }
+  const perMinor = Math.max(10, Math.ceil(plan.length / 12));
+  for (const [i, { at: startMs, failed }] of plan.entries()) {
+    const back = plan.length - 1 - i;
+    const minor = LATEST_MINOR - Math.floor(back / perMinor);
+    const patch = perMinor - 1 - (back % perMinor);
     const tag = `v1.${String(minor)}.${String(patch)}`;
     const sha = hex(rng, 12);
     const id = newId();
@@ -1478,6 +1813,10 @@ interface RolloutSpec {
   /** Mốc % đã đi qua (sự kiện PROMOTE) */
   steps: number[];
   end?: "COMPLETE" | "ROLLBACK" | "PAUSE";
+  /** Người bấm Rollback; không có là UDP tự rollback khi vượt ngưỡng */
+  endBy?: Person;
+  /** Ngưỡng bị vượt khi tự rollback: tỉ lệ lỗi (mặc định) hay độ trễ p99 */
+  breach?: "errors" | "latency";
   live?: { step: number; everySeconds: number; upTo: number };
 }
 
@@ -1486,6 +1825,7 @@ function snapshot(
   baselineErrorRate: number,
   at: string,
   workload: string,
+  canaryP99Ms = between(rng, 180, 420),
 ): RolloutDetailWire["latestMetricSnapshot"] {
   const requests = between(rng, 900, 2400);
   return {
@@ -1493,7 +1833,7 @@ function snapshot(
       requestCount: requests,
       errorCount: Math.round(requests * canaryErrorRate),
       errorRate: canaryErrorRate,
-      latencyP99Ms: between(rng, 180, 420),
+      latencyP99Ms: canaryP99Ms,
       hasData: true,
     },
     baseline: {
@@ -1545,10 +1885,23 @@ function buildRollout(
   });
   if (spec.end !== undefined) {
     const at = iso(startMs + stepMs * (spec.steps.length + 0.6));
+    const actor = spec.end === "PAUSE" ? owner : spec.endBy;
+    const breach =
+      spec.end !== "ROLLBACK" || actor !== undefined
+        ? null
+        : spec.breach === "latency"
+          ? snapshot(
+              0.006,
+              0.005,
+              at,
+              spec.workload,
+              between(rng, 1_180, 1_320),
+            )
+          : snapshot(0.078, 0.006, at, spec.workload);
     events.push({
       id: newId(),
       action: spec.end,
-      isIntent: spec.end === "PAUSE",
+      isIntent: actor !== undefined,
       processedAt: at,
       trafficPercentage: spec.end === "ROLLBACK" ? 0 : spec.percent,
       reason:
@@ -1557,13 +1910,10 @@ function buildRollout(
           : spec.end === "PAUSE"
             ? "Tạm dừng để kiểm tra log thanh toán"
             : "Đạt 100%, đóng session",
-      triggeredBy: spec.end === "PAUSE" ? "MANUAL" : "AUTO",
-      actorUserId: spec.end === "PAUSE" ? owner.id : null,
+      triggeredBy: actor === undefined ? "AUTO" : "MANUAL",
+      actorUserId: actor?.id ?? null,
       causedByEventId: null,
-      metricSnapshot:
-        spec.end === "ROLLBACK"
-          ? (snapshot(0.078, 0.006, at, spec.workload) ?? null)
-          : null,
+      metricSnapshot: breach ?? null,
       createdAt: at,
     });
   }
@@ -1630,7 +1980,19 @@ function buildRollout(
             spec.workload,
           ),
         }
-      : {}),
+      : spec.status === "PENDING"
+        ? {
+            lastDecision: {
+              decision: "HOLD" as const,
+              reason:
+                "Warm-up: nhánh canary mới có 64/200 request, chưa đủ để so với baseline",
+              breach: false,
+              breachStreak: 0,
+              breachAt: null,
+              at: minutesAgo(1),
+            },
+          }
+        : {}),
     events,
     createdAt: iso(startMs),
     updatedAt:
@@ -1664,112 +2026,6 @@ function buildRollout(
   };
 }
 
-// ------------------------------------------------------------- audit
-
-function auditOf(p: ProjectRecord, actors: Person[]): AuditEntryWire[] {
-  const flagKeys = p.flags.map((f) => f.detail);
-  const out: AuditEntryWire[] = [];
-  const push = (
-    minutes: number,
-    action: string,
-    actor: Person | null,
-    targetType: string,
-    targetId: string,
-    before: unknown,
-    after: unknown,
-    environmentId: string | null = null,
-  ) =>
-    out.push({
-      id: newId(),
-      action,
-      actorType: actor === null ? "SYSTEM" : "USER",
-      actorUserId: actor?.id ?? null,
-      targetType,
-      targetId,
-      environmentId,
-      before,
-      after,
-      occurredAt: minutesAgo(minutes),
-    });
-  const prod = p.environments.find((e) => e.isProduction);
-  const first = flagKeys[0];
-  if (first !== undefined && prod !== undefined) {
-    push(
-      4,
-      "rollout.promote",
-      null,
-      "RolloutSession",
-      newId(),
-      { trafficPercentage: 20 },
-      { trafficPercentage: 30 },
-      prod.id,
-    );
-    push(
-      38,
-      "flag.env.update",
-      pick(rng, actors),
-      "FlagEnvironmentConfig",
-      first.id,
-      { isEnabled: false },
-      { isEnabled: true },
-      prod.id,
-    );
-  }
-  for (const [i, flag] of flagKeys.slice(1, 7).entries()) {
-    push(
-      90 + i * 170,
-      "flag.rules.replace",
-      pick(rng, actors),
-      "Flag",
-      flag.id,
-      { ruleCount: 1 },
-      { ruleCount: 2 },
-      prod?.id ?? null,
-    );
-  }
-  push(
-    1_600,
-    "sdk_key.create",
-    pick(rng, actors),
-    "SdkKey",
-    newId(),
-    null,
-    { keyType: "CLIENT", label: "prod-web" },
-    prod?.id ?? null,
-  );
-  push(2_900, "member.add", actors[0] ?? null, "ProjectMember", newId(), null, {
-    projectRole: "DEVELOPER",
-  });
-  push(
-    4_400,
-    "domain.update",
-    actors[0] ?? null,
-    "ProjectDomain",
-    newId(),
-    { selectedTool: "loki", isEnabled: false },
-    { selectedTool: "loki", isEnabled: true },
-  );
-  push(
-    7_200,
-    "project.quota.update",
-    actors[0] ?? null,
-    "Project",
-    p.project.id,
-    { maxNodes: 3 },
-    { maxNodes: p.project.resourceQuota.maxNodes },
-  );
-  push(
-    12_000,
-    "project.provision",
-    actors[0] ?? null,
-    "Project",
-    p.project.id,
-    null,
-    { confirmedMonthlyUsd: p.preview.cost.monthlyUsd },
-  );
-  return out;
-}
-
 // ------------------------------------------------------------- lắp project
 
 interface Extras {
@@ -1797,9 +2053,21 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
       : spec.repoUrl;
   const segments = extras.segments.map(buildSegment);
   const segmentIds = Object.fromEntries(segments.map((s) => [s.name, s.id]));
-  const flags = extras.flags.map((f) => buildFlag(f, environments, segmentIds));
+  // Flag không cũ hơn project chứa nó
+  const flags = extras.flags.map((f) =>
+    buildFlag(
+      { ...f, ageDays: Math.min(f.ageDays, Math.max(0, spec.ageDays - 0.5)) },
+      environments,
+      segmentIds,
+    ),
+  );
   const deploymentLogs: ProjectRecord["deploymentLogs"] = {};
   const running = spec.status === "ACTIVE";
+  // Lịch sử deploy không dài hơn đời project
+  const historyDays = Math.min(
+    DEPLOY_HISTORY_DAYS,
+    Math.max(1, Math.floor(spec.ageDays - 1)),
+  );
   const workloads = [extras.workload, ...(extras.extraWorkloads ?? [])];
   const deployments = Object.fromEntries(
     environments.map((env, i) => [
@@ -1814,6 +2082,7 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
                 env.isProduction ? 0.08 : 0.12,
                 deploymentLogs,
                 repo ?? spec.name,
+                historyDays,
               ),
             )
             .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
@@ -1874,7 +2143,13 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
       ...spec.members.map(([m, role], i) => ({
         userId: m.id,
         projectRole: role,
-        createdAt: daysAgo(Math.max(0, spec.ageDays - 3 - i * 7)),
+        // Vào project sau khi project có và sau khi người đó đăng ký
+        createdAt: daysAgo(
+          Math.max(
+            0,
+            Math.min(spec.ageDays - 3 - i * 7, m.joinedDaysAgo - 0.5),
+          ),
+        ),
         user: { id: m.id, email: m.email, name: m.name },
       })),
     ],
@@ -1882,7 +2157,12 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
     sdkKeys: Object.fromEntries(
       environments.map((env) => [
         env.id,
-        running ? sdkKeysOf(env, spec.owner) : [],
+        sdkKeysOf(
+          env,
+          spec.owner,
+          spec.keys ?? (running ? "full" : "none"),
+          spec.ageDays,
+        ),
       ]),
     ),
     flags,
@@ -1899,6 +2179,7 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
     ),
     jobs: [],
     cloud,
+    retiredClouds: retiredOf(spec, cloud),
     cost: running
       ? {
           provider: "opencost",
@@ -1957,7 +2238,7 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
     });
     record.jobs.push({
       detail: {
-        job: job("DOMAIN_APPLY", "DONE", 12, null),
+        job: job("DOMAIN_APPLY", "DONE", Math.min(12, spec.ageDays / 2), null),
         resources: [],
         domains: [{ domainType: "LOGGING", status: "ACTIVE", message: null }],
       },
@@ -1978,7 +2259,7 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
       env.isTracked = true;
     }
   }
-  record.audit = auditOf(record, [spec.owner, ...spec.members.map(([m]) => m)]);
+  addRollbacks(record);
   return record;
 }
 
@@ -2000,12 +2281,15 @@ function checkoutService(): ProjectRecord {
         [LAN, "VIEWER"],
       ],
       cloud: { provider: "AWS", region: "ap-southeast-1", validated: true },
-      ageDays: 120,
+      // Bắt đầu bằng access key, chuyển sang role không khoá hai tháng trước
+      rotated: { authKind: "AWS_KEY", daysAgo: 64 },
+      // Đã chạy gần một năm: nhiều flag cũ, vài flag đã lưu trữ
+      ageDays: 365,
       maxNodes: 6,
     },
     {
-      flags: CHECKOUT_FLAGS,
-      segments: CHECKOUT_SEGMENTS,
+      flags: [...CHECKOUT_FLAGS, ...EXTRA_CHECKOUT_FLAGS],
+      segments: [...CHECKOUT_SEGMENTS, ...EXTRA_CHECKOUT_SEGMENTS],
       domains: {
         CONTAINER_REGISTRY: { tool: "ghcr" },
         CICD: { tool: "github-actions" },
@@ -2088,7 +2372,7 @@ function checkoutService(): ProjectRecord {
           strategy: "CANARY",
           status: "FAILED",
           percent: 0,
-          workload: "search-api",
+          workload: "checkout-api",
           startedHoursAgo: 30,
           steps: [10, 20],
           end: "ROLLBACK",
@@ -2119,12 +2403,100 @@ function checkoutService(): ProjectRecord {
           steps: [10, 25, 50, 75, 100],
           end: "COMPLETE",
         },
+        {
+          flag: "bnpl-installments",
+          env: "staging",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "PENDING",
+          percent: 0,
+          workload: "checkout-api",
+          startedHoursAgo: 0.05,
+          steps: [],
+        },
+        {
+          env: "prod",
+          scope: "SERVICE_LEVEL",
+          strategy: "CANARY",
+          status: "DONE",
+          percent: 100,
+          workload: "checkout-worker",
+          versions: ["v1.14.6", "v1.15.0"],
+          startedHoursAgo: 71,
+          steps: [10, 25, 50, 75, 100],
+          end: "COMPLETE",
+        },
+        {
+          env: "prod",
+          scope: "SERVICE_LEVEL",
+          strategy: "BLUE_GREEN",
+          status: "FAILED",
+          percent: 0,
+          workload: "checkout-web",
+          versions: ["v1.15.6", "v1.15.7"],
+          startedHoursAgo: 52,
+          steps: [100],
+          end: "ROLLBACK",
+          breach: "latency",
+          failReason:
+            "Độ trễ p99 của bản mới 1.240 ms vượt ngưỡng 800 ms hai lần liên tiếp, tự chuyển toàn bộ lưu lượng về bản đang chạy",
+        },
+        {
+          flag: "voucher-stacking",
+          env: "prod",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "FAILED",
+          percent: 0,
+          workload: "checkout-api",
+          startedHoursAgo: 97,
+          steps: [10, 20],
+          end: "ROLLBACK",
+          endBy: BAO,
+          failReason:
+            "Rollback thủ công bởi Trần Quốc Bảo: khách báo đơn bị trừ tiền giảm giá hai lần",
+        },
+        {
+          flag: "free-shipping-threshold",
+          env: "prod",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "DONE",
+          percent: 100,
+          workload: "checkout-api",
+          startedHoursAgo: 410,
+          steps: [10, 30, 60, 100],
+          end: "COMPLETE",
+        },
+        {
+          flag: "recommendation-engine",
+          env: "staging",
+          scope: "FLAG_LEVEL",
+          strategy: "ATTRIBUTE_SPLIT",
+          status: "DONE",
+          percent: 100,
+          workload: "checkout-api",
+          startedHoursAgo: 620,
+          steps: [50],
+          end: "COMPLETE",
+        },
+        {
+          env: "dev",
+          scope: "SERVICE_LEVEL",
+          strategy: "CANARY",
+          status: "DONE",
+          percent: 100,
+          workload: "checkout-api",
+          versions: ["v1.15.9", "v1.16.0-rc.2"],
+          startedHoursAgo: 26,
+          steps: [20, 50, 100],
+          end: "COMPLETE",
+        },
       ],
       cost: 5.8,
     },
   );
   addPendingProdDeploy(p);
-  addAutoRollback(p);
   p.domains.drift["GITOPS"] = {
     verdict: "DRIFTED",
     message:
@@ -2203,44 +2575,58 @@ function addPendingProdDeploy(p: ProjectRecord): void {
   ];
 }
 
-/** Rollback tự động nối với rollout thất bại — MTTR của DORA có mẫu để đo */
-function addAutoRollback(p: ProjectRecord): void {
-  const failed = p.rollouts.find((r) => r.status === "FAILED");
-  if (failed === undefined) return;
-  const list = p.deployments[failed.environment.id];
-  const restored = list?.find((d) => d.status === "DEPLOY_SUCCESS");
-  if (list === undefined || restored === undefined) return;
-  const at = failed.updatedAt;
-  const id = newId();
-  const event = { id: newId(), eventType: "ROLLBACK" as const, occurredAt: at };
-  list.push({
-    deploymentId: id,
-    status: "ROLLBACK",
-    workloadName: failed.workloadName,
-    imageTag: restored.imageTag,
-    commitSha: restored.commitSha,
-    triggeredBy: "AUTO",
-    rolloutSessionId: failed.id,
-    restoresDeploymentId: restored.deploymentId,
-    startedAt: at,
-    lastEventAt: at,
-    events: [event],
-  });
-  list.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  p.deploymentLogs[id] = [
-    {
-      ...event,
-      triggeredBy: "AUTO",
+/**
+ * Mỗi rollout thất bại để lại một lần deploy ROLLBACK về bản chạy tốt trước đó — MTTR của DORA có mẫu để đo;
+ * UDP tự rollback thì `AUTO`, người bấm thì `MANUAL`.
+ */
+function addRollbacks(p: ProjectRecord): void {
+  for (const failed of p.rollouts.filter((r) => r.status === "FAILED")) {
+    const list = p.deployments[failed.environment.id];
+    const at = failed.updatedAt;
+    const restored = list?.find(
+      (d) =>
+        d.status === "DEPLOY_SUCCESS" &&
+        d.startedAt < at &&
+        d.workloadName === failed.workloadName,
+    );
+    if (list === undefined || restored === undefined) continue;
+    const by =
+      failed.events.at(-1)?.triggeredBy === "MANUAL" ? "MANUAL" : "AUTO";
+    const id = newId();
+    const event = {
+      id: newId(),
+      eventType: "ROLLBACK" as const,
+      occurredAt: at,
+    };
+    list.push({
+      deploymentId: id,
+      status: "ROLLBACK",
       workloadName: failed.workloadName,
       imageTag: restored.imageTag,
       commitSha: restored.commitSha,
-      pipelineId: null,
-      detail: {
-        rolloutSessionId: failed.id,
-        reason: failed.failReason ?? "rollback",
+      triggeredBy: by,
+      rolloutSessionId: failed.id,
+      restoresDeploymentId: restored.deploymentId,
+      startedAt: at,
+      lastEventAt: at,
+      events: [event],
+    });
+    list.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    p.deploymentLogs[id] = [
+      {
+        ...event,
+        triggeredBy: by,
+        workloadName: failed.workloadName,
+        imageTag: restored.imageTag,
+        commitSha: restored.commitSha,
+        pipelineId: null,
+        detail: {
+          rolloutSessionId: failed.id,
+          reason: failed.failReason ?? "rollback",
+        },
       },
-    },
-  ];
+    ];
+  }
 }
 
 const STANDARD_DOMAINS: Partial<Record<string, DomainPick>> = {
@@ -2265,13 +2651,15 @@ function paymentGateway(): ProjectRecord {
       members: [
         [ANH, "MAINTAINER"],
         [PHAT, "DEVELOPER"],
+        [HUY, "MAINTAINER"],
       ],
       cloud: { provider: "GCP", region: "asia-southeast1", validated: true },
+      rotated: { authKind: "GCP_KEY", daysAgo: 31 },
       ageDays: 90,
     },
     {
       flags: smallFlagSet("payment"),
-      segments: [],
+      segments: PAYMENT_SEGMENTS,
       domains: {
         ...STANDARD_DOMAINS,
         SECRETS: { tool: "vault" },
@@ -2292,6 +2680,43 @@ function paymentGateway(): ProjectRecord {
           workload: "payment-api",
           startedHoursAgo: 120,
           steps: [10, 30, 50],
+          end: "COMPLETE",
+        },
+        {
+          env: "prod",
+          scope: "SERVICE_LEVEL",
+          strategy: "CANARY",
+          status: "IN_PROGRESS",
+          percent: 20,
+          workload: "payment-api",
+          versions: ["v1.15.7", "v1.16.0"],
+          startedHoursAgo: 0.8,
+          steps: [10, 20],
+        },
+        {
+          env: "staging",
+          scope: "SERVICE_LEVEL",
+          strategy: "CANARY",
+          status: "FAILED",
+          percent: 0,
+          workload: "payment-webhooks",
+          versions: ["v1.15.2", "v1.15.3"],
+          startedHoursAgo: 19,
+          steps: [10],
+          end: "ROLLBACK",
+          failReason:
+            "Lỗi 5xx của bản mới 7,8% so với 0,6% ở bản cũ: vượt ngưỡng hai lần liên tiếp, tự rollback",
+        },
+        {
+          flag: "vietqr-dynamic",
+          env: "prod",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "DONE",
+          percent: 100,
+          workload: "payment-api",
+          startedHoursAgo: 300,
+          steps: [10, 25, 50, 100],
           end: "COMPLETE",
         },
       ],
@@ -2374,13 +2799,49 @@ function mobileBff(): ProjectRecord {
     },
     {
       flags: smallFlagSet("mobile"),
-      segments: [],
+      segments: MOBILE_SEGMENTS,
       domains: STANDARD_DOMAINS,
       preferences: [],
       deploysPerDay: [3.1, 1.2, 0.5],
       workload: "mobile-bff",
       extraWorkloads: ["image-resizer"],
-      rollouts: [],
+      rollouts: [
+        {
+          flag: "home-feed-v3",
+          env: "prod",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "IN_PROGRESS",
+          percent: 34,
+          workload: "mobile-bff",
+          startedHoursAgo: 6,
+          steps: [10, 20, 34],
+        },
+        {
+          env: "prod",
+          scope: "SERVICE_LEVEL",
+          strategy: "BLUE_GREEN",
+          status: "DONE",
+          percent: 100,
+          workload: "image-resizer",
+          versions: ["v1.14.9", "v1.15.0"],
+          startedHoursAgo: 140,
+          steps: [100],
+          end: "COMPLETE",
+        },
+        {
+          flag: "biometric-login",
+          env: "prod",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "DONE",
+          percent: 100,
+          workload: "mobile-bff",
+          startedHoursAgo: 520,
+          steps: [5, 20, 50, 100],
+          end: "COMPLETE",
+        },
+      ],
       cost: 3.1,
     },
   );
@@ -2531,7 +2992,7 @@ function adminOnlyProject(
 const crowdRng = prng(20261001);
 const CROWD: Person[] = crowd(
   crowdRng,
-  120,
+  150,
   new Set(PEOPLE.map((p) => p.email)),
 ).map((m) => ({ id: uuid(crowdRng), ...m }));
 
@@ -2640,19 +3101,40 @@ type Incident =
     }
   | {
       kind: "compensationFailed";
+      /** Mặc định PROVISION; TEARDOWN là lúc xoá project mà dọn không hết */
+      jobType?: "PROVISION" | "TEARDOWN";
       daysAgo: number;
       step: string;
       message: string;
       orphans: string[];
     }
   | { kind: "cancelRequested"; hoursAgo: number }
-  | { kind: "provisioning"; state: "NETWORK" | "CLUSTER" | "DOMAINS" };
+  | {
+      kind: "running";
+      jobType: "PROVISION" | "ENVIRONMENT_APPLY";
+      state:
+        | "QUEUED"
+        | "NETWORK"
+        | "CLUSTER"
+        | "CLUSTER_ACCESS"
+        | "DOMAINS"
+        | "COMPENSATING";
+      minutesAgo: number;
+      /** Lý do đang bù trừ (chỉ với COMPENSATING) */
+      error?: { step: string; message: string };
+    };
 
 interface FleetSpec {
   name: string;
   owner: number;
   status: ProjectStatusWire;
-  cloud?: { provider: Provider; region: string; validated?: boolean };
+  cloud?: {
+    provider: Provider;
+    region: string;
+    validated?: boolean;
+    authKind?: AuthKind;
+  };
+  rotated?: ProjectSpec["rotated"];
   runtime?: "nodejs" | "python";
   ageDays: number;
   domains?: Partial<Record<string, DomainPick>>;
@@ -2670,7 +3152,7 @@ const FLEET: FleetSpec[] = [
     name: "inventory-sync",
     owner: 3,
     status: "ACTIVE",
-    cloud: { provider: "AWS", region: "ap-southeast-1" },
+    cloud: { provider: "AWS", region: "ap-southeast-1", authKind: "AWS_KEY" },
     ageDays: 150,
     domains: AWS_DATADOG,
     workload: "inventory-api",
@@ -2706,7 +3188,11 @@ const FLEET: FleetSpec[] = [
     name: "loyalty-api",
     owner: 19,
     status: "ACTIVE",
-    cloud: { provider: "AZURE", region: "southeastasia" },
+    cloud: {
+      provider: "AZURE",
+      region: "southeastasia",
+      authKind: "AZURE_SECRET",
+    },
     ageDays: 95,
     domains: { ...AZURE_ENTERPRISE, INFRA: { tool: "aso" } },
     workload: "loyalty-api",
@@ -2739,7 +3225,14 @@ const FLEET: FleetSpec[] = [
     runtime: "python",
     ageDays: 1,
     workload: "feature-server",
-    incidents: [{ kind: "provisioning", state: "CLUSTER" }],
+    incidents: [
+      {
+        kind: "running",
+        jobType: "PROVISION",
+        state: "CLUSTER",
+        minutesAgo: 19,
+      },
+    ],
   },
   {
     name: "sms-gateway",
@@ -2805,6 +3298,7 @@ const FLEET: FleetSpec[] = [
     owner: 64,
     status: "ACTIVE",
     cloud: { provider: "AZURE", region: "eastasia" },
+    rotated: { authKind: "AZURE_SECRET", daysAgo: 118 },
     ageDays: 320,
     domains: DYNATRACE_STACK,
     workload: "lms-web",
@@ -2857,6 +3351,179 @@ const FLEET: FleetSpec[] = [
     ageDays: 1,
     workload: "chatops-bot",
   },
+  {
+    name: "ride-booking",
+    owner: 89,
+    status: "ERROR",
+    cloud: { provider: "AWS", region: "ap-southeast-1" },
+    ageDays: 12,
+    workload: "ride-api",
+    incidents: [
+      {
+        kind: "compensationFailed",
+        daysAgo: 9,
+        step: "CLUSTER",
+        message:
+          "EKS CreateNodegroup: InsufficientInstanceCapacity, hết t3.large ở ap-southeast-1a; bù trừ không xoá được NAT gateway, Elastic IP và security group (còn ENI bám vào)",
+        orphans: ["nat", "eip", "sg"],
+      },
+    ],
+  },
+  {
+    name: "telehealth-api",
+    owner: 95,
+    status: "ERROR",
+    cloud: {
+      provider: "AZURE",
+      region: "southeastasia",
+      authKind: "AZURE_SECRET",
+    },
+    ageDays: 20,
+    workload: "consult-api",
+    incidents: [
+      {
+        kind: "compensationFailed",
+        daysAgo: 17,
+        step: "CLUSTER",
+        message:
+          "AKS: AuthorizationFailed, managed identity thiếu quyền Network Contributor trên subnet; bù trừ hết giờ khi xoá cluster dở và identity",
+        orphans: ["aks-cluster", "identity"],
+      },
+    ],
+  },
+  {
+    name: "event-ticketing",
+    owner: 101,
+    status: "DELETED",
+    cloud: { provider: "GCP", region: "asia-southeast1" },
+    runtime: "python",
+    ageDays: 140,
+    workload: "ticket-api",
+    incidents: [
+      {
+        kind: "compensationFailed",
+        jobType: "TEARDOWN",
+        daysAgo: 33,
+        step: "NETWORK",
+        message:
+          "Xoá project: subnetwork còn forwarding rule của load balancer nên không xoá được; Cloud NAT và node pool còn lại",
+        orphans: ["nat", "node-pool"],
+      },
+    ],
+  },
+  {
+    name: "warehouse-iot",
+    owner: 107,
+    status: "PROVISIONING",
+    cloud: { provider: "AWS", region: "ap-southeast-1" },
+    ageDays: 1,
+    workload: "sensor-ingest",
+    incidents: [
+      {
+        kind: "running",
+        jobType: "PROVISION",
+        state: "CLUSTER_ACCESS",
+        minutesAgo: 26,
+      },
+    ],
+  },
+  {
+    name: "smart-parking",
+    owner: 113,
+    status: "PROVISIONING",
+    cloud: { provider: "GCP", region: "asia-southeast1" },
+    ageDays: 1,
+    workload: "parking-api",
+    incidents: [
+      {
+        kind: "running",
+        jobType: "PROVISION",
+        state: "NETWORK",
+        minutesAgo: 4,
+      },
+    ],
+  },
+  {
+    name: "kiosk-menu",
+    owner: 119,
+    status: "PROVISIONING",
+    cloud: { provider: "AZURE", region: "eastasia" },
+    ageDays: 2,
+    workload: "menu-api",
+    incidents: [
+      {
+        kind: "running",
+        jobType: "PROVISION",
+        state: "DOMAINS",
+        minutesAgo: 31,
+      },
+    ],
+  },
+  {
+    name: "kyc-verify",
+    owner: 125,
+    status: "PROVISIONING",
+    cloud: { provider: "AWS", region: "ap-southeast-1" },
+    ageDays: 3,
+    workload: "kyc-api",
+    incidents: [
+      {
+        kind: "running",
+        jobType: "PROVISION",
+        state: "COMPENSATING",
+        minutesAgo: 48,
+        error: {
+          step: "CLUSTER",
+          message:
+            "EKS CreateCluster: UnsupportedAvailabilityZoneException ở ap-southeast-1c; đang xoá các tài nguyên đã tạo",
+        },
+      },
+    ],
+  },
+  {
+    name: "coupon-hub",
+    owner: 131,
+    status: "ACTIVE",
+    cloud: { provider: "AWS", region: "ap-southeast-1" },
+    rotated: { authKind: "AWS_KEY", daysAgo: 12 },
+    ageDays: 130,
+    domains: LAB_STACK,
+    workload: "coupon-api",
+    deploysPerDay: [1.9, 0.8, 0.4],
+    cost: 3.3,
+    incidents: [
+      {
+        kind: "failed",
+        jobType: "ENVIRONMENT_APPLY",
+        daysAgo: 6,
+        step: "NAMESPACE",
+        message:
+          "Tạo namespace cho environment qa: ResourceQuota của cụm đã dùng 8/8 CPU, cần tăng quota hoặc xoá environment cũ",
+      },
+      {
+        kind: "running",
+        jobType: "ENVIRONMENT_APPLY",
+        state: "QUEUED",
+        minutesAgo: 1,
+      },
+    ],
+  },
+  {
+    name: "crm-sync",
+    owner: 137,
+    status: "DELETED",
+    cloud: { provider: "AZURE", region: "southeastasia" },
+    ageDays: 300,
+    workload: "crm-sync",
+  },
+  {
+    name: "tour-booking",
+    owner: 143,
+    status: "DRAFT",
+    cloud: { provider: "GCP", region: "asia-southeast1", validated: false },
+    ageDays: 4,
+    workload: "tour-api",
+  },
 ];
 
 function incidentJob(p: ProjectRecord, incident: Incident): JobRecord {
@@ -2874,11 +3541,12 @@ function incidentJob(p: ProjectRecord, incident: Incident): JobRecord {
       return { detail: { job: j, resources: [], domains: [] } };
     }
     case "compensationFailed": {
+      const teardown = incident.jobType === "TEARDOWN";
       const j = job(
-        "PROVISION",
+        incident.jobType ?? "PROVISION",
         "COMPENSATION_FAILED",
         incident.daysAgo,
-        p.preview.cost.monthlyUsd,
+        teardown ? null : p.preview.cost.monthlyUsd,
       );
       j.attempt = 3;
       j.lastError = {
@@ -2901,15 +3569,79 @@ function incidentJob(p: ProjectRecord, incident: Incident): JobRecord {
       j.updatedAt = minutesAgo(2);
       return { detail: { job: j, resources: [], domains: [] } };
     }
-    case "provisioning": {
-      const j = job("PROVISION", incident.state, 0, p.preview.cost.monthlyUsd);
-      j.createdAt = minutesAgo(19);
-      j.updatedAt = minutesAgo(1);
-      const network = resourcesOf(provider, "READY", minutesAgo(12)).filter(
-        (r) => r.step === "NETWORK",
+    case "running": {
+      const provisioning = incident.jobType === "PROVISION";
+      const j = job(
+        incident.jobType,
+        incident.state,
+        0,
+        provisioning ? p.preview.cost.monthlyUsd : null,
       );
-      return { detail: { job: j, resources: network, domains: [] } };
+      j.createdAt = minutesAgo(incident.minutesAgo);
+      j.updatedAt = minutesAgo(Math.min(1, incident.minutesAgo));
+      if (incident.error !== undefined) {
+        j.lastError = {
+          ...incident.error,
+          orphans: [],
+          at: minutesAgo(incident.minutesAgo * 0.3),
+        };
+      }
+      return {
+        detail: {
+          job: j,
+          resources: provisioning ? runningResources(provider, incident) : [],
+          domains:
+            incident.state === "DOMAINS"
+              ? [
+                  {
+                    domainType: "CONTAINER_REGISTRY",
+                    status: "ACTIVE",
+                    message: null,
+                  },
+                  {
+                    domainType: "MONITORING",
+                    status: "DEPLOYING",
+                    message: null,
+                  },
+                  { domainType: "LOGGING", status: "DEPLOYING", message: null },
+                ]
+              : [],
+        },
+      };
     }
+  }
+}
+
+/** Tài nguyên của job dựng đang chạy: xong các pha trước, dở pha hiện tại; bù trừ thì đang xoá ngược */
+function runningResources(
+  provider: Provider,
+  incident: Extract<Incident, { kind: "running" }>,
+): Resource[] {
+  const at = minutesAgo(Math.max(1, incident.minutesAgo / 2));
+  const all = resourcesOf(provider, "READY", at);
+  switch (incident.state) {
+    case "QUEUED":
+      return [];
+    case "NETWORK": {
+      const network = all.filter((r) => r.step === "NETWORK");
+      const done = Math.ceil(network.length / 2);
+      return network.map((r, i) =>
+        i < done ? r : { ...r, status: "CREATING" as const, providerId: null },
+      );
+    }
+    case "CLUSTER":
+      return all.map((r) =>
+        r.step === "CLUSTER" ? { ...r, status: "CREATING" as const } : r,
+      );
+    case "CLUSTER_ACCESS":
+    case "DOMAINS":
+      return all;
+    case "COMPENSATING":
+      return all.map((r) =>
+        r.step === "CLUSTER"
+          ? { ...r, status: "DELETED" as const }
+          : { ...r, status: "DELETING" as const },
+      );
   }
 }
 
@@ -2936,8 +3668,12 @@ function fleetProject(spec: FleetSpec, index: number): ProjectRecord {
               provider: spec.cloud.provider,
               region: spec.cloud.region,
               validated: spec.cloud.validated ?? true,
+              ...(spec.cloud.authKind === undefined
+                ? {}
+                : { authKind: spec.cloud.authKind }),
             },
           }),
+      ...(spec.rotated === undefined ? {} : { rotated: spec.rotated }),
       ageDays: spec.ageDays,
     },
     {
@@ -3015,6 +3751,30 @@ function searchService(): ProjectRecord {
           startedHoursAgo: 1.1,
           steps: [10, 20],
         },
+        {
+          env: "prod",
+          scope: "SERVICE_LEVEL",
+          strategy: "CANARY",
+          status: "DONE",
+          percent: 100,
+          workload: "search-indexer",
+          versions: ["v1.14.8", "v1.15.0"],
+          startedHoursAgo: 46,
+          steps: [25, 50, 100],
+          end: "COMPLETE",
+        },
+        {
+          flag: "synonym-dictionary",
+          env: "staging",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "DONE",
+          percent: 100,
+          workload: "search-api",
+          startedHoursAgo: 200,
+          steps: [20, 50, 100],
+          end: "COMPLETE",
+        },
       ],
       cost: 5.1,
     },
@@ -3039,13 +3799,25 @@ function fraudDetector(): ProjectRecord {
     },
     {
       flags: smallFlagSet("payment"),
-      segments: [],
+      segments: PAYMENT_SEGMENTS,
       domains: AZURE_ENTERPRISE,
       preferences: [],
       deploysPerDay: [1.4, 0.8, 0.4],
       workload: "fraud-scorer",
       extraWorkloads: ["fraud-rules-sync"],
       rollouts: [
+        {
+          flag: "fraud-model",
+          env: "prod",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "DONE",
+          percent: 100,
+          workload: "fraud-scorer",
+          startedHoursAgo: 170,
+          steps: [10, 30, 60, 100],
+          end: "COMPLETE",
+        },
         {
           env: "staging",
           scope: "SERVICE_LEVEL",
@@ -3101,6 +3873,171 @@ function marketingSite(): ProjectRecord {
   );
 }
 
+// ------------------------------------------------------------- ba project đang "Bắt đầu" (Plan #58 UX-12)
+
+/** Nháp hai ngày tuổi: mới tạo SDK key đầu tiên (chưa dùng), chưa flag, chưa cloud */
+function voucherService(): ProjectRecord {
+  return buildProject(
+    {
+      name: "voucher-service",
+      runtime: "nodejs",
+      mode: "CREATE_NEW",
+      status: "DRAFT",
+      myRole: "OWNER",
+      owner: ANH,
+      members: [[LINH, "DEVELOPER"]],
+      ageDays: 2,
+      keys: "first",
+    },
+    EMPTY_EXTRAS("voucher-api"),
+  );
+}
+
+/** Nháp chín ngày: key, flag và segment đã dùng ở dev, cloud đã kiểm, CHƯA chọn domain nên chưa dựng */
+function sellerCenter(): ProjectRecord {
+  return buildProject(
+    {
+      name: "seller-center",
+      runtime: "python",
+      mode: "IMPORT_EXISTING",
+      status: "DRAFT",
+      myRole: "OWNER",
+      owner: ANH,
+      members: [
+        [HUY, "MAINTAINER"],
+        [PHAT, "DEVELOPER"],
+      ],
+      cloud: { provider: "GCP", region: "asia-southeast1", validated: true },
+      ageDays: 9,
+      keys: "full",
+    },
+    {
+      ...EMPTY_EXTRAS("seller-api"),
+      flags: [
+        {
+          key: "bulk-product-upload",
+          type: "BOOLEAN",
+          description: "Tải lên sản phẩm hàng loạt bằng tệp Excel",
+          default: "off",
+          ageDays: 7,
+          enabled: [true, true, false],
+          rules: {
+            dev: [{ type: "ALL", serve: "on" }],
+            staging: [
+              { type: "SEGMENT", segment: "pilot-sellers", serve: "on" },
+            ],
+          },
+          traffic: 310,
+          mix: { on: 0.8, off: 0.2 },
+        },
+        {
+          key: "payout-schedule",
+          type: "STRING",
+          description: "Lịch trả tiền cho người bán",
+          variants: [
+            ["weekly", "weekly"],
+            ["daily", "daily"],
+          ],
+          default: "weekly",
+          ageDays: 5,
+          enabled: [true, false, false],
+          rules: {
+            dev: [
+              {
+                type: "ATTRIBUTE_BASED",
+                when: [
+                  {
+                    attribute: "sellerTier",
+                    operator: "in",
+                    value: ["mall", "preferred"],
+                  },
+                  {
+                    attribute: "monthlyGmv",
+                    operator: "gte",
+                    value: 200_000_000,
+                  },
+                ],
+                serve: "daily",
+                description:
+                  "Shop Mall và shop yêu thích doanh số từ 200 triệu",
+              },
+            ],
+          },
+          traffic: 140,
+          mix: { weekly: 0.7, daily: 0.3 },
+        },
+        {
+          key: "seller-chat-ai",
+          type: "BOOLEAN",
+          description: "Gợi ý trả lời tin nhắn cho người bán",
+          default: "off",
+          lifecycle: "DRAFT",
+          ageDays: 2,
+          enabled: [true, false, false],
+          traffic: 0,
+        },
+      ],
+      segments: [
+        {
+          name: "pilot-sellers",
+          description: "Mười hai shop tham gia thử cổng người bán mới",
+          userIds: [
+            "shop-1021",
+            "shop-1188",
+            "shop-1203",
+            "shop-1377",
+            "shop-1402",
+            "shop-1569",
+            "shop-1610",
+            "shop-1734",
+            "shop-1851",
+            "shop-1906",
+            "shop-2044",
+            "shop-2117",
+          ],
+          ageDays: 6,
+        },
+      ],
+    },
+  );
+}
+
+/**
+ * Chạy sáu ngày, đi đường hạ tầng trước: cloud, domain, deploy đều có, nhưng CHƯA SDK key, flag, segment hay
+ * rollout nào — mọi trang của phần phát hành ở trạng thái trống
+ */
+function shippingFeeApi(): ProjectRecord {
+  return buildProject(
+    {
+      name: "shipping-fee-api",
+      runtime: "nodejs",
+      mode: "CREATE_NEW",
+      status: "ACTIVE",
+      myRole: "OWNER",
+      owner: ANH,
+      members: [[TUNG, "DEVELOPER"]],
+      cloud: { provider: "AWS", region: "ap-southeast-1", validated: true },
+      ageDays: 6,
+      keys: "none",
+    },
+    {
+      ...EMPTY_EXTRAS("shipping-fee-api"),
+      domains: {
+        CONTAINER_REGISTRY: { tool: "ghcr" },
+        CICD: { tool: "github-actions" },
+        MONITORING: {
+          tool: "prometheus-grafana",
+          config: { retentionDays: 7 },
+        },
+        LOGGING: { tool: "loki" },
+        INGRESS: { tool: "nginx" },
+      },
+      deploysPerDay: [1.8, 0.7, 0.3],
+      cost: 0.9,
+    },
+  );
+}
+
 const EMPTY_EXTRAS = (workload: string): Extras => ({
   flags: [],
   segments: [],
@@ -3112,35 +4049,43 @@ const EMPTY_EXTRAS = (workload: string): Extras => ({
   cost: 0,
 });
 
-/** `POST /projects` của bản xem thử: project nháp mới, người xem là OWNER */
-export function createDraftProject(input: {
-  name: string;
-  creationMode: "CREATE_NEW" | "IMPORT_EXISTING";
-  languageRuntime: string;
-  repoUrl?: string;
-}): ProjectRecord {
-  const record = buildProject(
+/** `POST /projects` của bản xem thử: project nháp mới, người đang xem là OWNER */
+export function createDraftProject(
+  input: {
+    name: string;
+    creationMode: "CREATE_NEW" | "IMPORT_EXISTING";
+    languageRuntime: string;
+    repoUrl?: string;
+  },
+  me: PublicUserWire,
+): ProjectRecord {
+  return buildProject(
     {
       name: input.name,
       runtime: input.languageRuntime === "python" ? "python" : "nodejs",
       mode: input.creationMode,
       status: "DRAFT",
       myRole: "OWNER",
-      owner: ANH,
+      owner: {
+        id: me.id,
+        name: me.name,
+        email: me.email,
+        admin: me.platformRole === "PLATFORM_ADMIN",
+        joinedDaysAgo: 0,
+      },
       members: [],
       ageDays: 0,
       repoUrl: input.repoUrl ?? null,
     },
     EMPTY_EXTRAS(input.name),
   );
-  record.audit = [];
-  return record;
 }
 
 // ------------------------------------------------------------- nhóm và lời mời (Plan #55)
 
 /** Hạt giống RIÊNG: id của nhóm và lời mời không xê dịch id của những thứ sinh trước */
-const teamRng = prng(20261002);
+const TEAM_SEED = 20261002;
+let teamRng = prng(TEAM_SEED);
 const teamUuid = (): string => uuid(teamRng);
 
 interface TeamSpec {
@@ -3356,14 +4301,32 @@ function seedTeams(projects: ProjectRecord[]): {
   return { teams, tokens };
 }
 
-export function createDb(): Db {
-  const users: AdminUserWire[] = [...PEOPLE, ...CROWD].map((p) => ({
-    id: p.id,
-    email: p.email,
-    name: p.name,
-    platformRole: p.admin ? "PLATFORM_ADMIN" : "USER",
-    createdAt: daysAgo(p.joinedDaysAgo),
-  }));
+/**
+ * Nhật ký dày hơn phần tự suy ra từ dữ liệu, cho các project chính: việc lặt vặt hằng ngày của nhiều người.
+ * `checkout-service` không cần: năm mươi flag của nó đã đủ vài trăm dòng.
+ */
+const AUDIT_TARGET: Partial<Record<string, number>> = {
+  "payment-gateway": 230,
+  "mobile-bff": 215,
+  "search-service": 205,
+  "fraud-detector": 220,
+  "marketing-site": 120,
+};
+
+export function createDb(setup: DemoSetup = DEFAULT_SETUP): Db {
+  // Mỗi lần dựng bắt đầu lại từ cùng hạt giống: hai database cùng một bản xem thử là hai bản sao y hệt
+  rng = prng(DB_SEED);
+  teamRng = prng(TEAM_SEED);
+  const users: AdminUserWire[] = [...PEOPLE, ...CROWD]
+    .map((p): AdminUserWire => ({
+      id: p.id,
+      email: p.email,
+      name: p.name,
+      platformRole: p.admin ? "PLATFORM_ADMIN" : "USER",
+      createdAt: daysAgo(p.joinedDaysAgo),
+    }))
+    // Như Service 1: người mới đăng ký lên đầu
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const projects = [
     checkoutService(),
     paymentGateway(),
@@ -3374,17 +4337,24 @@ export function createDb(): Db {
     searchService(),
     fraudDetector(),
     marketingSite(),
+    voucherService(),
+    sellerCenter(),
+    shippingFeeApi(),
     adminOnlyProject("data-pipeline", TUNG, "ACTIVE", "GCP"),
     adminOnlyProject("internal-wiki", LINH, "DRAFT", undefined),
     ...FLEET.map(fleetProject),
   ];
   const { teams, tokens } = seedTeams(projects);
+  for (const p of projects) {
+    p.audit = auditTrail(p, AUDIT_TARGET[p.project.name] ?? 0);
+  }
+  const viewer = VIEWER[setup.persona];
   const db: Db = {
     me: {
-      id: ANH.id,
-      email: ANH.email,
-      name: ANH.name,
-      platformRole: "PLATFORM_ADMIN",
+      id: viewer.id,
+      email: viewer.email,
+      name: viewer.name,
+      platformRole: viewer.admin ? "PLATFORM_ADMIN" : "USER",
     },
     signedIn: true,
     users,
@@ -3392,6 +4362,7 @@ export function createDb(): Db {
     teams,
     invitationTokens: tokens,
     configVersion: 1_284,
+    demo: setup,
   };
   // Vai của người đang xem đến từ CẢ nhóm: `data-pipeline` hiện ra, `search-service` lên Người duy trì
   refreshMyAccess(db);

@@ -4,6 +4,7 @@ import type {
   PublicEnvironmentWire,
 } from "@udp/shared-types/wire";
 import { useState } from "react";
+import { InfoTip } from "../../../components/InfoTip";
 import { useMessages } from "../../../i18n";
 import { messageOf } from "../../../lib/errors";
 import { flagApi } from "../flag-api";
@@ -47,7 +48,11 @@ export function Tester({
       </div>
       <div className="tester">
         <div className="f">
-          <label htmlFor="t-key">{m.targetingKey}</label>
+          {/* Nút giải thích nằm CẠNH nhãn, không trong nhãn: tên của ô chỉ là chữ của nhãn */}
+          <span className="lbl-row">
+            <label htmlFor="t-key">{m.targetingKey}</label>
+            <InfoTip term="targetingKey" />
+          </span>
           <input
             id="t-key"
             name="targetingKey"

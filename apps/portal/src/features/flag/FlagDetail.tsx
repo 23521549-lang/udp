@@ -4,12 +4,9 @@ import type {
   PublicEnvironmentWire,
 } from "@udp/shared-types/wire";
 import { Lock, X } from "lucide-react";
-import {
-  useEffect,
-  useRef,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { ErrorState, Loading } from "../../components/States";
 import { useMessages } from "../../i18n";
 import { relativeTime } from "../../lib/format";
@@ -32,6 +29,26 @@ import { variantColor } from "./RuleEditor";
 const tabId = (envId: string): string => `flag-envtab-${envId}`;
 
 /**
+ * [Plan #58 UX-38] Esc của panel flag: trong hộp thoại thì chỉ đóng hộp thoại; trong một ô đang gõ là "thôi gõ", không
+ * phải "đóng panel và bỏ mọi nháp"; còn lại thì đóng panel.
+ */
+export function closePeekOnEscape(onClose: () => void): void {
+  if (document.querySelector("[role=dialog]") !== null) return;
+  const t = document.activeElement;
+  if (
+    t instanceof HTMLElement &&
+    (t.tagName === "INPUT" ||
+      t.tagName === "TEXTAREA" ||
+      t.tagName === "SELECT" ||
+      t.isContentEditable)
+  ) {
+    t.blur();
+    return;
+  }
+  onClose();
+}
+
+/**
  * Panel xem nhanh của một flag (DESIGN.md §6 "Xem nhanh", §10.8 FlagDetail).
  *
  * Quyền: DEVELOPER sửa ở dev/staging; production cần MAINTAINER (§2.2). Portal ẩn/khoá
@@ -39,9 +56,12 @@ const tabId = (envId: string): string => `flag-envtab-${envId}`;
  */
 export function FlagDetail({
   flagId,
+  panelRef,
   onClose,
 }: {
   flagId: string;
+  /** [Plan #58 UX-38] Trang danh sách giữ focus của panel (`usePeekFocus`): panel bị gỡ khi đóng */
+  panelRef: RefObject<HTMLElement>;
   onClose: () => void;
 }) {
   const m = useMessages(flagMessages);
@@ -52,46 +72,9 @@ export function FlagDetail({
     staleTime: 10_000,
   });
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || document.querySelector("[role=dialog]")) {
-        return;
-      }
-      // Esc trong một ô đang gõ là "thôi gõ", không phải "đóng panel và bỏ mọi nháp"
-      const t = e.target as HTMLElement | null;
-      if (
-        t !== null &&
-        (t.tagName === "INPUT" ||
-          t.tagName === "TEXTAREA" ||
-          t.tagName === "SELECT" ||
-          t.isContentEditable)
-      ) {
-        t.blur();
-        return;
-      }
-      onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  /*
-   * Trên điện thoại panel phủ cả màn hình: focus phải vào trong nó, nếu không bàn phím và trình đọc
-   * màn hình vẫn ở danh sách nằm bên dưới. Trên máy tính giữ focus ở danh sách để j/k đi tiếp.
-   */
-  const panel = useRef<HTMLElement>(null);
-  useEffect(() => {
-    try {
-      if (window.matchMedia("(max-width: 860px)").matches)
-        panel.current?.focus();
-    } catch {
-      // jsdom không có matchMedia
-    }
-  }, [flagId]);
-
   return (
     <aside
-      ref={panel}
+      ref={panelRef}
       className="peek"
       aria-label={m.detail.label}
       tabIndex={-1}
@@ -178,12 +161,17 @@ function FlagBody({
         <dd>{lifecycleLabel(flag.lifecycleStatus)}</dd>
         <dt>{m.detail.type}</dt>
         <dd className="mono">{flag.flagType}</dd>
-        <dt>{m.detail.variants}</dt>
+        <dt>
+          {m.detail.variants}
+          <InfoTip term="variant" />
+        </dt>
         <dd>
           {flag.variants.map((v, i) => (
             <span key={v.id} className="chip">
               <span className="vd" style={{ background: variantColor(i) }} />
-              <span className="mono">{v.key}</span>
+              <span className="mono" translate="no">
+                {v.key}
+              </span>
             </span>
           ))}
         </dd>

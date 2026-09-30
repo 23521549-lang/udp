@@ -125,7 +125,7 @@ describe("cảnh báo trần trong hộp tạo segment", () => {
       { length: 120 },
       (_, i) => `user-${String(i).padStart(3, "0")}`,
     );
-    const tags = within(dialog).getByLabelText("Danh sách targetingKey");
+    const tags = within(dialog).getByLabelText("Danh sách khoá người dùng");
     await user.click(tags);
     await user.paste(ids.join(","));
     await user.keyboard("{Enter}");
@@ -144,7 +144,7 @@ describe("cảnh báo trần trong hộp tạo segment", () => {
     const dialog = await screen.findByRole("dialog");
     await user.type(within(dialog).getByLabelText("Tên"), "nho");
     await user.type(
-      within(dialog).getByLabelText("Danh sách targetingKey"),
+      within(dialog).getByLabelText("Danh sách khoá người dùng"),
       "u-1{Enter}",
     );
     expect(within(dialog).queryByText(/Vượt trần/)).toBeNull();
@@ -154,5 +154,47 @@ describe("cảnh báo trần trong hộp tạo segment", () => {
         within(dialog).getByText("Vượt trần tài nguyên của project."),
       ).toBeInTheDocument(),
     );
+  });
+});
+
+describe("[Plan #58] trang Segment: trạng thái trống và panel", () => {
+  it("UX-17: chưa có segment ⇒ nói vì sao, cần gì, và một nút mở hộp tạo", async () => {
+    const detail = setup(false);
+    const list = golden<SegmentListResponseWire>("GET /projects/{id}/segments");
+    list.segments = [];
+    server.use(
+      http.get(`${API}/projects/:id/segments`, () => HttpResponse.json(list)),
+    );
+    renderApp(`/app/projects/${detail.project.id}/segments`);
+    expect(await screen.findByText("Chưa có segment nào")).toBeInTheDocument();
+    expect(screen.getByText(/nhóm người dùng đặt tên sẵn/)).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: "Tạo segment đầu tiên" }),
+    );
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("UX-38: mở panel ⇒ focus vào panel; Esc ⇒ đóng và focus về đúng dòng", async () => {
+    const detail = setup(false);
+    server.use(
+      http.get(`${API}/projects/:id/segments/:segmentId`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/segments/{id}")),
+      ),
+    );
+    const { router } = renderApp(`/app/projects/${detail.project.id}/segments`);
+    const list = await screen.findByRole("list", { name: "Danh sách segment" });
+    const row = within(list).getAllByRole("link")[0]!;
+    const user = userEvent.setup();
+    await user.click(row);
+    const panel = await screen.findByRole("complementary", {
+      name: "Chi tiết segment",
+    });
+    await waitFor(() => expect(panel).toHaveFocus());
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(router.state.location.search).not.toHaveProperty("segment"),
+    );
+    await waitFor(() => expect(row).toHaveFocus());
   });
 });

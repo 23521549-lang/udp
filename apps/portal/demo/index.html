@@ -23,21 +23,78 @@
         z-index: 60;
         right: 12px;
         bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-        padding: 4px 10px;
+        max-width: calc(100vw - 24px);
+        font: 500 12px/1.4 var(--sans);
+        color: var(--ink);
+      }
+      .demo-badge summary {
+        display: flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 12px;
         border-radius: 999px;
         border: 1px solid var(--line-2);
         background: var(--amber-soft);
+        cursor: pointer;
+        list-style: none;
+      }
+      .demo-badge summary::-webkit-details-marker {
+        display: none;
+      }
+      .demo-badge summary::after {
+        content: "";
+        width: 6px;
+        height: 6px;
+        margin-left: 8px;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: translateY(1px) rotate(-135deg);
+      }
+      .demo-badge details[open] summary::after {
+        transform: translateY(-2px) rotate(45deg);
+      }
+      .demo-badge summary:focus-visible,
+      .demo-badge select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .demo-panel {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 6px);
+        display: grid;
+        gap: 10px;
+        width: min(280px, calc(100vw - 24px));
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid var(--line-2);
+        background: var(--panel);
+        box-shadow: 0 8px 24px color-mix(in oklab, var(--ink) 18%, transparent);
+      }
+      .demo-panel p {
+        margin: 0;
+        color: var(--ink-2);
+        font-weight: 400;
+      }
+      .demo-panel label {
+        display: grid;
+        gap: 4px;
+      }
+      .demo-panel select {
+        min-height: 32px;
+        padding: 0 8px;
+        border-radius: 8px;
+        border: 1px solid var(--line-2);
+        background: var(--raised);
         color: var(--ink);
-        font: 500 12px/1.4 var(--sans);
-        pointer-events: none;
+        font: inherit;
+        cursor: pointer;
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
-    <div class="demo-badge" role="note">
-      Bản xem thử · dữ liệu mẫu, không kết nối hệ thống thật
-    </div>
+    <aside class="demo-badge" id="demo-badge" aria-label="Bản xem thử"></aside>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

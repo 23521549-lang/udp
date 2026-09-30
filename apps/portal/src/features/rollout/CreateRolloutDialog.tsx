@@ -8,20 +8,25 @@ import { useNavigate } from "@tanstack/react-router";
 import { canaryPairOf } from "@udp/shared-types/rollout";
 import { useEffect, useState, type ReactNode } from "react";
 import { Dialog } from "../../components/Dialog";
+import { Field, focusFirstInvalid } from "../../components/Field";
+import { InfoTip } from "../../components/InfoTip";
 import { messagesOf, useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
-import { browserTimeZone } from "../../lib/format";
+import { browserTimeZone, formatDuration } from "../../lib/format";
 import { isApiError } from "../../lib/http";
 import { qk } from "../../lib/query-keys";
 import { flagApi } from "../flag/flag-api";
 import { useProjectContext } from "../project/ProjectLayout";
 import { rolloutApi, type CreateFlagRolloutInput } from "./rollout-api";
-import { MetricsSetupGuide, NumberField } from "./rollout-form";
+import {
+  MetricsSetupGuide,
+  NumberField,
+  unplacedErrors,
+  WORKLOAD_NAME,
+  WorkloadField,
+} from "./rollout-form";
 import { rolloutMessages } from "./rollout.messages";
 import { ServiceRolloutDialog } from "./ServiceRolloutDialog";
-
-const DNS_1123 =
-  /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
 
 /**
  * Tạo rollout FLAG_LEVEL (§10.9 RolloutCreateSheet v4, đóng góp C1).
@@ -40,15 +45,23 @@ const DNS_1123 =
  *
  * [Plan #51] Bước SCOPE của §10.9: "Theo flag" (hộp này) hay "Theo phiên bản" (`ServiceRolloutDialog`,
  * SERVICE_LEVEL qua Argo Rollouts/Flagger).
+ *
+ * [Plan #58 UX-29] `flag`: mở từ panel của một flag ("Phát hành dần") thì flag đó đã được chọn sẵn.
  */
 type FlagStrategy = "CANARY" | "ATTRIBUTE_SPLIT";
 type Scope = "FLAG_LEVEL" | "SERVICE_LEVEL";
 
-export function CreateRolloutDialog({ onClose }: { onClose: () => void }) {
+export function CreateRolloutDialog({
+  onClose,
+  flag,
+}: {
+  onClose: () => void;
+  flag?: { id: string; key: string };
+}) {
   const [scope, setScope] = useState<Scope>("FLAG_LEVEL");
   const picker = <ScopePicker value={scope} onChange={setScope} />;
   return scope === "FLAG_LEVEL" ? (
-    <FlagRolloutDialog onClose={onClose} scopePicker={picker} />
+    <FlagRolloutDialog onClose={onClose} scopePicker={picker} preset={flag} />
   ) : (
     <ServiceRolloutDialog onClose={onClose} scopePicker={picker} />
   );
@@ -83,12 +96,33 @@ function ScopePicker({
 
 const SPLIT_RULE_TYPES = new Set(["ATTRIBUTE_BASED", "SEGMENT"]);
 
+/** Khoá lỗi theo ô của máy chủ có ô trên form này — phần còn lại hiện ở câu chung */
+const PLACED = [
+  "flagEnvConfigId",
+  "targetingRuleId",
+  "targetVariantId",
+  "workloadName",
+] as const;
+/** Ô nhịp và ngưỡng — ẩn với ATTRIBUTE_SPLIT */
+const PLACED_CADENCE = [
+  "stepPercent",
+  "stepIntervalSeconds",
+  "analysisIntervalSeconds",
+  "warmUpRequests",
+  "thresholds.errorRate",
+  "thresholds.latencyP99Ms",
+  "thresholds.minErrors",
+  "thresholds.maxConsecutiveBreaches",
+] as const;
+
 function FlagRolloutDialog({
   onClose,
   scopePicker,
+  preset,
 }: {
   onClose: () => void;
   scopePicker: ReactNode;
+  preset: { id: string; key: string } | undefined;
 }) {
   const { form, flag: copy } = useMessages(rolloutMessages);
   const { project, env } = useProjectContext();
@@ -98,7 +132,7 @@ function FlagRolloutDialog({
 
   const [strategy, setStrategy] = useState<FlagStrategy>("CANARY");
   const split = strategy === "ATTRIBUTE_SPLIT";
-  const [flagId, setFlagId] = useState("");
+  const [flagId, setFlagId] = useState(preset?.id ?? "");
   const [ruleId, setRuleId] = useState("");
   const [variantId, setVariantId] = useState("");
   const [workloadName, setWorkloadName] = useState("");
@@ -112,8 +146,8 @@ function FlagRolloutDialog({
   const [breaches, setBreaches] = useState(2);
 
   // [Plan #41] Flag ACTIVE tìm ở máy chủ (FLAG_PAGE_SIZE hàng) — không tải trọn danh sách
-  const [flagSearch, setFlagSearch] = useState("");
-  const [flagTerm, setFlagTerm] = useState("");
+  const [flagSearch, setFlagSearch] = useState(preset?.key ?? "");
+  const [flagTerm, setFlagTerm] = useState(preset?.key ?? "");
   useEffect(() => {
     const t = setTimeout(() => {
       setFlagTerm(flagSearch.trim());
@@ -144,6 +178,8 @@ function FlagRolloutDialog({
   });
 
   const rule = rules.data?.rules.find((r) => r.id === ruleId);
+  const weights =
+    rule?.serve.kind === "distribution" ? rule.serve.weights : undefined;
   const pair =
     rule !== undefined && variantId !== ""
       ? canaryPairOf(rule.serve, variantId)
@@ -196,9 +232,15 @@ function FlagRolloutDialog({
     },
   });
   const fields = fieldErrorsOf(create.error);
+  // [Plan #58 UX-39] Gửi hỏng: focus tới ô lỗi đầu tiên (sau khi lỗi đã vẽ dưới ô)
+  useEffect(() => {
+    if (create.error !== null) {
+      focusFirstInvalid(document.querySelector<HTMLElement>("[role=dialog]"));
+    }
+  }, [create.error]);
 
   const activeFlags = flags.data?.flags ?? [];
-  const workloadOk = DNS_1123.test(workloadName);
+  const workloadOk = WORKLOAD_NAME.test(workloadName);
   const flagOff = envState !== undefined && !envState.isEnabled;
   const ready =
     pair?.kind === "ok" &&
@@ -209,6 +251,10 @@ function FlagRolloutDialog({
 
   const variantKey = (id: string) =>
     flag.data?.flag.variants.find((v) => v.id === id)?.key ?? id.slice(0, 8);
+  const unplaced = unplacedErrors(
+    fields,
+    split ? PLACED : [...PLACED, ...PLACED_CADENCE],
+  );
 
   return (
     <Dialog
@@ -234,7 +280,10 @@ function FlagRolloutDialog({
     >
       {scopePicker}
       <div className="f">
-        <span className="lbl">{form.strategy}</span>
+        <span className="lbl">
+          {form.strategy}
+          <InfoTip term="canary" />
+        </span>
         <div className="seg" role="group" aria-label={form.strategy}>
           {(["CANARY", "ATTRIBUTE_SPLIT"] as const).map((value) => (
             <button
@@ -252,136 +301,128 @@ function FlagRolloutDialog({
           ))}
         </div>
       </div>
-      <div className="f">
-        <label htmlFor="ro-flag">{copy.flag}</label>
-        <input
-          className="inp"
-          aria-label={copy.search}
-          placeholder={copy.searchPlaceholder}
-          value={flagSearch}
-          onChange={(e) => setFlagSearch(e.target.value)}
-        />
-        <select
-          id="ro-flag"
-          className="sel"
-          value={flagId}
-          onChange={(e) => {
-            setFlagId(e.target.value);
-            setRuleId("");
-            setVariantId("");
-          }}
-        >
-          <option value="">{copy.chooseFlag}</option>
-          {activeFlags.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.key}
-            </option>
-          ))}
-        </select>
-        {flagOff && (
-          <span className="field-error">{copy.flagOff(env.name)}</span>
-        )}
-      </div>
-      {flagId !== "" && (
-        <div className="f">
-          <label htmlFor="ro-rule">
-            {split ? copy.ruleSplit : copy.ruleRamp}
-          </label>
-          <select
-            id="ro-rule"
-            className="sel"
-            value={ruleId}
-            onChange={(e) => {
-              setRuleId(e.target.value);
-              setVariantId("");
-            }}
-          >
-            <option value="">{copy.chooseRule}</option>
-            {rules.data?.rules
-              .filter((r) => !split || SPLIT_RULE_TYPES.has(r.ruleType))
-              .map((r, i) => (
-                <option key={r.id} value={r.id}>
-                  {copy.ruleOption(
-                    i + 1,
-                    r.description,
-                    r.serve.kind !== "distribution",
-                  )}
+      <Field
+        id="ro-flag"
+        label={copy.flag}
+        error={flagOff ? copy.flagOff(env.name) : fields.flagEnvConfigId}
+      >
+        {(p) => (
+          <>
+            <input
+              className="inp"
+              aria-label={copy.search}
+              placeholder={copy.searchPlaceholder}
+              value={flagSearch}
+              onChange={(e) => setFlagSearch(e.target.value)}
+            />
+            <select
+              {...p}
+              className="sel"
+              value={flagId}
+              onChange={(e) => {
+                setFlagId(e.target.value);
+                setRuleId("");
+                setVariantId("");
+              }}
+            >
+              <option value="">{copy.chooseFlag}</option>
+              {activeFlags.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.key}
                 </option>
               ))}
-          </select>
-        </div>
-      )}
-      {rule !== undefined && rule.serve.kind === "distribution" && (
-        <div className="f">
-          <label htmlFor="ro-variant">
-            {split ? copy.variantSplit : copy.variantRamp}
-          </label>
-          <select
-            id="ro-variant"
-            className="sel"
-            value={variantId}
-            onChange={(e) => setVariantId(e.target.value)}
-          >
-            <option value="">{copy.chooseVariant}</option>
-            {rule.serve.weights.map((w) => (
-              <option key={w.variantId} value={w.variantId}>
-                {copy.variantOption(variantKey(w.variantId), w.weight / 1000)}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      {pair?.kind === "invalid" && (
-        <p className="field-error" role="alert">
-          {copy.cannotRamp(copy.rampReason(pair.code, pair.branches))}
-        </p>
-      )}
-      {rule !== undefined && rule.serve.kind === "variant" && (
-        <p className="field-error" role="alert">
-          {copy.singleVariantRule}
-        </p>
-      )}
-      <div className="f">
-        <label htmlFor="ro-workload">{form.workload}</label>
-        <div className="line">
-          <input
-            id="ro-workload"
-            className="inp mono"
-            placeholder={form.workloadPlaceholder}
-            value={workloadName}
-            onChange={(e) => {
-              setWorkloadName(e.target.value.trim());
-              probe.reset();
-            }}
-          />
-          <button
-            type="button"
-            className="btn"
-            disabled={!workloadOk || probe.isPending}
-            onClick={() => probe.mutate()}
-          >
-            {probe.isPending ? form.checking : form.checkMetrics}
-          </button>
-        </div>
-        {workloadName !== "" && !workloadOk && (
-          <span className="field-error">{copy.workloadInvalid}</span>
+            </select>
+          </>
         )}
-        {probed?.hasSeries === true && (
-          <span className="c3">
-            {copy.hasMetrics(
-              probed.scrapeIntervalSec,
-              probed.minMetricWindowSeconds,
-            )}
-          </span>
-        )}
-        {probe.isError && (
-          <span className="field-error">
-            {isApiError(probe.error) && probe.error.status === 503
+      </Field>
+      {flagId !== "" && (
+        <Field
+          id="ro-rule"
+          label={split ? copy.ruleSplit : copy.ruleRamp}
+          error={
+            rule?.serve.kind === "variant"
+              ? copy.singleVariantRule
+              : fields.targetingRuleId
+          }
+        >
+          {(p) => (
+            <select
+              {...p}
+              className="sel"
+              value={ruleId}
+              onChange={(e) => {
+                setRuleId(e.target.value);
+                setVariantId("");
+              }}
+            >
+              <option value="">{copy.chooseRule}</option>
+              {rules.data?.rules
+                .filter((r) => !split || SPLIT_RULE_TYPES.has(r.ruleType))
+                .map((r, i) => (
+                  <option key={r.id} value={r.id}>
+                    {copy.ruleOption(
+                      i + 1,
+                      r.description,
+                      r.serve.kind !== "distribution",
+                    )}
+                  </option>
+                ))}
+            </select>
+          )}
+        </Field>
+      )}
+      {weights !== undefined && (
+        <Field
+          id="ro-variant"
+          label={split ? copy.variantSplit : copy.variantRamp}
+          error={
+            pair?.kind === "invalid"
+              ? copy.cannotRamp(copy.rampReason(pair.code, pair.branches))
+              : fields.targetVariantId
+          }
+        >
+          {(p) => (
+            <select
+              {...p}
+              className="sel"
+              value={variantId}
+              onChange={(e) => setVariantId(e.target.value)}
+            >
+              <option value="">{copy.chooseVariant}</option>
+              {weights.map((w) => (
+                <option key={w.variantId} value={w.variantId}>
+                  {copy.variantOption(variantKey(w.variantId), w.weight / 1000)}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+      )}
+      <WorkloadField
+        id="ro-workload"
+        value={workloadName}
+        onChange={(name) => {
+          setWorkloadName(name);
+          probe.reset();
+        }}
+        checking={probe.isPending}
+        onCheck={() => probe.mutate()}
+        hint={
+          probed?.hasSeries === true
+            ? copy.hasMetrics(
+                formatDuration(probed.scrapeIntervalSec),
+                formatDuration(probed.minMetricWindowSeconds),
+              )
+            : undefined
+        }
+        error={
+          probe.isError
+            ? isApiError(probe.error) && probe.error.status === 503
               ? copy.metricsUnreachable
-              : messageOf(probe.error)}
-          </span>
-        )}
-      </div>
+              : messageOf(probe.error)
+            : fields.workloadName
+        }
+      />
       {probed?.hasSeries === false && (
         <MetricsSetupGuide
           runtime={project.languageRuntime}
@@ -392,11 +433,15 @@ function FlagRolloutDialog({
       {!split && (
         <>
           <fieldset className="fs">
-            <legend>{form.cadence}</legend>
+            <legend>
+              {form.cadence}
+              <InfoTip term="step" />
+            </legend>
             <div className="grid-f">
               <NumberField
                 id="ro-step"
                 label={form.stepPercent}
+                error={fields.stepPercent}
                 value={stepPercent}
                 onChange={setStepPercent}
                 min={0.01}
@@ -406,7 +451,8 @@ function FlagRolloutDialog({
               <NumberField
                 id="ro-dwell"
                 label={form.dwell}
-                hint={copy.dwellHint}
+                hint={form.dwellHint}
+                error={fields.stepIntervalSeconds}
                 value={stepInterval}
                 onChange={setStepInterval}
                 min={1}
@@ -415,6 +461,7 @@ function FlagRolloutDialog({
                 id="ro-analysis"
                 label={form.analysis}
                 hint={copy.analysisHint}
+                error={fields.analysisIntervalSeconds}
                 value={analysisInterval}
                 onChange={setAnalysisInterval}
                 min={1}
@@ -422,6 +469,7 @@ function FlagRolloutDialog({
               <NumberField
                 id="ro-warm"
                 label={form.warmUp}
+                error={fields.warmUpRequests}
                 value={warmUp}
                 onChange={setWarmUp}
                 min={1}
@@ -429,11 +477,15 @@ function FlagRolloutDialog({
             </div>
           </fieldset>
           <fieldset className="fs">
-            <legend>{form.thresholds}</legend>
+            <legend>
+              {form.thresholds}
+              <InfoTip term="autoRollback" />
+            </legend>
             <div className="grid-f">
               <NumberField
                 id="ro-err"
                 label={form.errorRate}
+                error={fields["thresholds.errorRate"]}
                 value={errorRate}
                 onChange={setErrorRate}
                 min={0}
@@ -443,6 +495,8 @@ function FlagRolloutDialog({
               <NumberField
                 id="ro-lat"
                 label={form.latency}
+                hint={form.latencyHint}
+                error={fields["thresholds.latencyP99Ms"]}
                 value={latency}
                 onChange={setLatency}
                 min={1}
@@ -450,6 +504,7 @@ function FlagRolloutDialog({
               <NumberField
                 id="ro-minerr"
                 label={form.minErrors}
+                error={fields["thresholds.minErrors"]}
                 value={minErrors}
                 onChange={setMinErrors}
                 min={1}
@@ -457,7 +512,7 @@ function FlagRolloutDialog({
               <NumberField
                 id="ro-breach"
                 label={form.breaches}
-
+                error={fields["thresholds.maxConsecutiveBreaches"]}
                 value={breaches}
                 onChange={setBreaches}
                 min={1}
@@ -468,7 +523,9 @@ function FlagRolloutDialog({
       )}
       {create.isError && (
         <p role="alert" className="field-error">
-          {Object.values(fields)[0] ?? messageOf(create.error)}
+          {Object.keys(fields).length > 0
+            ? [form.fixFields, ...unplaced].join(" ")
+            : messageOf(create.error)}
         </p>
       )}
     </Dialog>

@@ -1,4 +1,5 @@
 import type {
+  ArchitectureWire,
   ProjectDetailResponseWire,
   RolloutDetailWire,
 } from "@udp/shared-types/wire";
@@ -169,6 +170,92 @@ describe("tạo rollout SERVICE_LEVEL", () => {
     expect(
       within(dialog).getByRole("button", { name: "Tạo rollout" }),
     ).toBeDisabled();
+  });
+
+  it("[Plan #58 UX-29] ô workload gợi ý workload đã deploy ở environment, vẫn gõ tay được", async () => {
+    const world = setup("flagger");
+    const arch = golden<{ architecture: ArchitectureWire }>(
+      "GET /projects/{id}/architecture",
+    );
+    const first = arch.architecture.environments[0]!;
+    arch.architecture.environments = [{ ...first, id: world.dev.id }];
+    server.use(
+      http.get(`${API}/projects/:id/architecture`, () =>
+        HttpResponse.json(arch),
+      ),
+    );
+    renderApp(
+      `/app/projects/${world.detail.project.id}/rollouts?env=${world.dev.id}`,
+    );
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Tạo rollout" }),
+    );
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Theo phiên bản",
+      }),
+    );
+    const input = await screen.findByLabelText(
+      "Workload (tên service trong cluster)",
+    );
+    await waitFor(() => expect(input).toHaveAttribute("list"));
+    const list = document.getElementById(input.getAttribute("list") ?? "");
+    expect(
+      [...(list?.querySelectorAll("option") ?? [])].map((o) => o.value),
+    ).toEqual(first.workloads.map((w) => w.name));
+    expect(input).toHaveAccessibleDescription(/đã deploy ở/);
+    // Luật tên nói bằng lời thường, không dẫn tên chuẩn
+    await user.type(input, "Web_1");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAccessibleDescription(/chữ thường, số, dấu gạch ngang/);
+    expect(screen.queryByText(/DNS-1123/)).toBeNull();
+  });
+
+  it("[Plan #58 UX-39] lỗi theo ô của máy chủ nằm dưới đúng ô, gắn vào ô, và focus về ô lỗi đầu tiên", async () => {
+    const { user, dialog } = await openServiceForm("flagger");
+    server.use(
+      http.post(`${API}/projects/:id/rollouts`, () =>
+        HttpResponse.json(
+          {
+            type: "about:blank",
+            title: "Validation failed",
+            status: 400,
+            errors: [
+              { field: "thresholds.latencyP99Ms", message: "Quá lớn" },
+              { field: "imageTag", message: "Không có tag này" },
+            ],
+            traceId: "t-1",
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await user.click(within(dialog).getByRole("button", { name: "UDP quyết" }));
+    await user.type(
+      within(dialog).getByLabelText("Workload (tên service trong cluster)"),
+      "web",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Kiểm tra metric" }),
+    );
+    await within(dialog).findByText(/Có metric/);
+    const tag = within(dialog).getByLabelText("Tag image mới");
+    await user.type(tag, "1.4.2");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Tạo rollout" }),
+    );
+
+    await waitFor(() => expect(tag).toHaveAttribute("aria-invalid", "true"));
+    expect(tag).toHaveAccessibleDescription(/Không có tag này/);
+    const latency = within(dialog).getByLabelText("Độ trễ p99 tối đa (ms)");
+    expect(latency).toHaveAttribute("aria-invalid", "true");
+    expect(latency).toHaveAccessibleDescription(/Quá lớn/);
+    // Ô lỗi đầu tiên theo thứ tự trên form nhận focus
+    await waitFor(() => expect(tag).toHaveFocus());
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "sửa các ô được đánh dấu",
+    );
   });
 });
 

@@ -171,7 +171,7 @@ function provision(
   });
   p.project.status = "PROVISIONING";
   p.preview.blockers = ["job-active"];
-  audit(db, p, "project.provision", "Project", p.project.id, null, {
+  audit(db, p, "project.provision", "ProvisioningJob", job.id, null, {
     confirmedMonthlyUsd,
   });
   return job;
@@ -252,8 +252,9 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
       }
       p.domains.preferences = body.preferences;
       p.domains.domainSetVersion += 1;
-      audit(db, p, "domain.update", "ProjectDomain", p.project.id, null, {
-        enabled: body.domains.map((d) => d.domainType),
+      audit(db, p, "domain.config.set", "Project", p.project.id, null, {
+        enabled: body.domains.map((d) => `${d.domainType}:${d.toolId}`),
+        preferences: body.preferences,
       });
       const running = p.project.status === "ACTIVE";
       const job = running ? newJob("DOMAIN_APPLY", "QUEUED") : null;
@@ -300,11 +301,11 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
         audit(
           db,
           p,
-          "cicd.secret.rotate",
-          "ProjectDomain",
+          "cicd.webhook_secret.rotate",
+          "DomainConfig",
           p.project.id,
           null,
-          null,
+          { provider: cicd.provider },
         );
         return ok({
           provider: cicd.provider,
@@ -388,10 +389,10 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
           db,
           p,
           "domain.upgrade",
-          "ProjectDomain",
+          "Project",
           p.project.id,
-          { version: versions.current },
-          { version: target },
+          { domainType: type, version: versions.current },
+          { domainType: type, version: target },
         );
         versions.current = target;
         versions.available = [];
@@ -416,11 +417,11 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
         audit(
           db,
           p,
-          "domain.retry",
-          "ProjectDomain",
+          "domain.reapply",
+          "Project",
           p.project.id,
-          { status: "ERROR" },
-          { status: "ACTIVE" },
+          { domainType: type, status: "ERROR" },
+          { domainType: type, status: "DEPLOYING" },
         );
         return ok({ job: newJob("DOMAIN_APPLY", "QUEUED") }, 202);
       },
@@ -491,7 +492,7 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
         }));
         p.project.status = "DRAFT";
         p.preview.blockers = [];
-        audit(db, p, "job.cancel", "ProvisioningJob", job.id, null, {
+        audit(db, p, "provision.cancel", "ProvisioningJob", job.id, null, {
           state: "FAILED",
         });
         return ok({ job }, 202);
