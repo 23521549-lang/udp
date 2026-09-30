@@ -10,6 +10,7 @@ import { applyLocale, currentLocale, messagesOf } from "../src/i18n";
 import { createQueryClient } from "../src/lib/query-client";
 import "../src/styles/prototype.css";
 import "../src/styles/portal.css";
+import "../src/styles/ux.css";
 import { installMockBackend } from "./mock/server";
 
 /**

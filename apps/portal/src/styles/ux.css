@@ -1,0 +1,8 @@
+/*
+ * [Plan #58] Tối ưu UX: mỗi khu một tệp để các thay đổi không chồng lên nhau khi làm song song. Nạp SAU
+ * `portal.css`, nên một quy tắc ở đây được phép sửa quy tắc cũ cùng độ ưu tiên.
+ */
+@import "./ux-shared.css";
+@import "./ux-flag.css";
+@import "./ux-project.css";
+@import "./ux-admin.css";

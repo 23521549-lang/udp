@@ -5,6 +5,11 @@ import type {
   ProjectDomainWire,
 } from "@udp/shared-types/wire";
 import { messagesOf } from "../../i18n";
+import {
+  DOMAIN_TYPES,
+  domainInfoMessages,
+  type KnownDomainType,
+} from "./domain-info.messages";
 import { domainLabelMessages } from "./domain-labels.messages";
 
 /**
@@ -72,3 +77,18 @@ export function toolNamer(
   }
   return (key) => names.get(key.toLowerCase()) ?? key;
 }
+
+const info = () => messagesOf(domainInfoMessages);
+const isKnown = (type: string): type is KnownDomainType =>
+  (DOMAIN_TYPES as readonly string[]).includes(type);
+
+/**
+ * [Plan #58 UX-7] Tên hiển thị của một domain từ mã (`GITOPS` ⇒ `GitOps`) — không in mã thô ra giao diện. Mã lạ
+ * (catalog mới hơn Portal) giữ nguyên để không giấu thông tin.
+ */
+export const domainName = (type: string): string =>
+  isKnown(type) ? info().name[type] : type;
+
+/** [Plan #58 UX-14] Một câu nói domain đó làm gì, bằng lời thường; mã lạ ⇒ `undefined` */
+export const domainPurpose = (type: string): string | undefined =>
+  isKnown(type) ? info().purpose[type] : undefined;
