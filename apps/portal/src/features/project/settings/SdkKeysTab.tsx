@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { SdkKeyWire } from "@udp/shared-types/wire";
 import { KeyRound } from "lucide-react";
 import { Fragment, useState } from "react";
@@ -6,6 +7,7 @@ import { CodeBlock } from "../../../components/CodeBlock";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { Dialog } from "../../../components/Dialog";
 import { Icon } from "../../../components/Icon";
+import { InfoTip } from "../../../components/InfoTip";
 import { Empty, ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
 import { useMessages } from "../../../i18n";
@@ -15,6 +17,7 @@ import { qk } from "../../../lib/query-keys";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
 import { can } from "../roles";
+import { SdkQuickstart } from "./SdkQuickstart";
 import { settingsMessages } from "./settings.messages";
 
 const KEY_TYPES = ["SERVER", "CLIENT"] as const;
@@ -23,7 +26,23 @@ export function SdkKeysTab() {
   const m = useMessages(settingsMessages).keys;
   const { project, env } = useProjectContext();
   const queryClient = useQueryClient();
-  const [creating, setCreating] = useState(false);
+  const isOwner = can(project.myRole, "OWNER");
+  // [Plan #58 UX-29] "Tạo SDK key" từ Ctrl K mở thẳng hộp tạo; đóng hộp thì bỏ lệnh khỏi URL (tải lại không mở lại)
+  const once = useSearch({ from: "/app/projects/$projectId/settings" }).new;
+  const navigate = useNavigate();
+  const [creating, setCreating] = useState(once === "1" && isOwner);
+  const closeCreate = (): void => {
+    setCreating(false);
+    if (once === undefined) return;
+    void navigate({
+      to: ".",
+      replace: true,
+      search: (prev: Record<string, unknown>) => {
+        const { new: _once, ...rest } = prev;
+        return rest;
+      },
+    });
+  };
   const [revoking, setRevoking] = useState<SdkKeyWire | null>(null);
   const keys = useQuery({
     queryKey: qk.sdkKeys(project.id, env.id),
@@ -40,13 +59,13 @@ export function SdkKeysTab() {
       });
     },
   });
-  const isOwner = can(project.myRole, "OWNER");
   const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
 
   return (
     <section aria-label={m.inEnv(env.name)}>
       <div className="sect">
         <h2>{m.inEnv(env.name)}</h2>
+        <InfoTip term="sdkKey" />
         {isOwner && (
           <div className="r">
             <button
@@ -63,8 +82,11 @@ export function SdkKeysTab() {
       <dl className="props">
         {KEY_TYPES.map((t) => (
           <Fragment key={t}>
-            <dt>{t}</dt>
-            <dd className="c2">{m.typeHint[t]}</dd>
+            <dt>{m.typeName[t]}</dt>
+            <dd className="c2">
+              {m.typeHint[t]}
+              {t === "CLIENT" && <InfoTip term="ofrep" />}
+            </dd>
           </Fragment>
         ))}
       </dl>
@@ -73,7 +95,21 @@ export function SdkKeysTab() {
       ) : keys.isError ? (
         <ErrorState error={keys.error} onRetry={() => void keys.refetch()} />
       ) : keys.data.keys.length === 0 ? (
-        <Empty title={m.empty} />
+        <Empty title={m.emptyTitle(env.name)}>
+          <p className="empty-why">{isOwner ? m.emptyBody : m.emptyNotOwner}</p>
+          {isOwner && (
+            <div className="empty-actions">
+              <button
+                type="button"
+                className="btn pri"
+                onClick={() => setCreating(true)}
+              >
+                <Icon of={KeyRound} />
+                {m.create}
+              </button>
+            </div>
+          )}
+        </Empty>
       ) : (
         <div className="lst">
           {keys.data.keys.map((k) => (
@@ -81,7 +117,7 @@ export function SdkKeysTab() {
               <span className="mono" translate="no">
                 {k.maskedKey}
               </span>
-              <span className="chip soft">{k.keyType}</span>
+              <span className="chip soft">{m.typeName[k.keyType]}</span>
               <span className="c3">{k.label ?? ""}</span>
               <span className="c3" style={{ marginLeft: "auto" }}>
                 {k.status === "revoked"
@@ -107,7 +143,8 @@ export function SdkKeysTab() {
           ))}
         </div>
       )}
-      {creating && <CreateKeyDialog onClose={() => setCreating(false)} />}
+      <SdkQuickstart level={2} />
+      {creating && <CreateKeyDialog onClose={closeCreate} />}
       {revoking !== null && (
         <ConfirmDialog
           title={m.revokeTitle}
@@ -139,7 +176,10 @@ function CreateKeyDialog({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [keyType, setKeyType] = useState<"SERVER" | "CLIENT">("SERVER");
   const [label, setLabel] = useState("");
-  const [secret, setSecret] = useState<string | null>(null);
+  const [secret, setSecret] = useState<{
+    key: string;
+    type: SdkKeyWire["keyType"];
+  } | null>(null);
 
   const create = useMutation({
     mutationFn: () =>
@@ -148,7 +188,7 @@ function CreateKeyDialog({ onClose }: { onClose: () => void }) {
         label: label.trim() === "" ? null : label.trim(),
       }),
     onSuccess: async (data) => {
-      setSecret(data.secretKey);
+      setSecret({ key: data.secretKey, type: data.key.keyType });
       await queryClient.invalidateQueries({
         queryKey: qk.sdkKeys(project.id, env.id),
       });
@@ -161,13 +201,16 @@ function CreateKeyDialog({ onClose }: { onClose: () => void }) {
         title={m.createdTitle}
         description={m.createdBody}
         onClose={onClose}
+        wide
         footer={
           <button type="button" className="btn pri" onClick={onClose}>
             {m.savedIt}
           </button>
         }
       >
-        <CodeBlock code={secret} label={m.sdkKey} copyLabel={m.copy} />
+        <CodeBlock code={secret.key} label={m.sdkKey} copyLabel={m.copy} />
+        {/* [Plan #58 UX-13] Có key rồi thì bước tiếp theo là dùng nó: ba bước cài SDK hợp với loại key */}
+        <SdkQuickstart keyType={secret.type} level={3} />
       </Dialog>
     );
   }
@@ -200,7 +243,7 @@ function CreateKeyDialog({ onClose }: { onClose: () => void }) {
             aria-pressed={keyType === type}
             onClick={() => setKeyType(type)}
           >
-            <b>{type}</b>
+            <b>{m.typeName[type]}</b>
             {m.typeHint[type]}
           </button>
         ))}

@@ -27,7 +27,7 @@ const SERVICE_TONE: Record<ServiceState, Tone> = {
   unknown: "unknown",
 };
 
-/** Sức khoẻ một service (`GET /admin/system/health`) — trang Tổng quan và trang Hệ thống dùng chung */
+/** Sức khoẻ một service (`GET /admin/system/health`) — trang Tổng quan và trang Kiến trúc nền tảng dùng chung */
 export const serviceStatus = (
   status: ServiceState,
 ): { tone: Tone; label: string } => ({
@@ -86,4 +86,60 @@ export function certificateVerdict(
     return { tone: "warn", label: copy().certificate.expiring };
   }
   return { tone: "ok", label: copy().certificate.valid };
+}
+
+/** Giờ Việt Nam (Asia/Ho_Chi_Minh) là UTC+7 quanh năm: không có giờ mùa hè */
+const VIETNAM_OFFSET_MINUTES = 7 * 60;
+const DAY_MINUTES = 24 * 60;
+
+/**
+ * [Plan #58 UX-22] Lịch của CronJob sao lưu viết theo giờ UTC (`timeZone: Etc/UTC` ở `deploy/k8s/overlays/vm/backup.yaml`);
+ * người đọc cần giờ Việt Nam: "30 19 * * *" ⇒ "02:30" mỗi ngày. Chỉ hiểu dạng "phút giờ * * *"; dạng khác trả `null` và
+ * màn hình giữ nguyên chuỗi cron thay vì đoán.
+ */
+export function dailyAtVietnam(cron: string): string | null {
+  const match = /^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*$/.exec(cron.trim());
+  if (match === null) return null;
+  const minute = Number(match[1]);
+  const hour = Number(match[2]);
+  if (minute > 59 || hour > 23) return null;
+  const local = (hour * 60 + minute + VIETNAM_OFFSET_MINUTES) % DAY_MINUTES;
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${pad(Math.floor(local / 60))}:${pad(local % 60)}`;
+}
+
+/** Ngưỡng cam của thanh mức dùng (`Meter`, DESIGN.md §6) — trên ngưỡng này tín hiệu không còn "xanh" */
+const METER_HIGH = 0.8;
+
+export type PlatformSignal =
+  "machine" | "database" | "backup" | "certificate" | "release";
+
+/**
+ * [Plan #58 UX-27] Tín hiệu nào đang "xanh hẳn" — đọc được, phán quyết ổn, mức dùng dưới ngưỡng cam. Tín hiệu xanh gọn
+ * thành một dòng ở Tổng quan; tín hiệu còn lại giữ thẻ đầy đủ. Không đọc được KHÔNG phải xanh.
+ */
+export function greenSignals(
+  p: AdminPlatformWire,
+  databaseBytes: number | null,
+  now: number = Date.now(),
+): Record<PlatformSignal, boolean> {
+  const node = p.node;
+  const volume = p.postgresVolume;
+  return {
+    machine:
+      node.state === "ok" &&
+      idleRisk(node).tone === "ok" &&
+      node.cpuUsedCores / node.cpuCores < METER_HIGH &&
+      node.memoryUsedBytes / node.memoryBytes < METER_HIGH,
+    database:
+      volume.state === "ok" &&
+      databaseBytes !== null &&
+      databaseBytes / volume.capacityBytes < METER_HIGH,
+    backup:
+      p.backup.state === "ok" && backupVerdict(p.backup, now).tone === "ok",
+    certificate:
+      p.certificate.state === "ok" &&
+      certificateVerdict(p.certificate, now).tone === "ok",
+    release: p.release !== null,
+  };
 }

@@ -4,6 +4,7 @@ import { Info } from "lucide-react";
 import { useRef, useState } from "react";
 import type { NewProjectSearch } from "../../app/router";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { ErrorState, Loading } from "../../components/States";
 import { useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
@@ -14,7 +15,7 @@ import { JobLog } from "../provisioning/JobLog";
 import { PreviewPanel } from "../provisioning/PreviewPanel";
 import { CloudPanel } from "./cloud/CloudPanel";
 import { projectApi, type CreateProjectInput } from "./project-api";
-import { projectMessages } from "./project.messages";
+import { projectMessages, type WizardStep } from "./project.messages";
 
 const RUNTIMES = [
   { id: "nodejs", label: "Node.js" },
@@ -109,6 +110,85 @@ function useOpenProject(project: PublicProjectWire) {
     });
 }
 
+/** Năm bước của wizard; ba bước giữa nằm trên URL (`?step=`) nên quay lại được */
+const STEPS: readonly WizardStep[] = [
+  "project",
+  "cloud",
+  "domains",
+  "preview",
+  "deploy",
+];
+const isUrlStep = (s: WizardStep): s is NonNullable<NewProjectSearch["step"]> =>
+  s === "cloud" || s === "domains" || s === "preview";
+
+/**
+ * [Plan #58 UX-15] Thanh năm bước (NN/g về wizard): người dùng thấy mình ở đâu, còn bao nhiêu, và bấm một bước đã
+ * qua để quay lại. Bước 1 đã tạo project nên không quay về được (quay về là tạo trùng); bước 5 chỉ tới khi bấm Bắt đầu.
+ */
+function Stepper({
+  current,
+  projectId,
+}: {
+  current: WizardStep;
+  projectId?: string;
+}) {
+  const m = useMessages(projectMessages).wizard;
+  const at = STEPS.indexOf(current);
+  return (
+    <nav aria-label={m.steps}>
+      <ol className="wz-steps">
+        {STEPS.map((s, i) => {
+          const label = (
+            <>
+              <span className="wz-n">{i + 1}</span>
+              {m.stepName[s]}
+              {i < at && <span className="visually-hidden"> {m.stepDone}</span>}
+            </>
+          );
+          return (
+            <li
+              key={s}
+              className={i < at ? "done" : undefined}
+              aria-current={i === at ? "step" : undefined}
+            >
+              {i < at && projectId !== undefined && isUrlStep(s) ? (
+                <Link
+                  to="/app/projects/new"
+                  search={{ project: projectId, step: s }}
+                >
+                  {label}
+                </Link>
+              ) : (
+                <span>{label}</span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+/** Nút Quay lại của một bước giữa: về bước trước, cùng project */
+function BackLink({
+  projectId,
+  to,
+}: {
+  projectId: string;
+  to: NonNullable<NewProjectSearch["step"]>;
+}) {
+  const m = useMessages(projectMessages).wizard;
+  return (
+    <Link
+      to="/app/projects/new"
+      search={{ project: projectId, step: to }}
+      className="btn wz-back"
+    >
+      {m.back}
+    </Link>
+  );
+}
+
 function WizardBar({ step }: { step: string }) {
   const m = useMessages(projectMessages);
   return (
@@ -138,7 +218,11 @@ function CloudStep({
       <WizardBar step={m.step2} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
-          <h1 className="title">{m.cloudTitle}</h1>
+          <Stepper current="cloud" projectId={project.id} />
+          <div className="title-row">
+            <h1 className="title">{m.cloudTitle}</h1>
+            <InfoTip term="byoc" />
+          </div>
           <p className="lead">{m.cloudLead(project.name)}</p>
           <CloudPanel
             projectId={project.id}
@@ -174,7 +258,11 @@ function DomainStep({
       <WizardBar step={m.step3} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
-          <h1 className="title">{m.domainTitle}</h1>
+          <Stepper current="domains" projectId={project.id} />
+          <div className="title-row">
+            <h1 className="title">{m.domainTitle}</h1>
+            <InfoTip term="domain" />
+          </div>
           <p className="lead">{m.domainLead}</p>
           <DomainPanel
             projectId={project.id}
@@ -184,6 +272,7 @@ function DomainStep({
             onSaved={() => setSaved(true)}
           />
           <div className="wizard-nav">
+            <BackLink projectId={project.id} to="cloud" />
             <button
               type="button"
               className={saved ? "btn pri" : "btn"}
@@ -212,7 +301,11 @@ function PreviewStep({
       <WizardBar step={m.step4} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
-          <h1 className="title">{m.previewTitle}</h1>
+          <Stepper current="preview" projectId={project.id} />
+          <div className="title-row">
+            <h1 className="title">{m.previewTitle}</h1>
+            <InfoTip term="provisioning" />
+          </div>
           <p className="lead">{m.previewLead}</p>
           <PreviewPanel
             projectId={project.id}
@@ -220,6 +313,7 @@ function PreviewStep({
             onStarted={(job) => onStarted(job.id)}
           />
           <div className="wizard-nav">
+            <BackLink projectId={project.id} to="domains" />
             <button type="button" className="btn" onClick={open}>
               {m.later}
             </button>
@@ -244,6 +338,7 @@ function JobStep({
       <WizardBar step={m.step5} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
+          <Stepper current="deploy" projectId={project.id} />
           <h1 className="title">{m.jobTitle}</h1>
           <p className="lead">{m.jobLead}</p>
           <JobLog projectId={project.id} jobId={jobId} role={project.myRole} />
@@ -312,8 +407,12 @@ function CreateStep({
       <WizardBar step={m.step1} />
       <div className="scroll">
         <div className="page" style={{ maxWidth: 640 }}>
+          <Stepper current="project" />
           <h1 className="title">{t.createProject}</h1>
-          <p className="lead">{m.createLead}</p>
+          <p className="lead">
+            {m.createLead}
+            <InfoTip term="environment" />
+          </p>
           <div className="lock">
             <Icon of={Info} />
             <span>{m.draftNote}</span>
@@ -437,7 +536,7 @@ function CreateStep({
                 className="btn pri"
                 disabled={create.isPending}
               >
-                {create.isPending ? t.creating : t.createProject}
+                {create.isPending ? t.creating : m.createAndContinue}
               </button>
             </div>
           </form>

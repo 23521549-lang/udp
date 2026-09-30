@@ -3,11 +3,13 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { Icon } from "../../components/Icon";
 import { Pager } from "../../components/Pager";
-import { Empty, ErrorState, Loading } from "../../components/States";
+import { ErrorState, Loading } from "../../components/States";
 import { formatDateTime, relativeTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
+import { FirstRun } from "../home/FirstRun";
+import { useAttentionByProject } from "../home/home-api";
 import { PROJECT_PAGE_SIZE, projectApi } from "./project-api";
-import { ProjectStatus } from "./ProjectStatus";
+import { ProjectHealth, ProjectStatus } from "./ProjectStatus";
 import { rolesMessages } from "./roles.messages";
 import { useMessages } from "../../i18n";
 import { PageHead } from "../../components/PageHead";
@@ -30,6 +32,7 @@ export function ProjectsPage() {
     placeholderData: keepPreviousData,
   });
   const total = projects.data?.total ?? 0;
+  const attention = useAttentionByProject();
 
   return (
     <>
@@ -54,12 +57,8 @@ export function ProjectsPage() {
               error={projects.error}
               onRetry={() => void projects.refetch()}
             />
-          ) : projects.data.projects.length === 0 ? (
-            <Empty title={m.list.empty}>
-              <Link to="/app/projects/new" className="btn pri">
-                {m.list.createFirst}
-              </Link>
-            </Empty>
+          ) : projects.data.total === 0 ? (
+            <FirstRun />
           ) : (
             <div className="lst" role="list" aria-label={m.list.label}>
               {projects.data.projects.map((p) => (
@@ -79,6 +78,7 @@ export function ProjectsPage() {
                         status={p.status}
                         expiresAt={p.expiresAt}
                       />
+                      <ProjectHealth attention={attention?.get(p.id)} />
                     </span>
                     <span
                       className="c3 num"

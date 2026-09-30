@@ -39,3 +39,21 @@ export function ProjectStatus({
     </>
   );
 }
+
+/**
+ * [Plan #58 UX-5] Sức khoẻ, tách khỏi vòng đời: số việc cần xử lý của project (cùng số với trang chủ). Chưa có số
+ * (đang tải, lỗi) thì không vẽ gì: thà thiếu nhãn còn hơn nói "Không có vấn đề" khi chưa biết.
+ */
+export function ProjectHealth({
+  attention,
+}: {
+  attention: number | undefined;
+}) {
+  const m = useMessages(projectStatusMessages).health;
+  if (attention === undefined) return null;
+  return attention > 0 ? (
+    <StatusLabel tone="warn">{m.issues(attention)}</StatusLabel>
+  ) : (
+    <StatusLabel tone="ok">{m.none}</StatusLabel>
+  );
+}

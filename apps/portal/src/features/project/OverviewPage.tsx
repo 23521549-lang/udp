@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import type { ArchitectureWire } from "@udp/shared-types/wire";
 import { Lock, Rocket, Server } from "lucide-react";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { PageHead } from "../../components/PageHead";
 import { ErrorState, Loading } from "../../components/States";
 import { formatDateTime, formatPercent } from "../../lib/format";
@@ -15,13 +16,16 @@ import { deploymentApi } from "../deployment/deployment-api";
 import { useFlagCounts } from "../flag/flag-counts";
 import { rolloutApi } from "../rollout/rollout-api";
 import { RolloutStatusLabel } from "../rollout/rollout-status";
+import { useAttentionByProject } from "../home/home-api";
+import { GettingStarted } from "./GettingStarted";
 import { CloudCard } from "./cloud/CloudCard";
 import { PROVIDER_LABEL } from "./cloud/cloud-labels";
 import { ProjectBar } from "./ProjectBar";
 import { useProjectContext } from "./ProjectLayout";
-import { ProjectStatus } from "./ProjectStatus";
+import { ProjectHealth, ProjectStatus } from "./ProjectStatus";
 import { projectApi } from "./project-api";
 import { projectMessages } from "./project.messages";
+import { can } from "./roles";
 import { rolesMessages } from "./roles.messages";
 import { useMessages } from "../../i18n";
 
@@ -55,6 +59,8 @@ export function OverviewPage() {
     queryKey: qk.architecture(project.id),
     queryFn: () => architectureApi.get(project.id),
   });
+  const attention = useAttentionByProject()?.get(project.id);
+  const owner = can(project.myRole, "OWNER");
 
   const running =
     rollouts.data?.rollouts.filter(
@@ -73,6 +79,14 @@ export function OverviewPage() {
                 status={project.status}
                 expiresAt={project.expiresAt}
               />
+              {/* [Plan #58 UX-5] Sức khoẻ tách khỏi vòng đời; danh sách việc ở trang chủ */}
+              {attention !== undefined && attention > 0 ? (
+                <Link to="/app/home">
+                  <ProjectHealth attention={attention} />
+                </Link>
+              ) : (
+                <ProjectHealth attention={attention} />
+              )}
               <span>{m.yourRole(roles[project.myRole])}</span>
             </span>
           }
@@ -86,12 +100,29 @@ export function OverviewPage() {
               label: m.runningRollouts,
             },
             {
-              value: members.data?.members.length ?? "…",
+              // [Plan #58 UX-29] Số thành viên là lối tới trang mời
+              value:
+                members.data === undefined ? (
+                  "…"
+                ) : (
+                  <Link
+                    to="/app/projects/$projectId/settings"
+                    params={{ projectId: project.id }}
+                    search={{
+                      tab: "members",
+                      ...(owner ? { new: "1" as const } : {}),
+                    }}
+                    aria-label={m.membersLink(members.data.members.length)}
+                  >
+                    {members.data.members.length}
+                  </Link>
+                ),
               label: m.members,
             },
           ]}
         />
         <div className="page">
+          {owner && <GettingStarted />}
           <div className="kpis">
             {arch.data === undefined ? (
               <div className="kpi" aria-label={m.cloud}>
@@ -114,6 +145,7 @@ export function OverviewPage() {
                   <Icon of={Server} />
                 </span>
                 {m.cluster}
+                <InfoTip term="cluster" />
               </div>
               {cluster === null ? (
                 <div className="c3">{m.noCluster}</div>
@@ -122,7 +154,7 @@ export function OverviewPage() {
                   <div className="mono" translate="no">
                     {cluster.clusterId}
                   </div>
-                  <div className="c3 mono ellipsis" translate="no">
+                  <div className="c3 mono ov-url" translate="no">
                     {cluster.apiEndpoint}
                   </div>
                 </>
@@ -172,6 +204,7 @@ export function OverviewPage() {
           <section aria-labelledby="ov-health">
             <div className="sect">
               <h2 id="ov-health">{m.health}</h2>
+              <InfoTip term="domain" />
               <div className="r">
                 <Link
                   to="/app/projects/$projectId/domains"
@@ -213,8 +246,9 @@ export function OverviewPage() {
           <section aria-labelledby="ov-envs">
             <div className="sect">
               <h2 id="ov-envs">{m.environments}</h2>
+              <InfoTip term="environment" />
             </div>
-            <ul className="lst" aria-labelledby="ov-envs">
+            <ul className="lst ov-envs" aria-labelledby="ov-envs">
               {[...envs]
                 .sort((a, b) => a.rank - b.rank)
                 .map((e) => (

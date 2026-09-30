@@ -2,9 +2,17 @@ import { CAPABILITY_IDS, type CapabilityId } from "@udp/shared-types";
 import type { DomainValidationWire } from "@udp/shared-types/wire";
 import { CircleAlert, CircleCheck, Info } from "lucide-react";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { useMessages } from "../../i18n";
 import { issueText } from "./domain-labels";
 import { domainMessages } from "./domain.messages";
+
+/** Lỗi nói về capability: kèm lời giải thích của từ đó */
+const CAPABILITY_ISSUES: ReadonlySet<string> = new Set([
+  "MISSING_CAPABILITY",
+  "MISSING_ANY_OF",
+  "AMBIGUOUS_PROVIDER",
+]);
 
 /**
  * Kết quả kiểm trạng thái đích (§5.3 bảng thông báo, §10.12): mỗi lỗi là một câu có hành
@@ -42,6 +50,10 @@ export function ValidationPanel({
             <div key={`${issue.code}-${issue.subject}`}>
               <span>
                 <Icon of={CircleAlert} /> {issueText(issue, nameOf)}
+                {/* [Plan #58 UX-19] "capability" là từ lạ: giải thích ngay tại câu lỗi dùng nó */}
+                {CAPABILITY_ISSUES.has(issue.code) && (
+                  <InfoTip term="capability" />
+                )}
               </span>{" "}
               {canEdit &&
                 (action?.type === "ENABLE_DOMAIN" ||

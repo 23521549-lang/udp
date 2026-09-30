@@ -36,6 +36,11 @@ export function useProjectHandlers(detail: ProjectDetailResponseWire): void {
     http.get(`${API}/projects/:id/flags`, () =>
       HttpResponse.json(golden("GET /projects/{id}/flags")),
     ),
+    // [Plan #58 UX-12, UX-5] Thẻ "Bắt đầu" (SDK key của mọi env) và sức khoẻ project (số việc cần xử lý của trang chủ)
+    http.get(`${API}/projects/:id/environments/:envId/keys`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/environments/{id}/keys")),
+    ),
+    http.get(`${API}/home`, () => HttpResponse.json(golden("GET /home"))),
   );
 }
 

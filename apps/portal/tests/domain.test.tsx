@@ -424,11 +424,13 @@ describe("thao tác Day-2 ở chi tiết domain", () => {
     renderApp(`${domainsUrl(detail)}/MONITORING`);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: /Quét drift ngay/ }),
+      await screen.findByRole("button", { name: /Kiểm lệch cấu hình ngay/ }),
     );
     await waitFor(() => expect(calls.scanCount()).toBe(1));
-    const result = await screen.findByRole("status", { name: "Kết quả drift" });
-    expect(within(result).getByText(/Đã trôi/)).toBeInTheDocument();
+    const result = await screen.findByRole("status", {
+      name: "Kết quả kiểm lệch cấu hình",
+    });
+    expect(within(result).getByText("Lệch cấu hình")).toBeInTheDocument();
   });
 
   it("bản đang chạy cũ hơn registry ⇒ nút nâng cấp; production đòi gõ tên domain rồi hiện tiến độ", async () => {
@@ -461,7 +463,7 @@ describe("thao tác Day-2 ở chi tiết domain", () => {
     useProjectHandlers(detail);
     useDetailHandlers("1.0.0");
     renderApp(`${domainsUrl(detail)}/MONITORING`);
-    await screen.findByRole("button", { name: /Quét drift ngay/ });
+    await screen.findByRole("button", { name: /Kiểm lệch cấu hình ngay/ });
     expect(
       screen.queryByRole("button", { name: /Nâng cấp/ }),
     ).not.toBeInTheDocument();
@@ -539,8 +541,10 @@ describe("chi tiết domain", () => {
       ),
     );
     renderApp(`${domainsUrl(detail)}/MONITORING`);
-    const result = await screen.findByRole("status", { name: "Kết quả drift" });
-    expect(within(result).getByText(/Đã trôi/)).toBeInTheDocument();
+    const result = await screen.findByRole("status", {
+      name: "Kết quả kiểm lệch cấu hình",
+    });
+    expect(within(result).getByText("Lệch cấu hình")).toBeInTheDocument();
     expect(within(result).getByText(/retention 15d/)).toBeInTheDocument();
   });
 });

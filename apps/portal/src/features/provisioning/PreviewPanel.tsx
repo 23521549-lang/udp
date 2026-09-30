@@ -11,6 +11,8 @@ import { ErrorState, Loading } from "../../components/States";
 import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import { qk } from "../../lib/query-keys";
+import { domainName } from "../domain/domain-labels";
+import { PROVIDER_LABEL } from "../project/cloud/cloud-labels";
 import { can } from "../project/roles";
 import { provisioningApi } from "./provisioning-api";
 import { formatUsd } from "../../lib/format";
@@ -95,8 +97,10 @@ function Preview({
       <dl className="props">
         <dt>{m.cloud}</dt>
         <dd>
-          {preview.provider}
-          <span className="chip soft">{preview.region}</span>
+          {PROVIDER_LABEL[preview.provider]}
+          <span className="chip soft" translate="no">
+            {preview.region}
+          </span>
         </dd>
         <dt>{m.cluster}</dt>
         <dd>{m.nodes(preview.cluster.nodeCount, preview.cluster.nodeSize)}</dd>
@@ -139,23 +143,34 @@ function Preview({
         {m.pricing(preview.cost.isEstimate, preview.cost.pricingAsOf)}
       </p>
 
-      <h2 className="h2">{m.buildOrder}</h2>
-      <ol className="plan-list" aria-label={m.resourceOrder}>
-        {[...preview.steps.network, ...preview.steps.cluster].map((name) => (
-          <li key={name} className="mono">
-            {name}
-          </li>
-        ))}
-      </ol>
-      {preview.deployOrder.length > 0 && (
-        <ol className="plan-list" aria-label={m.domainOrder}>
-          {preview.deployOrder.map((tier, i) => (
-            <li key={tier.join(",")}>
-              {m.stage(i + 1, <span className="mono">{tier.join(", ")}</span>)}
+      {/*
+       * [Plan #58 UX-15] Danh sách tài nguyên thô (mười mấy tên) gọn vào một mục mở được: nút Bắt đầu và số tiền là
+       * thứ cần thấy ngay, thứ tự dựng là chi tiết cho ai muốn xem.
+       */}
+      <details className="plan-details">
+        <summary>
+          {m.buildOrderSummary(
+            preview.steps.network.length + preview.steps.cluster.length,
+            preview.deployOrder.length,
+          )}
+        </summary>
+        <ol className="plan-list" aria-label={m.resourceOrder}>
+          {[...preview.steps.network, ...preview.steps.cluster].map((name) => (
+            <li key={name} className="mono" translate="no">
+              {name}
             </li>
           ))}
         </ol>
-      )}
+        {preview.deployOrder.length > 0 && (
+          <ol className="plan-list" aria-label={m.domainOrder}>
+            {preview.deployOrder.map((tier, i) => (
+              <li key={tier.join(",")}>
+                {m.stage(i + 1, tier.map(domainName).join(", "))}
+              </li>
+            ))}
+          </ol>
+        )}
+      </details>
 
       {blocked && (
         <div className="alert amber" role="status" aria-label={m.blocked}>

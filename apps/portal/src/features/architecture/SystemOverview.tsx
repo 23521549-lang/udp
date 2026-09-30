@@ -31,6 +31,7 @@ import { useState, type ReactNode } from "react";
 import { BarChart } from "../../components/BarChart";
 import { DiagramBar } from "../../components/DiagramBar";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { LinkLayer } from "../../components/LinkLayer";
 import { StatusLabel } from "../../components/StatusLabel";
 import { useMessages } from "../../i18n";
@@ -164,10 +165,11 @@ function SystemMap({
     />
   );
   const zone = (z: SystemZone, children: ReactNode) => (
+    // [Plan #58 a11y] Vùng là h2 ngay dưới h1 của trang (trước là h3: nhảy bậc); environment là h3
     <section className={`sys-zone sys-${z}`} aria-labelledby={`sys-${z}-h`}>
-      <h3 id={`sys-${z}-h`} className="sys-zone-h">
+      <h2 id={`sys-${z}-h`} className="sys-zone-h">
         {copy.zone[z]}
-      </h3>
+      </h2>
       <div className="sys-zone-b">{children}</div>
     </section>
   );
@@ -218,9 +220,9 @@ function SystemMap({
           aria-labelledby="sys-envs-h"
           data-node={ENVS}
         >
-          <h3 id="sys-envs-h" className="sys-zone-h">
+          <h2 id="sys-envs-h" className="sys-zone-h">
             {copy.environments}
-          </h3>
+          </h2>
           <div className="sys-env-grid">
             {arch.environments.map((e) => (
               <EnvFrame key={e.id} env={e} projectId={projectId} />
@@ -321,17 +323,20 @@ function EnvFrame({
       data-env-production={env.isProduction ? "true" : undefined}
       aria-labelledby={`sys-env-${env.id}`}
     >
-      <h4 id={`sys-env-${env.id}`}>
+      <h3 id={`sys-env-${env.id}`}>
         <span translate="no">{env.name}</span>
         {env.isProduction && (
           <span className="chip soft">{copy.production}</span>
         )}
-      </h4>
+      </h3>
       <span className="mono c3 sys-ns" translate="no">
         {env.namespace}
       </span>
       {env.workloads.length === 0 ? (
-        <p className="c3 sys-empty">{copy.noWorkloads}</p>
+        <p className="c3 sys-empty">
+          {copy.noWorkloads}
+          <InfoTip term="workload" />
+        </p>
       ) : (
         <ul className="sys-wls">
           {env.workloads.map((w) => (
@@ -402,7 +407,7 @@ function SystemKpis({
         <div className="c3">{copy.kpi.deploysSub(failure)}</div>
         <BarChart
           title={copy.kpi.deploys}
-          level={3}
+          level={2}
           height={44}
           captionHidden
           format={formatNumber}

@@ -225,7 +225,8 @@ describe("màn chính bằng tiếng Anh", () => {
     );
     renderApp("/app/home");
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Hi Tester" }),
+      // [Plan #58 UX-24] Tiếng Anh gọi bằng tên riêng (chữ ĐẦU): "Dev Tester" ⇒ "Hi Dev"
+      await screen.findByRole("heading", { level: 1, name: "Hi Dev" }),
     ).toBeInTheDocument();
     const list = await screen.findByRole("list", { name: "Needs attention" });
     expect(

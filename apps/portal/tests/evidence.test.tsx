@@ -93,6 +93,10 @@ const ADMIN = { ...USER, platformRole: "PLATFORM_ADMIN" as const };
 function useDoraHandler(): { days: string[] } {
   const days: string[] = [];
   server.use(
+    // [Plan #58 UX-26] Huy hiệu của menu Bảng điều khiển đọc Tổng quan
+    http.get(`${API}/admin/overview`, () =>
+      HttpResponse.json(golden("GET /admin/overview")),
+    ),
     http.get(`${API}/admin/evidence/dora`, ({ request }) => {
       days.push(new URL(request.url).searchParams.get("days") ?? "");
       return HttpResponse.json(golden("GET /admin/evidence/dora"));

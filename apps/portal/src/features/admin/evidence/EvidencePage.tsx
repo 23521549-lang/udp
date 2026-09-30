@@ -18,6 +18,7 @@ import {
 import { BarChart } from "../../../components/BarChart";
 import { componentsMessages } from "../../../components/components.messages";
 import { ErrorState, Loading } from "../../../components/States";
+import { InfoTip } from "../../../components/InfoTip";
 import { StatusLabel, type Tone } from "../../../components/StatusLabel";
 import { useMessages } from "../../../i18n";
 import { downloadText, toCsv } from "../../../lib/download";
@@ -172,6 +173,8 @@ function EvidenceCard({
         <h3 id={headingId}>
           <span translate="no">{experiment.id}</span> · {text.title}
         </h3>
+        {/* [Plan #58 UX-19] Số sống của E10 là DORA: giải thích ngay tại chỗ */}
+        {experiment.source === "live" && <InfoTip term="dora" />}
         <div className="r">
           <StatusLabel tone={TONE[status]}>{m.status[status]}</StatusLabel>
         </div>

@@ -47,10 +47,11 @@ export function SettingsPage() {
                 onClick={() =>
                   void navigate({
                     to: ".",
-                    search: (prev: Record<string, unknown>) => ({
-                      ...prev,
-                      tab: t,
-                    }),
+                    search: (prev: Record<string, unknown>) => {
+                      // `new` là lệnh một lần của tab đang mở, không đi theo sang tab khác
+                      const { new: _once, ...rest } = prev;
+                      return { ...rest, tab: t };
+                    },
                   })
                 }
               >

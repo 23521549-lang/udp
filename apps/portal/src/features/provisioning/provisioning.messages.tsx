@@ -48,7 +48,10 @@ export const provisioningMessages = defineMessages({
       total: "Tổng",
       pricing: (isEstimate: boolean, asOf: string) =>
         `${isEstimate ? "Ước tính" : "Giá"} theo bảng giá ngày ${asOf}; chi phí thật tính trên tài khoản cloud của bạn.`,
-      buildOrder: "Thứ tự dựng",
+      buildOrderSummary: (resources: number, stages: number) =>
+        stages === 0
+          ? `Xem thứ tự dựng ${String(resources)} tài nguyên`
+          : `Xem thứ tự dựng ${String(resources)} tài nguyên và ${String(stages)} bậc cài domain`,
       resourceOrder: "Thứ tự dựng tài nguyên",
       domainOrder: "Thứ tự cài domain",
       stage: (n: number, domains: ReactNode) => (
@@ -123,7 +126,10 @@ export const provisioningMessages = defineMessages({
       total: "Total",
       pricing: (isEstimate: boolean, asOf: string) =>
         `${isEstimate ? "Estimated" : "Priced"} from the price list as of ${asOf}; actual costs are billed to your cloud account.`,
-      buildOrder: "Build order",
+      buildOrderSummary: (resources: number, stages: number) =>
+        stages === 0
+          ? `View the build order of ${count(resources, "resource", "resources")}`
+          : `View the build order of ${count(resources, "resource", "resources")} and ${count(stages, "domain stage", "domain stages")}`,
       resourceOrder: "Resource build order",
       domainOrder: "Domain install order",
       stage: (n: number, domains: ReactNode) => (

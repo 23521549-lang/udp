@@ -12,7 +12,13 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { CicdPanel } from "./CicdPanel";
 import { domainApi } from "./domain-api";
 import { DomainActions } from "./DomainActions";
-import { domainStatusLabel, driftLabel } from "./domain-labels";
+import { InfoTip } from "../../components/InfoTip";
+import {
+  domainName,
+  domainPurpose,
+  domainStatusLabel,
+  driftLabel,
+} from "./domain-labels";
 import { domainMessages } from "./domain.messages";
 
 /**
@@ -34,13 +40,17 @@ export function DomainDetailPage() {
     queryFn: () => domainApi.drift(project.id, type),
   });
   const m = useMessages(domainMessages).detail;
+  // [Plan #58 UX-7] Tên đọc được ("GitOps") ở tiêu đề và breadcrumb, không phải mã GITOPS trên URL
+  const name = domainName(type);
+  const purpose = domainPurpose(type);
 
   return (
     <>
-      <ProjectBar title={m.title(type)} envScoped={false} />
+      <ProjectBar title={m.title(name)} envScoped={false} />
       <div className="scroll">
         <div className="page">
-          <h1 className="title">{type}</h1>
+          <h1 className="title">{name}</h1>
+          {purpose !== undefined && <p className="lead">{purpose}</p>}
           {domain.isPending && <Loading />}
           {domain.isError && <ErrorState error={domain.error} />}
           {domain.data !== undefined && (
@@ -83,7 +93,10 @@ export function DomainDetailPage() {
               </>
             )}
 
-          <h2 className="h2">{m.drift}</h2>
+          <div className="sect">
+            <h2>{m.drift}</h2>
+            <InfoTip term="drift" />
+          </div>
           {drift.isPending && <Loading />}
           {drift.isError && <ErrorState error={drift.error} />}
           {drift.data !== undefined && (

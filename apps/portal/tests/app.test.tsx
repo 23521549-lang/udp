@@ -100,7 +100,11 @@ describe("đăng nhập và guard", () => {
 describe("project và environment", () => {
   it("danh sách project hiện tên và vai do SERVER tính (myRole)", async () => {
     const list = golden<{ projects: { name: string }[] }>("GET /projects");
-    server.use(http.get(`${API}/projects`, () => HttpResponse.json(list)));
+    server.use(
+      http.get(`${API}/projects`, () => HttpResponse.json(list)),
+      // [Plan #58 UX-5] Sức khoẻ cạnh trạng thái: số việc cần xử lý từ trang chủ
+      http.get(`${API}/home`, () => HttpResponse.json(golden("GET /home"))),
+    );
     renderApp("/app/projects");
     const first = list.projects[0];
     expect(first).toBeDefined();

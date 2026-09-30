@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ArchitectureWire, ProjectRoleWire } from "@udp/shared-types/wire";
 import { Cloud } from "lucide-react";
 import { Icon } from "../../../components/Icon";
+import { InfoTip } from "../../../components/InfoTip";
 import { StatusLabel } from "../../../components/StatusLabel";
 import { useMessages } from "../../../i18n";
 import { relativeTime } from "../../../lib/format";
@@ -54,7 +55,9 @@ export function CloudCard({
             <span className="mono c3" translate="no">
               {cloud.region}
             </span>
-            <span className="chip soft">{cloud.mode}</span>
+            {/* [Plan #58 UX-7] Chế độ bằng lời, không phải mã BYOC */}
+            <span className="chip soft">{m.mode[cloud.mode]}</span>
+            {cloud.mode === "BYOC" && <InfoTip term="byoc" />}
           </div>
           <dl className="props compact">
             <dt>{m.auth}</dt>

@@ -5,13 +5,15 @@ import type {
   ArchitectureWire,
 } from "@udp/shared-types/wire";
 import { CircleAlert, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useRef, type RefObject } from "react";
 import { Icon } from "../../components/Icon";
 import { PageHead } from "../../components/PageHead";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { StatusLabel } from "../../components/StatusLabel";
 import { useMessages } from "../../i18n";
+import { InfoTip } from "../../components/InfoTip";
 import { formatDateTime } from "../../lib/format";
+import { usePeekFocus } from "../../lib/use-peek-focus";
 import { qk } from "../../lib/query-keys";
 import { driftLabel } from "../domain/domain-labels";
 import { ProjectBar } from "../project/ProjectBar";
@@ -74,6 +76,9 @@ export function ArchitecturePage() {
       : a.tools.find((t) => t.key === search.tool);
   const workloads =
     a?.environments.reduce((n, e) => n + e.workloads.length, 0) ?? 0;
+  // [Plan #58 a11y] Mở panel thì focus vào panel, Esc đóng, đóng xong focus về đúng thẻ đã mở nó
+  const panel = useRef<HTMLElement>(null);
+  usePeekFocus(panel, selected?.key, () => select(undefined));
 
   return (
     <>
@@ -134,6 +139,7 @@ export function ArchitecturePage() {
         </div>
         {a !== undefined && selected !== undefined && (
           <ToolPanel
+            panelRef={panel}
             arch={a}
             tool={selected}
             projectId={project.id}
@@ -160,7 +166,29 @@ function ArchitectureBody({
 }) {
   const m = useMessages(architectureMessages).page;
   if (arch.cloud === null && arch.tools.length === 0) {
-    return <Empty title={m.emptyTitle}>{m.emptyBody}</Empty>;
+    // [Plan #58 UX-17] Vì sao trống, cần gì trước, và lối đi tiếp
+    return (
+      <Empty title={m.emptyTitle}>
+        <p className="empty-why">{m.emptyBody}</p>
+        <div className="empty-actions">
+          <Link
+            to="/app/projects/$projectId/settings"
+            params={{ projectId }}
+            search={{ tab: "cloud" }}
+            className="btn pri"
+          >
+            {m.emptyCloud}
+          </Link>
+          <Link
+            to="/app/projects/$projectId/domains"
+            params={{ projectId }}
+            className="btn"
+          >
+            {m.emptyDomains}
+          </Link>
+        </div>
+      </Empty>
+    );
   }
   const health = healthSummary(arch.tools);
   const byKey = new Map(arch.tools.map((t) => [t.key, t]));
@@ -234,11 +262,13 @@ function ArchitectureBody({
  * bằng CHỮ, nên dưới 860px (lớp cạnh ẩn) vẫn đủ thông tin. Bấm một quan hệ là chọn công cụ kia.
  */
 function ToolPanel({
+  panelRef,
   arch,
   tool,
   projectId,
   onSelect,
 }: {
+  panelRef: RefObject<HTMLElement>;
   arch: ArchitectureWire;
   tool: ArchitectureToolWire;
   projectId: string;
@@ -246,18 +276,8 @@ function ToolPanel({
 }) {
   const copy = useMessages(architectureMessages);
   const m = copy.panel;
-  const panel = useRef<HTMLElement>(null);
   const health = toolHealth(tool);
   const rel = relationsOf(arch, tool.key);
-
-  useEffect(() => {
-    try {
-      if (window.matchMedia("(max-width: 860px)").matches)
-        panel.current?.focus();
-    } catch {
-      // jsdom không có matchMedia
-    }
-  }, [tool.key]);
 
   const other = (r: (typeof rel.needs)[number]) =>
     r.tool === undefined ? (
@@ -272,13 +292,16 @@ function ToolPanel({
 
   return (
     <aside
-      ref={panel}
+      ref={panelRef}
       className="peek"
-      aria-label={m.label(tool.displayName)}
+      aria-labelledby="arch-tool-h"
       tabIndex={-1}
     >
       <div className="ph">
-        <b>{tool.displayName}</b>
+        {/* [Plan #58 a11y] Tiêu đề của panel là heading: trình đọc màn hình nhảy tới được */}
+        <h2 id="arch-tool-h" className="peek-h">
+          {tool.displayName}
+        </h2>
         <button
           type="button"
           className="ib"
@@ -291,7 +314,10 @@ function ToolPanel({
       </div>
       <div className="inner">
         <dl className="props">
-          <dt>{m.tool}</dt>
+          <dt>
+            {m.tool}
+            <InfoTip term="tool" />
+          </dt>
           <dd className="mono" translate="no">
             {tool.toolId}
             {tool.adapterVersion !== null && ` ${tool.adapterVersion}`}
@@ -321,6 +347,7 @@ function ToolPanel({
 
         <div className="sect">
           <h3>{m.provides}</h3>
+          <InfoTip term="capability" />
         </div>
         {tool.provides.length === 0 ? (
           <p className="c3">{m.providesNone}</p>

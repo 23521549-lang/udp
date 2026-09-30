@@ -6,11 +6,13 @@ import type {
 import { Cloud, Lock, Network, Server } from "lucide-react";
 import { useState } from "react";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { LinkLayer } from "../../components/LinkLayer";
 import { StatusLabel } from "../../components/StatusLabel";
 import { useMessages } from "../../i18n";
 import { relativeTime } from "../../lib/format";
 import { PROVIDER_LABEL } from "../project/cloud/cloud-labels";
+import { cloudMessages } from "../project/cloud/cloud.messages";
 import {
   namespaceTools,
   resourceKinds,
@@ -42,6 +44,7 @@ export function ArchitectureDiagram({
   onSelect: (key: string) => void;
 }) {
   const m = useMessages(architectureMessages).diagram;
+  const cloudCopy = useMessages(cloudMessages);
   // Callback ref qua state: lớp cạnh đo SAU khi khung đã gắn (xem `LinkLayer`)
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [hover, setHover] = useState<string | undefined>(undefined);
@@ -70,7 +73,7 @@ export function ArchitectureDiagram({
               : `${PROVIDER_LABEL[arch.cloud.provider]} ${arch.cloud.region}`}
           </h2>
           {arch.cloud !== null && (
-            <span className="chip soft">{arch.cloud.mode}</span>
+            <span className="chip soft">{cloudCopy.mode[arch.cloud.mode]}</span>
           )}
         </header>
         <section className="arch-net" aria-labelledby="arch-net-h">
@@ -151,7 +154,10 @@ export function ArchitectureDiagram({
                     </span>
                   </header>
                   {e.workloads.length === 0 ? (
-                    <p className="c3 arch-empty">{m.noWorkloads}</p>
+                    <p className="c3 arch-empty">
+                      {m.noWorkloads}
+                      <InfoTip term="workload" />
+                    </p>
                   ) : (
                     <ul
                       className="arch-workloads"

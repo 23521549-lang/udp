@@ -13,7 +13,7 @@ import {
   certificateVerdict,
   idleRisk,
 } from "../src/features/admin/platform-model";
-import { readableJobError } from "../src/features/admin/pages/AdminJobsPage";
+import { readableJobError } from "../src/features/admin/job-error";
 import { dayLabel, formatBytes, lastDays } from "../src/lib/format";
 import { API, golden, server } from "./msw";
 import { projectFixture, useProjectHandlers } from "./project-fixtures";
@@ -45,7 +45,8 @@ describe("Trang chủ (/app/home)", () => {
     expect(link(/Deploy checkout-api chờ duyệt/)).toMatch(
       new RegExp(`/app/projects/${p}/deployments\\?env=`),
     );
-    expect(link(/Domain LOGGING lỗi/)).toBe(
+    // [Plan #58 UX-7] Tên domain đọc được, không phải mã LOGGING
+    expect(link(/Domain Logging lỗi/)).toBe(
       `/app/projects/${p}/domains/LOGGING`,
     );
     expect(link(/Áp domain thất bại/)).toBe(`/app/projects/${p}/infra`);
@@ -170,9 +171,8 @@ describe("Kiến trúc: góc Hạ tầng & công cụ (?view=infra)", () => {
       view: "infra",
       tool: "monitoring:prometheus-grafana",
     });
-    const panel = screen.getByRole("complementary", {
-      name: "Công cụ Monitoring",
-    });
+    // [Plan #58 a11y] Panel mang tên của chính tiêu đề (h2) của nó
+    const panel = screen.getByRole("complementary", { name: "Monitoring" });
     expect(within(panel).getByText("registry.oci")).toBeInTheDocument();
     // Bấm quan hệ ⇒ chọn công cụ kia
     await user.click(
@@ -180,7 +180,7 @@ describe("Kiến trúc: góc Hạ tầng & công cụ (?view=infra)", () => {
     );
     expect(
       await screen.findByRole("complementary", {
-        name: "Công cụ Container Registry",
+        name: "Container Registry",
       }),
     ).toHaveTextContent("Monitoring dùng");
     expect(
@@ -317,16 +317,22 @@ describe("Giám sát", () => {
 });
 
 describe("Bảng điều khiển: Tổng quan", () => {
-  const useAdminHandlers = (platform?: AdminPlatformWire) => {
+  /** Sao lưu thành công một giờ trước: golden ghi một mốc cố định, sẽ "quá 2 ngày" theo đồng hồ thật */
+  const freshPlatform = (): AdminPlatformWire => {
+    const p = golden<{ platform: AdminPlatformWire }>(
+      "GET /admin/platform",
+    ).platform;
+    const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+    return p.backup.state === "ok"
+      ? { ...p, backup: { ...p.backup, lastSuccessAt: hourAgo } }
+      : p;
+  };
+  const useAdminHandlers = (platform: AdminPlatformWire = freshPlatform()) => {
     server.use(
       http.get(`${API}/admin/overview`, () =>
         HttpResponse.json(golden("GET /admin/overview")),
       ),
-      http.get(`${API}/admin/platform`, () =>
-        HttpResponse.json(
-          platform === undefined ? golden("GET /admin/platform") : { platform },
-        ),
-      ),
+      http.get(`${API}/admin/platform`, () => HttpResponse.json({ platform })),
       http.get(`${API}/admin/system/health`, () =>
         HttpResponse.json(golden("GET /admin/system/health")),
       ),
@@ -339,19 +345,27 @@ describe("Bảng điều khiển: Tổng quan", () => {
   it("/admin về /admin/overview: máy, database so với ổ, sao lưu, chứng chỉ, số liệu nền tảng", async () => {
     useAdminHandlers();
     const { router } = renderApp("/admin", { user: ADMIN });
-    const machine = await screen.findByRole("region", { name: "Máy" });
+    // [Plan #58 UX-27] Tín hiệu xanh gọn thành một dòng; "Xem chi tiết" mở lại thẻ đầy đủ
+    const green = await screen.findByRole("list", { name: "Máy ảo chạy UDP" });
+    expect(within(green).getByText("Trên ngưỡng rảnh")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Xem chi tiết" }));
+    const machine = screen.getByRole("region", { name: "Máy ảo" });
     expect(router.state.location.pathname).toBe("/admin/overview");
     expect(within(machine).getByText("udp-vm")).toBeInTheDocument();
     expect(within(machine).getByRole("meter", { name: "CPU" })).toHaveAttribute(
       "aria-valuemax",
       "2",
     );
-    expect(screen.getByRole("region", { name: "Sao lưu" })).toHaveTextContent(
-      "Đều đặn",
-    );
+    const backup = screen.getByRole("region", { name: "Sao lưu" });
+    expect(backup).toHaveTextContent("Đều đặn");
+    // [Plan #58 UX-22] Lịch cron UTC đọc thành giờ Việt Nam; chuỗi cron vẫn ở title
+    expect(
+      within(backup).getByText("Hằng ngày 02:30 (giờ VN)"),
+    ).toHaveAttribute("title", "Cron theo giờ UTC: 30 19 * * *");
     expect(
       screen.getByRole("region", { name: "Bản phát hành" }),
-    ).toHaveTextContent("Không khai UDP_RELEASE");
+    ).toHaveTextContent("Chưa rõ phiên bản");
     expect(
       await screen.findByRole("meter", { name: "PostgreSQL" }),
     ).toBeInTheDocument();
@@ -359,11 +373,8 @@ describe("Bảng điều khiển: Tổng quan", () => {
   });
 
   it("tín hiệu không đọc được ⇒ nói lý do, không đoán", async () => {
-    const platform = golden<{ platform: AdminPlatformWire }>(
-      "GET /admin/platform",
-    ).platform;
     useAdminHandlers({
-      ...platform,
+      ...freshPlatform(),
       node: { state: "unavailable", reason: "NOT_IN_CLUSTER" },
       certificate: { state: "unavailable", reason: "FORBIDDEN" },
     });
@@ -372,7 +383,9 @@ describe("Bảng điều khiển: Tổng quan", () => {
       await screen.findByText("UDP không chạy trong Kubernetes (máy dev)"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("ServiceAccount của Service 1 thiếu quyền đọc"),
+      screen.getByText(
+        "Thiếu quyền đọc trong Kubernetes: áp lại core-backend-rbac.yaml rồi tải lại trang",
+      ),
     ).toBeInTheDocument();
   });
 });
@@ -384,6 +397,9 @@ describe("danh sách quản trị: trang và bộ lọc trên URL", () => {
       "GET /admin/users",
     );
     server.use(
+      http.get(`${API}/admin/overview`, () =>
+        HttpResponse.json(golden("GET /admin/overview")),
+      ),
       http.get(`${API}/admin/users`, ({ request }) => {
         offsets.push(new URL(request.url).searchParams.get("offset") ?? "");
         return HttpResponse.json({ ...users, total: 130 });
@@ -399,6 +415,12 @@ describe("danh sách quản trị: trang và bộ lọc trên URL", () => {
   it("job lỗi: trạng thái bằng chữ, lỗi đọc được, trạng thái lên URL", async () => {
     const states: string[] = [];
     server.use(
+      http.get(`${API}/admin/overview`, () =>
+        HttpResponse.json(golden("GET /admin/overview")),
+      ),
+      http.get(`${API}/admin/projects`, () =>
+        HttpResponse.json(golden("GET /admin/projects")),
+      ),
       http.get(`${API}/admin/jobs`, ({ request }) => {
         states.push(new URL(request.url).searchParams.get("state") ?? "");
         return HttpResponse.json({
@@ -431,14 +453,21 @@ describe("danh sách quản trị: trang và bộ lọc trên URL", () => {
       await screen.findByText(/Hết hạn mức vCPU của vùng/, { selector: "p" }),
     ).toHaveTextContent("Còn 1 tài nguyên chưa dọn.");
     expect(screen.getByText("Dựng hạ tầng")).toBeInTheDocument();
+    // [Plan #58 UX-28] Golden có 2 job dọn chưa hết: tab đó đứng đầu và được mở sẵn, mỗi tab mang số của nó
+    const tabs = screen.getByRole("group", { name: "Trạng thái job" });
+    expect(within(tabs).getAllByRole("button")[0]).toHaveAccessibleName(
+      "Dọn chưa hết tài nguyên 2",
+    );
+    expect(
+      within(tabs).getByRole("button", { name: /Dọn chưa hết/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(states).toEqual(["COMPENSATION_FAILED"]);
     const user = userEvent.setup();
     await user.click(
-      screen.getByRole("button", { name: "Dọn chưa hết tài nguyên" }),
+      within(tabs).getByRole("button", { name: /Thất bại, đã dọn/ }),
     );
-    await waitFor(() => expect(states).toContain("COMPENSATION_FAILED"));
-    expect(router.state.location.search).toMatchObject({
-      state: "COMPENSATION_FAILED",
-    });
+    await waitFor(() => expect(states).toContain("FAILED"));
+    expect(router.state.location.search).toMatchObject({ state: "FAILED" });
   });
 });
 

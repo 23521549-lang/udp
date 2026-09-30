@@ -9,13 +9,21 @@ export const domainMessages = defineMessages({
   vi: {
     page: {
       title: "Domain",
-      lead: "Công cụ hạ tầng của project. Danh sách dựng từ adapter mà máy chủ nạp được, và cấu hình được kiểm trước khi lưu.",
+      lead: "Công cụ hạ tầng của project: build, chạy, quan sát và bảo vệ ứng dụng. Cấu hình được kiểm trước khi lưu.",
     },
     panel: {
       applying: "Đang áp cấu hình domain",
       applyingLead:
         "Project đang chạy: cấu hình mới được áp lên cluster theo thứ tự phụ thuộc. Bảng dưới vẫn là cấu hình đang chạy cho tới khi áp xong.",
       section: "Cấu hình domain",
+      /** [Plan #58 UX-14] "domain" trong tiếng Việt hay bị hiểu là tên miền: nói rõ ngay đầu */
+      intro:
+        "Domain là một loại công cụ hạ tầng, không phải tên miền. Bật những gì project cần; mỗi domain chạy một công cụ bạn chọn.",
+      starter: "Khuyến nghị cho người mới",
+      starterHint: (domains: string) =>
+        `Bật ${domains}: đủ để build, lưu image và thấy số đo. Thêm dần sau.`,
+      starterOn: "Gói khuyến nghị đã bật.",
+      otherGroup: "Khác",
       unsaved: "Thay đổi cấu hình domain",
       saved: "Đã lưu cấu hình domain",
       applyingToast: "Đang áp cấu hình domain lên cluster",
@@ -66,7 +74,7 @@ export const domainMessages = defineMessages({
       deployOrder: "Thứ tự triển khai",
     },
     detail: {
-      title: (type: string) => `Domain ${type}`,
+      title: (domain: string) => `Domain ${domain}`,
       tool: "Công cụ",
       noTool: "Chưa chọn",
       version: "Phiên bản",
@@ -75,15 +83,15 @@ export const domainMessages = defineMessages({
       disabled: " (đang tắt)",
       updated: "Cập nhật",
       desired: "Cấu hình mong muốn",
-      drift: "Drift",
-      driftResult: "Kết quả drift",
-      driftAt: "Chỗ trôi",
+      drift: "Kiểm lệch cấu hình",
+      driftResult: "Kết quả kiểm lệch cấu hình",
+      driftAt: "Chỗ lệch",
       scannedAt: (at: string) => `Quét lúc ${at}`,
     },
     actions: {
       label: "Thao tác Day-2",
       scanning: "Đang quét…",
-      scan: "Quét drift ngay",
+      scan: "Kiểm lệch cấu hình ngay",
       upgradeTo: (version: string) => `Nâng cấp lên ${version}`,
       retry: "Thử lại",
       reapply: "Áp lại cấu hình mong muốn",
@@ -97,7 +105,7 @@ export const domainMessages = defineMessages({
       retryDescription:
         "UDP triển khai lại domain với đúng cấu hình đang lưu, rồi kiểm khoẻ.",
       reapplyDescription:
-        "Chỗ trôi trên cluster sẽ bị ghi đè bằng cấu hình đang lưu. Trôi thường là người vận hành vá nóng: chắc chắn đó không còn cần thiết rồi hãy áp.",
+        "Chỗ lệch trên cluster sẽ bị ghi đè bằng cấu hình đang lưu. Lệch thường do người vận hành vá nóng: chắc chắn bản vá đó không còn cần rồi hãy áp.",
       reapplyConfirm: "Áp lại",
       details: "Chi tiết nâng cấp",
       current: (version: ReactNode) => <>Bản đang chạy: {version}</>,
@@ -141,13 +149,20 @@ export const domainMessages = defineMessages({
   en: {
     page: {
       title: "Domains",
-      lead: "The project's infrastructure tools. The list is built from the adapters the server loaded, and the configuration is validated before saving.",
+      lead: "The project's infrastructure tools: build, run, observe and protect your app. The configuration is validated before saving.",
     },
     panel: {
       applying: "Applying domain configuration",
       applyingLead:
         "The project is running: the new configuration is applied to the cluster in dependency order. The table below shows the running configuration until the apply finishes.",
       section: "Domain configuration",
+      intro:
+        "A domain is a kind of infrastructure tool, not a web domain name. Enable what the project needs; each domain runs one tool you choose.",
+      starter: "Recommended for beginners",
+      starterHint: (domains: string) =>
+        `Enables ${domains}: enough to build, store images and see metrics. Add more later.`,
+      starterOn: "The recommended set is enabled.",
+      otherGroup: "Other",
       unsaved: "domain configuration changes",
       saved: "Domain configuration saved",
       applyingToast: "Applying domain configuration to the cluster",
@@ -197,7 +212,7 @@ export const domainMessages = defineMessages({
       deployOrder: "Deployment order",
     },
     detail: {
-      title: (type: string) => `Domain ${type}`,
+      title: (domain: string) => `Domain ${domain}`,
       tool: "Tool",
       noTool: "Not selected",
       version: "Version",
@@ -206,15 +221,15 @@ export const domainMessages = defineMessages({
       disabled: " (disabled)",
       updated: "Updated",
       desired: "Desired configuration",
-      drift: "Drift",
-      driftResult: "Drift result",
-      driftAt: "Drift details",
+      drift: "Drift check",
+      driftResult: "Drift check result",
+      driftAt: "What drifted",
       scannedAt: (at: string) => `Scanned at ${at}`,
     },
     actions: {
       label: "Day-2 operations",
       scanning: "Scanning…",
-      scan: "Scan for drift now",
+      scan: "Check for drift now",
       upgradeTo: (version: string) => `Upgrade to ${version}`,
       retry: "Retry",
       reapply: "Reapply desired configuration",

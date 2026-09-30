@@ -12,25 +12,60 @@ import {
   type EvidenceDoraDays,
 } from "@udp/shared-types/wire";
 import { api } from "../../lib/http";
+import type { AdminProjectStatus, AdminRole } from "./admin-search";
 
 /** [Plan #53] Một trang của danh sách quản trị — `total` ở máy chủ, không cắt im lặng */
 export const ADMIN_PAGE_SIZE = 50;
 
+/**
+ * [Plan #58 UX-34] Bộ lọc của một danh sách theo trang — CHÍNH tham số gửi lên máy chủ: `search` (project: tên hoặc email
+ * chủ), `platformRole` (người dùng), `order=asc` (cũ nhất trước; mặc định mới nhất trước).
+ */
+export interface AdminListFilter {
+  search?: string | undefined;
+  status?: AdminProjectStatus | undefined;
+  platformRole?: AdminRole | undefined;
+  order?: "asc" | undefined;
+}
+
+/**
+ * Bộ lọc thành MỘT chuỗi ổn định cho tham số chuỗi của `qk.adminUsers`/`qk.adminProjects` (dạng query string, khoá
+ * xếp theo tên): hai bộ lọc khác nhau là hai mục cache khác nhau; không lọc gì là "" — cùng mục với danh bạ project.
+ */
+export const filterKey = (f: AdminListFilter): string =>
+  Object.entries(f)
+    .filter(([, v]) => v !== undefined && v !== "")
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .sort()
+    .join("&");
+
 export const adminApi = {
   overview: () => api(adminOverviewResponseWire, "/admin/overview"),
   platform: () => api(adminPlatformResponseWire, "/admin/platform"),
-  users: (search: string | undefined, offset: number) =>
+  users: (f: AdminListFilter, offset: number) =>
     api(adminUsersResponseWire, "/admin/users", {
-      query: { search, limit: ADMIN_PAGE_SIZE, offset },
+      query: {
+        search: f.search,
+        platformRole: f.platformRole,
+        order: f.order,
+        limit: ADMIN_PAGE_SIZE,
+        offset,
+      },
     }),
   setRole: (userId: string, platformRole: "USER" | "PLATFORM_ADMIN") =>
     api(adminUserResponseWire, `/admin/users/${userId}/platform-role`, {
       method: "PATCH",
       body: { platformRole },
     }),
-  projects: (status: string | undefined, offset: number) =>
+  projects: (f: AdminListFilter, offset: number) =>
     api(adminProjectsResponseWire, "/admin/projects", {
-      query: { status, limit: ADMIN_PAGE_SIZE, offset },
+      query: {
+        status: f.status,
+        search: f.search,
+        order: f.order,
+        limit: ADMIN_PAGE_SIZE,
+        offset,
+      },
     }),
   credentials: () => api(adminCredentialsResponseWire, "/admin/credentials"),
   jobs: (state: string, offset: number) =>
@@ -45,3 +80,16 @@ export const adminApi = {
       query: { days },
     }),
 };
+
+/** Một dòng của mỗi danh sách quản trị — suy từ chính hàm gọi, nên luôn khớp schema dây */
+type Rows<F extends (...a: never[]) => Promise<unknown>> = Awaited<
+  ReturnType<F>
+>;
+export type AdminProjectRow = Rows<
+  typeof adminApi.projects
+>["projects"][number];
+export type AdminJobRow = Rows<typeof adminApi.jobs>["jobs"][number];
+export type AdminCredentialRow = Rows<
+  typeof adminApi.credentials
+>["credentials"][number];
+export type AdminOrphanRow = Rows<typeof adminApi.orphans>["resources"][number];

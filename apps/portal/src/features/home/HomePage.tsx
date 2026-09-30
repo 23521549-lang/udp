@@ -5,7 +5,7 @@ import { Plus } from "lucide-react";
 import { BarChart } from "../../components/BarChart";
 import { Icon } from "../../components/Icon";
 import { PageHead } from "../../components/PageHead";
-import { Empty, ErrorState, Loading } from "../../components/States";
+import { ErrorState, Loading } from "../../components/States";
 import { StatusLabel, type Tone } from "../../components/StatusLabel";
 import {
   formatDateTime,
@@ -19,9 +19,11 @@ import { deployBars } from "../deployment/deploy-bars";
 import { PROVIDER_LABEL } from "../project/cloud/cloud-labels";
 import { ProjectStatus } from "../project/ProjectStatus";
 import { rolesMessages } from "../project/roles.messages";
-import { useMessages } from "../../i18n";
+import { useLocale, useMessages, type Locale } from "../../i18n";
+import { domainName } from "../domain/domain-labels";
 import { jobTypeLabel } from "../provisioning/provisioning-labels";
 import { RolloutStatusLabel } from "../rollout/rollout-status";
+import { FirstRun } from "./FirstRun";
 import { homeApi } from "./home-api";
 import { homeMessages } from "./home.messages";
 
@@ -33,6 +35,7 @@ type AttentionCopy = (typeof homeMessages)["vi"]["attention"];
  */
 export function HomePage() {
   const m = useMessages(homeMessages);
+  const locale = useLocale();
   const user = useAuthStore((s) => s.user);
   const home = useQuery({
     queryKey: qk.home(),
@@ -57,10 +60,14 @@ export function HomePage() {
       </div>
       <div className="scroll">
         <PageHead
-          title={user === null ? m.home : m.hello(firstNameOf(user.name))}
+          title={
+            user === null ? m.home : m.hello(givenNameOf(user.name, locale))
+          }
           lead={m.lead}
           minis={
-            h === undefined
+            // [Plan #58 UX-11] Ba số 0 không nói gì với người mới: ẩn khi mọi số đều 0
+            h === undefined ||
+            h.projects.length + h.rollouts.length + h.attention.length === 0
               ? undefined
               : [
                   {
@@ -87,11 +94,7 @@ export function HomePage() {
               onRetry={() => void home.refetch()}
             />
           ) : home.data.home.projects.length === 0 ? (
-            <Empty title={m.noProjects}>
-              <Link to="/app/projects/new" className="btn pri">
-                {m.createFirst}
-              </Link>
-            </Empty>
+            <FirstRun />
           ) : (
             <HomeBody home={home.data.home} />
           )}
@@ -101,9 +104,15 @@ export function HomePage() {
   );
 }
 
-/** Tên gọi: chữ cuối của họ tên Việt ("Nguyễn Thị Lan" ⇒ "Lan") */
-export const firstNameOf = (name: string): string =>
-  name.trim().split(/\s+/).pop() ?? name;
+/**
+ * Tên gọi trong lời chào. Tiếng Việt gọi bằng chữ CUỐI của họ tên ("Nguyễn Thị Lan" ⇒ "Lan"); [Plan #58 UX-24]
+ * tiếng Anh gọi bằng chữ ĐẦU ("Jane Doe" ⇒ "Jane"), không phải họ.
+ */
+export function givenNameOf(name: string, locale: Locale): string {
+  const words = name.trim().split(/\s+/);
+  const given = locale === "vi" ? words[words.length - 1] : words[0];
+  return given === undefined || given === "" ? name : given;
+}
 
 function HomeBody({ home }: { home: HomeWire }) {
   const roles = useMessages(rolesMessages).role;
@@ -239,10 +248,14 @@ const ATTENTION: Record<
     tone: "warn",
     text: (a, t) => t.deployPending(a.subject),
   },
-  DOMAIN_ERROR: { tone: "error", text: (a, t) => t.domainError(a.subject) },
+  // [Plan #58 UX-7] Tên domain đọc được ("GitOps"), không phải mã GITOPS
+  DOMAIN_ERROR: {
+    tone: "error",
+    text: (a, t) => t.domainError(domainName(a.subject)),
+  },
   DOMAIN_DRIFTED: {
     tone: "warn",
-    text: (a, t) => t.domainDrifted(a.subject),
+    text: (a, t) => t.domainDrifted(domainName(a.subject)),
   },
   JOB_FAILED: {
     tone: "error",

@@ -2,7 +2,7 @@ import type { projectListResponseWire } from "@udp/shared-types/wire";
 import type { z } from "zod";
 import { screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { API, golden, server } from "./msw";
 import { renderApp } from "./render";
 
@@ -22,6 +22,13 @@ const listWith = (expiresAt: string | null): ProjectListResponseWire => {
 };
 
 describe("danh sách project", () => {
+  // [Plan #58 UX-5] Danh sách đọc số việc cần xử lý của trang chủ cho nhãn sức khoẻ
+  beforeEach(() =>
+    server.use(
+      http.get(`${API}/home`, () => HttpResponse.json(golden("GET /home"))),
+    ),
+  );
+
   it("TTL đã qua ⇒ nhãn Hết hạn", async () => {
     server.use(
       http.get(`${API}/projects`, () =>

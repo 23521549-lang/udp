@@ -74,7 +74,7 @@ describe("Kiến trúc: Tổng quan hệ thống (mặc định)", () => {
       "Quản trị",
     ]) {
       expect(
-        await screen.findByRole("heading", { level: 3, name: zone }),
+        await screen.findByRole("heading", { level: 2, name: zone }),
       ).toBeInTheDocument();
     }
     expect(screen.getByText("Người dùng cuối")).toBeInTheDocument();
@@ -103,7 +103,7 @@ describe("Kiến trúc: Tổng quan hệ thống (mặc định)", () => {
       tool: "monitoring:prometheus-grafana",
     });
     expect(
-      screen.getByRole("complementary", { name: "Công cụ Monitoring" }),
+      screen.getByRole("complementary", { name: "Monitoring" }),
     ).toBeInTheDocument();
   });
 
@@ -203,7 +203,7 @@ describe("Kiến trúc: Tổng quan hệ thống (mặc định)", () => {
     await user.click(screen.getByRole("tab", { name: "Tổng quan hệ thống" }));
     expect(router.state.location.search).toEqual({});
     expect(
-      await screen.findByRole("heading", { level: 3, name: "Giao hàng" }),
+      await screen.findByRole("heading", { level: 2, name: "Giao hàng" }),
     ).toBeInTheDocument();
   });
 
@@ -215,7 +215,7 @@ describe("Kiến trúc: Tổng quan hệ thống (mặc định)", () => {
     renderApp(`/app/projects/${detail.project.id}/architecture`);
 
     expect(
-      await screen.findByRole("heading", { level: 3, name: "Delivery" }),
+      await screen.findByRole("heading", { level: 2, name: "Delivery" }),
     ).toBeInTheDocument();
     expect(screen.getByText("End users")).toBeInTheDocument();
     const kpis = screen.getByRole("region", { name: "Key figures" });

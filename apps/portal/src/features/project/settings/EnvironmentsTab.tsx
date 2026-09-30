@@ -3,6 +3,7 @@ import { ENVIRONMENT } from "@udp/shared-types/environment-api";
 import type { PublicEnvironmentWire } from "@udp/shared-types/wire";
 import { useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
+import { InfoTip } from "../../../components/InfoTip";
 import { toast } from "../../../components/Toast";
 import { useMessages } from "../../../i18n";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
@@ -140,7 +141,10 @@ export function EnvironmentsTab() {
           )}
         </form>
       )}
-      <p className="c3">{m.rules(ENVIRONMENT.nameMaxLength)}</p>
+      <p className="c3">
+        {m.rules(ENVIRONMENT.nameMaxLength)}
+        <InfoTip term="namespace" />
+      </p>
       <div className="lst" role="list" aria-label={m.list}>
         {envs.map((e) => (
           <div key={e.id} className="it" role="listitem">

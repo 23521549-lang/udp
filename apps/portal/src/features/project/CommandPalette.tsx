@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   ChartNoAxesColumnIncreasing,
   Flag,
+  KeyRound,
   LayoutDashboard,
   Lock,
   Moon,
@@ -10,6 +11,7 @@ import {
   Search,
   Settings2,
   Sun,
+  UserPlus,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -21,6 +23,7 @@ import { Icon } from "../../components/Icon";
 import { useMessages } from "../../i18n";
 import { browserTimeZone } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
+import { useShortcutsEnabled } from "../../lib/shortcuts";
 import { flagApi } from "../flag/flag-api";
 import { rolloutApi } from "../rollout/rollout-api";
 import { useProjectContext } from "./ProjectLayout";
@@ -107,10 +110,13 @@ export function ProjectKeyboard() {
 /**
  * Phím 1..9 đổi environment theo thứ tự `rank` (DESIGN.md §7). Không bắt khi đang gõ,
  * khi có hộp thoại, hay khi kèm phím bổ trợ — những lúc đó phím số là của người dùng.
+ * [Plan #58 UX-40] Người dùng tắt phím tắt một phím thì không bắt gì cả (WCAG 2.1.4).
  */
 export function useEnvShortcuts(): void {
   const { envs, env, setEnv } = useProjectContext();
+  const enabled = useShortcutsEnabled();
   useEffect(() => {
+    if (!enabled) return;
     const ordered = [...envs].sort((a, b) => a.rank - b.rank);
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
@@ -123,7 +129,7 @@ export function useEnvShortcuts(): void {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [envs, env.id, setEnv]);
+  }, [envs, env.id, setEnv, enabled]);
 }
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {
@@ -132,6 +138,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const { project, envs, env, setEnv } = useProjectContext();
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
+  const shortcuts = useShortcutsEnabled();
   const [query, setQuery] = useState("");
   const [sel, setSel] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -199,7 +206,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       out.push({
         group: m.group.command,
         label: m.createFlag,
-        hint: "C",
+        hint: shortcuts ? "C" : "",
         icon: Plus,
         run: () =>
           void navigate({
@@ -223,6 +230,28 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
           }),
       });
     }
+    // [Plan #58 UX-29] Hai việc chính của chủ sở hữu, tới thẳng từ Ctrl K
+    if (can(project.myRole, "OWNER")) {
+      const settings = (
+        label: string,
+        icon: LucideIcon,
+        tab: "keys" | "members",
+      ) =>
+        out.push({
+          group: m.group.command,
+          label,
+          hint: "",
+          icon,
+          run: () =>
+            void navigate({
+              to: "/app/projects/$projectId/settings",
+              params,
+              search: { env: env.id, tab, new: "1" },
+            }),
+        });
+      settings(m.inviteMember, UserPlus, "members");
+      settings(m.createSdkKey, KeyRound, "keys");
+    }
     [...envs]
       .sort((a, b) => a.rank - b.rank)
       .forEach((e, i) => {
@@ -230,7 +259,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         out.push({
           group: m.group.command,
           label: m.switchTo(e.name),
-          hint: i < 9 ? String(i + 1) : "",
+          hint: shortcuts && i < 9 ? String(i + 1) : "",
           icon: e.isProduction ? Lock : Search,
           run: () => setEnv(e.id),
         });
@@ -271,6 +300,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     navigate,
     theme,
     toggle,
+    shortcuts,
     m,
     app,
   ]);

@@ -14,6 +14,7 @@ import {
 import { useState } from "react";
 import { CodeBlock } from "../../components/CodeBlock";
 import { Icon } from "../../components/Icon";
+import { InfoTip } from "../../components/InfoTip";
 import { Empty, ErrorState, Loading } from "../../components/States";
 import { useMessages } from "../../i18n";
 import { formatDateTime } from "../../lib/format";
@@ -41,7 +42,14 @@ export function CodePage() {
         <PageHead
           title={m.title}
           lead={
-            project.creationMode === "CREATE_NEW" ? m.leadCreate : m.leadImport
+            project.creationMode === "CREATE_NEW" ? (
+              <>
+                {m.leadCreate}
+                <InfoTip term="goldenPath" />
+              </>
+            ) : (
+              m.leadImport
+            )
           }
         />
         <div className="page">

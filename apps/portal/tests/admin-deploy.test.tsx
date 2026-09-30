@@ -144,6 +144,9 @@ describe("khu quản trị", () => {
       users.users.find((u) => u.platformRole === "USER") ?? users.users[0]!;
     const patches: unknown[] = [];
     server.use(
+      http.get(`${API}/admin/overview`, () =>
+        HttpResponse.json(golden("GET /admin/overview")),
+      ),
       http.get(`${API}/admin/users`, () => HttpResponse.json(users)),
       http.patch(
         `${API}/admin/users/:userId/platform-role`,
@@ -163,7 +166,10 @@ describe("khu quản trị", () => {
     const user = userEvent.setup();
     await user.click(within(row as HTMLElement).getByRole("button"));
     const dialog = await screen.findByRole("dialog");
-    const ok = within(dialog).getByRole("button", { name: "Đổi vai" });
+    // [Plan #58 UX-36] Nút xác nhận nói đúng động từ
+    const ok = within(dialog).getByRole("button", {
+      name: target.platformRole === "USER" ? "Nâng lên quản trị" : "Hạ quyền",
+    });
     expect(ok).toBeDisabled();
     await user.type(within(dialog).getByLabelText(/để xác nhận/), target.email);
     await user.click(ok);
@@ -191,6 +197,12 @@ describe("khu quản trị", () => {
       },
     ];
     server.use(
+      http.get(`${API}/admin/overview`, () =>
+        HttpResponse.json(golden("GET /admin/overview")),
+      ),
+      http.get(`${API}/admin/projects`, () =>
+        HttpResponse.json(golden("GET /admin/projects")),
+      ),
       http.get(`${API}/admin/orphan-resources`, () => HttpResponse.json(body)),
     );
     renderApp("/admin/orphans", {

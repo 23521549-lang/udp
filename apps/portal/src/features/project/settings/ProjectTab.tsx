@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ResourceQuotaWire } from "@udp/shared-types/wire";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
+import { Field, focusFirstInvalid } from "../../../components/Field";
 import { toast } from "../../../components/Toast";
 import { useMessages } from "../../../i18n";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
@@ -33,6 +34,9 @@ export function ProjectTab() {
     project.expiresAt === null ? "" : project.expiresAt.slice(0, 10),
   );
   const [deleting, setDeleting] = useState(false);
+  const [ttlPast, setTtlPast] = useState(false);
+  const quotaRef = useRef<HTMLDivElement>(null);
+  const ttlRef = useRef<HTMLDivElement>(null);
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: qk.project(project.id) });
@@ -44,6 +48,9 @@ export function ProjectTab() {
       toast.info(m.quotaSaved);
       await refresh();
     },
+    // [Plan #58 UX-39] Lỗi nằm dưới đúng ô; con trỏ tới ô sai đầu tiên
+    onError: () =>
+      requestAnimationFrame(() => focusFirstInvalid(quotaRef.current)),
   });
   const saveTtl = useMutation({
     // Ngày theo giờ ĐỊA PHƯƠNG, gửi ISO có offset (§ updateTtlSchema): cuối ngày đã chọn
@@ -56,6 +63,8 @@ export function ProjectTab() {
       toast.info(m.ttlSaved);
       await refresh();
     },
+    onError: () =>
+      requestAnimationFrame(() => focusFirstInvalid(ttlRef.current)),
   });
   const remove = useMutation({
     mutationFn: () => projectApi.remove(project.id),
@@ -67,35 +76,47 @@ export function ProjectTab() {
     },
   });
   const quotaErrors = fieldErrorsOf(saveQuota.error);
+  const ttlErrors = fieldErrorsOf(saveTtl.error);
+  /** Ngày đã qua thì báo ngay, kèm cách sửa, không gửi đi để nghe máy chủ từ chối */
+  const submitTtl = (): void => {
+    const past =
+      expires !== "" && new Date(`${expires}T23:59:59`).getTime() <= Date.now();
+    setTtlPast(past);
+    if (past) requestAnimationFrame(() => focusFirstInvalid(ttlRef.current));
+    else saveTtl.mutate();
+  };
 
   const num = (
     key: Exclude<keyof ResourceQuotaWire, "maxNodeSize">,
     label: string,
   ) => (
-    <div className="f">
-      <label htmlFor={`q-${key}`}>{label}</label>
-      <input
-        id={`q-${key}`}
-        className="inp num"
-        type="number"
-        min={0}
-        disabled={!isOwner}
-        value={quota[key]}
-        onChange={(e) => setQuota({ ...quota, [key]: Number(e.target.value) })}
-      />
-      {quotaErrors[`resourceQuota.${key}`] !== undefined && (
-        <span className="field-error">
-          {quotaErrors[`resourceQuota.${key}`]}
-        </span>
+    <Field
+      id={`q-${key}`}
+      label={label}
+      error={quotaErrors[`resourceQuota.${key}`]}
+    >
+      {(p) => (
+        <input
+          {...p}
+          className="inp num"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          disabled={!isOwner}
+          value={quota[key]}
+          onChange={(e) =>
+            setQuota({ ...quota, [key]: Number(e.target.value) })
+          }
+        />
       )}
-    </div>
+    </Field>
   );
 
   return (
     <section aria-label={m.label}>
       <dl className="props">
         <dt>{m.name}</dt>
-        <dd>{project.name}</dd>
+        <dd translate="no">{project.name}</dd>
         <dt>{m.runtime}</dt>
         <dd className="mono">{project.languageRuntime}</dd>
         <dt>{m.createdAt}</dt>
@@ -104,26 +125,31 @@ export function ProjectTab() {
 
       <h2 className="h2">{m.quota}</h2>
       <p className="c3">{m.quotaNote}</p>
-      <div className="grid-f">
+      <div className="grid-f" ref={quotaRef}>
         {num("maxNodes", m.maxNodes)}
-        <div className="f">
-          <label htmlFor="q-size">{m.maxNodeSize}</label>
-          <select
-            id="q-size"
-            className="sel"
-            disabled={!isOwner}
-            value={quota.maxNodeSize}
-            onChange={(e) =>
-              setQuota({ ...quota, maxNodeSize: e.target.value })
-            }
-          >
-            {NODE_SIZES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Field
+          id="q-size"
+          label={m.maxNodeSize}
+          error={quotaErrors["resourceQuota.maxNodeSize"]}
+        >
+          {(p) => (
+            <select
+              {...p}
+              className="sel"
+              disabled={!isOwner}
+              value={quota.maxNodeSize}
+              onChange={(e) =>
+                setQuota({ ...quota, maxNodeSize: e.target.value })
+              }
+            >
+              {NODE_SIZES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
         {num("maxDatabases", m.maxDatabases)}
         {num("maxStorageGb", m.maxStorageGb)}
         {num("maxLoadBalancers", m.maxLoadBalancers)}
@@ -139,29 +165,39 @@ export function ProjectTab() {
         </button>
       )}
       {saveQuota.isError && Object.keys(quotaErrors).length === 0 && (
-        <p className="field-error">{messageOf(saveQuota.error)}</p>
+        <p role="alert" className="field-error">
+          {messageOf(saveQuota.error)}
+        </p>
       )}
 
       <h2 className="h2" style={{ marginTop: 22 }}>
         {m.ttl}
       </h2>
       <p className="c3">{m.ttlNote}</p>
-      <div className="line">
-        <input
-          className="inp"
-          type="date"
-          aria-label={m.expiryDate}
-          disabled={!isOwner}
-          value={expires}
-          onChange={(e) => setExpires(e.target.value)}
-        />
+      <div className="line ttl-line" ref={ttlRef}>
+        <Field
+          id="p-ttl"
+          label={m.expiryDate}
+          error={ttlPast ? m.ttlPast : ttlErrors.expiresAt}
+        >
+          {(p) => (
+            <input
+              {...p}
+              className="inp"
+              type="date"
+              disabled={!isOwner}
+              value={expires}
+              onChange={(e) => setExpires(e.target.value)}
+            />
+          )}
+        </Field>
         {isOwner && (
           <>
             <button
               type="button"
               className="btn"
               disabled={saveTtl.isPending}
-              onClick={() => saveTtl.mutate()}
+              onClick={submitTtl}
             >
               {m.saveTtl}
             </button>
@@ -169,7 +205,10 @@ export function ProjectTab() {
               <button
                 type="button"
                 className="btn"
-                onClick={() => setExpires("")}
+                onClick={() => {
+                  setExpires("");
+                  setTtlPast(false);
+                }}
               >
                 {m.clearTtl}
               </button>
@@ -177,8 +216,10 @@ export function ProjectTab() {
           </>
         )}
       </div>
-      {saveTtl.isError && (
-        <p className="field-error">{messageOf(saveTtl.error)}</p>
+      {saveTtl.isError && ttlErrors.expiresAt === undefined && (
+        <p role="alert" className="field-error">
+          {messageOf(saveTtl.error)}
+        </p>
       )}
 
       {isOwner && (

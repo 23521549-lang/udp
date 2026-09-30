@@ -4,9 +4,10 @@ import {
   type CloudProviderWire,
 } from "@udp/shared-types/cloud-api";
 import type { CloudSetupWire } from "@udp/shared-types/wire";
-import { TriangleAlert } from "lucide-react";
+import { ExternalLink, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { CodeBlock } from "../../../components/CodeBlock";
+import { Field as FormField } from "../../../components/Field";
 import { Icon } from "../../../components/Icon";
 import { ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
@@ -18,7 +19,12 @@ import { labelOf } from "../../provisioning/provisioning-labels";
 import { cloudApi } from "./cloud-api";
 import { buildBody, initialForm, type CloudForm } from "./cloud-form";
 import { cloudMessages } from "./cloud.messages";
-import { CREDENTIAL_FIELDS, PROVIDER_LABEL } from "./cloud-labels";
+import {
+  CONSOLE_URL,
+  CREDENTIAL_FIELDS,
+  PROVIDER_LABEL,
+  REGIONS,
+} from "./cloud-labels";
 
 type Method = CloudSetupWire["methods"][number];
 
@@ -183,45 +189,48 @@ function SetupBody({
   const method = setup.methods.find((x) => x.authKind === form.authKind);
   return (
     <div className="form">
-      <div className="f">
-        <span className="lbl" id="cloud-mode">
-          {m.editor.mode}
-        </span>
-        <div className="opts" role="group" aria-labelledby="cloud-mode">
-          <button
-            type="button"
-            aria-pressed={form.mode === "BYOC"}
-            onClick={() => setForm({ ...form, mode: "BYOC" })}
-          >
-            <b>{m.editor.myAccount}</b>
-            {m.editor.myAccountHint}
-          </button>
-          <button
-            type="button"
-            aria-pressed={form.mode === "MANAGED"}
-            disabled={!setup.managed.available}
-            onClick={() => setForm({ ...form, mode: "MANAGED" })}
-          >
-            <b>{m.udpAccount}</b>
-            {setup.managed.unavailableReason === null
-              ? m.editor.noCredential
-              : m.unavailable[setup.managed.unavailableReason]}
-          </button>
+      {/*
+       * [Plan #58 UX-16] Chỉ một lựa chọn dùng được (máy chủ tắt MANAGED, như bản free) thì không hỏi: một nút bị khoá
+       * chỉ làm người mới phân vân. Có MANAGED thì hai lựa chọn như cũ.
+       */}
+      {setup.managed.available && (
+        <div className="f">
+          <span className="lbl" id="cloud-mode">
+            {m.editor.mode}
+          </span>
+          <div className="opts" role="group" aria-labelledby="cloud-mode">
+            <button
+              type="button"
+              aria-pressed={form.mode === "BYOC"}
+              onClick={() => setForm({ ...form, mode: "BYOC" })}
+            >
+              <b>{m.editor.myAccount}</b>
+              {m.editor.myAccountHint}
+            </button>
+            <button
+              type="button"
+              aria-pressed={form.mode === "MANAGED"}
+              onClick={() => setForm({ ...form, mode: "MANAGED" })}
+            >
+              <b>{m.udpAccount}</b>
+              {m.editor.noCredential}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {form.mode === "BYOC" && (
         <MethodPicker setup={setup} form={form} setForm={setForm} />
       )}
       {form.mode === "BYOC" && method !== undefined && (
-        <Snippets method={method} />
+        <Snippets method={method} provider={form.provider} canEdit={canEdit} />
       )}
 
       {canEdit && (
         <div className="grid-f">
-          <Field
-            id="region"
-            label={m.editor.region}
+          <RegionField
+            key={form.provider}
+            provider={form.provider}
             value={form.region}
             error={errors.region}
             onChange={(v) => setForm({ ...form, region: v })}
@@ -286,17 +295,133 @@ function MethodPicker({
   );
 }
 
-function Snippets({ method }: { method: Method }) {
+/** Câu theo `id` của khối lệnh; id lạ (máy chủ mới hơn Portal) ⇒ không có câu */
+const textOf = (
+  table: Readonly<Record<string, string>>,
+  id: string,
+): string | undefined => table[id];
+
+/** Giá trị của lựa chọn "Region khác": không phải mã region nào */
+const OTHER_REGION = "";
+
+/**
+ * [Plan #58 UX-16] Region chọn từ danh sách của cloud đang chọn; "Region khác" mở ô gõ mã (máy chủ chỉ kiểm định
+ * dạng, nên mã mới của cloud vẫn dùng được). Lỗi gắn vào ô đang dùng, và ô đó mang id `cloud-region` để nút Lưu
+ * đưa focus tới đúng nó.
+ */
+function RegionField({
+  provider,
+  value,
+  error,
+  onChange,
+}: {
+  provider: CloudProviderWire;
+  value: string;
+  error: string | undefined;
+  onChange: (v: string) => void;
+}) {
+  const m = useMessages(cloudMessages).editor;
+  const regions = REGIONS[provider];
+  const [custom, setCustom] = useState(
+    () => !regions.some((r) => r.id === value),
+  );
+  return (
+    <>
+      <FormField
+        id={custom ? "cloud-region-pick" : "cloud-region"}
+        label={m.region}
+        hint={m.regionHint}
+        error={custom ? undefined : error}
+      >
+        {(p) => (
+          <select
+            {...p}
+            name="region"
+            className="sel"
+            value={custom ? OTHER_REGION : value}
+            onChange={(e) => {
+              const next = e.target.value;
+              setCustom(next === OTHER_REGION);
+              onChange(next);
+            }}
+          >
+            {regions.map((r) => (
+              <option key={r.id} value={r.id}>
+                {m.regionOption(r.city, r.id)}
+              </option>
+            ))}
+            <option value={OTHER_REGION}>{m.regionOther}</option>
+          </select>
+        )}
+      </FormField>
+      {custom && (
+        <FormField
+          id="cloud-region"
+          label={m.regionCode}
+          hint={m.regionCodeHint(regions[0]?.id ?? "")}
+          error={error}
+        >
+          {(p) => (
+            <input
+              {...p}
+              name="region-code"
+              className="inp mono"
+              autoComplete="off"
+              spellCheck={false}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+            />
+          )}
+        </FormField>
+      )}
+    </>
+  );
+}
+
+/**
+ * [Plan #58 UX-16] Việc cần làm bên cloud thành các BƯỚC đánh số: tiêu đề, làm ở đâu (link tới đúng trang của console)
+ * và thay gì, rồi khối lệnh. Bước cuối nói quay lại đây điền và lưu.
+ */
+function Snippets({
+  method,
+  provider,
+  canEdit,
+}: {
+  method: Method;
+  provider: CloudProviderWire;
+  canEdit: boolean;
+}) {
   const m = useMessages(cloudMessages);
   return (
-    <div className="snips" aria-label={m.editor.snippets}>
-      {method.snippets.map((s) => (
-        <div key={s.id}>
-          <h3>{labelOf(m.snippet, s.id)}</h3>
-          <CodeBlock code={s.content} label={labelOf(m.snippet, s.id)} />
-        </div>
-      ))}
-    </div>
+    <ol className="snips cloud-steps" aria-label={m.editor.snippets}>
+      {method.snippets.map((s) => {
+        const how = textOf(m.snippetHow, s.id);
+        const url = CONSOLE_URL[s.id];
+        return (
+          <li key={s.id}>
+            <h3>{labelOf(m.snippet, s.id)}</h3>
+            {(how !== undefined || url !== undefined) && (
+              <p className="c3">
+                {how}{" "}
+                {url !== undefined && (
+                  <a href={url} target="_blank" rel="noreferrer">
+                    {m.editor.openConsole(PROVIDER_LABEL[provider])}
+                    <Icon of={ExternalLink} size={12} />
+                  </a>
+                )}
+              </p>
+            )}
+            <CodeBlock code={s.content} label={labelOf(m.snippet, s.id)} />
+          </li>
+        );
+      })}
+      {canEdit && (
+        <li>
+          <h3>{m.editor.finalStep}</h3>
+          <p className="c3">{m.editor.finalStepHow}</p>
+        </li>
+      )}
+    </ol>
   );
 }
 

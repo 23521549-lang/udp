@@ -1,6 +1,7 @@
 import type { SdkKeyWire } from "@udp/shared-types/wire";
 import { count, defineMessages } from "../../../i18n";
 import { formatNumber } from "../../../lib/format";
+import type { SdkLang } from "./sdk-quickstart";
 
 /** Chữ của các tab trong Cài đặt project: SDK key, environment, thành viên, nhật ký, project */
 export const settingsMessages = defineMessages({
@@ -12,8 +13,6 @@ export const settingsMessages = defineMessages({
     autoDeploy: "Tự deploy",
     audit: {
       label: "Nhật ký kiểm toán",
-      filter: "Lọc theo hành động",
-      filterPlaceholder: "Hành động, ví dụ flag.update…",
       empty: "Không có dòng nào",
       list: "Nhật ký",
       pages: "Trang của nhật ký",
@@ -38,7 +37,7 @@ export const settingsMessages = defineMessages({
       deleteOf: (name: string) => `Xoá environment ${name}`,
       demoteTitle: (name: string) => `Bỏ đánh dấu production của ${name}?`,
       demoteBody:
-        "Environment này sẽ không còn cần xác nhận khi bật tắt flag, không còn cần gõ lại khi rollback, và DEVELOPER sửa được cấu hình của nó.",
+        "Environment này sẽ không còn cần xác nhận khi bật tắt flag, không còn cần gõ lại khi rollback, và Lập trình viên sửa được cấu hình của nó.",
       demote: "Bỏ đánh dấu production",
       deleteTitle: (name: string) => `Xoá environment ${name}?`,
       deleteBody:
@@ -80,7 +79,7 @@ export const settingsMessages = defineMessages({
       createdAt: "Tạo lúc",
       quota: "Trần tài nguyên",
       quotaNote:
-        "Cưỡng chế chứ không phải gợi ý: provisioning vượt trần bị từ chối (§4.4).",
+        "Là giới hạn thật, không phải gợi ý: lượt dựng hạ tầng vượt trần bị từ chối trước khi tạo gì trên cloud.",
       maxNodes: "Số node tối đa",
       maxNodeSize: "Cỡ node tối đa",
       maxDatabases: "Số database tối đa",
@@ -89,8 +88,10 @@ export const settingsMessages = defineMessages({
       saveQuota: "Lưu trần",
       ttl: "Hạn dùng",
       ttlNote:
-        "Hết hạn thì chỉ cảnh báo chủ sở hữu, không tự xoá tài nguyên của bạn (§4.4).",
+        "Hết hạn thì UDP chỉ cảnh báo chủ sở hữu, không tự xoá tài nguyên của bạn.",
       expiryDate: "Ngày hết hạn",
+      ttlPast:
+        "Ngày hết hạn phải sau hôm nay. Chọn một ngày khác, hoặc bấm Bỏ hạn nếu project không cần hạn.",
       saveTtl: "Lưu hạn",
       clearTtl: "Bỏ hạn",
       danger: "Vùng nguy hiểm",
@@ -106,10 +107,43 @@ export const settingsMessages = defineMessages({
         CLIENT:
           "Gửi context lên và nhận kết quả (OFREP): rule không bao giờ rời máy chủ. Dùng được ở trình duyệt.",
       } satisfies Record<SdkKeyWire["keyType"], string>,
+      typeName: {
+        SERVER: "Key server",
+        CLIENT: "Key client",
+      } satisfies Record<SdkKeyWire["keyType"], string>,
       revoked: "Đã thu hồi key",
       inEnv: (env: string) => `SDK key ở ${env}`,
       create: "Tạo key",
-      empty: "Chưa có key nào ở environment này",
+      /** [Plan #58 UX-17] Trống: vì sao trống, cần gì, và một nút */
+      emptyTitle: (env: string) => `Chưa có SDK key nào ở ${env}`,
+      emptyBody:
+        "Ứng dụng cần một SDK key để đọc flag, và mỗi environment có key riêng. Tạo key rồi làm theo ba bước cài SDK bên dưới.",
+      emptyNotOwner:
+        "Ứng dụng cần một SDK key để đọc flag, và mỗi environment có key riêng. Chỉ chủ sở hữu project tạo được key: hãy nhờ họ tạo.",
+      /** [Plan #58 UX-13] Ba bước cài SDK, cho Node, Python và trình duyệt */
+      quickstart: {
+        title: "Cài SDK vào ứng dụng",
+        lead: "Ba bước. Đoạn mã đã điền sẵn địa chỉ UDP của bạn.",
+        language: "Ngôn ngữ",
+        lang: {
+          node: "Node.js",
+          python: "Python",
+          browser: "Trình duyệt",
+        } satisfies Record<SdkLang, string>,
+        steps: "Các bước cài SDK",
+        codeOf: (lang: string, step: string) => `Mã ${lang}: ${step}`,
+        install: "Cài gói",
+        installHint:
+          "SDK của OpenFeature (chuẩn mở cho feature flag) và provider nối nó với UDP.",
+        init: "Khởi tạo với key và địa chỉ",
+        initServer:
+          "Đặt key server vào biến môi trường UDP_SDK_KEY của ứng dụng, đừng ghi thẳng vào mã.",
+        initBrowser:
+          "Dùng key client: nó chỉ đọc được giá trị flag nên đặt trong trình duyệt được. Gán nó cho UDP_CLIENT_KEY.",
+        evaluate: "Hỏi giá trị một flag",
+        evaluateHint: (flag: string) =>
+          `Thay ${flag} bằng key của flag bạn tạo. Khi chưa nối được UDP, hàm trả giá trị mặc định nên ứng dụng vẫn chạy.`,
+      },
       revokedAt: (when: string) => `Đã thu hồi ${when}`,
       unusedWeek: "Chưa dùng sau 7 ngày",
       unused: "Chưa dùng",
@@ -137,8 +171,6 @@ export const settingsMessages = defineMessages({
     autoDeploy: "Auto-deploy",
     audit: {
       label: "Audit log",
-      filter: "Filter by action",
-      filterPlaceholder: "Action, for example flag.update…",
       empty: "No entries",
       list: "Audit log entries",
       pages: "Audit log pages",
@@ -164,7 +196,7 @@ export const settingsMessages = defineMessages({
       deleteOf: (name: string) => `Delete environment ${name}`,
       demoteTitle: (name: string) => `Unmark ${name} as production?`,
       demoteBody:
-        "Toggling flags in this environment will no longer need confirmation, rolling back will no longer need retyping, and DEVELOPERs will be able to edit its configuration.",
+        "Toggling flags in this environment will no longer need confirmation, rolling back will no longer need retyping, and Developers will be able to edit its configuration.",
       demote: "Unmark production",
       deleteTitle: (name: string) => `Delete environment ${name}?`,
       deleteBody:
@@ -206,7 +238,7 @@ export const settingsMessages = defineMessages({
       createdAt: "Created",
       quota: "Resource quota",
       quotaNote:
-        "Enforced, not advisory: provisioning beyond the quota is rejected (§4.4).",
+        "A hard limit, not a suggestion: provisioning beyond the quota is rejected before anything is created in your cloud.",
       maxNodes: "Maximum nodes",
       maxNodeSize: "Maximum node size",
       maxDatabases: "Maximum databases",
@@ -215,8 +247,10 @@ export const settingsMessages = defineMessages({
       saveQuota: "Save quota",
       ttl: "Expiry",
       ttlNote:
-        "When it expires, only the owner is warned; your resources are never deleted automatically (§4.4).",
+        "When it expires, UDP only warns the owner; your resources are never deleted automatically.",
       expiryDate: "Expiry date",
+      ttlPast:
+        "The expiry date must be after today. Pick another date, or clear it if the project needs no expiry.",
       saveTtl: "Save expiry date",
       clearTtl: "Clear expiry date",
       danger: "Danger zone",
@@ -232,10 +266,41 @@ export const settingsMessages = defineMessages({
         CLIENT:
           "Sends the context and receives the result (OFREP): rules never leave the server. Safe to use in a browser.",
       },
+      typeName: {
+        SERVER: "Server key",
+        CLIENT: "Client key",
+      },
       revoked: "Key revoked",
       inEnv: (env: string) => `SDK keys in ${env}`,
       create: "Create key",
-      empty: "No keys in this environment yet",
+      emptyTitle: (env: string) => `No SDK keys in ${env} yet`,
+      emptyBody:
+        "Your app needs an SDK key to read flags, and each environment has its own keys. Create a key, then follow the three setup steps below.",
+      emptyNotOwner:
+        "Your app needs an SDK key to read flags, and each environment has its own keys. Only the project owner can create keys, so ask them to create one.",
+      quickstart: {
+        title: "Add the SDK to your app",
+        lead: "Three steps. The code already contains your UDP address.",
+        language: "Language",
+        lang: {
+          node: "Node.js",
+          python: "Python",
+          browser: "Browser",
+        },
+        steps: "SDK setup steps",
+        codeOf: (lang: string, step: string) => `${lang} code: ${step}`,
+        install: "Install the packages",
+        installHint:
+          "The OpenFeature SDK (an open standard for feature flags) and the provider that connects it to UDP.",
+        init: "Initialize with your key and address",
+        initServer:
+          "Put the server key in your app's UDP_SDK_KEY environment variable instead of writing it in the code.",
+        initBrowser:
+          "Use a client key: it can only read flag values, so it is safe in a browser. Assign it to UDP_CLIENT_KEY.",
+        evaluate: "Ask for a flag value",
+        evaluateHint: (flag: string) =>
+          `Replace ${flag} with the key of a flag you created. Until UDP is reachable, the call returns the default value, so your app keeps working.`,
+      },
       revokedAt: (when: string) => `Revoked ${when}`,
       unusedWeek: "Unused after 7 days",
       unused: "Never used",

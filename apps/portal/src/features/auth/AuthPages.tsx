@@ -1,7 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { LanguageSwitch } from "../../app/Preferences";
+import { Field, focusFirstInvalid } from "../../components/Field";
 import { Logo } from "../../components/Logo";
 import { useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
@@ -10,6 +11,29 @@ import { authMessages } from "./auth.messages";
 import { useAuthStore } from "./auth-store";
 
 const HOME = "/app/home";
+
+/**
+ * [Plan #58 UX-24] Độ dài tối thiểu của mật khẩu — BẢN SOI của `AUTH.passwordMinLength` (packages/config/src/
+ * constants.ts), luật mà Service 1 dùng ở `registerSchema` (services/core-backend/src/modules/auth/auth.types.ts).
+ * Portal không phụ thuộc `@udp/config`, nên chép số ở đây; đổi một bên thì đổi bên kia.
+ */
+export const PASSWORD_MIN_LENGTH = 8;
+
+/** Kiểm trước khi gửi: lỗi hiện dưới đúng ô, nói cách sửa, bằng ngôn ngữ đang chọn */
+export function registerErrors(
+  input: { name: string; email: string; password: string },
+  m: (typeof authMessages)["vi"],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (input.name.trim() === "") out.name = m.nameRequired;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) {
+    out.email = m.emailInvalid;
+  }
+  if (input.password.length < PASSWORD_MIN_LENGTH) {
+    out.password = m.passwordShort(PASSWORD_MIN_LENGTH);
+  }
+  return out;
+}
 
 /**
  * Chỉ chấp nhận đường dẫn NỘI BỘ của hai khung (`/app`, `/admin`) và trang nhận lời mời (`/invite`, Plan #55)
@@ -54,36 +78,6 @@ export function AuthFrame({
   );
 }
 
-function Field({
-  id,
-  label,
-  error,
-  ...input
-}: {
-  id: string;
-  label: string;
-  error?: string | undefined;
-} & React.InputHTMLAttributes<HTMLInputElement>) {
-  const errId = `${id}-err`;
-  return (
-    <div className="f">
-      <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        className="inp"
-        aria-invalid={error !== undefined}
-        aria-describedby={error === undefined ? undefined : errId}
-        {...input}
-      />
-      {error !== undefined && (
-        <span id={errId} className="field-error">
-          {error}
-        </span>
-      )}
-    </div>
-  );
-}
-
 export function LoginPage() {
   const m = useMessages(authMessages);
   const search = useSearch({ from: "/login" });
@@ -109,26 +103,32 @@ export function LoginPage() {
   return (
     <AuthFrame title={m.signIn}>
       <form className="auth-form" onSubmit={submit} noValidate>
-        <Field
-          id="email"
-          label={m.email}
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          error={fields.email}
-        />
-        <Field
-          id="password"
-          label={m.password}
-          type="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={fields.password}
-        />
+        <Field id="email" label={m.email} error={fields.email}>
+          {(p) => (
+            <input
+              {...p}
+              className="inp"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          )}
+        </Field>
+        <Field id="password" label={m.password} error={fields.password}>
+          {(p) => (
+            <input
+              {...p}
+              className="inp"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          )}
+        </Field>
         {login.isError && Object.keys(fields).length === 0 && (
           <p role="alert" className="field-error">
             {messageOf(login.error)}
@@ -166,47 +166,72 @@ export function RegisterPage() {
       await navigate({ href: safeRedirect(search.redirectTo) });
     },
   });
-  const fields = fieldErrorsOf(register.error);
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+  const form = useRef<HTMLFormElement>(null);
+  const fields = { ...fieldErrorsOf(register.error), ...clientErrors };
 
   return (
     <AuthFrame title={m.register}>
       <form
+        ref={form}
         className="auth-form"
         noValidate
         onSubmit={(e) => {
           e.preventDefault();
+          const errors = registerErrors({ name, email, password }, m);
+          setClientErrors(errors);
+          if (Object.keys(errors).length > 0) {
+            requestAnimationFrame(() => focusFirstInvalid(form.current));
+            return;
+          }
           register.mutate();
         }}
       >
-        <Field
-          id="name"
-          label={m.name}
-          autoComplete="name"
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          error={fields.name}
-        />
-        <Field
-          id="email"
-          label={m.email}
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          error={fields.email}
-        />
+        <Field id="name" label={m.name} error={fields.name}>
+          {(p) => (
+            <input
+              {...p}
+              className="inp"
+              autoComplete="name"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          )}
+        </Field>
+        <Field id="email" label={m.email} error={fields.email}>
+          {(p) => (
+            <input
+              {...p}
+              className="inp"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          )}
+        </Field>
+        {/* [Plan #58 UX-24] Luật mật khẩu nói TRƯỚC khi gõ, không đợi lỗi */}
         <Field
           id="password"
           label={m.password}
-          type="password"
-          autoComplete="new-password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          hint={m.passwordHint(PASSWORD_MIN_LENGTH)}
           error={fields.password}
-        />
+        >
+          {(p) => (
+            <input
+              {...p}
+              className="inp"
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={PASSWORD_MIN_LENGTH}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          )}
+        </Field>
         {register.isError && Object.keys(fields).length === 0 && (
           <p role="alert" className="field-error">
             {messageOf(register.error)}

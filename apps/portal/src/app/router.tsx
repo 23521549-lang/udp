@@ -15,21 +15,18 @@ import {
   type RedRange,
 } from "@udp/shared-types/wire";
 import { AdminLayout } from "../features/admin/AdminLayout";
-import { AdminCredentialsPage } from "../features/admin/pages/AdminCredentialsPage";
 import {
-  ADMIN_JOB_STATES,
-  AdminJobsPage,
-  DEFAULT_ADMIN_JOB_STATE,
-  type AdminJobState,
-} from "../features/admin/pages/AdminJobsPage";
+  adminCredentialsSearch,
+  adminJobsSearch,
+  adminOrphansSearch,
+  adminProjectsSearch,
+  adminUsersSearch,
+} from "../features/admin/admin-search";
+import { AdminCredentialsPage } from "../features/admin/pages/AdminCredentialsPage";
+import { AdminJobsPage } from "../features/admin/pages/AdminJobsPage";
 import { AdminOrphansPage } from "../features/admin/pages/AdminOrphansPage";
 import { AdminOverviewPage } from "../features/admin/pages/AdminOverviewPage";
-import {
-  ADMIN_PROJECT_STATUSES,
-  AdminProjectsPage,
-  type AdminProjectStatus,
-} from "../features/admin/pages/AdminProjectsPage";
-import { AdminSystemPage } from "../features/admin/pages/AdminSystemPage";
+import { AdminProjectsPage } from "../features/admin/pages/AdminProjectsPage";
 import { AdminArchitecturePage } from "../features/admin/pages/AdminArchitecturePage";
 import { AdminCatalogPage } from "../features/admin/pages/AdminCatalogPage";
 import { EvidencePage } from "../features/admin/evidence/EvidencePage";
@@ -379,6 +376,8 @@ export interface SettingsSearch {
   /** Bộ lọc hành động của tab Nhật ký (Plan #53 QĐ-9: bộ lọc nằm trên URL) */
   action?: string;
   offset?: number;
+  /** [Plan #58 UX-29] "1" = vào thẳng việc chính của tab (từ bảng lệnh): mở hộp tạo SDK key, focus ô mời */
+  new?: "1";
 }
 const TABS = [
   "keys",
@@ -399,6 +398,7 @@ export const settingsRoute = createRoute({
       ...(tab === undefined ? {} : { tab }),
       ...(action === undefined ? {} : { action }),
       ...(offset === undefined ? {} : { offset }),
+      ...(s.new === "1" ? { new: "1" as const } : {}),
     };
   },
   component: SettingsPage,
@@ -435,62 +435,38 @@ const adminOverviewRoute = createRoute({
   path: "overview",
   component: AdminOverviewPage,
 });
-/** Danh sách quản trị: bộ lọc và trang trên URL (Plan #53 QĐ-9) */
+/**
+ * Danh sách quản trị: bộ lọc, tab, thứ tự, trang và panel project trên URL (Plan #53 QĐ-9, Plan #58 UX-32/UX-34) —
+ * luật đọc URL ở `features/admin/admin-search.ts`.
+ */
 const adminUsersRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "users",
-  validateSearch: (
-    s: Record<string, unknown>,
-  ): { q?: string; offset?: number } => {
-    const q = str(s.q);
-    const offset = offsetOf(s.offset);
-    return {
-      ...(q === undefined ? {} : { q }),
-      ...(offset === undefined ? {} : { offset }),
-    };
-  },
+  validateSearch: adminUsersSearch,
   component: AdminUsersPage,
 });
 const adminProjectsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "projects",
-  validateSearch: (
-    s: Record<string, unknown>,
-  ): { status?: AdminProjectStatus; offset?: number } => {
-    const status = ADMIN_PROJECT_STATUSES.find((v) => v === s.status);
-    const offset = offsetOf(s.offset);
-    return {
-      ...(status === undefined ? {} : { status }),
-      ...(offset === undefined ? {} : { offset }),
-    };
-  },
+  validateSearch: adminProjectsSearch,
   component: AdminProjectsPage,
 });
 const adminCredentialsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "credentials",
+  validateSearch: adminCredentialsSearch,
   component: AdminCredentialsPage,
 });
 const adminJobsRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "jobs",
-  validateSearch: (
-    s: Record<string, unknown>,
-  ): { state?: AdminJobState; offset?: number } => {
-    const state = ADMIN_JOB_STATES.find((v) => v === s.state);
-    const offset = offsetOf(s.offset);
-    return {
-      ...(state === undefined || state === DEFAULT_ADMIN_JOB_STATE
-        ? {}
-        : { state }),
-      ...(offset === undefined ? {} : { offset }),
-    };
-  },
+  validateSearch: adminJobsSearch,
   component: AdminJobsPage,
 });
 const adminOrphansRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "orphans",
+  validateSearch: adminOrphansSearch,
   component: AdminOrphansPage,
 });
 /** [Plan #57 QĐ-7] Kiến trúc của chính nền tảng: khối, lời gọi, sức khoẻ sống — từ ba route sẵn có */
@@ -500,10 +476,13 @@ const adminArchitectureRoute = createRoute({
   component: AdminArchitecturePage,
 });
 
+/** [Plan #58 UX-26] "Hệ thống" đã gộp vào Kiến trúc nền tảng: đường cũ (dấu trang, link cũ) vẫn tới đúng chỗ */
 const adminSystemRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "system",
-  component: AdminSystemPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/admin/architecture" });
+  },
 });
 
 const adminCatalogRoute = createRoute({

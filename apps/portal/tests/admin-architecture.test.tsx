@@ -141,7 +141,10 @@ describe("Bảng điều khiển: Kiến trúc nền tảng (/admin/architecture
     ).toBeInTheDocument();
     expect(
       screen.getByText("Sao lưu hằng đêm").closest("[data-node]"),
-    ).toHaveTextContent("ServiceAccount của Service 1 thiếu quyền đọc");
+    ).toHaveTextContent(
+      // [Plan #58 UX-22] Lý do = nguyên nhân + việc cần làm
+      "Thiếu quyền đọc trong Kubernetes: áp lại core-backend-rbac.yaml rồi tải lại trang",
+    );
   });
 
   it("xem dạng bảng: khối và kết nối kèm giao thức", async () => {

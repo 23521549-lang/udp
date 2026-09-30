@@ -39,6 +39,11 @@ function setup() {
     http.get(`${API}/projects/:id/architecture`, () =>
       HttpResponse.json(golden("GET /projects/{id}/architecture")),
     ),
+    // [Plan #58 UX-12, UX-5] Thẻ "Bắt đầu" và sức khoẻ project của Tổng quan
+    http.get(`${API}/projects/:id/environments/:envId/keys`, () =>
+      HttpResponse.json(golden("GET /projects/{id}/environments/{id}/keys")),
+    ),
+    http.get(`${API}/home`, () => HttpResponse.json(golden("GET /home"))),
     // Mở flag từ bảng lệnh nạp panel xem nhanh — trả 404 là đủ, test chỉ xét URL
     http.get(`${API}/projects/:id/flags/:flagId`, () =>
       HttpResponse.json(

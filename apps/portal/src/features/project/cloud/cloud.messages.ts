@@ -38,6 +38,25 @@ export const cloudMessages = defineMessages({
         "App registration, federated credential và vai trò",
       "azure-app-secret": "App registration, client secret và vai trò",
     },
+    /** [Plan #58 UX-16] Làm khối lệnh đó ở đâu và thế nào; id lạ thì không có câu này */
+    snippetHow: {
+      "aws-trust-policy":
+        "Trong IAM, mở Roles rồi Create role, chọn Custom trust policy và dán khối dưới đây.",
+      "aws-permissions-policy":
+        "Trong IAM, mở Policies rồi Create policy, chọn tab JSON, dán khối dưới đây, rồi gắn policy vào role hoặc user của UDP.",
+      "gcp-workload-identity":
+        "Mở Cloud Shell, thay <SERVICE_ACCOUNT_EMAIL> và <PROJECT_NUMBER> bằng giá trị của bạn rồi chạy các lệnh.",
+      "gcp-custom-role":
+        "Trong Cloud Shell, thay <GCP_PROJECT_ID> và <SERVICE_ACCOUNT_EMAIL> rồi chạy các lệnh.",
+      "azure-federated-credential":
+        "Mở Cloud Shell, chạy lệnh đầu để tạo app, thay <APP_ID> bằng appId vừa nhận cùng <SUBSCRIPTION_ID> và <RESOURCE_GROUP>, rồi chạy các lệnh còn lại.",
+      "azure-app-secret":
+        "Mở Cloud Shell, chạy lệnh đầu để tạo app, thay <APP_ID>, <SUBSCRIPTION_ID> và <RESOURCE_GROUP> rồi chạy các lệnh còn lại. Lệnh credential reset in ra client secret: chép nó vào ô bên dưới.",
+    },
+    mode: {
+      BYOC: "Cloud của bạn (BYOC)",
+      MANAGED: "Tài khoản của UDP",
+    },
     /** Nhãn ô nhập theo khoá payload của `credentialPayloadSchemas` */
     credentialField: {
       roleArn: "ARN của role",
@@ -68,7 +87,8 @@ export const cloudMessages = defineMessages({
       view: "Xem cấu hình cloud",
     },
     panel: {
-      locked: "Cấu hình cloud chỉ hiện với Maintainer và chủ sở hữu.",
+      locked:
+        "Cấu hình cloud chỉ hiện với Người duy trì và Chủ sở hữu. Nhờ chủ sở hữu project nếu bạn cần xem.",
       none: "Project chưa kết nối cloud nào.",
       choose: "Chọn cloud và cách xác thực",
       change: "Đổi cấu hình",
@@ -101,6 +121,16 @@ export const cloudMessages = defineMessages({
       myAccountHint: "UDP dựng hạ tầng trong cloud của bạn",
       noCredential: "Không cần nhập credential",
       region: "Region",
+      regionHint: "Nơi đặt cluster. Chọn nơi gần người dùng của bạn.",
+      regionOption: (city: string, id: string) => `${city} (${id})`,
+      regionOther: "Region khác…",
+      regionCode: "Mã region",
+      regionCodeHint: (example: string) =>
+        `Mã đúng như trong console của cloud, ví dụ ${example}.`,
+      openConsole: (cloud: string) => `Mở console ${cloud}`,
+      finalStep: "Điền các giá trị vào ô bên dưới và lưu",
+      finalStepHow:
+        "Sau khi lưu, bấm Kiểm tra quyền: UDP liệt kê quyền nào còn thiếu, nếu có.",
       method: "Cách xác thực",
       federatedHint: "Khuyến nghị: UDP không giữ bí mật nào của bạn",
       staticHint: "Khoá dài hạn, chỉ dùng khi không có cách khác",
@@ -139,6 +169,24 @@ export const cloudMessages = defineMessages({
         "App registration, federated credential and role",
       "azure-app-secret": "App registration, client secret and role",
     },
+    snippetHow: {
+      "aws-trust-policy":
+        "In IAM, open Roles, then Create role, choose Custom trust policy and paste the block below.",
+      "aws-permissions-policy":
+        "In IAM, open Policies, then Create policy, choose the JSON tab, paste the block below, then attach the policy to UDP's role or user.",
+      "gcp-workload-identity":
+        "Open Cloud Shell, replace <SERVICE_ACCOUNT_EMAIL> and <PROJECT_NUMBER> with your values and run the commands.",
+      "gcp-custom-role":
+        "In Cloud Shell, replace <GCP_PROJECT_ID> and <SERVICE_ACCOUNT_EMAIL> and run the commands.",
+      "azure-federated-credential":
+        "Open Cloud Shell and run the first command to create the app. Replace <APP_ID> with the appId it returns, plus <SUBSCRIPTION_ID> and <RESOURCE_GROUP>, then run the rest.",
+      "azure-app-secret":
+        "Open Cloud Shell and run the first command to create the app. Replace <APP_ID>, <SUBSCRIPTION_ID> and <RESOURCE_GROUP>, then run the rest. The credential reset command prints the client secret: copy it into the field below.",
+    },
+    mode: {
+      BYOC: "Your own cloud (BYOC)",
+      MANAGED: "UDP's account",
+    },
     credentialField: {
       roleArn: "Role ARN",
       accessKeyId: "Access key ID",
@@ -169,7 +217,7 @@ export const cloudMessages = defineMessages({
     },
     panel: {
       locked:
-        "The cloud configuration is visible only to Maintainers and Owners.",
+        "The cloud configuration is visible only to Maintainers and Owners. Ask the project owner if you need to see it.",
       none: "The project has no cloud connected.",
       choose: "Choose a cloud and an authentication method",
       change: "Change configuration",
@@ -204,6 +252,16 @@ export const cloudMessages = defineMessages({
       myAccountHint: "UDP provisions infrastructure in your cloud",
       noCredential: "No credential needed",
       region: "Region",
+      regionHint: "Where the cluster runs. Pick one close to your users.",
+      regionOption: (city: string, id: string) => `${city} (${id})`,
+      regionOther: "Another region…",
+      regionCode: "Region code",
+      regionCodeHint: (example: string) =>
+        `The code exactly as your cloud console shows it, for example ${example}.`,
+      openConsole: (cloud: string) => `Open the ${cloud} console`,
+      finalStep: "Fill in the fields below and save",
+      finalStepHow:
+        "After saving, click Check permissions: UDP lists any permission that is still missing.",
       method: "Authentication method",
       federatedHint: "Recommended: UDP holds none of your secrets",
       staticHint: "Long-lived key, use only when there is no other way",

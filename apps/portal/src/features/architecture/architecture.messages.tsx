@@ -13,7 +13,7 @@ export const architectureMessages = defineMessages({
     health: {
       notDeployed: "Chưa triển khai",
       drifted: "Lệch cấu hình",
-      scanFailed: "Chưa quét được drift",
+      scanFailed: "Chưa kiểm được lệch cấu hình",
       healthy: "Ổn định",
     },
     grid: {
@@ -53,7 +53,9 @@ export const architectureMessages = defineMessages({
       workloads: (_n: number) => "workload",
       emptyTitle: "Chưa có gì để vẽ",
       emptyBody:
-        "Project chưa kết nối cloud và chưa bật domain nào. Sơ đồ hiện ra sau khi hạ tầng được dựng.",
+        "Sơ đồ vẽ hạ tầng UDP dựng cho project, nên cần cloud và domain trước. Kết nối cloud và chọn domain; sơ đồ hiện ra ngay khi có một trong hai.",
+      emptyCloud: "Kết nối cloud",
+      emptyDomains: "Chọn domain",
       invalid: (link: ReactNode) => (
         <>
           Tổ hợp domain đang bật chưa qua kiểm tra, nên chưa có thứ tự deploy và
@@ -79,11 +81,10 @@ export const architectureMessages = defineMessages({
       ),
     },
     panel: {
-      label: (tool: string) => `Công cụ ${tool}`,
       close: "Đóng",
       tool: "Tool",
       status: "Trạng thái",
-      drift: "Drift",
+      drift: "Cấu hình trên cluster",
       scope: "Phạm vi",
       scopeGone: "Máy chủ không còn nạp tool này",
       scopeCluster: "Cả cluster",
@@ -113,7 +114,7 @@ export const architectureMessages = defineMessages({
     health: {
       notDeployed: "Not deployed",
       drifted: "Drifted",
-      scanFailed: "Drift scan failed",
+      scanFailed: "Drift check failed",
       healthy: "Healthy",
     },
     grid: {
@@ -152,7 +153,9 @@ export const architectureMessages = defineMessages({
       workloads: (n: number) => plural(n, "workload", "workloads"),
       emptyTitle: "Nothing to draw yet",
       emptyBody:
-        "The project has no cloud connected and no domains enabled. The diagram appears once the infrastructure is provisioned.",
+        "The diagram shows the infrastructure UDP sets up for the project, so it needs a cloud and domains first. Connect a cloud and choose domains; the diagram appears as soon as either exists.",
+      emptyCloud: "Connect a cloud",
+      emptyDomains: "Choose domains",
       invalid: (link: ReactNode) => (
         <>
           The enabled domain combination has not passed validation, so there is
@@ -180,11 +183,10 @@ export const architectureMessages = defineMessages({
       ),
     },
     panel: {
-      label: (tool: string) => `Tool ${tool}`,
       close: "Close",
       tool: "Tool",
       status: "Status",
-      drift: "Drift",
+      drift: "Cluster configuration",
       scope: "Scope",
       scopeGone: "The server no longer loads this tool",
       scopeCluster: "Whole cluster",

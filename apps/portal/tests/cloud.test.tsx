@@ -190,7 +190,7 @@ describe("thẻ Cloud trong Cài đặt", () => {
     // Không có handler cloud: một request lọt đi là lỗi `onUnhandledRequest`
     expect(
       await screen.findByText(
-        "Cấu hình cloud chỉ hiện với Maintainer và chủ sở hữu.",
+        "Cấu hình cloud chỉ hiện với Người duy trì và Chủ sở hữu. Nhờ chủ sở hữu project nếu bạn cần xem.",
       ),
     ).toBeInTheDocument();
   });
@@ -223,7 +223,9 @@ describe("wizard tạo project", () => {
       await screen.findByLabelText("Tên project"),
       "cua-hang",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Tạo project" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Tạo và tiếp tục" }),
+    );
     expect(
       await screen.findByRole("heading", { level: 1, name: "Kết nối cloud" }),
     ).toBeInTheDocument();

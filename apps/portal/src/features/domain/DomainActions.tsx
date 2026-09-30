@@ -14,6 +14,7 @@ import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { JobLog } from "../provisioning/JobLog";
 import { domainApi } from "./domain-api";
+import { domainName } from "./domain-labels";
 import { domainMessages } from "./domain.messages";
 
 type Dialog = "upgrade" | "retry" | null;
@@ -144,7 +145,7 @@ export function DomainActions({
       )}
       {dialog === "upgrade" && target !== undefined && (
         <ConfirmDialog
-          title={m.upgradeTitle(type, target.version)}
+          title={m.upgradeTitle(domainName(type), target.version)}
           description={m.upgradeDescription}
           confirmLabel={m.upgrade}
           {...(production ? { typeToConfirm: type } : {})}
@@ -164,7 +165,11 @@ export function DomainActions({
       )}
       {dialog === "retry" && (
         <ConfirmDialog
-          title={failed ? m.retryTitle(type) : m.reapplyTitle(type)}
+          title={
+            failed
+              ? m.retryTitle(domainName(type))
+              : m.reapplyTitle(domainName(type))
+          }
           description={failed ? m.retryDescription : m.reapplyDescription}
           confirmLabel={failed ? m.retry : m.reapplyConfirm}
           danger={!failed}

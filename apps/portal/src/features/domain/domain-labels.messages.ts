@@ -8,6 +8,9 @@ import { defineMessages } from "../../i18n";
 /**
  * Chữ của domain dùng ở nhiều phân hệ (trang Domain, Kiến trúc, nhật ký job, catalog) — I37: mã ở máy chủ,
  * câu ở Portal. Bảng theo đúng kiểu dây: thêm một trạng thái mà quên câu là lỗi biên dịch.
+ *
+ * [Plan #58 UX-8] Một khái niệm một từ: vòng đời ACTIVE là "Đang hoạt động" (như project), còn "Ổn định" để dành cho
+ * SỨC KHOẺ (`toolHealth`); lệch khỏi cấu hình đã lưu luôn là "Lệch cấu hình" (bảng thuật ngữ, mục drift).
  */
 export const domainLabelMessages = defineMessages({
   vi: {
@@ -19,7 +22,7 @@ export const domainLabelMessages = defineMessages({
     status: {
       PENDING: "Chờ triển khai",
       DEPLOYING: "Đang triển khai",
-      ACTIVE: "Đang chạy",
+      ACTIVE: "Đang hoạt động",
       SWITCHING: "Đang đổi tool",
       RECONFIGURING: "Đang cấu hình lại",
       TEARINGDOWN: "Đang gỡ",
@@ -27,10 +30,10 @@ export const domainLabelMessages = defineMessages({
       ERROR: "Lỗi",
     } satisfies Record<NonNullable<ProjectDomainWire["status"]>, string>,
     drift: {
-      NOT_DEPLOYED: "Chưa triển khai, chưa có gì để trôi",
-      CLEAN: "Khớp cấu hình mong muốn",
-      DRIFTED: "Đã trôi khỏi cấu hình mong muốn",
-      SCAN_FAILED: "Lần quét gần nhất không chạy được",
+      NOT_DEPLOYED: "Chưa triển khai, chưa có gì để so",
+      CLEAN: "Khớp cấu hình đã lưu",
+      DRIFTED: "Lệch cấu hình",
+      SCAN_FAILED: "Chưa kiểm được: lần quét gần nhất không chạy được",
     } satisfies Record<DomainDriftWire["verdict"], string>,
     /** Câu cho một vấn đề của validator; tên tool đã đọc được (`datadog (Giám sát)`) */
     issue: {
@@ -61,7 +64,7 @@ export const domainLabelMessages = defineMessages({
     status: {
       PENDING: "Pending deployment",
       DEPLOYING: "Deploying",
-      ACTIVE: "Running",
+      ACTIVE: "Active",
       SWITCHING: "Switching tool",
       RECONFIGURING: "Reconfiguring",
       TEARINGDOWN: "Tearing down",
@@ -69,10 +72,10 @@ export const domainLabelMessages = defineMessages({
       ERROR: "Error",
     },
     drift: {
-      NOT_DEPLOYED: "Not deployed, nothing to drift yet",
-      CLEAN: "Matches the desired configuration",
-      DRIFTED: "Drifted from the desired configuration",
-      SCAN_FAILED: "The last scan could not run",
+      NOT_DEPLOYED: "Not deployed, nothing to compare yet",
+      CLEAN: "Matches the saved configuration",
+      DRIFTED: "Drifted",
+      SCAN_FAILED: "Not checked: the last scan could not run",
     },
     issue: {
       missingCapability: (tool: string, capability: string) =>

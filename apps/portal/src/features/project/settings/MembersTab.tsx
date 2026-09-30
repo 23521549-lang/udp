@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearch } from "@tanstack/react-router";
 import type { ProjectRoleWire } from "@udp/shared-types/wire";
 import { useState } from "react";
 import { ConfirmDialog } from "../../../components/ConfirmDialog";
@@ -28,6 +29,9 @@ export function MembersTab() {
   const { role: roles, permission } = useMessages(rolesMessages);
   const m = useMessages(settingsMessages).members;
   const { project } = useProjectContext();
+  // [Plan #58 UX-29] Tới từ "Mời thành viên" (Ctrl K, số thành viên ở Tổng quan): con trỏ đứng sẵn ở ô email
+  const inviting =
+    useSearch({ from: "/app/projects/$projectId/settings" }).new === "1";
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [role, setRole] =
@@ -159,6 +163,7 @@ export function MembersTab() {
             autoComplete="off"
             spellCheck={false}
             aria-label={m.newEmail}
+            autoFocus={inviting}
             aria-invalid={addErrors.email !== undefined}
             aria-describedby={add.isError ? "member-add-err" : undefined}
             placeholder={m.newEmailPlaceholder}

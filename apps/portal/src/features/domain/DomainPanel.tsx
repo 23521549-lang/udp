@@ -6,6 +6,7 @@ import type {
 } from "@udp/shared-types/wire";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { InfoTip } from "../../components/InfoTip";
 import { ErrorState, Loading } from "../../components/States";
 import { toast } from "../../components/Toast";
 import { UnsavedGuard } from "../../components/UnsavedGuard";
@@ -30,7 +31,13 @@ import {
   targetOf,
   type DomainDraft,
 } from "./domain-model";
-import { tierLabel, toolNamer } from "./domain-labels";
+import {
+  DOMAIN_GROUPS,
+  domainInfoMessages,
+  STARTER_DOMAINS,
+  type DomainGroup,
+} from "./domain-info.messages";
+import { domainName, toolNamer } from "./domain-labels";
 import { DomainRow } from "./DomainRow";
 import { ValidationPanel } from "./ValidationPanel";
 
@@ -181,6 +188,31 @@ function errorsByDomain(
   return out;
 }
 
+/**
+ * [Plan #58 UX-14] Nhóm theo VIỆC người dùng cần làm (build, chạy, quan sát, an toàn) thay cho bậc Cốt lõi/Tiêu
+ * chuẩn/Nâng cao, theo thứ tự trong nhóm của `DOMAIN_GROUPS`. Domain catalog có mà Portal chưa biết vào nhóm "Khác".
+ */
+function groupsOf(
+  catalog: readonly DomainCatalogEntryWire[],
+  titles: Record<DomainGroup, string>,
+  other: string,
+): { key: string; title: string; entries: DomainCatalogEntryWire[] }[] {
+  const byType = new Map(catalog.map((c) => [c.domainType, c]));
+  const grouped = new Set<string>(Object.values(DOMAIN_GROUPS).flat());
+  return [
+    ...(Object.keys(DOMAIN_GROUPS) as DomainGroup[]).map((g) => ({
+      key: g,
+      title: titles[g],
+      entries: DOMAIN_GROUPS[g].flatMap((t) => byType.get(t) ?? []),
+    })),
+    {
+      key: "other",
+      title: other,
+      entries: catalog.filter((c) => !grouped.has(c.domainType)),
+    },
+  ];
+}
+
 function DomainEditor({
   projectId,
   catalog,
@@ -204,6 +236,7 @@ function DomainEditor({
 }) {
   const queryClient = useQueryClient();
   const m = useMessages(domainMessages).panel;
+  const info = useMessages(domainInfoMessages);
   const initial = useMemo(() => draftFrom(catalog, saved), [catalog, saved]);
   const [draft, setDraft] = useState(initial);
   const [confirming, setConfirming] = useState(false);
@@ -246,10 +279,17 @@ function DomainEditor({
     ...errorsByDomain(save.error, draft),
   };
   const byType = new Map(saved.domains.map((d) => [d.domainType, d]));
-  const tiers = (["CORE", "STANDARD", "ADVANCED"] as const).map((tier) => ({
-    tier,
-    entries: catalog.filter((c) => c.tier === tier),
-  }));
+  const groups = groupsOf(catalog, info.group, m.otherGroup);
+  // [Plan #58 UX-14] Gói khởi đầu: chỉ những domain có công cụ và máy chủ đang cho bật
+  const starter = catalog.filter(
+    (c) =>
+      (STARTER_DOMAINS as readonly string[]).includes(c.domainType) &&
+      c.isAvailable &&
+      c.tools.length > 0,
+  );
+  const starterOn = starter.every(
+    (c) => draft.entries[c.domainType]?.enabled === true,
+  );
 
   const discard = () => {
     const before = draft;
@@ -264,10 +304,42 @@ function DomainEditor({
   return (
     <section aria-label={m.section}>
       <UnsavedGuard dirty={dirty} what={m.unsaved} />
-      {tiers.map(({ tier, entries }) =>
+      <div className="dom-intro">
+        <p className="c2">
+          {m.intro}
+          <InfoTip term="domain" />
+        </p>
+        {canTry && starter.length > 0 && (
+          <div className="dom-starter">
+            <button
+              type="button"
+              className="btn"
+              disabled={starterOn}
+              onClick={() =>
+                setDraft(
+                  starter.reduce(
+                    (d, c) => setEnabled(d, c.domainType, true),
+                    draft,
+                  ),
+                )
+              }
+            >
+              {m.starter}
+            </button>
+            <span className="c3">
+              {starterOn
+                ? m.starterOn
+                : m.starterHint(
+                    starter.map((c) => domainName(c.domainType)).join(", "),
+                  )}
+            </span>
+          </div>
+        )}
+      </div>
+      {groups.map(({ key, title, entries }) =>
         entries.length === 0 ? null : (
-          <div key={tier} className="dom-tier">
-            <Heading className="h2">{tierLabel(tier)}</Heading>
+          <div key={key} className="dom-tier">
+            <Heading className="h2">{title}</Heading>
             {entries.map((entry) => (
               <DomainRow
                 key={entry.domainType}

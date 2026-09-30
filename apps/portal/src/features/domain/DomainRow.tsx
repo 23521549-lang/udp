@@ -7,7 +7,7 @@ import { Switch } from "../../components/Switch";
 import { useMessages } from "../../i18n";
 import { ConfigForm } from "./ConfigForm";
 import type { DraftEntry } from "./domain-model";
-import { domainStatusLabel } from "./domain-labels";
+import { domainPurpose, domainStatusLabel } from "./domain-labels";
 import { domainMessages } from "./domain.messages";
 
 /**
@@ -40,6 +40,7 @@ export function DomainRow({
   const tool = entry.tools.find((t) => t.toolId === draft.toolId);
   const noTools = entry.tools.length === 0;
   const id = `dom-${entry.domainType}`;
+  const purpose = domainPurpose(entry.domainType);
   return (
     // `role="group"`: nhãn trên một `div` trơn bị trình đọc màn hình bỏ qua
     <div className="dom-row" role="group" aria-label={entry.displayName}>
@@ -66,6 +67,8 @@ export function DomainRow({
           </Link>
         )}
       </div>
+      {/* [Plan #58 UX-14] Một câu domain này làm gì: chọn được mà không phải biết tên công cụ */}
+      {purpose !== undefined && <p className="c3 dom-purpose">{purpose}</p>}
       {noTools && <p className="c3">{m.noTools}</p>}
       {draft.enabled && tool !== undefined && (
         <div className="form">

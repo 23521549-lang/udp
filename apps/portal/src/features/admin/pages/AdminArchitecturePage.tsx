@@ -28,7 +28,7 @@ import { LinkLayer } from "../../../components/LinkLayer";
 import { Meter } from "../../../components/Meter";
 import { StackedBar, type StackTone } from "../../../components/StackedBar";
 import { StatusLabel, type Tone } from "../../../components/StatusLabel";
-import { useMessages, type MessageBundle } from "../../../i18n";
+import { messagesOf, useMessages, type MessageBundle } from "../../../i18n";
 import { formatBytes, formatNumber } from "../../../lib/format";
 import { qk } from "../../../lib/query-keys";
 import { PROVIDER_LABEL } from "../../project/cloud/cloud-labels";
@@ -290,7 +290,10 @@ function outsideNote(
           .reduce((n, t) => n + t.projects, 0),
       );
     case "clusters":
-      return m.activeProjects(o.projects.byStatus.ACTIVE);
+      return m.activeProjects(
+        o.projects.byStatus.ACTIVE,
+        messagesOf(projectStatusMessages).status.ACTIVE,
+      );
     default:
       return undefined;
   }

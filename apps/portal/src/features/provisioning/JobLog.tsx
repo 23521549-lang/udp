@@ -9,7 +9,7 @@ import { useMessages } from "../../i18n";
 import { messageOf } from "../../lib/errors";
 import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
-import { domainStatusLabel } from "../domain/domain-labels";
+import { domainName, domainStatusLabel } from "../domain/domain-labels";
 import { can } from "../project/roles";
 import { provisioningApi } from "./provisioning-api";
 import { provisioningMessages } from "./provisioning.messages";
@@ -197,7 +197,7 @@ function JobView({
         <ul className="plan-list" aria-label={m.domains}>
           {detail.domains.map((d) => (
             <li key={d.domainType}>
-              {d.domainType}: {domainStatusLabel(d.status)}
+              {domainName(d.domainType)}: {domainStatusLabel(d.status)}
               {d.message !== null && ` (${d.message})`}
             </li>
           ))}

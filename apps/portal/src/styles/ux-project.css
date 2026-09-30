@@ -1,1 +1,306 @@
 /* [Plan #58] Khu project: quy tắc mới và quy tắc sửa lỗi của khu này */
+
+/* [Plan #58 UX-11] Lần đầu vào: một câu, ba bước đánh số, một nút */
+.first-run {
+  max-width: 620px;
+  padding: 22px 24px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.first-run .sect {
+  margin-top: 0;
+}
+.first-run > p {
+  margin: 0 0 14px;
+}
+.first-run-steps {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+}
+.first-run-steps li {
+  padding-left: 4px;
+}
+.first-run-steps li::marker {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.first-run-steps b,
+.first-run-steps span {
+  display: block;
+}
+.first-run-steps b {
+  font-weight: 600;
+}
+.first-run > p:last-child {
+  margin: 14px 0 0;
+  font-size: 12px;
+}
+
+/* [Plan #58 UX-12] Thẻ "Bắt đầu" ở Tổng quan: danh sách việc kiểu GOV.UK, trạng thái căn phải */
+.start-card {
+  margin-bottom: 22px;
+}
+.start-card .sect {
+  margin-top: 0;
+}
+.start-card > p {
+  margin: 0 0 8px;
+}
+.start-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.start-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.start-t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin-right: auto;
+}
+.start-t a {
+  font-weight: 500;
+}
+
+/* [Plan #58 UX-2] Tổng quan trên điện thoại: cột co được dưới bề rộng nội dung, chữ dài xuống dòng thay vì tràn mép */
+.kpi {
+  min-width: 0;
+}
+.kpi .mono,
+.ov-url {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 860px) {
+  .kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ov-envs > li.it {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.ov-envs .lst-name {
+  flex: none;
+  overflow: visible;
+}
+.ov-envs .mono {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* [Plan #58 UX-29] Số thành viên là link tới trang mời */
+.minis a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+}
+.minis a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* [Plan #58 UX-13] Ba bước cài SDK */
+.qs {
+  margin-top: 22px;
+}
+.modal .qs {
+  margin-top: 14px;
+}
+.qs > p {
+  margin: 0 0 10px;
+}
+.qs-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 12px;
+}
+.qs-steps li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.qs-steps li::marker {
+  color: var(--ink-3);
+}
+
+/* [Plan #58 UX-35] Dòng nhật ký: câu, đối tượng, environment, lúc; bảng trước/sau xuống dòng riêng */
+.audit-it {
+  flex-wrap: wrap;
+}
+.audit-it .rowbtn {
+  text-align: left;
+}
+
+/* [Plan #58 UX-39] Ô ngày hết hạn nằm cùng hàng với hai nút */
+.ttl-line {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.ttl-line .f {
+  margin: 0;
+}
+
+/* [Plan #58 UX-15] Thanh năm bước của wizard */
+.wz-steps {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 0 0 18px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.wz-steps li > a,
+.wz-steps li > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+}
+.wz-steps li > a:hover {
+  color: var(--accent);
+}
+.wz-n {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.wz-steps li.done {
+  color: var(--ink-2);
+}
+.wz-steps li.done .wz-n {
+  box-shadow: none;
+  background: var(--sunk);
+}
+.wz-steps li[aria-current="step"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+.wz-steps li[aria-current="step"] .wz-n {
+  box-shadow: none;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+/* Quay lại đứng bên trái, việc tiếp theo bên phải */
+.wizard-nav > .wz-back {
+  margin-right: auto;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 4px;
+}
+.title-row .title {
+  margin: 0;
+}
+
+/* [Plan #58 UX-15] Thứ tự dựng gọn trong một mục mở được */
+.plan-details {
+  margin: 4px 0 18px;
+}
+.plan-details > summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.plan-details[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* [Plan #58 UX-16] Việc bên cloud thành các bước đánh số */
+.cloud-steps {
+  margin: 0;
+  padding-left: 20px;
+}
+.cloud-steps > li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.cloud-steps > li::marker {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.cloud-steps p {
+  margin: 0;
+}
+.cloud-steps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* [Plan #58 UX-14] Chọn domain: câu dẫn, gói khuyến nghị, một câu công dụng mỗi domain */
+.dom-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.dom-intro p {
+  margin: 0;
+  max-width: 68ch;
+}
+.dom-starter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.dom-purpose {
+  margin: -6px 0 0;
+  max-width: 68ch;
+}
+
+/* [Plan #58 a11y] Tiêu đề của panel bên là heading, cùng cỡ chữ với nhãn đậm cũ */
+.peek-h {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Environment trong sơ đồ tổng quan: h3 (trước là h4), giữ nguyên kiểu */
+.sys-env h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* [Plan #58 UX-17] Trạng thái trống: câu vì sao (cần gì trước) và nút đi tiếp */
+.empty-why {
+  margin: 0 auto;
+  max-width: 56ch;
+}
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}

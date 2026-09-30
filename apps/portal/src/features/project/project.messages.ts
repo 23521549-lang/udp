@@ -1,8 +1,14 @@
 import type { SettingsSearch } from "../../app/router";
 import { count, defineMessages } from "../../i18n";
 import { formatNumber } from "../../lib/format";
+import type { StartTask } from "./getting-started";
 
 type SettingsTab = NonNullable<SettingsSearch["tab"]>;
+export type WizardStep = "project" | "cloud" | "domains" | "preview" | "deploy";
+interface StartCopy {
+  title: string;
+  hint: string;
+}
 
 /**
  * Chữ của phân hệ project: danh sách project, wizard tạo project, khung project (bộ chọn environment),
@@ -16,8 +22,6 @@ export const projectMessages = defineMessages({
     creating: "Đang tạo…",
     list: {
       lead: "Mọi project mà bạn là thành viên.",
-      empty: "Chưa có project nào",
-      createFirst: "Tạo project đầu tiên",
       label: "Project của bạn",
       pages: "Trang của danh sách project",
     },
@@ -28,6 +32,18 @@ export const projectMessages = defineMessages({
       step3: "Bước 3/5: Domain",
       step4: "Bước 4/5: Xem trước",
       step5: "Bước 5/5: Triển khai",
+      /** [Plan #58 UX-15] Thanh năm bước: bước đang làm, bước đã qua bấm được để quay lại */
+      steps: "Các bước tạo project",
+      stepName: {
+        project: "Project",
+        cloud: "Cloud",
+        domains: "Domain",
+        preview: "Xem trước",
+        deploy: "Triển khai",
+      } satisfies Record<WizardStep, string>,
+      stepDone: "đã xong",
+      back: "Quay lại",
+      createAndContinue: "Tạo và tiếp tục",
       next: "Tiếp tục",
       later: "Để sau",
       cloudTitle: "Kết nối cloud",
@@ -45,7 +61,7 @@ export const projectMessages = defineMessages({
       openProject: "Mở project",
       nameRequired: "Nhập tên project.",
       createLead:
-        "Project sinh sẵn ba environment: dev, staging và production.",
+        "Project sinh sẵn ba environment: dev, staging và prod (production, nơi người dùng thật dùng).",
       draftNote:
         "Project mới đứng ở trạng thái Nháp cho tới khi triển khai; flag, segment, rollout và SDK key dùng được ngay.",
       name: "Tên project",
@@ -76,9 +92,44 @@ export const projectMessages = defineMessages({
       flagsOn: (env: string) => `flag bật ở ${env}`,
       runningRollouts: "rollout đang chạy",
       members: "thành viên",
+      membersLink: (n: number) =>
+        `${formatNumber(n)} thành viên. Mở trang thành viên để mời thêm`,
       cloud: "Cloud",
       cluster: "Cluster",
-      noCluster: "Chưa có cluster: project chưa triển khai hạ tầng.",
+      noCluster: "Chưa có cluster: project chưa dựng hạ tầng.",
+      /** [Plan #58 UX-12] Thẻ "Bắt đầu": việc tự đánh dấu, thứ tự nào cũng được */
+      start: {
+        title: "Bắt đầu",
+        progress: (done: number, total: number) =>
+          `Xong ${formatNumber(done)}/${formatNumber(total)} việc`,
+        lead: "Làm theo thứ tự nào cũng được. Mỗi việc tự đánh dấu khi xong.",
+        hide: "Ẩn thẻ này",
+        done: "Xong",
+        todo: "Chưa làm",
+        checking: "Đang kiểm…",
+        task: {
+          sdkKey: {
+            title: "Tạo SDK key",
+            hint: "Ứng dụng dùng key này để hỏi giá trị flag.",
+          },
+          flag: {
+            title: "Tạo flag đầu tiên",
+            hint: "Flag chạy được ngay, chưa cần cloud.",
+          },
+          cloud: {
+            title: "Kết nối cloud",
+            hint: "Tài khoản cloud nơi UDP dựng hạ tầng. Làm sau cũng được.",
+          },
+          domains: {
+            title: "Chọn domain",
+            hint: "Công cụ hạ tầng project cần, ví dụ CI/CD và Monitoring.",
+          },
+          deploy: {
+            title: "Deploy lần đầu",
+            hint: "Dựng hạ tầng, rồi pipeline CI báo cho UDP sau mỗi lần build.",
+          },
+        } satisfies Record<StartTask, StartCopy>,
+      },
       latestDeploy: "Deploy gần nhất",
       latestDeployIn: (env: string) => `Deploy gần nhất ở ${env}`,
       noDeploy: "Chưa có lần deploy nào.",
@@ -125,6 +176,8 @@ export const projectMessages = defineMessages({
       group: { flag: "Flag", rollout: "Rollout", command: "Lệnh" },
       createFlag: "Tạo flag",
       createRollout: "Tạo rollout",
+      inviteMember: "Mời thành viên",
+      createSdkKey: "Tạo SDK key",
       switchTo: (env: string) => `Chuyển sang ${env}`,
       openOverview: "Mở Tổng quan",
       openSegments: "Mở Segment",
@@ -142,8 +195,6 @@ export const projectMessages = defineMessages({
     creating: "Creating…",
     list: {
       lead: "Every project you are a member of.",
-      empty: "No projects yet",
-      createFirst: "Create your first project",
       label: "Your projects",
       pages: "Project list pages",
     },
@@ -154,6 +205,17 @@ export const projectMessages = defineMessages({
       step3: "Step 3/5: Domains",
       step4: "Step 4/5: Preview",
       step5: "Step 5/5: Deploy",
+      steps: "Project creation steps",
+      stepName: {
+        project: "Project",
+        cloud: "Cloud",
+        domains: "Domains",
+        preview: "Preview",
+        deploy: "Deploy",
+      },
+      stepDone: "done",
+      back: "Back",
+      createAndContinue: "Create and continue",
       next: "Continue",
       later: "Skip for now",
       cloudTitle: "Connect a cloud",
@@ -171,7 +233,7 @@ export const projectMessages = defineMessages({
       openProject: "Open project",
       nameRequired: "Enter a project name.",
       createLead:
-        "A project comes with three environments: dev, staging and production.",
+        "A project comes with three environments: dev, staging and prod (production, where real users are).",
       draftNote:
         "A new project stays in Draft until it is deployed; flags, segments, rollouts and SDK keys work right away.",
       name: "Project name",
@@ -202,10 +264,43 @@ export const projectMessages = defineMessages({
       flagsOn: (env: string) => `flags on in ${env}`,
       runningRollouts: "running rollouts",
       members: "members",
+      membersLink: (n: number) =>
+        `${count(n, "member", "members")}. Open the members page to invite more`,
       cloud: "Cloud",
       cluster: "Cluster",
-      noCluster:
-        "No cluster yet: the project has not provisioned infrastructure.",
+      noCluster: "No cluster yet: the project has no infrastructure yet.",
+      start: {
+        title: "Get started",
+        progress: (done: number, total: number) =>
+          `${formatNumber(done)} of ${formatNumber(total)} done`,
+        lead: "Do them in any order. Each task checks itself off when it is done.",
+        hide: "Hide this card",
+        done: "Done",
+        todo: "To do",
+        checking: "Checking…",
+        task: {
+          sdkKey: {
+            title: "Create an SDK key",
+            hint: "Your app uses this key to ask for flag values.",
+          },
+          flag: {
+            title: "Create your first flag",
+            hint: "Flags work right away, no cloud needed.",
+          },
+          cloud: {
+            title: "Connect a cloud",
+            hint: "The cloud account where UDP sets up infrastructure. This can wait.",
+          },
+          domains: {
+            title: "Choose domains",
+            hint: "The infrastructure tools the project needs, such as CI/CD and Monitoring.",
+          },
+          deploy: {
+            title: "Deploy for the first time",
+            hint: "Set up the infrastructure, then your CI pipeline reports each build to UDP.",
+          },
+        },
+      },
       latestDeploy: "Latest deployment",
       latestDeployIn: (env: string) => `Latest deployment in ${env}`,
       noDeploy: "No deployments yet.",
@@ -252,6 +347,8 @@ export const projectMessages = defineMessages({
       group: { flag: "Flags", rollout: "Rollouts", command: "Commands" },
       createFlag: "Create flag",
       createRollout: "Create rollout",
+      inviteMember: "Invite a member",
+      createSdkKey: "Create SDK key",
       switchTo: (env: string) => `Switch to ${env}`,
       openOverview: "Open Overview",
       openSegments: "Open Segments",
