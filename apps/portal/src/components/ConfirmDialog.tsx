@@ -47,6 +47,8 @@ export function ConfirmDialog({
       title={title}
       description={description}
       onClose={onClose}
+      // [Plan #58 UX-37] Việc nguy hiểm không có ô gõ xác nhận: focus vào Huỷ, Enter lặp lại không xác nhận nhầm
+      initialFocus={danger && typeToConfirm === undefined ? "cancel" : "first"}
       footer={
         <>
           <button type="button" className="btn" data-close onClick={onClose}>

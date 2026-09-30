@@ -25,6 +25,7 @@ import { qk } from "../lib/query-keys";
 import { useMessages } from "../i18n";
 import { appMessages } from "./app.messages";
 import { NAV, NavBody, Shell } from "./Shell";
+import { shellUxMessages } from "./shell-ux.messages";
 
 /**
  * Khung của Portal (developer, `/app` — DESIGN.md §4). Trong một project, thanh bên có các phân hệ
@@ -62,6 +63,8 @@ export function AppShell() {
 
 function ProjectNav({ projectId }: { projectId: string }) {
   const m = useMessages(appMessages).portalNav;
+  // [Plan #58 UX-25] Hai nhóm theo việc: phát hành tính năng, và hạ tầng chạy nó
+  const g = useMessages(shellUxMessages).navGroup;
   const project = useQuery({
     queryKey: qk.project(projectId),
     queryFn: () => projectApi.get(projectId),
@@ -103,24 +106,7 @@ function ProjectNav({ projectId }: { projectId: string }) {
       >
         <NavBody icon={LayoutDashboard}>{m.overview}</NavBody>
       </Link>
-      <Link
-        {...NAV}
-        to="/app/projects/$projectId/architecture"
-        params={params}
-        search={keep}
-        activeOptions={sub}
-      >
-        <NavBody icon={Network}>{m.architecture}</NavBody>
-      </Link>
-      <Link
-        {...NAV}
-        to="/app/projects/$projectId/monitoring"
-        params={params}
-        search={keep}
-        activeOptions={sub}
-      >
-        <NavBody icon={Activity}>{m.monitoring}</NavBody>
-      </Link>
+      <div className="grp sub">{g.release}</div>
       <Link
         {...NAV}
         to="/app/projects/$projectId/flags"
@@ -157,14 +143,24 @@ function ProjectNav({ projectId }: { projectId: string }) {
       >
         <NavBody icon={Rocket}>{m.deployments}</NavBody>
       </Link>
+      <div className="grp sub">{g.platform}</div>
       <Link
         {...NAV}
-        to="/app/projects/$projectId/code"
+        to="/app/projects/$projectId/architecture"
         params={params}
         search={keep}
         activeOptions={sub}
       >
-        <NavBody icon={FileCode2}>{m.code}</NavBody>
+        <NavBody icon={Network}>{m.architecture}</NavBody>
+      </Link>
+      <Link
+        {...NAV}
+        to="/app/projects/$projectId/monitoring"
+        params={params}
+        search={keep}
+        activeOptions={sub}
+      >
+        <NavBody icon={Activity}>{m.monitoring}</NavBody>
       </Link>
       <Link
         {...NAV}
@@ -183,6 +179,15 @@ function ProjectNav({ projectId }: { projectId: string }) {
         activeOptions={sub}
       >
         <NavBody icon={Server}>{m.infra}</NavBody>
+      </Link>
+      <Link
+        {...NAV}
+        to="/app/projects/$projectId/code"
+        params={params}
+        search={keep}
+        activeOptions={sub}
+      >
+        <NavBody icon={FileCode2}>{m.code}</NavBody>
       </Link>
       <Link
         {...NAV}

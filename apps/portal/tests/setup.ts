@@ -6,6 +6,8 @@ import { useAuthStore } from "../src/features/auth/auth-store";
 import { useToasts } from "../src/components/Toast";
 import { usePaletteStore } from "../src/features/project/CommandPalette";
 import { useLocaleStore } from "../src/i18n";
+import { useHelpStore } from "../src/features/help/HelpDrawer";
+import { useShortcutStore } from "../src/lib/shortcuts";
 
 /**
  * Hạn chờ của `findBy*`/`waitFor`: 5 giây thay cho 1 giây mặc định. Một lượt đầy đủ chạy nhiều
@@ -40,6 +42,8 @@ afterEach(() => {
   useAuthStore.setState({ user: null, isInitializing: false });
   useToasts.setState({ items: [] });
   usePaletteStore.setState({ open: false });
+  useHelpStore.setState({ open: false });
+  useShortcutStore.setState({ enabled: true });
   useLocaleStore.setState({ locale: "vi" });
   document.documentElement.lang = "vi";
   delete document.documentElement.dataset.theme;

@@ -1,6 +1,8 @@
 import { useId } from "react";
 import { LOCALE_NAME, LOCALES, useLocaleStore, useMessages } from "../i18n";
+import { useShortcutStore } from "../lib/shortcuts";
 import { appMessages } from "./app.messages";
+import { shellUxMessages } from "./shell-ux.messages";
 import { useTheme, type ThemePreference } from "./theme";
 
 const THEMES: readonly ThemePreference[] = ["light", "dark", "system"];
@@ -61,6 +63,45 @@ export function LanguageSwitch() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * [Plan #58 UX-40] Bật/tắt phím tắt MỘT phím (WCAG 2.1.4) — cùng khuôn `.seg` với giao diện và ngôn ngữ. Ctrl K vẫn
+ * luôn dùng được vì có phím bổ trợ.
+ */
+export function ShortcutSwitch() {
+  const m = useMessages(shellUxMessages).shortcuts;
+  const enabled = useShortcutStore((s) => s.enabled);
+  const setEnabled = useShortcutStore((s) => s.setEnabled);
+  const label = useId();
+  const hint = useId();
+  return (
+    <div className="pref">
+      <span className="pref-l" id={label}>
+        {m.label}
+      </span>
+      <div
+        className="seg"
+        role="group"
+        aria-labelledby={label}
+        aria-describedby={hint}
+      >
+        {[true, false].map((on) => (
+          <button
+            key={String(on)}
+            type="button"
+            aria-pressed={enabled === on}
+            onClick={() => setEnabled(on)}
+          >
+            {on ? m.on : m.off}
+          </button>
+        ))}
+      </div>
+      <span className="c3 pref-hint" id={hint}>
+        {m.hint}
+      </span>
     </div>
   );
 }

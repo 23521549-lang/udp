@@ -2,19 +2,24 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import {
   ChevronsUpDown,
+  CircleHelp,
   LayoutGrid,
   LogOut,
   Menu,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../components/Icon";
 import { Logo } from "../components/Logo";
 import { authApi } from "../features/auth/auth-api";
 import { useAuthStore } from "../features/auth/auth-store";
+import { HelpDrawer, useHelpStore } from "../features/help/HelpDrawer";
 import { useMessages } from "../i18n";
 import { appMessages } from "./app.messages";
-import { LanguageSwitch, ThemeSwitch } from "./Preferences";
+import { usePageTitle } from "./page-title";
+import { LanguageSwitch, ShortcutSwitch, ThemeSwitch } from "./Preferences";
+import { shellUxMessages } from "./shell-ux.messages";
 
 /**
  * Khung chung của hai không gian (DESIGN.md §4 "Hai khung", Plan #53 QĐ-1):
@@ -36,9 +41,20 @@ export function Shell({
   nav: ReactNode;
 }) {
   const m = useMessages(appMessages);
+  const ux = useMessages(shellUxMessages);
   const [open, setOpen] = useState(false);
   const side = useRef<HTMLElement>(null);
   const menuBtn = useRef<HTMLButtonElement>(null);
+  const announce = usePageTitle();
+  const mainRef = useRef<HTMLElement>(null);
+
+  // [Plan #58 UX-38] Ngăn kéo mở trên điện thoại: nội dung phía sau không nhận focus hay bấm (kiểu React 18 chưa có
+  // thuộc tính `inert`, nên đặt thẳng lên phần tử)
+  useEffect(() => {
+    const main = mainRef.current;
+    if (main === null) return;
+    main.toggleAttribute("inert", open);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -83,7 +99,27 @@ export function Shell({
             <b>udp</b>
           </Link>
         )}
+        {/* [Plan #58 UX-38] Ngăn kéo điện thoại có nút đóng của riêng nó: phần nền bị khoá (inert) khi ngăn kéo mở */}
+        <button
+          type="button"
+          className="ib side-close"
+          aria-label={ux.closeMenu}
+          onClick={() => {
+            setOpen(false);
+            menuBtn.current?.focus();
+          }}
+        >
+          <Icon of={X} />
+        </button>
         {nav}
+        {/* [Plan #58 UX-21] Trợ giúp ở cùng một chỗ trên mọi trang của cả hai khung */}
+        <button
+          type="button"
+          className="nv helpbtn"
+          onClick={() => useHelpStore.getState().setOpen(true)}
+        >
+          <NavBody icon={CircleHelp}>{ux.help.open}</NavBody>
+        </button>
         <AccountMenu kind={kind} />
       </aside>
       {open && (
@@ -93,7 +129,7 @@ export function Shell({
           onClick={() => setOpen(false)}
         />
       )}
-      <main id="main" className="main" tabIndex={-1}>
+      <main id="main" ref={mainRef} className="main" tabIndex={-1}>
         <button
           ref={menuBtn}
           type="button"
@@ -107,6 +143,10 @@ export function Shell({
         </button>
         <Outlet />
       </main>
+      <HelpDrawer />
+      <div className="visually-hidden" aria-live="polite">
+        {announce}
+      </div>
     </div>
   );
 }
@@ -223,6 +263,7 @@ function AccountMenu({ kind }: { kind: "portal" | "console" }) {
             ))}
           <ThemeSwitch />
           <LanguageSwitch />
+          {kind === "portal" && <ShortcutSwitch />}
           <button
             type="button"
             className="acct-it"
