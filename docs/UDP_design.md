@@ -106,7 +106,7 @@ graph TD
 
 | Bảng | Writer | Reader |
 | ---- | ------ | ------ |
-| `User`, `ProjectMember`, `Project`, `CloudCredential`, `DomainConfig`, `CapabilityBinding`, `CapabilityPreference`, `Environment` (trừ hai cột `config_version` và `config_hash`), `ProvisioningJob`, `ProvisionedResource`, `RefreshSession`, `IdempotencyKey` | Service 1 | S2 (`Project`, `Environment`), S3 (`Project`, `DomainConfig`, `CapabilityBinding`). S3 **không** đọc `CloudCredential`: quyền vào cluster được cấp qua endpoint nội bộ của S1 (ADR-06) |
+| `User`, `ProjectMember`, `Project`, `CloudCredential`, `DomainConfig`, `CapabilityBinding`, `CapabilityPreference`, `Environment` (trừ hai cột `config_version` và `config_hash`), `ProvisioningJob`, `ProvisionedResource`, `RefreshSession`, `IdempotencyKey`, **[v4.11, Plan #55]** `Team`, `TeamMember`, `ProjectTeamGrant`, `Invitation` | Service 1 | S2 (`Project`, `Environment`), S3 (`Project`, `DomainConfig`, `CapabilityBinding`). S3 **không** đọc `CloudCredential`: quyền vào cluster được cấp qua endpoint nội bộ của S1 (ADR-06) |
 | `Environment.config_version`, `FeatureFlag`, `FlagVariant`, `FlagEnvConfig`, `FlagTargetingRule`, `Segment`, `SdkKey`, `FlagEvaluationStat`, `ConfigChangeLog` | Service 2 | S1 (hiển thị), S3 (đọc rule đang rollout). **Một ngoại lệ có chủ đích:** để dùng làm kill-switch **chỉ** khi Service 2 không phản hồi (nhánh `DEPENDENCY_DOWN`, §7.6), S3 được cấp **đúng bốn quyền hẹp**, không hơn: `UPDATE` mức cột trên `flag_targeting_rules.serve`, `UPDATE` mức cột trên `environments.config_version` và `config_hash`, `INSERT` trên `config_change_log`, và **[v4.3]** `UPDATE` mức cột trên `flag_env_configs.updated_at` — kill-switch đẩy mốc optimistic lock như đường ramp của S2, để người đang mở danh sách rule từ trước nhận 409 thay vì lưu đè baseline vừa đặt. Ba quyền đầu là **tối thiểu để chạy được kỷ luật transaction của ADR-05** — thiếu quyền cấp version thì S3 ghi `serve` mà replica của S2 không bao giờ thấy, tức là kill-switch im lặng không có tác dụng. Không có ngoại lệ này thì hành động *an toàn* nhất của hệ thống lại phụ thuộc vào availability của một service khác. S3 vẫn phải theo đúng kỷ luật transaction của ADR-05 (khóa `Environment` trước, ghi outbox cuối) để replica của S2 lan truyền đúng khi hồi phục. Bất biến I30 |
 | `RolloutSession` | **Chia theo cột**: S1 tạo hàng và ghi các cột cấu hình; **[v4.4]** lúc INSERT (và chỉ lúc đó), S1 đặt giá trị KHỞI TẠO của hai nhóm cột của S3 — `current_traffic_percentage = baseline_percentage` (traffic thật đang ở đó) và **lease khai sinh** `claimed_by = 's1-create:<uuid>'`, `claimed_until = now + birthLeaseSeconds` (đồng hồ của S1, không của database — INSERT qua Prisma giữ nguyên hình dạng lỗi P2002 mà `uniqueViolationIndexOf` đọc; lệch đồng hồ chỉ ăn vào biên 15 giây, hết biên thì bù trừ rơi sang huỷ bằng intent) (S3 không claim được session trong lúc S1 gọi track sang S2, nên S1 bù trừ bằng DELETE chắc chắn không đụng thứ S3 đã chạm, §8.5) — rồi không bao giờ UPDATE chúng; S3 là writer duy nhất của `status`, `current_traffic_percentage`, `fail_reason`, `last_decision`, `last_step_at`, `claimed_by`, `claimed_until`, `version` | **[v4.1]** S2 **đọc đúng năm cột** — `id`, `targeting_rule_id`, `status`, `version`, `claimed_until` — để `PATCH /internal/rules/:id` kiểm lease (T12) và so fencing token (I23) trong **một** truy vấn. **[v4.3]** Thêm cột thứ sáu `flag_env_config_id`: `track` nhận id session và phải biết flag nào, và `untrack` (theo env-config) bỏ qua khi config còn session đang chạy (§6.6). Chỉ SELECT. Bản trước định lưu thêm một `rollout_lock` trên rule; bỏ, vì `RolloutSession.version` đã **là** fencing token, và một bản sao trên rule sẽ ôi thiu đúng ở nhánh kill-switch §7.6 — S3 ghi thẳng `serve` mà không có quyền ghi cột đó |
 | `RolloutEvent` | S1 ghi `is_intent = true`; S3 ghi `is_intent = false` | **[v4.2]** S3 có thêm `UPDATE` mức cột trên `rollout_events.processed_at`, và trigger writer chỉ cho đặt nó **trên hàng intent, một lần, từ NULL sang khác NULL** — S3 đánh dấu intent đã xử lý trong cùng transaction với hiệu lực của nó, nên không có cửa sổ "intent chạy hai lần" và cũng không có đường sửa lại lịch sử |
@@ -500,6 +500,13 @@ erDiagram
     User ||--o{ Project : "owns"
     User ||--o{ ProjectMember : "member of"
     Project ||--o{ ProjectMember : "has members"
+    Team ||--o{ TeamMember : "has members"
+    User ||--o{ TeamMember : "member of"
+    Team ||--o{ ProjectTeamGrant : "granted to projects"
+    Project ||--o{ ProjectTeamGrant : "grants a role to teams"
+    Project ||--o{ Invitation : "invites by link"
+    Team ||--o{ Invitation : "invites by link"
+    User ||--o{ Invitation : "invited by"
     Project ||--o{ Environment : "has"
     Project ||--o{ CloudCredential : "has"
     Project ||--o{ DomainConfig : "has"
@@ -542,6 +549,43 @@ erDiagram
         uuid project_id FK
         uuid user_id FK
         string project_role "OWNER MAINTAINER DEVELOPER VIEWER"
+        timestamp created_at
+    }
+
+    Team {
+        uuid id PK
+        string name "varchar 80, not blank"
+        timestamp created_at
+    }
+
+    TeamMember {
+        uuid id PK
+        uuid team_id FK
+        uuid user_id FK
+        string team_role "OWNER MEMBER"
+        timestamp created_at
+    }
+
+    ProjectTeamGrant {
+        uuid id PK
+        uuid project_id FK
+        uuid team_id FK
+        string project_role "MAINTAINER DEVELOPER VIEWER, never OWNER"
+        timestamp created_at
+    }
+
+    Invitation {
+        uuid id PK
+        uuid project_id FK "exactly one of project_id and team_id"
+        uuid team_id FK
+        string email "lowercase"
+        string project_role "project target only, never OWNER"
+        string team_role "team target only"
+        string token_hash "sha256 hex UNIQUE, the token itself is never stored"
+        uuid invited_by FK
+        timestamp expires_at
+        timestamp accepted_at
+        timestamp revoked_at
         timestamp created_at
     }
 
@@ -911,9 +955,71 @@ ON ProjectMember (project_id) WHERE project_role = 'OWNER';
 | Bấm Manual Override (PAUSE/PROMOTE/ROLLBACK) | ✓ | ✓ | — | — |
 | Sửa Domain Config, provision, teardown | ✓ | ✓ | — | — |
 | Nhập/đổi Cloud Credential, tạo/thu hồi SDK key | ✓ | — | — | — |
-| Thêm/xóa thành viên, chuyển quyền OWNER, xóa project | ✓ | — | — | — |
+| Thêm/xóa thành viên, **[v4.11]** tạo/thu hồi lời mời, cấp/đổi/gỡ quyền của nhóm, chuyển quyền OWNER, xóa project | ✓ | — | — | — |
 
 > Việc tồn tại optimistic lock trên flag ở v2 đã ngầm giả định nhiều người cùng sửa một project — nhưng data model lại chỉ có `owner_id`. Bảng này gỡ mâu thuẫn đó.
+
+> **[v4.11, Plan #55, D-P48] Vai hiệu lực.** Cột "vai" của ma trận trên là **vai hiệu lực**: vai CAO NHẤT giữa hàng `ProjectMember` của người đó và các `ProjectTeamGrant` của những nhóm họ thuộc. Một chỗ duy nhất ở Service 1 (`project-access.ts`) tính nó cho mọi nơi hỏi — `requireMinProjectRole`, danh sách project, trang chủ, luồng SSE — không chỗ nào tự tính lại, và không cache: rời nhóm là mất quyền đến từ nhóm ở request kế tiếp. Grant của nhóm không bao giờ là OWNER, nên mọi hành động cột OWNER vẫn đòi đúng người chủ.
+
+#### `Team` — [NEW v4.11, Plan #55: nhóm dùng chung cho nhiều project]
+
+| Cột        | Kiểu        | Constraint                 | Ghi chú                                                                                  |
+| ---------- | ----------- | -------------------------- | ---------------------------------------------------------------------------------------- |
+| id         | UUID        | PK                         |                                                                                          |
+| name       | VARCHAR(80) | NOT NULL, CHECK không rỗng | Không duy nhất: tên là nhãn của người dùng, như tên project                               |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW()    | Người tạo không lưu ở đây — họ là `TeamMember` OWNER đầu tiên, và audit ghi `team.create` |
+
+Ai đăng nhập cũng tạo được nhóm. Nhóm luôn còn ít nhất một OWNER: Service 1 giữ trong transaction có khoá hàng `teams` (`FOR NO KEY UPDATE`, như chuyển quyền sở hữu project) — một unique index chỉ nói được "nhiều nhất", không nói được "ít nhất". Xoá nhóm kéo theo thành viên, grant và lời mời của nhóm.
+
+#### `TeamMember` — [NEW v4.11, Plan #55]
+
+| Cột        | Kiểu        | Constraint                            | Ghi chú                                                                      |
+| ---------- | ----------- | ------------------------------------- | ---------------------------------------------------------------------------- |
+| id         | UUID        | PK                                    |                                                                              |
+| team_id    | UUID        | FK → Team ON DELETE CASCADE, NOT NULL | UNIQUE (team_id, user_id)                                                    |
+| user_id    | UUID        | FK → User ON DELETE CASCADE, NOT NULL | Có index: vai hiệu lực đi từ người sang nhóm ở mọi request vào project       |
+| team_role  | ENUM        | NOT NULL                              | `'OWNER'` quản lý nhóm (thành viên, lời mời, tên), `'MEMBER'` chỉ thuộc nhóm |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW()               |                                                                              |
+
+#### `ProjectTeamGrant` — [NEW v4.11, Plan #55: project cấp một vai cho cả nhóm]
+
+| Cột          | Kiểu        | Constraint                               | Ghi chú                                                                 |
+| ------------ | ----------- | ---------------------------------------- | ----------------------------------------------------------------------- |
+| id           | UUID        | PK                                       |                                                                         |
+| project_id   | UUID        | FK → Project ON DELETE CASCADE, NOT NULL | UNIQUE (project_id, team_id)                                            |
+| team_id      | UUID        | FK → Team ON DELETE CASCADE, NOT NULL    |                                                                         |
+| project_role | ENUM        | NOT NULL, CHECK ≠ `'OWNER'`              | Chủ sở hữu luôn là MỘT người cụ thể, đổi qua `POST /transfer-ownership` |
+| created_at   | TIMESTAMPTZ | NOT NULL, DEFAULT NOW()                  |                                                                         |
+
+Chỉ OWNER của project cấp, và người cấp phải là thành viên của nhóm đó: trao project cho một nhóm mình không thuộc là trao cho người lạ.
+
+#### `Invitation` — [NEW v4.11, Plan #55: lời mời bằng đường dẫn, không gửi mail]
+
+| Cột          | Kiểu         | Constraint                               | Ghi chú                                                                                                                                     |
+| ------------ | ------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| id           | UUID         | PK                                       |                                                                                                                                             |
+| project_id   | UUID         | FK → Project ON DELETE CASCADE, NULLABLE | Đúng một trong `project_id`, `team_id` (CHECK `invitations_one_target`)                                                                     |
+| team_id      | UUID         | FK → Team ON DELETE CASCADE, NULLABLE    |                                                                                                                                             |
+| email        | VARCHAR(255) | NOT NULL, CHECK chữ thường               | So khớp với `User.email` (đã chữ thường ở cửa vào) bằng phép bằng                                                                           |
+| project_role | ENUM         | NULLABLE                                 | Đích project: vai cấp khi nhận, không bao giờ `'OWNER'`. Đích nhóm: NULL                                                                    |
+| team_role    | ENUM         | NULLABLE                                 | Đích nhóm: vai trong nhóm khi nhận. Đích project: NULL                                                                                      |
+| token_hash   | CHAR(64)     | NOT NULL, UNIQUE                         | SHA-256 hex của token 256 bit. Token chỉ hiện MỘT lần cho người mời (đường dẫn `/invite/<token>`); một bản dump không nhận được lời mời nào |
+| invited_by   | UUID         | FK → User ON DELETE CASCADE, NOT NULL    | Trang nhận lời mời hiện "ai mời"                                                                                                            |
+| expires_at   | TIMESTAMPTZ  | NOT NULL                                 | 7 ngày sau lúc tạo                                                                                                                          |
+| accepted_at  | TIMESTAMPTZ  | NULLABLE                                 | Dùng một lần                                                                                                                                |
+| revoked_at   | TIMESTAMPTZ  | NULLABLE                                 | Người mời thu hồi, hoặc mời lại cùng email (lời cũ thu hồi trong cùng transaction)                                                          |
+| created_at   | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()                  |                                                                                                                                             |
+
+```sql
+-- Mỗi (đích, email) một lời mời ĐANG CHỜ; hết hạn không nằm trong điều kiện (now() không immutable) — mời lại
+-- là thu hồi lời cũ rồi tạo lời mới trong một transaction
+CREATE UNIQUE INDEX invitations_one_pending_per_project ON invitations (project_id, email)
+  WHERE project_id IS NOT NULL AND accepted_at IS NULL AND revoked_at IS NULL;
+CREATE UNIQUE INDEX invitations_one_pending_per_team ON invitations (team_id, email)
+  WHERE team_id IS NOT NULL AND accepted_at IS NULL AND revoked_at IS NULL;
+```
+
+Vì sao không gửi mail: chi phí hạ tầng phải bằng 0 do cấu trúc (không tài khoản dịch vụ mail, không bí mật SMTP), và một đường dẫn chép được đi qua mọi kênh người mời đã có. Nhận chỉ được khi email của tài khoản đang đăng nhập trùng `email`: đường dẫn lọt sang người khác cũng không dùng được. Token sai, hết hạn, đã dùng hay đã thu hồi đều trả CÙNG 404.
 
 #### `Environment` — [v3: vá B2 — ADR-04; v4: thêm `config_version`, `config_hash`]
 
@@ -1640,6 +1746,8 @@ CREATE UNIQUE INDEX deployment_events_once_per_kind ON DeploymentEvent
 | Bảng               | Chính sách khi Project bị xóa       |
 | ------------------ | ----------------------------------- |
 | ProjectMember      | ON DELETE CASCADE                   |
+| ProjectTeamGrant   | ON DELETE CASCADE — nhóm vẫn còn, nhóm không thuộc project |
+| Invitation         | ON DELETE CASCADE (lời mời vào project) |
 | Environment        | ON DELETE CASCADE                   |
 | SdkKey             | CASCADE theo Environment            |
 | CloudCredential    | ON DELETE CASCADE                   |

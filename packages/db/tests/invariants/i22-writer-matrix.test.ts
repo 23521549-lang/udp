@@ -59,6 +59,13 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     // phat lai nhan duoc — pha dung tinh chat bang nay sinh ra de bao dam.
     // DELETE thi can, vi don hang qua han lam ngay tren duong ghi (§2.2).
     idempotency_keys: { SELECT: "*", INSERT: "*", DELETE: "*" },
+    // [v4.11, Plan #55] Nhóm, grant của nhóm và lời mời — vòng đời thành viên, như
+    // project_members. S2/S3 không có quyền nào: không nhiệm vụ nào của hai service
+    // đó đọc thành viên, và `invitations` chứa hash token như refresh_sessions.
+    teams: FULL,
+    team_members: FULL,
+    project_team_grants: FULL,
+    invitations: FULL,
     // config_version/config_hash thuộc S2 (và S3 trong nhánh kill-switch)
     environments: {
       SELECT: "*",

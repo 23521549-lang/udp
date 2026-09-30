@@ -40,6 +40,13 @@ enum ProjectRole {
   VIEWER
 }
 
+/// [v4.11, Plan #55] Vai trong một nhóm: OWNER quản lý nhóm (thành viên, lời mời, tên), MEMBER chỉ thuộc nhóm.
+/// Vai trên PROJECT của một thành viên nhóm đến từ `ProjectTeamGrant`, không từ vai này.
+enum TeamRole {
+  OWNER
+  MEMBER
+}
+
 enum CreationMode {
   CREATE_NEW
   IMPORT_EXISTING
@@ -337,6 +344,8 @@ model User {
   configChanges   ConfigChangeLog[]
   refreshSessions RefreshSession[]
   idempotencyKeys IdempotencyKey[]
+  teamMemberships TeamMember[]
+  invitationsSent Invitation[]
 
   @@map("users")
 }
@@ -402,6 +411,88 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([userId])
   @@map("project_members")
+}
+
+/// [v4.11, Plan #55 QĐ-2] Nhóm — đơn vị trao quyền cho nhiều project một lần. Nhóm 10 người làm 5 project là
+/// 5 lần cấp quyền thay cho 50 lần thêm tay, và một người rời nhóm mất quyền ở cả 5 project ngay request kế tiếp.
+/// Ai đăng nhập cũng tạo được nhóm; nhóm luôn còn ít nhất một OWNER (Service 1 giữ, như chủ project).
+model Team {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(80)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  members     TeamMember[]
+  grants      ProjectTeamGrant[]
+  invitations Invitation[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  teamId    String   @map("team_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  teamRole  TeamRole @map("team_role")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  /// Vai hiệu lực đi từ người sang nhóm của họ ở MỌI request vào project
+  @@index([userId])
+  @@map("team_members")
+}
+
+/// [v4.11, Plan #55 QĐ-2] Project cấp cho một nhóm một vai. KHÔNG BAO GIỜ `OWNER` (CHECK trong migration): chủ
+/// sở hữu luôn là một người cụ thể, đổi qua chuyển quyền sở hữu. Vai hiệu lực của một người trên project = vai
+/// CAO NHẤT giữa hàng `project_members` của họ và các grant của những nhóm họ thuộc (`effectiveProjectRole`, S1).
+model ProjectTeamGrant {
+  id          String      @id @default(uuid()) @db.Uuid
+  projectId   String      @map("project_id") @db.Uuid
+  teamId      String      @map("team_id") @db.Uuid
+  projectRole ProjectRole @map("project_role")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, teamId])
+  @@index([teamId])
+  @@map("project_team_grants")
+}
+
+/// [v4.11, Plan #55 QĐ-1] Lời mời bằng đường dẫn — vào MỘT project hoặc MỘT nhóm (CHECK đúng một đích).
+///
+/// Không gửi mail (chi phí 0, không bí mật SMTP): người mời tự chuyển đường dẫn `/invite/<token>` qua kênh họ có.
+/// Chỉ lưu SHA-256 của token (như `refresh_sessions`): một bản dump database không cho ai nhận lời mời thay người
+/// được mời. Nhận chỉ được khi email của tài khoản trùng `email` — đường dẫn lọt sang người khác cũng vô dụng.
+/// Mỗi đích và email chỉ MỘT lời mời đang chờ (unique từng phần trong migration); mời lại là thu hồi lời cũ.
+model Invitation {
+  id          String       @id @default(uuid()) @db.Uuid
+  projectId   String?      @map("project_id") @db.Uuid
+  teamId      String?      @map("team_id") @db.Uuid
+  /// Chữ thường (CHECK) — email của tài khoản cũng lưu chữ thường, so khớp là phép bằng
+  email       String       @db.VarChar(255)
+  /// Đích project: vai cấp khi nhận (không `OWNER`). Đích nhóm: NULL
+  projectRole ProjectRole? @map("project_role")
+  /// Đích nhóm: vai trong nhóm khi nhận. Đích project: NULL
+  teamRole    TeamRole?    @map("team_role")
+  tokenHash   String       @unique @map("token_hash") @db.Char(64)
+  invitedById String       @map("invited_by") @db.Uuid
+  expiresAt   DateTime     @map("expires_at") @db.Timestamptz(3)
+  acceptedAt  DateTime?    @map("accepted_at") @db.Timestamptz(3)
+  revokedAt   DateTime?    @map("revoked_at") @db.Timestamptz(3)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  invitedBy User     @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([teamId])
+  @@index([invitedById])
+  @@map("invitations")
 }
 
 /// Lop luu cua header `Idempotency-Key` (§9, §2.2).
@@ -483,6 +574,8 @@ model Project {
   deploymentEvents DeploymentEvent[]
   auditLogs        AuditLog[]
   idempotencyKeys  IdempotencyKey[]
+  teamGrants       ProjectTeamGrant[]
+  invitations      Invitation[]
 
   @@index([ownerId, status])
   @@index([expiresAt])
@@ -1027,10 +1120,10 @@ model RolloutSession {
   /// @default(0) thì quên set sẽ thành rollback im lặng về 0 — đúng thứ cột này chặn.
   baselinePercentage Decimal? @map("baseline_percentage") @db.Decimal(5, 2)
 
-  versionNew String? @map("version_new") @db.VarChar(255)
-  versionOld String? @map("version_old") @db.VarChar(255)
+  versionNew   String? @map("version_new") @db.VarChar(255)
+  versionOld   String? @map("version_old") @db.VarChar(255)
   /// [v4.11, Plan #51] ATTRIBUTE_SPLIT ở SERVICE_LEVEL: { header, value } — request khớp đi phiên bản mới
-  trafficMatch Json? @map("traffic_match")
+  trafficMatch Json?   @map("traffic_match")
 
   /// { errorRate, relativeErrorRate, latencyP99Ms, minErrors, maxConsecutiveBreaches }
   thresholds    Json
