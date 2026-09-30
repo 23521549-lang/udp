@@ -5625,10 +5625,52 @@ DELETE /api/v1/projects/:id/environments/:envId/keys/:keyId   thu hồi (revoked
 Members                                                       [NEW]
 ────────────────────────────────────────────────────────────────
 GET    /api/v1/projects/:id/members
-POST   /api/v1/projects/:id/members            mời theo email
+POST   /api/v1/projects/:id/members            thêm người ĐÃ có tài khoản theo email; chưa có ⇒ 404
+                                               và Portal đề nghị lời mời bằng đường dẫn [Plan #55]
 PATCH  /api/v1/projects/:id/members/:userId    đổi project_role
 DELETE /api/v1/projects/:id/members/:userId
 POST   /api/v1/projects/:id/transfer-ownership
+
+Lời mời bằng đường dẫn                                        [v4.11, Plan #55, D-P48]
+────────────────────────────────────────────────────────────────
+GET    /api/v1/projects/:id/invitations          OWNER; lời mời đang chờ (kể cả đã quá hạn —
+                                                 Portal đánh dấu). Không bao giờ mang token
+POST   /api/v1/projects/:id/invitations          OWNER; {email, projectRole ≠ OWNER} ⇒ 201
+                                                 {invitation, token}: token `udp_inv_…` hiện ĐÚNG MỘT
+                                                 LẦN, database giữ SHA-256. Mời lại cùng email thu hồi
+                                                 lời cũ. Đã là thành viên ⇒ 409. KHÔNG nhận
+                                                 Idempotency-Key (lớp đó lưu nguyên response = token)
+DELETE /api/v1/projects/:id/invitations/:invId   OWNER; thu hồi ⇒ 204; không còn chờ ⇒ 404
+POST   /api/v1/invitations/lookup                KHÔNG cần phiên, miễn CSRF (chỉ đọc); {token} ⇒
+                                                 {target {kind, id, name, vai}, email, invitedBy {name},
+                                                 expiresAt}. Sai/hết hạn/đã dùng/thu hồi ⇒ CÙNG 404.
+                                                 Token đi trong THÂN, không trong URL (log truy cập)
+POST   /api/v1/invitations/accept                đăng nhập + CSRF; email tài khoản phải trùng ⇒ 200
+                                                 {target}; khác email ⇒ 403. Một lần; không hạ vai
+
+Nhóm                                                          [v4.11, Plan #55, D-P48]
+────────────────────────────────────────────────────────────────
+GET    /api/v1/teams                             nhóm của người gọi {id, name, myRole, memberCount,
+                                                 projectCount}
+POST   /api/v1/teams                             {name} ⇒ 201; người tạo là OWNER nhóm
+GET    /api/v1/teams/:teamId                     thành viên nhóm; kèm members và projects được cấp.
+                                                 Người ngoài ⇒ 404 (guard `requireTeamRole`)
+PATCH  /api/v1/teams/:teamId                     OWNER nhóm; đổi tên
+DELETE /api/v1/teams/:teamId                     OWNER nhóm; cascade thành viên, grant, lời mời
+POST   /api/v1/teams/:teamId/members             OWNER nhóm; {email, teamRole} — người đã có tài khoản
+PATCH  /api/v1/teams/:teamId/members/:userId     OWNER nhóm; không hạ chủ nhóm cuối ⇒ 409
+DELETE /api/v1/teams/:teamId/members/:userId     OWNER nhóm gỡ ai cũng được; MEMBER chỉ gỡ chính mình
+                                                 (rời nhóm); chủ nhóm cuối ⇒ 409
+GET|POST /api/v1/teams/:teamId/invitations       OWNER nhóm; như lời mời vào project, vai là teamRole
+DELETE /api/v1/teams/:teamId/invitations/:invId  OWNER nhóm
+
+Quyền của nhóm trên project                                   [v4.11, Plan #55, D-P48]
+────────────────────────────────────────────────────────────────
+GET    /api/v1/projects/:id/teams                VIEWER; nhóm có quyền, KÈM người của từng nhóm
+POST   /api/v1/projects/:id/teams                OWNER; {teamId, projectRole ≠ OWNER} — người cấp phải
+                                                 thuộc nhóm (không ⇒ 404); cấp trùng ⇒ 409
+PATCH  /api/v1/projects/:id/teams/:teamId        OWNER; đổi vai của nhóm
+DELETE /api/v1/projects/:id/teams/:teamId        OWNER; người chỉ vào qua nhóm mất quyền ngay
 
 Domain
 ────────────────────────────────────────────────────────────────
@@ -6480,6 +6522,9 @@ udp-portal/
 /                              → redirect to /app/projects
 /login
 /register
+/invite#<token>                → [v4.11, Plan #55] nhận lời mời — NGOÀI /app, token ở fragment
+/app/teams                     → [v4.11, Plan #55] nhóm của tôi
+/app/teams/:teamId             → [v4.11, Plan #55] thành viên, lời mời, project được cấp, cài đặt nhóm
 /app/projects                  → Project list
 /app/projects/new              → Creation wizard
 /app/projects/:id              → Dashboard overview tab
@@ -6998,6 +7043,15 @@ function useGlobalRolloutWatcher(projectId: string) {
 
 ### 10.10 Shared / Global
 
+> **[v4.11, Plan #55, D-P48] Nhóm và lời mời.** Thanh bên có mục **Nhóm** (`users-round`). Tab Cài đặt › Thành
+> viên có ba phần: thành viên trực tiếp (nút **Mời**: người đã có tài khoản vào ngay; email chưa có tài khoản ⇒
+> máy chủ trả 404 và Portal tạo lời mời bằng đường dẫn, hiện đường dẫn MỘT lần trong hộp có nút chép), lời mời
+> đang chờ (chỉ OWNER: tạo lại đường dẫn, thu hồi; lời đã quá hạn đánh dấu "Đã hết hạn"), và **Nhóm có quyền**
+> (kèm tên người của từng nhóm — ai xem được project thì thấy mọi người vào được nó). Đường dẫn mời là
+> `/invite#<token>`: fragment không bao giờ tới máy chủ. Trang `/invite` cất token vào sessionStorage của thẻ rồi
+> xoá nó khỏi thanh địa chỉ, nên đăng nhập/tạo tài khoản chỉ mang `redirectTo=/invite` — token không bao giờ lên
+> query string (thứ có đi lên máy chủ và vào lịch sử).
+
 > **[v4.11, Plan #54, D-P46/D-P47] Ngôn ngữ và giao diện.** Portal có hai ngôn ngữ (Tiếng Việt, English) và ba
 > lựa chọn giao diện (Sáng, Tối, Theo hệ thống). Chữ nằm ở `*.messages.ts(x)` cạnh component, khai bằng
 > `defineMessages({ vi, en })` — bản `en` có kiểu của bản `vi` nên thiếu một câu là lỗi biên dịch; chữ có tham số
@@ -7214,6 +7268,9 @@ Inline error:         form validation — always near the field, never toast
 | **[v4.11, Plan #53] Chi phí theo ngày** | `GET /projects/:id/cost?days=` | `["cost", projectId, days]` | Đổi cửa sổ |
 | **[v4.11, Plan #53] Admin Tổng quan** | `GET /admin/overview`, `GET /admin/platform` | `["admin", "overview"]`, `["admin", "platform"]` | Mỗi 60 giây |
 | **[v4.11, Plan #53] Admin danh sách** | `GET /admin/users`, `/admin/projects`, `/admin/jobs` với `offset` | `["admin", …, bộ lọc, offset]` | Đổi vai (người dùng) |
+| **[v4.11, Plan #55] Nhóm** | `GET /teams`, `GET /teams/:teamId`, `GET /teams/:teamId/invitations` | `["teams"]`, `["team", teamId]`, `["teamInvitations", teamId]` | Tạo, đổi tên, xoá nhóm; thêm, đổi vai, gỡ thành viên; mời, thu hồi. Rời hay xoá nhóm làm mới cả `["home"]` và `["projects"]` — quyền đến từ nhóm mất ngay |
+| **[v4.11, Plan #55] Thành viên của project** | `GET /projects/:id/invitations`, `GET /projects/:id/teams` | `["projectInvitations", projectId]`, `["projectTeams", projectId]` | Mời (kể cả khi "Mời" rơi sang tạo đường dẫn vì email chưa có tài khoản), thu hồi; cấp, đổi vai, gỡ quyền của nhóm |
+| **[v4.11, Plan #55] Nhận lời mời** | `POST /invitations/lookup` (đọc) | `["invitation", token]` — chỉ trong bộ nhớ của trang | Nhận xong làm mới `["home"]`, `["projects"]`, `["teams"]` |
 
 **Quy tắc, và cách cưỡng chế:**
 
@@ -7264,6 +7321,7 @@ Plan #25 dựng Portal theo §10 và theo bản mẫu đã duyệt (`docs/design
 | D-P45 | §13 Testing, §10.15 D-P1 | Portal kiểm bằng jsdom; không phép kiểm nào chạy layout thật | [v4.11, Plan #53] Bản xem thử (`apps/portal/demo`, lớp giả lập trong trang, dữ liệu tất định: 130 người dùng, 24 project trên ba cloud) và job CI `portal-demo`: Playwright qua 34 màn ở 1440×900 và 375×812 — không lỗi console, không tràn ngang, một `main`, một `h1`, không 404, không "...", mỗi màn có phần chính; ảnh chụp là artifact; máy dev chạy bằng Edge sẵn có | jsdom không có layout: một phép "không tràn ngang" trong jsdom xanh với mọi layout. Cổng này trả mục nợ `portal-responsive` và ngay lần đầu bắt hai lỗi mà jsdom không thể thấy (lớp cạnh không vẽ vì đo trước khi ref của khung cha được gắn; trang đăng nhập thiếu `main`). Không so pixel: font khác máy làm đỏ giả |
 | D-P46 | §10.1, §10.10 (không nói ngôn ngữ) | Portal một ngôn ngữ, chữ viết thẳng trong component (~1 500 chuỗi) | [v4.11, Plan #54] Hai ngôn ngữ bằng một tầng tự viết (`src/i18n`): `defineMessages({ vi, en })` với `en: NoInfer<V>`, `useMessages`/`messagesOf`, `count`/`plural` cho số nhiều tiếng Anh; `lib/format` theo ngôn ngữ đang chọn; bốn luật design-lint (không chữ có dấu, không chữ JSX, không `aria-label`/`title`/`placeholder` viết thẳng ngoài messages; bản `en` không còn chữ tiếng Việt); I37 kéo tới cả những câu mà máy chủ và Portal dùng chung — `serviceLevelIssueOf`, `canaryPairOf` và đường mở công cụ giám sát trả MÃ (`app`), Portal đặt chữ | Khoá chuỗi kiểu `t("flags.title")` không kiểm được bằng kiểu nếu không sinh mã, tham số nội suy không kiểm được; một tầng hai tệp cho kiểu chặt hơn một thư viện 40 KB. Chữ là mã của giao diện, sống cạnh component. Luật lint là thứ giữ cho màn thứ một trăm không lọt một câu tiếng Việt khi người dùng chọn English |
 | D-P47 | §10.1 dark mode, DESIGN.md §7 | Nút đổi sáng/tối hai trạng thái; chọn tay một lần là mất "theo hệ điều hành"; không phép kiểm nào mở màn nào ở chế độ tối | [v4.11, Plan #54] Ba lựa chọn Sáng/Tối/Theo hệ thống; "Theo hệ thống" nghe `prefers-color-scheme` lúc đang mở trang; cổng `portal-demo` thêm lượt tối (máy tính, điện thoại) và lượt tiếng Anh, mỗi màn đo tương phản chữ WCAG AA bằng axe-core; `--ink-3` sửa ở nguồn (52% sáng, 67% tối) | Tương phản là thứ quyết định một giao diện tối dùng được, và mắt không đo được nó trên 34 màn × 5 lượt. Lượt đầu của phép đo tìm đúng MỘT gốc cho hơn 1 000 chỗ thiếu tương phản (chữ phụ 3.5–4.3:1 ở cả hai chế độ) |
+| D-P48 | §2.2 ma trận quyền, §9 Members ("mời theo email"), §16 | Thêm thành viên chỉ khi người đó ĐÃ có tài khoản (404 nếu chưa); không có đơn vị nào lớn hơn một người — nhóm 10 người làm 5 project là 50 lần thêm tay | [v4.11, Plan #55] (1) **Lời mời bằng đường dẫn**: OWNER tạo lời mời (email + vai ≠ OWNER), máy chủ trả token `udp_inv_…` MỘT lần và chỉ giữ SHA-256; hạn 7 ngày, dùng một lần, thu hồi được, mời lại là thu hồi lời cũ; nhận chỉ khi email tài khoản trùng; sai/hết hạn/đã dùng/thu hồi cùng 404; token đi trong THÂN request (`/invitations/lookup`, `/accept`) và trong FRAGMENT của đường dẫn Portal. (2) **Nhóm** (`teams`, `team_members` OWNER/MEMBER) và **quyền của nhóm trên project** (`project_team_grants`, CHECK ≠ OWNER, người cấp phải thuộc nhóm). (3) **Vai hiệu lực** = vai cao nhất giữa thành viên trực tiếp và các nhóm; một chỗ tính (`core/access/project-access.ts`) cho middleware, danh sách project, trang chủ, SSE; không cache. (4) Guard `requireTeamRole` + lint `team-route-guard` cho `/teams/:teamId/*` | Gửi mail tự động đòi một dịch vụ mail — tài khoản có thể tính tiền và một bí mật SMTP phải giữ — trái yêu cầu cứng chi phí 0; đường dẫn chép được chạy ngay qua mọi kênh người mời đã có. Đường dẫn trong fragment + token trong thân request là cách duy nhất để token không vào log truy cập, log proxy, header Referer hay `?redirectTo=`. Tính vai ở một chỗ là thứ giữ cho "vào được project" và "vai gì" không lệch nhau giữa hai màn |
 | D-P36 | §11.1, §11.2, §8.3 áp image, §5.2 `PipelineTemplateParams`, §9 Project | Template §11.1 là khối mã trong tài liệu, không nói giao cho developer thế nào; "CI ghi image tag lúc render" trong khi luồng áp image §8.3 chỉ đổi `image`; §11.2 "quét repo" không nói quét bằng gì, lưu ở đâu; pipeline Golden Path không nói test theo runtime | [v4.11, Plan #48] Template là dự án chạy được trong monorepo (`packages/golden-path`), sinh qua `GET /golden-path`; patch áp image gắn nhãn pod `app.kubernetes.io/version`, manifest đọc nhãn vào `service.version`; quét qua API công khai GitHub/GitLab ở S1, kết quả ở `projects.repo_scan`; `PipelineTemplateParams.languageRuntime` ⇒ lệnh và image test theo runtime | Mã developer chép nguyên văn phải là mã đã chạy — v3 từng phát tán một cơ chế không chạy. Không có nhãn thì `service.version` đứng yên ở giá trị lúc apply đầu, canary SERVICE_LEVEL so hai phiên bản mang cùng nhãn. Quét cục bộ đòi developer cài công cụ; API công khai không tốn gì và không nhận host lạ. `npm test` trên project Python là pipeline luôn đỏ |
 | D-P35 | §6.5 toán tử `regex`, §6.6 đoạn mã Python, §6.8 "Bản Python" | Regex "cờ `u`, không backreference/lookaround" — mọi pattern V8 nhận là hợp lệ; bản Python "dùng lại vector test hash/delta" và nhận `picks=_picks` ở cả provider lẫn middleware | [v4.11, Plan #47] Ngữ pháp regex KHẢ CHUYỂN: `regexSyntaxIssue` từ chối thêm `\p{…}`, cờ nội tuyến và tên nhóm không phải định danh ASCII hoặc trùng — ở đường ghi của S1/S2 lẫn schema đọc của mọi SDK; vector dùng chung mở rộng sang regex (639 pattern) và giá trị mặc định của provider; phép so chéo ngôn ngữ với Service 2 thật; store theo request là MỘT `ContextVar` của module, không có tham số `picks` | Tập ký tự của `\p{…}` đổi theo phiên bản Unicode của runtime (ICU của V8 và bảng của Python không cùng nhịp): hai SDK không thể cho cùng kết quả, I26 vỡ bằng dữ liệu hợp lệ. Cờ nội tuyến và luật trùng tên đổi theo phiên bản V8 — cho phép chúng là để kết quả phụ thuộc bản Node của server. Vector hash/delta không phủ toán tử khó nhất; `picks` là cấu hình developer phải khai hai lần và có thể khai lệch |
 | D-P34 | §7.2 ATTRIBUTE_SPLIT (FLAG_LEVEL), §9 Internal S2, §10.9 | "Rule ATTRIBUTE_BASED/SEGMENT serve variant mới; promote = đổi default variant" — không nói rule có hình gì, ai đổi default, bằng quyền nào | [v4.11, Plan #46] Rule là phân phối HAI variant như canary (`canaryPairOf`), bậc duy nhất đưa nhóm khớp sang 100%; chiến lược mang `autoDecide`, `finish`, `ruleIssue` — reconciler không rẽ theo tên; không tự quyết thì mỗi nhịp vẫn đo và ghi HOLD kèm số; PROMOTE tay: S3 gọi `PATCH /internal/flag-envs/:id {defaultVariantId}` mang người bấm (audit I40) rồi đóng DONE; `canaryPairOf(…, allowFull)` nhận 100% khi "lên 100%" chưa phải xong | `PATCH /internal/rules/:id` chỉ đổi TRỌNG SỐ, không đổi tập variant — rule một variant thì rollout không có gì để đổi mà không nới quyền ghi của S3. Đổi default cần người làm thật: một thay đổi cấu hình production không được ẩn danh. Rẽ theo tên chiến lược là một `if` nữa mỗi lần thêm chiến lược |
@@ -8102,7 +8160,8 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | **[v4.10] KEK trần đúng HAI version** | Hàng ngay trên đã nói KEK đọc từ biến môi trường; hàng này nói cái trần mà việc đó kéo theo. `UDP_KEK_VERSION` nhận 1 hoặc 2, và `rewrapDek()` chỉ biết đường đi giữa hai version đó. Trần là có chủ đích: một bảng version mở cần một nơi lưu KEK cũ (KMS hoặc Vault), còn ở lab thì "nơi lưu" là chính cấu hình process — version thứ ba chỉ làm tăng số bí mật nằm trong đó mà không thêm một tính chất nào. Cấu trúc `kek_version` của lược đồ thì không có trần, nên đây là trần của HIỆN THỰC, không của thiết kế | Chuyển KEK sang KMS; lúc đó version là một tham chiếu khoá, không phải một biến môi trường |
 | **[v4.10] Registry dùng `import()` động, nên thêm bundler vào kho là vỡ** | Auto-discovery đọc thư mục lúc chạy rồi `import()` theo `pathToFileURL(...).href`. Một bundler (esbuild, webpack) gom mã thành một file sẽ làm `readdir` trên thư mục nguồn trả về rỗng, và registry im lặng thấy **không có adapter nào** — không lỗi, chỉ là một catalog trống. Chỗ này là đánh đổi trực tiếp của chỉ số "0 file" | Nếu cần bundle: sinh một file manifest lúc build từ cùng phép quét thư mục, và cho registry đọc manifest khi nó tồn tại |
 | **[v4.10] `sslmode=require` sẽ đổi nghĩa ở `pg` v9 / `pg-connection-string` v3** | Đã đo (R24-1): bản hiện tại coi `require` là "mã hoá, không kiểm chứng chứng chỉ"; bản sau sẽ kiểm chứng, nên một chuỗi kết nối đang chạy sẽ **đổi hành vi** khi nâng thư viện — và nó đổi theo chiều an toàn hơn nhưng có thể làm dừng dịch vụ | Trước khi nâng: đổi sang `sslmode=verify-full` kèm CA của Supabase, hoặc `no-verify` tường minh nếu vẫn chấp nhận |
-| `POST /projects/:id/members` đòi người được mời **đã có tài khoản** | §9 gọi đây là "mời theo email", nhưng cùng lý do với mục đăng ký ở đầu §16: chưa có hạ tầng mail. Một lời mời treo mà không đường nào gửi đi thì tệ hơn một lỗi 404 rõ ràng, và không bảng nào lưu nó | Khi có mail: thêm bảng lời mời, gửi thư kèm token, và cho phép mời địa chỉ chưa đăng ký |
+| ~~`POST /projects/:id/members` đòi người được mời **đã có tài khoản**~~ — **[v4.11, Plan #55] đã gỡ** | Người chưa có tài khoản giờ được mời bằng **đường dẫn** (bảng `invitations`, D-P48): "Mời" trên Portal thêm thẳng người đã có tài khoản, còn email chưa có tài khoản thì nhận một đường dẫn `/invite#<token>` dùng một lần, hạn 7 ngày | — |
+| **[v4.11, Plan #55] UDP không tự gửi thư mời** | Lời mời là một đường dẫn mà người mời tự chuyển (chat, mail của chính họ): yêu cầu cứng chi phí hạ tầng bằng 0 loại một dịch vụ mail (tài khoản có thể tính tiền, bí mật SMTP phải giữ). Hệ quả cần nói thẳng: "nhận chỉ khi email trùng" dựa vào quyền sở hữu email, mà UDP chưa xác thực email lúc đăng ký (cùng lý do ở đầu §16) — ai cầm được đường dẫn VÀ đăng ký trước bằng đúng email chưa có tài khoản đó thì nhận được lời mời. Giảm thiểu: token 256 bit chỉ đi qua kênh người mời chọn, hạn 7 ngày, thu hồi được, mời lại vô hiệu đường dẫn cũ, và audit `invitation.accept` ghi tài khoản đã nhận; vai mời được không bao giờ là OWNER | Khi có máy chủ mail 0 đồng: gửi chính đường dẫn đó qua mail, và xác thực email lúc đăng ký — lúc đó "email trùng" mới là bằng chứng sở hữu |
 | **[v4.11, Plan #50] Không đo được E2, và E9 mới có hai pha** | E2 (provisioning time) cần ba cloud thật — tính tiền theo giờ, trái yêu cầu chi phí 0 (D-P37). E9 chạy mỗi đêm trên cụm kind của CI (rỗi và 1 000 SDK nối SSE); nhánh 100 rollout đồng thời cần ≥ 34 environment có workload vì trần 3 flag track mỗi env (§6.6), quá sức runner miễn phí; hai pha ADR-05 (CPU `config_hash` ở env nghìn flag, khoá `NOTIFY` dưới tải ghi) cần env lớn và tải ghi. Sổ nợ: `E2`, `E9` | Commit artifact E9 của lượt đêm đầu tiên; E2 và các pha còn lại khi có hạ tầng được phép tốn tiền |
 | **[v4.11, Plan #50] Dựng cụm, E2E rút gọn và E9 chỉ chạy được ở CI** | Máy dev (7,7 GiB RAM) không chạy được Docker engine; `pnpm deploy:up` lần đầu chạy thật là ở job `kind` sau lần push đầu tiên. Manifest, cấu hình cụm (qua schema env) và nối dây CI đã có test tại chỗ; phần còn lại chỉ lộ trên cụm thật | Job `kind` in trạng thái cụm (`pnpm --filter @udp/deploy diagnose`) khi đỏ |
 | **[v4.11, Plan #53] Chuỗi RED mới kiểm bằng provider giả và response mẫu** | `series` của Prometheus kiểm khuôn `query_range` và bước trên fetch giả; ba nhà SaaS parse response mẫu theo tài liệu của họ; route và Portal chạy trên provider giả. Số đo thật cần một cụm có Prometheus và workload xuất metric (middleware §7.4), và khoá API trả phí của Datadog, New Relic, Dynatrace. Sổ nợ: `monitoring-real-cluster`, `monitoring-saas-real` | Chạy hai lượt đó khi có cụm và khoá |

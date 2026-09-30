@@ -6,9 +6,11 @@ import type {
   DomainCatalogEntryWire,
   DomainConfigFieldWire,
   FlagDetailWire,
+  GrantableProjectRoleWire,
   JobDetailWire,
   ProjectClusterWire,
   ProjectDomainWire,
+  ProjectInvitationWire,
   ProjectRoleWire,
   ProjectStatusWire,
   ProvisionPreviewWire,
@@ -18,7 +20,10 @@ import type {
   RuleWire,
   SdkKeyWire,
   SegmentDetailWire,
+  TeamInvitationWire,
+  TeamRoleWire,
 } from "@udp/shared-types/wire";
+import { refreshMyAccess } from "./access";
 import {
   dateDaysAgo,
   daysAgo,
@@ -32,10 +37,13 @@ import type {
   Db,
   DomainState,
   FlagRecord,
+  InvitationToken,
   JobRecord,
   LiveRollout,
   ProjectRecord,
+  TeamRecord,
 } from "./db";
+import { DEMO_INVITE_TOKEN } from "./demo-invite";
 import { golden } from "./goldens";
 import { crowd } from "./people";
 import { between, hex, pick, prng, uuid } from "./random";
@@ -1922,6 +1930,8 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
         }
       : null,
     adminOnly: spec.myRole === null,
+    teamGrants: [],
+    invitations: [],
   };
 
   refreshSegmentUsage(record);
@@ -3127,6 +3137,225 @@ export function createDraftProject(input: {
   return record;
 }
 
+// ------------------------------------------------------------- nhóm và lời mời (Plan #55)
+
+/** Hạt giống RIÊNG: id của nhóm và lời mời không xê dịch id của những thứ sinh trước */
+const teamRng = prng(20261002);
+const teamUuid = (): string => uuid(teamRng);
+
+interface TeamSpec {
+  name: string;
+  ageDays: number;
+  members: [Person, TeamRoleWire, number][];
+  grants: [string, GrantableProjectRoleWire, number][];
+  invitations: InvitationSpec<TeamRoleWire>[];
+}
+
+interface InvitationSpec<R> {
+  email: string;
+  role: R;
+  by: Person;
+  /** Giờ trước lúc mở trang; lời mời hết hạn sau 7 ngày = 168 giờ */
+  hoursAgo: number;
+  token?: string;
+}
+
+const INVITATION_TTL_HOURS = 7 * 24;
+
+const invitationBase = (spec: InvitationSpec<unknown>) => ({
+  id: teamUuid(),
+  email: spec.email,
+  invitedBy: { id: spec.by.id, email: spec.by.email, name: spec.by.name },
+  expiresAt: hoursAhead(INVITATION_TTL_HOURS - spec.hoursAgo),
+  createdAt: hoursAgo(spec.hoursAgo),
+});
+
+/**
+ * Năm nhóm có thật: chủ nhóm và thành viên thường, nhóm cấp quyền cho nhiều project (kể cả `data-pipeline` —
+ * Minh Anh vào được CHỈ qua nhóm "Nền tảng", và `search-service` — vai của nhóm cao hơn vai riêng), một nhóm chưa
+ * có quyền ở đâu, lời mời đang chờ, đã hết hạn, và một lời mời dành cho chính người đang xem.
+ */
+const TEAMS: TeamSpec[] = [
+  {
+    name: "Nhóm thanh toán",
+    ageDays: 60,
+    members: [
+      [ANH, "OWNER", 60],
+      [BAO, "OWNER", 60],
+      [HUY, "MEMBER", 45],
+      [LAN, "MEMBER", 30],
+      [YEN, "MEMBER", 10],
+    ],
+    grants: [
+      ["checkout-service", "DEVELOPER", 50],
+      ["payment-gateway", "DEVELOPER", 40],
+      ["fraud-detector", "VIEWER", 20],
+    ],
+    invitations: [
+      {
+        email: "thuc.tap.thanh.toan@udp.dev",
+        role: "MEMBER",
+        by: BAO,
+        hoursAgo: 26,
+      },
+    ],
+  },
+  {
+    name: "Nhóm di động",
+    ageDays: 90,
+    members: [
+      [HA, "OWNER", 90],
+      [ANH, "MEMBER", 80],
+      [PHAT, "MEMBER", 40],
+      [LINH, "MEMBER", 25],
+    ],
+    grants: [
+      ["mobile-bff", "MAINTAINER", 70],
+      ["notification-worker", "VIEWER", 30],
+    ],
+    invitations: [],
+  },
+  {
+    name: "Nền tảng",
+    ageDays: 120,
+    members: [
+      [KHANH, "OWNER", 120],
+      [ANH, "OWNER", 110],
+      [TUNG, "MEMBER", 100],
+      [crowdAt(2), "MEMBER", 64],
+    ],
+    grants: [
+      ["data-pipeline", "VIEWER", 15],
+      ["search-service", "MAINTAINER", 35],
+      ["legacy-billing", "MAINTAINER", 60],
+    ],
+    invitations: [],
+  },
+  {
+    name: "Tư vấn bên ngoài",
+    ageDays: 20,
+    members: [
+      [ANH, "OWNER", 20],
+      [crowdAt(40), "MEMBER", 18],
+      [crowdAt(41), "MEMBER", 9],
+    ],
+    grants: [],
+    invitations: [
+      {
+        email: "tu.van.bao.mat@doitac.vn",
+        role: "MEMBER",
+        by: ANH,
+        hoursAgo: 50,
+      },
+      // Quá 7 ngày: danh sách đánh dấu "Đã hết hạn", chủ nhóm tạo lại đường dẫn được
+      { email: "kiem.thu@doitac.vn", role: "MEMBER", by: ANH, hoursAgo: 216 },
+    ],
+  },
+  {
+    name: "Nhóm dữ liệu",
+    ageDays: 50,
+    members: [
+      [TUNG, "OWNER", 50],
+      [LINH, "MEMBER", 30],
+    ],
+    grants: [["analytics-api", "DEVELOPER", 12]],
+    invitations: [
+      {
+        email: ANH.email,
+        role: "MEMBER",
+        by: TUNG,
+        hoursAgo: 3,
+        token: DEMO_INVITE_TOKEN,
+      },
+    ],
+  },
+];
+
+/** Lời mời đang chờ vào project — cùng khuôn: mới, sắp hết hạn, đã hết hạn */
+const PROJECT_INVITATIONS: [
+  string,
+  InvitationSpec<GrantableProjectRoleWire>,
+][] = [
+  [
+    "checkout-service",
+    { email: "minh.tran@doitac.vn", role: "DEVELOPER", by: ANH, hoursAgo: 20 },
+  ],
+  [
+    "checkout-service",
+    {
+      email: "qa.contractor@gmail.com",
+      role: "VIEWER",
+      by: ANH,
+      hoursAgo: 240,
+    },
+  ],
+  [
+    "notification-worker",
+    { email: "sre.moi@udp.dev", role: "MAINTAINER", by: ANH, hoursAgo: 4 },
+  ],
+  [
+    "analytics-api",
+    { email: "data.intern@udp.dev", role: "VIEWER", by: ANH, hoursAgo: 150 },
+  ],
+];
+
+function seedTeams(projects: ProjectRecord[]): {
+  teams: TeamRecord[];
+  tokens: InvitationToken[];
+} {
+  const byName = new Map(projects.map((p) => [p.project.name, p]));
+  const projectNamed = (name: string): ProjectRecord => {
+    const p = byName.get(name);
+    if (p === undefined) throw new Error(`dữ liệu mẫu thiếu project ${name}`);
+    return p;
+  };
+  const tokens: InvitationToken[] = [];
+
+  const teams = TEAMS.map((spec): TeamRecord => {
+    const id = teamUuid();
+    for (const [project, projectRole, age] of spec.grants) {
+      projectNamed(project).teamGrants.push({
+        teamId: id,
+        projectRole,
+        createdAt: daysAgo(age),
+      });
+    }
+    const invitations = spec.invitations.map((inv): TeamInvitationWire => {
+      const row = { ...invitationBase(inv), teamRole: inv.role };
+      if (inv.token !== undefined) {
+        tokens.push({
+          token: inv.token,
+          invitationId: row.id,
+          kind: "TEAM",
+          targetId: id,
+        });
+      }
+      return row;
+    });
+    return {
+      id,
+      name: spec.name,
+      createdAt: daysAgo(spec.ageDays),
+      members: spec.members.map(([m, teamRole, age]) => ({
+        userId: m.id,
+        teamRole,
+        createdAt: daysAgo(age),
+        user: { id: m.id, email: m.email, name: m.name },
+      })),
+      invitations,
+    };
+  });
+
+  for (const [project, inv] of PROJECT_INVITATIONS) {
+    const row: ProjectInvitationWire = {
+      ...invitationBase(inv),
+      projectRole: inv.role,
+    };
+    projectNamed(project).invitations.push(row);
+  }
+  return { teams, tokens };
+}
+
 export function createDb(): Db {
   const users: AdminUserWire[] = [...PEOPLE, ...CROWD].map((p) => ({
     id: p.id,
@@ -3135,7 +3364,22 @@ export function createDb(): Db {
     platformRole: p.admin ? "PLATFORM_ADMIN" : "USER",
     createdAt: daysAgo(p.joinedDaysAgo),
   }));
-  return {
+  const projects = [
+    checkoutService(),
+    paymentGateway(),
+    notificationWorker(),
+    mobileBff(),
+    analyticsApi(),
+    legacyBilling(),
+    searchService(),
+    fraudDetector(),
+    marketingSite(),
+    adminOnlyProject("data-pipeline", TUNG, "ACTIVE", "GCP"),
+    adminOnlyProject("internal-wiki", LINH, "DRAFT", undefined),
+    ...FLEET.map(fleetProject),
+  ];
+  const { teams, tokens } = seedTeams(projects);
+  const db: Db = {
     me: {
       id: ANH.id,
       email: ANH.email,
@@ -3144,22 +3388,14 @@ export function createDb(): Db {
     },
     signedIn: true,
     users,
-    projects: [
-      checkoutService(),
-      paymentGateway(),
-      notificationWorker(),
-      mobileBff(),
-      analyticsApi(),
-      legacyBilling(),
-      searchService(),
-      fraudDetector(),
-      marketingSite(),
-      adminOnlyProject("data-pipeline", TUNG, "ACTIVE", "GCP"),
-      adminOnlyProject("internal-wiki", LINH, "DRAFT", undefined),
-      ...FLEET.map(fleetProject),
-    ],
+    projects,
+    teams,
+    invitationTokens: tokens,
     configVersion: 1_284,
   };
+  // Vai của người đang xem đến từ CẢ nhóm: `data-pipeline` hiện ra, `search-service` lên Người duy trì
+  refreshMyAccess(db);
+  return db;
 }
 
 /** Ngày đầu tiên có số đếm telemetry — trang Dọn dẹp nói nó đã quan sát bao lâu */

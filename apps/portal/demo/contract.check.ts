@@ -8,13 +8,16 @@ import { deploymentApi } from "../src/features/deployment/deployment-api";
 import { domainApi } from "../src/features/domain/domain-api";
 import { flagApi } from "../src/features/flag/flag-api";
 import { homeApi } from "../src/features/home/home-api";
+import { invitationApi } from "../src/features/invitation/invitation-api";
 import { monitoringApi } from "../src/features/monitoring/monitoring-api";
 import { cloudApi } from "../src/features/project/cloud/cloud-api";
 import { projectApi } from "../src/features/project/project-api";
 import { provisioningApi } from "../src/features/provisioning/provisioning-api";
 import { rolloutApi } from "../src/features/rollout/rollout-api";
 import { segmentApi } from "../src/features/segment/segment-api";
+import { projectTeamApi, teamApi } from "../src/features/team/team-api";
 import { isApiError } from "../src/lib/http";
+import { DEMO_INVITE_TOKEN } from "./mock/demo-invite";
 import { API_PREFIX, createMockBackend } from "./mock/server";
 
 /**
@@ -123,7 +126,8 @@ describe("đăng nhập và quản trị", () => {
 describe("trang chủ", () => {
   it("việc cần xử lý đủ sáu loại, rollout đang chạy, deploy 14 ngày", async () => {
     const { home } = await homeApi.get();
-    expect(home.projects.length).toBe(9);
+    // [Plan #55] `data-pipeline` vào được qua nhóm "Nền tảng"
+    expect(home.projects.length).toBe(10);
     expect(new Set(home.attention.map((a) => a.kind))).toEqual(
       new Set([
         "DEPLOY_PENDING",
@@ -146,6 +150,7 @@ describe("mọi project người xem thấy", () => {
     expect([...projects.keys()].sort()).toEqual([
       "analytics-api",
       "checkout-service",
+      "data-pipeline",
       "fraud-detector",
       "legacy-billing",
       "marketing-site",
@@ -162,6 +167,10 @@ describe("mọi project người xem thấy", () => {
         (t) => t.domainType === "MONITORING",
       );
       await projectApi.members(project.id);
+      await projectTeamApi.list(project.id);
+      if (project.myRole === "OWNER") {
+        await invitationApi.ofProject(project.id);
+      }
       await projectApi.audit(project.id, {});
       await cloudApi.get(project.id);
       await provisioningApi.preview(project.id);
@@ -263,6 +272,125 @@ describe("mọi project người xem thấy", () => {
     expect(
       (await domainApi.versions(p.id, "MONITORING")).versions.available.length,
     ).toBe(1);
+  });
+});
+
+describe("nhóm và lời mời (Plan #55)", () => {
+  it("dữ liệu mẫu: năm nhóm, vai hiệu lực qua nhóm, lời mời đang chờ và hết hạn", async () => {
+    const { teams } = await teamApi.list();
+    expect(new Set(teams.map((t) => t.name))).toEqual(
+      new Set([
+        "Nền tảng",
+        "Nhóm di động",
+        "Nhóm thanh toán",
+        "Tư vấn bên ngoài",
+      ]),
+    );
+    expect(new Set(teams.map((t) => t.myRole))).toEqual(
+      new Set(["OWNER", "MEMBER"]),
+    );
+    let expired = 0;
+    for (const t of teams) {
+      const { team } = await teamApi.get(t.id);
+      expect(team.members.length).toBe(t.memberCount);
+      expect(team.projects.length).toBe(t.projectCount);
+      if (team.myRole === "OWNER") {
+        const { invitations } = await invitationApi.ofTeam(t.id);
+        expired += invitations.filter(
+          (i) => Date.parse(i.expiresAt) <= Date.now(),
+        ).length;
+      }
+    }
+    expect(expired).toBeGreaterThan(0);
+
+    const projects = await projectsByName();
+    // Vai của nhóm cao hơn vai riêng; project chỉ vào được qua nhóm
+    expect(projects.get("search-service")?.myRole).toBe("MAINTAINER");
+    expect(projects.get("data-pipeline")?.myRole).toBe("VIEWER");
+    const checkout = projects.get("checkout-service");
+    if (checkout === undefined) throw new Error("thiếu checkout-service");
+    expect((await projectTeamApi.list(checkout.id)).teams.length).toBe(1);
+    expect(
+      (await invitationApi.ofProject(checkout.id)).invitations.length,
+    ).toBe(2);
+
+    const { invitation } = await invitationApi.lookup(DEMO_INVITE_TOKEN);
+    expect(invitation.target).toMatchObject({
+      kind: "TEAM",
+      name: "Nhóm dữ liệu",
+    });
+    expect(invitation.email).toBe((await authApi.me()).user.email);
+  });
+
+  it("tạo nhóm, thêm, mời, cấp quyền, nhận lời mời, rời, xoá", async () => {
+    const projects = await projectsByName();
+    const checkout = projects.get("checkout-service");
+    const users = await adminApi.users(undefined, 0);
+    const someone = users.users.find((u) => u.platformRole === "USER");
+    if (checkout === undefined || someone === undefined) {
+      throw new Error("dữ liệu mẫu thiếu project hoặc người dùng");
+    }
+
+    const { team } = await teamApi.create("Nhóm hợp đồng");
+    expect(team.myRole).toBe("OWNER");
+    await teamApi.rename(team.id, "Nhóm hợp đồng mới");
+    const added = await teamApi.addMember(team.id, {
+      email: someone.email,
+      teamRole: "MEMBER",
+    });
+    await teamApi.updateMember(team.id, added.member.userId, "OWNER");
+    await teamApi.updateMember(team.id, added.member.userId, "MEMBER");
+    await expectStatus(
+      teamApi.addMember(team.id, {
+        email: "chua.co@doitac.vn",
+        teamRole: "MEMBER",
+      }),
+      404,
+    );
+
+    const invited = await invitationApi.inviteToTeam(team.id, {
+      email: "chua.co@doitac.vn",
+      teamRole: "MEMBER",
+    });
+    await invitationApi.lookup(invited.token);
+    await invitationApi.revokeInTeam(team.id, invited.invitation.id);
+    await expectStatus(invitationApi.lookup(invited.token), 404);
+
+    const granted = await projectTeamApi.grant(checkout.id, {
+      teamId: team.id,
+      projectRole: "VIEWER",
+    });
+    expect(granted.team.members.length).toBe(2);
+    await projectTeamApi.update(checkout.id, team.id, "DEVELOPER");
+    await expectStatus(
+      projectTeamApi.grant(checkout.id, {
+        teamId: team.id,
+        projectRole: "VIEWER",
+      }),
+      409,
+    );
+    await projectTeamApi.revoke(checkout.id, team.id);
+
+    const forOther = await invitationApi.inviteToProject(checkout.id, {
+      email: "ai.do.khac@doitac.vn",
+      projectRole: "VIEWER",
+    });
+    await expectStatus(invitationApi.accept(forOther.token), 403);
+    await invitationApi.revokeInProject(checkout.id, forOther.invitation.id);
+
+    const joined = await invitationApi.accept(DEMO_INVITE_TOKEN);
+    expect(joined.target.kind).toBe("TEAM");
+    await expectStatus(invitationApi.accept(DEMO_INVITE_TOKEN), 404);
+    expect((await teamApi.list()).teams.length).toBe(6);
+
+    await teamApi.removeMember(team.id, added.member.userId);
+    // Chủ nhóm cuối không tự rời được
+    await expectStatus(
+      teamApi.removeMember(team.id, (await authApi.me()).user.id),
+      409,
+    );
+    await teamApi.remove(team.id);
+    await expectStatus(teamApi.get(team.id), 404);
   });
 });
 

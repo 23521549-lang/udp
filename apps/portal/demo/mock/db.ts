@@ -9,9 +9,11 @@ import type {
   DomainDriftWire,
   DomainVersionsWire,
   FlagDetailWire,
+  GrantableProjectRoleWire,
   JobDetailWire,
   ProjectClusterWire,
   ProjectDomainWire,
+  ProjectInvitationWire,
   ProvisionPreviewWire,
   PublicEnvironmentWire,
   PublicMemberWire,
@@ -21,6 +23,8 @@ import type {
   RuleWire,
   SdkKeyWire,
   SegmentDetailWire,
+  TeamInvitationWire,
+  TeamMemberWire,
 } from "@udp/shared-types/wire";
 
 /**
@@ -96,8 +100,42 @@ export interface ProjectRecord {
   cost: CostWire | null;
   preview: ProvisionPreviewWire;
   cicd: CicdStatusWire | null;
-  /** Project mà người đang xem KHÔNG là thành viên — chỉ trang quản trị thấy */
+  /**
+   * Người đang xem KHÔNG vào được project — không là thành viên, không ở nhóm nào có quyền — nên chỉ trang quản
+   * trị thấy. [Plan #55] Tính lại bằng `refreshMyAccess` sau mọi thay đổi nhóm hay quyền của nhóm.
+   */
   adminOnly: boolean;
+  /** [Plan #55] Nhóm có quyền trên project */
+  teamGrants: TeamGrant[];
+  /** [Plan #55] Lời mời đang chờ vào project */
+  invitations: ProjectInvitationWire[];
+}
+
+/** [Plan #55] Một nhóm có vai trên một project — không bao giờ OWNER */
+export interface TeamGrant {
+  teamId: string;
+  projectRole: GrantableProjectRoleWire;
+  createdAt: string;
+}
+
+/** [Plan #55] Nhóm và lời mời đang chờ của nó */
+export interface TeamRecord {
+  id: string;
+  name: string;
+  createdAt: string;
+  members: TeamMemberWire[];
+  invitations: TeamInvitationWire[];
+}
+
+/**
+ * [Plan #55] Token của lời mời mà bản xem thử còn nhớ — như máy chủ thật chỉ giữ hash, đây chỉ có token của lời
+ * mời tạo trong phiên xem, cộng MỘT lời mời mẫu mở được từ màn hình (`DEMO_INVITE_TOKEN`).
+ */
+export interface InvitationToken {
+  token: string;
+  invitationId: string;
+  kind: "PROJECT" | "TEAM";
+  targetId: string;
 }
 
 export interface Db {
@@ -105,5 +143,7 @@ export interface Db {
   signedIn: boolean;
   users: AdminUserWire[];
   projects: ProjectRecord[];
+  teams: TeamRecord[];
+  invitationTokens: InvitationToken[];
   configVersion: number;
 }

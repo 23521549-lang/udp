@@ -4,6 +4,7 @@ import { registerDeliveryRoutes } from "./handlers/delivery";
 import { registerFlagRoutes } from "./handlers/flag";
 import { registerPlatformRoutes } from "./handlers/platform";
 import { registerProjectRoutes } from "./handlers/project";
+import { registerTeamRoutes } from "./handlers/team";
 import { advance } from "./live";
 import { HttpProblem, problemBody, Router, type Reply } from "./router";
 import { createDb } from "./seed";
@@ -50,6 +51,7 @@ export function createMockBackend(): MockBackend {
   registerDeliveryRoutes(router, db);
   registerPlatformRoutes(router, db);
   registerDashboardRoutes(router, db);
+  registerTeamRoutes(router, db);
   return {
     handle(method, url, body) {
       const path = url.pathname.slice(API_PREFIX.length);

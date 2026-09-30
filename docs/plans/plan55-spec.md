@@ -31,6 +31,11 @@ kênh nào cũng được (chat, mail của chính họ). Token chỉ hiện m�
 - Đọc lời mời (`GET /invitations/:token`) không cần phiên, sau rate limiter chung; token sai, hết hạn, đã dùng hay
   bị thu hồi đều trả CÙNG 404 (không dò được token nào từng có thật).
 
+Rủi ro còn lại (ghi ở §16): UDP chưa xác thực email lúc đăng ký, nên "email trùng" chưa phải bằng chứng sở hữu
+email — ai cầm được đường dẫn và đăng ký TRƯỚC bằng đúng email chưa có tài khoản đó thì nhận được lời mời. Giảm
+thiểu: token chỉ đi qua kênh người mời chọn, hạn 7 ngày, thu hồi được, audit ghi tài khoản đã nhận, không mời được
+vai OWNER.
+
 Vì sao không gửi mail: chi phí 0 do cấu trúc (không tài khoản dịch vụ, không bí mật SMTP), và một đường dẫn chép
 được chạy ngay hôm nay qua mọi kênh người dùng đã có. Gửi mail tự động là bước sau, khi có máy chủ mail 0 đồng.
 

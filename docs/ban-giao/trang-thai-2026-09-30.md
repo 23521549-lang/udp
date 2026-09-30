@@ -36,7 +36,7 @@ Người dùng (30/09/2026): "làm thêm ngôn ngữ tiếng anh và chế độ
 | 54a | `452c22a`                       | Tầng `src/i18n` (`defineMessages({ vi, en })` với `en: NoInfer<V>`), `lib/format` theo ngôn ngữ, giao diện Sáng · Tối · Theo hệ thống, bộ chọn ở menu tài khoản và trang đăng nhập; khung và component dùng chung |
 | 54b | `5d849cf`, `cceddb0`, `7984ac9` | Bảng nhãn dùng chung (hàm tra theo ngôn ngữ), rồi chữ của mọi phân hệ — năm nhóm chuyển song song; I37 cho `serviceLevelIssueOf`, `canaryPairOf` và đường mở công cụ giám sát (`app` thay câu `label`)            |
 | 54c | `80e9fd9`                       | Cổng `portal-demo` năm lượt (sáng/tối × máy tính/điện thoại, và tiếng Anh) đo tương phản bằng axe-core; `--ink-3` sửa ở nguồn (52% sáng, 67% tối); test tiếng Anh cho các màn chính                               |
-| 54d | (commit này)                    | DESIGN.md (hai ngôn ngữ, ba lựa chọn giao diện, tương phản), `UDP_design.md` §9, §10.10, D-P46/D-P47, §16; baseline `@ts-expect-error` 6 ⇒ 9 (TSX-07..09); bàn giao                                               |
+| 54d | `9de7711`                       | DESIGN.md (hai ngôn ngữ, ba lựa chọn giao diện, tương phản), `UDP_design.md` §9, §10.10, D-P46/D-P47, §16; baseline `@ts-expect-error` 6 ⇒ 9 (TSX-07..09); bàn giao                                               |
 
 Cách viết chữ mới (đọc `src/i18n/index.ts` và một tệp mẫu như `src/app/app.messages.tsx`):
 
@@ -49,21 +49,52 @@ Cách viết chữ mới (đọc `src/i18n/index.ts` và một tệp mẫu như 
 Còn tiếng Việt khi chọn English — cố ý, ghi ở §16: câu mà máy chủ tự sinh từ dữ liệu (lý do quyết định của vòng
 phân tích, gợi ý quét repo, `lastError` của job) và dữ liệu người dùng (tên, mô tả).
 
+## 1c. Plan #55 — mời bằng đường dẫn, và nhóm dùng chung cho nhiều project
+
+Người dùng (30/09/2026): "bạn lên kế hoạch và làm theo quy trình đi" — sau câu hỏi về quyền riêng tư, mời người
+khác vào project, và phân quyền. Spec: `docs/plans/plan55-spec.md` (QĐ-1…QĐ-7); kế hoạch: `plan55-plan.md`;
+quyết định D-P48.
+
+| Đợt | Commit       | Nội dung                                                                                                                                                                                                                   |
+| --- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 55a | `6811605`    | Bốn bảng (`teams`, `team_members`, `project_team_grants`, `invitations`) với CHECK và unique từng phần; `udp_s1` đủ quyền, S2/S3 không; sửa lệch I22 có từ Plan #51 (`rollout_sessions.traffic_match` thiếu UPDATE của S1) |
+| 55b | `b486a0e`    | Service 1: vai hiệu lực ở MỘT chỗ (`core/access/project-access.ts`) cho middleware, danh sách project, trang chủ, SSE; route lời mời, nhóm, quyền của nhóm; `requireTeamRole` + lint `team-route-guard`; golden            |
+| 55c | `a10f985`    | Portal: `/app/teams`, `/app/teams/:teamId`, `/invite#<token>`; tab Thành viên có lời mời đang chờ và "Nhóm có quyền"; "Mời" email chưa có tài khoản ⇒ đường dẫn; hai ngôn ngữ                                              |
+| 55d | (commit này) | Bản xem thử: năm nhóm, quyền nhóm trên sáu project (`data-pipeline` chỉ vào được qua nhóm), lời mời đang chờ/hết hạn, một lời mời mở được; `contract.check`; ba màn mới trong cổng năm lượt; tài liệu                      |
+
+Bốn điều người tiếp theo cần biết:
+
+- **Vai hiệu lực** = vai cao nhất giữa hàng `project_members` và grant của các nhóm người đó thuộc. Mọi chỗ hỏi "ai
+  vào được project, vai gì" đi qua `accessibleBy` / `roleSourcesOf` / `effectiveRoleOf` — thêm một chỗ hỏi mới mà
+  tự đọc `project_members` là lỗ phân quyền (người vào qua nhóm biến mất, hoặc người vừa rời nhóm vẫn còn).
+- **Token lời mời không bao giờ nằm trong URL mà máy chủ thấy**: thân request ở API (`/invitations/lookup`,
+  `/accept`), fragment ở Portal (`/invite#…`), sessionStorage trong lúc đăng nhập (`redirectTo=/invite`). Golden
+  capture thay `token` bằng giá trị giả cùng hình.
+- **Không gửi mail** (chi phí 0): người mời tự chuyển đường dẫn. Rủi ro còn lại ghi ở §16: UDP chưa xác thực email
+  lúc đăng ký, nên ai cầm đường dẫn và đăng ký TRƯỚC bằng đúng email đó nhận được lời mời.
+- `POST /projects/:id/invitations` KHÔNG dùng `Idempotency-Key`: lớp đó lưu nguyên thân response, tức lưu token.
+
 ## 2. Cưỡng chế thêm
 
-| Chốt                                                                                           | Ở đâu                                                        |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Cạnh của sơ đồ bằng đúng quan hệ `chosen` (kể cả `anyOf`, preference); provider trước consumer | `services/core-backend/tests/capability-resolver.test.ts`    |
-| Route mới: 401/403/404, VIEWER, lọc theo membership, `unavailable` kèm lý do                   | `services/core-backend/tests/dashboards.integration.test.ts` |
-| RBAC của `/admin/platform` chỉ đọc (không `secrets`, không verb ghi)                           | `deploy/tests/manifests.test.ts`                             |
-| Mỗi màn mới của Portal (msw + mẫu golden), mô hình thuần của tín hiệu nền tảng                 | `apps/portal/tests/dashboards.test.tsx`                      |
-| Không em-dash trong chữ giao diện VÀ trong dữ liệu mẫu; `<svg>` chỉ ở tệp đã khai              | `apps/portal/tests/design-lint.test.ts`                      |
-| Mọi API của Portal qua lớp giả lập, số liệu khớp nhau (tổng quan = danh sách)                  | `apps/portal/demo/contract.check.ts`                         |
-| 34 màn × 2 khung: không lỗi console, không tràn ngang, một `main`, một `h1`…                   | `apps/portal/demo/screens.pw.ts` (job CI `portal-demo`)      |
-| Nối dây job `portal-demo` (build → Chromium → chụp; artifact kể cả khi đỏ; không secret)       | `deploy/tests/ci-workflow.test.ts`                           |
-| [#54] Không chữ giao diện viết thẳng ngoài `*.messages`; bản `en` không còn tiếng Việt         | `apps/portal/tests/design-lint.test.ts`                      |
-| [#54] Bản `en` thiếu/thừa khoá, sai tham số là lỗi biên dịch (TSX-07..09)                      | `apps/portal/tests/i18n-theme.test.tsx`                      |
-| [#54] Năm lượt × 34 màn: tương phản WCAG AA, `lang`/`data-theme` đúng, khung tiếng Anh sạch    | `apps/portal/demo/screens.pw.ts` (job CI `portal-demo`)      |
+| Chốt                                                                                           | Ở đâu                                                             |
+| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Cạnh của sơ đồ bằng đúng quan hệ `chosen` (kể cả `anyOf`, preference); provider trước consumer | `services/core-backend/tests/capability-resolver.test.ts`         |
+| Route mới: 401/403/404, VIEWER, lọc theo membership, `unavailable` kèm lý do                   | `services/core-backend/tests/dashboards.integration.test.ts`      |
+| RBAC của `/admin/platform` chỉ đọc (không `secrets`, không verb ghi)                           | `deploy/tests/manifests.test.ts`                                  |
+| Mỗi màn mới của Portal (msw + mẫu golden), mô hình thuần của tín hiệu nền tảng                 | `apps/portal/tests/dashboards.test.tsx`                           |
+| Không em-dash trong chữ giao diện VÀ trong dữ liệu mẫu; `<svg>` chỉ ở tệp đã khai              | `apps/portal/tests/design-lint.test.ts`                           |
+| Mọi API của Portal qua lớp giả lập, số liệu khớp nhau (tổng quan = danh sách)                  | `apps/portal/demo/contract.check.ts`                              |
+| 34 màn × 2 khung: không lỗi console, không tràn ngang, một `main`, một `h1`…                   | `apps/portal/demo/screens.pw.ts` (job CI `portal-demo`)           |
+| Nối dây job `portal-demo` (build → Chromium → chụp; artifact kể cả khi đỏ; không secret)       | `deploy/tests/ci-workflow.test.ts`                                |
+| [#54] Không chữ giao diện viết thẳng ngoài `*.messages`; bản `en` không còn tiếng Việt         | `apps/portal/tests/design-lint.test.ts`                           |
+| [#54] Bản `en` thiếu/thừa khoá, sai tham số là lỗi biên dịch (TSX-07..09)                      | `apps/portal/tests/i18n-theme.test.tsx`                           |
+| [#54] Năm lượt × 34 màn: tương phản WCAG AA, `lang`/`data-theme` đúng, khung tiếng Anh sạch    | `apps/portal/demo/screens.pw.ts` (job CI `portal-demo`)           |
+| [#55] Ràng buộc của nhóm và lời mời trong database (không OWNER, đúng một đích, một lời chờ)   | `packages/db/tests/invariants/teams-invitations.test.ts`          |
+| [#55] Bốn bảng mới trong ma trận writer; `traffic_match` có UPDATE của S1                      | `packages/db/tests/invariants/i22-writer-matrix.test.ts`          |
+| [#55] Lời mời (một lần, hết hạn, thu hồi, sai email, cùng 404), nhóm, vai hiệu lực, rời nhóm   | `services/core-backend/tests/team-invitation.integration.test.ts` |
+| [#55] Mọi route có `:teamId` qua `requireTeamRole` (sau `requireAuth`)                         | `packages/design-lint/tests/team-route-guard.test.ts`             |
+| [#55] Vai của nhóm và vai cấp được trên dây khớp enum database                                 | `packages/design-lint/tests/enum-mirrors.test.ts`                 |
+| [#55] Màn Nhóm, trang `/invite` (token rời URL), tab Thành viên mới                            | `apps/portal/tests/team-invitation.test.tsx`                      |
 
 Cổng Playwright bắt được ngay hai lỗi mà jsdom không thể thấy, đã sửa: lớp cạnh của sơ đồ không vẽ (đo trong
 layout effect của con, trước khi ref của khung cha được gắn — nay nhận khung qua callback ref) và trang đăng

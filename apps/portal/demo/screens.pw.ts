@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { DEMO_INVITE_TOKEN } from "./mock/demo-invite";
 
 /**
  * [Plan #53 QĐ-11, Plan #54 QĐ-4] Mọi màn của hai khung qua NĂM lượt: máy tính (1440×900) và điện thoại
@@ -55,6 +56,8 @@ interface Ids {
   rollout: string;
   /** Project nháp: các bước của wizard mở lại được từ URL (`?project=&step=`) */
   draft: string;
+  /** [Plan #55] Nhóm mà người xem là chủ nhóm — đủ form mời, lời mời đang chờ, cài đặt nhóm */
+  team: string;
 }
 
 /** Tên, đường dẫn, và (tuỳ màn) một locator PHẢI có — bằng chứng màn đã vẽ phần chính của nó */
@@ -63,6 +66,10 @@ type Screen = [name: string, path: (ids: Ids) => string, must?: string];
 const SCREENS: Screen[] = [
   ["home", () => "/app/home", ".bc-col"],
   ["projects", () => "/app/projects"],
+  // [Plan #55] Nhóm, chi tiết nhóm, và trang nhận lời mời (token ở fragment, ngoài hai khung)
+  ["teams", () => "/app/teams", "[role=list]"],
+  ["team", (i) => `/app/teams/${i.team}`, "[role=list]"],
+  ["invite", () => `/invite#${DEMO_INVITE_TOKEN}`, ".auth-card .btn.pri"],
   ["new-project", () => "/app/projects/new"],
   ...(["cloud", "domains", "preview"] as const).map((step): Screen => [
     `new-project-${step}`,
@@ -130,6 +137,24 @@ const VI =
  */
 const CHROME = "nav, h1, thead, label";
 
+/**
+ * Chữ của khung, BỎ phần đánh dấu `translate="no"` — quy ước của Portal cho dữ liệu người dùng không bao giờ dịch
+ * (tên project, tên nhóm, khoá flag). [Plan #55] Trang chi tiết nhóm có `h1` là tên nhóm "Nhóm thanh toán": chữ
+ * đó đúng là tiếng Việt ở mọi ngôn ngữ, và không phải lỗi dịch.
+ */
+async function chromeTexts(page: Page): Promise<string[]> {
+  return page.locator(CHROME).evaluateAll((nodes) =>
+    nodes.map((node) => {
+      if (node.getAttribute("translate") === "no") return "";
+      const copy = node.cloneNode(true) as Element;
+      for (const data of copy.querySelectorAll('[translate="no"]')) {
+        data.remove();
+      }
+      return copy.textContent ?? "";
+    }),
+  );
+}
+
 /** Id của dữ liệu mẫu, hỏi thẳng lớp giả lập trong trang (id tất định nhưng sinh ra, không viết tay) */
 async function discover(page: Page): Promise<Ids> {
   await page.goto("./#/app/home");
@@ -151,11 +176,17 @@ async function discover(page: Page): Promise<Ids> {
     }>(`/projects/${checkout}/rollouts`);
     const live = rollouts.find((r) => r.status === "IN_PROGRESS");
     if (live === undefined) throw new Error("thiếu rollout đang chạy");
+    const { teams } = await get<{ teams: { id: string; name: string }[] }>(
+      "/teams",
+    );
+    const team = teams.find((t) => t.name === "Nhóm thanh toán");
+    if (team === undefined) throw new Error("thiếu nhóm Nhóm thanh toán");
     return {
       checkout,
       marketing: id("marketing-site"),
       rollout: live.id,
       draft: id("analytics-api"),
+      team: team.id,
     };
   });
 }
@@ -244,7 +275,7 @@ for (const pass of PASSES) {
         if (root.theme !== pass.theme)
           problems.push(`theme="${String(root.theme)}"`);
         if (pass.locale === "en") {
-          const chrome = await page.locator(CHROME).allInnerTexts();
+          const chrome = await chromeTexts(page);
           const vi = chrome.filter((t) => VI.test(t));
           if (vi.length > 0)
             problems.push(
