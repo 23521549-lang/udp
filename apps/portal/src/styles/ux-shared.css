@@ -46,3 +46,8 @@
   color: var(--ink);
   font-weight: 600;
 }
+
+/* [Plan #58 UX-39] Gợi ý dưới ô, gắn vào ô qua aria-describedby */
+.field-hint {
+  font-size: 12px;
+}
