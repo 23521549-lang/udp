@@ -68,8 +68,17 @@
   min-width: 0;
   margin-right: auto;
 }
+/* Việc là link: màu nhấn và gạch chân khi trỏ — người mới phải thấy bấm được (không chỉ khác màu: có mũi tên) */
 .start-t a {
   font-weight: 500;
+  color: var(--accent-2);
+}
+.start-t a::after {
+  content: " →";
+}
+.start-t a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* [Plan #58 UX-2] Tổng quan trên điện thoại: cột co được dưới bề rộng nội dung, chữ dài xuống dòng thay vì tràn mép */

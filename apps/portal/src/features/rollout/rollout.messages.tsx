@@ -264,6 +264,8 @@ const vi = {
     dwellLeft: (after: string) => `Đủ thời gian giữ bậc sau ${after}.`,
     /** [Plan #58 UX-6] Hết thời gian giữ bậc: nói việc tiếp theo, không nói "sau 0 giây" */
     dwellDone: "Có thể lên bậc tiếp.",
+    dwellDoneHeld:
+      "Đã đủ thời gian giữ bậc, nhưng chưa lên vì số đo đang vượt ngưỡng.",
     working: "Đang thực hiện…",
     requestSent: (action: string) => `Đã gửi yêu cầu: ${action}`,
     confirmRollback: "Rollback rollout này?",
@@ -542,6 +544,8 @@ export const rolloutMessages = defineMessages({
       nextAnalysisNow: "Measuring again shortly. ",
       dwellLeft: (after: string) => `Step hold time ends in ${after}.`,
       dwellDone: "Ready for the next step.",
+      dwellDoneHeld:
+        "The hold time is over, but the rollout stays because metrics are above the threshold.",
       working: "In progress…",
       requestSent: (action: string) => `Request sent: ${action}`,
       confirmRollback: "Roll back this rollout?",

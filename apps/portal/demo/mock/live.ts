@@ -32,11 +32,15 @@ function advanceRollout(
       isIntent: false,
       processedAt: at,
       trafficPercentage: next,
-      reason: `Canary khoẻ ${String(Math.round(live.everySeconds))} giây liền: lỗi 0,4% ≤ ngưỡng 5%`,
+      // Cùng câu của `decide()` ở Service 3; số đo là lần đo trong ngưỡng đã cho phép lên bậc
+      reason: "Không vượt ngưỡng",
       triggeredBy: "AUTO",
       actorUserId: null,
       causedByEventId: null,
-      metricSnapshot: rollout.latestMetricSnapshot ?? null,
+      metricSnapshot:
+        rollout.latestMetricSnapshot === undefined
+          ? null
+          : { ...rollout.latestMetricSnapshot, at },
       createdAt: at,
     };
     rollout.events.push(event);
@@ -44,15 +48,12 @@ function advanceRollout(
     rollout.baselinePercentage = 100 - next;
     rollout.updatedAt = at;
   }
-  const atCeiling = rollout.currentTrafficPercentage >= live.upTo;
   if (rollout.lastDecision !== undefined) {
-    // Khoẻ ở mọi bậc: PROMOTE, không vượt ngưỡng; ở trần thì bậc cuối chờ người bấm
+    // Khoẻ ở mọi bậc: PROMOTE, không vượt ngưỡng (số đo khoẻ ở `latestMetricSnapshot`)
     rollout.lastDecision = {
       ...rollout.lastDecision,
       decision: "PROMOTE",
-      reason: atCeiling
-        ? `Đã tới ${String(live.upTo)}%, số đo trong ngưỡng. Bậc cuối lên 100% chờ người duyệt (Promote)`
-        : "Lỗi canary 0,41% so với baseline 0,48%: trong ngưỡng, sẵn sàng bậc tiếp",
+      reason: "Không vượt ngưỡng",
       breach: false,
       breachStreak: 0,
       breachAt: null,

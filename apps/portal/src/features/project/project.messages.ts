@@ -51,7 +51,7 @@ export const projectMessages = defineMessages({
         `Project ${name} đã tạo. Chọn nơi UDP dựng hạ tầng; có thể làm sau ở Cài đặt, thẻ Cloud.`,
       domainTitle: "Chọn domain",
       domainLead:
-        "Bật những công cụ hạ tầng project cần. Cấu hình được kiểm trước khi lưu; có thể đổi sau ở trang Domain.",
+        "Cấu hình được kiểm trước khi lưu; mọi lựa chọn đổi được sau ở trang Domain.",
       previewTitle: "Xem trước và triển khai",
       previewLead:
         "Chi phí ước tính và thứ tự UDP dựng hạ tầng trên tài khoản cloud của bạn. Có thể triển khai sau ở trang Hạ tầng.",
@@ -223,7 +223,7 @@ export const projectMessages = defineMessages({
         `Project ${name} was created. Choose where UDP provisions infrastructure; you can also do this later in Settings, Cloud tab.`,
       domainTitle: "Choose domains",
       domainLead:
-        "Enable the infrastructure tools the project needs. The configuration is validated before saving; you can change it later on the Domains page.",
+        "The configuration is validated before saving; you can change any choice later on the Domains page.",
       previewTitle: "Preview and deploy",
       previewLead:
         "The estimated cost and the order in which UDP provisions infrastructure in your cloud account. You can deploy later on the Infrastructure page.",

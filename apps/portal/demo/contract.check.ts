@@ -3,6 +3,7 @@ import {
   ARCHITECTURE_DEPLOY_DAYS,
   EVIDENCE_DORA_DAYS,
   RED_RANGES,
+  type RolloutDetailWire,
 } from "@udp/shared-types/wire";
 import { ADMIN_PAGE_SIZE, adminApi } from "../src/features/admin/admin-api";
 import { architectureApi } from "../src/features/architecture/architecture-api";
@@ -99,6 +100,27 @@ async function allPages<T>(
     rows.push(...(await load(o)).rows);
   }
   return rows;
+}
+
+/**
+ * Một lần đo có vượt ngưỡng của rollout không — cùng ba điều kiện của `decide()` ở Service 3: tỉ lệ lỗi tuyệt đối
+ * (kèm `minErrors`), tương đối so với baseline (kèm z-test một phía 5%), độ trễ p99.
+ */
+function breaches(
+  s: RolloutDetailWire["latestMetricSnapshot"] | null,
+  t: Record<string, number>,
+): boolean {
+  if (s === undefined || s === null) return false;
+  const c = s.canary;
+  const absolute =
+    c.errorRate > (t["errorRate"] ?? 1) &&
+    c.errorCount >= (t["minErrors"] ?? 0);
+  const relative =
+    s.zScore !== null &&
+    s.zScore > 1.645 &&
+    c.errorRate > (t["relativeErrorRate"] ?? Infinity) * s.baseline.errorRate;
+  const slow = (c.latencyP99Ms ?? 0) > (t["latencyP99Ms"] ?? Infinity);
+  return absolute || relative || slow;
 }
 
 const JOB_STATES = [
@@ -473,7 +495,15 @@ describe("mọi project người xem thấy", () => {
     const last = failed.map((r) => r.events.at(-1));
     expect(last.some((e) => e?.triggeredBy === "AUTO")).toBe(true);
     expect(last.some((e) => e?.triggeredBy === "MANUAL")).toBe(true);
-    expect(failed.every((r) => (r.failReason ?? "").length > 20)).toBe(true);
+    // Mã lý do như Service 3; UDP tự rollback thì dải báo đọc câu của quyết định ROLLBACK
+    for (const r of failed) {
+      const auto = r.events.at(-1)?.triggeredBy === "AUTO";
+      expect(r.failReason).toBe(auto ? "AUTO_ROLLBACK" : "MANUAL");
+      if (auto) {
+        expect(r.lastDecision?.decision).toBe("ROLLBACK");
+        expect(r.lastDecision?.reason).toBe(r.events.at(-1)?.reason);
+      }
+    }
 
     // Nhật ký: hơn 200 dòng, mới nhất trước, trải hàng tháng, người làm là thành viên có thật
     const first = await projectApi.audit(p.id, { limit: "50" });
@@ -571,6 +601,48 @@ describe("mọi project người xem thấy", () => {
         "checkout-worker",
       ]);
     }
+  });
+
+  it("rollout ở mọi project: quyết định, số đo, ngưỡng và nhật ký khớp nhau", async () => {
+    let checked = 0;
+    for (const project of (await projectsByName()).values()) {
+      const { environments } = await projectApi.get(project.id);
+      for (const env of environments) {
+        for (const row of (await rolloutApi.list(project.id, env.id))
+          .rollouts) {
+          const r = (await rolloutApi.get(project.id, row.id)).rollout;
+          const t = r.thresholds as Record<string, number>;
+          const d = r.lastDecision;
+          const snap = r.latestMetricSnapshot;
+          if (d?.decision === "PROMOTE") {
+            expect(d.breach, r.id).toBe(false);
+            expect(breaches(snap, t), `${r.id} PROMOTE`).toBe(false);
+          }
+          if (d?.breach === true) {
+            expect(breaches(snap, t), `${r.id} breach`).toBe(true);
+            // Câu của quyết định nêu ĐÚNG số đo đã vượt: tỉ lệ lỗi hay độ trễ
+            const rate = `errorRate ${(snap?.canary.errorRate ?? 0).toFixed(4)}`;
+            const p99 = `p99 ${(snap?.canary.latencyP99Ms ?? 0).toFixed(0)}ms`;
+            expect(
+              d.reason.includes(rate) || d.reason.includes(p99),
+              d.reason,
+            ).toBe(true);
+          }
+          if (d?.decision === "HOLD" && !d.breach) {
+            expect(d.reason, r.id).toMatch(/^Mới \d+\/\d+ request$/);
+          }
+          // Bậc đi lên nhờ số đo trong ngưỡng; UDP tự rollback vì số đo vượt ngưỡng
+          for (const e of r.events.filter((x) => x.triggeredBy === "AUTO")) {
+            if (e.metricSnapshot === null) continue;
+            expect(breaches(e.metricSnapshot, t), `${r.id} ${e.action}`).toBe(
+              e.action === "ROLLBACK",
+            );
+          }
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(20);
   });
 
   it("trang chủ của chủ project: thẻ Bắt đầu, số việc cần xử lý, cloud chỉ BYOC", async () => {

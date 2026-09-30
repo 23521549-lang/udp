@@ -394,7 +394,11 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
 
       <div className="grid2">
         <div>
-          <ErrorChart events={rollout.events} limit={errorLimit} />
+          <ErrorChart
+            events={rollout.events}
+            latest={snap}
+            limit={errorLimit}
+          />
           {snap !== undefined && (
             <details className="cardc">
               <summary>{m.promql}</summary>
@@ -504,9 +508,12 @@ function WhyStill({
               (nextAnalysis === 0
                 ? m.nextAnalysisNow
                 : m.nextAnalysis(formatDuration(nextAnalysis)))}
-            {dwellLeft === 0
-              ? m.dwellDone
-              : m.dwellLeft(formatDuration(dwellLeft))}
+            {/* [Plan #58 UX-6] Hết giờ giữ bậc KHÔNG có nghĩa được lên bậc khi số đo đang vượt ngưỡng */}
+            {dwellLeft > 0
+              ? m.dwellLeft(formatDuration(dwellLeft))
+              : decision?.breach === true
+                ? m.dwellDoneHeld
+                : m.dwellDone}
             <InfoTip term="dwell" />
           </div>
         )}
@@ -637,26 +644,36 @@ function EventFeed({ events }: { events: RolloutEventWire[] }) {
  * đối chứng"; DESIGN.md §6 "Biểu đồ", "Trục biểu đồ"). Dùng `LineChart` chung: thang co theo dữ liệu,
  * nên canary 0,4% không còn nằm dẹt dưới đáy vì thang bị kéo tới ngưỡng 5%.
  */
+/**
+ * Tỉ lệ lỗi theo thời gian: các lần đo gắn với sự kiện (lên bậc, lùi lại…) cộng [Plan #58] lần đo MỚI NHẤT của bộ
+ * điều phối. Quyết định giữ bậc (HOLD) không phải một sự kiện, nên thiếu điểm cuối thì biểu đồ nằm dưới ngưỡng trong
+ * lúc dải quyết định báo đang vượt — hai thứ trên cùng một trang nói ngược nhau.
+ */
 function ErrorChart({
   events,
+  latest,
   limit,
 }: {
   events: RolloutEventWire[];
+  latest: RolloutEventWire["metricSnapshot"] | undefined;
   limit: number;
 }) {
   const m = useMessages(rolloutMessages).detail;
-  const points = events
-    .filter((e) => e.metricSnapshot !== null)
-    .map((e) => ({
-      at: new Date(e.createdAt).getTime(),
-      canary:
-        e.metricSnapshot === null
-          ? null
-          : e.metricSnapshot.canary.errorRate * 100,
-      baseline:
-        e.metricSnapshot === null
-          ? null
-          : e.metricSnapshot.baseline.errorRate * 100,
+  const snapshots = events.flatMap((e) =>
+    e.metricSnapshot === null ? [] : [e.metricSnapshot],
+  );
+  if (
+    latest !== undefined &&
+    latest !== null &&
+    !snapshots.some((s) => s.at === latest.at)
+  ) {
+    snapshots.push(latest);
+  }
+  const points = snapshots
+    .map((snap) => ({
+      at: new Date(snap.at).getTime(),
+      canary: snap.canary.errorRate * 100,
+      baseline: snap.baseline.errorRate * 100,
     }))
     .sort((a, b) => a.at - b.at);
 

@@ -259,10 +259,7 @@ function DomainStep({
       <div className="scroll">
         <div className="page" style={{ maxWidth: 760 }}>
           <Stepper current="domains" projectId={project.id} />
-          <div className="title-row">
-            <h1 className="title">{m.domainTitle}</h1>
-            <InfoTip term="domain" />
-          </div>
+          <h1 className="title">{m.domainTitle}</h1>
           <p className="lead">{m.domainLead}</p>
           <DomainPanel
             projectId={project.id}

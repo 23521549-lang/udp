@@ -65,19 +65,6 @@ function event(
   r.updatedAt = at;
 }
 
-/** Controller giữ nguyên bậc, không vì vượt ngưỡng: tạm dừng, hay chờ số đo */
-function holdFor(r: RolloutDetailWire, reason: string): void {
-  if (r.lastDecision === undefined) return;
-  r.lastDecision = {
-    decision: "HOLD",
-    reason,
-    breach: false,
-    breachStreak: 0,
-    breachAt: null,
-    at: nowIso(),
-  };
-}
-
 function setTracked(
   p: ProjectRecord,
   r: RolloutDetailWire,
@@ -102,13 +89,11 @@ function act(
     case "PAUSE":
       if (r.status !== "IN_PROGRESS") break;
       r.status = "PAUSED";
-      holdFor(r, "Session đang tạm dừng theo yêu cầu");
       event(db, r, "PAUSE", `Tạm dừng bởi ${db.me.name}`, true);
       break;
     case "RESUME":
       if (r.status !== "PAUSED") break;
       r.status = "IN_PROGRESS";
-      holdFor(r, "Vừa tiếp tục: chờ lần đo đầu tiên trước khi lên bậc tiếp");
       if (live !== undefined) {
         live.startedAt = Date.now();
         live.from = r.currentTrafficPercentage;
@@ -155,11 +140,12 @@ function act(
       r.currentTrafficPercentage = 0;
       r.baselinePercentage =
         r.strategy === "CANARY" ? 100 : r.baselinePercentage;
-      r.failReason = `Rollback thủ công bởi ${db.me.name}`;
+      // Như Service 3: mã lý do MANUAL, câu của sự kiện là yêu cầu của người dùng
+      r.failReason = "MANUAL";
       if (live !== undefined) syncRule(p, live, 0);
       delete p.liveRollouts[r.id];
       setTracked(p, r, false);
-      event(db, r, "ROLLBACK", r.failReason, true);
+      event(db, r, "ROLLBACK", "Người dùng yêu cầu rollback", true);
       break;
     default:
       throw new HttpProblem(
@@ -265,7 +251,8 @@ function create(db: Db, p: ProjectRecord, body: CreateBody): RolloutDetailWire {
     maxDurationSeconds: 86_400,
     lastDecision: {
       decision: "HOLD",
-      reason: `Warm-up: chờ đủ ${String(body.warmUpRequests)} request ở nhánh canary`,
+      // Cùng câu của `decide()` ở Service 3 khi nhánh canary chưa đủ request
+      reason: `Mới 0/${String(body.warmUpRequests)} request`,
       breach: false,
       breachStreak: 0,
       breachAt: null,

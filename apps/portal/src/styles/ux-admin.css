@@ -169,7 +169,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  max-width: 420px;
+  max-width: 260px;
 }
 .orphan-id > .mono {
   min-width: 0;

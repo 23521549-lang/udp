@@ -86,7 +86,14 @@ export function auditActor(
 }
 
 /** Trường đọc được của đối tượng, theo thứ tự ưu tiên, trong `after` rồi `before` */
-const TARGET_FIELDS = ["key", "name", "email", "label", "flagKey"] as const;
+const TARGET_FIELDS = [
+  "key",
+  "name",
+  "email",
+  "label",
+  "flagKey",
+  "workloadName",
+] as const;
 
 function field(value: unknown, key: string): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;

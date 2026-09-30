@@ -1809,9 +1809,12 @@ interface RolloutSpec {
   workload: string;
   versions?: [string, string];
   startedHoursAgo: number;
-  failReason?: string;
   /** Mốc % đã đi qua (sự kiện PROMOTE) */
   steps: number[];
+  /** Tỉ lệ lỗi canary đo được ở từng bậc (mặc định 0,4%) */
+  stepRates?: number[];
+  /** Tỉ lệ lỗi của nhánh baseline (mặc định 0,5%) */
+  baselineRate?: number;
   end?: "COMPLETE" | "ROLLBACK" | "PAUSE";
   /** Người bấm Rollback; không có là UDP tự rollback khi vượt ngưỡng */
   endBy?: Person;
@@ -1825,93 +1828,56 @@ interface RolloutSpec {
   live?: { step: number; everySeconds: number; upTo: number };
 }
 
-/** Quyết định gần nhất của controller cho một session chưa kết thúc, cùng số đo đi kèm */
-function liveDecisionOf(
-  spec: RolloutSpec,
-): Pick<RolloutDetailWire, "lastDecision" | "latestMetricSnapshot"> {
-  const at = minutesAgo(1);
-  const decide = (
-    decision: "PROMOTE" | "HOLD",
-    reason: string,
-    breachStreak = 0,
-  ) => ({
-    decision,
-    reason,
-    breach: breachStreak > 0,
-    breachStreak,
-    breachAt: breachStreak > 0 ? minutesAgo(2) : null,
-    at,
-  });
-  const healthy = () => snapshot(0.0041, 0.0048, at, spec.workload);
-  switch (spec.status) {
-    case "PENDING":
-      return {
-        lastDecision: decide(
-          "HOLD",
-          "Warm-up: nhánh canary mới có 64/200 request, chưa đủ để so với baseline",
-        ),
-      };
-    case "PAUSED":
-      return {
-        lastDecision: decide("HOLD", "Session đang tạm dừng theo yêu cầu"),
-        latestMetricSnapshot: healthy(),
-      };
-    case "IN_PROGRESS":
-      if (spec.decision === "warmup") {
-        return {
-          lastDecision: decide(
-            "HOLD",
-            `Vừa lên ${String(spec.percent)}%: nhánh canary mới có 140/200 request, chờ đủ số đo để so với baseline`,
-          ),
-        };
-      }
-      if (spec.decision === "breach") {
-        return {
-          lastDecision: decide(
-            "HOLD",
-            `Lỗi canary 2,3% so với baseline 0,6%: vượt ngưỡng 1,5 lần baseline, lần 1 trên 3. Giữ ở ${String(spec.percent)}% và đo lại sau 30 giây`,
-            1,
-          ),
-          latestMetricSnapshot: snapshot(0.023, 0.006, at, spec.workload),
-        };
-      }
-      return {
-        lastDecision: decide(
-          "PROMOTE",
-          "Lỗi canary 0,41% so với baseline 0,48%: trong ngưỡng, sẵn sàng bậc tiếp",
-        ),
-        latestMetricSnapshot: healthy(),
-      };
-    case "DONE":
-    case "FAILED":
-      return {};
-  }
+interface Thresholds {
+  errorRate: number;
+  minErrors: number;
+  latencyP99Ms: number;
+  relativeErrorRate: number;
+  maxConsecutiveBreaches: number;
 }
 
-function snapshot(
-  canaryErrorRate: number,
-  baselineErrorRate: number,
+type Snapshot = NonNullable<RolloutDetailWire["latestMetricSnapshot"]>;
+
+const WARM_UP_REQUESTS = 200;
+
+/** `ROLLOUT_ANALYSIS.zCritical` của `@udp/config`: kiểm định một phía mức 5% */
+const Z_CRITICAL = 1.645;
+
+/** Kiểm định hai tỉ lệ (pooled), một phía — cùng công thức `twoProportionZ` của Service 3 */
+function twoProportionZ(e1: number, n1: number, e2: number, n2: number) {
+  if (n1 === 0 || n2 === 0) return 0;
+  const p = (e1 + e2) / (n1 + n2);
+  const se = Math.sqrt(p * (1 - p) * (1 / n1 + 1 / n2));
+  return se === 0 ? 0 : (e1 / n1 - e2 / n2) / se;
+}
+
+/** Một lần đo trên cửa sổ 60 giây: số lỗi là số nguyên, tỉ lệ tính TỪ số đếm như `snapshotOf` của Service 3 */
+function measure(
   at: string,
   workload: string,
-  canaryP99Ms = between(rng, 180, 420),
-): RolloutDetailWire["latestMetricSnapshot"] {
-  const requests = between(rng, 900, 2400);
+  canaryRate: number,
+  baselineRate: number,
+  opts: { requests?: number; p99Ms?: number } = {},
+): Snapshot {
+  const requests = opts.requests ?? between(rng, 1_600, 2_400);
+  const errors = Math.round(requests * canaryRate);
+  const baseRequests = requests * 3;
+  const baseErrors = Math.round(baseRequests * baselineRate);
   return {
     canary: {
       requestCount: requests,
-      errorCount: Math.round(requests * canaryErrorRate),
-      errorRate: canaryErrorRate,
-      latencyP99Ms: canaryP99Ms,
+      errorCount: errors,
+      errorRate: errors / requests,
+      latencyP99Ms: opts.p99Ms ?? between(rng, 180, 420),
       hasData: true,
     },
     baseline: {
-      requestCount: requests * 3,
-      errorCount: Math.round(requests * 3 * baselineErrorRate),
-      errorRate: baselineErrorRate,
-      latencyP99Ms: between(rng, 170, 380),
+      requestCount: baseRequests,
+      errorCount: baseErrors,
+      errorRate: baseErrors / baseRequests,
       hasData: true,
     },
-    zScore: Math.round((canaryErrorRate - baselineErrorRate) * 1000) / 10,
+    zScore: twoProportionZ(errors, requests, baseErrors, baseRequests),
     queries: {
       canary: [
         `sum(rate(http_requests_total{namespace="…",service_name="${workload}",ff_variant="canary",code=~"5.."}[1m]))`,
@@ -1925,6 +1891,131 @@ function snapshot(
   };
 }
 
+/**
+ * Các ngưỡng một lần đo vượt, viết ĐÚNG như `decide()` của Service 3 (tuyệt đối kèm `minErrors`, tương đối so với
+ * baseline kèm z-test, độ trễ p99); rỗng là trong ngưỡng.
+ */
+function breachesOf(s: Snapshot, t: Thresholds): string[] {
+  const c = s.canary;
+  const b = s.baseline;
+  const out: string[] = [];
+  if (c.errorRate > t.errorRate && c.errorCount >= t.minErrors) {
+    out.push(
+      `errorRate ${c.errorRate.toFixed(4)} > ${String(t.errorRate)} (${String(c.errorCount)} lỗi ≥ minErrors ${String(t.minErrors)})`,
+    );
+  }
+  if (
+    b.requestCount >= WARM_UP_REQUESTS &&
+    s.zScore !== null &&
+    c.errorRate > t.relativeErrorRate * b.errorRate &&
+    s.zScore > Z_CRITICAL
+  ) {
+    out.push(
+      `errorRate ${c.errorRate.toFixed(4)} > ${String(t.relativeErrorRate)} × baseline ${b.errorRate.toFixed(4)} (z = ${s.zScore.toFixed(2)})`,
+    );
+  }
+  if (c.latencyP99Ms !== undefined && c.latencyP99Ms > t.latencyP99Ms) {
+    out.push(
+      `p99 ${c.latencyP99Ms.toFixed(0)}ms > ${String(t.latencyP99Ms)}ms`,
+    );
+  }
+  return out;
+}
+
+/** Dữ liệu mẫu tự kiểm lúc dựng: số đo phải khớp quyết định đi kèm nó */
+function checked(s: Snapshot, t: Thresholds, breach: boolean): string {
+  const why = breachesOf(s, t);
+  if (why.length > 0 !== breach) {
+    throw new Error(`số đo mẫu không khớp quyết định: ${why.join("; ")}`);
+  }
+  return why.join("; ");
+}
+
+/** Lần đo làm rollout thất bại: vượt tỉ lệ lỗi (mặc định) hay độ trễ p99 */
+function breachMeasure(spec: RolloutSpec, at: string): Snapshot {
+  const baseline = spec.baselineRate ?? 0.005;
+  return spec.breach === "latency"
+    ? measure(at, spec.workload, 0.006, baseline, {
+        p99Ms: between(rng, 1_180, 1_320),
+      })
+    : measure(at, spec.workload, 0.078, baseline);
+}
+
+/**
+ * Quyết định gần nhất của controller và số đo đi kèm, cùng câu chữ Service 3 viết: "Không vượt ngưỡng", "Mới
+ * n/200 request", "Vượt ngưỡng lần k/N, chờ xác nhận: …". Tạm dừng không đổi quyết định (chỉ đổi trạng thái).
+ */
+function decisionOf(
+  spec: RolloutSpec,
+  t: Thresholds,
+  failure: Snapshot | undefined,
+): Pick<RolloutDetailWire, "lastDecision" | "latestMetricSnapshot"> {
+  const at = minutesAgo(1);
+  const decide = (
+    decision: "PROMOTE" | "HOLD" | "ROLLBACK",
+    reason: string,
+    snap: Snapshot,
+    breachStreak = 0,
+  ) => ({
+    lastDecision: {
+      decision,
+      reason,
+      breach: breachStreak > 0,
+      breachStreak,
+      breachAt: breachStreak > 0 ? snap.at : null,
+      at: snap.at,
+    },
+    latestMetricSnapshot: snap,
+  });
+  const warmingUp = (requests: number) =>
+    decide(
+      "HOLD",
+      `Mới ${String(requests)}/${String(WARM_UP_REQUESTS)} request`,
+      measure(at, spec.workload, 0.0071, 0.005, { requests }),
+    );
+  const healthy = () => {
+    const snap = measure(at, spec.workload, 0.0041, 0.0048);
+    checked(snap, t, false);
+    return decide("PROMOTE", "Không vượt ngưỡng", snap);
+  };
+  switch (spec.status) {
+    case "PENDING":
+      return warmingUp(64);
+    case "PAUSED":
+      return healthy();
+    case "IN_PROGRESS": {
+      if (spec.decision === "warmup") return warmingUp(140);
+      if (spec.decision !== "breach") return healthy();
+      const snap = measure(
+        at,
+        spec.workload,
+        0.0228,
+        spec.baselineRate ?? 0.005,
+        { requests: 1_840, p99Ms: 243 },
+      );
+      const why = checked(snap, t, true);
+      return decide(
+        "HOLD",
+        `Vượt ngưỡng lần 1/${String(t.maxConsecutiveBreaches)}, chờ xác nhận: ${why}`,
+        snap,
+        1,
+      );
+    }
+    case "FAILED":
+      // UDP tự rollback: quyết định cuối là ROLLBACK, cùng số đo của sự kiện ROLLBACK
+      return failure === undefined
+        ? {}
+        : decide(
+            "ROLLBACK",
+            `${checked(failure, t, true)}, trong ${String(t.maxConsecutiveBreaches)} lần đo liên tiếp`,
+            failure,
+            t.maxConsecutiveBreaches,
+          );
+    case "DONE":
+      return {};
+  }
+}
+
 function buildRollout(
   p: ProjectRecord,
   spec: RolloutSpec,
@@ -1935,37 +2026,62 @@ function buildRollout(
   const flag = p.flags.find((f) => f.detail.key === spec.flag);
   const startMs = OPENED_AT - spec.startedHoursAgo * 3_600_000;
   const stepMs = (spec.startedHoursAgo * 3_600_000) / (spec.steps.length + 1);
+  // Session vừa vượt ngưỡng được cấu hình chặt hơn: ngưỡng tuyệt đối 1,5% và cần ba lần vượt liên tiếp
+  const thresholds: Thresholds =
+    spec.decision === "breach"
+      ? {
+          errorRate: 0.015,
+          minErrors: 5,
+          latencyP99Ms: 800,
+          relativeErrorRate: 1.5,
+          maxConsecutiveBreaches: 3,
+        }
+      : {
+          errorRate: 0.05,
+          minErrors: 5,
+          latencyP99Ms: 800,
+          relativeErrorRate: 1.5,
+          maxConsecutiveBreaches: 2,
+        };
+  /*
+   * Mỗi bậc đi lên nhờ một lần đo trong ngưỡng, và sự kiện mang đúng số đo đó. ATTRIBUTE_SPLIT không tự quyết
+   * (§7.2): số đo vẫn ghi cho người đọc, người có quyền bấm Promote.
+   */
+  const split = spec.strategy === "ATTRIBUTE_SPLIT";
   const events: RolloutEventWire[] = spec.steps.map((percent, i) => {
     const at = iso(startMs + stepMs * (i + 1));
+    const snap = measure(
+      at,
+      spec.workload,
+      spec.stepRates?.[i] ?? 0.004,
+      spec.baselineRate ?? 0.005,
+    );
+    checked(snap, thresholds, false);
     return {
       id: newId(),
       action: "PROMOTE",
-      isIntent: false,
+      isIntent: split,
       processedAt: at,
       trafficPercentage: percent,
-      reason: `Canary khoẻ: lỗi ${(0.2 + rng() * 0.6).toFixed(2)}% ≤ ngưỡng 5%, p99 trong ngưỡng`,
-      triggeredBy: "AUTO",
-      actorUserId: null,
+      reason: split ? null : "Không vượt ngưỡng",
+      triggeredBy: split ? "MANUAL" : "AUTO",
+      actorUserId: split ? owner.id : null,
       causedByEventId: null,
-      metricSnapshot: snapshot(0.004, 0.005, at, spec.workload) ?? null,
+      metricSnapshot: snap,
       createdAt: at,
     };
   });
+  let failure: Snapshot | undefined;
   if (spec.end !== undefined) {
     const at = iso(startMs + stepMs * (spec.steps.length + 0.6));
-    const actor = spec.end === "PAUSE" ? owner : spec.endBy;
-    const breach =
-      spec.end !== "ROLLBACK" || actor !== undefined
-        ? null
-        : spec.breach === "latency"
-          ? snapshot(
-              0.006,
-              0.005,
-              at,
-              spec.workload,
-              between(rng, 1_180, 1_320),
-            )
-          : snapshot(0.078, 0.006, at, spec.workload);
+    const actor =
+      spec.end === "PAUSE" || (split && spec.end === "COMPLETE")
+        ? owner
+        : spec.endBy;
+    failure =
+      spec.end === "ROLLBACK" && actor === undefined
+        ? breachMeasure(spec, at)
+        : undefined;
     events.push({
       id: newId(),
       action: spec.end,
@@ -1973,15 +2089,17 @@ function buildRollout(
       processedAt: at,
       trafficPercentage: spec.end === "ROLLBACK" ? 0 : spec.percent,
       reason:
-        spec.end === "ROLLBACK"
-          ? (spec.failReason ?? null)
-          : spec.end === "PAUSE"
-            ? "Tạm dừng để kiểm tra log thanh toán"
-            : "Đạt 100%, đóng session",
+        spec.end === "PAUSE"
+          ? "Tạm dừng để kiểm tra log thanh toán"
+          : spec.end === "COMPLETE"
+            ? "Đạt 100%, đóng session"
+            : failure === undefined
+              ? "Người dùng yêu cầu rollback"
+              : `${checked(failure, thresholds, true)}, trong ${String(thresholds.maxConsecutiveBreaches)} lần đo liên tiếp`,
       triggeredBy: actor === undefined ? "AUTO" : "MANUAL",
       actorUserId: actor?.id ?? null,
       causedByEventId: null,
-      metricSnapshot: breach ?? null,
+      metricSnapshot: failure ?? null,
       createdAt: at,
     });
   }
@@ -2011,21 +2129,18 @@ function buildRollout(
     ...(spec.versions === undefined
       ? {}
       : { versionOld: spec.versions[0], versionNew: spec.versions[1] }),
-    thresholds: {
-      errorRate: 0.05,
-      minErrors: 5,
-      latencyP99Ms: 800,
-      relativeErrorRate: 1.5,
-      maxConsecutiveBreaches: spec.decision === "breach" ? 3 : 2,
-    },
+    thresholds: { ...thresholds },
     stepPercent: 10,
     stepIntervalSeconds: 300,
     analysisIntervalSeconds: 30,
-    warmUpRequests: 200,
+    warmUpRequests: WARM_UP_REQUESTS,
     metricWindowSeconds: 60,
     maxDurationSeconds: 86_400,
-    ...(spec.failReason === undefined ? {} : { failReason: spec.failReason }),
-    ...liveDecisionOf(spec),
+    // Mã lý do như Service 3: UDP tự rollback hay người bấm
+    ...(spec.end === "ROLLBACK"
+      ? { failReason: failure === undefined ? "MANUAL" : "AUTO_ROLLBACK" }
+      : {}),
+    ...decisionOf(spec, thresholds, failure),
     events,
     createdAt: iso(startMs),
     updatedAt:
@@ -2409,8 +2524,6 @@ function checkoutService(): ProjectRecord {
           startedHoursAgo: 30,
           steps: [10, 20],
           end: "ROLLBACK",
-          failReason:
-            "Tỉ lệ lỗi canary 7,8% vượt ngưỡng 5% hai lần liên tiếp, tự rollback về 0%",
         },
         {
           flag: "checkout-button-color",
@@ -2446,6 +2559,9 @@ function checkoutService(): ProjectRecord {
           workload: "checkout-web",
           startedHoursAgo: 2.2,
           steps: [10, 20],
+          // Hai bậc đầu trong ngưỡng nhưng lỗi nhích dần; lần đo mới nhất vượt 1,5%
+          stepRates: [0.0052, 0.0079],
+          baselineRate: 0.006,
           decision: "breach",
         },
         {
@@ -2483,8 +2599,6 @@ function checkoutService(): ProjectRecord {
           steps: [100],
           end: "ROLLBACK",
           breach: "latency",
-          failReason:
-            "Độ trễ p99 của bản mới 1.240 ms vượt ngưỡng 800 ms hai lần liên tiếp, tự chuyển toàn bộ lưu lượng về bản đang chạy",
         },
         {
           flag: "voucher-stacking",
@@ -2498,8 +2612,6 @@ function checkoutService(): ProjectRecord {
           steps: [10, 20],
           end: "ROLLBACK",
           endBy: BAO,
-          failReason:
-            "Rollback thủ công bởi Trần Quốc Bảo: khách báo đơn bị trừ tiền giảm giá hai lần",
         },
         {
           flag: "free-shipping-threshold",
@@ -2667,7 +2779,8 @@ function addRollbacks(p: ProjectRecord): void {
         pipelineId: null,
         detail: {
           rolloutSessionId: failed.id,
-          reason: failed.failReason ?? "rollback",
+          failReason: failed.failReason ?? null,
+          reason: failed.events.at(-1)?.reason ?? null,
         },
       },
     ];
@@ -2749,8 +2862,6 @@ function paymentGateway(): ProjectRecord {
           startedHoursAgo: 19,
           steps: [10],
           end: "ROLLBACK",
-          failReason:
-            "Lỗi 5xx của bản mới 7,8% so với 0,6% ở bản cũ: vượt ngưỡng hai lần liên tiếp, tự rollback",
         },
         {
           flag: "vietqr-dynamic",
