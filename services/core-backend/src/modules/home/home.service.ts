@@ -1,13 +1,19 @@
 import { Prisma } from "@udp/db";
 import type { HomeAttentionWire, HomeWire } from "@udp/shared-types/wire";
+import {
+  accessibleBy,
+  roleOfAccessible,
+  roleSourcesOf,
+} from "../../core/access/project-access.js";
 import { prisma } from "../../core/db.js";
 import { driftVerdictOf } from "../domain/project-domain.service.js";
 
 /**
- * [v4.11, Plan #53 QĐ-5] Trang chủ của MỘT người dùng: mọi project họ là thành viên, rollout đang
+ * [v4.11, Plan #53 QĐ-5] Trang chủ của MỘT người dùng: mọi project họ vào được, rollout đang
  * chạy, việc cần xử lý, và deploy 14 ngày — một lời gọi thay vì N×M lời gọi từ trình duyệt.
  *
- * MỌI truy vấn lọc theo membership của người gọi (`project_members.user_id`) ngay trong câu hỏi, không
+ * MỌI truy vấn lọc theo quyền vào của người gọi (thành viên trực tiếp hay qua nhóm — `project-access.ts`,
+ * Plan #55) ngay trong câu hỏi, không
  * lọc sau: một dòng của project khác không bao giờ rời database. PLATFORM_ADMIN không có đặc quyền ở
  * đây — cùng luật với guard của project (§2.2: vai nền tảng chỉ dùng cho `/admin`).
  */
@@ -50,31 +56,30 @@ export async function homeOf(
   userId: string,
   now: Date = new Date(),
 ): Promise<HomeWire> {
-  const memberships = await prisma.projectMember.findMany({
-    where: { userId, project: { status: { not: "DELETED" } } },
+  // [Plan #55] Project người gọi VÀO ĐƯỢC — trực tiếp hoặc qua nhóm — với vai hiệu lực (`project-access.ts`)
+  const rows = await prisma.project.findMany({
+    where: { status: { not: "DELETED" }, ...accessibleBy(userId) },
     select: {
-      projectRole: true,
-      project: {
-        select: {
-          id: true,
-          name: true,
-          status: true,
-          expiresAt: true,
-          credentials: {
-            where: { isActive: true },
-            select: { provider: true },
-            take: 1,
-          },
-          _count: { select: { environments: true } },
-        },
+      id: true,
+      name: true,
+      status: true,
+      expiresAt: true,
+      credentials: {
+        where: { isActive: true },
+        select: { provider: true },
+        take: 1,
       },
+      _count: { select: { environments: true } },
+      ...roleSourcesOf(userId),
     },
-    orderBy: { project: { name: "asc" } },
+    orderBy: { name: "asc" },
   });
-  const ids = memberships.map((m) => m.project.id);
-  const nameOf = new Map(
-    memberships.map((m) => [m.project.id, m.project.name]),
-  );
+  const accessible = rows.map(({ members, teamGrants, ...project }) => ({
+    project,
+    projectRole: roleOfAccessible({ id: project.id, members, teamGrants }),
+  }));
+  const ids = accessible.map((m) => m.project.id);
+  const nameOf = new Map(accessible.map((m) => [m.project.id, m.project.name]));
   const deploys = emptyDays(now);
   if (ids.length === 0) {
     return {
@@ -222,7 +227,7 @@ export async function homeOf(
       refId: j.id,
       at: j.updatedAt.toISOString(),
     })),
-    ...memberships.flatMap((m): HomeAttentionWire[] =>
+    ...accessible.flatMap((m): HomeAttentionWire[] =>
       m.project.expiresAt !== null &&
       m.project.expiresAt.getTime() <= now.getTime() + EXPIRING_WINDOW_MS
         ? [
@@ -266,7 +271,7 @@ export async function homeOf(
   }
 
   return {
-    projects: memberships.map((m) => ({
+    projects: accessible.map((m) => ({
       id: m.project.id,
       name: m.project.name,
       status: m.project.status,

@@ -1,0 +1,12 @@
+{
+  "route": "POST /invitations/accept",
+  "status": 200,
+  "body": {
+    "target": {
+      "kind": "PROJECT",
+      "id": "1545fc0f-540b-4796-87e7-5de4648af476",
+      "name": "p-3cb5c3d4",
+      "projectRole": "DEVELOPER"
+    }
+  }
+}

@@ -207,6 +207,187 @@ export const memberResponseWire = z
   .object({ member: publicMemberWire })
   .strict();
 
+// ------------------------------------------------------------- [v4.11, Plan #55] nhóm và lời mời
+
+/** Vai trong một nhóm: OWNER quản lý nhóm, MEMBER chỉ thuộc nhóm */
+export const teamRoleWire = z.enum(["OWNER", "MEMBER"]);
+
+/**
+ * Vai cấp được cho một nhóm, hay qua lời mời vào project — KHÔNG BAO GIỜ `OWNER`: chủ sở hữu luôn là một người,
+ * đổi qua `POST /transfer-ownership` (database giữ bằng CHECK).
+ */
+export const grantableProjectRoleWire = z.enum([
+  "MAINTAINER",
+  "DEVELOPER",
+  "VIEWER",
+]);
+
+/** Người trên dây ở mọi chỗ của Plan #55 — cùng hình với `user` của thành viên project */
+const personWire = z
+  .object({ id: uuid, email: z.string().email(), name: z.string() })
+  .strict();
+
+/**
+ * Token của lời mời: tiền tố cố định (công cụ quét bí mật nhận ra) + 32 byte ngẫu nhiên base64url. Chỉ xuất
+ * hiện MỘT lần — trong response tạo lời mời; database chỉ giữ SHA-256 của nó.
+ */
+export const INVITATION_TOKEN_PATTERN = /^udp_inv_[A-Za-z0-9_-]{43}$/;
+export const invitationTokenWire = z.string().regex(INVITATION_TOKEN_PATTERN);
+
+const invitationBase = {
+  id: uuid,
+  email: z.string().email(),
+  invitedBy: personWire,
+  expiresAt: isoDateTime,
+  createdAt: isoDateTime,
+};
+
+/** Lời mời đang chờ vào project — không bao giờ mang token */
+export const projectInvitationWire = z
+  .object({ ...invitationBase, projectRole: grantableProjectRoleWire })
+  .strict();
+
+/** Lời mời đang chờ vào nhóm — không bao giờ mang token */
+export const teamInvitationWire = z
+  .object({ ...invitationBase, teamRole: teamRoleWire })
+  .strict();
+
+/** `GET /projects/:id/invitations` */
+export const projectInvitationListResponseWire = z
+  .object({ invitations: z.array(projectInvitationWire) })
+  .strict();
+
+/** `POST /projects/:id/invitations` (201) — token hiện đúng lần này */
+export const projectInvitationCreatedResponseWire = z
+  .object({ invitation: projectInvitationWire, token: invitationTokenWire })
+  .strict();
+
+/** `GET /teams/:teamId/invitations` */
+export const teamInvitationListResponseWire = z
+  .object({ invitations: z.array(teamInvitationWire) })
+  .strict();
+
+/** `POST /teams/:teamId/invitations` (201) — token hiện đúng lần này */
+export const teamInvitationCreatedResponseWire = z
+  .object({ invitation: teamInvitationWire, token: invitationTokenWire })
+  .strict();
+
+/** Lời mời dẫn tới đâu, với vai gì */
+export const invitationTargetWire = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("PROJECT"),
+      id: uuid,
+      name: z.string(),
+      projectRole: grantableProjectRoleWire,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("TEAM"),
+      id: uuid,
+      name: z.string(),
+      teamRole: teamRoleWire,
+    })
+    .strict(),
+]);
+
+/**
+ * `POST /invitations/lookup` — thứ người cầm đường dẫn thấy, TRƯỚC khi đăng nhập: mời vào đâu, vai gì, ai mời,
+ * dành cho email nào (để họ đăng nhập đúng tài khoản). Người mời chỉ lộ TÊN.
+ */
+export const invitationLookupResponseWire = z
+  .object({
+    invitation: z
+      .object({
+        target: invitationTargetWire,
+        email: z.string().email(),
+        invitedBy: z.object({ name: z.string() }).strict(),
+        expiresAt: isoDateTime,
+      })
+      .strict(),
+  })
+  .strict();
+
+/** `POST /invitations/accept` — Portal đi thẳng tới project hay nhóm vừa vào */
+export const invitationAcceptedResponseWire = z
+  .object({ target: invitationTargetWire })
+  .strict();
+
+/** Một dòng của "Nhóm của tôi" */
+export const teamSummaryWire = z
+  .object({
+    id: uuid,
+    name: z.string(),
+    myRole: teamRoleWire,
+    memberCount: z.number().int().nonnegative(),
+    projectCount: z.number().int().nonnegative(),
+    createdAt: isoDateTime,
+  })
+  .strict();
+
+/** `GET /teams` */
+export const teamListResponseWire = z
+  .object({ teams: z.array(teamSummaryWire) })
+  .strict();
+
+export const teamMemberWire = z
+  .object({
+    userId: uuid,
+    teamRole: teamRoleWire,
+    createdAt: isoDateTime,
+    user: personWire,
+  })
+  .strict();
+
+/** Project mà nhóm được cấp quyền (project đã xoá không hiện) */
+export const teamProjectWire = z
+  .object({ id: uuid, name: z.string(), projectRole: grantableProjectRoleWire })
+  .strict();
+
+export const teamDetailWire = z
+  .object({
+    id: uuid,
+    name: z.string(),
+    myRole: teamRoleWire,
+    createdAt: isoDateTime,
+    members: z.array(teamMemberWire),
+    projects: z.array(teamProjectWire),
+  })
+  .strict();
+
+/** `POST /teams` (201), `GET|PATCH /teams/:teamId` */
+export const teamResponseWire = z.object({ team: teamDetailWire }).strict();
+
+/** `POST /teams/:teamId/members` (201), `PATCH /teams/:teamId/members/:userId` */
+export const teamMemberResponseWire = z
+  .object({ member: teamMemberWire })
+  .strict();
+
+/**
+ * Nhóm có quyền trên một project, KÈM danh sách người của nhóm: người xem project thấy được mọi người vào được
+ * project — một nhóm không phải hộp đen che ai đang có quyền.
+ */
+export const projectTeamWire = z
+  .object({
+    teamId: uuid,
+    name: z.string(),
+    projectRole: grantableProjectRoleWire,
+    createdAt: isoDateTime,
+    members: z.array(personWire),
+  })
+  .strict();
+
+/** `GET /projects/:id/teams` */
+export const projectTeamListResponseWire = z
+  .object({ teams: z.array(projectTeamWire) })
+  .strict();
+
+/** `POST /projects/:id/teams` (201), `PATCH /projects/:id/teams/:teamId` */
+export const projectTeamResponseWire = z
+  .object({ team: projectTeamWire })
+  .strict();
+
 // ------------------------------------------------------------- audit
 
 /**
@@ -1421,6 +1602,19 @@ export type ProjectDetailResponseWire = z.infer<
   typeof projectDetailResponseWire
 >;
 export type PublicMemberWire = z.infer<typeof publicMemberWire>;
+export type TeamRoleWire = z.infer<typeof teamRoleWire>;
+export type GrantableProjectRoleWire = z.infer<typeof grantableProjectRoleWire>;
+export type ProjectInvitationWire = z.infer<typeof projectInvitationWire>;
+export type TeamInvitationWire = z.infer<typeof teamInvitationWire>;
+export type InvitationTargetWire = z.infer<typeof invitationTargetWire>;
+export type InvitationLookupWire = z.infer<
+  typeof invitationLookupResponseWire
+>["invitation"];
+export type TeamSummaryWire = z.infer<typeof teamSummaryWire>;
+export type TeamMemberWire = z.infer<typeof teamMemberWire>;
+export type TeamProjectWire = z.infer<typeof teamProjectWire>;
+export type TeamDetailWire = z.infer<typeof teamDetailWire>;
+export type ProjectTeamWire = z.infer<typeof projectTeamWire>;
 export type AuditEntryWire = z.infer<typeof auditEntryWire>;
 export type SdkKeyWire = z.infer<typeof sdkKeyWire>;
 export type FlagEnvStateWire = z.infer<typeof flagEnvStateWire>;

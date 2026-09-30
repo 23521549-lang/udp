@@ -1,0 +1,25 @@
+{
+  "route": "PATCH /teams/{id}",
+  "status": 200,
+  "body": {
+    "team": {
+      "id": "c6dd4670-6c5b-47a5-8659-14ce8c509779",
+      "name": "Nền tảng",
+      "myRole": "OWNER",
+      "createdAt": "2026-09-30T03:18:53.215Z",
+      "members": [
+        {
+          "userId": "94e312c9-6f27-4fa7-9f88-12c991478847",
+          "teamRole": "OWNER",
+          "createdAt": "2026-09-30T03:18:53.215Z",
+          "user": {
+            "id": "94e312c9-6f27-4fa7-9f88-12c991478847",
+            "email": "team-lead-23002492-b661-4896-999e-81d92ee06e79@udp.local",
+            "name": "Test User"
+          }
+        }
+      ],
+      "projects": []
+    }
+  }
+}

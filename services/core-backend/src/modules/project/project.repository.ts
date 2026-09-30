@@ -3,6 +3,11 @@ import type { Request } from "express";
 import { DEFAULT_ENVIRONMENTS, k8sNamespaceFor } from "@udp/config";
 import type { CreationMode, Prisma, ProjectRole } from "@udp/db";
 import { NotFoundError } from "@udp/http";
+import {
+  accessibleBy,
+  roleOfAccessible,
+  roleSourcesOf,
+} from "../../core/access/project-access.js";
 import { prisma } from "../../core/db.js";
 import { auditEntry } from "../audit/audit.service.js";
 import type {
@@ -117,7 +122,7 @@ export async function createWithDefaults(
 /**
  * Danh sách project của người gọi.
  *
- * Lọc theo `members.some` chứ không theo `ownerId`: I10 chỉ phủ route có id
+ * Lọc theo quyền vào (`accessibleBy`) chứ không theo `ownerId`: I10 chỉ phủ route có id
  * project, còn `GET /projects` không có id nên middleware phân quyền không chạm
  * tới. §12.2 tầng 1 vì thế áp thẳng vào đây — mọi truy vấn phải tự mang điều
  * kiện thuộc về ai. Bỏ dòng `where` này là rò toàn bộ project của mọi tenant.
@@ -130,42 +135,30 @@ export async function listForUser(
   total: number;
 }> {
   /**
-   * [v4.11] Vai của người gọi đọc trong CÙNG truy vấn (`take: 1` trên khoá
-   * `(project_id, user_id)` — nhiều nhất một hàng). Kiểu trả về khai tường minh vì
-   * gán object Prisma rộng cho kiểu hẹp là hợp lệ trong TS: `members` sẽ biến mất
-   * khỏi kiểu mà vẫn còn ở runtime, và `.strict()` của schema wire đỏ lúc chạy.
+   * [v4.11] Vai của người gọi đọc trong CÙNG truy vấn. [Plan #55] Vai là vai HIỆU LỰC (thành viên trực tiếp
+   * hoặc nhóm được cấp quyền) — `accessibleBy`/`roleSourcesOf`/`effectiveRoleOf`, cùng ba mảnh với
+   * `requireMinProjectRole`. Tách `members`/`teamGrants` ra khỏi hàng trước khi trả: gán object Prisma rộng cho
+   * kiểu hẹp là hợp lệ trong TS, trường thừa biến mất khỏi kiểu mà vẫn còn ở runtime, và `.strict()` của
+   * schema wire đỏ lúc chạy.
    */
   const where: Prisma.ProjectWhereInput = {
     status: { not: "DELETED" },
-    members: { some: { userId } },
+    ...accessibleBy(userId),
   };
   const [rows, total] = await Promise.all([
     prisma.project.findMany({
       where,
-      select: {
-        ...PUBLIC_FIELDS,
-        members: { where: { userId }, select: { projectRole: true }, take: 1 },
-      },
+      select: { ...PUBLIC_FIELDS, ...roleSourcesOf(userId) },
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       take: page.limit,
       skip: page.offset,
     }),
     prisma.project.count({ where }),
   ]);
-  const projects = rows.map(({ members, ...project }) => {
-    const membership = members[0];
-    /**
-     * `where` ở trên đã đòi `members.some`, nên thiếu hàng ở đây là mâu thuẫn dữ liệu
-     * (hàng bị xoá giữa hai phần của truy vấn). Ném, tuyệt đối không `?? "VIEWER"`:
-     * đó là hạ cấp phân quyền im lặng.
-     */
-    if (membership === undefined) {
-      throw new Error(
-        `project ${project.id} không có hàng thành viên của người gọi`,
-      );
-    }
-    return { ...project, myRole: membership.projectRole };
-  });
+  const projects = rows.map(({ members, teamGrants, ...project }) => ({
+    ...project,
+    myRole: roleOfAccessible({ id: project.id, members, teamGrants }),
+  }));
   return { projects, total };
 }
 

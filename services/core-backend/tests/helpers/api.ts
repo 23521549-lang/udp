@@ -109,6 +109,14 @@ export function testWorld(app: Express, admin: PrismaClient): TestWorld {
         where: { projectId: { in: projectIds } },
       });
       await admin.project.deleteMany({ where: { id: { in: projectIds } } });
+      // [Plan #55] Nhóm không có khoá ngoại tới người tạo — xoá người dùng để lại nhóm mồ côi; audit của nhóm là
+      // audit nền tảng (`project_id` NULL) nên không đi theo project
+      await admin.team.deleteMany({
+        where: { members: { some: { userId: { in: ids } } } },
+      });
+      await admin.auditLog.deleteMany({
+        where: { projectId: null, actorUserId: { in: ids } },
+      });
       await admin.user.deleteMany({ where: { id: { in: ids } } });
     },
   };

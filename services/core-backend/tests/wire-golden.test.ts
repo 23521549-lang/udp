@@ -41,6 +41,23 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "PATCH /projects/{id}/members/{id}": wire.memberResponseWire,
   "POST /projects/{id}/transfer-ownership": wire.memberResponseWire,
 
+  // [v4.11, Plan #55] Lời mời bằng đường dẫn, nhóm, và quyền của nhóm trên project
+  "GET /projects/{id}/invitations": wire.projectInvitationListResponseWire,
+  "POST /projects/{id}/invitations": wire.projectInvitationCreatedResponseWire,
+  "GET /projects/{id}/teams": wire.projectTeamListResponseWire,
+  "POST /projects/{id}/teams": wire.projectTeamResponseWire,
+  "PATCH /projects/{id}/teams/{id}": wire.projectTeamResponseWire,
+  "POST /invitations/lookup": wire.invitationLookupResponseWire,
+  "POST /invitations/accept": wire.invitationAcceptedResponseWire,
+  "GET /teams": wire.teamListResponseWire,
+  "POST /teams": wire.teamResponseWire,
+  "GET /teams/{id}": wire.teamResponseWire,
+  "PATCH /teams/{id}": wire.teamResponseWire,
+  "POST /teams/{id}/members": wire.teamMemberResponseWire,
+  "PATCH /teams/{id}/members/{id}": wire.teamMemberResponseWire,
+  "GET /teams/{id}/invitations": wire.teamInvitationListResponseWire,
+  "POST /teams/{id}/invitations": wire.teamInvitationCreatedResponseWire,
+
   "GET /projects/{id}/environments": wire.environmentListResponseWire,
   "POST /projects/{id}/environments": wire.environmentCreatedResponseWire,
   "PATCH /projects/{id}/environments/{id}": wire.environmentResponseWire,
@@ -261,6 +278,9 @@ const PORTAL_MODULES = [
   "home",
   "architecture",
   "monitoring",
+  // [v4.11, Plan #55]
+  "team",
+  "invitation",
 ];
 
 describe("cổng gọi: controller Portal tiêu thụ gửi qua sendJson", () => {

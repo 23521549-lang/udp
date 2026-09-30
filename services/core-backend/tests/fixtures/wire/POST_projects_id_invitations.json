@@ -1,0 +1,19 @@
+{
+  "route": "POST /projects/{id}/invitations",
+  "status": 201,
+  "body": {
+    "invitation": {
+      "id": "579119ad-9a25-4238-894c-a4a0b9d95d0a",
+      "email": "inv-guest-9b728719-8197-4c6a-9d68-866a02adf8a6@udp.local",
+      "invitedBy": {
+        "id": "81835568-a086-417a-b4fe-aa30ce3b8456",
+        "email": "inv-owner-90560c08-4a1c-4c88-ada9-8ef0d1fd7421@udp.local",
+        "name": "Test User"
+      },
+      "expiresAt": "2026-10-07T03:18:16.888Z",
+      "createdAt": "2026-09-30T03:18:17.020Z",
+      "projectRole": "DEVELOPER"
+    },
+    "token": "udp_inv_FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAK"
+  }
+}

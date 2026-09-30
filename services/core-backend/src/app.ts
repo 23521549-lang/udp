@@ -15,6 +15,8 @@ import { healthRouter } from "./modules/health/health.controller.js";
 import { metricsRouter } from "./modules/health/metrics.controller.js";
 import { authRouter } from "./modules/auth/auth.controller.js";
 import { homeRouter } from "./modules/home/home.controller.js";
+import { invitationRouter } from "./modules/invitation/invitation.controller.js";
+import { teamRouter } from "./modules/team/team.controller.js";
 import { projectRouter } from "./modules/project/project.controller.js";
 import { adminRouter } from "./modules/admin/admin.controller.js";
 import { createOidcRouter } from "./modules/oidc/oidc.controller.js";
@@ -44,8 +46,17 @@ import { internalMetricsRouter } from "./internal/metrics.controller.js";
  *
  * `/logout` cũng không nằm trong danh sách: phiên đã tồn tại và một trang web
  * khác có thể ép người dùng đăng xuất nếu không kiểm tra.
+ *
+ * [v4.11, Plan #55] `/invitations/lookup`: người mở đường dẫn mời có thể chưa có
+ * tài khoản (chưa có cookie CSRF), và route chỉ ĐỌC một lời mời bằng token trong
+ * thân — không có phiên nào để lạm dụng, không có gì bị ghi. `/invitations/accept`
+ * thì ghi và cần phiên, nên được bảo vệ như mọi route khác.
  */
-const CSRF_EXEMPT_PATHS = ["/auth/register", "/auth/login"] as const;
+const CSRF_EXEMPT_PATHS = [
+  "/auth/register",
+  "/auth/login",
+  "/invitations/lookup",
+] as const;
 
 /**
  * Tạo Express app.
@@ -133,6 +144,8 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
   app.use(`${API_PREFIX}/auth`, authRouter);
   app.use(`${API_PREFIX}/projects`, projectRouter);
   app.use(`${API_PREFIX}/home`, homeRouter);
+  app.use(`${API_PREFIX}/teams`, teamRouter);
+  app.use(`${API_PREFIX}/invitations`, invitationRouter);
   app.use(`${API_PREFIX}/admin`, adminRouter);
   app.use(`${API_PREFIX}/domains`, domainCatalogRouter);
 

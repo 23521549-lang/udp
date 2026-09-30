@@ -20,9 +20,9 @@ import express from "express";
  * Vitest chạy mỗi tệp test trong một worker riêng, nên "giàu nhất" so với tệp trên đĩa
  * chứ không với biến trong bộ nhớ.
  *
- * Hai thứ bị thay trước khi ghi: `secretKey` (plaintext SDK key, đúng thứ quét bí mật
- * chặn) và `csrfToken`. Cả hai được thay bằng giá trị giả CÙNG DẠNG, để schema vẫn kiểm
- * được hình.
+ * Những thứ bị thay trước khi ghi: `secretKey` (plaintext SDK key, đúng thứ quét bí mật
+ * chặn), `csrfToken`, `secret` (webhook CI/CD) và `token` (lời mời, Plan #55). Tất cả
+ * được thay bằng giá trị giả CÙNG DẠNG, để schema vẫn kiểm được hình.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -52,6 +52,8 @@ const FAKE: Record<string, string> = {
   csrfToken: "fake-csrf-token-for-golden-capture",
   /** Secret webhook CI/CD (Plan #36) — mẫu giữ HÌNH hex 64 ký tự, không giữ giá trị */
   secret: "0123456789abcdef".repeat(4),
+  /** Token lời mời (Plan #55) — `udp_inv_` + 43 ký tự base64url, giữ hình để schema kiểm được */
+  token: `udp_inv_${"FAKE".repeat(10)}FAK`,
 };
 
 function redact(value: unknown): unknown {

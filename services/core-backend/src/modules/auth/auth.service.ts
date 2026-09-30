@@ -7,6 +7,7 @@ import {
   hashPassword,
   verifyPassword,
 } from "../../core/security/password.js";
+import { hashToken } from "../../core/security/token-hash.js";
 import {
   signAccessToken,
   signRefreshToken,
@@ -142,7 +143,7 @@ export async function refresh(
 
   if (
     session.revokedAt !== null ||
-    session.tokenHash !== sessions.hashToken(refreshToken)
+    session.tokenHash !== hashToken(refreshToken)
   ) {
     await sessions.revokeFamily(session.familyId);
     throw new UnauthenticatedError("Phiên đăng nhập không hợp lệ");

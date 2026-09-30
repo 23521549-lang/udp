@@ -13,7 +13,7 @@ import {
 import { planPromotion } from "@udp/shared-types/promote";
 import type { AppDeps } from "../../core/app-deps.js";
 import { prisma } from "../../core/db.js";
-import { hasMinProjectRole } from "../../core/http/middlewares/project-role.middleware.js";
+import { hasMinProjectRole } from "../../core/access/project-access.js";
 import * as repository from "./flag.repository.js";
 import type { TesterResult } from "@udp/shared-types";
 import type {

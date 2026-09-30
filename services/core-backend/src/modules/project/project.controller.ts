@@ -29,6 +29,8 @@ import { monitoringRouter } from "../monitoring/monitoring.controller.js";
 import { provisioningRouter } from "../provisioning/provisioning.controller.js";
 import { environmentRouter } from "../environment/environment.controller.js";
 import { memberRouter } from "../member/member.controller.js";
+import { projectInvitationRouter } from "../invitation/invitation.controller.js";
+import { projectTeamRouter } from "../team/project-team.controller.js";
 import { flagRouter } from "../flag/flag.controller.js";
 import { rolloutRouter } from "../rollout/rollout.controller.js";
 import { segmentRouter } from "../segment/segment.routes.js";
@@ -213,6 +215,8 @@ projectRouter.get(
  * ký, và `use("/:id", ...)` sẽ nuốt mọi đường dẫn con nếu đứng trước.
  */
 projectRouter.use("/:id", memberRouter);
+projectRouter.use("/:id", projectInvitationRouter);
+projectRouter.use("/:id", projectTeamRouter);
 projectRouter.use("/:id", rolloutRouter);
 projectRouter.use("/:id", segmentRouter);
 projectRouter.use("/:id", environmentRouter);

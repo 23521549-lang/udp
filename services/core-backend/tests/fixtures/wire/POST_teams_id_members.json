@@ -1,0 +1,16 @@
+{
+  "route": "POST /teams/{id}/members",
+  "status": 201,
+  "body": {
+    "member": {
+      "userId": "006c48ca-03f9-4f9b-9d48-9c5da3796428",
+      "teamRole": "MEMBER",
+      "createdAt": "2026-09-30T03:18:38.073Z",
+      "user": {
+        "id": "006c48ca-03f9-4f9b-9d48-9c5da3796428",
+        "email": "team-member-1c3e127a-520b-4ba6-bd93-e296e8513a2d@udp.local",
+        "name": "Test User"
+      }
+    }
+  }
+}

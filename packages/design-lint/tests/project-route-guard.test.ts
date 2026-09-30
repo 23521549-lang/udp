@@ -33,7 +33,7 @@ const SRC = join(ROOT, "services", "core-backend", "src");
 const EXEMPT: Record<string, string> = {
   "POST /": "Tạo project — chưa có project nào để kiểm vai trò",
   "GET /":
-    "Danh sách project của chính người gọi — repository lọc theo ProjectMember",
+    "Danh sách project của chính người gọi — repository lọc theo vai hiệu lực (thành viên trực tiếp hay qua nhóm, `accessibleBy`)",
 };
 
 const GUARD = "requireMinProjectRole";

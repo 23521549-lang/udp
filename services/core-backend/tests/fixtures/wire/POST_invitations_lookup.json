@@ -1,0 +1,19 @@
+{
+  "route": "POST /invitations/lookup",
+  "status": 200,
+  "body": {
+    "invitation": {
+      "target": {
+        "kind": "PROJECT",
+        "id": "1545fc0f-540b-4796-87e7-5de4648af476",
+        "name": "p-3cb5c3d4",
+        "projectRole": "DEVELOPER"
+      },
+      "email": "inv-guest-f786e010-20d1-4d7a-924c-02f03fba5a31@udp.local",
+      "invitedBy": {
+        "name": "Test User"
+      },
+      "expiresAt": "2026-10-07T03:18:24.128Z"
+    }
+  }
+}

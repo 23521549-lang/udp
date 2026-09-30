@@ -1,0 +1,29 @@
+{
+  "route": "POST /projects/{id}/teams",
+  "status": 201,
+  "body": {
+    "team": {
+      "teamId": "2f4752ef-d2ba-4ff5-9832-5fe8ace110f6",
+      "name": "Nhóm thanh toán",
+      "projectRole": "DEVELOPER",
+      "createdAt": "2026-09-30T03:19:04.408Z",
+      "members": [
+        {
+          "id": "99e801af-8d99-4fe7-9ed5-bc3a0488ab69",
+          "email": "grant-lead-609ca8b0-a376-4085-aae5-fa6a4a9a1e62@udp.local",
+          "name": "Test User"
+        },
+        {
+          "id": "cb5999d8-4bd8-43e7-be1b-dc3297b48ae5",
+          "email": "grant-a-c204d11a-5901-4f98-a6e3-64e537bca61d@udp.local",
+          "name": "Test User"
+        },
+        {
+          "id": "a6a37dc2-b6e4-4a57-a10c-94a07520d0ab",
+          "email": "grant-b-bf50ac96-84ad-4849-9d6d-a430e0096062@udp.local",
+          "name": "Test User"
+        }
+      ]
+    }
+  }
+}

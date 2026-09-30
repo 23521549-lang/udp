@@ -77,3 +77,28 @@ describe("enum của Prisma và bản chép trong adapter-core", () => {
     );
   });
 });
+
+/**
+ * [v4.11, Plan #55] Vai của nhóm và vai cấp được cho nhóm/lời mời trên dây — bản chép của enum database. Một vai
+ * mới trong database mà dây không biết thì response đầu tiên mang nó làm `.strict()` đỏ ở Portal; một vai thừa trên
+ * dây thì Portal cho chọn thứ database từ chối.
+ */
+describe("enum của Prisma và bản chép trên dây", () => {
+  it("teamRoleWire trùng đúng enum TeamRole", async () => {
+    const { TeamRole } = await import("@udp/db");
+    const { teamRoleWire } = await import("@udp/shared-types/wire");
+
+    expect(new Set(teamRoleWire.options)).toEqual(
+      new Set(Object.values(TeamRole)),
+    );
+  });
+
+  it("grantableProjectRoleWire là ProjectRole trừ OWNER", async () => {
+    const { ProjectRole } = await import("@udp/db");
+    const { grantableProjectRoleWire } = await import("@udp/shared-types/wire");
+
+    expect(new Set(grantableProjectRoleWire.options)).toEqual(
+      new Set(Object.values(ProjectRole).filter((r) => r !== "OWNER")),
+    );
+  });
+});
