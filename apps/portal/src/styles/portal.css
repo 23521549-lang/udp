@@ -1902,6 +1902,197 @@ ol.lst {
   }
 }
 
+/* Thanh xếp chồng (StackedBar): một tổng chia theo phần, chú giải mang cùng số */
+.sb {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.sb-bar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+}
+.sb-bar i {
+  display: block;
+  min-width: 2px;
+}
+.sb-lg {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.sb-lg li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sb-lg i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.sb-neutral {
+  background: var(--v2);
+}
+.sb-accent {
+  background: var(--accent);
+}
+.sb-error {
+  background: var(--red);
+}
+.sb-c3 {
+  background: var(--v3);
+}
+.sb-c4 {
+  background: var(--v4);
+}
+
+/*
+ * [Plan #57 QĐ-7] Kiến trúc nền tảng: lưới năm cột — bên ngoài trái | ba cột trong máy ảo | bên ngoài phải — để mỗi
+ * hệ bên ngoài thẳng hàng với khối nó nối tới. Khung máy ảo là nền trang trí phủ ba cột giữa. PostgreSQL ở giữa:
+ * S1, S2, S3 và PostgreSQL gọi nhau đôi một mà không cạnh nào chạy xuyên qua thẻ khác.
+ */
+.plat-map {
+  position: relative;
+  display: grid;
+  grid-template-columns: 136px repeat(3, minmax(156px, 1fr)) 156px;
+  grid-template-areas:
+    ". vmh vmh vmh ."
+    "left1 portal s1 . right1"
+    "left2 s2 pg s3 right2"
+    "left3 backup budget budget .";
+  align-items: start;
+  /* Khe cột đủ cho nhãn dài nhất (LISTEN/NOTIFY) không đè chữ trong thẻ */
+  gap: 48px 76px;
+  min-width: 1064px;
+  padding: 28px 16px;
+  border-radius: 12px;
+  background: var(--sunk);
+}
+.plat-vm {
+  grid-column: 2 / 5;
+  grid-row: 1 / 5;
+  align-self: stretch;
+  margin: -16px -18px;
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.plat-vm-h {
+  grid-area: vmh;
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-self: start;
+}
+.plat-free {
+  color: var(--green-ink);
+  background: var(--green-soft);
+  box-shadow: none;
+}
+.plat-left1 {
+  grid-area: left1;
+}
+.plat-left2 {
+  grid-area: left2;
+}
+.plat-left3 {
+  grid-area: left3;
+}
+.plat-right1 {
+  grid-area: right1;
+}
+.plat-right2 {
+  grid-area: right2;
+}
+.plat-left1,
+.plat-right1 {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.plat-ext {
+  width: 100%;
+}
+.plat-portal {
+  grid-area: portal;
+}
+.plat-s1 {
+  grid-area: s1;
+}
+.plat-s2 {
+  grid-area: s2;
+}
+.plat-pg {
+  grid-area: pg;
+}
+.plat-s3 {
+  grid-area: s3;
+}
+.plat-backup {
+  grid-area: backup;
+}
+.plat-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line-2);
+  font-size: 12.5px;
+}
+.plat-card .sys-card-h b {
+  font-size: 13px;
+}
+.plat-card .sl {
+  font-size: 12px;
+}
+/* Sức khoẻ: viền đỏ/cam CỘNG biểu tượng và chữ của StatusLabel — không chỉ màu */
+.plat-card.tone-error {
+  box-shadow: 0 0 0 1.5px var(--red);
+}
+.plat-card.tone-warn {
+  box-shadow: 0 0 0 1.5px var(--amber);
+}
+.plat-budget {
+  grid-area: budget;
+  position: relative;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plat-budget .meter {
+  margin: 0;
+}
+@media (max-width: 860px) {
+  .plat-map {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "vmh" "left1" "portal" "s1" "left2" "s2" "pg" "s3" "right1" "right2" "backup" "left3" "budget";
+    gap: 14px;
+    min-width: 0;
+  }
+  .plat-vm {
+    display: none;
+  }
+}
+
 /* Giám sát: mỗi workload ba biểu đồ nhỏ */
 .red-list {
   display: flex;

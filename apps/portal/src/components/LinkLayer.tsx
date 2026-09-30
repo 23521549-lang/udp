@@ -19,8 +19,11 @@ export interface LayerLink {
   label?: string;
   /** Nét đứt: giao hàng, điều khiển, telemetry; nét liền: yêu cầu và dữ liệu */
   dashed?: boolean;
-  /** Ép hướng nối: `x` mép trái–phải, `y` mép trên–dưới; không có thì chọn theo vị trí hai nút */
-  axis?: "x" | "y";
+  /**
+   * Ép hướng nối: `x` mép trái–phải, `y` mép trên–dưới, `under` vòng dưới từ đáy nút này tới đáy nút kia (hai nút
+   * cùng hàng mà giữa chúng có nút khác); không có thì chọn theo vị trí hai nút.
+   */
+  axis?: "x" | "y" | "under";
 }
 
 interface Box {
@@ -165,6 +168,9 @@ function Arrow({ id, fill }: { id: string; fill: string }) {
   );
 }
 
+/** Độ võng của cạnh vòng dưới — cặp với khoảng cách hàng 48px của các sơ đồ */
+const UNDER_BEND = 44;
+
 /**
  * Đường cong bezier giữa hai nút và điểm giữa của nó (chỗ đặt nhãn). Hai nút không chồng nhau theo chiều ngang nối
  * mép trái–phải; chồng nhau (cùng cột, hay dải trên với khung giữa) nối mép trên–dưới.
@@ -172,7 +178,7 @@ function Arrow({ id, fill }: { id: string; fill: string }) {
 function route(
   from: Box,
   to: Box,
-  axis: "x" | "y" | undefined,
+  axis: LayerLink["axis"],
 ): { d: string; mid: Point } {
   const fromCx = from.x + from.w / 2;
   const toCx = to.x + to.w / 2;
@@ -184,7 +190,13 @@ function route(
   let p3: Point;
   let c1: Point;
   let c2: Point;
-  if (horizontal) {
+  if (axis === "under") {
+    // Đỉnh vòng sâu ¾ × UNDER_BEND dưới đáy: nằm trong khoảng cách giữa hai hàng, không chạm hàng dưới
+    p0 = { x: fromCx, y: from.y + from.h };
+    p3 = { x: toCx, y: to.y + to.h };
+    c1 = { x: p0.x, y: p0.y + UNDER_BEND };
+    c2 = { x: p3.x, y: p3.y + UNDER_BEND };
+  } else if (horizontal) {
     const leftward = fromCx > toCx;
     p0 = { x: leftward ? from.x : from.x + from.w, y: from.y + from.h / 2 };
     p3 = { x: leftward ? to.x + to.w : to.x, y: to.y + to.h / 2 };

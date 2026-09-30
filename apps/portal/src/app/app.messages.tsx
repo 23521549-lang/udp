@@ -51,6 +51,7 @@ export const appMessages = defineMessages({
       system: "Hệ thống",
       catalog: "Catalog domain",
       evidence: "Bằng chứng",
+      architecture: "Kiến trúc nền tảng",
     },
     notFound: {
       title: "Không tìm thấy trang",
@@ -112,6 +113,7 @@ export const appMessages = defineMessages({
       system: "System",
       catalog: "Domain catalog",
       evidence: "Evidence",
+      architecture: "Platform architecture",
     },
     notFound: {
       title: "Page not found",

@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { BarChart } from "../../components/BarChart";
+import { DiagramBar } from "../../components/DiagramBar";
 import { Icon } from "../../components/Icon";
 import { LinkLayer } from "../../components/LinkLayer";
 import { StatusLabel } from "../../components/StatusLabel";
@@ -110,27 +111,13 @@ export function SystemOverview({
   return (
     <>
       <SystemKpis arch={arch} projectId={projectId} />
-      <div className="sys-bar">
-        <span className="sys-legend">
-          <span className="lg">
-            <i className="sys-line" />
-            {copy.legend.solid}
-          </span>
-          <span className="lg">
-            <i className="sys-line dash" />
-            {copy.legend.dashed}
-          </span>
-          <span className="c3">{copy.legend.note}</span>
-        </span>
-        <button
-          type="button"
-          className="btn"
-          aria-pressed={asTable}
-          onClick={() => setAsTable((v) => !v)}
-        >
-          {asTable ? copy.table.hide : copy.table.show}
-        </button>
-      </div>
+      <DiagramBar
+        solid={copy.legend.solid}
+        dashed={copy.legend.dashed}
+        note={copy.legend.note}
+        asTable={asTable}
+        onToggle={() => setAsTable((v) => !v)}
+      />
       {asTable ? (
         <SystemTables arch={arch} links={links} />
       ) : (

@@ -32,6 +32,10 @@ export const componentsMessages = defineMessages({
       logScale: "thang log",
       csv: "Tải CSV",
     },
+    diagram: {
+      asTable: "Xem dạng bảng",
+      asDiagram: "Xem dạng sơ đồ",
+    },
   },
   en: {
     loading: "Loading…",
@@ -62,6 +66,10 @@ export const componentsMessages = defineMessages({
       time: "Time",
       logScale: "log scale",
       csv: "Download CSV",
+    },
+    diagram: {
+      asTable: "View as table",
+      asDiagram: "View as diagram",
     },
   },
 });

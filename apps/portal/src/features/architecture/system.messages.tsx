@@ -82,8 +82,6 @@ export const systemMessages = defineMessages({
       canary: "canary",
     } satisfies Record<LinkKind, string>,
     table: {
-      show: "Xem dạng bảng",
-      hide: "Xem dạng sơ đồ",
       components: "Thành phần",
       connections: "Kết nối",
       zone: "Vùng",
@@ -177,8 +175,6 @@ export const systemMessages = defineMessages({
       canary: "canary",
     },
     table: {
-      show: "View as table",
-      hide: "View as diagram",
       components: "Components",
       connections: "Connections",
       zone: "Zone",

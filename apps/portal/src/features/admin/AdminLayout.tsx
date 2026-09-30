@@ -6,6 +6,7 @@ import {
   Gauge,
   KeyRound,
   ListX,
+  Network,
   PiggyBank,
   Server,
   Users,
@@ -51,6 +52,9 @@ export function AdminLayout() {
           </Link>
           <Link {...NAV} to="/admin/system">
             <NavBody icon={Server}>{m.system}</NavBody>
+          </Link>
+          <Link {...NAV} to="/admin/architecture">
+            <NavBody icon={Network}>{m.architecture}</NavBody>
           </Link>
           <Link {...NAV} to="/admin/catalog">
             <NavBody icon={Blocks}>{m.catalog}</NavBody>

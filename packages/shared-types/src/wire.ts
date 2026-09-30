@@ -2443,3 +2443,4 @@ export type AdminOverviewWire = z.infer<
 export type AdminPlatformWire = z.infer<
   typeof adminPlatformResponseWire
 >["platform"];
+export type AdminSystemWire = z.infer<typeof adminSystemResponseWire>;

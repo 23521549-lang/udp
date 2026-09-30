@@ -30,6 +30,7 @@ import {
   type AdminProjectStatus,
 } from "../features/admin/pages/AdminProjectsPage";
 import { AdminSystemPage } from "../features/admin/pages/AdminSystemPage";
+import { AdminArchitecturePage } from "../features/admin/pages/AdminArchitecturePage";
 import { AdminCatalogPage } from "../features/admin/pages/AdminCatalogPage";
 import { EvidencePage } from "../features/admin/evidence/EvidencePage";
 import { AdminUsersPage } from "../features/admin/pages/AdminUsersPage";
@@ -492,6 +493,13 @@ const adminOrphansRoute = createRoute({
   path: "orphans",
   component: AdminOrphansPage,
 });
+/** [Plan #57 QĐ-7] Kiến trúc của chính nền tảng: khối, lời gọi, sức khoẻ sống — từ ba route sẵn có */
+const adminArchitectureRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "architecture",
+  component: AdminArchitecturePage,
+});
+
 const adminSystemRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "system",
@@ -529,6 +537,7 @@ export const routeTree = rootRoute.addChildren([
     adminJobsRoute,
     adminOrphansRoute,
     adminSystemRoute,
+    adminArchitectureRoute,
     adminCatalogRoute,
     adminEvidenceRoute,
   ]),
