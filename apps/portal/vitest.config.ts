@@ -13,5 +13,13 @@ export default defineConfig({
      */
     css: false,
     testTimeout: 15_000,
+    /**
+     * [Plan #55] Tối đa 4 worker. Mặc định vitest mở (số lõi − 1) worker jsdom — 15 trên máy 16 luồng mà chỉ
+     * 8 GiB RAM — và máy thiếu RAM làm các ô có debounce hay nhiều bước quá hạn chờ: đo 30/09 ở lượt đầy đủ, 1–3
+     * ô đỏ khác nhau mỗi lần, xanh khi chạy riêng. Với 4 worker: 227/227 xanh và NHANH hơn (35 giây so với 47).
+     * Runner CI có 4 lõi nên vốn chạy 3 worker — giới hạn này không đổi gì ở đó.
+     */
+    maxWorkers: 4,
+    minWorkers: 1,
   },
 });

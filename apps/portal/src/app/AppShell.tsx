@@ -15,6 +15,7 @@ import {
   Server,
   Settings2,
   Users,
+  UsersRound,
 } from "lucide-react";
 import { Icon } from "../components/Icon";
 import { usePaletteStore } from "../features/project/CommandPalette";
@@ -47,6 +48,9 @@ export function AppShell() {
             <Link {...NAV} to="/app/projects" activeOptions={{ exact: true }}>
               <NavBody icon={FolderKanban}>{m.projects}</NavBody>
             </Link>
+            <Link {...NAV} to="/app/teams">
+              <NavBody icon={UsersRound}>{m.teams}</NavBody>
+            </Link>
           </nav>
         ) : (
           <ProjectNav projectId={projectId} />
@@ -74,6 +78,9 @@ function ProjectNav({ projectId }: { projectId: string }) {
       </Link>
       <Link to="/app/projects" className="nv">
         <NavBody icon={FolderKanban}>{m.allProjects}</NavBody>
+      </Link>
+      <Link to="/app/teams" className="nv">
+        <NavBody icon={UsersRound}>{m.teams}</NavBody>
       </Link>
       <button
         type="button"

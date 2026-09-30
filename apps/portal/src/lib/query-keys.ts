@@ -21,6 +21,16 @@ export const qk = {
   projects: (offset: number) => ["projects", offset] as const,
   project: (projectId: string) => ["project", projectId] as const,
   members: (projectId: string) => ["members", projectId] as const,
+  /** [Plan #55] Lời mời đang chờ và nhóm có quyền của một project */
+  projectInvitations: (projectId: string) =>
+    ["projectInvitations", projectId] as const,
+  projectTeams: (projectId: string) => ["projectTeams", projectId] as const,
+  /** [Plan #55] Nhóm của người đang đăng nhập, một nhóm, lời mời đang chờ của nhóm */
+  teams: () => ["teams"] as const,
+  team: (teamId: string) => ["team", teamId] as const,
+  teamInvitations: (teamId: string) => ["teamInvitations", teamId] as const,
+  /** [Plan #55] Lời mời người cầm đường dẫn đang xem — chỉ trong bộ nhớ của trang, không lưu đâu cả */
+  invitation: (token: string) => ["invitation", token] as const,
   audit: (projectId: string, filters: Record<string, string | undefined>) =>
     ["audit", projectId, filters] as const,
   sdkKeys: (projectId: string, envId: string) =>
@@ -151,6 +161,12 @@ export const NOT_ENV_SCOPED = {
   projects: "danh sách project",
   project: "project và danh sách env của nó",
   members: "thành viên thuộc project",
+  projectInvitations: "lời mời vào project, không theo env",
+  projectTeams: "quyền của nhóm trên cả project",
+  teams: "nhóm của người dùng, không thuộc project nào",
+  team: "một nhóm, không thuộc project nào",
+  teamInvitations: "lời mời vào nhóm",
+  invitation: "một lời mời, trước khi có project nào",
   audit: "nhật ký của project, lọc env bằng tham số riêng",
   flagEnvs: "ma trận flag × env: cố ý hiện MỌI env (§10.14)",
   staleFlags: "Cleanup Center gộp mọi env (§6.7)",

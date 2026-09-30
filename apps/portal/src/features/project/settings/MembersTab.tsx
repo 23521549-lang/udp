@@ -5,12 +5,17 @@ import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import { ErrorState, Loading } from "../../../components/States";
 import { toast } from "../../../components/Toast";
 import { fieldErrorsOf, messageOf } from "../../../lib/errors";
+import { isApiError } from "../../../lib/http";
 import { qk, qkPrefix } from "../../../lib/query-keys";
+import { invitationApi } from "../../invitation/invitation-api";
+import { InviteLinkDialog } from "../../invitation/InviteLinkDialog";
 import { useProjectContext } from "../ProjectLayout";
 import { projectApi } from "../project-api";
 import { useMessages } from "../../../i18n";
 import { can, PERMISSIONS } from "../roles";
 import { rolesMessages } from "../roles.messages";
+import { ProjectInvitations } from "./ProjectInvitations";
+import { ProjectTeams } from "./ProjectTeams";
 import { settingsMessages } from "./settings.messages";
 
 const ASSIGNABLE: Exclude<ProjectRoleWire, "OWNER">[] = [
@@ -31,6 +36,9 @@ export function MembersTab() {
     id: string;
     email: string;
   } | null>(null);
+  const [link, setLink] = useState<{ email: string; token: string } | null>(
+    null,
+  );
   const members = useQuery({
     queryKey: qk.members(project.id),
     queryFn: () => projectApi.members(project.id),
@@ -39,18 +47,37 @@ export function MembersTab() {
     await queryClient.invalidateQueries({ queryKey: qk.members(project.id) });
   };
 
+  /**
+   * "Mời" thêm thẳng người đã có tài khoản; email chưa có tài khoản (404) thì tạo lời mời bằng đường dẫn (Plan
+   * #55) và hiện đường dẫn đó — một nút cho cả hai trường hợp, người mời không phải biết trước.
+   */
   const add = useMutation({
-    // Idempotency-Key sinh LÚC BẤM GỬI (§9): khoá gắn với nội dung của lần gửi này
-    mutationFn: () =>
-      projectApi.addMember(
-        project.id,
-        { email, projectRole: role },
-        crypto.randomUUID(),
-      ),
-    onSuccess: async () => {
+    mutationFn: async (): Promise<{ email: string; token?: string }> => {
+      try {
+        // Idempotency-Key sinh LÚC BẤM GỬI (§9): khoá gắn với nội dung của lần gửi này
+        await projectApi.addMember(
+          project.id,
+          { email, projectRole: role },
+          crypto.randomUUID(),
+        );
+        return { email };
+      } catch (error) {
+        if (!isApiError(error) || error.status !== 404) throw error;
+        const created = await invitationApi.inviteToProject(project.id, {
+          email,
+          projectRole: role,
+        });
+        return { email: created.invitation.email, token: created.token };
+      }
+    },
+    onSuccess: async (result) => {
       setEmail("");
-      toast.info(m.added);
+      if (result.token === undefined) toast.info(m.added);
+      else setLink({ email: result.email, token: result.token });
       await refresh();
+      await queryClient.invalidateQueries({
+        queryKey: qk.projectInvitations(project.id),
+      });
     },
   });
   /*
@@ -241,6 +268,9 @@ export function MembersTab() {
         </div>
       )}
 
+      {isOwner && <ProjectInvitations projectId={project.id} />}
+      <ProjectTeams projectId={project.id} isOwner={isOwner} />
+
       <h2 className="h2">{m.matrix}</h2>
       <div className="table-wrap">
         <table className="matrix">
@@ -271,6 +301,13 @@ export function MembersTab() {
         </table>
       </div>
 
+      {link !== null && (
+        <InviteLinkDialog
+          email={link.email}
+          token={link.token}
+          onClose={() => setLink(null)}
+        />
+      )}
       {transferTo !== null && (
         <ConfirmDialog
           title={m.transferTitle}

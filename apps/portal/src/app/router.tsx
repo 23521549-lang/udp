@@ -38,6 +38,7 @@ import { InfraPage } from "../features/provisioning/InfraPage";
 import { CleanupPage } from "../features/flag/CleanupPage";
 import { FlagsPage } from "../features/flag/FlagsPage";
 import { HomePage } from "../features/home/HomePage";
+import { InvitePage } from "../features/invitation/InvitePage";
 import {
   DEFAULT_RED_RANGE,
   MonitoringPage,
@@ -50,6 +51,8 @@ import { SettingsPage } from "../features/project/SettingsPage";
 import { RolloutDetailPage } from "../features/rollout/RolloutDetailPage";
 import { RolloutsPage } from "../features/rollout/RolloutsPage";
 import { SegmentsPage } from "../features/segment/SegmentsPage";
+import { TeamDetailPage } from "../features/team/TeamDetailPage";
+import { TeamsPage } from "../features/team/TeamsPage";
 import { AppShell } from "./AppShell";
 import { NotFound, RouteError } from "./RouteError";
 
@@ -119,7 +122,19 @@ const loginRoute = createRoute({
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/register",
+  // [Plan #55] Người được mời tạo tài khoản rồi quay về trang nhận lời mời
+  validateSearch: loginSearch,
   component: RegisterPage,
+});
+
+/**
+ * [Plan #55 QĐ-5] Trang nhận lời mời — NGOÀI `/app`: người được mời có thể chưa có tài khoản. Token ở fragment
+ * (`/invite#<token>`), không ở path hay query: fragment không bao giờ tới máy chủ.
+ */
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/invite",
+  component: InvitePage,
 });
 
 const appRoute = createRoute({
@@ -149,6 +164,19 @@ const homeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "home",
   component: HomePage,
+});
+
+/** [Plan #55] Nhóm của người đăng nhập — đơn vị trao quyền cho nhiều project */
+const teamsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "teams",
+  component: TeamsPage,
+});
+
+const teamDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "teams/$teamId",
+  component: TeamDetailPage,
 });
 
 const projectsRoute = createRoute({
@@ -468,6 +496,7 @@ export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   registerRoute,
+  inviteRoute,
   adminRoute.addChildren([
     adminIndexRoute,
     adminOverviewRoute,
@@ -482,6 +511,8 @@ export const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     appIndexRoute,
     homeRoute,
+    teamsRoute,
+    teamDetailRoute,
     projectsRoute,
     newProjectRoute,
     projectRoute.addChildren([

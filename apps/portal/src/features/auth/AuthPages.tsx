@@ -12,23 +12,25 @@ import { useAuthStore } from "./auth-store";
 const HOME = "/app/home";
 
 /**
- * Chỉ chấp nhận đường dẫn NỘI BỘ của hai khung (`/app`, `/admin`) làm đích quay lại. `redirectTo`
- * đến từ URL, nên nhận nguyên văn là một open redirect: `/login?redirectTo=https://evil.example` sẽ
- * đưa người vừa đăng nhập sang trang lạ. `/admin` vẫn qua guard vai của route đó.
+ * Chỉ chấp nhận đường dẫn NỘI BỘ của hai khung (`/app`, `/admin`) và trang nhận lời mời (`/invite`, Plan #55)
+ * làm đích quay lại. `redirectTo` đến từ URL, nên nhận nguyên văn là một open redirect:
+ * `/login?redirectTo=https://evil.example` sẽ đưa người vừa đăng nhập sang trang lạ. `/admin` vẫn qua guard vai
+ * của route đó.
  */
 export function safeRedirect(target: string | undefined): string {
   if (target === undefined) return HOME;
   try {
     const url = new URL(target, window.location.origin);
     if (url.origin !== window.location.origin) return HOME;
-    if (!/^\/(app|admin)(\/|$)/.test(url.pathname)) return HOME;
+    if (!/^\/(app|admin|invite)(\/|$)/.test(url.pathname)) return HOME;
     return `${url.pathname}${url.search}`;
   } catch {
     return HOME;
   }
 }
 
-function AuthFrame({
+/** Khung của các trang ngoài hai không gian: đăng nhập, đăng ký, nhận lời mời */
+export function AuthFrame({
   title,
   children,
 }: {
@@ -137,7 +139,11 @@ export function LoginPage() {
         </button>
       </form>
       <p className="c3">
-        {m.noAccount(<Link to="/register">{m.registerLink}</Link>)}
+        {m.noAccount(
+          <Link to="/register" search={search}>
+            {m.registerLink}
+          </Link>,
+        )}
       </p>
     </AuthFrame>
   );
@@ -145,6 +151,7 @@ export function LoginPage() {
 
 export function RegisterPage() {
   const m = useMessages(authMessages);
+  const search = useSearch({ from: "/register" });
   const navigate = useNavigate();
   const setUser = useAuthStore((s) => s.setUser);
   const [name, setName] = useState("");
@@ -155,7 +162,8 @@ export function RegisterPage() {
     mutationFn: () => authApi.register({ name, email, password }),
     onSuccess: async ({ user }) => {
       setUser(user);
-      await navigate({ to: HOME });
+      // [Plan #55] Người được mời tạo tài khoản rồi quay về đúng trang nhận lời mời
+      await navigate({ href: safeRedirect(search.redirectTo) });
     },
   });
   const fields = fieldErrorsOf(register.error);
@@ -208,7 +216,13 @@ export function RegisterPage() {
           {register.isPending ? m.registering : m.register}
         </button>
       </form>
-      <p className="c3">{m.haveAccount(<Link to="/login">{m.signIn}</Link>)}</p>
+      <p className="c3">
+        {m.haveAccount(
+          <Link to="/login" search={search}>
+            {m.signIn}
+          </Link>,
+        )}
+      </p>
     </AuthFrame>
   );
 }
