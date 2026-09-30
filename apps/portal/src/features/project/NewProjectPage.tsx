@@ -145,7 +145,7 @@ function CloudStep({
             role={project.myRole}
             onSaved={() => setSaved(true)}
           />
-          <div className="form-actions">
+          <div className="wizard-nav">
             <button
               type="button"
               className={saved ? "btn pri" : "btn"}
@@ -183,7 +183,7 @@ function DomainStep({
             level={2}
             onSaved={() => setSaved(true)}
           />
-          <div className="form-actions">
+          <div className="wizard-nav">
             <button
               type="button"
               className={saved ? "btn pri" : "btn"}
@@ -219,7 +219,7 @@ function PreviewStep({
             role={project.myRole}
             onStarted={(job) => onStarted(job.id)}
           />
-          <div className="form-actions">
+          <div className="wizard-nav">
             <button type="button" className="btn" onClick={open}>
               {m.later}
             </button>
@@ -247,7 +247,7 @@ function JobStep({
           <h1 className="title">{m.jobTitle}</h1>
           <p className="lead">{m.jobLead}</p>
           <JobLog projectId={project.id} jobId={jobId} role={project.myRole} />
-          <div className="form-actions">
+          <div className="wizard-nav">
             <button type="button" className="btn pri" onClick={open}>
               {m.openProject}
             </button>

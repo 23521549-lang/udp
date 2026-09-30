@@ -105,6 +105,20 @@
   gap: 6px;
 }
 
+/*
+ * Điều hướng của wizard tạo project ("Để sau", "Tiếp", "Mở project"): chân trang RIÊNG của bước, tách khỏi nút
+ * của panel phía trên ("Lưu cấu hình cloud", "Triển khai") bằng khoảng trống và đường kẻ — hai nút khác loại
+ * (lưu biểu mẫu và chuyển bước) không được trông như một nhóm.
+ */
+.wizard-nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 28px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
 /* Ô bí mật: "Đã lưu" + "Đổi", hay ô mật khẩu + "Giữ khoá cũ" (Plan #31) */
 .secret-row {
   display: flex;
@@ -416,6 +430,14 @@ details.cardc .q {
  * Một domain trên trang Domain: dòng tiêu đề (công tắc, tên, trạng thái, "Chi tiết"), form cấu hình bên dưới.
  * Trước đây dùng nhầm `.sect` — kiểu của dòng tiêu đề mục, đẩy cả khối sang phải cạnh form.
  */
+/* Nhóm domain theo bậc (Cốt lõi, Tiêu chuẩn, Nâng cao): tiêu đề nhóm cách nhóm trên một khoảng, không dính dòng cuối */
+.dom-tier + .dom-tier {
+  margin-top: 22px;
+}
+/* Nút lưu của panel domain cách danh sách, không đè lên đường kẻ của dòng cuối */
+.dom-actions {
+  margin-top: 14px;
+}
 .dom-row {
   display: flex;
   flex-direction: column;

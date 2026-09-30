@@ -266,7 +266,7 @@ function DomainEditor({
       <UnsavedGuard dirty={dirty} what={m.unsaved} />
       {tiers.map(({ tier, entries }) =>
         entries.length === 0 ? null : (
-          <div key={tier}>
+          <div key={tier} className="dom-tier">
             <Heading className="h2">{tierLabel(tier)}</Heading>
             {entries.map((entry) => (
               <DomainRow
@@ -314,7 +314,7 @@ function DomainEditor({
           </p>
         )}
       {canSave && (
-        <div className="form-actions">
+        <div className="form-actions dom-actions">
           <button
             type="button"
             className="btn"

@@ -53,6 +53,8 @@ interface Ids {
   checkout: string;
   marketing: string;
   rollout: string;
+  /** Project nháp: các bước của wizard mở lại được từ URL (`?project=&step=`) */
+  draft: string;
 }
 
 /** Tên, đường dẫn, và (tuỳ màn) một locator PHẢI có — bằng chứng màn đã vẽ phần chính của nó */
@@ -62,6 +64,12 @@ const SCREENS: Screen[] = [
   ["home", () => "/app/home", ".bc-col"],
   ["projects", () => "/app/projects"],
   ["new-project", () => "/app/projects/new"],
+  ...(["cloud", "domains", "preview"] as const).map((step): Screen => [
+    `new-project-${step}`,
+    (i) => `/app/projects/new?project=${i.draft}&step=${step}`,
+    // Chân trang của bước tách khỏi nút của panel phía trên
+    ".wizard-nav",
+  ]),
   ["overview", (i) => `/app/projects/${i.checkout}`, ".health-cell"],
   [
     "architecture",
@@ -143,7 +151,12 @@ async function discover(page: Page): Promise<Ids> {
     }>(`/projects/${checkout}/rollouts`);
     const live = rollouts.find((r) => r.status === "IN_PROGRESS");
     if (live === undefined) throw new Error("thiếu rollout đang chạy");
-    return { checkout, marketing: id("marketing-site"), rollout: live.id };
+    return {
+      checkout,
+      marketing: id("marketing-site"),
+      rollout: live.id,
+      draft: id("analytics-api"),
+    };
   });
 }
 
