@@ -208,3 +208,14 @@
   margin-left: auto;
   flex: none;
 }
+
+/* [Plan #58 UX-41] Phím tắt trên nền tối của thanh bên: theo màu chữ của khung, không nền sáng riêng (tương phản) */
+.console .searchbtn kbd {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--console-line);
+  color: inherit;
+}
+/* Nút chép và mở console không bị co dưới 24px khi mã tài nguyên dài (WCAG 2.5.8) */
+.orphan-id > .ib {
+  flex: none;
+}

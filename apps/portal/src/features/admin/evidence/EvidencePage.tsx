@@ -364,7 +364,13 @@ function DoraBody({ evidence }: { evidence: PlatformDoraWire }) {
       ) : (
         <>
           <h4 className="ev-h4">{m.table}</h4>
-          <div className="table-wrap">
+          {/* [Plan #58 UX-41] Vùng cuộn của bảng nhận focus để bàn phím cuộn được (WCAG 2.1.1) */}
+          <div
+            className="table-wrap"
+            tabIndex={0}
+            role="region"
+            aria-label={m.table}
+          >
             <table className="dtable">
               <thead>
                 <tr>

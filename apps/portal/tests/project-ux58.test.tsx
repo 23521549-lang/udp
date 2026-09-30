@@ -37,11 +37,14 @@ import { renderApp } from "./render";
 
 describe("lời chào (UX-24)", () => {
   it("tiếng Việt gọi chữ cuối, tiếng Anh gọi chữ đầu", () => {
-    expect(givenNameOf("Nguyễn Thị Lan", "vi")).toBe("Lan");
-    expect(givenNameOf("Jane Doe", "en")).toBe("Jane");
-    expect(givenNameOf("  Jane   Doe ", "en")).toBe("Jane");
-    expect(givenNameOf("Madonna", "en")).toBe("Madonna");
-    expect(givenNameOf("", "vi")).toBe("");
+    expect(givenNameOf("Nguyễn Thị Lan")).toBe("Lan");
+    expect(givenNameOf("Jane Doe")).toBe("Jane");
+    expect(givenNameOf("  Jane   Doe ")).toBe("Jane");
+    expect(givenNameOf("Madonna")).toBe("Madonna");
+    // Tên Việt giữ thứ tự Việt kể cả khi giao diện tiếng Anh, kể cả khi gõ không dấu
+    expect(givenNameOf("Nguyen Van Minh")).toBe("Minh");
+    expect(givenNameOf("Châu Ngọc Hân")).toBe("Hân");
+    expect(givenNameOf("")).toBe("");
   });
 });
 

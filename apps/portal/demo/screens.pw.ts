@@ -247,13 +247,16 @@ async function discover(page: Page): Promise<Ids> {
   });
 }
 
-/** Mỗi chỗ thiếu tương phản một dòng: phần tử, tỉ lệ đo được, tỉ lệ cần */
-async function contrastProblems(page: Page): Promise<string[]> {
+/** Mỗi vi phạm trợ năng một dòng: luật và phần tử; riêng tương phản kèm tỉ lệ đo được và tỉ lệ cần */
+async function a11yProblems(page: Page): Promise<string[]> {
+  // [Plan #58 UX-41] Đủ bộ luật WCAG 2.0/2.1/2.2 A và AA của axe, không chỉ tương phản: nhãn, ARIA, thứ bậc
+  // tiêu đề, vùng cuộn dùng được bằng bàn phím, phần tử tương tác lồng nhau…
   const result = await new AxeBuilder({ page })
-    .withRules(["color-contrast"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
   return result.violations.flatMap((v) =>
     v.nodes.map((n) => {
+      if (v.id !== "color-contrast") return `${v.id} ở ${n.target.join(" ")}`;
       const data = (n.any[0]?.data ?? {}) as {
         contrastRatio?: number;
         expectedContrastRatio?: string;
@@ -317,7 +320,7 @@ async function checkScreen(
     if (vi.length > 0)
       problems.push(`khung còn tiếng Việt: ${vi.slice(0, 3).join(" | ")}`);
   }
-  problems.push(...(await contrastProblems(page)));
+  problems.push(...(await a11yProblems(page)));
   if (errors.length > 0) problems.push(`console: ${errors.join(" | ")}`);
 
   await page.screenshot({

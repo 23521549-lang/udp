@@ -7,7 +7,7 @@ export const homeMessages = defineMessages({
   vi: {
     home: "Trang chủ",
     createProject: "Tạo project",
-    hello: (name: string) => `Chào ${name}`,
+    hello: (name: ReactNode) => <>Chào {name}</>,
     lead: "Việc cần xử lý, rollout đang chạy và deploy của mọi project bạn tham gia.",
     minis: {
       projects: (_n: number) => "project",
@@ -64,7 +64,7 @@ export const homeMessages = defineMessages({
   en: {
     home: "Home",
     createProject: "Create project",
-    hello: (name: string) => `Hi ${name}`,
+    hello: (name: ReactNode) => <>Hi {name}</>,
     lead: "What needs attention, running rollouts and deployments across every project you belong to.",
     minis: {
       projects: (n: number) => plural(n, "project", "projects"),

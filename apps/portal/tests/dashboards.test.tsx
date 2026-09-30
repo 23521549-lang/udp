@@ -34,7 +34,7 @@ describe("Trang chủ (/app/home)", () => {
     const { router } = renderApp("/app");
 
     expect(
-      await screen.findByRole("heading", { level: 1, name: "Chào Tester" }),
+      await screen.findByRole("heading", { level: 1, name: "Chào Dev" }),
     ).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/app/home");
 

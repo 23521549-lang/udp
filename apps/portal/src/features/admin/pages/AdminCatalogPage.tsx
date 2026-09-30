@@ -28,7 +28,13 @@ export function AdminCatalogPage() {
           onRetry={() => void catalog.refetch()}
         />
       ) : (
-        <div className="table-wrap">
+        // [Plan #58 UX-41] Bảng rộng không chứa gì bấm được: vùng cuộn nhận focus để bàn phím cuộn được (WCAG 2.1.1)
+        <div
+          className="table-wrap"
+          tabIndex={0}
+          role="region"
+          aria-label={m.catalog.title}
+        >
           <table className="dtable" aria-label={m.catalog.title}>
             <thead>
               <tr>

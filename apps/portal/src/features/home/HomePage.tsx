@@ -19,7 +19,7 @@ import { deployBars } from "../deployment/deploy-bars";
 import { PROVIDER_LABEL } from "../project/cloud/cloud-labels";
 import { ProjectStatus } from "../project/ProjectStatus";
 import { rolesMessages } from "../project/roles.messages";
-import { useLocale, useMessages, type Locale } from "../../i18n";
+import { useMessages } from "../../i18n";
 import { domainName } from "../domain/domain-labels";
 import { jobTypeLabel } from "../provisioning/provisioning-labels";
 import { RolloutStatusLabel } from "../rollout/rollout-status";
@@ -35,7 +35,6 @@ type AttentionCopy = (typeof homeMessages)["vi"]["attention"];
  */
 export function HomePage() {
   const m = useMessages(homeMessages);
-  const locale = useLocale();
   const user = useAuthStore((s) => s.user);
   const home = useQuery({
     queryKey: qk.home(),
@@ -61,7 +60,10 @@ export function HomePage() {
       <div className="scroll">
         <PageHead
           title={
-            user === null ? m.home : m.hello(givenNameOf(user.name, locale))
+            user === null
+              ? m.home
+              : // Tên người là dữ liệu: không dịch
+                m.hello(<span translate="no">{givenNameOf(user.name)}</span>)
           }
           lead={m.lead}
           minis={
@@ -104,14 +106,56 @@ export function HomePage() {
   );
 }
 
+/** Họ Việt phổ biến, bỏ dấu — tên bắt đầu bằng một họ này là tên kiểu Việt (họ trước, tên gọi sau cùng) */
+const VIET_SURNAMES = new Set([
+  "nguyen",
+  "tran",
+  "le",
+  "pham",
+  "hoang",
+  "huynh",
+  "phan",
+  "vu",
+  "vo",
+  "dang",
+  "bui",
+  "do",
+  "ho",
+  "ngo",
+  "duong",
+  "ly",
+  "trinh",
+  "dinh",
+  "truong",
+  "lam",
+  "luong",
+  "chau",
+  "cao",
+  "quach",
+  "luu",
+  "doan",
+  "vuong",
+]);
+/** Chữ chỉ tiếng Việt có (ă â đ ê ô ơ ư và các dấu thanh) */
+const VIET_LETTERS =
+  /[ăâđêôơưạảãặẳẵắằậẩẫấầẹẻẽệểễếềịỉĩọỏõộổỗốồợởỡớờụủũựửữứừỵỷỹýỳ]/i;
+
 /**
- * Tên gọi trong lời chào. Tiếng Việt gọi bằng chữ CUỐI của họ tên ("Nguyễn Thị Lan" ⇒ "Lan"); [Plan #58 UX-24]
- * tiếng Anh gọi bằng chữ ĐẦU ("Jane Doe" ⇒ "Jane"), không phải họ.
+ * Tên gọi trong lời chào. [Plan #58 UX-24] Thứ tự tên là của CHÍNH cái tên, không của ngôn ngữ giao diện: tên Việt
+ * gọi bằng chữ CUỐI ("Nguyễn Thị Lan" ⇒ "Lan", cả khi giao diện là tiếng Anh), tên kiểu phương Tây bằng chữ ĐẦU
+ * ("Jane Doe" ⇒ "Jane", không phải họ).
  */
-export function givenNameOf(name: string, locale: Locale): string {
+export function givenNameOf(name: string): string {
   const words = name.trim().split(/\s+/);
-  const given = locale === "vi" ? words[words.length - 1] : words[0];
-  return given === undefined || given === "" ? name : given;
+  const first = words[0];
+  const last = words[words.length - 1];
+  if (first === undefined || last === undefined || first === "") return name;
+  const folded = first
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[đĐ]/g, "d")
+    .toLowerCase();
+  return VIET_SURNAMES.has(folded) || VIET_LETTERS.test(name) ? last : first;
 }
 
 function HomeBody({ home }: { home: HomeWire }) {

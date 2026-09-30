@@ -225,7 +225,7 @@ describe("màn chính bằng tiếng Anh", () => {
     );
     renderApp("/app/home");
     expect(
-      // [Plan #58 UX-24] Tiếng Anh gọi bằng tên riêng (chữ ĐẦU): "Dev Tester" ⇒ "Hi Dev"
+      // [Plan #58 UX-24] Tên kiểu phương Tây gọi bằng chữ ĐẦU ở mọi ngôn ngữ: "Dev Tester" ⇒ "Hi Dev"
       await screen.findByRole("heading", { level: 1, name: "Hi Dev" }),
     ).toBeInTheDocument();
     const list = await screen.findByRole("list", { name: "Needs attention" });

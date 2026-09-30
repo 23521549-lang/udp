@@ -136,3 +136,9 @@
   width: 26px;
   padding: 0;
 }
+
+/* [Plan #58 UX-41] Link trong thanh đầu trang rollout: gạch chân, không chỉ khác màu (WCAG 1.4.1) */
+.bar a.c3 {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
