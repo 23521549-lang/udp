@@ -200,12 +200,22 @@ describe("đăng nhập và quản trị", () => {
 
     // Tài nguyên mồ côi ở cả ba cloud, trải nhiều ngày, có loại chưa rõ giá; id ổn định giữa hai lần gọi
     const orphans = await adminApi.orphans();
-    expect(orphans.resources.length).toBe(13);
+    expect(orphans.resources.length).toBe(14);
     expect(new Set(orphans.resources.map((r) => r.provider)).size).toBe(3);
     expect(orphans.unpriced.length).toBeGreaterThanOrEqual(3);
     expect(
       new Set(orphans.resources.map((r) => r.updatedAt.slice(0, 10))).size,
-    ).toBeGreaterThanOrEqual(5);
+    ).toBeGreaterThanOrEqual(6);
+    // "Mồ côi từ khi nào" trải từ vài ngày tới vài tháng
+    const since = orphans.resources.map((r) => Date.parse(r.updatedAt));
+    expect(Date.now() - Math.max(...since)).toBeLessThan(3 * 86_400_000);
+    expect(Date.now() - Math.min(...since)).toBeGreaterThan(90 * 86_400_000);
+
+    // Người đang xem có trong danh sách người dùng (dấu "(bạn)")
+    const me = (await authApi.me()).user;
+    expect(
+      (await adminApi.users({ search: me.email }, 0)).users.map((u) => u.id),
+    ).toEqual([me.id]);
     expect((await adminApi.orphans()).resources.map((r) => r.id)).toEqual(
       orphans.resources.map((r) => r.id),
     );
@@ -502,7 +512,11 @@ describe("mọi project người xem thấy", () => {
     const userIds = new Set(users.map((u) => u.id));
     expect(memberIds.size).toBeGreaterThan(0);
     expect([...memberIds].every((id) => userIds.has(id))).toBe(true);
-    // Lọc theo nhóm hành động của trang Nhật ký
+    // Có dòng do UDP tự làm (job dựng, webhook bị từ chối), không chỉ người
+    expect(
+      entries.filter((e) => e.actorType === "SYSTEM").length,
+    ).toBeGreaterThanOrEqual(3);
+    // Lọc ĐÚNG một mã như Service 1: một tiền tố không khớp gì
     const flagOnly = await projectApi.audit(p.id, {
       action: "flag.env.update",
     });
@@ -510,6 +524,84 @@ describe("mọi project người xem thấy", () => {
     expect(flagOnly.entries.every((e) => e.action === "flag.env.update")).toBe(
       true,
     );
+    expect((await projectApi.audit(p.id, { action: "flag" })).total).toBe(0);
+  });
+
+  it("checkout-service: quyết định của rollout, deploy chờ duyệt, flag đang theo dõi, workload theo environment", async () => {
+    const p = (await projectsByName()).get("checkout-service");
+    if (p === undefined) throw new Error("thiếu checkout-service");
+    const { environments } = await projectApi.get(p.id);
+    const prod = environments.find((e) => e.isProduction);
+    if (prod === undefined) throw new Error("thiếu prod");
+
+    // Đang chạy: khoẻ là PROMOTE không vượt ngưỡng; một cái vừa vượt lần 1 trên 3 (cam); chờ số đo là HOLD
+    const running = await Promise.all(
+      (await rolloutApi.active(p.id)).rollouts.map(
+        async (r) => (await rolloutApi.get(p.id, r.id)).rollout,
+      ),
+    );
+    const decisions = running.map((r) => r.lastDecision);
+    expect(decisions.some((d) => d?.decision === "PROMOTE" && !d.breach)).toBe(
+      true,
+    );
+    const breached = running.find((r) => r.lastDecision?.breach === true);
+    expect(breached?.lastDecision?.breachStreak).toBe(1);
+    expect(breached?.thresholds["maxConsecutiveBreaches"]).toBe(3);
+    expect(breached?.workloadName).toBe("checkout-web");
+    const staging = environments.find((e) => e.name === "staging");
+    const pending = (
+      await rolloutApi.list(p.id, staging?.id ?? "")
+    ).rollouts.find((r) => r.status === "PENDING");
+    const waiting = (await rolloutApi.get(p.id, pending?.id ?? "")).rollout
+      .lastDecision;
+    expect(waiting).toMatchObject({ decision: "HOLD", breach: false });
+
+    // Deploy prod chờ duyệt, và flag đang được rollout theo dõi
+    const deploys = (await deploymentApi.list(p.id, prod.id)).deployments;
+    expect(deploys.some((d) => d.status === "DEPLOY_PENDING")).toBe(true);
+    const flags = (await flagApi.page(p.id, prod.id, tz)).flags;
+    expect(flags.some((f) => f.env?.isTracked === true)).toBe(true);
+
+    // Hộp tạo rollout gợi ý workload có thật ở MỖI environment
+    const { architecture } = await architectureApi.get(p.id);
+    for (const env of architecture.environments) {
+      expect(env.workloads.map((w) => w.name).sort(), env.name).toEqual([
+        "checkout-api",
+        "checkout-web",
+        "checkout-worker",
+      ]);
+    }
+  });
+
+  it("trang chủ của chủ project: thẻ Bắt đầu, số việc cần xử lý, cloud chỉ BYOC", async () => {
+    const { home } = await homeApi.get();
+    const { projects } = await projectApi.list(0);
+    expect(new Set(home.projects.map((h) => h.id))).toEqual(
+      new Set(projects.map((x) => x.id)),
+    );
+    for (const name of ["voucher-service", "seller-center"]) {
+      const row = home.projects.find((h) => h.name === name);
+      expect(row?.myRole, name).toBe("OWNER");
+      expect(row?.status, name).toBe("DRAFT");
+    }
+    expect(home.projects.some((h) => h.attention > 0)).toBe(true);
+    expect(home.projects.some((h) => h.attention === 0)).toBe(true);
+    // Project sắp hết hạn: job hạn dùng (SYSTEM) đã nhắc chủ project
+    const expiring = projects.find((x) => x.expiresAt !== null);
+    const warned = await projectApi.audit(expiring?.id ?? "", {
+      action: "project.ttl.warn",
+    });
+    expect(warned.total).toBeGreaterThan(0);
+    expect(warned.entries.every((e) => e.actorType === "SYSTEM")).toBe(true);
+    // Tài khoản cloud của UDP tắt: lựa chọn MANAGED không hiện
+    const draft = projects.find((x) => x.name === "voucher-service");
+    for (const provider of ["AWS", "GCP", "AZURE"] as const) {
+      const { setup } = await cloudApi.setup(draft?.id ?? "", provider);
+      expect(setup.managed, provider).toEqual({
+        available: false,
+        unavailableReason: "managed-disabled",
+      });
+    }
   });
 
   it("các project ở từng bước của thẻ Bắt đầu, và trạng thái trống", async () => {

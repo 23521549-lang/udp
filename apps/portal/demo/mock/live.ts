@@ -46,12 +46,16 @@ function advanceRollout(
   }
   const atCeiling = rollout.currentTrafficPercentage >= live.upTo;
   if (rollout.lastDecision !== undefined) {
+    // Khoẻ ở mọi bậc: PROMOTE, không vượt ngưỡng; ở trần thì bậc cuối chờ người bấm
     rollout.lastDecision = {
       ...rollout.lastDecision,
-      decision: atCeiling ? "HOLD" : "PROMOTE",
+      decision: "PROMOTE",
       reason: atCeiling
-        ? `Đã tới ${String(live.upTo)}%. Bậc cuối chờ người duyệt (Promote) để lên 100%`
+        ? `Đã tới ${String(live.upTo)}%, số đo trong ngưỡng. Bậc cuối lên 100% chờ người duyệt (Promote)`
         : "Lỗi canary 0,41% so với baseline 0,48%: trong ngưỡng, sẵn sàng bậc tiếp",
+      breach: false,
+      breachStreak: 0,
+      breachAt: null,
       at: nowIso(),
     };
   }

@@ -1817,7 +1817,75 @@ interface RolloutSpec {
   endBy?: Person;
   /** Ngưỡng bị vượt khi tự rollback: tỉ lệ lỗi (mặc định) hay độ trễ p99 */
   breach?: "errors" | "latency";
+  /**
+   * Quyết định gần nhất của session đang chạy: mặc định trong ngưỡng (PROMOTE); `warmup` là vừa lên bậc, chưa đủ
+   * số đo (HOLD); `breach` là vừa vượt ngưỡng lần 1 trên 3 (HOLD, cảnh báo)
+   */
+  decision?: "warmup" | "breach";
   live?: { step: number; everySeconds: number; upTo: number };
+}
+
+/** Quyết định gần nhất của controller cho một session chưa kết thúc, cùng số đo đi kèm */
+function liveDecisionOf(
+  spec: RolloutSpec,
+): Pick<RolloutDetailWire, "lastDecision" | "latestMetricSnapshot"> {
+  const at = minutesAgo(1);
+  const decide = (
+    decision: "PROMOTE" | "HOLD",
+    reason: string,
+    breachStreak = 0,
+  ) => ({
+    decision,
+    reason,
+    breach: breachStreak > 0,
+    breachStreak,
+    breachAt: breachStreak > 0 ? minutesAgo(2) : null,
+    at,
+  });
+  const healthy = () => snapshot(0.0041, 0.0048, at, spec.workload);
+  switch (spec.status) {
+    case "PENDING":
+      return {
+        lastDecision: decide(
+          "HOLD",
+          "Warm-up: nhánh canary mới có 64/200 request, chưa đủ để so với baseline",
+        ),
+      };
+    case "PAUSED":
+      return {
+        lastDecision: decide("HOLD", "Session đang tạm dừng theo yêu cầu"),
+        latestMetricSnapshot: healthy(),
+      };
+    case "IN_PROGRESS":
+      if (spec.decision === "warmup") {
+        return {
+          lastDecision: decide(
+            "HOLD",
+            `Vừa lên ${String(spec.percent)}%: nhánh canary mới có 140/200 request, chờ đủ số đo để so với baseline`,
+          ),
+        };
+      }
+      if (spec.decision === "breach") {
+        return {
+          lastDecision: decide(
+            "HOLD",
+            `Lỗi canary 2,3% so với baseline 0,6%: vượt ngưỡng 1,5 lần baseline, lần 1 trên 3. Giữ ở ${String(spec.percent)}% và đo lại sau 30 giây`,
+            1,
+          ),
+          latestMetricSnapshot: snapshot(0.023, 0.006, at, spec.workload),
+        };
+      }
+      return {
+        lastDecision: decide(
+          "PROMOTE",
+          "Lỗi canary 0,41% so với baseline 0,48%: trong ngưỡng, sẵn sàng bậc tiếp",
+        ),
+        latestMetricSnapshot: healthy(),
+      };
+    case "DONE":
+    case "FAILED":
+      return {};
+  }
 }
 
 function snapshot(
@@ -1948,7 +2016,7 @@ function buildRollout(
       minErrors: 5,
       latencyP99Ms: 800,
       relativeErrorRate: 1.5,
-      maxConsecutiveBreaches: 2,
+      maxConsecutiveBreaches: spec.decision === "breach" ? 3 : 2,
     },
     stepPercent: 10,
     stepIntervalSeconds: 300,
@@ -1957,42 +2025,7 @@ function buildRollout(
     metricWindowSeconds: 60,
     maxDurationSeconds: 86_400,
     ...(spec.failReason === undefined ? {} : { failReason: spec.failReason }),
-    ...(spec.status === "IN_PROGRESS" || spec.status === "PAUSED"
-      ? {
-          lastDecision: {
-            decision:
-              spec.status === "PAUSED"
-                ? ("HOLD" as const)
-                : ("PROMOTE" as const),
-            reason:
-              spec.status === "PAUSED"
-                ? "Session đang tạm dừng theo yêu cầu"
-                : "Lỗi canary 0,41% so với baseline 0,48%: trong ngưỡng, sẵn sàng bậc tiếp",
-            breach: false,
-            breachStreak: 0,
-            breachAt: null,
-            at: minutesAgo(1),
-          },
-          latestMetricSnapshot: snapshot(
-            0.0041,
-            0.0048,
-            minutesAgo(1),
-            spec.workload,
-          ),
-        }
-      : spec.status === "PENDING"
-        ? {
-            lastDecision: {
-              decision: "HOLD" as const,
-              reason:
-                "Warm-up: nhánh canary mới có 64/200 request, chưa đủ để so với baseline",
-              breach: false,
-              breachStreak: 0,
-              breachAt: null,
-              at: minutesAgo(1),
-            },
-          }
-        : {}),
+    ...liveDecisionOf(spec),
     events,
     createdAt: iso(startMs),
     updatedAt:
@@ -2402,6 +2435,18 @@ function checkoutService(): ProjectRecord {
           startedHoursAgo: 900,
           steps: [10, 25, 50, 75, 100],
           end: "COMPLETE",
+        },
+        {
+          flag: "one-click-reorder",
+          env: "prod",
+          scope: "FLAG_LEVEL",
+          strategy: "CANARY",
+          status: "IN_PROGRESS",
+          percent: 20,
+          workload: "checkout-web",
+          startedHoursAgo: 2.2,
+          steps: [10, 20],
+          decision: "breach",
         },
         {
           flag: "bnpl-installments",
@@ -2814,8 +2859,10 @@ function mobileBff(): ProjectRecord {
           status: "IN_PROGRESS",
           percent: 34,
           workload: "mobile-bff",
-          startedHoursAgo: 6,
+          // Bậc 34% vừa lên vài phút trước: số đo chưa đủ
+          startedHoursAgo: 0.4,
           steps: [10, 20, 34],
+          decision: "warmup",
         },
         {
           env: "prod",
@@ -3278,6 +3325,18 @@ const FLEET: FleetSpec[] = [
     cloud: { provider: "AWS", region: "ap-southeast-1" },
     ageDays: 260,
     workload: "hr-portal",
+    // Xoá bốn tháng trước, còn sót một Elastic IP: tiền nhỏ nhưng mất đều từng giờ
+    incidents: [
+      {
+        kind: "compensationFailed",
+        jobType: "TEARDOWN",
+        daysAgo: 118,
+        step: "NETWORK",
+        message:
+          "Xoá project: Elastic IP còn gắn với ENI của một máy chạy tay ngoài UDP (InvalidIPAddress.InUse), không giải phóng được",
+        orphans: ["eip"],
+      },
+    ],
   },
   {
     name: "promo-engine",
@@ -3403,7 +3462,7 @@ const FLEET: FleetSpec[] = [
       {
         kind: "compensationFailed",
         jobType: "TEARDOWN",
-        daysAgo: 33,
+        daysAgo: 74,
         step: "NETWORK",
         message:
           "Xoá project: subnetwork còn forwarding rule của load balancer nên không xoá được; Cloud NAT và node pool còn lại",

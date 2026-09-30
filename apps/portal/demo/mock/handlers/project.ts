@@ -77,9 +77,14 @@ function setupFor(
   provider: "AWS" | "GCP" | "AZURE",
   projectId: string,
 ): CloudSetupWire {
-  const setup = golden<{ setup: CloudSetupWire }>(
+  const captured = golden<{ setup: CloudSetupWire }>(
     "GET /projects/{id}/cloud/setup",
   ).setup;
+  // Tài khoản cloud của UDP (MANAGED) tắt theo quyết định sản phẩm: bản miễn phí chỉ có BYOC
+  const setup: CloudSetupWire = {
+    ...captured,
+    managed: { available: false, unavailableReason: "managed-disabled" },
+  };
   const subject = `project:${projectId}`;
   if (provider === "AZURE") return { ...setup, subject };
   const aws = provider === "AWS";
@@ -263,8 +268,9 @@ export function registerProjectRoutes(router: Router, db: Db): void {
       const action = req.query.get("action");
       const limit = intParam(req.query, "limit", 50);
       const offset = intParam(req.query, "offset", 0);
+      // Như Service 1: lọc đúng MỘT mã hành động, không theo tiền tố
       const matched = p.audit.filter(
-        (e) => action === null || action === "" || e.action.startsWith(action),
+        (e) => action === null || action === "" || e.action === action,
       );
       return ok({
         entries: matched.slice(offset, offset + limit),

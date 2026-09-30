@@ -65,6 +65,19 @@ function event(
   r.updatedAt = at;
 }
 
+/** Controller giữ nguyên bậc, không vì vượt ngưỡng: tạm dừng, hay chờ số đo */
+function holdFor(r: RolloutDetailWire, reason: string): void {
+  if (r.lastDecision === undefined) return;
+  r.lastDecision = {
+    decision: "HOLD",
+    reason,
+    breach: false,
+    breachStreak: 0,
+    breachAt: null,
+    at: nowIso(),
+  };
+}
+
 function setTracked(
   p: ProjectRecord,
   r: RolloutDetailWire,
@@ -89,11 +102,13 @@ function act(
     case "PAUSE":
       if (r.status !== "IN_PROGRESS") break;
       r.status = "PAUSED";
+      holdFor(r, "Session đang tạm dừng theo yêu cầu");
       event(db, r, "PAUSE", `Tạm dừng bởi ${db.me.name}`, true);
       break;
     case "RESUME":
       if (r.status !== "PAUSED") break;
       r.status = "IN_PROGRESS";
+      holdFor(r, "Vừa tiếp tục: chờ lần đo đầu tiên trước khi lên bậc tiếp");
       if (live !== undefined) {
         live.startedAt = Date.now();
         live.from = r.currentTrafficPercentage;

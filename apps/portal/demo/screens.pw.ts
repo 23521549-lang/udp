@@ -62,6 +62,13 @@ interface Ids {
   draft: string;
   /** [Plan #55] Nhóm mà người xem là chủ nhóm — đủ form mời, lời mời đang chờ, cài đặt nhóm */
   team: string;
+  /** [Plan #58] Rollout vừa vượt ngưỡng lần 1/3 (dải cảnh báo cam) */
+  rolloutBreach: string;
+  /** [Plan #58] Project nháp mới có SDK key ở dev: thẻ "Bắt đầu" 1/5, env staging chưa có key */
+  voucher: string;
+  voucherStaging: string;
+  /** [Plan #58] Project chạy mà chưa có rollout, flag, segment hay SDK key nào */
+  shipping: string;
 }
 
 /** Tên, đường dẫn, và (tuỳ màn) một locator PHẢI có — bằng chứng màn đã vẽ phần chính của nó */
@@ -82,6 +89,19 @@ const SCREENS: Screen[] = [
     ".wizard-nav",
   ]),
   ["overview", (i) => `/app/projects/${i.checkout}`, ".health-cell"],
+  // [Plan #58 UX-12, UX-17] Thẻ "Bắt đầu" của chủ project, và các trạng thái trống có lối đi tiếp
+  ["overview-start", (i) => `/app/projects/${i.voucher}`, ".start-card"],
+  [
+    "settings-keys-empty",
+    (i) =>
+      `/app/projects/${i.voucher}/settings?tab=keys&env=${i.voucherStaging}`,
+    ".state .empty-why",
+  ],
+  [
+    "rollouts-empty",
+    (i) => `/app/projects/${i.shipping}/rollouts`,
+    ".state .empty-body",
+  ],
   // [Plan #57] Tổng quan hệ thống (mặc định): lớp cạnh vai trò đã đo và vẽ sau layout, nhãn nằm trên thẻ
   [
     "architecture",
@@ -111,6 +131,11 @@ const SCREENS: Screen[] = [
   ["segments", (i) => `/app/projects/${i.checkout}/segments`],
   ["rollouts", (i) => `/app/projects/${i.checkout}/rollouts`],
   ["rollout", (i) => `/app/projects/${i.checkout}/rollouts/${i.rollout}`],
+  [
+    "rollout-breach",
+    (i) => `/app/projects/${i.checkout}/rollouts/${i.rolloutBreach}`,
+    ".alert.amber",
+  ],
   ["deployments", (i) => `/app/projects/${i.checkout}/deployments`],
   ["code", (i) => `/app/projects/${i.checkout}/code`],
   ["domains", (i) => `/app/projects/${i.checkout}/domains`],
@@ -125,13 +150,14 @@ const SCREENS: Screen[] = [
   ),
   ["login", () => "/login"],
   ["register", () => "/register"],
-  ["admin-overview", () => "/admin/overview", "[role=meter]"],
+  // [Plan #58 UX-27] Dải "Cần xử lý" luôn có, kể cả khi mọi tín hiệu xanh (khi đó nó nói "Mọi thứ ổn")
+  ["admin-overview", () => "/admin/overview", "section.attn"],
   ["admin-users", () => "/admin/users"],
   ["admin-projects", () => "/admin/projects"],
-  ["admin-jobs", () => "/admin/jobs"],
-  ["admin-orphans", () => "/admin/orphans"],
+  // [Plan #58 UX-28] Tab "Dọn chưa hết": tài nguyên còn trên cloud của khách
+  ["admin-jobs", () => "/admin/jobs?state=COMPENSATION_FAILED", ".job-list li"],
+  ["admin-orphans", () => "/admin/orphans", ".dtable tbody tr"],
   ["admin-credentials", () => "/admin/credentials"],
-  ["admin-system", () => "/admin/system"],
   // [Plan #57] Kiến trúc nền tảng: khối trong máy ảo và cạnh ghi giao thức, sức khoẻ sống từ ba route
   [
     "admin-architecture",
@@ -190,21 +216,33 @@ async function discover(page: Page): Promise<Ids> {
     };
     const checkout = id("checkout-service");
     const { rollouts } = await get<{
-      rollouts: { id: string; status: string }[];
+      rollouts: { id: string; status: string; flagKey: string | null }[];
     }>(`/projects/${checkout}/rollouts`);
     const live = rollouts.find((r) => r.status === "IN_PROGRESS");
     if (live === undefined) throw new Error("thiếu rollout đang chạy");
+    const breach = rollouts.find((r) => r.flagKey === "one-click-reorder");
+    if (breach === undefined) throw new Error("thiếu rollout vượt ngưỡng");
     const { teams } = await get<{ teams: { id: string; name: string }[] }>(
       "/teams",
     );
     const team = teams.find((t) => t.name === "Nhóm thanh toán");
     if (team === undefined) throw new Error("thiếu nhóm Nhóm thanh toán");
+    const voucher = id("voucher-service");
+    const { environments } = await get<{
+      environments: { id: string; name: string }[];
+    }>(`/projects/${voucher}`);
+    const staging = environments.find((e) => e.name === "staging");
+    if (staging === undefined) throw new Error("thiếu staging");
     return {
       checkout,
       marketing: id("marketing-site"),
       rollout: live.id,
       draft: id("analytics-api"),
       team: team.id,
+      rolloutBreach: breach.id,
+      voucher,
+      voucherStaging: staging.id,
+      shipping: id("shipping-fee-api"),
     };
   });
 }
@@ -319,11 +357,14 @@ async function prepare(
 }
 
 /** [Plan #58 UX-11] Lần đầu dùng: người mới, chưa project, chưa nhóm (vai "Người mới" của dải Bản xem thử) */
-const NEWCOMER_SCREENS: [name: string, path: string][] = [
-  ["home-newcomer", "/app/home"],
-  ["projects-newcomer", "/app/projects"],
-  ["teams-newcomer", "/app/teams"],
-  ["new-project-newcomer", "/app/projects/new"],
+const NEWCOMER_SCREENS: [name: string, path: string, must: string][] = [
+  // Ba bước và MỘT nút chính thay cho "Bạn chưa tham gia project nào" (`FirstRun.tsx`)
+  ["home-newcomer", "/app/home", ".first-run .first-run-steps"],
+  ["projects-newcomer", "/app/projects", ".first-run .btn.pri"],
+  // Trạng thái trống của danh sách nhóm (không phải lỗi tải)
+  ["teams-newcomer", "/app/teams", ".state:not([role])"],
+  // Thanh bước của wizard (UX-15)
+  ["new-project-newcomer", "/app/projects/new", ".wz-steps"],
 ];
 
 for (const pass of PASSES) {
@@ -356,14 +397,14 @@ for (const pass of PASSES) {
     test("người mới: mọi màn lần đầu dùng đạt", async ({ page }) => {
       const errors = await prepare(page, pass, "newcomer");
       const failures: string[] = [];
-      for (const [name, path] of NEWCOMER_SCREENS) {
+      for (const [name, path, must] of NEWCOMER_SCREENS) {
         const problems = await checkScreen(
           page,
           pass,
           errors,
           name,
           path,
-          undefined,
+          must,
         );
         if (problems.length > 0)
           failures.push(`${name}: ${problems.join("; ")}`);

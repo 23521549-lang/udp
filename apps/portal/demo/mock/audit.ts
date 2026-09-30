@@ -153,6 +153,7 @@ export function auditTrail(p: ProjectRecord, target = 0): AuditEntryWire[] {
     );
   }
   if (p.project.expiresAt !== null) {
+    const expiresAt = p.project.expiresAt;
     add(
       later(p.project.createdAt, 30, 600),
       "project.ttl.update",
@@ -160,8 +161,20 @@ export function auditTrail(p: ProjectRecord, target = 0): AuditEntryWire[] {
       "Project",
       p.project.id,
       { expiresAt: null },
-      { expiresAt: p.project.expiresAt },
+      { expiresAt },
     );
+    // Job hạn dùng của Service 1 nhắc chủ project ở mốc 48 và 24 giờ trước hạn
+    for (const threshold of [48, 24]) {
+      add(
+        Date.parse(expiresAt) - threshold * HOUR + between(rng, 1, 9) * MINUTE,
+        "project.ttl.warn",
+        null,
+        "Project",
+        p.project.id,
+        null,
+        { expiresAt, threshold },
+      );
+    }
   }
   const enabled = p.domains.domains
     .filter((d) => d.isEnabled)
@@ -178,6 +191,21 @@ export function auditTrail(p: ProjectRecord, target = 0): AuditEntryWire[] {
         null,
         { confirmedMonthlyUsd: job.confirmedMonthlyUsd },
       );
+      // Pha DOMAINS của job dựng do UDP tự áp, không ai bấm
+      if (detail.domains.length > 0) {
+        add(
+          job.updatedAt,
+          "domain.config.apply",
+          null,
+          "ProvisioningJob",
+          job.id,
+          null,
+          {
+            state: job.state,
+            domains: detail.domains.map((d) => d.domainType),
+          },
+        );
+      }
     }
     if (job.jobType === "DOMAIN_APPLY") {
       add(
