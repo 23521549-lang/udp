@@ -106,6 +106,8 @@ describe("lint thiết kế của Portal", () => {
       join("components", "ProgressRing.tsx"),
       join("components", "Sparkline.tsx"),
       join("components", "LineChart.tsx"),
+      // Biểu đồ cột theo nhóm của trang Bằng chứng, thang tuyến tính hoặc log (Plan #56 QĐ-5)
+      join("components", "CategoryChart.tsx"),
       // Lớp cạnh của sơ đồ kiến trúc: nét nối giữa các nút HTML, vẽ sau layout (Plan #53 QĐ-7)
       join("features", "architecture", "EdgeLayer.tsx"),
     ]);

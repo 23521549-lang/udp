@@ -29,6 +29,8 @@ export const componentsMessages = defineMessages({
       aboveFrame: ", cao hơn khung",
       table: "Bảng số liệu",
       time: "Thời điểm",
+      logScale: "thang log",
+      csv: "Tải CSV",
     },
   },
   en: {
@@ -58,6 +60,8 @@ export const componentsMessages = defineMessages({
       aboveFrame: ", above the frame",
       table: "Data table",
       time: "Time",
+      logScale: "log scale",
+      csv: "Download CSV",
     },
   },
 });

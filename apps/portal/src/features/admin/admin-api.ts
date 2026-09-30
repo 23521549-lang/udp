@@ -1,5 +1,6 @@
 import {
   adminCredentialsResponseWire,
+  adminEvidenceDoraResponseWire,
   adminJobsResponseWire,
   adminOrphansResponseWire,
   adminOverviewResponseWire,
@@ -8,6 +9,7 @@ import {
   adminSystemResponseWire,
   adminUserResponseWire,
   adminUsersResponseWire,
+  type EvidenceDoraDays,
 } from "@udp/shared-types/wire";
 import { api } from "../../lib/http";
 
@@ -37,4 +39,9 @@ export const adminApi = {
     }),
   orphans: () => api(adminOrphansResponseWire, "/admin/orphan-resources"),
   system: () => api(adminSystemResponseWire, "/admin/system/health"),
+  /** [Plan #56] E10 của cả nền tảng cho trang Bằng chứng */
+  evidenceDora: (days: EvidenceDoraDays) =>
+    api(adminEvidenceDoraResponseWire, "/admin/evidence/dora", {
+      query: { days },
+    }),
 };

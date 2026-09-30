@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
   Blocks,
+  FlaskConical,
   FolderKanban,
   Gauge,
   KeyRound,
@@ -53,6 +54,9 @@ export function AdminLayout() {
           </Link>
           <Link {...NAV} to="/admin/catalog">
             <NavBody icon={Blocks}>{m.catalog}</NavBody>
+          </Link>
+          <Link {...NAV} to="/admin/evidence">
+            <NavBody icon={FlaskConical}>{m.evidence}</NavBody>
           </Link>
         </nav>
       }

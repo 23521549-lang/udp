@@ -131,6 +131,10 @@ export const qk = {
   /** §10.14: `["orphans"]` — invalidate khi dọn một tài nguyên */
   adminOrphans: () => ["admin", "orphans"] as const,
   adminSystem: () => ["admin", "system"] as const,
+  /** [Plan #56] E10 của cả nền tảng; `days` trong key — đổi cửa sổ là một mục cache khác */
+  adminEvidenceDora: (days: number) => ["admin", "evidenceDora", days] as const,
+  /** [Plan #56] Tệp kết quả đo nạp lúc build — không bao giờ cũ trong một phiên */
+  measurements: () => ["measurements"] as const,
 } as const;
 
 export type QueryKeyName = keyof typeof qk;
@@ -201,6 +205,9 @@ export const NOT_ENV_SCOPED = {
   adminSystem: "toàn hệ thống",
   adminOverview: "toàn hệ thống",
   adminPlatform: "cụm chạy UDP, không thuộc project nào",
+  adminEvidenceDora:
+    "DORA của env production MỌI project, env nằm trong từng dòng",
+  measurements: "tệp kết quả đo của repo, không thuộc project nào",
 } as const satisfies Partial<Record<QueryKeyName, string>>;
 
 /**

@@ -8,7 +8,12 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { Toaster } from "../components/Toast";
-import { RED_RANGES, type RedRange } from "@udp/shared-types/wire";
+import {
+  EVIDENCE_DORA_DAYS,
+  RED_RANGES,
+  type EvidenceDoraDays,
+  type RedRange,
+} from "@udp/shared-types/wire";
 import { AdminLayout } from "../features/admin/AdminLayout";
 import { AdminCredentialsPage } from "../features/admin/pages/AdminCredentialsPage";
 import {
@@ -26,6 +31,7 @@ import {
 } from "../features/admin/pages/AdminProjectsPage";
 import { AdminSystemPage } from "../features/admin/pages/AdminSystemPage";
 import { AdminCatalogPage } from "../features/admin/pages/AdminCatalogPage";
+import { EvidencePage } from "../features/admin/evidence/EvidencePage";
 import { AdminUsersPage } from "../features/admin/pages/AdminUsersPage";
 import { ArchitecturePage } from "../features/architecture/ArchitecturePage";
 import { useAuthStore } from "../features/auth/auth-store";
@@ -492,6 +498,17 @@ const adminCatalogRoute = createRoute({
   component: AdminCatalogPage,
 });
 
+/** [Plan #56] Bằng chứng thực nghiệm (§14); cửa sổ của E10 trên URL, mặc định 30 ngày không ghi ra */
+const adminEvidenceRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "evidence",
+  validateSearch: (s: Record<string, unknown>): { days?: EvidenceDoraDays } => {
+    const days = EVIDENCE_DORA_DAYS.find((d) => d === Number(s.days));
+    return days === undefined || days === 30 ? {} : { days };
+  },
+  component: EvidencePage,
+});
+
 export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -507,6 +524,7 @@ export const routeTree = rootRoute.addChildren([
     adminOrphansRoute,
     adminSystemRoute,
     adminCatalogRoute,
+    adminEvidenceRoute,
   ]),
   appRoute.addChildren([
     appIndexRoute,

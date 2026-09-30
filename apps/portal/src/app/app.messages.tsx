@@ -50,6 +50,7 @@ export const appMessages = defineMessages({
       orphans: "Tài nguyên mồ côi",
       system: "Hệ thống",
       catalog: "Catalog domain",
+      evidence: "Bằng chứng",
     },
     notFound: {
       title: "Không tìm thấy trang",
@@ -110,6 +111,7 @@ export const appMessages = defineMessages({
       orphans: "Orphaned resources",
       system: "System",
       catalog: "Domain catalog",
+      evidence: "Evidence",
     },
     notFound: {
       title: "Page not found",

@@ -805,6 +805,73 @@ details.cardc .q {
   max-height: 240px;
   overflow: auto;
 }
+/* [Plan #56] Trang Bằng chứng: con số lớn đầu thẻ, dòng nguồn + nút tải, danh sách phụ */
+.ev > p {
+  margin: 0 0 8px;
+}
+.ev-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px 16px;
+  margin: 4px 0 12px;
+}
+.ev-stats div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+}
+.ev-stats dt {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.ev-stats dd {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+.ev .lc,
+.ev .bc {
+  margin-bottom: 12px;
+}
+.ev-src {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-top: 4px;
+}
+.ev-src p {
+  flex: 1 1 320px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ev-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.ev-h4 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ev-debts {
+  margin-top: 8px;
+}
+
+/* [Plan #56] CategoryChart: bảng số liệu và nút tải CSV cùng một hàng dưới biểu đồ */
+.cc-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+.cc-foot .lc-tbl {
+  flex: 1 1 260px;
+  min-width: 0;
+}
 .bc-plot {
   position: relative;
   display: flex;
