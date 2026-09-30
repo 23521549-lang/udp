@@ -78,10 +78,16 @@ const SCREENS: Screen[] = [
     ".wizard-nav",
   ]),
   ["overview", (i) => `/app/projects/${i.checkout}`, ".health-cell"],
+  // [Plan #57] Tổng quan hệ thống (mặc định): lớp cạnh vai trò đã đo và vẽ sau layout, nhãn nằm trên thẻ
   [
     "architecture",
+    (i) => `/app/projects/${i.checkout}/architecture`,
+    ".sys-map .link-labels span",
+  ],
+  [
+    "architecture-infra",
     (i) =>
-      `/app/projects/${i.checkout}/architecture?tool=monitoring:prometheus-grafana`,
+      `/app/projects/${i.checkout}/architecture?view=infra&tool=monitoring:prometheus-grafana`,
     // Cạnh của công cụ đang chọn nổi lên: lớp cạnh đã đo và vẽ sau layout
     ".arch-edges path.on",
   ],
@@ -122,6 +128,12 @@ const SCREENS: Screen[] = [
   ["admin-orphans", () => "/admin/orphans"],
   ["admin-credentials", () => "/admin/credentials"],
   ["admin-system", () => "/admin/system"],
+  // [Plan #57] Kiến trúc nền tảng: khối trong máy ảo và cạnh ghi giao thức, sức khoẻ sống từ ba route
+  [
+    "admin-architecture",
+    () => "/admin/architecture",
+    ".plat-map .link-labels span",
+  ],
   ["admin-catalog", () => "/admin/catalog"],
   // [Plan #56] Bằng chứng thực nghiệm: biểu đồ đọc từ tệp thô, E10 từ lớp giả lập
   ["admin-evidence", () => "/admin/evidence", "figure.cc"],

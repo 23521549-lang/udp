@@ -31,7 +31,7 @@ msw + golden, Playwright (`portal-demo`).
 
 | Tệp                                                                      | Trách nhiệm                                                                     |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| `packages/shared-types/src/wire.ts`                                      | `deployDayWire` dùng chung; `architecture.deploys`                            |
+| `packages/shared-types/src/wire.ts`                                      | `deployDayWire` dùng chung; `architecture.deploys`                              |
 | `services/core-backend/src/modules/deployment/deployment.dora.ts`        | `utcDayWindow(days, now)` — cửa sổ ngày UTC dùng chung                          |
 | `services/core-backend/src/modules/deployment/deployment.repository.ts`  | `eventsOfProject(projectId, from, to)`                                          |
 | `services/core-backend/src/modules/architecture/architecture.service.ts` | thêm `deploys`                                                                  |
@@ -387,3 +387,26 @@ TIÊN rời `users`).
 - [ ] **Step 2:** build bản xem thử, cổng Playwright năm lượt (`npx playwright test --config demo/playwright.config.ts`).
 - [ ] **Step 3:** tài liệu; design-lint repo; prettier.
 - [ ] **Step 4: commit** `P57d: bản xem thử và cổng cho hai sơ đồ; tài liệu Plan #57`
+
+---
+
+## Kết quả (30/09/2026)
+
+| Đợt | Commit     | Cổng                                                                                                                                                                                                   |
+| --- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 57a | `08e3c3c`  | S1: dora, dashboards, admin, wire-golden, wire-routes (162 test) xanh; golden `GET /projects/{id}/architecture` ghi lại; contract                                                                      |
+| 57b | `52d3188`  | Portal 256 test, typecheck (cả demo), eslint, prettier xanh                                                                                                                                            |
+| 57c | `1623be0`  | Portal 263 test, typecheck, eslint, prettier xanh                                                                                                                                                      |
+| 57d | commit này | Cổng `portal-demo`: lượt desktop và mobile ĐẠT với ba màn mới; ba lượt còn lại (tối, tối di động, tiếng Anh) chưa chạy xong lúc người dùng tắt máy — chạy lại `pnpm --filter @udp/portal demo:screens` |
+
+Lệch so với kế hoạch, có lý do:
+
+- `deployDayWire` dùng lại hình sẵn có của trang chủ thay vì thêm `dailyDeployWire`; trang chủ cũng chuyển sang
+  `utcDayWindow` (một định nghĩa cửa sổ ngày).
+- `dailyOutcomes` gom theo cặp (env, `deployment_id`) khi gộp nhiều env — đúng Deployment Frequency của §2.2
+  (provisioning ghi cùng `deployment_id` cho mỗi env).
+- Bỏ cạnh Cost → Monitoring khỏi Tổng quan hệ thống: nó chạy ngang qua thẻ Logging/Tracing cùng hàng; quan hệ đó
+  vẫn ở góc "Hạ tầng & công cụ" (cạnh capability `metrics.query`).
+- Sơ đồ nền tảng đối chiếu với mã: S1 (không phải S3) đọc Prometheus của khách; thêm S1 → S2, S3 → S1, S3 → S2.
+  PostgreSQL đặt giữa để bốn khối nối nhau đôi một mà không cạnh nào xuyên thẻ; `LinkLayer` thêm kiểu `under`.
+- Thêm `DiagramBar`, `StackedBar`, `deployBars` dùng chung; sửa một lỗi lint có sẵn ở `demo/screens.pw.ts`.
