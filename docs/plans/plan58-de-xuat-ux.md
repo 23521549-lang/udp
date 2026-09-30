@@ -172,3 +172,42 @@ chủ không cho gỡ admin cuối cùng; Ctrl K, `C`, `j`/`k` ở Portal; hai n
   https://docs.getunleash.io/guides/demo-walkthrough · Vercel rollback https://vercel.com/docs/instant-rollback · Argo
   CD https://argo-cd.readthedocs.io/en/stable/core_concepts/ · Grafana dashboard
   https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/best-practices/
+
+## 7. Bản mẫu chạy được (01/10/2026) — nhánh `ux58-prototype`, `main` không đổi
+
+Người dùng: "dựng những đề xuất của bạn lên thành một web hoàn chỉnh trên local cho tôi xem đi, bơm dữ liệu nhiều
+nhiều, phong phú, đầy đủ". Bản mẫu là CHÍNH Portal với các thay đổi, chạy trên bản xem thử (backend giả lập trong
+trình duyệt), nên bấm được mọi màn, đủ hai ngôn ngữ và hai giao diện.
+
+**Đã dựng:** UX-1 → UX-17, UX-19 → UX-22, UX-24 → UX-41. **Chưa dựng:** UX-18 (trang xem thử công khai, chờ quyết
+định), UX-23 (lý do quyết định rollout do Service 3 trả mã + số — cần sửa máy chủ; bản mẫu vẫn hiện câu tiếng Việt
+của máy chủ ở phần lý do).
+
+**Cổng đã chạy:** typecheck (Portal + bản xem thử), eslint, prettier, 326 test Portal, contract của bản xem thử 17/17,
+Playwright năm lượt (sáng, di động, tối, tối di động, tiếng Anh) cộng lượt "người mới" ở mỗi cỡ, với ĐỦ bộ luật axe
+WCAG 2.2 AA (UX-41; trước chỉ có luật tương phản — bật đủ làm lộ và đã sửa: tương phản, mục bấm dưới 24px, link chỉ
+khác màu, vùng cuộn không nhận focus). Lượt Playwright đầy đủ gần nhất đạt 10/10 ở `3f362c6`; các sửa sau khi soát ảnh (`858229a`) đã qua
+lint, 326 test và contract, nhưng lượt Playwright chạy lại bị hệ thống dừng vì máy thiếu bộ nhớ — cần chạy lại
+`pnpm --filter @udp/portal demo:screens` khi máy rảnh.
+
+**Xem:** góc dưới phải có nút "Bản xem thử · <vai>" — đổi vai Quản trị viên / Developer / Người mới (chưa có project
+nào) và kịch bản nền tảng Ổn định / Có rủi ro (Bảng điều khiển).
+
+**Dữ liệu mẫu:** 161 người dùng (7 quản trị), 37 project ở mọi trạng thái, checkout-service 54 flag (nháp, lưu trữ,
+kill switch, flag cũ), 12 segment, 13 rollout (đang chạy, tạm dừng, vượt ngưỡng 1/3, tự lùi, lùi tay; số đo khớp đúng
+cách bộ điều phối quyết định), 2 184 dòng nhật ký audit với người làm thật, job ở mọi trạng thái, 14 tài nguyên mồ côi
+trên ba cloud, credential chưa từng kiểm, deploy chờ duyệt, các project ở từng mức "Bắt đầu".
+
+### Việc hoàn thiện sau khi duyệt (không để nợ)
+
+| #   | Việc                                                                                                                 | Vì sao                                                         |
+| --- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| H1  | Service 1: bộ lọc `platformRole`, `order` cho `/admin/users`; `search`, `order` cho `/admin/projects`                | Schema của máy chủ thật đang chặt: dùng bộ lọc mới sẽ nhận 400 |
+| H2  | Service 2: nhật ký `flag.env.update` / `flag.rule.update` ghi kèm `flagKey`                                          | Để nhật ký gọi tên flag như bản mẫu; máy chủ thật chưa ghi     |
+| H3  | UX-23: Service 3 trả mã lý do + số, Portal viết câu theo ngôn ngữ                                                    | Bản tiếng Anh còn câu tiếng Việt ở lý do rollout               |
+| H4  | Tách khuôn bảng lệnh Ctrl K dùng chung cho hai portal                                                                | Bảng lệnh của Bảng điều khiển đang chép khuôn listbox          |
+| H5  | Gom `ux-*.css` vào đúng chỗ trong `portal.css`; kiểu `.alert.neutral/.ok` dùng chung                                 | Tệp theo khu chỉ để làm song song                              |
+| H6  | `qk.adminUsers`/`qk.adminProjects` nhận bộ lọc có kiểu thay vì chuỗi ghép                                            | Khoá cache rõ nghĩa                                            |
+| H7  | Kiểm tuỳ chọn `headers` của `@openfeature/ofrep-web-provider` trong hướng dẫn nhanh cho trình duyệt với mã nguồn gói | Gói chưa cài trong repo nên chưa đối chiếu được                |
+| H8  | Panel project của Bảng điều khiển: "job gần nhất" hiện chỉ xét trang đầu (50) của danh sách lỗi                      | Đủ khi ít job; cần route theo project nếu nhiều                |
+| H9  | Tài liệu: `UDP_design.md` §10 (các màn), quyết định D-P51, bàn giao                                                  | Như mọi plan                                                   |
