@@ -104,6 +104,8 @@ sao … tham khảo các nền tảng tương tự khác đi". Quy trình: nghi�
 Backstage, Grafana, W3C WAI), bản mẫu bốn góc nhìn chạy ở máy, người dùng duyệt góc 1 và 4 ("tui chọn 1 và 4
 nha"), rồi mới sửa mã. Spec: `docs/plans/plan57-spec.md`; kế hoạch: `plan57-plan.md`; quyết định D-P50.
 
+**Người dùng đã duyệt bản chạy thật** (bản xem thử ở máy, cả hai trang): "oke rồi duyệt nha".
+
 | Đợt | Commit    | Nội dung                                                                                                                                                                                              |
 | --- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 57a | `08e3c3c` | `architecture.deploys` (14 ngày UTC, mọi env, cùng `dailyOutcomes`); `utcDayWindow` một định nghĩa cho E10, trang chủ, Kiến trúc; deployment khi gộp env là cặp (env, `deployment_id`)                |

@@ -392,6 +392,8 @@ TIÊN rời `users`).
 
 ## Kết quả (30/09/2026)
 
+Người dùng đã duyệt bản chạy thật của cả hai trang (bản xem thử ở máy): "oke rồi duyệt nha".
+
 | Đợt | Commit    | Cổng                                                                                                                              |
 | --- | --------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | 57a | `08e3c3c` | S1: dora, dashboards, admin, wire-golden, wire-routes (162 test) xanh; golden `GET /projects/{id}/architecture` ghi lại; contract |
