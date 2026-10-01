@@ -104,6 +104,8 @@ const VIEWER: Record<PersonaId, Person> = {
   admin: ANH,
   developer: HUY,
   newcomer: HAN,
+  // [Plan #59] Khách chưa đăng nhập: đăng ký xong là chính người mới
+  visitor: HAN,
 };
 
 // ------------------------------------------------------------- catalog domain
@@ -4526,7 +4528,7 @@ export function createDb(setup: DemoSetup = DEFAULT_SETUP): Db {
       name: viewer.name,
       platformRole: viewer.admin ? "PLATFORM_ADMIN" : "USER",
     },
-    signedIn: true,
+    signedIn: setup.persona !== "visitor",
     users,
     projects,
     teams,

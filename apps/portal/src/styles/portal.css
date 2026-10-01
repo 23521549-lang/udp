@@ -155,16 +155,51 @@
 }
 
 /* ---------- đăng nhập ---------- */
+/* [Plan #59] Logo về trang giới thiệu ở góc trên; thẻ form giữa màn; trang đăng ký thêm panel bên trên màn rộng */
 .auth {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 16px;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
 }
 
+.auth-top {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 24px;
+}
+
+.auth-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.auth-home b {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.auth-main {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 8px 16px 64px;
+}
+
+.auth-main.split {
+  width: min(100%, 1120px);
+  margin-inline: auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 48px;
+}
+
 .auth-card {
-  width: min(380px, 100%);
+  width: min(400px, 100%);
   background: var(--panel);
   border-radius: 12px;
   box-shadow: var(--shadow-panel);
@@ -174,6 +209,16 @@
   gap: 16px;
 }
 
+.auth-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-head p {
+  margin: 0;
+}
+
 .auth-card h1 {
   margin: 0;
   font-size: 22px;
@@ -181,15 +226,105 @@
   letter-spacing: -0.025em;
 }
 
-.auth-brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
 .auth-card a {
   color: var(--accent);
   font-weight: 500;
+}
+
+/* Ô mật khẩu với nút hiện/ẩn nằm trong mép phải của ô */
+.pw {
+  position: relative;
+}
+
+.pw .inp {
+  padding-right: 36px;
+}
+
+.pw-eye {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+}
+
+.auth-aside {
+  align-self: stretch;
+  justify-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 36px 0 0 36px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.auth-aside h2 {
+  margin: 0;
+  padding-right: 36px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.auth-aside ul {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0 36px 0 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.auth-aside li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.auth-aside li .i {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+/* Mẩu ảnh thật tràn ra mép phải và mép dưới của panel */
+.auth-shot {
+  margin: auto 0 0;
+  padding-top: 8px;
+}
+
+.auth-shot img {
+  display: block;
+  width: 760px;
+  max-width: none;
+  height: auto;
+  border-radius: 10px 0 0;
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+
+@media (max-width: 1024px) {
+  .auth-main.split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .auth-aside {
+    width: min(400px, 100%);
+    justify-self: center;
+    padding: 24px;
+  }
+
+  .auth-aside h2,
+  .auth-aside ul {
+    padding-right: 0;
+  }
+
+  .auth-shot {
+    display: none;
+  }
 }
 
 /* ---------- danh sách ---------- */

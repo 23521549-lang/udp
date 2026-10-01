@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { discover, type Ids } from "./ids";
 import { DEMO_INVITE_TOKEN } from "./mock/demo-invite";
 import { PERSONA_KEY, type PersonaId } from "./mock/persona";
 
@@ -15,6 +16,7 @@ import { PERSONA_KEY, type PersonaId } from "./mock/persona";
  *
  * [Plan #58] Mỗi lượt thêm bốn màn LẦN ĐẦU DÙNG, xem bằng vai "Người mới" của dải Bản xem thử (chưa project, chưa
  * nhóm): khoá vai đặt vào `sessionStorage` trước khi trang chạy, lớp giả lập dựng dữ liệu cho đúng người đó.
+ * [Plan #59] Và ba màn của khách chưa đăng nhập: trang giới thiệu, đăng nhập, đăng ký.
  */
 
 type Locale = "vi" | "en";
@@ -53,23 +55,6 @@ const TEXT: Record<Locale, { loading: string; notFound: string }> = {
   vi: { loading: "Đang tải…", notFound: "Không tìm thấy trang" },
   en: { loading: "Loading…", notFound: "Page not found" },
 };
-
-interface Ids {
-  checkout: string;
-  marketing: string;
-  rollout: string;
-  /** Project nháp: các bước của wizard mở lại được từ URL (`?project=&step=`) */
-  draft: string;
-  /** [Plan #55] Nhóm mà người xem là chủ nhóm — đủ form mời, lời mời đang chờ, cài đặt nhóm */
-  team: string;
-  /** [Plan #58] Rollout vừa vượt ngưỡng lần 1/3 (dải cảnh báo cam) */
-  rolloutBreach: string;
-  /** [Plan #58] Project nháp mới có SDK key ở dev: thẻ "Bắt đầu" 1/5, env staging chưa có key */
-  voucher: string;
-  voucherStaging: string;
-  /** [Plan #58] Project chạy mà chưa có rollout, flag, segment hay SDK key nào */
-  shipping: string;
-}
 
 /** Tên, đường dẫn, và (tuỳ màn) một locator PHẢI có — bằng chứng màn đã vẽ phần chính của nó */
 type Screen = [name: string, path: (ids: Ids) => string, must?: string];
@@ -148,8 +133,6 @@ const SCREENS: Screen[] = [
       (i) => `/app/projects/${i.checkout}/settings?tab=${tab}`,
     ],
   ),
-  ["login", () => "/login"],
-  ["register", () => "/register"],
   // [Plan #58 UX-27] Dải "Cần xử lý" luôn có, kể cả khi mọi tín hiệu xanh (khi đó nó nói "Mọi thứ ổn")
   ["admin-overview", () => "/admin/overview", "section.attn"],
   ["admin-users", () => "/admin/users"],
@@ -197,54 +180,6 @@ async function chromeTexts(page: Page): Promise<string[]> {
       return copy.textContent;
     }),
   );
-}
-
-/** Id của dữ liệu mẫu, hỏi thẳng lớp giả lập trong trang (id tất định nhưng sinh ra, không viết tay) */
-async function discover(page: Page): Promise<Ids> {
-  await page.goto("./#/app/home");
-  await expect(page.locator("h1")).toHaveCount(1);
-  return page.evaluate(async () => {
-    const get = async <T>(path: string): Promise<T> =>
-      (await (await fetch(`/api/v1${path}`)).json()) as T;
-    const { projects } = await get<{
-      projects: { id: string; name: string }[];
-    }>("/projects?limit=50");
-    const id = (name: string): string => {
-      const found = projects.find((p) => p.name === name);
-      if (found === undefined) throw new Error(`thiếu project ${name}`);
-      return found.id;
-    };
-    const checkout = id("checkout-service");
-    const { rollouts } = await get<{
-      rollouts: { id: string; status: string; flagKey: string | null }[];
-    }>(`/projects/${checkout}/rollouts`);
-    const live = rollouts.find((r) => r.status === "IN_PROGRESS");
-    if (live === undefined) throw new Error("thiếu rollout đang chạy");
-    const breach = rollouts.find((r) => r.flagKey === "one-click-reorder");
-    if (breach === undefined) throw new Error("thiếu rollout vượt ngưỡng");
-    const { teams } = await get<{ teams: { id: string; name: string }[] }>(
-      "/teams",
-    );
-    const team = teams.find((t) => t.name === "Nhóm thanh toán");
-    if (team === undefined) throw new Error("thiếu nhóm Nhóm thanh toán");
-    const voucher = id("voucher-service");
-    const { environments } = await get<{
-      environments: { id: string; name: string }[];
-    }>(`/projects/${voucher}`);
-    const staging = environments.find((e) => e.name === "staging");
-    if (staging === undefined) throw new Error("thiếu staging");
-    return {
-      checkout,
-      marketing: id("marketing-site"),
-      rollout: live.id,
-      draft: id("analytics-api"),
-      team: team.id,
-      rolloutBreach: breach.id,
-      voucher,
-      voucherStaging: staging.id,
-      shipping: id("shipping-fee-api"),
-    };
-  });
 }
 
 /** Mỗi vi phạm trợ năng một dòng: luật và phần tử; riêng tương phản kèm tỉ lệ đo được và tỉ lệ cần */
@@ -370,6 +305,18 @@ const NEWCOMER_SCREENS: [name: string, path: string, must: string][] = [
   ["new-project-newcomer", "/app/projects/new", ".wz-steps"],
 ];
 
+/**
+ * [Plan #59] Khách chưa đăng nhập (vai "Khách" của dải Bản xem thử, `/auth/me` trả 401): trang giới thiệu ở địa chỉ
+ * gốc, đăng nhập và đăng ký. Trước đây hai trang sau được chụp khi ĐÃ đăng nhập, không phải cảnh người thật gặp.
+ */
+const VISITOR_SCREENS: [name: string, path: string, must: string][] = [
+  // Bốn con số và ảnh chụp thật của Portal ở hero
+  ["landing", "/", ".lp-facts .lp-fact-v"],
+  ["login", "/login", ".auth-card .pw-eye"],
+  // Panel bên của trang đăng ký (màn hẹp: xuống dưới form)
+  ["register", "/register", ".auth-aside li"],
+];
+
 for (const pass of PASSES) {
   test.describe(`${pass.name} ${String(pass.width)}×${String(pass.height)}`, () => {
     test.use({
@@ -389,6 +336,26 @@ for (const pass of PASSES) {
           errors,
           name,
           path(ids),
+          must,
+        );
+        if (problems.length > 0)
+          failures.push(`${name}: ${problems.join("; ")}`);
+      }
+      expect(failures).toEqual([]);
+    });
+
+    test("khách chưa đăng nhập: trang giới thiệu, đăng nhập, đăng ký đạt", async ({
+      page,
+    }) => {
+      const errors = await prepare(page, pass, "visitor");
+      const failures: string[] = [];
+      for (const [name, path, must] of VISITOR_SCREENS) {
+        const problems = await checkScreen(
+          page,
+          pass,
+          errors,
+          name,
+          path,
           must,
         );
         if (problems.length > 0)

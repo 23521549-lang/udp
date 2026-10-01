@@ -4,8 +4,11 @@
  * Playwright đặt được khoá trước khi trang chạy mà không nạp dữ liệu mẫu.
  */
 
-/** Quản trị viên nền tảng (mặc định), developer thường ở vài project, người mới chưa có project hay nhóm nào */
-export const PERSONAS = ["admin", "developer", "newcomer"] as const;
+/**
+ * Quản trị viên nền tảng (mặc định), developer thường ở vài project, người mới chưa có project hay nhóm nào, và
+ * [Plan #59] khách chưa đăng nhập: thấy trang giới thiệu, đăng ký xong thành người mới.
+ */
+export const PERSONAS = ["admin", "developer", "newcomer", "visitor"] as const;
 export type PersonaId = (typeof PERSONAS)[number];
 
 /** Cụm chạy UDP khoẻ, hay đang có rủi ro (máy rảnh dễ bị thu hồi, sao lưu hỏng, chứng chỉ sắp hết hạn) */
@@ -52,4 +55,17 @@ export function storeSetup(setup: DemoSetup): void {
   } catch {
     // storage bị chặn: lựa chọn chỉ sống tới lần tải lại
   }
+}
+
+/**
+ * [Plan #59] Mở thẳng một vai bằng địa chỉ (`?as=visitor#/`): gửi link cho người xem là thấy ngay trang giới thiệu,
+ * không phải tìm dải Bản xem thử. Nhớ vai như khi chọn ở dải, rồi bỏ tham số khỏi thanh địa chỉ.
+ */
+export function adoptSetupFromUrl(): void {
+  const url = new URL(window.location.href);
+  const persona = PERSONAS.find((p) => p === url.searchParams.get("as"));
+  if (persona === undefined) return;
+  storeSetup({ ...storedSetup(), persona });
+  url.searchParams.delete("as");
+  window.history.replaceState(null, "", url);
 }

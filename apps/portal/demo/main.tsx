@@ -12,6 +12,7 @@ import "../src/styles/prototype.css";
 import "../src/styles/portal.css";
 import "../src/styles/ux.css";
 import { mountDemoBanner } from "./banner";
+import { adoptSetupFromUrl } from "./mock/persona";
 import { installMockBackend } from "./mock/server";
 
 /**
@@ -19,6 +20,7 @@ import { installMockBackend } from "./mock/server";
  * lớp giả lập trong trang (`mock/`), và router dùng hash history vì trang tĩnh không phục vụ được đường sâu.
  * Thêm dải "Bản xem thử" để đổi vai người xem (`banner.ts`).
  */
+adoptSetupFromUrl();
 installMockBackend();
 applyTheme();
 watchSystemTheme();

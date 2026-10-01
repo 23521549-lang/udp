@@ -35,6 +35,7 @@ const COPY: Record<Locale, Copy> = {
       admin: "Quản trị viên",
       developer: "Developer",
       newcomer: "Người mới",
+      visitor: "Khách chưa đăng nhập",
     },
     platform: "Nền tảng",
     platforms: { healthy: "Ổn định", "at-risk": "Có rủi ro" },
@@ -48,6 +49,7 @@ const COPY: Record<Locale, Copy> = {
       admin: "Platform admin",
       developer: "Developer",
       newcomer: "Newcomer",
+      visitor: "Signed-out visitor",
     },
     platform: "Platform",
     platforms: { healthy: "Healthy", "at-risk": "At risk" },
@@ -75,10 +77,15 @@ function select<T extends string>(
   return wrap;
 }
 
-/** Nhớ lựa chọn rồi tải lại; đổi vai thì về trang chủ (trang đang mở có thể không thuộc về người mới) */
+/**
+ * Nhớ lựa chọn rồi tải lại; đổi vai thì về trang chủ (trang đang mở có thể không thuộc về người mới). Khách chưa
+ * đăng nhập về trang giới thiệu.
+ */
 function apply(next: DemoSetup, current: DemoSetup): void {
   storeSetup(next);
-  if (next.persona !== current.persona) window.location.hash = "#/app/home";
+  if (next.persona !== current.persona) {
+    window.location.hash = next.persona === "visitor" ? "#/" : "#/app/home";
+  }
   window.location.reload();
 }
 

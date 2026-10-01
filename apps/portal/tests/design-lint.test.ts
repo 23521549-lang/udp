@@ -231,15 +231,19 @@ describe("lint thiết kế của Portal", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("portal.css chỉ dùng token màu, không màu thô", () => {
-    const css = readFileSync(join(SRC, "styles", "portal.css"), "utf8").replace(
-      /\/\*[\s\S]*?\*\//g,
-      "",
-    );
-    expect(
-      css.match(/#[0-9a-fA-F]{3,8}\b|\b(rgb|rgba|hsl|hsla|oklch)\(/g) ?? [],
-    ).toEqual([]);
-  });
+  // [Plan #59] Trang giới thiệu cùng luật: chỉ token, nên sáng/tối tự đúng như Portal
+  it.each(["portal.css", "landing.css"])(
+    "%s chỉ dùng token màu, không màu thô",
+    (file) => {
+      const css = readFileSync(join(SRC, "styles", file), "utf8").replace(
+        /\/\*[\s\S]*?\*\//g,
+        "",
+      );
+      expect(
+        css.match(/#[0-9a-fA-F]{3,8}\b|\b(rgb|rgba|hsl|hsla|oklch)\(/g) ?? [],
+      ).toEqual([]);
+    },
+  );
 
   it("prototype.css là bản chép NGUYÊN VĂN của bản mẫu đã duyệt", () => {
     const html = readFileSync(

@@ -109,10 +109,12 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
       return ok(session(db));
     })
     .on("POST", "/auth/register", (req) => {
-      const { name } = bodyOf<{ name?: string }>(req);
+      const { name, email } = bodyOf<{ name?: string; email?: string }>(req);
       db.signedIn = true;
       if (name !== undefined && name.trim() !== "")
         db.me = { ...db.me, name: name.trim() };
+      if (email !== undefined && email.trim() !== "")
+        db.me = { ...db.me, email: email.trim().toLowerCase() };
       return ok(session(db), 201);
     })
     .on("POST", "/auth/refresh", () => {

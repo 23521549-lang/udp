@@ -1,11 +1,16 @@
 import { useMutation } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useRef, useState, type FormEvent } from "react";
+import { Check } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { LanguageSwitch } from "../../app/Preferences";
 import { Field, focusFirstInvalid } from "../../components/Field";
+import { Icon } from "../../components/Icon";
 import { Logo } from "../../components/Logo";
+import { PasswordInput } from "../../components/PasswordInput";
 import { useMessages } from "../../i18n";
 import { fieldErrorsOf, messageOf } from "../../lib/errors";
+import { DOMAIN_COUNT, TOOL_COUNT } from "../landing/landing-facts";
+import { useShot } from "../landing/shots";
 import { authApi } from "./auth-api";
 import { authMessages } from "./auth.messages";
 import { useAuthStore } from "./auth-store";
@@ -53,28 +58,76 @@ export function safeRedirect(target: string | undefined): string {
   }
 }
 
-/** Khung của các trang ngoài hai không gian: đăng nhập, đăng ký, nhận lời mời */
+/**
+ * Khung của các trang ngoài hai không gian: đăng nhập, đăng ký, nhận lời mời. [Plan #59] Logo ở góc trên dẫn về
+ * trang giới thiệu (luôn có đường về); `aside` là panel bên của trang đăng ký, chỉ chứa sự thật về sản phẩm, không
+ * nằm trong form.
+ */
 export function AuthFrame({
   title,
+  lead,
+  aside,
   children,
 }: {
   title: string;
+  lead?: string;
+  aside?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  // `main`: trang đăng nhập cũng có vùng nội dung chính cho trình đọc màn hình (không nằm trong khung nào)
+  const m = useMessages(authMessages);
+  useEffect(() => {
+    document.title = `${title} · UDP`;
+  }, [title]);
   return (
-    <main className="auth">
-      <div className="auth-card">
-        <div className="auth-brand">
+    <div className="auth">
+      <header className="auth-top">
+        <Link to="/" className="auth-home" aria-label={m.home}>
           <Logo />
           <b>udp</b>
+        </Link>
+      </header>
+      {/* `main`: trang đăng nhập cũng có vùng nội dung chính cho trình đọc màn hình (không nằm trong khung nào) */}
+      <main className={aside === undefined ? "auth-main" : "auth-main split"}>
+        <div className="auth-card">
+          <div className="auth-head">
+            <h1>{title}</h1>
+            {lead !== undefined && <p className="c2">{lead}</p>}
+          </div>
+          {children}
+          {/* Người chưa đăng nhập cũng chọn được ngôn ngữ (Plan #54 QĐ-1) */}
+          <LanguageSwitch />
         </div>
-        <h1>{title}</h1>
-        {children}
-        {/* Người chưa đăng nhập cũng chọn được ngôn ngữ (Plan #54 QĐ-1) */}
-        <LanguageSwitch />
-      </div>
-    </main>
+        {aside}
+      </main>
+    </div>
+  );
+}
+
+/** [Plan #59] Panel bên của trang đăng ký: ba điều có ngay, và một mẩu ảnh thật của sản phẩm */
+function RegisterAside() {
+  const m = useMessages(authMessages).aside;
+  const shot = useShot("hero");
+  return (
+    <aside className="auth-aside" aria-labelledby="auth-aside-title">
+      <h2 id="auth-aside-title">{m.title}</h2>
+      <ul>
+        {m.items(DOMAIN_COUNT, TOOL_COUNT).map((item) => (
+          <li key={item}>
+            <Icon of={Check} />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+      <figure className="auth-shot">
+        <img
+          src={shot.src}
+          alt={m.shotAlt}
+          width={shot.width}
+          height={shot.height}
+          decoding="async"
+        />
+      </figure>
+    </aside>
   );
 }
 
@@ -118,14 +171,11 @@ export function LoginPage() {
         </Field>
         <Field id="password" label={m.password} error={fields.password}>
           {(p) => (
-            <input
+            <PasswordInput
               {...p}
-              className="inp"
-              type="password"
               autoComplete="current-password"
-              required
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
             />
           )}
         </Field>
@@ -171,7 +221,11 @@ export function RegisterPage() {
   const fields = { ...fieldErrorsOf(register.error), ...clientErrors };
 
   return (
-    <AuthFrame title={m.register}>
+    <AuthFrame
+      title={m.register}
+      lead={m.registerLead}
+      aside={<RegisterAside />}
+    >
       <form
         ref={form}
         className="auth-form"
@@ -220,15 +274,12 @@ export function RegisterPage() {
           error={fields.password}
         >
           {(p) => (
-            <input
+            <PasswordInput
               {...p}
-              className="inp"
-              type="password"
               autoComplete="new-password"
-              required
               minLength={PASSWORD_MIN_LENGTH}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
             />
           )}
         </Field>

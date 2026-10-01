@@ -3,6 +3,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
   redirect,
   type RouterHistory,
@@ -100,12 +101,22 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   errorComponent: RouteError,
 });
 
+/**
+ * [Plan #59] Địa chỉ gốc: người chưa đăng nhập thấy trang giới thiệu, người đã đăng nhập vào thẳng trang chủ như trước.
+ * Trang giới thiệu tải riêng (chunk lười): người dùng hằng ngày không tải mã và CSS của nó.
+ */
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/app/home" });
+    if (useAuthStore.getState().user !== null) {
+      throw redirect({ to: "/app/home" });
+    }
   },
+  component: lazyRouteComponent(
+    () => import("../features/landing/LandingPage"),
+    "LandingPage",
+  ),
 });
 
 interface LoginSearch {

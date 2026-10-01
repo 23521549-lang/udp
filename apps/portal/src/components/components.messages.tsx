@@ -14,6 +14,7 @@ export const componentsMessages = defineMessages({
     copy: "Sao chép",
     copied: "Đã sao chép",
     copyFailed: "Không sao chép được, hãy chọn và chép tay",
+    showPassword: "Hiện mật khẩu",
     prevPage: "Trang trước",
     nextPage: "Trang sau",
     unsaved: {
@@ -49,6 +50,7 @@ export const componentsMessages = defineMessages({
     copy: "Copy",
     copied: "Copied",
     copyFailed: "Could not copy. Select the text and copy it manually",
+    showPassword: "Show password",
     prevPage: "Previous page",
     nextPage: "Next page",
     unsaved: {

@@ -190,6 +190,18 @@ không bao giờ là "khoẻ".
 Logo "Công tắc": một viên thuốc viền trắng có núm tròn bên phải, đặt trong ô `--accent` bo 22%. Chữ `udp`
 viết thường, đậm 600–700. Favicon dùng cùng hình trên nền `#2B5BE0`.
 
+## 8b. Trang giới thiệu, đăng nhập, đăng ký (Plan #59)
+
+- Cùng token với Portal (màu, font, bo góc, đường kẻ), không thêm font hay màu. Trang giới thiệu có thang chữ riêng
+  cho đọc lướt: thân 16px, tiêu đề lớn `clamp()` đậm 650, chữ sát `-0.04em`, dòng 1.1 để dấu tiếng Việt hai tầng
+  không chạm nhau. CSS ở `styles/landing.css`, tải cùng chunk lười của trang.
+- Hình là ảnh chụp THẬT của Portal, sinh lại bằng `demo:shots` (bốn bản: sáng, tối × Việt, Anh), trong `figure` viền
+  mảnh. Không vẽ lại giao diện bằng div, không khung trình duyệt giả, không lời chứng thực hay logo khách hàng.
+- Số trên trang công khai đếm được trong mã và có test đối chiếu nguồn (catalog adapter, trần tài nguyên).
+- Nút của trang giới thiệu cao 38/46px bo 8px; một nút chính màu nhấn mỗi vùng. Đăng nhập: thẻ giữa màn, logo ở góc
+  trên về trang giới thiệu, ô mật khẩu có nút hiện (nút bật `aria-pressed`). Đăng ký thêm panel bên chỉ nói sự thật về
+  sản phẩm; dưới 1024px panel xuống dưới form.
+
 ## 9. Không làm (rút từ các vòng duyệt)
 
 - Gradient nhiều màu, ô icon cầu vồng, nền màu loang, chữ phồng 900, lưới thẻ lặp giống nhau, số liệu đặt ra

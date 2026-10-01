@@ -13,6 +13,7 @@
     "test": "vitest run && vitest run --config demo/vitest.config.ts",
     "demo:build": "vite build --config demo/vite.config.ts",
     "demo:screens": "playwright test --config demo/playwright.config.ts",
+    "demo:shots": "playwright test --config demo/shots.config.ts",
     "test:watch": "vitest"
   },
   "dependencies": {
