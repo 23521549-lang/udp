@@ -1,4 +1,8 @@
-import type { CapabilityBinding } from "@udp/shared-types";
+import {
+  BUILD_TEXT_RULES,
+  isSafeBuildPath,
+  type CapabilityBinding,
+} from "@udp/shared-types";
 
 /**
  * [Plan #61 QĐ-2, QĐ-3] Kế hoạch build image của một project — dữ liệu THUẦN: Service 1 dựng nó (cài đặt build
@@ -131,27 +135,10 @@ export const registryServerOf = (endpoint: string): string =>
 
 /**
  * Mọi chuỗi của kế hoạch đi vào sáu cú pháp (YAML, Groovy ba nháy đơn, `sh -ec '…'`, chỗ trống `%TÊN%`). Cùng luật
- * với bước của domain khác (D-P28): cấm ký tự thì không phải thoát ở đâu cả.
+ * với bước của domain khác (D-P28): cấm ký tự thì không phải thoát ở đâu cả. Luật sống ở `@udp/shared-types` — cùng
+ * luật mà schema cài đặt build của dây và Portal dùng.
  */
-const PATH =
-  /^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]*(\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)$/;
-const SERVER = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{2,5})?$/;
-const REGION = /^[a-z]{2}(-gov)?-[a-z]+-\d$/;
-const ACR_NAME = /^[a-zA-Z0-9]{5,50}$/;
-const AWS_ROLE_ARN =
-  /^arn:aws(-cn|-us-gov)?:iam::\d{12}:role\/[A-Za-z0-9+=,.@_\/-]{1,512}$/;
-const GCP_PROVIDER =
-  /^projects\/\d{1,20}\/locations\/global\/workloadIdentityPools\/[a-z0-9-]{4,32}\/providers\/[a-z0-9-]{4,32}$/;
-const GCP_SERVICE_ACCOUNT =
-  /^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-/** Lệnh test: không nháy, không backslash, không `%`, không xuống dòng, không backtick (đặt trong `sh -c "…"`) */
-const COMMAND = /^[^"'\\%`\n\r]{1,500}$/;
-const IMAGE =
-  /^[a-z0-9][a-z0-9._\-/]*(:[A-Za-z0-9_.-]{1,128})?(@sha256:[0-9a-f]{64})?$/;
-
-export const BUILD_TEXT_RULES = {
-  PATH,
+const {
   SERVER,
   REGION,
   ACR_NAME,
@@ -161,7 +148,9 @@ export const BUILD_TEXT_RULES = {
   UUID,
   COMMAND,
   IMAGE,
-} as const;
+} = BUILD_TEXT_RULES;
+
+export { BUILD_TEXT_RULES, isSafeBuildPath };
 
 export class BuildPlanError extends Error {
   constructor(message: string) {
@@ -173,10 +162,6 @@ export class BuildPlanError extends Error {
 const check = (ok: boolean, message: string): void => {
   if (!ok) throw new BuildPlanError(message);
 };
-
-/** Đường dẫn tương đối, không `..`, không tuyệt đối */
-export const isSafeBuildPath = (path: string): boolean =>
-  PATH.test(path) && !path.split("/").includes("..");
 
 /** Ném `BuildPlanError` khi một chuỗi của kế hoạch không an toàn cho template — renderer gọi trước khi vẽ */
 export function assertBuildPlanSafe(plan: BuildPlan): void {

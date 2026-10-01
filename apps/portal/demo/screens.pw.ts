@@ -123,6 +123,12 @@ const SCREENS: Screen[] = [
   ],
   ["deployments", (i) => `/app/projects/${i.checkout}/deployments`],
   ["code", (i) => `/app/projects/${i.checkout}/code`],
+  // [Plan #61] Mục Đóng gói còn việc: danh tính build (script, ô dán), cài đặt build
+  [
+    "code-packaging",
+    (i) => `/app/projects/${i.packaging}/code`,
+    ".packaging-identity textarea",
+  ],
   ["domains", (i) => `/app/projects/${i.checkout}/domains`],
   ["domain", (i) => `/app/projects/${i.checkout}/domains/MONITORING`],
   ["infra", (i) => `/app/projects/${i.checkout}/infra`],

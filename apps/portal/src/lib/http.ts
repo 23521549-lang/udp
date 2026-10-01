@@ -1,5 +1,5 @@
 import type { ProblemDetails } from "@udp/shared-types/problem";
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 import { messagesOf } from "../i18n";
 import { httpMessages } from "./http.messages";
 
@@ -292,8 +292,12 @@ async function send(path: string, opts: RequestOptions): Promise<Response> {
  * Gọi API và parse response bằng `schema`. `schema = null` cho response không thân
  * (204): trả `undefined`.
  */
+/**
+ * `T` suy từ ĐẦU RA của schema: schema có `.default()` có đầu vào khác đầu ra, và `ZodType<T>` trần buộc hai thứ là một
+ * — trường có mặc định thành tuỳ chọn ở kiểu trả về (Plan #61, cài đặt build).
+ */
 export async function api<T>(
-  schema: ZodType<T>,
+  schema: ZodType<T, ZodTypeDef, unknown>,
   path: string,
   opts?: RequestOptions,
 ): Promise<T>;
@@ -303,7 +307,7 @@ export async function api(
   opts?: RequestOptions,
 ): Promise<undefined>;
 export async function api<T>(
-  schema: ZodType<T> | null,
+  schema: ZodType<T, ZodTypeDef, unknown> | null,
   path: string,
   opts: RequestOptions = {},
 ): Promise<T | undefined> {

@@ -156,6 +156,8 @@ export async function scan(
     repoUrl: project.repoUrl,
     host,
     runtime: result.runtime,
+    // [Plan #61 QĐ-10] Ngôn ngữ cho đóng gói và bước test (mục Đóng gói đọc nó)
+    language: result.language,
     framework: result.framework,
     cicdTool: result.cicdTool,
     findings,

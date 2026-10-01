@@ -45,6 +45,7 @@ export const AUDIT_GROUPS = {
     "cicd.webhook_secret.create",
     "cicd.webhook_secret.rotate",
     "cicd.webhook.rejected",
+    "project.build.update",
     "deployment.approve",
     "cloud.credential.set",
     "project.provision",

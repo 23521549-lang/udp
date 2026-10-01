@@ -31,11 +31,20 @@ import { dockerHostBuildLines } from "../../adapter-base/packaging/build-script.
  * thô.
  */
 
+const CIRCLECI_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 export const circleciConfigSchema = z.object({
   /** `gh/owner/repo`, `bb/owner/repo` hay `circleci/<org-id>/<project-id>` */
   projectSlug: z
     .string()
     .regex(/^(gh|bb|circleci)\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+  /**
+   * [Plan #61 QĐ-6] Id tổ chức và project của CircleCI (Organization/Project Settings) — chủ thể JWT OIDC của CircleCI
+   * mang hai id này, nên danh tính build trong cloud chỉ tin được đúng project khi biết chúng. Không bí mật.
+   */
+  organizationId: z.string().regex(CIRCLECI_UUID).optional(),
+  projectId: z.string().regex(CIRCLECI_UUID).optional(),
 });
 
 const base = createDescriptorAdapter({

@@ -19,6 +19,8 @@ export interface Ids {
   voucherStaging: string;
   /** [Plan #58] Project chạy mà chưa có rollout, flag, segment hay SDK key nào */
   shipping: string;
+  /** [Plan #61] Project mà registry của cloud chưa có danh tính build: việc cần làm, script, ô dán */
+  packaging: string;
 }
 
 /** Mở trang chủ của vai đang xem rồi hỏi lớp giả lập id của các project, rollout và nhóm mẫu */
@@ -29,7 +31,7 @@ export async function discover(page: Page): Promise<Ids> {
     const get = async <T>(path: string): Promise<T> =>
       (await (await fetch(`/api/v1${path}`)).json()) as T;
     const { projects } = await get<{
-      projects: { id: string; name: string }[];
+      projects: { id: string; name: string; myRole: string }[];
     }>("/projects?limit=50");
     const id = (name: string): string => {
       const found = projects.find((p) => p.name === name);
@@ -55,7 +57,29 @@ export async function discover(page: Page): Promise<Ids> {
     }>(`/projects/${voucher}`);
     const staging = environments.find((e) => e.name === "staging");
     if (staging === undefined) throw new Error("thiếu staging");
+    let packaging: string | undefined;
+    // Ô dán danh tính chỉ hiện cho Người bảo trì trở lên
+    for (const p of projects.filter((x) =>
+      ["OWNER", "MAINTAINER"].includes(x.myRole),
+    )) {
+      const view = await get<{
+        identity: { required: boolean; configured: boolean };
+        identityScript: unknown;
+      }>(`/projects/${p.id}/build`);
+      if (
+        view.identity.required &&
+        !view.identity.configured &&
+        view.identityScript !== null
+      ) {
+        packaging = p.id;
+        break;
+      }
+    }
+    if (packaging === undefined) {
+      throw new Error("thiếu project cần danh tính build");
+    }
     return {
+      packaging,
       checkout,
       marketing: id("marketing-site"),
       rollout: live.id,

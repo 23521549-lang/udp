@@ -121,6 +121,42 @@ describe("CI (§13.5)", () => {
     // Không secret: bản xem thử chạy hoàn toàn trong trang
     expect(JSON.stringify(demo)).not.toMatch(/secrets\./);
   });
+
+  it("build-smoke: sinh đoạn build của UDP rồi chạy CHÍNH nó, rồi chạy image; đủ sáu ứng dụng mẫu; không cho PR (Plan #61)", () => {
+    const smoke = job("build-smoke") as Job & {
+      permissions?: Record<string, string>;
+      strategy?: { matrix?: { app?: string[] } };
+    };
+    expect(smoke.if).toBe("github.event_name != 'pull_request'");
+    expect(smoke.permissions).toEqual({
+      contents: "read",
+      packages: "write",
+    });
+    expect(smoke.strategy?.matrix?.app).toEqual([
+      "node",
+      "python",
+      "go",
+      "java-maven",
+      "dotnet",
+      "dockerfile",
+    ]);
+    const order = [
+      "scripts/build-smoke.ts",
+      'bash "$RUNNER_TEMP/build.sh"',
+      "/healthz",
+    ].map((command) => indexOfRun(smoke, command));
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Mỗi ứng dụng mẫu có thư mục thật
+    for (const app of smoke.strategy?.matrix?.app ?? []) {
+      expect(
+        existsSync(
+          resolve(root, "services/core-backend/tests/fixtures/build-apps", app),
+        ),
+        app,
+      ).toBe(true);
+    }
+  });
 });
 
 describe("máy ảo công khai (Plan #52)", () => {

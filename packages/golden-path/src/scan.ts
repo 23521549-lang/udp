@@ -1,4 +1,8 @@
 import {
+  BUILDPACKS_LANGUAGES,
+  type BuildLanguage,
+} from "@udp/shared-types/build";
+import {
   goldenPathFiles,
   isGoldenPathRuntime,
   type GoldenPathFile,
@@ -53,8 +57,13 @@ export interface ScanFinding {
 }
 
 export interface RepoScan {
-  /** `nodejs` | `python` | `java` | `null` */
+  /** `nodejs` | `python` | `java` | `go` | `dotnet` | `ruby` | `php` | `rust` | `static` | `null` */
   runtime: string | null;
+  /**
+   * [Plan #61 QĐ-10] Ngôn ngữ cho đóng gói và bước test — như `runtime` nhưng tách Maven với Gradle. `null` khi không
+   * nhận diện được.
+   */
+  language: BuildLanguage | null;
   framework: string | null;
   /** Id tool CI/CD như adapter của UDP: `github-actions`, `gitlab-ci`, … */
   cicdTool: string | null;
@@ -100,6 +109,19 @@ const PYTHON_FRAMEWORKS: [RegExp, string][] = [
 const PYTHON_MANIFEST =
   /^(requirements[^/]*\.txt|pyproject\.toml|Pipfile|setup\.py|setup\.cfg)$/;
 const JAVA_MANIFEST = /^(pom\.xml|build\.gradle(\.kts)?)$/;
+
+/**
+ * [Plan #61 QĐ-10] Ngôn ngữ khác — xét SAU Node.js, Python, Java (thứ tự cũ giữ nguyên: repo hỗn hợp không đổi kết
+ * quả). Chỉ tệp ở thư mục nông (`maxDepth` phần đường dẫn): đó là thứ Buildpacks đọc. .NET thường để project ở
+ * `src/<Tên>/<Tên>.csproj`.
+ */
+const OTHER_LANGUAGES: [RegExp, BuildLanguage, number][] = [
+  [/^go\.mod$/, "go", 2],
+  [/\.(csproj|fsproj|sln)$/, "dotnet", 3],
+  [/^Gemfile$/, "ruby", 2],
+  [/^composer\.json$/, "php", 2],
+  [/^Cargo\.toml$/, "rust", 2],
+];
 const DOCKERFILE = /(^|\/)(Dockerfile|Containerfile)(\.[^/]+)?$/;
 const K8S_MANIFEST = /\.ya?ml$/;
 const SOURCE = /\.(ts|tsx|js|mjs|cjs|py)$/;
@@ -108,6 +130,7 @@ const ENTRY =
 
 interface Evidence {
   runtime: string | null;
+  language: BuildLanguage | null;
   framework: string | null;
   /** Nội dung đã đọc theo đường dẫn */
   texts: Map<string, string>;
@@ -178,17 +201,36 @@ async function gatherEvidence(
     .join("\n");
 
   let runtime: string | null = null;
+  let language: BuildLanguage | null = null;
   let framework: string | null = null;
   if (nodeManifest !== undefined) {
     runtime = "nodejs";
+    language = "nodejs";
     framework = NODE_FRAMEWORKS.find(([dep]) => nodeDeps.has(dep))?.[1] ?? null;
   } else if (pythonManifests.length > 0) {
     runtime = "python";
+    language = "python";
     framework =
       PYTHON_FRAMEWORKS.find(([re]) => re.test(manifestText))?.[1] ?? null;
   } else if (javaManifests.length > 0) {
     runtime = "java";
+    // Maven và Gradle có lệnh test khác nhau; repo có cả hai thì theo tệp nông nhất
+    language = javaManifests[0]?.endsWith("pom.xml")
+      ? "java-maven"
+      : "java-gradle";
     framework = /spring-boot/.test(manifestText) ? "spring-boot" : null;
+  } else {
+    const other = OTHER_LANGUAGES.find(([re, , maxDepth]) =>
+      visible.some((p) => re.test(baseName(p)) && depth(p) <= maxDepth),
+    );
+    if (other !== undefined) {
+      language = other[1];
+      runtime = other[1];
+    } else if (visible.includes("index.html")) {
+      // Trang tĩnh: chỉ HTML ở gốc, không tệp của ngôn ngữ nào
+      language = "static";
+      runtime = "static";
+    }
   }
 
   const sources = visible.filter(
@@ -210,6 +252,7 @@ async function gatherEvidence(
 
   return {
     runtime,
+    language,
     framework,
     texts,
     nodeDeps,
@@ -330,7 +373,7 @@ export async function scanRepository(
           id: "runtime",
           status: "missing",
           detail:
-            "Không nhận diện được ngôn ngữ: không thấy package.json, requirements.txt, pyproject.toml hay pom.xml",
+            "Không nhận diện được ngôn ngữ: không thấy package.json, requirements.txt, pyproject.toml, pom.xml, build.gradle, go.mod, *.csproj, Gemfile, composer.json, Cargo.toml hay index.html ở gốc",
           evidence: [],
           suggestion: {
             text: "Golden Path hỗ trợ Node.js và Python (§16); runtime khác cần tích hợp tay",
@@ -342,17 +385,7 @@ export async function scanRepository(
           detail: `Runtime ${runtime}${ev.framework === null ? "" : ` (${ev.framework})`}`,
           evidence: ev.manifestPaths,
         },
-    finding(
-      "dockerfile",
-      dockerfiles.length > 0,
-      "Có Dockerfile",
-      "Chưa có Dockerfile: pipeline không build được image",
-      dockerfiles,
-      {
-        text: "Thêm Dockerfile nhiều tầng của Golden Path",
-        ...optionalFile(templateFile(runtime, "Dockerfile", context)),
-      },
-    ),
+    packagingFinding(ev.language, runtime, dockerfiles, context),
     finding(
       "metrics-endpoint",
       hasDependency(
@@ -447,6 +480,7 @@ export async function scanRepository(
 
   return {
     runtime,
+    language: ev.language,
     framework: ev.framework,
     cicdTool,
     findings,
@@ -454,6 +488,56 @@ export async function scanRepository(
       findings.find((f) => f.id === "udp-provider")?.status === "ok" &&
       findings.find((f) => f.id === "udp-middleware")?.status === "ok",
     truncated: source.truncated,
+  };
+}
+
+/**
+ * [Plan #61 QĐ-4, QĐ-10] Đóng gói được không — id `dockerfile` giữ nguyên (lần quét đã lưu vẫn đọc được). Có Dockerfile
+ * ⇒ build bằng nó. Không có mà Buildpacks biết ngôn ngữ ⇒ UDP build bằng Buildpacks, Dockerfile Golden Path chỉ là
+ * lựa chọn (muốn tự quyết image nền). Còn lại (Rust, không rõ) ⇒ thiếu: cần Dockerfile.
+ */
+function packagingFinding(
+  language: BuildLanguage | null,
+  runtime: string | null,
+  dockerfiles: string[],
+  context: ScanContext,
+): ScanFinding {
+  const template = templateFile(runtime, "Dockerfile", context);
+  if (dockerfiles.length > 0) {
+    return {
+      id: "dockerfile",
+      status: "ok",
+      detail: "Có Dockerfile: UDP build image bằng Dockerfile (BuildKit)",
+      evidence: dockerfiles,
+    };
+  }
+  if (language !== null && BUILDPACKS_LANGUAGES.includes(language)) {
+    return {
+      id: "dockerfile",
+      status: "ok",
+      detail: `Không có Dockerfile: UDP build image bằng Buildpacks (${language})`,
+      evidence: [],
+      ...(template === undefined
+        ? {}
+        : {
+            suggestion: {
+              text: "Muốn tự quyết image nền: thêm Dockerfile nhiều tầng của Golden Path",
+              file: template,
+            },
+          }),
+    };
+  }
+  return {
+    id: "dockerfile",
+    status: "missing",
+    detail:
+      language === null
+        ? "Chưa có Dockerfile và không nhận diện được ngôn ngữ: Buildpacks không build được"
+        : `Chưa có Dockerfile và Buildpacks không build được ${language}`,
+    evidence: [],
+    suggestion: {
+      text: "Thêm Dockerfile ở gốc repo (hay khai đường Dockerfile trong mục Đóng gói)",
+    },
   };
 }
 

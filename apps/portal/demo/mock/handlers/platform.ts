@@ -1,9 +1,12 @@
+import { buildSettingsSchema } from "@udp/shared-types/build";
 import type {
   CostWire,
   DomainCatalogEntryWire,
   JobDetailWire,
   ProjectDomainWire,
+  RepoScanWire,
 } from "@udp/shared-types/wire";
+import { buildViewOf, repoProfileOf, scanOf } from "../build";
 import { elapsedSeconds, nowIso } from "../clock";
 import type { Db, ProjectRecord } from "../db";
 import { golden } from "../goldens";
@@ -507,12 +510,47 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
       );
       return ok({ ...path, slug: p.project.name });
     })
-    .on("GET", "/projects/:id/repo-scan", (_req, [id = ""]) => {
-      projectOf(db, id);
-      return ok(golden("GET /projects/{id}/repo-scan"));
-    })
-    .on("POST", "/projects/:id/repo-scan", (_req, [id = ""]) => {
-      projectOf(db, id);
-      return ok(golden("POST /projects/{id}/repo-scan"));
+    .on("GET", "/projects/:id/repo-scan", (_req, [id = ""]) =>
+      ok(scanReply(db, projectOf(db, id), "GET /projects/{id}/repo-scan")),
+    )
+    .on("POST", "/projects/:id/repo-scan", (_req, [id = ""]) =>
+      ok(scanReply(db, projectOf(db, id), "POST /projects/{id}/repo-scan")),
+    )
+
+    // ---------------------------------------------------------- [Plan #61] Đóng gói
+    .on("GET", "/projects/:id/build", (_req, [id = ""]) =>
+      ok(buildViewOf(db.projects, projectOf(db, id))),
+    )
+    .on("PUT", "/projects/:id/build", (req, [id = ""]) => {
+      const p = projectOf(db, id);
+      // Cùng schema với Service 1: đường dẫn có .., khoá giả dạng danh tính, trường lạ ⇒ 400
+      const parsed = buildSettingsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new HttpProblem(
+          400,
+          "VALIDATION_FAILED",
+          "Cài đặt build không hợp lệ",
+        );
+      }
+      audit(
+        db,
+        p,
+        "project.build.update",
+        "Project",
+        p.project.id,
+        p.build ?? null,
+        parsed.data,
+      );
+      p.build = parsed.data;
+      return ok(buildViewOf(db.projects, p));
     });
+}
+
+/** Lần quét repo theo hồ sơ của project Import Existing — cùng hồ sơ mà mục Đóng gói đọc */
+function scanReply(db: Db, p: ProjectRecord, route: string): unknown {
+  const reply = golden<{ scan: RepoScanWire | null }>(route);
+  const profile = repoProfileOf(db.projects, p);
+  return reply.scan === null || profile === null
+    ? reply
+    : { scan: scanOf(reply.scan, profile) };
 }

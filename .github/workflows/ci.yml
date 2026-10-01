@@ -238,6 +238,52 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  build-smoke:
+    # [Plan #61] Đóng gói chạy THẬT: build sáu ứng dụng mẫu (Node.js, Python, Go, Maven, .NET bằng Buildpacks; một
+    # Dockerfile bằng BuildKit) bằng ĐÚNG đoạn shell mà pipeline GitHub Actions của UDP sinh, đẩy GHCR bằng
+    # GITHUB_TOKEN, rồi chạy image và gọi /healthz. Không chạy cho pull request: lượt từ fork không có quyền
+    # `packages: write`. Chi phí 0: repo public, GHCR miễn phí cho package công khai.
+    name: build smoke — Dockerfile và Buildpacks thật, đẩy GHCR, chạy image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [node, python, go, java-maven, dotnet, dockerfile]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: sinh đoạn build mà pipeline của UDP chạy
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: pnpm --filter @udp/core-backend exec tsx scripts/build-smoke.ts "ghcr.io/${OWNER,,}/udp-build-smoke" > "$RUNNER_TEMP/build.sh"
+      - name: build và đẩy bằng chính đoạn đó
+        working-directory: services/core-backend/tests/fixtures/build-apps/${{ matrix.app }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          UDP_SMOKE_TAG: ${{ matrix.app }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash "$RUNNER_TEMP/build.sh"
+      - name: chạy image, gọi /healthz
+        run: |
+          IMAGE_REF=$(cat "$RUNNER_TEMP/image-ref")
+          echo "$IMAGE_REF" | grep -Eq '@sha256:[0-9a-f]{64}$'
+          docker run -d --name smoke -p 18080:8080 -e PORT=8080 "$IMAGE_REF"
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:18080/healthz; then exit 0; fi
+            sleep 2
+          done
+          docker logs smoke
+          exit 1
+
   kind:
     # [Plan #50] §13.5 "build image → dựng kind → E2E rút gọn" và làn đêm "benchmark".
     # Chạy ĐÚNG `pnpm deploy:up` mà README hứa với developer (Plan #49, D-P37): build 6

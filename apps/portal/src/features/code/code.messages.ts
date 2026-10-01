@@ -25,7 +25,7 @@ const vi = {
   } satisfies Record<Finding["status"], string>,
   finding: {
     runtime: "Ngôn ngữ",
-    dockerfile: "Dockerfile",
+    dockerfile: "Đóng gói image",
     "metrics-endpoint": "Endpoint /metrics",
     openfeature: "OpenFeature SDK",
     "udp-provider": "Provider của UDP",
@@ -82,7 +82,7 @@ export const codeMessages = defineMessages({
     },
     finding: {
       runtime: "Language",
-      dockerfile: "Dockerfile",
+      dockerfile: "Image packaging",
       "metrics-endpoint": "/metrics endpoint",
       openfeature: "OpenFeature SDK",
       "udp-provider": "UDP provider",

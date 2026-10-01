@@ -22,7 +22,8 @@
     "./domain-api": "./src/domain-api.ts",
     "./provisioning-api": "./src/provisioning-api.ts",
     "./environment-api": "./src/environment-api.ts",
-    "./measurements": "./src/measurements.ts"
+    "./measurements": "./src/measurements.ts",
+    "./build": "./src/build.ts"
   },
   "scripts": {
     "test": "vitest run",

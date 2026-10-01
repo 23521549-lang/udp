@@ -219,3 +219,21 @@ export type {
   CreateSegmentFields,
   UpdateSegmentFields,
 } from "./segment-api.js";
+
+export {
+  BUILD_LANGUAGES,
+  BUILD_STRATEGIES,
+  BUILD_TEXT_RULES,
+  BUILDPACKS_LANGUAGES,
+  buildIdentitySchema,
+  buildSettingsSchema,
+  buildTestSettingSchema,
+  DEFAULT_BUILD_SETTINGS,
+  isSafeBuildPath,
+} from "./build.js";
+export type {
+  BuildIdentityInput,
+  BuildLanguage,
+  BuildSettings,
+  BuildStrategyName,
+} from "./build.js";

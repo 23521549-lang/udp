@@ -124,6 +124,9 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "POST /projects/{id}/repo-scan": wire.repoScanResponseWire,
   "GET /projects/{id}/domains/CICD/pipeline-template":
     wire.pipelineTemplateResponseWire,
+  // [Plan #61] Mục Đóng gói: cài đặt build, dự đoán, việc cần làm, script danh tính
+  "GET /projects/{id}/build": wire.buildViewWire,
+  "PUT /projects/{id}/build": wire.buildViewWire,
   /** CI gọi, không phải Portal — nhưng đi `sendJson` nên cũng có mẫu và schema */
   "POST /webhooks/cicd/{id}/github-actions": wire.deployAcceptedResponseWire,
 

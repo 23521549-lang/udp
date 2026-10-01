@@ -1,4 +1,6 @@
+import type { BuildSettings } from "@udp/shared-types/build";
 import {
+  buildViewWire,
   goldenPathResponseWire,
   repoScanResponseWire,
 } from "@udp/shared-types/wire";
@@ -17,5 +19,12 @@ export const codeApi = {
     api(repoScanResponseWire, `${p(projectId)}/repo-scan`, {
       method: "POST",
       body: token === undefined ? {} : { token },
+    }),
+  /** [Plan #61] Mục Đóng gói: cách UDP build image, việc cần làm, script danh tính build */
+  build: (projectId: string) => api(buildViewWire, `${p(projectId)}/build`),
+  saveBuild: (projectId: string, settings: BuildSettings) =>
+    api(buildViewWire, `${p(projectId)}/build`, {
+      method: "PUT",
+      body: settings,
     }),
 };

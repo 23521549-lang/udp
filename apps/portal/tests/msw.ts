@@ -54,4 +54,8 @@ export const server = setupServer(
   http.get(`${API}/auth/options`, () =>
     HttpResponse.json(golden("GET /auth/options")),
   ),
+  // [Plan #61] Trang Mã nguồn luôn mở mục Đóng gói — mẫu golden; test của mục đó đè bằng ô riêng
+  http.get(`${API}/projects/:id/build`, () =>
+    HttpResponse.json(golden("GET /projects/{id}/build")),
+  ),
 );

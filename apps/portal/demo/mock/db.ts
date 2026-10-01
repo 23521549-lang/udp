@@ -1,3 +1,4 @@
+import type { BuildSettings } from "@udp/shared-types/build";
 import type {
   AdminUserWire,
   AuditEntryWire,
@@ -112,6 +113,8 @@ export interface ProjectRecord {
   teamGrants: TeamGrant[];
   /** [Plan #55] Lời mời đang chờ vào project */
   invitations: ProjectInvitationWire[];
+  /** [Plan #61] Cài đặt build đã lưu — vắng là mặc định (như `projects.build_settings` NULL) */
+  build?: BuildSettings;
 }
 
 export interface RetiredCloud {

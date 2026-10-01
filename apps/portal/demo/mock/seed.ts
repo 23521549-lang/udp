@@ -50,6 +50,7 @@ import type {
   RetiredCloud,
   TeamRecord,
 } from "./db";
+import { seedBuildSettings } from "./build";
 import { DEMO_INVITE_TOKEN } from "./demo-invite";
 import { golden } from "./goldens";
 import { crowd } from "./people";
@@ -4607,6 +4608,8 @@ export function createDb(setup: DemoSetup = DEFAULT_SETUP): Db {
   };
   // Vai của người đang xem đến từ CẢ nhóm: `data-pipeline` hiện ra, `search-service` lên Người duy trì
   refreshMyAccess(db);
+  // [Plan #61] Mục Đóng gói: danh tính có sẵn, test tự khai, test tắt, chiến lược ghim
+  seedBuildSettings(projects);
   return db;
 }
 

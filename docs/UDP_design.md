@@ -676,6 +676,7 @@ erDiagram
         jsonb cluster_access "NEW v4 — ADR-06, cach ket noi cluster"
         int domain_set_version "NEW v4 — optimistic lock cho ca tap domain"
         jsonb repo_scan "v4.11 — ket qua quet repo moi nhat, nullable"
+        jsonb build_settings "v4.12 — cai dat build, nullable"
         timestamp created_at
         timestamp updated_at
         timestamp expires_at "nullable"
@@ -1187,6 +1188,7 @@ CREATE UNIQUE INDEX idx_idempotency_scope
 | cluster_access   | JSONB        | NULLABLE                  | **[NEW v4 — ADR-06]** `{ mode: 'direct' \| 'agent', apiEndpoint, caData, controlPlaneSA }` — **không** chứa token           |
 | domain_set_version | INTEGER    | NOT NULL, DEFAULT 0       | **[NEW v4]** Optimistic lock cho cả tập DomainConfig — xem `DomainConfig`                                                  |
 | repo_scan        | JSONB        | NULLABLE                  | **[v4.11, Plan #48, D-P36]** Kết quả quét repo MỚI NHẤT của Import Existing (§11.2): phát hiện, đề xuất, `flagLevelReady` — thẻ "Sẵn sàng cho flag-level rollout" đọc nó; không lưu token |
+| build_settings   | JSONB        | NULLABLE                  | **[v4.12, Plan #61, D-P54]** Cài đặt build (`buildSettingsSchema`): chiến lược (`auto`/`dockerfile`/`buildpacks`), thư mục build, Dockerfile, ngôn ngữ, bước test (`default`/`custom`/`none`), danh tính build (chỉ mã định danh: ARN vai trò, provider Workload Identity + service account, client/tenant id). NULL = mặc định; không bao giờ chứa khoá |
 | updated_at       | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()   |                                                                                                                           |
 
 ```sql

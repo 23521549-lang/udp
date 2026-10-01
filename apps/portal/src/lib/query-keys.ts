@@ -121,6 +121,8 @@ export const qk = {
   /** [Plan #48] Cây Golden Path và lần quét repo mới nhất (§11) */
   goldenPath: (projectId: string) => ["goldenPath", projectId] as const,
   repoScan: (projectId: string) => ["repoScan", projectId] as const,
+  /** [Plan #61] Mục Đóng gói: cài đặt build, dự đoán, việc cần làm, script danh tính */
+  projectBuild: (projectId: string) => ["projectBuild", projectId] as const,
   /** Plan #38: chi phí THỰC của project; `days` trong key — đổi cửa sổ mà số không đổi là thiếu nó */
   cost: (projectId: string, days: number) => ["cost", projectId, days] as const,
   /** [Plan #53] Sơ đồ kiến trúc — cũng là nguồn của lưới sức khoẻ domain ở Tổng quan */
@@ -208,6 +210,7 @@ export const NOT_ENV_SCOPED = {
   pipelineTemplate: "một pipeline cho MỌI env của project, env chọn theo nhánh",
   goldenPath: "mã nguồn của project, một repo cho mọi env",
   repoScan: "repo của project, một lần quét cho mọi env",
+  projectBuild: "cách build image của project, một cho mọi env",
   cost: "chi phí cả project, chia theo environment ngay trong response",
   architecture:
     "sơ đồ của cả project: một cluster cho mọi env, env là các khung bên trong",

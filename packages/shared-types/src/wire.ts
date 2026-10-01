@@ -18,6 +18,7 @@ import {
   cloudProviderSchema,
   cloudRegionSchema,
 } from "./cloud-api.js";
+import { BUILD_LANGUAGES, buildSettingsSchema } from "./build.js";
 import { capabilityPreferenceSchema } from "./domain-api.js";
 import { PROVISION_BLOCKERS } from "./provisioning-api.js";
 
@@ -1835,6 +1836,8 @@ export const repoScanWire = z
     repoUrl: z.string(),
     host: z.enum(["github", "gitlab"]),
     runtime: z.string().nullable(),
+    /** [Plan #61 QĐ-10] Ngôn ngữ cho đóng gói và bước test; lần quét trước Plan #61 không có trường */
+    language: z.enum(BUILD_LANGUAGES).nullable().optional(),
     framework: z.string().nullable(),
     cicdTool: z.string().nullable(),
     findings: z.array(repoScanFindingWire),
@@ -1848,6 +1851,126 @@ export type RepoScanWire = z.infer<typeof repoScanWire>;
 export const repoScanResponseWire = z
   .object({ scan: repoScanWire.nullable() })
   .strict();
+
+/**
+ * [Plan #61 QĐ-9] `GET` và `PUT /projects/:id/build` — mục "Đóng gói" của trang Mã nguồn. Mọi điều UDP quyết định về
+ * build (chiến lược, ngôn ngữ, bước test, cách đẩy) đi bằng MÃ: Portal viết câu theo ngôn ngữ của người xem.
+ */
+export const REGISTRY_PUSH_KIND_WIRE = [
+  "basic",
+  "github-token",
+  "aws-ecr",
+  "gcp",
+  "azure-acr",
+] as const;
+
+export const BUILD_PREDICTION_REASONS = [
+  "PINNED_DOCKERFILE",
+  "PINNED_BUILDPACKS",
+  "GOLDEN_PATH",
+  "SCAN_DOCKERFILE",
+  "SCAN_BUILDPACKS",
+  "SCAN_NEEDS_DOCKERFILE",
+  "NOT_SCANNED",
+] as const;
+
+const cloudEnum = z.enum(["aws", "gcp", "azure"]);
+
+/** Việc người dùng phải làm để pipeline build và đẩy được — mỗi mã một câu ở Portal */
+export const buildTodoWire = z.discriminatedUnion("code", [
+  z.object({ code: z.literal("ENABLE_CI") }).strict(),
+  z.object({ code: z.literal("ENABLE_REGISTRY") }).strict(),
+  z.object({ code: z.literal("REAPPLY_REGISTRY") }).strict(),
+  z
+    .object({
+      code: z.literal("CI_SECRETS"),
+      ci: z.string(),
+      names: z.array(z.string()),
+    })
+    .strict(),
+  z.object({ code: z.literal("BUILD_IDENTITY"), cloud: cloudEnum }).strict(),
+  z.object({ code: z.literal("CIRCLECI_IDS") }).strict(),
+  z.object({ code: z.literal("NO_CLUSTER") }).strict(),
+  z.object({ code: z.literal("CLUSTER_OTHER_CLOUD") }).strict(),
+  z
+    .object({
+      code: z.literal("TEST_COMMAND"),
+      language: z.enum(BUILD_LANGUAGES),
+    })
+    .strict(),
+  z
+    .object({
+      code: z.literal("NEEDS_DOCKERFILE"),
+      language: z.enum(BUILD_LANGUAGES),
+    })
+    .strict(),
+  z.object({ code: z.literal("DRONE_TRUSTED") }).strict(),
+  z.object({ code: z.literal("TEKTON_RUN") }).strict(),
+]);
+export type BuildTodoWire = z.infer<typeof buildTodoWire>;
+
+export const buildViewWire = z
+  .object({
+    /** Cài đặt hiệu lực (đã điền mặc định) */
+    settings: buildSettingsSchema,
+    /** `linux/amd64` — kiến trúc node mà UDP dựng */
+    platform: z.string(),
+    /** Tool CI/CD đang bật, `null` khi chưa bật */
+    ci: z.string().nullable(),
+    registry: z
+      .object({
+        server: z.string(),
+        push: z.enum(REGISTRY_PUSH_KIND_WIRE),
+        /** Cách đẩy THẬT ở CI đang bật (GHCR ngoài GitHub, ACR từ CircleCI ⇒ basic) */
+        effectivePush: z.enum(REGISTRY_PUSH_KIND_WIRE),
+      })
+      .strict()
+      .nullable(),
+    language: z
+      .object({
+        value: z.enum(BUILD_LANGUAGES),
+        source: z.enum(["settings", "scan", "runtime"]),
+      })
+      .strict(),
+    prediction: z
+      .object({
+        strategy: z.enum(["dockerfile", "buildpacks", "unknown"]),
+        reason: z.enum(BUILD_PREDICTION_REASONS),
+      })
+      .strict(),
+    test: z.discriminatedUnion("kind", [
+      z
+        .object({
+          kind: z.literal("run"),
+          command: z.string(),
+          image: z.string(),
+        })
+        .strict(),
+      z.object({ kind: z.literal("skip") }).strict(),
+      z
+        .object({
+          kind: z.literal("missing"),
+          language: z.enum(BUILD_LANGUAGES),
+        })
+        .strict(),
+    ]),
+    identity: z
+      .object({
+        /** Registry của cloud cần danh tính build */
+        required: z.boolean(),
+        configured: z.boolean(),
+        cloud: cloudEnum.nullable(),
+      })
+      .strict(),
+    /** Script chủ tài khoản cloud chạy một lần — `null` khi không cần hay chưa đủ điều kiện (xem `todo`) */
+    identityScript: z
+      .object({ cloud: cloudEnum, text: z.string() })
+      .strict()
+      .nullable(),
+    todo: z.array(buildTodoWire),
+  })
+  .strict();
+export type BuildViewWire = z.infer<typeof buildViewWire>;
 
 /**
  * `POST /webhooks/cicd/:projectId/:provider` và `POST /projects/:id/deployments/:deploymentId/approve`

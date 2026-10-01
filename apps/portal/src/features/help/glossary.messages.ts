@@ -38,6 +38,8 @@ export const TERMS = [
   "orphan",
   "goldenPath",
   "approval",
+  "buildpacks",
+  "buildIdentity",
 ] as const;
 export type TermKey = (typeof TERMS)[number];
 
@@ -175,6 +177,14 @@ export const glossaryMessages = defineMessages({
         name: "Chờ duyệt",
         def: "Deploy vào environment cần duyệt sẽ dừng cho tới khi người có quyền bấm Duyệt.",
       },
+      buildpacks: {
+        name: "Tự đóng gói (Buildpacks)",
+        def: "Cách build image không cần Dockerfile: Buildpacks tự nhận ngôn ngữ (Node.js, Python, Go, Java, .NET, Ruby, PHP, web tĩnh) và dựng image chạy bằng người dùng thường.",
+      },
+      buildIdentity: {
+        name: "Danh tính build",
+        def: "Vai trò trong cloud của bạn mà CI dùng để đẩy image, qua token ngắn hạn (OIDC). Không có khoá nào được lưu; chỉ đúng repo và nhánh của project dùng được.",
+      },
     } satisfies Record<TermKey, Term>,
   },
   en: {
@@ -304,6 +314,14 @@ export const glossaryMessages = defineMessages({
       approval: {
         name: "Awaiting approval",
         def: "Deploys to an environment that needs approval wait until someone with permission clicks Approve.",
+      },
+      buildpacks: {
+        name: "Automatic packaging (Buildpacks)",
+        def: "Building an image without a Dockerfile: Buildpacks detect the language (Node.js, Python, Go, Java, .NET, Ruby, PHP, static sites) and build an image that runs as a regular user.",
+      },
+      buildIdentity: {
+        name: "Build identity",
+        def: "A role in your cloud that CI uses to push images through short-lived tokens (OIDC). No key is stored; only this project's repository and branches can use it.",
       },
     },
   },

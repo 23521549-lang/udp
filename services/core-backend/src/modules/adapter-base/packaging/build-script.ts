@@ -278,7 +278,8 @@ export function dockerHostBuildLines(
     ...strategyLines(plan),
     ...dockerHostLoginLines(plan, ci),
     'if [ "$UDP_STRATEGY" = dockerfile ]; then',
-    "  docker buildx create --name udp-build --driver docker-container --use >/dev/null",
+    // Máy chạy giữ lại builder (runner tự host, lượt chạy lại): dùng lại thay vì dừng pipeline
+    "  docker buildx create --name udp-build --driver docker-container --use >/dev/null 2>&1 || docker buildx use udp-build",
     [
       "  docker buildx build",
       `--platform ${plan.platform}`,

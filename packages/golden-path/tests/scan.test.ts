@@ -67,7 +67,9 @@ describe("scanRepository (§11.2)", () => {
       framework: "express",
       cicdTool: "gitlab-ci",
     });
-    expect(status(scan, "dockerfile")).toBe("missing");
+    // [Plan #61] Không Dockerfile mà Buildpacks biết Node.js ⇒ đóng gói được; Dockerfile Golden Path là lựa chọn
+    expect(status(scan, "dockerfile")).toBe("ok");
+    expect(scan.language).toBe("nodejs");
     expect(status(scan, "metrics-endpoint")).toBe("ok");
     expect(status(scan, "openfeature")).toBe("missing");
     expect(status(scan, "udp-provider")).toBe("missing");
@@ -130,5 +132,46 @@ describe("scanRepository (§11.2)", () => {
     expect(status(scan, "udp-provider")).toBe("ok");
     expect(scan.truncated).toBe(true);
     expect(scan.flagLevelReady).toBe(false);
+  });
+});
+
+describe("[Plan #61 QĐ-10] ngôn ngữ cho đóng gói", () => {
+  const cases: [string, Record<string, string>, string, string][] = [
+    ["Go", { "go.mod": "module x", "main.go": "package main" }, "go", "ok"],
+    ["Maven", { "pom.xml": "<project/>" }, "java-maven", "ok"],
+    ["Gradle", { "build.gradle.kts": "plugins {}" }, "java-gradle", "ok"],
+    [".NET", { "src/Web/Web.csproj": "<Project/>" }, "dotnet", "ok"],
+    ["Ruby", { Gemfile: "source 'x'", "config.ru": "run x" }, "ruby", "ok"],
+    ["PHP", { "composer.json": "{}" }, "php", "ok"],
+    ["web tĩnh", { "index.html": "<html></html>" }, "static", "ok"],
+    [
+      "Rust",
+      { "Cargo.toml": "[package]", "src/main.rs": "fn main(){}" },
+      "rust",
+      "missing",
+    ],
+  ];
+  for (const [name, files, language, packaging] of cases) {
+    it(`${name}: ngôn ngữ ${language}, đóng gói ${packaging}`, async () => {
+      const scan = await scanRepository(repo(files));
+      expect(scan.language).toBe(language);
+      expect(status(scan, "dockerfile")).toBe(packaging);
+    });
+  }
+
+  it("Rust có Dockerfile ⇒ đóng gói được bằng Dockerfile; Dockerfile là bằng chứng", async () => {
+    const scan = await scanRepository(
+      repo({ "Cargo.toml": "[package]", Dockerfile: "FROM rust" }),
+    );
+    expect(status(scan, "dockerfile")).toBe("ok");
+    expect(scan.findings.find((f) => f.id === "dockerfile")?.evidence).toEqual([
+      "Dockerfile",
+    ]);
+  });
+
+  it("không nhận diện được ⇒ language null, đóng gói thiếu", async () => {
+    const scan = await scanRepository(repo({ "README.md": "# x" }));
+    expect(scan.language).toBeNull();
+    expect(status(scan, "dockerfile")).toBe("missing");
   });
 });

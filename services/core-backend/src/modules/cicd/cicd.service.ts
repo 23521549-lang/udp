@@ -9,6 +9,7 @@ import type {
 import type { Request } from "express";
 import { prisma } from "../../core/db.js";
 import { buildPlanOf } from "../packaging/build-plan.js";
+import { scannedLanguageOf } from "../packaging/scanned-language.js";
 import { API_PREFIX } from "../../core/http/api-prefix.js";
 import { auditEntry } from "../audit/audit.service.js";
 import { bindingsOfProject } from "../capability/capability-binding.repository.js";
@@ -111,6 +112,8 @@ export async function pipelineTemplate(
       select: {
         name: true,
         languageRuntime: true,
+        buildSettings: true,
+        repoScan: true,
         environments: {
           select: { name: true, isProduction: true },
           orderBy: { rank: "asc" },
@@ -150,6 +153,8 @@ export async function pipelineTemplate(
       build: buildPlanOf({
         languageRuntime: project.languageRuntime,
         registry: registryBinding,
+        settings: project.buildSettings,
+        scannedLanguage: scannedLanguageOf(project.repoScan),
       }),
       flagKeys: tracked.map((t) => t.flag.key).sort(),
       rolloutStrategy: bindings.some(

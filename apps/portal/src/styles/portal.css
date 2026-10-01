@@ -687,6 +687,98 @@ details.cardc .q {
   gap: 10px;
 }
 
+/* [Plan #61] Mục Đóng gói của trang Mã nguồn: tóm tắt, việc cần làm, danh tính build, cài đặt build */
+.cardc.packaging {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.packaging-lead {
+  margin: 0;
+  max-width: 72ch;
+}
+/* Bốn ô tóm tắt một hàng ở màn rộng; hai cột ở màn vừa; một cột ở điện thoại */
+.packaging .kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+@media (max-width: 1100px) {
+  .packaging .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .packaging .kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.packaging-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.packaging-row .l {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.packaging-row code {
+  overflow-wrap: anywhere;
+}
+.packaging-todo {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.packaging-todo li + li {
+  margin-top: 4px;
+}
+.packaging-identity,
+.packaging-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.packaging-identity h3,
+.packaging-form h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.packaging-identity p {
+  margin: 0;
+  max-width: 72ch;
+}
+.packaging-form fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.packaging-form .btn {
+  align-self: flex-start;
+}
+.packaging-form select.inp {
+  max-width: 520px;
+}
+.packaging-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .packaging-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /*
  * Một domain trên trang Domain: dòng tiêu đề (công tắc, tên, trạng thái, "Chi tiết"), form cấu hình bên dưới.
  * Trước đây dùng nhầm `.sect` — kiểu của dòng tiêu đề mục, đẩy cả khối sang phải cạnh form.

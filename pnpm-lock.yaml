@@ -459,6 +459,10 @@ importers:
         version: 2.1.9(@types/node@22.20.1)(jsdom@25.0.1)(msw@2.11.3(@types/node@22.20.1)(typescript@5.9.3))
 
   packages/golden-path:
+    dependencies:
+      '@udp/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
     devDependencies:
       '@openfeature/core':
         specifier: ^1.12.0

@@ -23,6 +23,7 @@ import { deploymentRouter } from "../deployment/deployment.controller.js";
 import { projectDomainRouter } from "../domain/project-domain.controller.js";
 import { projectCicdRouter } from "../cicd/cicd.controller.js";
 import { projectGoldenPathRouter } from "../golden-path/golden-path.controller.js";
+import { projectPackagingRouter } from "../packaging/packaging.controller.js";
 import { architectureRouter } from "../architecture/architecture.controller.js";
 import { costRouter } from "../cost/cost.controller.js";
 import { monitoringRouter } from "../monitoring/monitoring.controller.js";
@@ -226,6 +227,8 @@ projectRouter.use("/:id", cloudRouter);
 projectRouter.use("/:id", projectDomainRouter);
 projectRouter.use("/:id", projectCicdRouter);
 projectRouter.use("/:id", projectGoldenPathRouter);
+// [Plan #61] Đóng gói: cài đặt build, dự đoán, danh tính build
+projectRouter.use("/:id", projectPackagingRouter);
 projectRouter.use("/:id", costRouter);
 projectRouter.use("/:id", architectureRouter);
 projectRouter.use("/:id", monitoringRouter);

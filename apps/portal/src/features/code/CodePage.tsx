@@ -25,6 +25,7 @@ import { can } from "../project/roles";
 import { codeApi } from "./code-api";
 import { codeMessages } from "./code.messages";
 import { download, zip } from "./zip";
+import { PackagingPanel } from "./PackagingPanel";
 import { PageHead } from "../../components/PageHead";
 
 /**
@@ -53,6 +54,8 @@ export function CodePage() {
           }
         />
         <div className="page">
+          {/* [Plan #61] Đóng gói: mọi thành viên thấy pipeline build image thế nào */}
+          <PackagingPanel />
           {project.creationMode === "CREATE_NEW" ? (
             <GoldenPathView />
           ) : (

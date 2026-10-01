@@ -242,6 +242,7 @@ describe("/projects/:id/repo-scan (§11.2)", () => {
       framework: "express",
       cicdTool: "github-actions",
       flagLevelReady: false,
+      language: "nodejs",
     });
     const status = Object.fromEntries(
       (res.body.scan.findings as { id: string; status: string }[]).map((f) => [
@@ -249,8 +250,9 @@ describe("/projects/:id/repo-scan (§11.2)", () => {
         f.status,
       ]),
     );
+    // [Plan #61] Repo Node không có Dockerfile vẫn đóng gói được: Buildpacks build, mục "Đóng gói image" là ok
     expect(status).toMatchObject({
-      dockerfile: "missing",
+      dockerfile: "ok",
       "metrics-endpoint": "ok",
       "udp-middleware": "missing",
     });

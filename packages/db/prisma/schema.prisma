@@ -605,6 +605,10 @@ model Project {
   /// [v4.11, Plan #48] Kết quả quét repo mới nhất của Import Existing (§11.2) — không bao giờ chứa token.
   repoScan Json? @map("repo_scan")
 
+  /// [v4.12, Plan #61 QĐ-9] Cài đặt build (`buildSettingsSchema` của @udp/shared-types): chiến lược, thư mục,
+  /// Dockerfile, ngôn ngữ, bước test, danh tính build. NULL = mặc định. Chỉ MÃ định danh, không bao giờ khoá.
+  buildSettings Json? @map("build_settings")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 

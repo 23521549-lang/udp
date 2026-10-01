@@ -110,7 +110,8 @@ describe("quét repo (Import Existing)", () => {
     const results = await screen.findByLabelText("Kết quả quét");
     expect(bodies).toEqual([{ token: "ghp_bi-mat" }]);
     expect(token).toHaveValue("");
-    expect(within(results).getByText("Dockerfile")).toBeInTheDocument();
+    // [Plan #61] Phát hiện "dockerfile" nay nói đóng gói được không (Buildpacks khi không có Dockerfile)
+    expect(within(results).getByText("Đóng gói image")).toBeInTheDocument();
     expect(
       screen.getByLabelText("Sẵn sàng cho flag-level rollout"),
     ).toHaveTextContent(
