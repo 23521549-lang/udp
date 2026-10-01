@@ -183,3 +183,14 @@
   align-items: center;
   gap: 2px;
 }
+
+/*
+ * [Plan #58] Thanh bên dài hơn từ khi có nhóm menu và nút Trợ giúp: trên màn thấp nó cuộn. Ẩn THANH cuộn (người dùng
+ * thấy rối mắt) nhưng vẫn cuộn được bằng con lăn, cảm ứng và bàn phím — Tab tới mục khuất thì trình duyệt tự cuộn.
+ */
+.side {
+  scrollbar-width: none;
+}
+.side::-webkit-scrollbar {
+  display: none;
+}
