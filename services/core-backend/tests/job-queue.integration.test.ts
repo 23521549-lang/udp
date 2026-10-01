@@ -46,6 +46,7 @@ beforeAll(async () => {
   });
   raw.on("error", () => undefined);
   await raw.start();
+  await emptyQueues();
   const owner = await stableOwner(admin);
   projectId = randomUUID();
   await admin.project.create({
@@ -67,6 +68,17 @@ afterAll(async () => {
   await admin.project.deleteMany({ where: { id: projectId } });
   await admin.$disconnect();
 });
+
+/**
+ * Hàng đợi (schema riêng của tệp này) CHỈ còn job của phép kiểm sắp chạy. Hai nguồn rác: lượt chạy bị ngắt giữa chừng
+ * để lại job `created`/`active`; và `reconcileJobs` quét CẢ bảng `provisioning_jobs` (đúng thiết kế) nên trên database
+ * dev dùng chung, hàng QUEUED mồ côi của một lượt test khác bị ngắt được gửi lại vào đây. `fetch` và worker lấy job CŨ
+ * NHẤT, nên không dọn thì phép kiểm nhận nhầm job. CI chạy trên database dùng một lần nên không gặp.
+ */
+async function emptyQueues(): Promise<void> {
+  await raw.deleteAllJobs(QUEUES.jobs);
+  await raw.deleteAllJobs(QUEUES.compensate);
+}
 
 async function job(
   state: "QUEUED" | "CLUSTER",
@@ -111,6 +123,7 @@ describe("đối soát (ADR-02 đk 4)", () => {
 
   it("pg-boss đã bỏ cuộc mà job còn ở CLUSTER, không ai giữ lease ⇒ gửi job BÙ TRỪ, không tự đánh FAILED", async () => {
     const id = await job("CLUSTER");
+    await emptyQueues();
     await queue.enqueueJob(id);
     const [fetched] = await raw.fetch(QUEUES.jobs);
     expect(fetched?.id).toBe(id);
@@ -145,6 +158,7 @@ describe("đối soát (ADR-02 đk 4)", () => {
 
 describe("worker nhận việc", () => {
   it("handler nhận đúng jobId; retryLimit 0 ⇒ lượt đầu cũng là lượt CUỐI", async () => {
+    await emptyQueues();
     const id = randomUUID();
     const seen = new Promise<{ jobId: string; final: boolean }>((resolve) => {
       void queue.workJobs((jobId, attempt) => {
