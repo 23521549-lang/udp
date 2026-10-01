@@ -2399,3 +2399,878 @@ ol.lst {
   font-size: 12px;
   overflow-x: auto;
 }
+
+/* =====================================================================================================================
+ * [Plan #58, gom ở Plan #60 H5] Tối ưu UX của hai khung. Trước nằm ở bốn tệp `ux-*.css` để làm song song; giữ ĐÚNG
+ * thứ tự cũ (khung chung, flag, project, quản trị) ở cuối tệp nên mọi quy tắc vẫn đè quy tắc cũ như trước.
+ * ===================================================================================================================== */
+
+/* ---------- Plan #58: khung chung ---------- */
+/* [Plan #58 UX-19] Giải thích thuật ngữ tại chỗ: nút nhỏ, mở bằng bấm */
+.infotip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.infotip-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -4px -2px;
+  border-radius: 999px;
+  color: var(--ink-3);
+}
+.infotip-btn:hover,
+.infotip-btn[aria-expanded="true"] {
+  color: var(--accent);
+  background: var(--accent-tint);
+}
+.infotip-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: -8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: min(300px, 80vw);
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: var(--shadow-pop);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
+}
+.infotip-pop b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* [Plan #58 UX-39] Gợi ý dưới ô, gắn vào ô qua aria-describedby */
+.field-hint {
+  font-size: 12px;
+}
+
+/* [Plan #58 UX-25] Tiêu đề nhóm trong menu project: nhẹ hơn tên project */
+.grp.sub {
+  padding-top: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.console .grp.sub {
+  color: var(--console-ink-2);
+}
+
+/* [Plan #58 UX-21] Nút Trợ giúp: một mục menu ở cùng chỗ (ngay trên khu tài khoản) trên mọi trang */
+.helpbtn {
+  width: 100%;
+  margin-top: auto;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* [Plan #58 UX-38] Nút đóng của ngăn kéo: chỉ có trên màn hẹp, nơi thanh bên thành ngăn kéo */
+.side-close {
+  display: none;
+}
+@media (max-width: 860px) {
+  .side-close {
+    display: grid;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+  }
+}
+
+/* [Plan #58 UX-21] Hộp thoại dạng ngăn kéo bên phải (trang Trợ giúp) */
+.modal.drawer {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: auto;
+  display: flex;
+  flex-direction: column;
+  width: min(460px, 100%);
+  border-radius: 12px 0 0 12px;
+  transform: translateX(8px);
+}
+.modal.drawer.on {
+  transform: none;
+}
+.modal.drawer .mb {
+  flex: 1;
+  overflow-y: auto;
+}
+.help-sec {
+  margin-bottom: 20px;
+}
+.help-sec h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.help-guide {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.help-guide summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.help-guide ol {
+  margin: 8px 0 4px;
+  padding-left: 20px;
+  color: var(--ink-2);
+}
+.help-guide li + li {
+  margin-top: 4px;
+}
+.help-terms {
+  margin: 12px 0 0;
+}
+.help-terms > div {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.help-terms dt {
+  font-weight: 600;
+}
+.help-terms dd {
+  margin: 2px 0 0;
+  color: var(--ink-2);
+}
+
+/* [Plan #58 UX-40] Câu giải thích dưới công tắc phím tắt trong menu tài khoản */
+.pref-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+}
+
+/* [Plan #58 D-F24] Tiêu đề phụ không dính vào nút ngay phía trên */
+.h2 {
+  margin-top: 18px;
+}
+
+/* Nút Trợ giúp đã đẩy khu tài khoản xuống đáy */
+.helpbtn + .me {
+  margin-top: 0;
+}
+
+/* [Plan #58 UX-39] Nhãn của ô kèm nút giải thích nằm ngoài nhãn */
+.f-l {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/*
+ * [Plan #58] Thanh bên dài hơn từ khi có nhóm menu và nút Trợ giúp: trên màn thấp nó cuộn. Ẩn THANH cuộn (người dùng
+ * thấy rối mắt) nhưng vẫn cuộn được bằng con lăn, cảm ứng và bàn phím — Tab tới mục khuất thì trình duyệt tự cuộn.
+ */
+.side {
+  scrollbar-width: none;
+}
+.side::-webkit-scrollbar {
+  display: none;
+}
+
+/* Kiểu dải báo dùng chung (Plan #60 H5): trung tính và ổn, cạnh cam/đỏ của bản mẫu */
+/* [Plan #58 UX-6, UX-4] Dải báo trung tính (đang chờ, nháp) và ổn (trong ngưỡng) — cam/đỏ chỉ khi cần chú ý */
+.alert.neutral,
+.alert.ok {
+  background: var(--sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.alert.neutral svg {
+  color: var(--ink-3);
+}
+.alert.ok svg {
+  color: var(--green);
+}
+/* Icon của nút (giải thích, hành động) trong dải báo giữ màu của nút, không nhận màu trạng thái của dải */
+.alert .infotip svg,
+.alert .btn svg {
+  color: inherit;
+}
+.alert-act {
+  margin-top: 10px;
+}
+
+/* ---------- Plan #58: flag và rollout ---------- */
+/* [Plan #58] Khu flag: quy tắc mới và quy tắc sửa lỗi của khu này */
+
+/* [Plan #58 UX-1] Dọn dẹp flag: mỗi hàng là nhãn bọc ô chọn — cùng khuôn với `div.it`, không còn dính thành đoạn văn */
+.lst > label.it {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.lst > label.it:last-child {
+  border-bottom: 0;
+}
+
+/* [Plan #58 D-F25] Ô vòng tiến độ của dòng flag: một ô vuông, không lệch theo dòng chữ */
+.row .ring {
+  display: grid;
+  place-items: center;
+}
+/* [Plan #58 UX-4] "Nháp, chưa phục vụ" dài hơn "Bật": cho xuống dòng trong cột thay vì tràn */
+.row .envs span {
+  line-height: 1.25;
+}
+
+/*
+ * [Plan #58 UX-2] Danh sách flag trên điện thoại: GIỮ chữ Bật/Tắt, ẩn cột phụ (mô tả, biểu đồ, lượt, thời gian).
+ * Trước đây cột thời gian rơi xuống dòng sau và trông như thuộc flag kế tiếp. Rollout cùng khuôn lưới.
+ */
+@media (max-width: 860px) {
+  .row {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+  }
+  .row .envs {
+    display: flex;
+  }
+  .row .spark,
+  .row .when {
+    display: none;
+  }
+  .row.ro-row {
+    grid-template-columns: 18px minmax(0, 1fr) auto auto;
+  }
+  .row.ro-row .ro-gap {
+    display: none;
+  }
+}
+
+/* [Plan #58 UX-19] Nút giải thích cạnh tiêu đề mục (không nằm trong tiêu đề: tên tiêu đề chỉ là chữ) */
+.sect > .infotip {
+  margin-left: -4px;
+}
+/* Nhãn ô cộng nút giải thích trên cùng một dòng; nút nằm ngoài `<label>` */
+.f > .lbl-row {
+  display: flex;
+  align-items: center;
+}
+.lbl-row > label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+/* [Plan #58 UX-17] Thân của trạng thái trống: vì sao trống, cần gì trước, một nút */
+.empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+.empty-body > p {
+  margin: 0;
+}
+.empty-body > .btn {
+  margin-top: 6px;
+}
+
+/*
+ * [Plan #58 UX-12] Thanh Lưu nổi ở đáy panel không che ô rule đang focus: vùng cuộn chừa đúng chỗ của thanh
+ * (cao 40px + cách đáy 18px + khe). Cộng thêm chỗ của toast đang hiện (UX-9).
+ */
+.peek .inner {
+  scroll-padding-bottom: calc(72px + var(--toasts-h, 0px));
+}
+
+/*
+ * [Plan #58 UX-9] Toast không che nội dung: `Toaster` ghi chiều cao của chồng toast vào `--toasts-h`; vùng cuộn chừa
+ * khoảng đó ở đáy, nên dòng cuối và ô đang focus cuộn lên được phía trên toast.
+ */
+.scroll {
+  scroll-padding-bottom: var(--toasts-h, 0px);
+}
+.scroll::after {
+  content: "";
+  display: block;
+  height: var(--toasts-h, 0px);
+}
+.toasts {
+  gap: 0;
+}
+.toasts-live {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.toasts-live:first-child:not(:empty) {
+  margin-bottom: 8px;
+}
+.toast .toast-x {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  padding: 0;
+}
+
+/* [Plan #58 UX-41] Link trong thanh đầu trang rollout: gạch chân, không chỉ khác màu (WCAG 1.4.1) */
+.bar a.c3 {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------- Plan #58: project ---------- */
+/* [Plan #58] Khu project: quy tắc mới và quy tắc sửa lỗi của khu này */
+
+/* [Plan #58 UX-11] Lần đầu vào: một câu, ba bước đánh số, một nút */
+.first-run {
+  max-width: 620px;
+  padding: 22px 24px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.first-run .sect {
+  margin-top: 0;
+}
+.first-run > p {
+  margin: 0 0 14px;
+}
+.first-run-steps {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+}
+.first-run-steps li {
+  padding-left: 4px;
+}
+.first-run-steps li::marker {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.first-run-steps b,
+.first-run-steps span {
+  display: block;
+}
+.first-run-steps b {
+  font-weight: 600;
+}
+.first-run > p:last-child {
+  margin: 14px 0 0;
+  font-size: 12px;
+}
+
+/* [Plan #58 UX-12] Thẻ "Bắt đầu" ở Tổng quan: danh sách việc kiểu GOV.UK, trạng thái căn phải */
+.start-card {
+  margin-bottom: 22px;
+}
+.start-card .sect {
+  margin-top: 0;
+}
+.start-card > p {
+  margin: 0 0 8px;
+}
+.start-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.start-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.start-t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin-right: auto;
+}
+/* Việc là link: màu nhấn và gạch chân khi trỏ — người mới phải thấy bấm được (không chỉ khác màu: có mũi tên) */
+.start-t a {
+  font-weight: 500;
+  color: var(--accent-2);
+}
+.start-t a::after {
+  content: " →";
+}
+.start-t a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* [Plan #58 UX-2] Tổng quan trên điện thoại: cột co được dưới bề rộng nội dung, chữ dài xuống dòng thay vì tràn mép */
+.kpi {
+  min-width: 0;
+}
+.kpi .mono,
+.ov-url {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 860px) {
+  .kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ov-envs > li.it {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.ov-envs .lst-name {
+  flex: none;
+  overflow: visible;
+}
+.ov-envs .mono {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* [Plan #58 UX-29] Số thành viên là link tới trang mời */
+.minis a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+}
+.minis a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* [Plan #58 UX-13] Ba bước cài SDK */
+.qs {
+  margin-top: 22px;
+}
+.modal .qs {
+  margin-top: 14px;
+}
+.qs > p {
+  margin: 0 0 10px;
+}
+.qs-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 12px;
+}
+.qs-steps li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.qs-steps li::marker {
+  color: var(--ink-3);
+}
+
+/* [Plan #58 UX-35] Dòng nhật ký: câu, đối tượng, environment, lúc; bảng trước/sau xuống dòng riêng */
+.audit-it {
+  flex-wrap: wrap;
+}
+.audit-it .rowbtn {
+  text-align: left;
+}
+
+/* [Plan #58 UX-39] Ô ngày hết hạn nằm cùng hàng với hai nút */
+.ttl-line {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.ttl-line .f {
+  margin: 0;
+}
+
+/* [Plan #58 UX-15] Thanh năm bước của wizard */
+.wz-steps {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 0 0 18px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.wz-steps li > a,
+.wz-steps li > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+}
+.wz-steps li > a:hover {
+  color: var(--accent);
+}
+.wz-n {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.wz-steps li.done {
+  color: var(--ink-2);
+}
+.wz-steps li.done .wz-n {
+  box-shadow: none;
+  background: var(--sunk);
+}
+.wz-steps li[aria-current="step"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+.wz-steps li[aria-current="step"] .wz-n {
+  box-shadow: none;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+/* Quay lại đứng bên trái, việc tiếp theo bên phải */
+.wizard-nav > .wz-back {
+  margin-right: auto;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 4px;
+}
+.title-row .title {
+  margin: 0;
+}
+
+/* [Plan #58 UX-15] Thứ tự dựng gọn trong một mục mở được */
+.plan-details {
+  margin: 4px 0 18px;
+}
+.plan-details > summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.plan-details[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* [Plan #58 UX-16] Việc bên cloud thành các bước đánh số */
+.cloud-steps {
+  margin: 0;
+  padding-left: 20px;
+}
+.cloud-steps > li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.cloud-steps > li::marker {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.cloud-steps p {
+  margin: 0;
+}
+.cloud-steps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* [Plan #58 UX-14] Chọn domain: câu dẫn, gói khuyến nghị, một câu công dụng mỗi domain */
+.dom-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.dom-intro p {
+  margin: 0;
+  max-width: 68ch;
+}
+.dom-starter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.dom-purpose {
+  margin: -6px 0 0;
+  max-width: 68ch;
+}
+
+/* [Plan #58 a11y] Tiêu đề của panel bên là heading, cùng cỡ chữ với nhãn đậm cũ */
+.peek-h {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Environment trong sơ đồ tổng quan: h3 (trước là h4), giữ nguyên kiểu */
+.sys-env h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* [Plan #58 UX-17] Trạng thái trống: câu vì sao (cần gì trước) và nút đi tiếp */
+.empty-why {
+  margin: 0 auto;
+  max-width: 56ch;
+}
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+/* ---------- Plan #58: Bảng điều khiển ---------- */
+/* [Plan #58] Khu admin: quy tắc mới và quy tắc sửa lỗi của khu này */
+
+/*
+ * [Plan #58 UX-3] Danh sách job lỗi bị căn giữa: `.lst > li.it` (portal.css) đặt `align-items: center` và thắng
+ * `.job-it` vì độ ưu tiên cao hơn. Hàng job là khối xếp dọc, căn trái.
+ */
+.lst > li.job-it {
+  align-items: stretch;
+  gap: 6px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.lst > li.job-it.on {
+  background: var(--active);
+}
+/* `.lst a` của bản mẫu biến MỌI link trong danh sách thành một hàng đệm: tên project là link trong dòng */
+.lst .job-h a.job-p {
+  display: inline;
+  padding: 0;
+  border: 0;
+  font-weight: 600;
+}
+.lst .job-h a.job-p:hover {
+  background: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* [Plan #58 UX-26] Huy hiệu số của menu: việc đang tốn tiền của khách mang sắc lỗi */
+.nv .n.hot,
+.seg .seg-n.hot {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--red-soft);
+  color: var(--red-ink);
+  font-weight: 600;
+}
+/* Số trên tab (UX-28) */
+.seg .seg-n {
+  margin-left: 2px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* [Plan #58 UX-27] Dải "Cần xử lý": icon mang mức, chữ giữ màu đọc được và được xuống dòng */
+.attn {
+  margin-bottom: 8px;
+}
+.attn .sl {
+  white-space: normal;
+}
+.attn-list {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line);
+  background: var(--raised);
+}
+.attn-it {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.attn-it:last-child {
+  border-bottom: 0;
+}
+.attn-it .sl {
+  align-items: flex-start;
+  color: var(--ink);
+  font-size: 13px;
+}
+.attn-it .sl svg.i {
+  flex: none;
+  margin-top: 1px;
+}
+.attn-it.error .sl svg.i {
+  color: var(--red-ink);
+}
+.attn-it.warn .sl svg.i {
+  color: var(--amber-ink);
+}
+.attn-act {
+  margin-left: auto;
+  flex: none;
+  white-space: nowrap;
+}
+.attn-act a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-weight: 500;
+}
+@media (max-width: 640px) {
+  .attn-it {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .attn-act {
+    margin-left: 23px;
+  }
+}
+
+/* Tín hiệu xanh gọn thành một dòng; nút "Xem chi tiết" ngay dưới */
+.sig-green {
+  margin-bottom: 6px;
+}
+.sig-more {
+  margin: 0 0 18px;
+  font-size: 12.5px;
+}
+
+/* Ba số ở đầu trang là link */
+.console .minis a {
+  color: inherit;
+}
+.console .minis a:hover {
+  color: var(--accent);
+}
+
+/* [Plan #58 UX-34] Tiêu đề cột sắp được */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+}
+.th-sort .i {
+  color: var(--ink-4);
+}
+.th-sort:hover,
+.th-sort.on,
+.th-sort.on .i {
+  color: var(--ink);
+}
+.dtable th.num .th-sort {
+  flex-direction: row-reverse;
+}
+/* Dòng đang mở trong panel */
+.console .dtable tbody tr.on {
+  background: var(--active);
+}
+.console .dtable tbody th a {
+  color: var(--ink);
+}
+.console .dtable tbody th a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/*
+ * Tên dài (project, email) không bẻ giữa dấu gạch nối: bảng cuộn ngang thay vì cột tên cao ba dòng. Cột thứ hai là
+ * trạng thái hay chi phí, nên trên điện thoại điều quan trọng vẫn nằm trong màn đầu, cạnh tên (UX-34).
+ */
+.console .dtable tbody th[scope="row"] {
+  white-space: nowrap;
+}
+.you {
+  font-weight: 400;
+}
+
+/* [Plan #58 UX-33] Id trên cloud kèm nút sao chép và link console */
+.orphan-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 260px;
+}
+.orphan-id > .mono {
+  min-width: 0;
+  margin-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* [Plan #58 UX-32] Panel project */
+.peek .ph-close {
+  margin-left: auto;
+}
+.peek .ph b {
+  min-width: 0;
+}
+.peek-job .job-h {
+  margin: 0 0 6px;
+}
+.peek-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.peek-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  border-bottom: 1px solid var(--line);
+}
+.peek-list li:last-child {
+  border-bottom: 0;
+}
+.peek-list li > :last-child {
+  margin-left: auto;
+  flex: none;
+}
+
+/* [Plan #58 UX-41] Phím tắt trên nền tối của thanh bên: theo màu chữ của khung, không nền sáng riêng (tương phản) */
+.console .searchbtn kbd {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--console-line);
+  color: inherit;
+}
+/* Nút chép và mở console không bị co dưới 24px khi mã tài nguyên dài (WCAG 2.5.8) */
+.orphan-id > .ib {
+  flex: none;
+}

@@ -174,7 +174,7 @@ describe("[Plan #58 UX-1] trang Dọn dẹp flag", () => {
     const list = await screen.findByRole("list", { name: "Flag cần dọn" });
     const rows = within(list).getAllByRole("listitem");
     expect(rows.length).toBeGreaterThan(0);
-    // Khớp đúng bộ chọn của kiểu hàng (`.lst > label.it`, ux-flag.css)
+    // Khớp đúng bộ chọn của kiểu hàng (`.lst > label.it`, portal.css)
     for (const r of rows) {
       expect(r.parentElement).toHaveClass("lst");
       expect(r.tagName).toBe("LABEL");

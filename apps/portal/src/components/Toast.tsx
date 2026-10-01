@@ -115,7 +115,7 @@ function ToastView({ item }: { item: ToastItem }) {
 
 /**
  * [Plan #58 UX-9] Toast không che nội dung: chiều cao của chồng toast ghi vào `--toasts-h` trên `<html>`, và vùng
- * cuộn chừa đúng khoảng đó ở đáy (`ux-flag.css`) — dòng cuối và ô đang focus cuộn lên được phía trên toast.
+ * cuộn chừa đúng khoảng đó ở đáy (`portal.css`, mục flag của Plan #58) — dòng cuối và ô đang focus cuộn lên được phía trên toast.
  */
 function useToastSpace(ref: RefObject<HTMLElement | null>): void {
   useEffect(() => {

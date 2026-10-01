@@ -10,7 +10,6 @@ import { bootstrapAuth } from "./features/auth/session";
 import { createQueryClient } from "./lib/query-client";
 import "./styles/prototype.css";
 import "./styles/portal.css";
-import "./styles/ux.css";
 
 /**
  * Khởi động: xác định phiên TRƯỚC khi dựng router (§10.3 "loading gate"). Guard của
