@@ -78,6 +78,8 @@ export function quickstartCode(
           'import { OFREPWebProvider } from "@openfeature/ofrep-web-provider";',
           "",
           "await OpenFeature.setProviderAndWait(",
+          // [Plan #60 H7] Đã đối chiếu với gói phát hành: @openfeature/ofrep-web-provider 0.4.3 (ofrep-core 2.3.0)
+          // khai `headers?: [string, string][]`; Service 2 đòi `Authorization: Bearer <key client>` (sdk-key.guard)
           "  new OFREPWebProvider({",
           `    baseUrl: "${host}",`,
           '    headers: [["Authorization", "Bearer " + UDP_CLIENT_KEY]],',
