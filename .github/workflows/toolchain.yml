@@ -1,0 +1,30 @@
+name: Toolchain
+
+# [Plan #61 QĐ-13] Kiểm phiên bản công cụ mà pipeline UDP sinh ra ghim (`packages/config/src/build-toolchain.ts`,
+# `FROM` của Dockerfile Golden Path): bản vá cùng dòng, tag bị đẩy lại (bản dựng lại có bản vá), ghim hỏng. Chỉ ĐỌC
+# registry và GitHub, không sửa gì: đỏ khi có việc cần làm, bảng kết quả ở tóm tắt của lượt chạy. Dòng mới hơn (Node 22
+# ⇒ 26) chỉ để biết — nâng dòng là một quyết định riêng. Thứ Hai 02:00 UTC.
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  toolchain-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `packageManager` của package.json là nguồn duy nhất của phiên bản pnpm (xem ci.yml)
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm toolchain:check
+        env:
+          # Giới hạn gọi API của GitHub cao hơn gọi ẩn danh; chỉ đọc bản phát hành công khai
+          GITHUB_TOKEN: ${{ github.token }}

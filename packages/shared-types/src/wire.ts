@@ -939,6 +939,8 @@ export const deploymentWire = z
     imageTag: z.string().nullable(),
     commitSha: z.string().nullable(),
     triggeredBy: z.enum(["WEBHOOK", "MANUAL", "ROLLBACK", "AUTO"]),
+    /** [Plan #61 QĐ-13] Lần deploy do rebase theo lịch: cùng commit, lớp hệ điều hành mới */
+    rebase: z.boolean(),
     rolloutSessionId: uuid.nullable(),
     restoresDeploymentId: uuid.nullable(),
     startedAt: isoDateTime,
@@ -1967,6 +1969,20 @@ export const buildViewWire = z
       .object({ cloud: cloudEnum, text: z.string() })
       .strict()
       .nullable(),
+    /**
+     * [Plan #61 QĐ-13] Lịch vá image nền (rebase) hằng ngày, giờ UTC — `null` khi chiến lược ghim Dockerfile.
+     * `schedule`: lịch nằm sẵn trong tệp pipeline (GitHub Actions, Jenkins), phải tạo trong cài đặt của CI (GitLab,
+     * CircleCI, Drone), hay tự lập (Tekton chưa có Triggers).
+     */
+    rebase: z
+      .object({
+        hour: z.number().int().min(0).max(23),
+        minute: z.number().int().min(0).max(59),
+        cron: z.string(),
+        schedule: z.enum(["pipeline", "ci-settings", "manual"]),
+      })
+      .strict()
+      .nullable(),
     todo: z.array(buildTodoWire),
   })
   .strict();
@@ -1976,12 +1992,26 @@ export type BuildViewWire = z.infer<typeof buildViewWire>;
  * `POST /webhooks/cicd/:projectId/:provider` và `POST /projects/:id/deployments/:deploymentId/approve`
  * — webhook nhận xong trả ngay, việc áp và theo dõi chạy ở hàng đợi `udp-deploy`.
  */
-export const deployAcceptedResponseWire = z
-  .object({
-    deploymentId: uuid,
-    status: z.enum(["duplicate", "failure-recorded", "pending", "started"]),
-  })
-  .strict();
+export const deployAcceptedResponseWire = z.union([
+  z
+    .object({
+      deploymentId: uuid,
+      status: z.enum(["duplicate", "failure-recorded", "pending", "started"]),
+    })
+    .strict(),
+  /**
+   * [Plan #61 QĐ-13] Lượt rebase không thành lần deploy: production đã chạy đúng image này (`unchanged`), hay đang ở
+   * lần deploy chưa xong / commit khác / chưa deploy lần nào (`skipped` + lý do). Không ghi sự kiện nào.
+   */
+  z.object({ deploymentId: uuid, status: z.literal("unchanged") }).strict(),
+  z
+    .object({
+      deploymentId: uuid.nullable(),
+      status: z.literal("skipped"),
+      reason: z.enum(["NOT_DEPLOYED", "NOT_SETTLED", "OTHER_IMAGE"]),
+    })
+    .strict(),
+]);
 
 export type CicdStatusWire = z.infer<typeof cicdStatusResponseWire>["cicd"];
 export type CicdSecretResponseWire = z.infer<typeof cicdSecretResponseWire>;

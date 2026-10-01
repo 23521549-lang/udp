@@ -1,8 +1,9 @@
 import { z } from "zod";
-import type {
-  CicdDomainAdapter,
-  PipelineStep,
-  PipelineTemplateParams,
+import {
+  rebaseScheduleOf,
+  type CicdDomainAdapter,
+  type PipelineStep,
+  type PipelineTemplateParams,
 } from "@udp/adapter-core";
 import {
   createCicdAdapter,
@@ -19,10 +20,13 @@ import {
   environmentExpr,
   fillTemplate,
   notifyScript,
+  rebaseNotifyVars,
+  rebaseTimeOf,
   templateValues,
   TEST_IN_CONTAINER,
 } from "../../adapter-base/pipeline-template.js";
 import { dockerHostBuildLines } from "../../adapter-base/packaging/build-script.js";
+import { dockerHostRebaseLines } from "../../adapter-base/packaging/rebase-script.js";
 
 /**
  * Adapter CircleCI (§5.5 CI/CD, Plan #36) — lớp nền mô tả + lớp bọc CI/CD.
@@ -104,47 +108,100 @@ const stepRuns = (steps: readonly PipelineStep[]): string[] =>
  * Executor `machine`: Docker chạy ngay trên máy của job. Với `docker` + `setup_remote_docker` thì
  * engine ở máy khác và `docker run -v` không thấy thư mục làm việc — bước của domain khác hỏng.
  */
-const config = (params: PipelineTemplateParams): string[] => [
-  "# .circleci/config.yml — sinh bởi UDP (Golden Path, §11)",
-  "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
-  "version: 2.1",
-  "jobs:",
-  "  build-and-deploy:",
+/**
+ * [Plan #61 QĐ-13] Job của lượt theo lịch (Project Settings, Triggers, nhánh `main`): rebase image Buildpacks của commit
+ * đầu `main` rồi báo UDP (`kind: rebase`). Không phải Buildpacks ⇒ đoạn shell dừng xanh trước bước báo.
+ */
+const rebaseJob = (params: PipelineTemplateParams): string[] => [
+  "  rebase:",
   "    machine:",
   "      image: ubuntu-2204:current",
-  "    environment:",
-  '      UDP_TRACKED_FLAGS: "%FLAGS%"',
   "    steps:",
-  // Bước ĐẦU: `BASH_ENV` đưa hai biến vào mọi bước sau, kể cả bước báo UDP
-  "      - run: |",
-  `          echo "export UDP_ENVIRONMENT=${environmentExpr("$CIRCLE_BRANCH")}" >> "$BASH_ENV"`,
-  '          echo "export IMAGE_REF=%IMAGE%:$CIRCLE_SHA1" >> "$BASH_ENV"',
   "      - checkout",
-  `      - run: ${TEST_IN_CONTAINER}`,
-  ...stepRuns(stepsOf(params, "before-build")),
   "      - run:",
-  "          name: Build và đẩy image",
+  "          name: Rebase image nền và báo UDP",
   "          command: |",
   ...[
-    ...dockerHostBuildLines(params.build, "circleci", {
+    "COMMIT_SHA=$CIRCLE_SHA1 PIPELINE_ID=$CIRCLE_WORKFLOW_ID",
+    "REPO=$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME ACTOR=$CIRCLE_USERNAME",
+    ...dockerHostRebaseLines(params.build, "circleci", {
       image: "%IMAGE%",
       commit: "$CIRCLE_SHA1",
-      tmp: "/tmp/udp-build",
+      tmp: "/tmp/udp-rebase",
     }),
-    // [Plan #61 QĐ-7] Bước sau build và bước báo UDP dùng đúng digest vừa đẩy
-    'echo "export IMAGE_REF=$UDP_IMAGE_REF" >> "$BASH_ENV"',
+    ...rebaseNotifyVars("$CIRCLE_BRANCH"),
+    ...notifyScript('-H "circleci-signature: v1=$SIG"'),
   ].map((line) => `            ${line}`),
-  ...stepRuns(stepsOf(params, "after-build")),
-  ...notifyStep("success", "on_success"),
-  ...notifyStep("failure", "on_fail"),
-  "workflows:",
-  "  udp:",
-  "    jobs:",
-  "      - build-and-deploy:",
-  "          filters:",
-  "            branches:",
-  "              only: [%BRANCHES%]",
 ];
+
+/** Điều kiện lượt theo lịch — `pipeline.trigger_source` đã ngừng hỗ trợ từ 01/08/2026, dùng `pipeline.trigger.type` */
+const SCHEDULED = "equal: [schedule, << pipeline.trigger.type >>]";
+
+const config = (params: PipelineTemplateParams): string[] => {
+  const schedule = rebaseScheduleOf(params.build, params.projectSlug);
+  return [
+    "# .circleci/config.yml — sinh bởi UDP (Golden Path, §11)",
+    "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
+    ...(schedule === null
+      ? []
+      : [
+          `# [Plan #61 QĐ-13] Vá image nền: thêm lịch ở Project Settings, Triggers — nhánh main, mỗi ngày ${rebaseTimeOf(schedule)} UTC`,
+        ]),
+    "version: 2.1",
+    "jobs:",
+    "  build-and-deploy:",
+    "    machine:",
+    "      image: ubuntu-2204:current",
+    "    environment:",
+    '      UDP_TRACKED_FLAGS: "%FLAGS%"',
+    "    steps:",
+    // Bước ĐẦU: `BASH_ENV` đưa hai biến vào mọi bước sau, kể cả bước báo UDP
+    "      - run: |",
+    `          echo "export UDP_ENVIRONMENT=${environmentExpr("$CIRCLE_BRANCH")}" >> "$BASH_ENV"`,
+    '          echo "export IMAGE_REF=%IMAGE%:$CIRCLE_SHA1" >> "$BASH_ENV"',
+    "      - checkout",
+    `      - run: ${TEST_IN_CONTAINER}`,
+    ...stepRuns(stepsOf(params, "before-build")),
+    "      - run:",
+    "          name: Build và đẩy image",
+    "          command: |",
+    ...[
+      ...dockerHostBuildLines(params.build, "circleci", {
+        image: "%IMAGE%",
+        commit: "$CIRCLE_SHA1",
+        tmp: "/tmp/udp-build",
+      }),
+      // [Plan #61 QĐ-7] Bước sau build và bước báo UDP dùng đúng digest vừa đẩy
+      'echo "export IMAGE_REF=$UDP_IMAGE_REF" >> "$BASH_ENV"',
+    ].map((line) => `            ${line}`),
+    ...stepRuns(stepsOf(params, "after-build")),
+    ...notifyStep("success", "on_success"),
+    ...notifyStep("failure", "on_fail"),
+    ...(schedule === null ? [] : rebaseJob(params)),
+    "workflows:",
+    "  udp:",
+    ...(schedule === null
+      ? []
+      : ["    when:", "      not:", `        ${SCHEDULED}`]),
+    "    jobs:",
+    "      - build-and-deploy:",
+    "          filters:",
+    "            branches:",
+    "              only: [%BRANCHES%]",
+    ...(schedule === null
+      ? []
+      : [
+          "  udp-rebase:",
+          "    when:",
+          `      ${SCHEDULED}`,
+          "    jobs:",
+          "      - rebase:",
+          "          filters:",
+          "            branches:",
+          "              only: [main]",
+        ]),
+  ];
+};
 
 const adapter: CicdDomainAdapter = createCicdAdapter({
   base,

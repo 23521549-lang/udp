@@ -217,3 +217,36 @@ describe("máy ảo công khai (Plan #52)", () => {
     expect(deployText).not.toMatch(/StrictHostKeyChecking=(no|accept-new)/);
   });
 });
+
+/** [Plan #61 QĐ-13] Kiểm phiên bản công cụ ghim: workflow riêng, theo tuần, chỉ đọc, đỏ khi có việc cần làm */
+describe("Toolchain (toolchain:check)", () => {
+  const toolchain = parse(
+    readFileSync(resolve(root, ".github/workflows/toolchain.yml"), "utf8"),
+  ) as Workflow & { permissions?: Record<string, string> };
+  const rootPackage = JSON.parse(
+    readFileSync(resolve(root, "package.json"), "utf8"),
+  ) as { scripts: Record<string, string> };
+
+  it("chạy thứ Hai hằng tuần và chạy tay được; không chạy theo push hay PR", () => {
+    expect(toolchain.on).toEqual({
+      schedule: [{ cron: "0 2 * * 1" }],
+      workflow_dispatch: null,
+    });
+  });
+
+  it("chỉ đọc mã; gọi đúng lệnh gốc với GITHUB_TOKEN cho API GitHub", () => {
+    expect(toolchain.permissions).toEqual({ contents: "read" });
+    const check = toolchain.jobs["toolchain-check"];
+    const step = check?.steps.find((s) => s.run === "pnpm toolchain:check");
+    expect(step).toBeDefined();
+    expect((step as Step & { env?: Record<string, string> }).env).toEqual({
+      GITHUB_TOKEN: "${{ github.token }}",
+    });
+    expect(rootPackage.scripts["toolchain:check"]).toBe(
+      "tsx packages/config/scripts/toolchain-check.ts",
+    );
+    expect(
+      existsSync(resolve(root, "packages/config/scripts/toolchain-check.ts")),
+    ).toBe(true);
+  });
+});

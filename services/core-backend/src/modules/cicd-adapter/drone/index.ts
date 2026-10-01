@@ -1,8 +1,9 @@
 import { z } from "zod";
-import type {
-  CicdDomainAdapter,
-  PipelineStep,
-  PipelineTemplateParams,
+import {
+  rebaseScheduleOf,
+  type CicdDomainAdapter,
+  type PipelineStep,
+  type PipelineTemplateParams,
 } from "@udp/adapter-core";
 import {
   createCicdAdapter,
@@ -19,6 +20,7 @@ import {
   environmentOfBranch,
   fillTemplate,
   notifyScript,
+  rebaseNotifyVars,
   templateValues,
 } from "../../adapter-base/pipeline-template.js";
 import {
@@ -30,6 +32,7 @@ import {
   type BuildContainer,
 } from "../../adapter-base/packaging/build-script.js";
 import { buildNamespaceCompanion } from "../../adapter-base/packaging/build-namespace.js";
+import { inClusterRebaseContainers } from "../../adapter-base/packaging/rebase-script.js";
 import { BUILD_TOOLCHAIN } from "@udp/config";
 
 /** Hai volume tạm của pod: thư mục làm việc của build và thông tin đăng nhập registry */
@@ -208,37 +211,93 @@ const buildSteps = (containers: readonly BuildContainer[]): string[] =>
     ...c.script.map((line) => `        ${line}`),
   ]);
 
-const pipeline = (params: PipelineTemplateParams): string[] => [
-  "# .drone.yml — sinh bởi UDP (Golden Path, §11)",
-  "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
+/** Tên cron Drone kích lượt rebase — người dùng tạo bằng `drone cron add … udp-rebase` (Portal chỉ lệnh) */
+const REBASE_CRON = "udp-rebase";
+
+/**
+ * [Plan #61 QĐ-13] Pipeline thứ hai của tệp: chỉ chạy ở sự kiện `cron` tên `udp-rebase` (nhánh `main`). Rebase image
+ * Buildpacks của commit đầu `main`; bước báo chỉ gửi khi đã ra image mới (`/udp/out/image-ref`).
+ */
+const rebasePipeline = (params: PipelineTemplateParams): string[] => [
+  "---",
   "kind: pipeline",
   "type: kubernetes",
-  "name: udp",
+  `name: ${REBASE_CRON}`,
   `service_account_name: ${BUILDER_SERVICE_ACCOUNT}`,
   "trigger:",
-  "  branch: [%BRANCHES%]",
-  "environment:",
-  '  UDP_TRACKED_FLAGS: "%FLAGS%"',
+  "  event: [cron]",
+  `  cron: [${REBASE_CRON}]`,
+  "  branch: [main]",
   "volumes:",
   "  - name: udp",
   "    temp: {}",
   "  - name: udp-auth",
   "    temp: {}",
   "steps:",
-  "  - name: test",
-  "    image: %TEST_IMAGE%",
-  '    commands: ["%TEST%"]',
-  ...stepSteps(stepsOf(params, "before-build")),
   ...buildSteps(
-    inClusterBuildContainers(params.build, "drone", {
+    inClusterRebaseContainers(params.build, "drone", {
       image: "%IMAGE%",
       commit: "$DRONE_COMMIT_SHA",
     }),
   ),
-  ...stepSteps(stepsOf(params, "after-build")),
-  ...notifyStep("success"),
-  ...notifyStep("failure"),
+  "  - name: notify-udp-rebase",
+  `    image: ${BUILD_TOOLCHAIN.images.alpine}`,
+  ...VOLUME_MOUNTS,
+  "    environment:",
+  "      UDP_WEBHOOK_URL: { from_secret: udp_webhook_url }",
+  "      UDP_WEBHOOK_SECRET: { from_secret: udp_webhook_secret }",
+  "    commands:",
+  "      - |",
+  ...[
+    `[ -f ${WORK_DIR}/out/image-ref ] || { echo "Khong co image moi: khong bao UDP"; exit 0; }`,
+    "apk add --no-cache jq curl openssl",
+    "COMMIT_SHA=$DRONE_COMMIT_SHA PIPELINE_ID=$DRONE_BUILD_NUMBER REPO=$DRONE_REPO ACTOR=drone-cron",
+    ...rebaseNotifyVars("$DRONE_BRANCH", `"$(cat ${WORK_DIR}/out/image-ref)"`),
+    ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"'),
+  ].map((line) => `        ${line}`),
 ];
+
+const pipeline = (params: PipelineTemplateParams): string[] => {
+  const schedule = rebaseScheduleOf(params.build, params.projectSlug);
+  return [
+    "# .drone.yml — sinh bởi UDP (Golden Path, §11)",
+    "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
+    ...(schedule === null
+      ? []
+      : [
+          `# [Plan #61 QĐ-13] Vá image nền: drone cron add <owner/repo> ${REBASE_CRON} "0 ${schedule.cron}" --branch main (UTC)`,
+        ]),
+    "kind: pipeline",
+    "type: kubernetes",
+    "name: udp",
+    `service_account_name: ${BUILDER_SERVICE_ACCOUNT}`,
+    "trigger:",
+    "  branch: [%BRANCHES%]",
+    ...(schedule === null ? [] : ["  event:", "    exclude: [cron]"]),
+    "environment:",
+    '  UDP_TRACKED_FLAGS: "%FLAGS%"',
+    "volumes:",
+    "  - name: udp",
+    "    temp: {}",
+    "  - name: udp-auth",
+    "    temp: {}",
+    "steps:",
+    "  - name: test",
+    "    image: %TEST_IMAGE%",
+    '    commands: ["%TEST%"]',
+    ...stepSteps(stepsOf(params, "before-build")),
+    ...buildSteps(
+      inClusterBuildContainers(params.build, "drone", {
+        image: "%IMAGE%",
+        commit: "$DRONE_COMMIT_SHA",
+      }),
+    ),
+    ...stepSteps(stepsOf(params, "after-build")),
+    ...notifyStep("success"),
+    ...notifyStep("failure"),
+    ...(schedule === null ? [] : rebasePipeline(params)),
+  ];
+};
 
 const adapter: CicdDomainAdapter = createCicdAdapter({
   base,

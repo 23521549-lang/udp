@@ -8,6 +8,9 @@ type Reason = BuildViewWire["prediction"]["reason"];
 type Strategy = BuildViewWire["settings"]["strategy"];
 type Source = BuildViewWire["language"]["source"];
 
+/** Câu chỉ cách đặt lịch rebase của một CI: biểu thức cron và giờ `HH:MM` (UTC) */
+export type RebaseHow = (cron: string, time: string) => string;
+
 /** [Plan #61] Chữ của mục Đóng gói (trang Mã nguồn) — mọi quyết định của máy chủ đến bằng MÃ, câu viết ở đây */
 const vi = {
   title: "Đóng gói container",
@@ -63,6 +66,23 @@ const vi = {
   testSkip: "Tắt trong cài đặt build",
   testMissing: (language: string) => `Chưa có lệnh test cho ${language}`,
   testImage: (image: string) => `trong ${image}`,
+  // [Plan #61 QĐ-13] Vá image nền theo lịch
+  rebase: "Vá image nền",
+  rebaseWhen: (time: string) => `Mỗi ngày lúc ${time} UTC`,
+  rebaseHow: {
+    "github-actions": () => "Lịch có sẵn trong tệp workflow.",
+    jenkins: () => "Lịch có sẵn trong Jenkinsfile, chỉ chạy ở nhánh main.",
+    "gitlab-ci": (cron: string) =>
+      `Tạo lịch ở Build, Pipeline schedules: nhánh main, cron "${cron}", múi giờ UTC.`,
+    circleci: (_cron: string, time: string) =>
+      `Tạo lịch ở Project Settings, Triggers: nhánh main, mỗi ngày lúc ${time} UTC.`,
+    drone: (cron: string) =>
+      `Tạo lịch: drone cron add <owner/repo> udp-rebase "0 ${cron}" --branch main`,
+    tekton: () =>
+      "Tekton chưa có lịch trong UDP: chạy Pipeline rebase (lệnh tkn ở đầu tệp pipeline) theo lịch của bạn.",
+  } satisfies Record<string, RebaseHow>,
+  rebaseOff:
+    "Chiến lược ghim Dockerfile: lấy bản vá của image nền bằng cách cập nhật FROM rồi build lại.",
   todoTitle: "Việc cần làm để pipeline build và đẩy được image",
   allSet: "Không còn việc gì: pipeline build và đẩy được image.",
   todo: {
@@ -208,6 +228,23 @@ const en: typeof vi = {
   testSkip: "Turned off in the build settings",
   testMissing: (language: string) => `No test command for ${language} yet`,
   testImage: (image: string) => `in ${image}`,
+  rebase: "Base image patch",
+  rebaseWhen: (time: string) => `Every day at ${time} UTC`,
+  rebaseHow: {
+    "github-actions": () => "The schedule is already in the workflow file.",
+    jenkins: () =>
+      "The schedule is already in the Jenkinsfile and runs on the main branch only.",
+    "gitlab-ci": (cron: string) =>
+      `Create a schedule under Build, Pipeline schedules: branch main, cron "${cron}", time zone UTC.`,
+    circleci: (_cron: string, time: string) =>
+      `Create a schedule under Project Settings, Triggers: branch main, every day at ${time} UTC.`,
+    drone: (cron: string) =>
+      `Create the schedule: drone cron add <owner/repo> udp-rebase "0 ${cron}" --branch main`,
+    tekton: () =>
+      "Tekton has no schedule in UDP yet: run the rebase Pipeline (the tkn command at the top of the pipeline file) on your own schedule.",
+  },
+  rebaseOff:
+    "The strategy is pinned to Dockerfile: get base image patches by updating FROM and rebuilding.",
   todoTitle: "To do before the pipeline can build and push",
   allSet: "Nothing left to do: the pipeline can build and push the image.",
   todo: {

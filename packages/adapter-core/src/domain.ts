@@ -220,6 +220,11 @@ export interface WebhookDeployEvent {
   commitTimestamp?: string;
   /** Deployment/Rollout đã có trong namespace của environment; container cùng tên */
   workloadName: string;
+  /**
+   * [Plan #61 QĐ-13] `rebase`: lượt theo lịch vá lớp hệ điều hành của image commit đầu `main` — Service 1 chỉ deploy
+   * khi production đang chạy đúng commit đó với digest khác. Vắng = lượt build thường. Mở rộng, không đổi trường cũ.
+   */
+  kind?: "rebase";
 }
 
 /**

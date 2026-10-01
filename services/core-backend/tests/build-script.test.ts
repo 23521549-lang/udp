@@ -1,8 +1,13 @@
-import { spawnSync } from "node:child_process";
-import type { BuildPlan } from "@udp/adapter-core";
 import { BUILD_TOOLCHAIN, TEST_IMAGES } from "@udp/config";
 import { describe, expect, it } from "vitest";
 import { buildNamespaceManifests } from "../src/modules/adapter-base/packaging/build-namespace.js";
+import {
+  BASE,
+  bashCheck,
+  CLUSTER,
+  HOSTS,
+  PLANS,
+} from "./helpers/build-plans.js";
 import {
   BUILD_NAMESPACE,
   BUILDER_SERVICE_ACCOUNT,
@@ -22,80 +27,6 @@ import {
  * [Plan #61 QĐ-4..QĐ-7] Đoạn shell mà sáu CI dùng để build. Kiểm bằng `bash -n` (cú pháp) trên MỌI ô — CI thật mới
  * chạy được lệnh, nhưng một dấu ngoặc lệch thì phải đỏ ở đây.
  */
-
-const BASE: BuildPlan = {
-  strategy: "auto",
-  context: ".",
-  dockerfile: "Dockerfile",
-  platform: "linux/amd64",
-  push: { kind: "basic", server: "registry.acme.vn" },
-  identity: null,
-  test: {
-    kind: "run",
-    command: "npm ci && npm test",
-    image: TEST_IMAGES.nodejs,
-  },
-};
-
-const PLANS: Record<string, BuildPlan> = {
-  basic: BASE,
-  ghcr: { ...BASE, push: { kind: "github-token", server: "ghcr.io" } },
-  ecr: {
-    ...BASE,
-    push: {
-      kind: "aws-ecr",
-      server: "123456789012.dkr.ecr.eu-west-1.amazonaws.com",
-      region: "eu-west-1",
-    },
-    identity: { cloud: "aws", roleArn: "arn:aws:iam::123456789012:role/udp/b" },
-  },
-  gcp: {
-    ...BASE,
-    push: { kind: "gcp", server: "europe-docker.pkg.dev" },
-    identity: {
-      cloud: "gcp",
-      workloadIdentityProvider:
-        "projects/42/locations/global/workloadIdentityPools/udp-build/providers/gitlab",
-      serviceAccount: "udp-build-web@acme-prod.iam.gserviceaccount.com",
-    },
-  },
-  acr: {
-    ...BASE,
-    push: {
-      kind: "azure-acr",
-      server: "acmeprod.azurecr.io",
-      registryName: "acmeprod",
-    },
-    identity: {
-      cloud: "azure",
-      clientId: "11111111-2222-3333-4444-555555555555",
-      tenantId: "66666666-7777-8888-9999-000000000000",
-    },
-  },
-  ecrMissing: {
-    ...BASE,
-    push: {
-      kind: "aws-ecr",
-      server: "123456789012.dkr.ecr.eu-west-1.amazonaws.com",
-      region: "eu-west-1",
-    },
-  },
-  pinnedDockerfile: {
-    ...BASE,
-    strategy: "dockerfile",
-    context: "services/web",
-    dockerfile: "docker/Dockerfile.prod",
-  },
-  pinnedBuildpacks: { ...BASE, strategy: "buildpacks" },
-};
-
-function bashCheck(script: string): string {
-  const result = spawnSync("bash", ["-n"], { input: script, encoding: "utf8" });
-  return result.status === 0 ? "" : result.stderr;
-}
-
-const HOSTS: DockerHostCi[] = ["github-actions", "gitlab-ci", "circleci"];
-const CLUSTER: InClusterCi[] = ["jenkins", "tekton", "drone"];
 
 describe("build-script: cú pháp shell (bash -n) ở mọi ô", () => {
   for (const [name, plan] of Object.entries(PLANS)) {

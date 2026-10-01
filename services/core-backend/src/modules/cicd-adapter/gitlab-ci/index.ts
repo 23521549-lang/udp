@@ -1,8 +1,9 @@
 import { z } from "zod";
-import type {
-  CicdDomainAdapter,
-  PipelineStep,
-  PipelineTemplateParams,
+import {
+  rebaseScheduleOf,
+  type CicdDomainAdapter,
+  type PipelineStep,
+  type PipelineTemplateParams,
 } from "@udp/adapter-core";
 import {
   createCicdAdapter,
@@ -19,6 +20,7 @@ import {
   environmentOfBranch,
   fillTemplate,
   notifyScript,
+  rebaseNotifyVars,
   templateValues,
 } from "../../adapter-base/pipeline-template.js";
 import {
@@ -27,6 +29,7 @@ import {
   oidcAudience,
   registrySecretNames,
 } from "../../adapter-base/packaging/build-script.js";
+import { dockerHostRebaseLines } from "../../adapter-base/packaging/rebase-script.js";
 import { BUILD_TOOLCHAIN } from "@udp/config";
 
 /**
@@ -78,12 +81,30 @@ const base = createDescriptorAdapter({
   ],
 });
 
+/**
+ * [Plan #61 QĐ-13] Khi có lịch rebase, lượt theo lịch (`CI_PIPELINE_SOURCE == "schedule"`) chỉ chạy job rebase —
+ * mọi job khác mang luật này. `rules` thay `when` ở cấp job (GitLab không nhận cả hai).
+ */
+function whenOf(when: string, rebase: boolean): string[] {
+  if (!rebase) return when === "on_success" ? [] : [`  when: ${when}`];
+  return [
+    "  rules:",
+    `    - if: '$CI_PIPELINE_SOURCE == "schedule"'`,
+    "      when: never",
+    `    - when: ${when}`,
+  ];
+}
+
 /** Hai job báo UDP: một khi mọi stage thành công, một khi có stage hỏng */
-const notifyJob = (status: "success" | "failure", when: string): string[] => [
+const notifyJob = (
+  status: "success" | "failure",
+  when: string,
+  rebase: boolean,
+): string[] => [
   `udp-notify-${status}:`,
   "  stage: notify",
   `  image: ${BUILD_TOOLCHAIN.images.alpine}`,
-  `  when: ${when}`,
+  ...(rebase ? whenOf(when, true) : [`  when: ${when}`]),
   "  variables:",
   `    UDP_STATUS: "${status}"`,
   "  script:",
@@ -102,11 +123,16 @@ const notifyJob = (status: "success" | "failure", when: string): string[] => [
  * GitLab đòi xoá nó để chạy `script`. Biến bí mật là biến CI/CD của project (GitLab đưa vào môi
  * trường mọi job), nên template chỉ ghi TÊN cần khai.
  */
-const stepJobs = (steps: readonly PipelineStep[], stage: string): string[] =>
+const stepJobs = (
+  steps: readonly PipelineStep[],
+  stage: string,
+  rebase: boolean,
+): string[] =>
   steps.flatMap((step) => [
     `${stepId(step)}:`,
     `  stage: ${stage}`,
     `  image: { name: "${step.image}", entrypoint: [""] }`,
+    ...whenOf("on_success", rebase),
     ...(step.secretEnv.length === 0
       ? []
       : [`  # cần biến CI/CD (masked): ${step.secretEnv.join(", ")}`]),
@@ -125,13 +151,12 @@ const stepJobs = (steps: readonly PipelineStep[], stage: string): string[] =>
  * [Plan #61 QĐ-5, QĐ-6] Job build: Docker CLI cạnh dịch vụ dind (TLS), cùng đoạn shell với GitHub Actions và CircleCI.
  * Đẩy bằng danh tính build ⇒ `id_tokens` cấp JWT có `aud` của cloud. Ảnh có digest sang job sau bằng dotenv.
  */
-const buildJob = (params: PipelineTemplateParams): string[] => {
+/** Phần chung của job có Docker (build, rebase): Docker CLI cạnh dind (TLS), JWT cho danh tính build, tên secret */
+function dockerJob(params: PipelineTemplateParams): string[] {
   const images = BUILD_TOOLCHAIN.images;
   const identity = params.build.identity;
   const secrets = registrySecretNames(params.build.push, "gitlab-ci");
   return [
-    "build:",
-    "  stage: build",
     `  image: ${images.dockerCli}`,
     "  services:",
     `    - name: ${images.dockerDind}`,
@@ -148,6 +173,18 @@ const buildJob = (params: PipelineTemplateParams): string[] => {
     ...(secrets.length === 0
       ? []
       : [`  # cần biến CI/CD (masked): ${secrets.join(", ")}`]),
+  ];
+}
+
+const buildJob = (
+  params: PipelineTemplateParams,
+  rebase: boolean,
+): string[] => {
+  return [
+    "build:",
+    "  stage: build",
+    ...dockerJob(params),
+    ...whenOf("on_success", rebase),
     "  script:",
     // `pack` tải bằng curl; image Docker CLI là Alpine
     "    - apk add --no-cache curl",
@@ -166,9 +203,37 @@ const buildJob = (params: PipelineTemplateParams): string[] => {
   ];
 };
 
+/**
+ * [Plan #61 QĐ-13] Job của lượt theo lịch (Build, Pipeline schedules, nhánh `main`): rebase image Buildpacks của commit
+ * đầu `main` rồi báo UDP (`kind: rebase`). Không phải Buildpacks ⇒ đoạn shell dừng xanh trước bước báo.
+ */
+const rebaseJob = (params: PipelineTemplateParams): string[] => [
+  "rebase:",
+  "  stage: build",
+  ...dockerJob(params),
+  "  rules:",
+  `    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == "main"'`,
+  "  script:",
+  "    - apk add --no-cache curl jq openssl",
+  "    - export PIPELINE_ID=$CI_PIPELINE_ID-$CI_JOB_ID REPO=$CI_PROJECT_PATH ACTOR=$GITLAB_USER_LOGIN",
+  "    - |",
+  ...[
+    "COMMIT_SHA=$CI_COMMIT_SHA",
+    ...dockerHostRebaseLines(params.build, "gitlab-ci", {
+      image: "%IMAGE%",
+      commit: "$CI_COMMIT_SHA",
+      tmp: "/tmp/udp-rebase",
+    }),
+    ...rebaseNotifyVars("$CI_COMMIT_REF_NAME"),
+    ...notifyScript('-H "X-Gitlab-Token: $UDP_WEBHOOK_SECRET"'),
+  ].map((line) => `      ${line}`),
+];
+
 const pipeline = (params: PipelineTemplateParams): string[] => {
   const before = stepsOf(params, "before-build");
   const after = stepsOf(params, "after-build");
+  const schedule = rebaseScheduleOf(params.build, params.projectSlug);
+  const rebase = schedule !== null;
   const stages = [
     "test",
     ...(before.length === 0 ? [] : ["before-build"]),
@@ -179,6 +244,11 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
   return [
     "# .gitlab-ci.yml — sinh bởi UDP (Golden Path, §11)",
     "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
+    ...(schedule === null
+      ? []
+      : [
+          `# [Plan #61 QĐ-13] Vá image nền: tạo lịch ở Build, Pipeline schedules — nhánh main, cron "${schedule.cron}", múi giờ UTC`,
+        ]),
     `stages: [${stages.join(", ")}]`,
     "variables:",
     '  UDP_TRACKED_FLAGS: "%FLAGS%"',
@@ -195,12 +265,14 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     "test:",
     "  stage: test",
     "  image: %TEST_IMAGE%",
+    ...whenOf("on_success", rebase),
     '  script: ["%TEST%"]',
-    ...stepJobs(before, "before-build"),
-    ...buildJob(params),
-    ...stepJobs(after, "after-build"),
-    ...notifyJob("success", "on_success"),
-    ...notifyJob("failure", "on_failure"),
+    ...stepJobs(before, "before-build", rebase),
+    ...buildJob(params, rebase),
+    ...stepJobs(after, "after-build", rebase),
+    ...notifyJob("success", "on_success", rebase),
+    ...notifyJob("failure", "on_failure", rebase),
+    ...(rebase ? rebaseJob(params) : []),
   ];
 };
 

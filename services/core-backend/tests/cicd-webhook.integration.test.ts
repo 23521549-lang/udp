@@ -362,6 +362,152 @@ describe("deploy chờ duyệt (AC-4, §2.2 auto_deploy)", () => {
   });
 });
 
+/**
+ * [Plan #61 QĐ-13] Lượt rebase theo lịch: UDP quyết, không phải pipeline — chỉ deploy khi production đang chạy ĐÚNG
+ * commit đó với digest khác; không bao giờ đè một lần rollback có chủ đích hay một lần deploy chưa xong.
+ */
+describe("lượt rebase theo lịch (Plan #61 QĐ-13)", () => {
+  const COMMIT = "0123456789abcdef0123456789abcdef01234567";
+  const OTHER = "89abcdef0123456789abcdef0123456789abcdef";
+  const OLD = `sha256:${"1".repeat(64)}`;
+  const NEW = `sha256:${"2".repeat(64)}`;
+  const image = (commit: string, digest: string) =>
+    `ghcr.io/acme/web:${commit}@${digest}`;
+  const rebase = (imageRef: string) =>
+    body({
+      environment: "prod",
+      ref: "refs/heads/main",
+      commitSha: COMMIT,
+      imageRef,
+      kind: "rebase",
+    });
+
+  /** Lần deploy production đã XONG với ảnh này — START rồi SUCCESS, mốc giờ tách rõ */
+  async function deployed(imageRef: string): Promise<string> {
+    const deploymentId = randomUUID();
+    const base = {
+      projectId,
+      environmentId: envs.prod!.id,
+      deploymentId,
+      workloadName: "web",
+      triggeredBy: "WEBHOOK" as const,
+    };
+    const now = Date.now();
+    await admin.deploymentEvent.create({
+      data: {
+        ...base,
+        eventType: "DEPLOY_START",
+        occurredAt: new Date(now - 2000),
+        metadata: { imageRef },
+      },
+    });
+    await admin.deploymentEvent.create({
+      data: {
+        ...base,
+        eventType: "DEPLOY_SUCCESS",
+        occurredAt: new Date(now - 1000),
+        metadata: {},
+      },
+    });
+    return deploymentId;
+  }
+
+  beforeAll(async () => {
+    await admin.environment.update({
+      where: { id: envs.prod!.id },
+      data: { autoDeploy: true },
+    });
+    await admin.deploymentEvent.deleteMany({
+      where: { environmentId: envs.prod!.id },
+    });
+  });
+
+  it("production chưa deploy lần nào ⇒ 200 skipped NOT_DEPLOYED, không ghi sự kiện, không job", async () => {
+    const before = enqueued.length;
+    const res = await hook(rebase(image(COMMIT, NEW))).expect(200);
+    expect(res.body).toEqual({
+      deploymentId: null,
+      status: "skipped",
+      reason: "NOT_DEPLOYED",
+    });
+    expect(enqueued).toHaveLength(before);
+    expect(
+      await admin.deploymentEvent.count({
+        where: { environmentId: envs.prod!.id },
+      }),
+    ).toBe(0);
+  });
+
+  it("production chạy cùng commit, digest cũ ⇒ 202 started, metadata kind rebase; danh sách ghi cờ rebase", async () => {
+    await deployed(image(COMMIT, OLD));
+    const res = await hook(rebase(image(COMMIT, NEW))).expect(202);
+    expect(res.body.status).toBe("started");
+    const id = res.body.deploymentId as string;
+    expect(enqueued).toContain(id);
+    const [start] = await eventsOf(id);
+    expect(start).toMatchObject({
+      eventType: "DEPLOY_START",
+      imageTag: COMMIT,
+      metadata: { imageRef: image(COMMIT, NEW), kind: "rebase" },
+    });
+    const list = await as(
+      viewer,
+      request(app).get(
+        `${API}/projects/${projectId}/deployments?envId=${envs.prod!.id}`,
+      ),
+    ).expect(200);
+    const rows = list.body.deployments as {
+      deploymentId: string;
+      rebase: boolean;
+    }[];
+    expect(rows.find((d) => d.deploymentId === id)?.rebase).toBe(true);
+    expect(
+      rows.filter((d) => d.deploymentId !== id).every((d) => !d.rebase),
+    ).toBe(true);
+  });
+
+  it("lần deploy mới nhất chưa xong ⇒ skipped NOT_SETTLED; xong với ĐÚNG image ⇒ 200 unchanged, không ghi gì", async () => {
+    const pendingRun = await hook(rebase(image(COMMIT, NEW))).expect(200);
+    expect(pendingRun.body).toMatchObject({
+      status: "skipped",
+      reason: "NOT_SETTLED",
+    });
+    const current = await deployed(image(COMMIT, NEW));
+    const count = await admin.deploymentEvent.count({
+      where: { environmentId: envs.prod!.id },
+    });
+    const res = await hook(rebase(image(COMMIT, NEW))).expect(200);
+    expect(res.body).toEqual({ deploymentId: current, status: "unchanged" });
+    expect(
+      await admin.deploymentEvent.count({
+        where: { environmentId: envs.prod!.id },
+      }),
+    ).toBe(count);
+  });
+
+  it("production chạy commit KHÁC (vừa rollback có chủ đích) ⇒ skipped OTHER_IMAGE: rebase không đè rollback", async () => {
+    const rolledBack = await deployed(image(OTHER, OLD));
+    const res = await hook(rebase(image(COMMIT, NEW))).expect(200);
+    expect(res.body).toEqual({
+      deploymentId: rolledBack,
+      status: "skipped",
+      reason: "OTHER_IMAGE",
+    });
+  });
+
+  it("rebase vào environment không phải production ⇒ 422; rebase hỏng hay thiếu image ⇒ 400", async () => {
+    await hook({ ...rebase(image(COMMIT, NEW)), environment: "dev" }).expect(
+      422,
+    );
+    await hook({ ...rebase(image(COMMIT, NEW)), status: "failure" }).expect(
+      400,
+    );
+    const noImage: Record<string, unknown> = rebase(image(COMMIT, NEW));
+    delete noImage.imageRef;
+    await hook(noImage).expect(400);
+  });
+});
+
 describe("template pipeline", () => {
   it("chưa có registry.oci ⇒ 409; có ⇒ template của tool đang bật, đúng registry, VIEWER không xem", async () => {
     await as(developer, request(app).get(cicdUrl("/pipeline-template"))).expect(

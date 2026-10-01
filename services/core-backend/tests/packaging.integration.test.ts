@@ -179,6 +179,8 @@ describe("GET /projects/:id/build", () => {
       "ENABLE_CI",
       "ENABLE_REGISTRY",
     ]);
+    // Chưa bật CI ⇒ chưa có chỗ đặt lịch rebase
+    expect(view.rebase).toBeNull();
   });
 
   it("GitHub Actions + ECR: cần danh tính, có script AWS tin đúng repo; lưu danh tính thì hết việc và pipeline mang ARN", async () => {
@@ -267,6 +269,25 @@ describe("GET /projects/:id/build", () => {
       names: ["UDP_REGISTRY_USERNAME", "UDP_REGISTRY_PASSWORD"],
     });
     expect(view.identityScript).toBeNull();
+    // [Plan #61 QĐ-13] GitLab: lịch tạo trong cài đặt của CI; giờ chạy và cron khớp nhau, trong 01:00–06:59 UTC
+    expect(view.rebase?.schedule).toBe("ci-settings");
+    const { hour, minute, cron } = view.rebase!;
+    expect(cron).toBe(`${String(minute)} ${String(hour)} * * *`);
+    expect(hour).toBeGreaterThanOrEqual(1);
+    expect(hour).toBeLessThanOrEqual(6);
+
+    // Ghim Dockerfile ⇒ chỉ image Buildpacks rebase được ⇒ không có lịch
+    const pinned = buildViewWire.parse(
+      (
+        await as(
+          owner,
+          request(app)
+            .put(buildUrl(projectId))
+            .send({ strategy: "dockerfile" }),
+        ).expect(200)
+      ).body,
+    );
+    expect(pinned.rebase).toBeNull();
   });
 
   it("Jenkins (trong cluster) + ECR chưa có cluster ⇒ NO_CLUSTER, không script; binding cũ thiếu pushAuth ⇒ REAPPLY", async () => {

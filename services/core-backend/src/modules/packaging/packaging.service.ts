@@ -1,4 +1,8 @@
-import { identityCloudOf, registryPushOf } from "@udp/adapter-core";
+import {
+  identityCloudOf,
+  rebaseScheduleOf,
+  registryPushOf,
+} from "@udp/adapter-core";
 import { BUILD_PLATFORM, workloadSlugFor } from "@udp/config";
 import {
   BUILDPACKS_LANGUAGES,
@@ -172,6 +176,8 @@ export async function buildView(projectId: string): Promise<BuildViewWire> {
     language: language.value,
   });
 
+  const schedule = rebaseScheduleOf(settings, workloadSlugFor(project.name));
+
   const todo: BuildTodoWire[] = [];
   if (ci === null) todo.push({ code: "ENABLE_CI" });
   if (binding === undefined) todo.push({ code: "ENABLE_REGISTRY" });
@@ -244,9 +250,29 @@ export async function buildView(projectId: string): Promise<BuildViewWire> {
       cloud: identityCloud,
     },
     identityScript: script,
+    rebase:
+      schedule === null || ci === null
+        ? null
+        : { ...schedule, schedule: REBASE_SCHEDULE[ci] },
     todo,
   };
 }
+
+/**
+ * [Plan #61 QĐ-13] Lịch rebase ở từng CI: nằm sẵn trong tệp pipeline, phải tạo trong cài đặt của CI, hay tự lập (Tekton
+ * chưa có Triggers — §16)
+ */
+const REBASE_SCHEDULE: Record<
+  CiTool,
+  NonNullable<BuildViewWire["rebase"]>["schedule"]
+> = {
+  "github-actions": "pipeline",
+  jenkins: "pipeline",
+  "gitlab-ci": "ci-settings",
+  circleci: "ci-settings",
+  drone: "ci-settings",
+  tekton: "manual",
+};
 
 function clusterRefOf(
   row: { provider: string; providerId: string | null; region: string } | null,

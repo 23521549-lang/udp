@@ -1,6 +1,7 @@
 import {
   BUILDPACKS_LANGUAGES,
   DEFAULT_BUILD_SETTINGS,
+  rebaseScheduleOf,
   type BuildLanguage,
   type BuildSettings,
 } from "@udp/shared-types/build";
@@ -346,8 +347,34 @@ export function buildViewOf(
       cloud,
     },
     identityScript,
+    rebase: rebaseOf(settings, p, ci),
     todo,
   };
+}
+
+/** [Plan #61 QĐ-13] Cách đặt lịch rebase ở từng CI — giống Service 1 */
+const REBASE_SCHEDULE: Record<
+  string,
+  NonNullable<BuildViewWire["rebase"]>["schedule"]
+> = {
+  "github-actions": "pipeline",
+  jenkins: "pipeline",
+  "gitlab-ci": "ci-settings",
+  circleci: "ci-settings",
+  drone: "ci-settings",
+  tekton: "manual",
+};
+
+function rebaseOf(
+  settings: BuildSettings,
+  p: ProjectRecord,
+  ci: string | null,
+): BuildViewWire["rebase"] {
+  const schedule = rebaseScheduleOf(settings, slugOf(p.project.name));
+  const how = ci === null ? undefined : REBASE_SCHEDULE[ci];
+  return schedule === null || how === undefined
+    ? null
+    : { ...schedule, schedule: how };
 }
 
 /**

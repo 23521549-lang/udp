@@ -164,3 +164,6 @@ export {
   teardownTierOf,
   waitGone,
 } from "./teardown.js";
+
+/** [Plan #61 QĐ-13] Lịch rebase — sống ở `@udp/shared-types` vì bản xem thử của Portal cũng tính nó */
+export { rebaseScheduleOf, type RebaseSchedule } from "@udp/shared-types";

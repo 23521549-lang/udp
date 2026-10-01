@@ -1,4 +1,4 @@
-import type { PipelineTemplateParams } from "@udp/adapter-core";
+import type { PipelineTemplateParams, RebaseSchedule } from "@udp/adapter-core";
 import { testStep } from "./packaging/build-script.js";
 
 /**
@@ -55,7 +55,8 @@ export function templateValues(
 /**
  * Lệnh shell "báo UDP": biến vào là `UDP_STATUS`, `COMMIT_SHA`, `COMMIT_TS`, `IMAGE_REF`,
  * `PIPELINE_ID`, `REPO`, `REF`, `ACTOR`, `UDP_ENVIRONMENT`, `UDP_WEBHOOK_URL` (địa chỉ ĐẦY ĐỦ mà
- * Portal hiện, đã gồm project và provider), `UDP_WEBHOOK_SECRET`. `PIPELINE_ID` phải khác nhau
+ * Portal hiện, đã gồm project và provider), `UDP_WEBHOOK_SECRET`, và `UDP_KIND` tuỳ chọn (`rebase` ở
+ * lượt theo lịch, Plan #61 QĐ-13). `PIPELINE_ID` phải khác nhau
  * giữa hai lượt chạy lại của cùng pipeline — UDP chống trùng theo nó.
  * Trường rỗng (timestamp, image khi build hỏng) bị bỏ khỏi thân — schema của UDP không nhận chuỗi
  * rỗng. `signatureHeader` là dòng `-H` của nhà cung cấp, dùng `$SIG` hay `$UDP_WEBHOOK_SECRET`.
@@ -66,10 +67,10 @@ export function notifyScript(signatureHeader: string): string[] {
     '  --arg env "$UDP_ENVIRONMENT" --arg status "$UDP_STATUS" \\',
     '  --arg sha "$COMMIT_SHA" --arg ts "$COMMIT_TS" --arg image "$IMAGE_REF" \\',
     '  --arg wl "%PROJECT%" --arg run "$PIPELINE_ID" --arg repo "$REPO" \\',
-    '  --arg ref "$REF" --arg actor "$ACTOR" \\',
+    '  --arg ref "$REF" --arg actor "$ACTOR" --arg kind "${UDP_KIND:-}" \\',
     "  '{environment:$env, status:$status, commitSha:$sha, commitTimestamp:$ts,",
     "    imageRef:$image, workloadName:$wl, pipelineId:$run, repo:$repo, ref:$ref,",
-    '    actor:$actor} | with_entries(select(.value != ""))\')',
+    '    actor:$actor, kind:$kind} | with_entries(select(.value != ""))\')',
     "SIG=$(printf '%s' \"$BODY\" | openssl dgst -sha256 -hmac \"$UDP_WEBHOOK_SECRET\" -hex | sed 's/^.* //')",
     'curl -sS --fail -X POST "$UDP_WEBHOOK_URL" \\',
     "  -H 'Content-Type: application/json' \\",
@@ -85,3 +86,18 @@ export const environmentExpr = (branchVar: string): string =>
 /** Lệnh shell đặt `UDP_ENVIRONMENT` theo nhánh */
 export const environmentOfBranch = (branchVar: string): string =>
   `UDP_ENVIRONMENT=${environmentExpr(branchVar)}`;
+
+/**
+ * [Plan #61 QĐ-13] Biến của bước báo UDP sau lượt rebase: luôn `success` (rebase hỏng thì job đỏ và không báo), luôn
+ * environment production, `kind: rebase`. `imageRef` là biểu thức shell ra ảnh có digest mới.
+ */
+export const rebaseNotifyVars = (
+  ref: string,
+  imageRef = '"$UDP_IMAGE_REF"',
+): string[] => [
+  `UDP_STATUS=success UDP_KIND=rebase UDP_ENVIRONMENT=%PROD% IMAGE_REF=${imageRef} COMMIT_TS= REF=${ref}`,
+];
+
+/** `HH:MM` của lịch rebase — cho chú thích trong tệp pipeline */
+export const rebaseTimeOf = (schedule: RebaseSchedule): string =>
+  `${String(schedule.hour).padStart(2, "0")}:${String(schedule.minute).padStart(2, "0")}`;

@@ -27,6 +27,8 @@ const vi = {
     AUTO: "tự động",
   } satisfies Record<DeploymentWire["triggeredBy"], string>,
   viewRollout: "xem rollout",
+  /** [Plan #61 QĐ-13] Lần deploy do rebase theo lịch: cùng commit, lớp hệ điều hành mới */
+  rebase: "Vá image nền",
   log: "Nhật ký",
   logLabel: (id: string) => `Nhật ký deploy ${id}`,
   approve: "Duyệt deploy",
@@ -80,6 +82,7 @@ export const deploymentMessages = defineMessages({
       AUTO: "automatic",
     },
     viewRollout: "view rollout",
+    rebase: "Base image patch",
     log: "Log",
     logLabel: (id: string) => `Deployment log ${id}`,
     approve: "Approve deployment",

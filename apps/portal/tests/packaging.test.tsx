@@ -191,6 +191,60 @@ describe("mục Đóng gói", () => {
   });
 });
 
+describe("mục Đóng gói: vá image nền (Plan #61 QĐ-13)", () => {
+  const panel = async () =>
+    screen.findByRole("region", { name: "Đóng gói container" });
+
+  it("GitHub Actions: giờ chạy UTC, lịch có sẵn trong tệp workflow", async () => {
+    const detail = projectFixture("VIEWER");
+    useProjectHandlers(detail);
+    serve(view());
+    renderApp(`/app/projects/${detail.project.id}/code`);
+    const region = await panel();
+    expect(
+      within(region).getByText("Mỗi ngày lúc 04:17 UTC"),
+    ).toBeInTheDocument();
+    expect(
+      within(region).getByText("Lịch có sẵn trong tệp workflow."),
+    ).toBeInTheDocument();
+  });
+
+  it("GitLab: chỉ đúng chỗ tạo lịch và cron; ghim Dockerfile ⇒ nói cách lấy bản vá; chưa bật CI ⇒ không có dòng", async () => {
+    const detail = projectFixture("VIEWER");
+    useProjectHandlers(detail);
+    serve({
+      ...view(),
+      ci: "gitlab-ci",
+      rebase: {
+        hour: 2,
+        minute: 5,
+        cron: "5 2 * * *",
+        schedule: "ci-settings",
+      },
+    });
+    const { unmount } = renderApp(`/app/projects/${detail.project.id}/code`);
+    expect(
+      within(await panel()).getByText(
+        'Tạo lịch ở Build, Pipeline schedules: nhánh main, cron "5 2 * * *", múi giờ UTC.',
+      ),
+    ).toBeInTheDocument();
+    unmount();
+
+    serve({ ...view(), rebase: null });
+    const second = renderApp(`/app/projects/${detail.project.id}/code`);
+    expect(
+      within(await panel()).getByText(
+        "Chiến lược ghim Dockerfile: lấy bản vá của image nền bằng cách cập nhật FROM rồi build lại.",
+      ),
+    ).toBeInTheDocument();
+    second.unmount();
+
+    serve({ ...view(), ci: null, rebase: null });
+    renderApp(`/app/projects/${detail.project.id}/code`);
+    expect(within(await panel()).queryByText("Vá image nền")).toBeNull();
+  });
+});
+
 describe("parseIdentityLine", () => {
   it("nhận dòng có tiền tố, giữa nhiều dòng, hay JSON trần; từ chối khoá và cloud lạ", () => {
     const line = `UDP_BUILD_IDENTITY={"cloud":"aws","roleArn":"${ROLE}"}`;

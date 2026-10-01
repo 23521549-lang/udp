@@ -34,7 +34,9 @@
     "test:scratch": "pnpm --filter @udp/db test:scratch",
     "db:service-login": "pnpm --filter @udp/db service-login",
     "db:verify-chain": "pnpm --filter @udp/db verify-chain",
-    "db:ci-bootstrap": "pnpm --filter @udp/db ci-bootstrap"
+    "db:ci-bootstrap": "pnpm --filter @udp/db ci-bootstrap",
+    "//toolchain": "Plan #61: báo bản vá, tag bị đẩy lại hay ghim hỏng của công cụ mà pipeline UDP sinh ra dùng (chỉ đọc registry và GitHub)",
+    "toolchain:check": "tsx packages/config/scripts/toolchain-check.ts"
   },
   "devDependencies": {
     "@types/node": "^22.7.5",

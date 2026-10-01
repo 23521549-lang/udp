@@ -1,8 +1,9 @@
 import { z } from "zod";
-import type {
-  CicdDomainAdapter,
-  PipelineStep,
-  PipelineTemplateParams,
+import {
+  rebaseScheduleOf,
+  type CicdDomainAdapter,
+  type PipelineStep,
+  type PipelineTemplateParams,
 } from "@udp/adapter-core";
 import {
   createCicdAdapter,
@@ -18,6 +19,7 @@ import {
 import {
   fillTemplate,
   notifyScript,
+  rebaseTimeOf,
   templateValues,
 } from "../../adapter-base/pipeline-template.js";
 import {
@@ -29,6 +31,7 @@ import {
   type BuildContainer,
 } from "../../adapter-base/packaging/build-script.js";
 import { buildNamespaceCompanion } from "../../adapter-base/packaging/build-namespace.js";
+import { inClusterRebaseContainers } from "../../adapter-base/packaging/rebase-script.js";
 import { BUILD_TOOLCHAIN } from "@udp/config";
 
 /**
@@ -262,10 +265,17 @@ const podYaml = (
   ];
 };
 
+/** [Plan #61 QĐ-13] Stage của lượt build — lượt theo lịch (TimerTrigger) chỉ chạy stage rebase */
+const NOT_ON_TIMER = "      when { not { triggeredBy 'TimerTrigger' } }";
+
 /** Bước của domain khác: chạy trong container của nó trong pod; bí mật qua `withCredentials` */
-const stepStages = (steps: readonly PipelineStep[]): string[] =>
+const stepStages = (
+  steps: readonly PipelineStep[],
+  rebase: boolean,
+): string[] =>
   steps.flatMap((step) => [
     `    stage('${stepId(step)}') {`,
+    ...(rebase ? [NOT_ON_TIMER] : []),
     "      steps {",
     ...withSecrets(
       step.secretEnv,
@@ -276,11 +286,86 @@ const stepStages = (steps: readonly PipelineStep[]): string[] =>
     "    }",
   ]);
 
+/**
+ * Container của pod chạy được một container của lượt rebase: cùng image, cùng biến, cùng quyền — pod của Jenkins dựng
+ * MỘT lần cho cả pipeline, nên lượt rebase dùng lại container sẵn có (không thêm container nào đứng chờ trong pod)
+ */
+function podContainerFor(
+  c: BuildContainer,
+  pod: readonly BuildContainer[],
+): string {
+  const same = pod.find(
+    (p) =>
+      p.image === c.image &&
+      p.runAsUser === c.runAsUser &&
+      p.unconfined === c.unconfined &&
+      JSON.stringify(p.env) === JSON.stringify(c.env),
+  );
+  if (same === undefined) {
+    throw new Error(`pod build không có container chạy được ${c.name}`);
+  }
+  return same.name;
+}
+
+/**
+ * [Plan #61 QĐ-13] Stage của lượt theo lịch: rebase image Buildpacks của commit đầu `main`; ảnh có digest mới vào
+ * `IMAGE_REF` — không phải Buildpacks thì `IMAGE_REF` rỗng và bước báo bỏ qua.
+ */
+const rebaseStage = (
+  rebase: readonly BuildContainer[],
+  pod: readonly BuildContainer[],
+): string[] => [
+  "    stage('Vá image nền (rebase)') {",
+  "      when { triggeredBy 'TimerTrigger' }",
+  "      steps {",
+  "        script { env.UDP_KIND = 'rebase' }",
+  ...rebase.flatMap((c) =>
+    withSecrets(
+      c.secretEnv,
+      "        ",
+      shIn(podContainerFor(c, pod), "        ", c.script),
+    ),
+  ),
+  "        container('udp-digest') {",
+  `          script { env.IMAGE_REF = sh(script: 'cat ${WORK_DIR}/out/image-ref 2>/dev/null || true', returnStdout: true).trim() }`,
+  "        }",
+  "      }",
+  "    }",
+];
+
+/** Bước báo UDP của `post`: lượt theo lịch chỉ báo khi đã ra image mới, và không báo khi hỏng (không phải lần deploy) */
+const notifyPost = (
+  status: "success" | "failure",
+  rebase: boolean,
+): string[] => {
+  if (!rebase) return notify(status);
+  const when =
+    status === "success"
+      ? "env.UDP_KIND != 'rebase' || env.IMAGE_REF"
+      : "env.UDP_KIND != 'rebase'";
+  return [
+    "      script {",
+    `        if (${when}) {`,
+    ...notify(status).map((line) => `    ${line}`),
+    "        }",
+    "      }",
+  ];
+};
+
 const jenkinsfile = (params: PipelineTemplateParams): string[] => {
   const build = inClusterBuildContainers(params.build, "jenkins", {
     image: "%IMAGE%",
     commit: "$GIT_COMMIT",
   });
+  const schedule = rebaseScheduleOf(params.build, params.projectSlug);
+  const rebase =
+    schedule === null
+      ? null
+      : inClusterRebaseContainers(params.build, "jenkins", {
+          image: "%IMAGE%",
+          commit: "$GIT_COMMIT",
+        });
+  const onTimer = rebase !== null;
   return [
     "// Jenkinsfile — sinh bởi UDP (Golden Path, §11)",
     "// Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
@@ -298,16 +383,26 @@ const jenkinsfile = (params: PipelineTemplateParams): string[] => {
     "    UDP_WEBHOOK_URL = credentials('udp-webhook-url')",
     "    UDP_WEBHOOK_SECRET = credentials('udp-webhook-secret')",
     "  }",
+    ...(schedule === null
+      ? []
+      : [
+          `  // [Plan #61 QĐ-13] Vá image nền mỗi ngày ${rebaseTimeOf(schedule)} (giờ của Jenkins, mặc định UTC) — chỉ ở nhánh main`,
+          "  triggers {",
+          `    cron(env.BRANCH_NAME == 'main' ? '${schedule.cron}' : '')`,
+          "  }",
+        ]),
     "  stages {",
     "    stage('Test') {",
+    ...(onTimer ? [NOT_ON_TIMER] : []),
     "      steps {",
     // `IMAGE_REF` gán bằng `env.` (không trong `environment`): sau build nó đổi thành ảnh có digest
     '        script { env.IMAGE_REF = "%IMAGE%:${env.GIT_COMMIT}" }',
     ...shIn("udp-test", "        ", ["%TEST%"]),
     "      }",
     "    }",
-    ...stepStages(stepsOf(params, "before-build")),
+    ...stepStages(stepsOf(params, "before-build"), onTimer),
     "    stage('Build và đẩy image') {",
+    ...(onTimer ? [NOT_ON_TIMER] : []),
     "      steps {",
     ...build.flatMap((c) =>
       withSecrets(c.secretEnv, "        ", shIn(c.name, "        ", c.script)),
@@ -318,14 +413,15 @@ const jenkinsfile = (params: PipelineTemplateParams): string[] => {
     "        }",
     "      }",
     "    }",
-    ...stepStages(stepsOf(params, "after-build")),
+    ...stepStages(stepsOf(params, "after-build"), onTimer),
+    ...(rebase === null ? [] : rebaseStage(rebase, build)),
     "  }",
     "  post {",
     "    success {",
-    ...notify("success"),
+    ...notifyPost("success", onTimer),
     "    }",
     "    failure {",
-    ...notify("failure"),
+    ...notifyPost("failure", onTimer),
     "    }",
     "  }",
     "}",

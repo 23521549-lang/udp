@@ -17,6 +17,7 @@ import { WebhookPayloadError } from "../adapter-base/cicd.js";
 import { auditEntry } from "../audit/audit.service.js";
 import type { DomainAdapterRegistry } from "../domain/domain-adapter.registry.js";
 import { enqueueAfterCommit, type EnqueueDeploy } from "./deploy.service.js";
+import { decideRebase, latestDeployment } from "./rebase-decision.js";
 import { isSealedWebhookSecret, openWebhookSecret } from "./webhook-secret.js";
 
 /**
@@ -146,6 +147,8 @@ function eventBase(
       ref: event.ref,
       actor: event.actor,
       ...(event.imageRef === undefined ? {} : { imageRef: event.imageRef }),
+      // [Plan #61 QĐ-13] Danh sách deployment đọc cờ này để ghi "Vá image nền"
+      ...(event.kind === undefined ? {} : { kind: event.kind }),
     } satisfies Prisma.InputJsonObject,
   };
 }
@@ -170,11 +173,16 @@ export async function receiveWebhook(args: {
 
   const environment = await prisma.environment.findFirst({
     where: { projectId, name: event.environment },
-    select: { id: true, autoDeploy: true },
+    select: { id: true, autoDeploy: true, isProduction: true },
   });
   if (environment === null) {
     throw new UnprocessableError(
       `Project không có environment "${event.environment}"`,
+    );
+  }
+  if (event.kind === "rebase" && !environment.isProduction) {
+    throw new UnprocessableError(
+      `Lượt rebase chỉ dành cho environment production, không phải "${event.environment}"`,
     );
   }
 
@@ -193,6 +201,30 @@ export async function receiveWebhook(args: {
     });
     if (seen !== null) {
       return { deploymentId: seen.deploymentId, status: "duplicate" as const };
+    }
+    // [Plan #61 QĐ-13] UDP quyết lượt rebase: chỉ deploy khi production đang chạy ĐÚNG commit này với digest khác
+    if (event.kind === "rebase" && event.imageRef !== undefined) {
+      const decision = decideRebase(
+        await latestDeployment(tx, {
+          projectId,
+          environmentId: environment.id,
+          workloadName: event.workloadName,
+        }),
+        event.imageRef,
+      );
+      if (decision.action === "unchanged") {
+        return {
+          deploymentId: decision.deploymentId,
+          status: "unchanged" as const,
+        };
+      }
+      if (decision.action === "skipped") {
+        return {
+          deploymentId: decision.deploymentId,
+          status: "skipped" as const,
+          reason: decision.reason,
+        };
+      }
     }
     const deploymentId = randomUUID();
     const base = eventBase(projectId, environment.id, provider, event);

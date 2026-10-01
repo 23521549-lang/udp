@@ -132,3 +132,30 @@ export type BuildSettings = z.infer<typeof buildSettingsSchema>;
 export const DEFAULT_BUILD_SETTINGS: BuildSettings = buildSettingsSchema.parse(
   {},
 );
+
+/** Giờ chạy hằng ngày (UTC) của lượt rebase theo lịch */
+export interface RebaseSchedule {
+  hour: number;
+  minute: number;
+  /** Biểu thức cron năm trường `phút giờ * * *` */
+  cron: string;
+}
+
+/**
+ * [Plan #61 QĐ-13] Lịch rebase của project — `null` khi chiến lược ghim Dockerfile (chỉ image Buildpacks rebase được).
+ * Giờ tất định theo slug (FNV-1a) trong 01:00–06:59 UTC để rải tải giữa các project; phút khác 0 vì GitHub trễ lịch
+ * đầu giờ. Service 1 (pipeline, mục Đóng gói) và bản xem thử của Portal tính CÙNG một hàm.
+ */
+export function rebaseScheduleOf(
+  plan: { strategy: BuildStrategyName },
+  projectSlug: string,
+): RebaseSchedule | null {
+  if (plan.strategy === "dockerfile") return null;
+  let hash = 0x811c9dc5;
+  for (const char of projectSlug) {
+    hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
+  }
+  const minute = 1 + (hash % 59);
+  const hour = 1 + (Math.floor(hash / 59) % 6);
+  return { hour, minute, cron: `${String(minute)} ${String(hour)} * * *` };
+}

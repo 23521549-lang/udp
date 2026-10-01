@@ -1,8 +1,9 @@
 import { z } from "zod";
-import type {
-  CicdDomainAdapter,
-  PipelineStep,
-  PipelineTemplateParams,
+import {
+  rebaseScheduleOf,
+  type CicdDomainAdapter,
+  type PipelineStep,
+  type PipelineTemplateParams,
 } from "@udp/adapter-core";
 import {
   createCicdAdapter,
@@ -19,6 +20,8 @@ import {
   environmentOfBranch,
   fillTemplate,
   notifyScript,
+  rebaseNotifyVars,
+  rebaseTimeOf,
   templateValues,
 } from "../../adapter-base/pipeline-template.js";
 import {
@@ -30,11 +33,14 @@ import {
   type BuildContainer,
 } from "../../adapter-base/packaging/build-script.js";
 import { buildNamespaceCompanion } from "../../adapter-base/packaging/build-namespace.js";
+import { inClusterRebaseContainers } from "../../adapter-base/packaging/rebase-script.js";
 import { BUILD_TOOLCHAIN } from "@udp/config";
 
 /** Ảnh có digest trong workspace (tương đối với thư mục làm việc = workspace) — sau khi build xong mới có */
 const IMAGE_REF_DIR = ".udp-out";
 const IMAGE_REF_FILE = `${IMAGE_REF_DIR}/image-ref`;
+/** [Plan #61 QĐ-13] Commit đầu `main` mà task lấy mã của lượt rebase ghi cho task sau */
+const COMMIT_FILE = `${IMAGE_REF_DIR}/commit`;
 
 /**
  * Adapter Tekton (§5.5 CI/CD, Plan #36) — họ Helm (chart `tekton-pipeline`) + lớp bọc CI/CD.
@@ -163,8 +169,12 @@ const TEST_TASK = [
  * [Plan #61 QĐ-12] Lấy mã nguồn — Pipeline cũ không có bước này nên workspace rỗng. Commit cụ thể lấy bằng `fetch`
  * nông theo SHA; repo riêng đọc `.git-credentials` từ Secret `udp-git` (tuỳ chọn) của namespace `udp-build`.
  */
-const FETCH_TASK = [
-  "    - name: fetch-source",
+const fetchTask = (
+  name: string,
+  revision: string,
+  after: readonly string[] = [],
+): string[] => [
+  `    - name: ${name}`,
   "      workspaces:",
   "        - name: source",
   "          workspace: source",
@@ -184,9 +194,12 @@ const FETCH_TASK = [
   '              [ -f /udp-git/.git-credentials ] && git config --global credential.helper "store --file=/udp-git/.git-credentials"',
   "              git init -q .",
   '              git remote add origin "$(params.repo-url)"',
-  '              git fetch -q --depth 1 origin "$(params.revision)"',
+  `              git fetch -q --depth 1 origin "${revision}"`,
   "              git checkout -q FETCH_HEAD",
+  ...after.map((line) => `              ${line}`),
 ];
+
+const FETCH_TASK = fetchTask("fetch-source", "$(params.revision)");
 
 /** Một bước của task build — từ `BuildContainer` chung (build-script.ts) */
 const buildSteps = (containers: readonly BuildContainer[]): string[] =>
@@ -237,7 +250,71 @@ const buildSteps = (containers: readonly BuildContainer[]): string[] =>
       : []),
   ]);
 
+/**
+ * [Plan #61 QĐ-13] Pipeline thứ hai của tệp: lấy đầu nhánh `main`, rebase image Buildpacks của commit đó, báo UDP
+ * (`kind: rebase`) khi đã ra image mới. Lượt rebase hỏng ⇒ PipelineRun hỏng, không báo.
+ */
+const rebasePipeline = (params: PipelineTemplateParams): string[] => [
+  "---",
+  "apiVersion: tekton.dev/v1",
+  "kind: Pipeline",
+  "metadata:",
+  "  name: udp-%PROJECT%-rebase",
+  `  namespace: ${BUILD_NAMESPACE}`,
+  "spec:",
+  "  params:",
+  "    - name: repo-url",
+  "    - name: image",
+  "      default: %IMAGE%",
+  "  workspaces:",
+  "    - name: source",
+  "  tasks:",
+  ...fetchTask("fetch-main", "main", [
+    `mkdir -p ${IMAGE_REF_DIR} && git rev-parse HEAD > ${COMMIT_FILE}`,
+  ]),
+  "    - name: rebase",
+  "      runAfter: [fetch-main]",
+  "      workspaces:",
+  "        - name: source",
+  "          workspace: source",
+  "      taskSpec:",
+  "        workspaces: [{ name: source }]",
+  "        volumes:",
+  "          - name: udp",
+  "            emptyDir: {}",
+  "          - name: udp-auth",
+  "            emptyDir: {}",
+  "        steps:",
+  ...buildSteps(
+    inClusterRebaseContainers(params.build, "tekton", {
+      image: "$(params.image)",
+      commit: `$(cat $(workspaces.source.path)/${COMMIT_FILE})`,
+    }),
+  ),
+  "          - name: notify",
+  `            image: ${BUILD_TOOLCHAIN.images.alpine}`,
+  "            workingDir: $(workspaces.source.path)",
+  "            env:",
+  "              - name: UDP_WEBHOOK_URL",
+  "                valueFrom: { secretKeyRef: { name: udp-webhook, key: url } }",
+  "              - name: UDP_WEBHOOK_SECRET",
+  "                valueFrom: { secretKeyRef: { name: udp-webhook, key: secret } }",
+  "            volumeMounts:",
+  `              - { name: udp, mountPath: ${WORK_DIR} }`,
+  "            script: |",
+  "              #!/bin/sh",
+  "              set -eu",
+  ...[
+    `[ -f ${WORK_DIR}/out/image-ref ] || { echo "Khong co image moi: khong bao UDP"; exit 0; }`,
+    "apk add --no-cache jq curl openssl",
+    `COMMIT_SHA=$(cat ${COMMIT_FILE}) PIPELINE_ID=$(context.pipelineRun.name) REPO=%PROJECT% ACTOR=tekton`,
+    ...rebaseNotifyVars("main", `"$(cat ${WORK_DIR}/out/image-ref)"`),
+    ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"'),
+  ].map((line) => `              ${line}`),
+];
+
 const pipeline = (params: PipelineTemplateParams): string[] => {
+  const schedule = rebaseScheduleOf(params.build, params.projectSlug);
   const before = stepsOf(params, "before-build");
   const after = stepsOf(params, "after-build");
   const containers = inClusterBuildContainers(params.build, "tekton", {
@@ -250,6 +327,12 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     `# Chạy một lượt ở namespace ${BUILD_NAMESPACE} bằng ServiceAccount ${BUILDER_SERVICE_ACCOUNT} (Tekton Triggers chưa có, §16):`,
     `#   tkn pipeline start udp-%PROJECT% -n ${BUILD_NAMESPACE} --serviceaccount ${BUILDER_SERVICE_ACCOUNT} -p repo-url=<url> -p revision=<commit> -p branch=<nhánh> -w name=source,volumeClaimTemplateFile=<pvc.yaml>`,
     `# Secret cần có ở ${BUILD_NAMESPACE}: udp-webhook (url, secret); ${CI_SECRETS} cho biến bí mật; udp-git (tuỳ chọn) cho repo riêng`,
+    ...(schedule === null
+      ? []
+      : [
+          `# [Plan #61 QĐ-13] Vá image nền mỗi ngày ${rebaseTimeOf(schedule)} UTC bằng hệ lập lịch của bạn (Tekton Triggers chưa có, §16):`,
+          `#   tkn pipeline start udp-%PROJECT%-rebase -n ${BUILD_NAMESPACE} --serviceaccount ${BUILDER_SERVICE_ACCOUNT} -p repo-url=<url> -w name=source,volumeClaimTemplateFile=<pvc.yaml>`,
+        ]),
     "apiVersion: tekton.dev/v1",
     "kind: Pipeline",
     "metadata:",
@@ -318,6 +401,7 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
       (line) => `              ${line}`,
     ),
+    ...(schedule === null ? [] : rebasePipeline(params)),
   ];
 };
 

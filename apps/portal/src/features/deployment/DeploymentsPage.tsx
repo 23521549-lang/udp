@@ -141,6 +141,12 @@ function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
           <span className="mono c3">{d.commitSha.slice(0, 7)}</span>
         )}
         <span className="c3">{m.trigger[d.triggeredBy]}</span>
+        {d.rebase && (
+          <span className="stt">
+            {m.rebase}
+            <InfoTip term="rebase" />
+          </span>
+        )}
         {d.rolloutSessionId !== null && (
           <Link
             to="/app/projects/$projectId/rollouts/$rolloutId"

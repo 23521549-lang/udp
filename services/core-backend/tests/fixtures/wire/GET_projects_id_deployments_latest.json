@@ -9,6 +9,7 @@
       "imageTag": "v9",
       "commitSha": null,
       "triggeredBy": "WEBHOOK",
+      "rebase": false,
       "rolloutSessionId": null,
       "restoresDeploymentId": null,
       "startedAt": "2026-09-28T13:36:31.931Z",

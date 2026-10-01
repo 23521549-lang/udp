@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 46.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 47.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1187,3 +1187,32 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
 - **Tài nguyên:** gói miễn phí của dịch vụ SMTP, OAuth App của GitHub — 0 đồng.
 - **Ảnh hưởng tới kết luận:** câu "người dùng tự lấy lại được tài khoản và đăng nhập bằng GitHub" — hôm nay là bảo
   đảm của mã và test ranh giới.
+
+## packaging-real — đóng gói, đăng nhập OIDC và vá image nền ở sáu CI và ba cloud thật
+
+- **Vì sao nợ:** Plan #61 (61a–61c): đoạn shell build và rebase của sáu CI qua `bash -n` ở mọi ô
+  (CI × kiểu đăng nhập × chiến lược), YAML của mọi template parse được, thứ tự và ghim digest được
+  bộ hợp đồng kiểm; quyết định rebase của Service 1 chạy trên database thật; job `build-smoke` của CI
+  UDP build sáu ứng dụng mẫu bằng ĐÚNG đoạn shell renderer sinh rồi chạy image (đẩy GHCR, chỉ trên
+  GitHub Actions). Chưa đo: đăng nhập OIDC thật với ECR, Artifact Registry, ACR (script danh tính,
+  trust theo repo và nhánh, `aud` của từng cloud); GitLab với dịch vụ dind, CircleCI `machine`;
+  build trong cluster (pod template của Jenkins, task của Tekton, runner của Drone) với BuildKit
+  không root trên node thật (seccomp/AppArmor `Unconfined`) và `creator` tự hạ quyền; `pack rebase
+--publish` và `/cnb/lifecycle/rebaser` trên registry thật (gồm GHCR không có API referrers); lịch
+  rebase kích đúng ở sáu CI; workflow `toolchain.yml` chạy trên GitHub.
+- **Tiền đề:** tài khoản ba cloud (gói miễn phí hay tín dụng dùng thử) có registry và cụm của UDP
+  (`I32-cluster`); repo thử ở sáu CI; UDP có địa chỉ công khai (tunnel); chạy script danh tính một
+  lần mỗi cloud.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- packaging.real` (tệp CHƯA CÓ; nó đẩy một
+  commit có Dockerfile và một commit không có Dockerfile vào repo thử ở từng CI, chờ `DEPLOY_SUCCESS`
+  với `imageRef` dạng `repo:commit@sha256:…`, rồi kích lượt theo lịch và chờ lần deploy `rebase`).
+- **Đạt:** mỗi ô CI × cloud: đẩy được bằng mật khẩu ngắn hạn (không secret dài hạn nào trong CI của
+  registry cloud), image chạy được và mang SBOM; lượt rebase đổi digest khi run image có bản mới,
+  giữ digest khi không, và Service 1 trả `unchanged`/`skipped` đúng lúc. **Không đạt:** trust policy
+  từ chối JWT ⇒ sửa script danh tính của cloud đó; BuildKit không khởi động trên node ⇒ xem lại
+  securityContext; `rebaser` không đọc được thông tin đăng nhập ⇒ xem lại thứ tự hạ quyền.
+- **Tài nguyên:** ba cụm (~3 GiB mỗi cụm, lần lượt) + tài khoản miễn phí ở năm CI dịch vụ;
+  Jenkins/Tekton/Drone cài bằng chính adapter.
+- **Ảnh hưởng tới kết luận:** AC-1…AC-7 của Plan #61 đứng ở mức hợp đồng, `bash -n` và build thật
+  trên GitHub Actions; câu "sáu CI × chín registry đẩy được không cần khoá dài hạn" và "image
+  Buildpacks được vá theo lịch" chưa được chứng minh trên hạ tầng thật.

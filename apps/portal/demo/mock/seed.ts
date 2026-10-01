@@ -1441,6 +1441,7 @@ function deploymentsFor(
       imageTag: tag,
       commitSha: sha,
       triggeredBy: "WEBHOOK",
+      rebase: false,
       rolloutSessionId: null,
       restoresDeploymentId: null,
       startedAt: iso(startMs),
@@ -1481,7 +1482,76 @@ function deploymentsFor(
       },
     ];
   }
+  if (env.isProduction) out.push(...rebasesOf(out, logs, repo, env.name));
   return out.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
+
+/** Giờ chạy lịch rebase của project mẫu (04:17 UTC) — cách lần deploy trước ít nhất một ngày */
+const REBASE_OFFSET_MS = 21 * 3_600_000 + 17 * 60_000;
+
+/**
+ * [Plan #61 QĐ-13] Lượt "Vá image nền" ở production: cứ vài bản phát hành thành công mà bản kế sau đó hơn một ngày, lịch
+ * rebase deploy lại CÙNG commit với lớp hệ điều hành mới. Tất định (không tiêu số ngẫu nhiên) nên dữ liệu các màn khác
+ * giữ nguyên.
+ */
+function rebasesOf(
+  deployments: readonly DeploymentWire[],
+  logs: ProjectRecord["deploymentLogs"],
+  repo: string,
+  environment: string,
+): DeploymentWire[] {
+  const sorted = [...deployments].sort((a, b) =>
+    a.startedAt.localeCompare(b.startedAt),
+  );
+  const out: DeploymentWire[] = [];
+  for (const [i, d] of sorted.entries()) {
+    const next = sorted[i + 1];
+    const at = Date.parse(d.startedAt) + REBASE_OFFSET_MS;
+    if (
+      i % 6 !== 2 ||
+      d.status !== "DEPLOY_SUCCESS" ||
+      next === undefined ||
+      Date.parse(next.startedAt) <= at + 3_600_000
+    ) {
+      continue;
+    }
+    const id = newId();
+    const started = {
+      id: newId(),
+      eventType: "DEPLOY_START" as const,
+      occurredAt: iso(at),
+    };
+    const concluded = {
+      id: newId(),
+      eventType: "DEPLOY_SUCCESS" as const,
+      occurredAt: iso(at + 4 * 60_000),
+    };
+    out.push({
+      ...d,
+      deploymentId: id,
+      status: "DEPLOY_SUCCESS",
+      rebase: true,
+      startedAt: started.occurredAt,
+      lastEventAt: concluded.occurredAt,
+      events: [started, concluded],
+    });
+    const common = {
+      triggeredBy: "WEBHOOK" as const,
+      workloadName: d.workloadName,
+      imageTag: d.imageTag,
+      commitSha: d.commitSha,
+    };
+    logs[id] = [
+      {
+        ...started,
+        ...common,
+        pipelineId: `rebase-${String(i)}`,
+        detail: { repo, ref: "main", environment, kind: "rebase" },
+      },
+      { ...concluded, ...common, pipelineId: null, detail: null },
+    ];
+  }
+  return out;
 }
 
 // ------------------------------------------------------------- domain
@@ -2780,6 +2850,7 @@ function addPendingProdDeploy(p: ProjectRecord): void {
     imageTag: "v1.16.0",
     commitSha: "9f3c2ab41d07",
     triggeredBy: "WEBHOOK",
+    rebase: false,
     rolloutSessionId: null,
     restoresDeploymentId: null,
     startedAt: at,
@@ -2833,6 +2904,7 @@ function addRollbacks(p: ProjectRecord): void {
       imageTag: restored.imageTag,
       commitSha: restored.commitSha,
       triggeredBy: by,
+      rebase: false,
       rolloutSessionId: failed.id,
       restoresDeploymentId: restored.deploymentId,
       startedAt: at,

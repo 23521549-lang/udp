@@ -269,8 +269,6 @@ export function dockerHostBuildLines(
   assertBuildPlanSafe(plan);
   const { image, commit, tmp } = vars;
   const tag = `${image}:${commit}`;
-  const pack = BUILD_TOOLCHAIN.pack;
-  const packUrl = `https://github.com/buildpacks/pack/releases/download/v${pack.version}/pack-v${pack.version}-linux.tgz`;
   return [
     "set -eu",
     `UDP_TMP="${tmp}"`,
@@ -294,9 +292,7 @@ export function dockerHostBuildLines(
     ].join(" "),
     `  UDP_DIGEST=$(${digestFromBuildkit('"$UDP_TMP/build-meta.json"')})`,
     "else",
-    `  curl -fsSL -o "$UDP_TMP/pack.tgz" "${packUrl}"`,
-    `  echo "${pack.linuxSha256}  $UDP_TMP/pack.tgz" | sha256sum -c -`,
-    '  tar -xzf "$UDP_TMP/pack.tgz" -C "$UDP_TMP" pack',
+    ...packDownloadLines().map((line) => `  ${line}`),
     // Bản sao không có .git: lịch sử repo không vào image
     '  rm -rf "$UDP_TMP/app" && mkdir -p "$UDP_TMP/app"',
     `  tar -C "${plan.context}" --exclude=./.git -cf - . | tar -C "$UDP_TMP/app" -xf -`,
@@ -319,12 +315,23 @@ export function dockerHostBuildLines(
   ];
 }
 
+/** Tải `pack` bản ghim vào `$UDP_TMP` rồi kiểm sha256 — thiếu khớp thì dừng (`set -e`) */
+export function packDownloadLines(): string[] {
+  const pack = BUILD_TOOLCHAIN.pack;
+  const url = `https://github.com/buildpacks/pack/releases/download/v${pack.version}/pack-v${pack.version}-linux.tgz`;
+  return [
+    `curl -fsSL -o "$UDP_TMP/pack.tgz" "${url}"`,
+    `echo "${pack.linuxSha256}  $UDP_TMP/pack.tgz" | sha256sum -c -`,
+    'tar -xzf "$UDP_TMP/pack.tgz" -C "$UDP_TMP" pack',
+  ];
+}
+
 /** Digest trong tệp `--metadata-file` của BuildKit — không backslash, không jq */
 const digestFromBuildkit = (file: string): string =>
   `grep -o '"containerimage.digest": *"sha256:[0-9a-f]*"' ${file} | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1`;
 
-/** Digest trong `report.toml` của lifecycle (`[image] digest = "sha256:…"`) */
-const digestFromReport = (file: string): string =>
+/** Digest trong `report.toml` của lifecycle (`[image] digest = "sha256:…"`) — `pack build/rebase` và creator/rebaser */
+export const digestFromReport = (file: string): string =>
   `grep -E '^ *digest *= *"sha256:' ${file} | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1`;
 
 // -------------------------------------------------------------------------------- trong cluster
@@ -350,6 +357,79 @@ export interface BuildContainer {
   secretEnv: string[];
 }
 
+/** Container với giá trị mặc định: UID của image, không nới seccomp, không biến */
+function buildContainer(
+  c: Partial<BuildContainer> &
+    Pick<BuildContainer, "name" | "image" | "script">,
+): BuildContainer {
+  return { runAsUser: null, unconfined: false, env: {}, secretEnv: [], ...c };
+}
+
+/**
+ * Đăng nhập registry trong cluster: ghi `/udp-auth/config.json` — bằng hai secret của CI (mật khẩu), hay xin token
+ * ServiceAccount rồi đổi lấy mật khẩu ngắn hạn qua CLI của cloud (danh tính build). Dùng chung cho lượt build và lượt
+ * rebase (QĐ-13).
+ */
+export function inClusterLoginContainers(
+  plan: BuildPlan,
+  ci: InClusterCi,
+): BuildContainer[] {
+  const images = BUILD_TOOLCHAIN.images;
+  const push = effectivePush(plan.push, ci);
+  const login: BuildContainer[] = [];
+  if (push.kind === "basic") {
+    login.push(
+      buildContainer({
+        name: "udp-login",
+        image: images.alpine,
+        secretEnv: ["UDP_REGISTRY_USERNAME", "UDP_REGISTRY_PASSWORD"],
+        script: [
+          "set -eu",
+          '[ -n "${UDP_REGISTRY_USERNAME:-}" ] && [ -n "${UDP_REGISTRY_PASSWORD:-}" ] || { echo "Thieu secret UDP_REGISTRY_USERNAME / UDP_REGISTRY_PASSWORD"; exit 1; }',
+          ...dockerConfigLines(
+            push.server,
+            'printf "%s:%s" "$UDP_REGISTRY_USERNAME" "$UDP_REGISTRY_PASSWORD"',
+          ),
+        ],
+      }),
+    );
+  } else if (plan.identity === null) {
+    login.push(
+      buildContainer({
+        name: "udp-login",
+        image: images.alpine,
+        script: missingIdentity(plan),
+      }),
+    );
+  } else {
+    const cli = cloudCli(plan);
+    const tokenFile = `${AUTH_DIR}/oidc-token`;
+    const password = cloudPasswordCommand(plan, tokenFile);
+    login.push(
+      buildContainer({
+        name: "udp-token",
+        image: images.curl,
+        script: tokenRequestLines(oidcAudience(plan.identity), tokenFile),
+      }),
+      buildContainer({
+        name: "udp-login",
+        image: cli.image,
+        env: password.env,
+        script: [
+          "set -eu",
+          `UDP_PASSWORD=$(${password.command})`,
+          ...dockerConfigLines(
+            push.server,
+            `printf "%s:%s" "${cli.username}" "$UDP_PASSWORD"`,
+          ),
+        ],
+      }),
+    );
+  }
+
+  return login;
+}
+
 /**
  * Các container build trong cluster, theo thứ tự: chuẩn bị → (xin token → đăng nhập) → build Dockerfile → build
  * Buildpacks → digest. Hai bước build tự bỏ qua khi chiến lược không phải của mình — nên mọi CI chạy CÙNG một
@@ -366,19 +446,7 @@ export function inClusterBuildContainers(
   const tag = `${image}:${commit}`;
   const user = BUILD_TOOLCHAIN.builderUser;
   const parts = dockerfileParts(plan);
-  const push = effectivePush(plan.push, ci);
-  const container = (
-    c: Partial<BuildContainer> &
-      Pick<BuildContainer, "name" | "image" | "script">,
-  ): BuildContainer => ({
-    runAsUser: null,
-    unconfined: false,
-    env: {},
-    secretEnv: [],
-    ...c,
-  });
-
-  const prepare = container({
+  const prepare = buildContainer({
     name: "udp-prepare",
     image: images.alpine,
     runAsUser: 0,
@@ -396,61 +464,12 @@ export function inClusterBuildContainers(
     ],
   });
 
-  const login: BuildContainer[] = [];
-  if (push.kind === "basic") {
-    login.push(
-      container({
-        name: "udp-login",
-        image: images.alpine,
-        secretEnv: ["UDP_REGISTRY_USERNAME", "UDP_REGISTRY_PASSWORD"],
-        script: [
-          "set -eu",
-          '[ -n "${UDP_REGISTRY_USERNAME:-}" ] && [ -n "${UDP_REGISTRY_PASSWORD:-}" ] || { echo "Thieu secret UDP_REGISTRY_USERNAME / UDP_REGISTRY_PASSWORD"; exit 1; }',
-          ...dockerConfigLines(
-            push.server,
-            'printf "%s:%s" "$UDP_REGISTRY_USERNAME" "$UDP_REGISTRY_PASSWORD"',
-          ),
-        ],
-      }),
-    );
-  } else if (plan.identity === null) {
-    login.push(
-      container({
-        name: "udp-login",
-        image: images.alpine,
-        script: missingIdentity(plan),
-      }),
-    );
-  } else {
-    const cli = cloudCli(plan);
-    const tokenFile = `${AUTH_DIR}/oidc-token`;
-    const password = cloudPasswordCommand(plan, tokenFile);
-    login.push(
-      container({
-        name: "udp-token",
-        image: images.curl,
-        script: tokenRequestLines(oidcAudience(plan.identity), tokenFile),
-      }),
-      container({
-        name: "udp-login",
-        image: cli.image,
-        env: password.env,
-        script: [
-          "set -eu",
-          `UDP_PASSWORD=$(${password.command})`,
-          ...dockerConfigLines(
-            push.server,
-            `printf "%s:%s" "${cli.username}" "$UDP_PASSWORD"`,
-          ),
-        ],
-      }),
-    );
-  }
+  const login = inClusterLoginContainers(plan, ci);
 
   const skipUnless = (wanted: string, other: string): string =>
     `[ "$(cat ${WORK_DIR}/strategy)" = ${wanted} ] || { echo "Bo qua: build bang ${other}"; exit 0; }`;
 
-  const dockerfile = container({
+  const dockerfile = buildContainer({
     name: "udp-build-dockerfile",
     image: images.buildkit,
     runAsUser: BUILD_TOOLCHAIN.buildkitUser.uid,
@@ -479,7 +498,7 @@ export function inClusterBuildContainers(
     ],
   });
 
-  const buildpacks = container({
+  const buildpacks = buildContainer({
     name: "udp-build-buildpacks",
     image: images.builder,
     env: {
@@ -503,7 +522,7 @@ export function inClusterBuildContainers(
     ],
   });
 
-  const digest = container({
+  const digest = buildContainer({
     name: "udp-digest",
     image: images.alpine,
     script: [

@@ -40,6 +40,7 @@ export const TERMS = [
   "approval",
   "buildpacks",
   "buildIdentity",
+  "rebase",
 ] as const;
 export type TermKey = (typeof TERMS)[number];
 
@@ -181,6 +182,10 @@ export const glossaryMessages = defineMessages({
         name: "Tự đóng gói (Buildpacks)",
         def: "Cách build image không cần Dockerfile: Buildpacks tự nhận ngôn ngữ (Node.js, Python, Go, Java, .NET, Ruby, PHP, web tĩnh) và dựng image chạy bằng người dùng thường.",
       },
+      rebase: {
+        name: "Vá image nền (rebase)",
+        def: "Mỗi ngày, pipeline thay lớp hệ điều hành dưới image Buildpacks bằng bản vá mới nhất mà không build lại. UDP chỉ deploy khi production đang chạy đúng commit đó, nên không bao giờ đè một lần rollback.",
+      },
       buildIdentity: {
         name: "Danh tính build",
         def: "Vai trò trong cloud của bạn mà CI dùng để đẩy image, qua token ngắn hạn (OIDC). Không có khoá nào được lưu; chỉ đúng repo và nhánh của project dùng được.",
@@ -318,6 +323,10 @@ export const glossaryMessages = defineMessages({
       buildpacks: {
         name: "Automatic packaging (Buildpacks)",
         def: "Building an image without a Dockerfile: Buildpacks detect the language (Node.js, Python, Go, Java, .NET, Ruby, PHP, static sites) and build an image that runs as a regular user.",
+      },
+      rebase: {
+        name: "Base image patch (rebase)",
+        def: "Every day the pipeline swaps the operating-system layers under a Buildpacks image for the latest patched ones, without rebuilding. UDP deploys it only when production runs that exact commit, so a rollback is never overridden.",
       },
       buildIdentity: {
         name: "Build identity",

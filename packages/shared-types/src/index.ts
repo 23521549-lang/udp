@@ -230,10 +230,12 @@ export {
   buildTestSettingSchema,
   DEFAULT_BUILD_SETTINGS,
   isSafeBuildPath,
+  rebaseScheduleOf,
 } from "./build.js";
 export type {
   BuildIdentityInput,
   BuildLanguage,
   BuildSettings,
   BuildStrategyName,
+  RebaseSchedule,
 } from "./build.js";

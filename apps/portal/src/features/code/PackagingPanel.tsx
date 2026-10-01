@@ -22,7 +22,7 @@ import { qk } from "../../lib/query-keys";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
 import { codeApi } from "./code-api";
-import { packagingMessages } from "./packaging.messages";
+import { packagingMessages, type RebaseHow } from "./packaging.messages";
 
 /**
  * [Plan #61 QĐ-9] Mục "Đóng gói" của trang Mã nguồn: UDP sẽ build image thế nào và vì sao, người dùng còn phải làm gì
@@ -106,6 +106,7 @@ function PackagingView({ view }: { view: BuildViewWire }) {
         </div>
       </div>
       <TestLine view={view} />
+      <RebaseLine view={view} />
       <Todo view={view} />
       {view.identity.required && (
         <IdentitySection view={view} canEdit={canEdit} />
@@ -132,6 +133,37 @@ function TestLine({ view }: { view: BuildViewWire }) {
         <span className="stt warn">
           <Icon of={CircleX} />
           {m.testMissing(m.languageName[test.language])}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const pad = (n: number): string => String(n).padStart(2, "0");
+
+/** [Plan #61 QĐ-13] Vá image nền theo lịch: giờ chạy (UTC) và cách đặt lịch ở CI đang bật */
+function RebaseLine({ view }: { view: BuildViewWire }) {
+  const m = useMessages(packagingMessages);
+  if (view.ci === null) return null;
+  const rebase = view.rebase;
+  const time =
+    rebase === null ? "" : `${pad(rebase.hour)}:${pad(rebase.minute)}`;
+  const how: RebaseHow | undefined =
+    view.ci in m.rebaseHow
+      ? m.rebaseHow[view.ci as keyof PackagingText["rebaseHow"]]
+      : undefined;
+  return (
+    <div className="packaging-row">
+      <span className="l">
+        {m.rebase}
+        <InfoTip term="rebase" />
+      </span>
+      {rebase === null ? (
+        <span className="c3">{m.rebaseOff}</span>
+      ) : (
+        <span>
+          {m.rebaseWhen(time)}{" "}
+          <span className="c3">{how?.(rebase.cron, time)}</span>
         </span>
       )}
     </div>

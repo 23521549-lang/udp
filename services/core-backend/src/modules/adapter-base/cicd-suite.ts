@@ -1,8 +1,9 @@
 import { createHmac } from "node:crypto";
-import type {
-  CicdDomainAdapter,
-  PipelineStep,
-  PipelineTemplateParams,
+import {
+  rebaseScheduleOf,
+  type CicdDomainAdapter,
+  type PipelineStep,
+  type PipelineTemplateParams,
 } from "@udp/adapter-core";
 import {
   BUILD_TOOLCHAIN,
@@ -115,6 +116,56 @@ const PARAMS: PipelineTemplateParams = {
   rolloutStrategy: "udp-driven",
   languageRuntime: "nodejs",
   build: BUILD,
+};
+
+/** Kế hoạch ghim Dockerfile ⇒ không có lịch rebase (QĐ-13) — cho phép kiểm về riêng lượt build */
+const NO_REBASE: PipelineTemplateParams = {
+  ...PARAMS,
+  build: { ...BUILD, strategy: "dockerfile" },
+};
+
+const REBASE = rebaseScheduleOf(BUILD, PARAMS.projectSlug);
+
+/**
+ * [Plan #61 QĐ-13] Dấu hiệu của lượt theo lịch ở từng CI: có lịch, lượt build bỏ qua lượt theo lịch, lượt rebase chỉ
+ * chạy ở lượt theo lịch. CI mới thêm vào mà không khai ở đây ⇒ đỏ.
+ */
+const REBASE_MARKERS: Record<string, readonly string[]> = {
+  "github-actions": [
+    "UDP_ENVIRONMENT=prod",
+    `cron: "${REBASE?.cron ?? ""}"`,
+    "if: github.event_name != 'schedule'",
+    "if: github.event_name == 'schedule'",
+  ],
+  "gitlab-ci": [
+    "UDP_ENVIRONMENT=prod",
+    `- if: '$CI_PIPELINE_SOURCE == "schedule"'`,
+    "when: never",
+    `- if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == "main"'`,
+  ],
+  circleci: [
+    "UDP_ENVIRONMENT=prod",
+    "not:",
+    "equal: [schedule, << pipeline.trigger.type >>]",
+    "udp-rebase:",
+  ],
+  // Lịch chỉ ở nhánh main, nơi `UDP_ENVIRONMENT` của khối environment là production
+  jenkins: [
+    `cron(env.BRANCH_NAME == 'main' ? '${REBASE?.cron ?? ""}' : '')`,
+    "when { not { triggeredBy 'TimerTrigger' } }",
+    "when { triggeredBy 'TimerTrigger' }",
+  ],
+  drone: [
+    "UDP_ENVIRONMENT=prod",
+    "exclude: [cron]",
+    "event: [cron]",
+    "cron: [udp-rebase]",
+  ],
+  tekton: [
+    "UDP_ENVIRONMENT=prod",
+    "name: udp-web-rebase",
+    "tkn pipeline start udp-web-rebase",
+  ],
 };
 
 /**
@@ -503,7 +554,8 @@ export function runCicdSuite(
     api.it(
       "bước của domain khác: đủ, theo pha rồi tool, trước lúc báo UDP; bí mật chỉ bằng TÊN",
       () => {
-        const text = adapter.renderPipelineTemplate(PARAMS);
+        // Lượt rebase (QĐ-13) cũng có bước báo UDP ở cuối tệp: phép thứ tự này về LƯỢT BUILD, nên vẽ không có lịch
+        const text = adapter.renderPipelineTemplate(NO_REBASE);
         const at = (needle: string): number => {
           const i = text.indexOf(needle);
           assert(i >= 0, `template thiếu "${needle}"`);
@@ -531,11 +583,50 @@ export function runCicdSuite(
         assert(!text.includes("''''"), "bốn nháy đơn liền nhau trong template");
         assert(at("TF_IN_AUTOMATION") > 0, "thiếu biến công khai của bước");
 
-        const bare = adapter.renderPipelineTemplate({ ...PARAMS, steps: [] });
+        const bare = adapter.renderPipelineTemplate({
+          ...NO_REBASE,
+          steps: [],
+        });
         for (const step of STEPS) {
           assert(
             !bare.includes(stepId(step)),
             `không có bước mà template vẫn có ${stepId(step)}`,
+          );
+        }
+      },
+    );
+
+    api.it(
+      "[Plan #61 QĐ-13] lượt theo lịch: lịch có mặt, lượt build bỏ qua nó, rebase rồi báo UDP kind rebase; ghim Dockerfile ⇒ không có",
+      () => {
+        const text = adapter.renderPipelineTemplate(PARAMS);
+        const markers = REBASE_MARKERS[adapter.toolId];
+        assert(
+          markers !== undefined,
+          `CI ${adapter.toolId} chưa khai dấu hiệu lượt theo lịch`,
+        );
+        for (const marker of markers) {
+          assert(text.includes(marker), `thiếu "${marker}"`);
+        }
+        // Shell đặt `UDP_KIND=rebase`; Jenkins đặt bằng Groovy (`env.UDP_KIND = 'rebase'`) rồi bước `post` báo
+        assert(
+          (text.match(/UDP_KIND ?= ?'?rebase/g) ?? []).length === 1,
+          "phải có đúng MỘT chỗ đánh dấu lượt rebase",
+        );
+        assert(
+          text.includes('pack" rebase') ||
+            text.includes("/cnb/lifecycle/rebaser"),
+          "không có lệnh rebase",
+        );
+        const pinned = adapter.renderPipelineTemplate(NO_REBASE);
+        assert(
+          !/UDP_KIND ?= ?'?rebase/.test(pinned),
+          "ghim Dockerfile vẫn đánh dấu lượt rebase",
+        );
+        for (const absent of ["rebaser", 'pack" rebase']) {
+          assert(
+            !pinned.includes(absent),
+            `ghim Dockerfile vẫn có "${absent}"`,
           );
         }
       },

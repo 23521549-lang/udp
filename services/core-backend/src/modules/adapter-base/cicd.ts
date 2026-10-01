@@ -144,6 +144,8 @@ export const deployBodySchema = z
     repo: z.string().min(1).max(255),
     ref: z.string().min(1).max(255),
     actor: z.string().min(1).max(255),
+    /** [Plan #61 QĐ-13] Lượt rebase theo lịch — vắng là lượt build thường */
+    kind: z.literal("rebase").optional(),
   })
   .strict();
 
@@ -165,6 +167,15 @@ export function parseDeployBody(
     );
   }
   const b = parsed.data;
+  // Lượt rebase chỉ báo khi đã ra image mới: hỏng thì job đỏ ở CI, không phải một lần deploy hỏng (QĐ-13)
+  if (
+    b.kind === "rebase" &&
+    (b.status !== "success" || b.imageRef === undefined)
+  ) {
+    throw new WebhookPayloadError(
+      "thân webhook sai hình ở: kind (lượt rebase phải thành công và có imageRef)",
+    );
+  }
   return {
     provider,
     repo: b.repo,
@@ -179,5 +190,6 @@ export function parseDeployBody(
     ...(b.commitTimestamp === undefined
       ? {}
       : { commitTimestamp: b.commitTimestamp }),
+    ...(b.kind === undefined ? {} : { kind: b.kind }),
   };
 }

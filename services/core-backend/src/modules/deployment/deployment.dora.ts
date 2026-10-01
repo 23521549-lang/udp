@@ -214,12 +214,19 @@ export interface DeploymentView {
   imageTag: string | null;
   commitSha: string | null;
   triggeredBy: DoraEvent["triggeredBy"];
+  /** [Plan #61 QĐ-13] Lần deploy do rebase theo lịch — metadata của sự kiện mở đầu mang `kind: "rebase"` */
+  rebase: boolean;
   rolloutSessionId: string | null;
   restoresDeploymentId: string | null;
   startedAt: string;
   lastEventAt: string;
   events: { id: string; eventType: DeploymentEventType; occurredAt: string }[];
 }
+
+const isRebase = (metadata: unknown): boolean =>
+  typeof metadata === "object" &&
+  metadata !== null &&
+  (metadata as { kind?: unknown }).kind === "rebase";
 
 /**
  * Gom sự kiện theo `deploymentId` (§2.2: cột đó tồn tại đúng để gom START/SUCCESS/
@@ -251,6 +258,7 @@ export function groupDeployments(
       imageTag: pick("imageTag"),
       commitSha: pick("commitSha"),
       triggeredBy: first.triggeredBy,
+      rebase: sorted.some((e) => isRebase(e.metadata)),
       rolloutSessionId:
         sorted.map((e) => e.rolloutSessionId).find((v) => v !== null) ?? null,
       restoresDeploymentId:

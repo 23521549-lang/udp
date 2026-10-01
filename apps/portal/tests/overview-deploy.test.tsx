@@ -98,3 +98,30 @@ describe("trang Deploy: nhật ký một lần deploy", () => {
     expect(log).not.toHaveTextContent("ghp_should_hide");
   });
 });
+
+describe("trang Deploy: lượt vá image nền (Plan #61 QĐ-13)", () => {
+  it("lần deploy do rebase theo lịch mang nhãn Vá image nền; lần thường thì không", async () => {
+    const detail = projectFixture("VIEWER");
+    useProjectHandlers(detail);
+    const list = golden<{ deployments: DeploymentWire[] }>(
+      "GET /projects/{id}/deployments",
+    );
+    const [first, ...rest] = list.deployments;
+    server.use(
+      http.get(`${API}/projects/:id/deployments`, () =>
+        HttpResponse.json({
+          deployments: [{ ...first!, rebase: true }, ...rest],
+        }),
+      ),
+      http.get(`${API}/projects/:id/metrics/dora`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/metrics/dora")),
+      ),
+    );
+    renderApp(`/app/projects/${detail.project.id}/deployments`);
+    const rows = await screen.findAllByRole("listitem");
+    expect(within(rows[0]!).getByText("Vá image nền")).toBeInTheDocument();
+    for (const row of rows.slice(1)) {
+      expect(within(row).queryByText("Vá image nền")).toBeNull();
+    }
+  });
+});
