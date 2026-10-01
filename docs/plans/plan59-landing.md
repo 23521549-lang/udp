@@ -81,3 +81,7 @@ trang chủ, nút hiện mật khẩu, panel bên), hợp đồng bản xem th�
 **Còn biết:** ảnh rollout bản tiếng Anh còn câu lý do tiếng Việt "Không vượt ngưỡng": đó là chữ Service 3 trả về, sửa
 bằng mã lý do (UX-23, mục H3 của Plan #58), rồi chạy lại `demo:shots`. Bản build của bản xem thử (một tệp JS cố ý) vượt
 ngưỡng cảnh báo 1.200 KB từ trước (phần trang mới chỉ khoảng 30 KB).
+
+> **Đã làm (01/10/2026, Plan #60):** L1–L6 — `docs/plans/plan60-hoan-thien.md`, quyết định D-P52, D-P53. Luật "không
+> nút cho thứ chưa có" (§4) giữ nguyên ở dạng mới: link Quên mật khẩu và nút GitHub chỉ hiện khi máy chủ đã cấu hình
+> tính năng đó (`GET /auth/options`). Ảnh rollout bản tiếng Anh đã chụp lại với lý do theo ngôn ngữ.

@@ -211,3 +211,6 @@ trên ba cloud, credential chưa từng kiểm, deploy chờ duyệt, các proje
 | H7  | Kiểm tuỳ chọn `headers` của `@openfeature/ofrep-web-provider` trong hướng dẫn nhanh cho trình duyệt với mã nguồn gói | Gói chưa cài trong repo nên chưa đối chiếu được                |
 | H8  | Panel project của Bảng điều khiển: "job gần nhất" hiện chỉ xét trang đầu (50) của danh sách lỗi                      | Đủ khi ít job; cần route theo project nếu nhiều                |
 | H9  | Tài liệu: `UDP_design.md` §10 (các màn), quyết định D-P51, bàn giao                                                  | Như mọi plan                                                   |
+
+> **Đã làm (01/10/2026, Plan #60):** H1–H9 đủ cả chín mục, kể cả UX-23 (H3) — `docs/plans/plan60-hoan-thien.md`.
+> Quyết định D-P51 trong `UDP_design.md` §10.15.

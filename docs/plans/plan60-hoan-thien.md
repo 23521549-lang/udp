@@ -34,8 +34,9 @@ không có trường thì `detail = null` (default của schema).
 đọc trường này (bản mẫu).
 
 **QĐ-3 (H1, H8, H6).** `/admin/users` nhận `platformRole`, `order`; `/admin/projects` nhận `search`, `order` và trả
-`latestJob` của từng project (một truy vấn `DISTINCT ON`), thay cho việc Portal tự tìm trong trang đầu của danh sách
-job lỗi. `qk.adminUsers`/`qk.adminProjects` nhận object bộ lọc có kiểu.
+`latestProblemJob` của từng project (job gần nhất ở một trong ba trạng thái của trang Job lỗi, một truy vấn
+`DISTINCT ON`), thay cho việc Portal tự tìm trong trang đầu của danh sách job lỗi. `qk.adminUsers`/`qk.adminProjects`
+nhận object bộ lọc có kiểu.
 
 **QĐ-4 (H4, H5).** Một component `CommandPalette` dùng chung (khung listbox, bàn phím, nhóm), mỗi portal chỉ khai
 nguồn mục. CSS của Plan #58 về đúng mục trong `portal.css`; `.alert.neutral`, `.alert.ok` thành kiểu chung.
@@ -75,3 +76,27 @@ bốn mục gần nhất hiện trên trang giới thiệu.
 
 Typecheck và lint toàn repo đụng tới; test của `@udp/db`, Service 1, 2, 3 theo lô chạm; `wire-golden`; Portal
 (Vitest, demo contract); Playwright năm lượt (chạy từng lượt để máy đủ bộ nhớ); `deploy` test; design-lint.
+
+## 4. Kết quả (01/10/2026)
+
+| Commit    | Mục                                                                                          |
+| --------- | -------------------------------------------------------------------------------------------- |
+| `950e194` | H3 — lý do quyết định rollout dạng mã + số                                                   |
+| `0097c15` | H2 — `flagKey` trong nhật ký của Service 2                                                   |
+| `999b556` | H1, H6, H8 — lọc và sắp xếp ở máy chủ, `latestProblemJob`, khoá cache có kiểu                |
+| `f78a524` | H4 — `CommandPalette` dùng chung                                                             |
+| `fd0f893` | H5 — gom `ux-*.css`                                                                          |
+| `6ef73a5` | H7 — đoạn mã OFREP đối chiếu `@openfeature/ofrep-web-provider` 0.4.3                         |
+| `6ac5ba2` | L2–L4 máy chủ — điều khoản, quên mật khẩu, GitHub OAuth, `GET /auth/options`, migration      |
+| `894c723` | L2–L4 Portal — hai trang pháp lý, ô đồng ý, quên và đặt lại mật khẩu, nút GitHub             |
+| `93cf8ba` | L1, L5, L6 — dựng sẵn `/`, `llms.txt` + `index.md`, nhật ký thay đổi                         |
+| (sau đó)  | H9 — ảnh trang giới thiệu chụp lại, sổ nợ, bàn giao `docs/ban-giao/trang-thai-2026-10-01.md` |
+
+**Cổng đã chạy:** typecheck (Portal, bản xem thử, Service 1, `@udp/config`, `@udp/db`, `@udp/shared-types`,
+`deploy`); eslint và prettier trên mọi tệp đổi; Service 1 đủ bộ 4 245 ô (lượt chạy chung có 8 ô của `grid-tier2`
+quá giờ vì máy tải nặng, chạy riêng tệp đó đạt 45/45); `@udp/db` 355/355 (I22 có hai bảng mới); `@udp/config`
+26/26; `@udp/shared-types` 125/125; design-lint 158/158; `deploy` 61/61; Portal 352/352; hợp đồng bản xem thử
+17/17; Playwright năm lượt 15/15 với đủ luật axe WCAG 2.2 AA, gồm bốn màn mới của khách; `build:static` sinh
+`index.html` dựng sẵn 26 KB, `app.html`, `llms.txt`, `index.md`.
+
+**Nợ mới:** `legal-review`, `auth-external-real` (`docs/measurements/kiem-chung-con-no.md`).

@@ -168,8 +168,10 @@ test("chụp ảnh trang giới thiệu", async ({ browser }) => {
     }
     await context.close();
   }
-  writeFileSync(
-    fileURLToPath(new URL("shots.json", OUT)),
-    `${JSON.stringify(meta, null, 2)}\n`,
+  // Cặp toạ độ của dấu đánh số viết trên một dòng, đúng như Prettier: chụp lại không sinh diff định dạng
+  const json = JSON.stringify(meta, null, 2).replace(
+    /\[\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]/g,
+    "[$1, $2]",
   );
+  writeFileSync(fileURLToPath(new URL("shots.json", OUT)), `${json}\n`);
 });

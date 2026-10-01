@@ -1154,3 +1154,36 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
 - **Tài nguyên:** không (thời gian người).
 - **Ảnh hưởng tới kết luận:** phần đánh giá định tính của luận văn; không ảnh hưởng tính
   đúng.
+
+## legal-review — Điều khoản và Quyền riêng tư cần luật sư đọc
+
+- **Vì sao nợ:** [Plan #60 QĐ-6] `/terms` và `/privacy` viết đúng những gì mã làm (dữ liệu nào, ở đâu, giữ bao
+  lâu, cookie nào, bên thứ ba nào), và việc đăng ký đòi tích ô đồng ý. Nhưng văn bản pháp lý của một sản phẩm
+  thương mại phải do người có chuyên môn đọc theo Nghị định 13/2023/NĐ-CP và luật của nơi đặt máy chủ; trang hiện
+  cũng chưa ghi pháp nhân, địa chỉ và kênh liên hệ thật (chưa có).
+- **Tiền đề:** pháp nhân hoặc người chịu trách nhiệm, địa chỉ liên hệ, nơi đặt máy chủ đã chốt (`vm-oracle-real`).
+- **Việc:** luật sư đọc hai trang (bản tiếng Việt là bản gốc); sửa `legal.messages.ts`; đổi `LEGAL.termsVersion`
+  (`@udp/config`) và `LEGAL_VERSION` của Portal CÙNG lúc — test `auth-recovery.test.tsx` bắt hai số lệch.
+- **Đạt:** có ý kiến bằng văn bản rằng hai trang đủ cho việc mở công khai. **Không đạt:** thiếu điều khoản bắt buộc
+  ⇒ thêm, và người đã đồng ý bản cũ thấy lại ô đồng ý khi đăng nhập (chưa dựng: hôm nay chỉ lưu bản đã đồng ý).
+- **Tài nguyên:** thời gian của luật sư.
+- **Ảnh hưởng tới kết luận:** không ảnh hưởng tính đúng của hệ thống; là điều kiện để mở đăng ký công khai.
+
+## auth-external-real — gửi thư và đăng nhập GitHub thật
+
+- **Vì sao nợ:** [Plan #60 QĐ-7, QĐ-8] Quên mật khẩu và GitHub OAuth đã test với thư giả và GitHub giả ở ranh
+  giới (`AuthRuntime` trong `AppDeps`): token một lần, hết hạn, thu hồi phiên, `state` sai, email chưa xác minh,
+  email đã có tài khoản mật khẩu. Chưa chạy với một máy chủ SMTP thật và một OAuth App GitHub thật vì cả hai cần
+  tài khoản của người dùng.
+- **Tiền đề:** dịch vụ SMTP có gói miễn phí (Brevo, Resend…) ⇒ `SMTP_URL`, `MAIL_FROM`; OAuth App trên GitHub
+  với callback `<CORS_ORIGIN>/api/v1/auth/github/callback` ⇒ `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`. Thiếu
+  biến nào thì tính năng đó tắt và Portal ẩn link (`GET /auth/options`).
+- **Lệnh:** trên bản chạy thật: (1) Quên mật khẩu với một email có tài khoản ⇒ thư tới trong 1 phút, link mở
+  `/reset-password`, đặt được mật khẩu, phiên cũ ở trình duyệt khác bị đăng xuất; với email không có tài khoản ⇒
+  cùng câu trả lời, không thư; (2) "Tiếp tục với GitHub" ở trang đăng ký (đã tích ô) ⇒ tài khoản mới; đăng xuất
+  rồi ở trang đăng nhập ⇒ vào lại đúng tài khoản; email trùng một tài khoản mật khẩu ⇒ thông báo dùng mật khẩu.
+- **Đạt:** cả hai luồng như trên; thư không vào thư rác của Gmail. **Không đạt:** thư vào thư rác ⇒ cấu hình
+  SPF/DKIM của tên miền gửi; GitHub trả lỗi `redirect_uri` ⇒ callback của OAuth App lệch `CORS_ORIGIN`.
+- **Tài nguyên:** gói miễn phí của dịch vụ SMTP, OAuth App của GitHub — 0 đồng.
+- **Ảnh hưởng tới kết luận:** câu "người dùng tự lấy lại được tài khoản và đăng nhập bằng GitHub" — hôm nay là bảo
+  đảm của mã và test ranh giới.
