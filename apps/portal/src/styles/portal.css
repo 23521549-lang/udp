@@ -231,6 +231,132 @@
   font-weight: 500;
 }
 
+/* [Plan #60] "Quên mật khẩu?" cạnh nhãn của ô mật khẩu */
+.auth-forgot {
+  margin-left: auto;
+  font-size: 12.5px;
+}
+
+/* [Plan #60 QĐ-8] Kẻ "hoặc" và nút GitHub (nút viền, không màu nhấn: màu nhấn là việc chính của form) */
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.auth-or::before,
+.auth-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.auth-card a.auth-gh {
+  justify-content: center;
+  height: 34px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* [Plan #60 QĐ-6] Ô đồng ý Điều khoản: ô vuông cạnh câu, link trong câu mở thẻ mới */
+.auth-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.auth-check input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.auth-alert {
+  margin: 0;
+}
+
+/* [Plan #60 QĐ-6] Điều khoản và Quyền riêng tư: cột đọc 68 ký tự */
+.legal {
+  min-height: 100dvh;
+  background: var(--bg);
+}
+.legal-main {
+  width: min(100% - 32px, 720px);
+  margin: 8px auto 64px;
+  font-size: 15px;
+  line-height: 1.65;
+}
+.legal-main h1 {
+  margin: 0 0 8px;
+  font-size: clamp(26px, 2vw + 16px, 34px);
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.legal-lead {
+  margin: 0 0 6px;
+  color: var(--ink-2);
+  font-size: 16px;
+}
+.legal-toc {
+  margin: 20px 0 8px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow-panel);
+}
+.legal-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  columns: 2 220px;
+  font-size: 13.5px;
+}
+.legal-toc li {
+  padding: 2px 0;
+}
+.legal-main section {
+  scroll-margin-top: 16px;
+}
+.legal-main section:focus {
+  outline: none;
+}
+.legal-main h2 {
+  margin: 32px 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.legal-main p,
+.legal-main ul {
+  max-width: 68ch;
+  margin: 0 0 10px;
+  color: var(--ink-2);
+}
+.legal-main ul {
+  padding-left: 20px;
+}
+.legal-main li {
+  margin: 4px 0;
+}
+.legal-main a {
+  color: var(--accent-2);
+}
+.legal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 40px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
 /* Ô mật khẩu với nút hiện/ẩn nằm trong mép phải của ô */
 .pw {
   position: relative;

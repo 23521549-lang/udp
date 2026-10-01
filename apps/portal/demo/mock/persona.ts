@@ -16,6 +16,8 @@ export const PLATFORM_SCENARIOS = ["healthy", "at-risk"] as const;
 export type PlatformScenario = (typeof PLATFORM_SCENARIOS)[number];
 
 export const PERSONA_KEY = "udp_demo_persona";
+/** [Plan #60] Khách đã đăng nhập trong thẻ này (đăng ký, đăng nhập, GitHub giả lập) — tải lại trang vẫn còn phiên */
+export const SIGNED_IN_KEY = "udp_demo_signed_in";
 export const PLATFORM_KEY = "udp_demo_platform";
 
 export interface DemoSetup {
@@ -47,6 +49,17 @@ export function storedSetup(): DemoSetup {
       PLATFORM_SCENARIOS.find((s) => s === platform) ?? DEFAULT_SETUP.platform,
   };
 }
+
+export function rememberSignedIn(on: boolean): void {
+  try {
+    if (on) sessionStorage.setItem(SIGNED_IN_KEY, "1");
+    else sessionStorage.removeItem(SIGNED_IN_KEY);
+  } catch {
+    // storage bị chặn: phiên chỉ sống tới lần tải lại
+  }
+}
+
+export const rememberedSignedIn = (): boolean => stored(SIGNED_IN_KEY) === "1";
 
 export function storeSetup(setup: DemoSetup): void {
   try {

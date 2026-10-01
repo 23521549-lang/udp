@@ -315,6 +315,15 @@ const VISITOR_SCREENS: [name: string, path: string, must: string][] = [
   ["login", "/login", ".auth-card .pw-eye"],
   // Panel bên của trang đăng ký (màn hẹp: xuống dưới form)
   ["register", "/register", ".auth-aside li"],
+  // [Plan #60] Quên và đặt lại mật khẩu, hai trang pháp lý (ô đồng ý nằm trong màn "register")
+  ["forgot-password", "/forgot-password", ".auth-form .btn.pri"],
+  [
+    "reset-password",
+    "/reset-password#ma-dat-lai-mau-cua-ban-xem-thu",
+    ".auth-form .pw",
+  ],
+  ["terms", "/terms", ".legal-toc li"],
+  ["privacy", "/privacy", ".legal-toc li"],
 ];
 
 for (const pass of PASSES) {

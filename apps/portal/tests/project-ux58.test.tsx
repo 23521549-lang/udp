@@ -197,15 +197,25 @@ describe("đăng ký: luật nói trước, lỗi nói cách sửa (UX-24)", () 
   it("thiếu tên, email sai, mật khẩu ngắn ⇒ ba lỗi kèm cách sửa", () => {
     const m = authMessages.vi;
     expect(
-      registerErrors({ name: " ", email: "a@b", password: "123" }, m),
+      registerErrors(
+        { name: " ", email: "a@b", password: "123", agree: false },
+        m,
+      ),
     ).toEqual({
       name: m.nameRequired,
       email: m.emailInvalid,
       password: m.passwordShort(8),
+      // [Plan #60 QĐ-6] Ô đồng ý chưa tích cũng là một lỗi nói cách sửa
+      acceptTerms: m.consentRequired,
     });
     expect(
       registerErrors(
-        { name: "Lan", email: "lan@congty.vn", password: "12345678" },
+        {
+          name: "Lan",
+          email: "lan@congty.vn",
+          password: "12345678",
+          agree: true,
+        },
         m,
       ),
     ).toEqual({});

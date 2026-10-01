@@ -2,6 +2,7 @@ import type { CloudCredentialWire } from "@udp/shared-types/wire";
 import { cloudCredentialId } from "../audit";
 import { nowIso } from "../clock";
 import type { Db } from "../db";
+import { rememberSignedIn } from "../persona";
 import { uuidOf } from "../random";
 import {
   bodyOf,
@@ -129,11 +130,13 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
     })
     .on("POST", "/auth/login", () => {
       db.signedIn = true;
+      rememberSignedIn(true);
       return ok(session(db));
     })
     .on("POST", "/auth/register", (req) => {
       const { name, email } = bodyOf<{ name?: string; email?: string }>(req);
       db.signedIn = true;
+      rememberSignedIn(true);
       if (name !== undefined && name.trim() !== "")
         db.me = { ...db.me, name: name.trim() };
       if (email !== undefined && email.trim() !== "")
@@ -146,6 +149,21 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
     })
     .on("POST", "/auth/logout", () => {
       db.signedIn = false;
+      rememberSignedIn(false);
+      return noContent;
+    })
+    // [Plan #60] Bản xem thử bật cả hai cách đăng nhập để xem được; thư và GitHub đều GIẢ LẬP, không gửi gì thật
+    .on("GET", "/auth/options", () => ok({ passwordReset: true, github: true }))
+    .on("POST", "/auth/password/forgot", () => ok({ status: "accepted" }, 202))
+    .on("POST", "/auth/password/reset", (req) => {
+      const { token } = bodyOf<{ token?: string }>(req);
+      if (token === undefined || token.length < 20) {
+        throw new HttpProblem(
+          404,
+          "NOT_FOUND",
+          "Đường dẫn đặt lại mật khẩu không còn dùng được. Xin một thư mới ở trang Quên mật khẩu.",
+        );
+      }
       return noContent;
     })
 

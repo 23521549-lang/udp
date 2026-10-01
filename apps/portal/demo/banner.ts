@@ -2,6 +2,7 @@ import { currentLocale, useLocaleStore, type Locale } from "../src/i18n";
 import {
   PERSONAS,
   PLATFORM_SCENARIOS,
+  rememberSignedIn,
   storedSetup,
   storeSetup,
   type DemoSetup,
@@ -84,6 +85,8 @@ function select<T extends string>(
 function apply(next: DemoSetup, current: DemoSetup): void {
   storeSetup(next);
   if (next.persona !== current.persona) {
+    // Vai mới bắt đầu từ trạng thái của vai đó: khách thì chưa đăng nhập
+    rememberSignedIn(false);
     window.location.hash = next.persona === "visitor" ? "#/" : "#/app/home";
   }
   window.location.reload();

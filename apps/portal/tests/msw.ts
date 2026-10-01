@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 
 /**
@@ -42,5 +43,15 @@ export function golden<T = unknown>(route: string): T {
   return structuredClone(g.body) as T;
 }
 
-export const server = setupServer();
 export const API = "http://localhost:3000/api/v1";
+
+/**
+ * Handler MẶC ĐỊNH (còn lại sau mỗi `resetHandlers`): [Plan #60] cách đăng nhập đang bật là cấu hình công khai của cả
+ * triển khai mà trang đăng nhập và đăng ký hỏi mỗi lần mở — mẫu golden là triển khai CHƯA bật Quên mật khẩu hay
+ * GitHub. Test cần bật thì `server.use` đè lên.
+ */
+export const server = setupServer(
+  http.get(`${API}/auth/options`, () =>
+    HttpResponse.json(golden("GET /auth/options")),
+  ),
+);

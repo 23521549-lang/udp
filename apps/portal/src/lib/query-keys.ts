@@ -31,6 +31,8 @@ interface AdminProjectsKeyFilter {
 
 export const qk = {
   me: () => ["me"] as const,
+  /** [Plan #60] Cách đăng nhập mà triển khai bật (Quên mật khẩu, GitHub) — công khai, không theo người */
+  authOptions: () => ["authOptions"] as const,
   /** [Plan #53] Trang chủ của người đang đăng nhập — mọi project của họ trong một lời gọi */
   home: () => ["home"] as const,
   /** [Plan #41] Một trang danh sách project */
@@ -177,6 +179,7 @@ export const ENV_SCOPED = [
  */
 export const NOT_ENV_SCOPED = {
   me: "người dùng hiện tại",
+  authOptions: "cấu hình đăng nhập của cả triển khai, không thuộc project nào",
   home: "gom mọi project của người dùng; env nằm trong từng dòng của response",
   projects: "danh sách project",
   project: "project và danh sách env của nó",

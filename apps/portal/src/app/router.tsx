@@ -34,7 +34,14 @@ import { EvidencePage } from "../features/admin/evidence/EvidencePage";
 import { AdminUsersPage } from "../features/admin/pages/AdminUsersPage";
 import { ArchitecturePage } from "../features/architecture/ArchitecturePage";
 import { useAuthStore } from "../features/auth/auth-store";
-import { LoginPage, RegisterPage } from "../features/auth/AuthPages";
+import {
+  ForgotPasswordPage,
+  LoginPage,
+  RegisterPage,
+  ResetPasswordPage,
+} from "../features/auth/AuthPages";
+import { authSearch } from "../features/auth/auth-search";
+import { LegalPage } from "../features/legal/LegalPage";
 import { DeploymentsPage } from "../features/deployment/DeploymentsPage";
 import { CodePage } from "../features/code/CodePage";
 import { DomainDetailPage } from "../features/domain/DomainDetailPage";
@@ -119,18 +126,10 @@ const indexRoute = createRoute({
   ),
 });
 
-interface LoginSearch {
-  redirectTo?: string;
-}
-const loginSearch = (s: Record<string, unknown>): LoginSearch => {
-  const redirectTo = str(s.redirectTo);
-  return redirectTo === undefined ? {} : { redirectTo };
-};
-
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  validateSearch: loginSearch,
+  validateSearch: authSearch,
   component: LoginPage,
 });
 
@@ -138,8 +137,34 @@ const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/register",
   // [Plan #55] Người được mời tạo tài khoản rồi quay về trang nhận lời mời
-  validateSearch: loginSearch,
+  validateSearch: authSearch,
   component: RegisterPage,
+});
+
+/** [Plan #60 QĐ-7] Quên mật khẩu, và trang đặt mật khẩu mới mở từ thư (mã ở fragment) */
+const forgotPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/forgot-password",
+  component: ForgotPasswordPage,
+});
+
+const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/reset-password",
+  component: ResetPasswordPage,
+});
+
+/** [Plan #60 QĐ-6] Hai văn bản công khai mà người đăng ký đồng ý */
+const termsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/terms",
+  component: () => <LegalPage doc="terms" />,
+});
+
+const privacyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/privacy",
+  component: () => <LegalPage doc="privacy" />,
 });
 
 /**
@@ -517,6 +542,10 @@ export const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   registerRoute,
+  forgotPasswordRoute,
+  resetPasswordRoute,
+  termsRoute,
+  privacyRoute,
   inviteRoute,
   adminRoute.addChildren([
     adminIndexRoute,

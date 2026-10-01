@@ -53,7 +53,12 @@ import type {
 import { DEMO_INVITE_TOKEN } from "./demo-invite";
 import { golden } from "./goldens";
 import { crowd } from "./people";
-import { DEFAULT_SETUP, type DemoSetup, type PersonaId } from "./persona";
+import {
+  DEFAULT_SETUP,
+  rememberedSignedIn,
+  type DemoSetup,
+  type PersonaId,
+} from "./persona";
 import { between, hex, pick, prng, uuid, uuidOf } from "./random";
 
 /**
@@ -4591,7 +4596,8 @@ export function createDb(setup: DemoSetup = DEFAULT_SETUP): Db {
       name: viewer.name,
       platformRole: viewer.admin ? "PLATFORM_ADMIN" : "USER",
     },
-    signedIn: setup.persona !== "visitor",
+    // Khách chưa đăng nhập, trừ khi đã đăng nhập trong thẻ này (Plan #60: tải lại trang không mất phiên)
+    signedIn: setup.persona !== "visitor" || rememberedSignedIn(),
     users,
     projects,
     teams,

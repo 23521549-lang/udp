@@ -37,6 +37,52 @@ export const authMessages = defineMessages({
       shotAlt:
         "Sơ đồ Kiến trúc của một project trong Portal UDP: CI/CD, registry, GitOps và Progressive Delivery nối với nhau.",
     },
+    /** [Plan #60] Quên mật khẩu, đăng nhập GitHub, đồng ý Điều khoản */
+    forgotLink: "Quên mật khẩu?",
+    github: "Tiếp tục với GitHub",
+    or: "hoặc",
+    consent: (terms: ReactNode, privacy: ReactNode) => (
+      <>
+        Tôi đồng ý với {terms} và {privacy} của UDP.
+      </>
+    ),
+    termsLink: "Điều khoản sử dụng",
+    privacyLink: "Chính sách quyền riêng tư",
+    consentRequired: "Tích ô này để tạo tài khoản.",
+    resetDone: "Đã đổi mật khẩu. Đăng nhập bằng mật khẩu mới.",
+    oauth: {
+      email_taken:
+        "Email của tài khoản GitHub này đã có tài khoản UDP. Đăng nhập bằng mật khẩu, hoặc dùng Quên mật khẩu.",
+      no_account:
+        "Chưa có tài khoản UDP gắn với GitHub này. Tích ô đồng ý bên dưới rồi tiếp tục với GitHub để tạo.",
+      no_email:
+        "Tài khoản GitHub chưa có email chính đã xác minh. Xác minh email trên GitHub rồi thử lại.",
+      denied: "Bạn đã huỷ đăng nhập bằng GitHub.",
+      failed: "Không đăng nhập được bằng GitHub. Thử lại sau ít phút.",
+    },
+    forgot: {
+      title: "Quên mật khẩu",
+      lead: "Nhập email đã đăng ký. UDP gửi đường dẫn đặt lại, dùng được một lần trong 30 phút.",
+      submit: "Gửi đường dẫn",
+      sending: "Đang gửi…",
+      sentTitle: "Kiểm tra hộp thư",
+      sent: (email: ReactNode) => (
+        <>
+          Nếu {email} có tài khoản UDP, thư đặt lại mật khẩu đang trên đường
+          tới. Không thấy thì xem cả mục thư rác.
+        </>
+      ),
+      back: "Về trang đăng nhập",
+    },
+    reset: {
+      title: "Đặt mật khẩu mới",
+      password: "Mật khẩu mới",
+      submit: "Đổi mật khẩu",
+      saving: "Đang lưu…",
+      missingToken:
+        "Đường dẫn thiếu mã đặt lại. Mở lại đường dẫn trong thư, hoặc xin thư mới.",
+      requestNew: "Xin thư mới",
+    },
   },
   en: {
     signIn: "Sign in",
@@ -65,6 +111,51 @@ export const authMessages = defineMessages({
       ],
       shotAlt:
         "The Architecture diagram of a project in the UDP Portal: CI/CD, registry, GitOps and Progressive Delivery connected.",
+    },
+    forgotLink: "Forgot password?",
+    github: "Continue with GitHub",
+    or: "or",
+    consent: (terms: ReactNode, privacy: ReactNode) => (
+      <>
+        I agree to the UDP {terms} and {privacy}.
+      </>
+    ),
+    termsLink: "Terms of Service",
+    privacyLink: "Privacy Policy",
+    consentRequired: "Tick this box to create an account.",
+    resetDone: "Password changed. Sign in with your new password.",
+    oauth: {
+      email_taken:
+        "The email of this GitHub account already has a UDP account. Sign in with your password, or use Forgot password.",
+      no_account:
+        "No UDP account is linked to this GitHub account yet. Tick the box below, then continue with GitHub to create one.",
+      no_email:
+        "This GitHub account has no verified primary email. Verify an email on GitHub and try again.",
+      denied: "You cancelled signing in with GitHub.",
+      failed: "Could not sign in with GitHub. Try again in a few minutes.",
+    },
+    forgot: {
+      title: "Forgot password",
+      lead: "Enter the email you signed up with. UDP sends a reset link that works once, for 30 minutes.",
+      submit: "Send link",
+      sending: "Sending…",
+      sentTitle: "Check your inbox",
+      sent: (email: ReactNode) => (
+        <>
+          If {email} has a UDP account, a reset email is on its way. If you do
+          not see it, check your spam folder.
+        </>
+      ),
+      back: "Back to sign in",
+    },
+    reset: {
+      title: "Choose a new password",
+      password: "New password",
+      submit: "Change password",
+      saving: "Saving…",
+      missingToken:
+        "The link is missing its reset code. Open the link from the email again, or request a new one.",
+      requestNew: "Request a new email",
     },
   },
 });

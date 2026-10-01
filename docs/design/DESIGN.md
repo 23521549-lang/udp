@@ -202,6 +202,18 @@ viết thường, đậm 600–700. Favicon dùng cùng hình trên nền `#2B5B
   trên về trang giới thiệu, ô mật khẩu có nút hiện (nút bật `aria-pressed`). Đăng ký thêm panel bên chỉ nói sự thật về
   sản phẩm; dưới 1024px panel xuống dưới form.
 
+## 8c. Tài khoản và trang pháp lý (Plan #60)
+
+- Quên mật khẩu và Đặt mật khẩu mới dùng CÙNG thẻ giữa màn của Đăng nhập; gửi xong thì thẻ nói một câu như nhau cho
+  mọi email (không lộ email nào có tài khoản). Link "Quên mật khẩu?" và nút GitHub chỉ hiện khi máy chủ đã cấu hình
+  tính năng đó (`GET /auth/options`): không có nút bấm vào lỗi.
+- Ô đồng ý ở trang Đăng ký không tích sẵn, chữ có link tới hai trang mở ở thẻ mới; lỗi gắn ô như mọi trường.
+- Nút "Tiếp tục với GitHub" là nút viền (màu nhấn để dành cho việc chính của form) dưới form, ngăn bằng một dòng
+  "hoặc". Dấu GitHub ở đây là ngoại lệ DUY NHẤT của luật "không yếu tố của tổ chức bên ngoài" (mục 9): nó chỉ chỗ
+  đăng nhập, không làm nhận diện của UDP.
+- `/terms`, `/privacy`: một cột chữ đọc dài (tối đa 720px, chữ 15px, dòng 1.65), mục lục đầu trang, ngày phiên bản;
+  đầu trang là logo về trang giới thiệu như Đăng nhập, cuối trang là link sang văn bản kia và chọn ngôn ngữ.
+
 ## 9. Không làm (rút từ các vòng duyệt)
 
 - Gradient nhiều màu, ô icon cầu vồng, nền màu loang, chữ phồng 900, lưới thẻ lặp giống nhau, số liệu đặt ra
