@@ -186,11 +186,8 @@ export const adminMessages = defineMessages({
     },
     /** [Plan #58 UX-30] Bảng lệnh Ctrl K của Bảng điều khiển */
     palette: {
-      title: "Tìm nhanh",
       search: "Tìm trang, project hoặc người dùng",
       searchPlaceholder: "Tìm trang, project hoặc email người dùng…",
-      results: "Kết quả",
-      noResults: "Không có kết quả",
       group: {
         page: "Trang",
         project: "Project",
@@ -198,10 +195,6 @@ export const adminMessages = defineMessages({
         command: "Lệnh",
       },
       admin: "Quản trị",
-      esc: "Esc",
-      enter: "Enter",
-      select: "chọn",
-      open: "mở",
     },
     architecture: {
       title: "Kiến trúc nền tảng",
@@ -546,11 +539,8 @@ export const adminMessages = defineMessages({
       openOrphans: "Open in Orphaned resources",
     },
     palette: {
-      title: "Quick search",
       search: "Search pages, projects or users",
       searchPlaceholder: "Search pages, projects or user emails…",
-      results: "Results",
-      noResults: "No results",
       group: {
         page: "Pages",
         project: "Projects",
@@ -558,10 +548,6 @@ export const adminMessages = defineMessages({
         command: "Commands",
       },
       admin: "Admin",
-      esc: "Esc",
-      enter: "Enter",
-      select: "select",
-      open: "open",
     },
     architecture: {
       title: "Platform architecture",

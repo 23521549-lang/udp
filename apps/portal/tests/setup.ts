@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll } from "vitest";
 import { server } from "./msw";
 import { useAuthStore } from "../src/features/auth/auth-store";
 import { useToasts } from "../src/components/Toast";
-import { usePaletteStore } from "../src/features/project/CommandPalette";
+import { usePaletteStore } from "../src/components/CommandPalette";
 import { useLocaleStore } from "../src/i18n";
 import { useHelpStore } from "../src/features/help/HelpDrawer";
 import { useShortcutStore } from "../src/lib/shortcuts";

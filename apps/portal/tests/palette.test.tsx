@@ -8,7 +8,7 @@ import {
   matchItems,
   usePaletteStore,
   type PaletteItem,
-} from "../src/features/project/CommandPalette";
+} from "../src/components/CommandPalette";
 import { API, golden, server } from "./msw";
 import { renderApp } from "./render";
 

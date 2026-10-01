@@ -38,6 +38,16 @@ export const componentsMessages = defineMessages({
       asTable: "Xem dạng bảng",
       asDiagram: "Xem dạng sơ đồ",
     },
+    /** [Plan #60 H4] Khung chung của bảng lệnh Ctrl K hai khung */
+    palette: {
+      title: "Tìm nhanh",
+      results: "Kết quả",
+      noResults: "Không có kết quả",
+      esc: "Esc",
+      enter: "Enter",
+      select: "chọn",
+      open: "mở",
+    },
   },
   en: {
     loading: "Loading…",
@@ -74,6 +84,15 @@ export const componentsMessages = defineMessages({
     diagram: {
       asTable: "View as table",
       asDiagram: "View as diagram",
+    },
+    palette: {
+      title: "Quick search",
+      results: "Results",
+      noResults: "No results",
+      esc: "Esc",
+      enter: "Enter",
+      select: "select",
+      open: "open",
     },
   },
 });

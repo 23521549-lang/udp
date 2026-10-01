@@ -18,7 +18,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { Icon } from "../components/Icon";
-import { usePaletteStore } from "../features/project/CommandPalette";
+import { usePaletteStore } from "../components/CommandPalette";
 import { projectApi } from "../features/project/project-api";
 import { shortcut } from "../lib/keys";
 import { qk } from "../lib/query-keys";

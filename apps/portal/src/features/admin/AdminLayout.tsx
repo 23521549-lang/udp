@@ -21,7 +21,7 @@ import { useMessages } from "../../i18n";
 import { formatNumber } from "../../lib/format";
 import { shortcut } from "../../lib/keys";
 import { qk } from "../../lib/query-keys";
-import { usePaletteStore } from "../project/CommandPalette";
+import { usePaletteStore } from "../../components/CommandPalette";
 import { adminApi } from "./admin-api";
 import { AdminKeyboard } from "./AdminPalette";
 
