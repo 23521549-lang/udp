@@ -31,3 +31,7 @@ services/core-backend/tests/fixtures/wire/
 
 # Sinh bởi `pnpm --filter @udp/flag-evaluator conformance` — so bằng JSON đã parse, không theo byte
 packages/flag-evaluator/conformance/vectors.json
+
+# Bản chép NGUYÊN VĂN phần <style> của docs/design/portal-prototype.html (design-lint so từng ký tự):
+# Prettier dàn dòng tệp này là vỡ luật đó. Sửa thì sửa bản mẫu rồi chép lại.
+apps/portal/src/styles/prototype.css

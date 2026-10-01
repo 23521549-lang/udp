@@ -1,12 +1,24 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Check, Minus } from "lucide-react";
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { LanguageSwitch, ThemeSwitch } from "../../app/Preferences";
 import { CodeBlock } from "../../components/CodeBlock";
 import { Icon } from "../../components/Icon";
+import { JumpLink } from "../../components/JumpLink";
 import { Logo } from "../../components/Logo";
 import { Tabs } from "../../components/Tabs";
-import { LOCALE_NAME, useLocaleStore, useMessages } from "../../i18n";
+import {
+  INTL_LOCALE,
+  LOCALE_NAME,
+  useLocale,
+  useLocaleStore,
+  useMessages,
+} from "../../i18n";
 import {
   DOMAIN_GROUPS,
   domainInfoMessages,
@@ -23,6 +35,7 @@ import {
   SAFETY_QUOTA,
   TOOL_COUNT,
 } from "./landing-facts";
+import { changelogMessages } from "./changelog.messages";
 import { landingMessages } from "./landing.messages";
 import { useShot, type ShotName } from "./shots";
 import "../../styles/landing.css";
@@ -43,9 +56,9 @@ export function LandingPage() {
 
   return (
     <div className="lp">
-      <Jump to="lp-main" className="lp-skip">
+      <JumpLink to="lp-main" className="lp-skip">
         {m.skip}
-      </Jump>
+      </JumpLink>
       <Nav />
       <main id="lp-main" tabIndex={-1}>
         <Hero />
@@ -56,60 +69,13 @@ export function LandingPage() {
         <Byoc />
         <Tools />
         <How />
+        <Changelog />
         <Free />
         <Faq />
         <Final />
       </main>
       <Footer />
     </div>
-  );
-}
-
-/** Người dùng xin giảm chuyển động; vài trình duyệt nhúng không có `matchMedia` dù kiểu DOM nói có */
-function prefersStill(): boolean {
-  try {
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Link tới một phần của trang. Không để trình duyệt tự nhảy theo `#id`: bản xem thử dùng hash history, nên `#faq`
- * sẽ thành đường dẫn `/faq` của router. Cuộn bằng tay (êm, trừ khi người dùng xin giảm chuyển động) và đưa focus tới
- * phần đích để người dùng bàn phím và trình đọc màn hình đi theo.
- */
-function Jump({
-  to,
-  className,
-  label,
-  children,
-}: {
-  to: string;
-  className?: string;
-  label?: string;
-  children: ReactNode;
-}) {
-  const go = (e: MouseEvent<HTMLAnchorElement>): void => {
-    const target = document.getElementById(to);
-    if (target === null) return;
-    e.preventDefault();
-    const still = prefersStill();
-    target.scrollIntoView({
-      behavior: still ? "auto" : "smooth",
-      block: "start",
-    });
-    target.focus({ preventScroll: true });
-  };
-  return (
-    <a
-      href={`#${to}`}
-      className={className}
-      {...(label === undefined ? {} : { "aria-label": label })}
-      onClick={go}
-    >
-      {children}
-    </a>
   );
 }
 
@@ -121,15 +87,15 @@ function Nav() {
   return (
     <header className="lp-nav">
       <div className="lp-wrap lp-nav-in">
-        <Jump to="lp-main" className="lp-brand" label={m.home}>
+        <JumpLink to="lp-main" className="lp-brand" label={m.home}>
           <Logo />
           <b>udp</b>
-        </Jump>
+        </JumpLink>
         <nav className="lp-links" aria-label={m.label}>
-          <Jump to="features">{m.features}</Jump>
-          <Jump to="byoc">{m.byoc}</Jump>
-          <Jump to="tools">{m.tools}</Jump>
-          <Jump to="faq">{m.faq}</Jump>
+          <JumpLink to="features">{m.features}</JumpLink>
+          <JumpLink to="byoc">{m.byoc}</JumpLink>
+          <JumpLink to="tools">{m.tools}</JumpLink>
+          <JumpLink to="faq">{m.faq}</JumpLink>
         </nav>
         <div className="lp-nav-end">
           <button
@@ -172,14 +138,19 @@ function ShotFigure({
     <figure
       className={className === undefined ? "lp-shot" : `lp-shot ${className}`}
     >
-      <img
-        src={shot.src}
-        alt={alt}
-        width={shot.width}
-        height={shot.height}
-        loading={eager ? "eager" : "lazy"}
-        decoding="async"
-      />
+      <picture>
+        {shot.darkSrc !== undefined && (
+          <source media="(prefers-color-scheme: dark)" srcSet={shot.darkSrc} />
+        )}
+        <img
+          src={shot.src}
+          alt={alt}
+          width={shot.width}
+          height={shot.height}
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
+        />
+      </picture>
       {children}
     </figure>
   );
@@ -202,9 +173,9 @@ function Hero() {
                 {m.primary}
                 <Icon of={ArrowRight} />
               </Link>
-              <Jump to="how" className="lp-btn lg">
+              <JumpLink to="how" className="lp-btn lg">
                 {m.secondary}
-              </Jump>
+              </JumpLink>
             </div>
             <p className="lp-note">{m.note}</p>
           </div>
@@ -312,10 +283,15 @@ function Rollout() {
 
 const SDK_LANGS: readonly SdkLang[] = ["node", "python", "browser"];
 
+/** Địa chỉ mẫu trong đoạn mã khi trang được dựng sẵn ở máy chủ (chưa có `window`); trình duyệt thay ngay khi chạy */
+const SAMPLE_HOST = "https://udp.example.com";
+const noSubscribe = () => () => undefined;
+
 function Flags() {
   const m = useMessages(landingMessages).flags;
   const [lang, setLang] = useState<SdkLang>("node");
-  const [install, init, evaluate] = quickstartCode(lang, flagHost());
+  const host = useSyncExternalStore(noSubscribe, flagHost, () => SAMPLE_HOST);
+  const [install, init, evaluate] = quickstartCode(lang, host);
   const name = m.langs[lang];
   return (
     <section className="lp-sec" aria-labelledby="lp-flags">
@@ -443,6 +419,41 @@ function How() {
   );
 }
 
+/** [Plan #60 QĐ-10] Bốn thay đổi gần nhất, có ngày — việc đã có trong mã, không hứa hẹn */
+const CHANGELOG_SHOWN = 4;
+
+function Changelog() {
+  const m = useMessages(changelogMessages);
+  const locale = useLocale();
+  const day = new Intl.DateTimeFormat(INTL_LOCALE[locale], {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  });
+  return (
+    <section className="lp-sec" aria-labelledby="lp-changelog">
+      <div className="lp-wrap">
+        <div className="lp-head2">
+          <h2 id="lp-changelog">{m.title}</h2>
+          <p>{m.lead}</p>
+        </div>
+        <ol className="lp-log">
+          {m.entries.slice(0, CHANGELOG_SHOWN).map((e) => (
+            <li key={e.title}>
+              <time dateTime={e.date}>
+                {day.format(new Date(`${e.date}T00:00:00Z`))}
+              </time>
+              <div>
+                <h3>{e.title}</h3>
+                <p>{e.body}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
 function Free() {
   const m = useMessages(landingMessages).free;
   return (
@@ -532,10 +543,12 @@ function Footer() {
           </p>
         </div>
         <nav className="lp-foot-links" aria-label={m.footer.links}>
-          <Jump to="features">{m.nav.features}</Jump>
-          <Jump to="tools">{m.nav.tools}</Jump>
-          <Jump to="faq">{m.nav.faq}</Jump>
+          <JumpLink to="features">{m.nav.features}</JumpLink>
+          <JumpLink to="tools">{m.nav.tools}</JumpLink>
+          <JumpLink to="faq">{m.nav.faq}</JumpLink>
           <Link to="/login">{m.nav.signIn}</Link>
+          <Link to="/terms">{m.footer.terms}</Link>
+          <Link to="/privacy">{m.footer.privacy}</Link>
         </nav>
         <div className="lp-foot-prefs">
           <LanguageSwitch />

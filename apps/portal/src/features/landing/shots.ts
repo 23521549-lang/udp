@@ -17,19 +17,30 @@ export type ShotName = keyof typeof meta;
 
 export interface Shot {
   src: string;
+  /**
+   * [Plan #60 QĐ-9] Bản tối khi người xem ĐỂ giao diện theo hệ thống — `<picture>` để trình duyệt chọn ngay từ HTML
+   * dựng sẵn (chưa có JS), không tải bản sáng rồi mới đổi. `undefined` khi người xem đã chọn tay (đã biết chắc).
+   */
+  darkSrc: string | undefined;
   width: number;
   height: number;
   /** Vị trí các chú thích đánh số, phần trăm theo bề rộng và chiều cao của ảnh */
   marks: readonly (readonly number[])[];
 }
 
+const urlOf = (name: ShotName, variant: string): string =>
+  URLS[`./shots/${name}-${variant}.webp`] ?? "";
+
 export function useShot(name: ShotName): Shot {
-  const { theme } = useTheme();
+  const { theme, preference } = useTheme();
   const locale = useLocale();
-  const variant = `${theme}-${locale}` as const;
+  const system = preference === "system";
+  // Theo hệ thống: bản sáng là mặc định của <img>, bản tối nằm ở <source media>
+  const variant = `${system ? "light" : theme}-${locale}` as const;
   const size = meta[name][variant];
   return {
-    src: URLS[`./shots/${name}-${variant}.webp`] ?? "",
+    src: urlOf(name, variant),
+    darkSrc: system ? urlOf(name, `dark-${locale}`) : undefined,
     width: size.width,
     height: size.height,
     marks: size.marks,

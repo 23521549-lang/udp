@@ -376,6 +376,9 @@
   background: var(--panel);
   box-shadow: var(--lp-lift);
 }
+.lp-shot picture {
+  display: block;
+}
 .lp-shot img {
   display: block;
   width: 100%;
@@ -570,6 +573,37 @@
 }
 .lp-steps p {
   margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: 15px;
+}
+
+/* [Plan #60 QĐ-10] Mới cập nhật: ngày bên trái, việc bên phải, đường kẻ mảnh giữa các mục */
+.lp-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.lp-log li {
+  display: grid;
+  grid-template-columns: minmax(0, 10rem) minmax(0, 1fr);
+  gap: 8px 32px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.lp-log time {
+  color: var(--ink-3);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.lp-log h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.lp-log p {
+  max-width: 70ch;
+  margin: 4px 0 0;
   color: var(--ink-2);
   font-size: 15px;
 }
@@ -788,7 +822,8 @@
     padding: 20px 16px 22px;
   }
   .lp-ledger,
-  .lp-group dl > div {
+  .lp-group dl > div,
+  .lp-log li {
     grid-template-columns: minmax(0, 1fr);
   }
   .lp-group dl > div {

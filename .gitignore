@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# [Plan #60] Lượt build SSR tạm của Portal (scripts/prerender.mjs xoá sau khi dựng sẵn)
+dist-ssr/
 build/
 .turbo/
 *.tsbuildinfo

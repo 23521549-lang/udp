@@ -14,5 +14,9 @@ export default defineConfig({
       "/api": { target: "http://localhost:3001", changeOrigin: true },
     },
   },
-  build: { sourcemap: true },
+  /**
+   * [Plan #60 QĐ-9] `manifest`: `scripts/prerender.mjs` tìm CSS và chunk của trang giới thiệu theo tên nguồn để gắn
+   * vào `index.html` đã dựng sẵn (CSS của chunk lười chỉ nạp khi JS chạy — trang dựng sẵn cần nó ngay).
+   */
+  build: { sourcemap: true, manifest: true },
 });

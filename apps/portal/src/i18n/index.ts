@@ -39,6 +39,8 @@ function storedLocale(): Locale | undefined {
 
 /** Ngôn ngữ đầu tiên của trình duyệt mà Portal có (`vi-VN` ⇒ vi, `en-GB` ⇒ en) */
 function browserLocale(): Locale | undefined {
+  // [Plan #60 QĐ-9] Dựng sẵn ở máy chủ (Node có `navigator` báo en-US): dùng ngôn ngữ mặc định của sản phẩm
+  if (typeof window === "undefined") return undefined;
   try {
     const tags =
       navigator.languages.length > 0

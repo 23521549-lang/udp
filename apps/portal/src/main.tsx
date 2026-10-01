@@ -21,13 +21,21 @@ watchSystemTheme();
 applyLocale(currentLocale());
 const queryClient = createQueryClient();
 const router = createAppRouter(queryClient);
-const root = createRoot(document.getElementById("root") as HTMLElement);
+const container = document.getElementById("root") as HTMLElement;
+const root = createRoot(container);
 
-root.render(
-  <div className="boot" role="status">
-    {messagesOf(appMessages).loading}
-  </div>,
-);
+/*
+ * [Plan #60 QĐ-9] `/` là trang giới thiệu ĐÃ DỰNG SẴN (dist/index.html): giữ nguyên nội dung đó tới khi ứng dụng vẽ
+ * xong, không thay bằng dòng "Đang tải…". Ứng dụng vẽ lại cùng trang (theo ngôn ngữ, giao diện của người xem), hay
+ * chuyển người đã đăng nhập vào trang chủ.
+ */
+if (!container.hasAttribute("data-prerendered")) {
+  root.render(
+    <div className="boot" role="status">
+      {messagesOf(appMessages).loading}
+    </div>,
+  );
+}
 
 void bootstrapAuth(router, queryClient).then(() => {
   root.render(
