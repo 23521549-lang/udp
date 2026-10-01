@@ -22,6 +22,7 @@ import {
   inertProvisioning,
   noDomainAdapters,
   outsidePlatform,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -60,6 +61,7 @@ const appWith = (runtime: ProvisioningRuntime) =>
     cloud: simCloudPlatform(),
     repoSource: noRepoSource,
     platform: outsidePlatform,
+    auth: noExternalAuth,
     domainRegistry: noDomainAdapters,
     provisioning: runtime,
   });

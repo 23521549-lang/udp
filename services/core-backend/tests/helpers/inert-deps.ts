@@ -2,7 +2,10 @@ import {
   capabilitiesOf,
   type CloudPlatform,
 } from "../../src/modules/cloud/cloud.platform.js";
-import type { ProvisioningRuntime } from "../../src/core/app-deps.js";
+import type {
+  AuthRuntime,
+  ProvisioningRuntime,
+} from "../../src/core/app-deps.js";
 import type { DomainAdapterRegistry } from "../../src/modules/domain/domain-adapter.registry.js";
 import type { RepoSourceFactory } from "../../src/modules/golden-path/repo-source.js";
 import { UnprocessableError } from "@udp/http";
@@ -50,3 +53,6 @@ export const outsidePlatform = (): Promise<PlatformProbe> =>
 export const noRepoSource: RepoSourceFactory = () => {
   throw new UnprocessableError("test: không có nguồn repo");
 };
+
+/** [v4.12, Plan #60] Không thư, không GitHub: hai tính năng tắt như một triển khai chưa cấu hình */
+export const noExternalAuth: AuthRuntime = { mailer: null, github: null };

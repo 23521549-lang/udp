@@ -39,6 +39,7 @@ import {
   noDomainAdapters,
   inertProvisioning,
   outsidePlatform,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -133,6 +134,7 @@ beforeAll(async () => {
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
     platform: outsidePlatform,
+    auth: noExternalAuth,
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
     flagService: createFlagServiceClient({
@@ -412,6 +414,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
       cloud: inertCloudPlatform,
       repoSource: noRepoSource,
       platform: outsidePlatform,
+      auth: noExternalAuth,
       domainRegistry: noDomainAdapters,
       provisioning: inertProvisioning,
       flagService: createFlagServiceClient({
@@ -439,6 +442,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
       cloud: inertCloudPlatform,
       repoSource: noRepoSource,
       platform: outsidePlatform,
+      auth: noExternalAuth,
       domainRegistry: noDomainAdapters,
       provisioning: inertProvisioning,
       // Client thật, chỉ `track` bị thay — mọi lời gọi khác giữ đúng hợp đồng

@@ -28,6 +28,9 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "POST /auth/login": wire.authSessionResponseWire,
   "POST /auth/refresh": wire.authSessionResponseWire,
   "GET /auth/me": wire.meResponseWire,
+  // [v4.12, Plan #60] Cách đăng nhập đang bật; xin thư đặt lại mật khẩu
+  "GET /auth/options": wire.authOptionsResponseWire,
+  "POST /auth/password/forgot": wire.passwordForgotResponseWire,
 
   "POST /projects": wire.projectDetailResponseWire,
   "GET /projects": wire.projectListResponseWire,

@@ -48,6 +48,7 @@ import {
   noRepoSource,
   inertProvisioning,
   outsidePlatform,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 import {
   simCloudPlatform,
@@ -451,6 +452,7 @@ beforeAll(async () => {
     cloud: platform,
     repoSource: noRepoSource,
     platform: outsidePlatform,
+    auth: noExternalAuth,
     domainRegistry: () => Promise.resolve(domainsWith().registry),
     provisioning: inertProvisioning,
   });
@@ -1309,6 +1311,7 @@ function appFor(
     cloud: platform,
     repoSource: noRepoSource,
     platform: outsidePlatform,
+    auth: noExternalAuth,
     domainRegistry: () => Promise.resolve(registry),
     provisioning: {
       egressCidrs: ["203.0.113.0/24"],

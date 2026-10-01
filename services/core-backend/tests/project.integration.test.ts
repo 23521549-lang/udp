@@ -55,7 +55,7 @@ async function newActor(): Promise<Actor> {
   const email = `test-${randomUUID()}@udp.local`;
   const res = await request(app)
     .post(`${API}/auth/register`)
-    .send({ email, password: PASSWORD, name: "Test User" })
+    .send({ email, password: PASSWORD, name: "Test User", acceptTerms: true })
     .expect(201);
   createdUsers.push(email);
   return {

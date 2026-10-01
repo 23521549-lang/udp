@@ -682,6 +682,23 @@ export const AUTH = {
    * Giữ lại để lần sau không ai thêm lại một token ngẫu nhiên trần.
    */
   csrfTokenBytes: 32,
+  /**
+   * [v4.12, Plan #60 QĐ-7] Token đặt lại mật khẩu: 32 byte ngẫu nhiên (base64url), sống 30 phút, dùng một lần. Đủ để
+   * mở thư và bấm; ngắn để một hộp thư bị lộ về sau không mở được tài khoản bằng thư cũ.
+   */
+  passwordResetTokenBytes: 32,
+  passwordResetTtlMinutes: 30,
+  /** [v4.12, Plan #60 QĐ-8] Cookie `state` của OAuth GitHub sống 10 phút: đủ cho một lần đăng nhập, không hơn */
+  oauthStateTtlSeconds: 600,
+} as const;
+
+/**
+ * [v4.12, Plan #60 QĐ-6] Phiên bản HIỆN HÀNH của Điều khoản sử dụng và Chính sách quyền riêng tư (ngày công bố). Service
+ * 1 ghi giá trị này vào `users.terms_version` khi người đăng ký tích ô đồng ý; Portal hiện cùng ngày ở hai trang
+ * (bản soi có test đối chiếu). Đổi nội dung hai trang thì đổi ngày ở cả hai chỗ.
+ */
+export const LEGAL = {
+  termsVersion: "2026-10-01",
 } as const;
 
 /**
@@ -693,6 +710,8 @@ export const COOKIE_NAMES = {
   refreshToken: "udp_refresh",
   /** Cố ý KHÔNG httpOnly để Portal đọc được và gắn vào header */
   csrfToken: "udp_csrf",
+  /** [v4.12, Plan #60 QĐ-8] `state` đã ký của một lần đăng nhập GitHub — chỉ gửi về `/api/v1/auth/github` */
+  oauthState: "udp_oauth",
 } as const;
 
 export const CSRF_HEADER = "X-CSRF-Token";

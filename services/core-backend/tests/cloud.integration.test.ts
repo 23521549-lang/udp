@@ -29,6 +29,7 @@ import {
   noDomainAdapters,
   inertProvisioning,
   outsidePlatform,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 import { tapServiceLog, type LogTap } from "./helpers/log-tap.js";
 import type { CloudPlatform } from "../src/modules/cloud/cloud.platform.js";
@@ -64,6 +65,7 @@ const appOn = (cloud: CloudPlatform) =>
     cloud,
     repoSource: noRepoSource,
     platform: outsidePlatform,
+    auth: noExternalAuth,
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
   });

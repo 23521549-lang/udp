@@ -23,6 +23,7 @@ import {
   inertProvisioning,
   noDomainAdapters,
   outsidePlatform,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -59,6 +60,7 @@ const appWith = (cluster: WithCluster | null) =>
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
     platform: outsidePlatform,
+    auth: noExternalAuth,
     domainRegistry: noDomainAdapters,
     provisioning: { ...inertProvisioning, withCluster: cluster },
   });

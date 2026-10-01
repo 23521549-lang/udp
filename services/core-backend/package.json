@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@udp/adapter-core": "workspace:*",
-    "@udp/cluster-access": "workspace:*",
     "@udp/cloud-adapters": "workspace:*",
+    "@udp/cluster-access": "workspace:*",
     "@udp/config": "workspace:*",
     "@udp/db": "workspace:*",
     "@udp/golden-path": "workspace:*",
@@ -28,6 +28,7 @@
     "express-rate-limit": "^7.4.1",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "10.0.10",
     "pg-boss": "12.34.0",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",

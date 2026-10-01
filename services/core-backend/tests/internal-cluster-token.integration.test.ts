@@ -13,6 +13,7 @@ import {
   noDomainAdapters,
   noRepoSource,
   outsidePlatform,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -37,6 +38,7 @@ function appWith(clusterToken: ClusterTokenIssuer | null) {
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
     platform: outsidePlatform,
+    auth: noExternalAuth,
     domainRegistry: noDomainAdapters,
     provisioning: { ...inertProvisioning, clusterToken },
   });

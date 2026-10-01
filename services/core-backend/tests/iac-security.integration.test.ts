@@ -26,6 +26,7 @@ import {
   inertCloudPlatform,
   inertProvisioning,
   outsidePlatform,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -229,6 +230,7 @@ beforeAll(async () => {
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
     platform: outsidePlatform,
+    auth: noExternalAuth,
     domainRegistry: () => product,
     provisioning: inertProvisioning,
   });
@@ -321,6 +323,7 @@ describe("CLOUD_MISMATCH là lý do chặn provisioning (credential đổi cloud
       cloud: simCloudPlatform(),
       repoSource: noRepoSource,
       platform: outsidePlatform,
+      auth: noExternalAuth,
       domainRegistry: () => product,
       provisioning: { ...inertProvisioning, egressCidrs: ["203.0.113.0/24"] },
     });

@@ -33,6 +33,7 @@ import {
   noDomainAdapters,
   noRepoSource,
   outsidePlatform,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -68,6 +69,7 @@ const app = createApp({
   cloud: inertCloudPlatform,
   repoSource: noRepoSource,
   platform: outsidePlatform,
+  auth: noExternalAuth,
   domainRegistry: noDomainAdapters,
   provisioning: {
     ...inertProvisioning,

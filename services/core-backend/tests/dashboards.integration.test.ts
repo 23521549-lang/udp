@@ -32,6 +32,7 @@ import {
   inertCloudPlatform,
   inertProvisioning,
   noRepoSource,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -94,6 +95,7 @@ const app = createApp({
   cloud: inertCloudPlatform,
   repoSource: noRepoSource,
   platform: () => Promise.resolve(platformProbe),
+  auth: noExternalAuth,
   domainRegistry: () => registry,
   provisioning: inertProvisioning,
 });

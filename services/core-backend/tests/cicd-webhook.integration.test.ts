@@ -20,6 +20,7 @@ import {
   noRepoSource,
   inertCloudPlatform,
   outsidePlatform,
+  noExternalAuth,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -46,6 +47,7 @@ const app = createApp({
   cloud: inertCloudPlatform,
   repoSource: noRepoSource,
   platform: outsidePlatform,
+  auth: noExternalAuth,
   domainRegistry: (() => {
     const loaded = createRegistry({
       root: resolve(import.meta.dirname, "../src/modules"),

@@ -507,6 +507,8 @@ erDiagram
     Project ||--o{ Invitation : "invites by link"
     Team ||--o{ Invitation : "invites by link"
     User ||--o{ Invitation : "invited by"
+    User ||--o{ PasswordResetToken : "resets"
+    User ||--o{ UserIdentity : "signs in with"
     Project ||--o{ Environment : "has"
     Project ||--o{ CloudCredential : "has"
     Project ||--o{ DomainConfig : "has"
@@ -538,10 +540,12 @@ erDiagram
     User {
         uuid id PK
         string email "UNIQUE NOT NULL"
-        string password_hash "bcrypt"
+        string password_hash "bcrypt, v4.12 nullable - tai khoan GitHub chua dat mat khau"
         string name "NOT NULL"
         string platform_role "USER or PLATFORM_ADMIN"
         timestamp created_at
+        string terms_version "v4.12 nullable - phien ban Dieu khoan da dong y"
+        timestamp terms_accepted_at "v4.12 nullable"
     }
 
     ProjectMember {
@@ -612,6 +616,23 @@ erDiagram
         uuid replaced_by_id FK "nullable - phien da thay the phien nay"
         string user_agent "nullable"
         string ip_address "nullable"
+        timestamp created_at
+    }
+
+    PasswordResetToken {
+        uuid id PK
+        uuid user_id FK
+        string token_hash "sha256 hex, UNIQUE"
+        timestamp expires_at
+        timestamp used_at "nullable - dung mot lan"
+        timestamp created_at
+    }
+
+    UserIdentity {
+        uuid id PK
+        uuid user_id FK
+        enum provider "GITHUB"
+        string provider_user_id "id bat bien cua nha cung cap"
         timestamp created_at
     }
 
@@ -920,10 +941,12 @@ erDiagram
 | ------------- | ------------ | ------------------------ | -------------------------------------------------------------------------- |
 | id            | UUID         | PK                       |                                                                            |
 | email         | VARCHAR(255) | UNIQUE, NOT NULL         |                                                                            |
-| password_hash | VARCHAR(255) | NOT NULL                 | bcrypt hash (cost ≥ 12)                                                    |
+| password_hash | VARCHAR(255) | NULLABLE                 | bcrypt hash (cost ≥ 12). **[v4.12]** NULL = tài khoản tạo bằng GitHub, chưa đặt mật khẩu (đặt qua Quên mật khẩu); đăng nhập mật khẩu khi NULL đi đúng nhánh "sai thông tin" |
 | name          | VARCHAR(255) | NOT NULL                 |                                                                            |
 | platform_role | ENUM         | NOT NULL, DEFAULT 'USER' | `'USER'` hoặc `'PLATFORM_ADMIN'` — **chỉ** dùng cho admin endpoints toàn hệ |
 | created_at    | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()  |                                                                            |
+| terms_version | VARCHAR(20)  | NULLABLE                 | **[v4.12, Plan #60 QĐ-6]** Phiên bản Điều khoản người dùng đã TÍCH Ô đồng ý lúc đăng ký (`LEGAL.termsVersion`, máy chủ ghi, không tin client); NULL ở tài khoản có trước Điều khoản. CHECK `users_terms_pair`: cùng NULL với cột dưới |
+| terms_accepted_at | TIMESTAMPTZ | NULLABLE              | **[v4.12]** Lúc đồng ý — bằng chứng đồng ý theo Nghị định 13/2023/NĐ-CP (im lặng không phải đồng ý) |
 
 > **v2 dùng `User.role` cho cả hai việc** (quản trị hệ thống và quyền trong project) nên không biểu diễn được "A là owner project X nhưng chỉ là viewer của project Y". v3 tách: `platform_role` cho hệ thống, `ProjectMember.project_role` cho từng project.
 
@@ -1065,6 +1088,31 @@ Trước bảng này, `POST /auth/logout` chỉ xoá cookie phía trình duyệt
 
 > **Ba lớp kiểm khi refresh, mỗi lớp bắt một thứ khác nhau:** (1) chữ ký JWT — token có phải do ta cấp; (2) hàng phiên — đã thu hồi chưa, còn hạn không, thứ chữ ký **không** nói được; (3) `token_hash` khớp — hàng phiên đúng là hàng của TOKEN NÀY. Thiếu lớp 3 thì `sid` là ràng buộc duy nhất, mà `sid` nằm trong payload đã ký nên token gốc và token đã xoay đều qua được.
 
+
+#### `PasswordResetToken` — [NEW v4.12, Plan #60 QĐ-7: quên mật khẩu]
+
+| Cột | Kiểu | Constraint | Ghi chú |
+| --- | ---- | ---------- | ------- |
+| id         | UUID        | PK                                    | |
+| user_id    | UUID        | FK → User ON DELETE CASCADE, NOT NULL | |
+| token_hash | CHAR(64)    | NOT NULL, UNIQUE                      | SHA-256 hex của token 32 byte. Token thật chỉ nằm trong thư, ở FRAGMENT của đường dẫn (`/reset-password#<token>`) — không vào log máy chủ nào |
+| expires_at | TIMESTAMPTZ | NOT NULL                              | `AUTH.passwordResetTtlMinutes` (30 phút) |
+| used_at    | TIMESTAMPTZ | NULLABLE                              | Dùng MỘT lần: đánh dấu bằng `UPDATE … WHERE used_at IS NULL AND expires_at > now()` trong cùng transaction với đổi mật khẩu. Xin thư mới thì token cũ chưa dùng bị đánh dấu luôn |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW()               | |
+
+> Xin thư LUÔN trả 202 như nhau (có tài khoản hay không), thư gửi sau khi trả lời — thời gian phản hồi không lộ email nào đã đăng ký. Đặt lại xong thì thu hồi MỌI `RefreshSession` của người đó. Quyền: lãnh địa Service 1; S2/S3 không có quyền nào (bảng chứa hash token).
+
+#### `UserIdentity` — [NEW v4.12, Plan #60 QĐ-8: đăng nhập bằng GitHub]
+
+| Cột | Kiểu | Constraint | Ghi chú |
+| --- | ---- | ---------- | ------- |
+| id               | UUID         | PK                                    | |
+| user_id          | UUID         | FK → User ON DELETE CASCADE, NOT NULL | UNIQUE cùng `provider`: một người một liên kết mỗi nhà cung cấp |
+| provider         | ENUM         | NOT NULL                              | `'GITHUB'` |
+| provider_user_id | VARCHAR(100) | NOT NULL                              | Id số BẤT BIẾN của GitHub — không dùng login hay email làm khoá, hai thứ đó đổi được. UNIQUE cùng `provider` |
+| created_at       | TIMESTAMPTZ  | NOT NULL, DEFAULT NOW()               | |
+
+> **Không tự liên kết theo email.** Email GitHub đã có tài khoản mật khẩu thì KHÔNG nối vào: UDP chưa xác minh email lúc đăng ký bằng mật khẩu, nên ai đó có thể đăng ký trước bằng email của người khác rồi chờ chủ thật đăng nhập GitHub để chiếm tài khoản (pre-account hijacking). Tài khoản mới tạo bằng GitHub chỉ khi người dùng đến từ trang đăng ký và đã tích ô đồng ý Điều khoản.
 
 #### `IdempotencyKey` — [NEW v4: lop luu cua header Idempotency-Key §9]
 
@@ -5545,11 +5593,16 @@ sequenceDiagram
 ```
 Auth
 ────────────────────────────────────────────────────────────────
-POST   /api/v1/auth/register
+POST   /api/v1/auth/register              [v4.12] body có acceptTerms: true (ô đồng ý Điều khoản, Plan #60)
 POST   /api/v1/auth/login
 POST   /api/v1/auth/logout
 GET    /api/v1/auth/me                    hydrate authStore khi refresh trang
 POST   /api/v1/auth/refresh               cấp udp_access mới từ cookie udp_refresh
+GET    /api/v1/auth/options               [v4.12] công khai: { passwordReset, github } — cách đăng nhập đang bật
+POST   /api/v1/auth/password/forgot       [v4.12] luôn 202 như nhau; thư có /reset-password#<token> (30 phút, một lần)
+POST   /api/v1/auth/password/reset        [v4.12] { token, password } ⇒ 204, thu hồi mọi phiên; token hỏng ⇒ 404
+GET    /api/v1/auth/github/start          [v4.12] ?intent=login|register&acceptTerms=1&redirectTo= ⇒ 302 GitHub, cookie state đã ký
+GET    /api/v1/auth/github/callback       [v4.12] ⇒ 302 về Portal; lỗi là mã trên query (oauth=email_taken|no_account|no_email|denied|failed)
 
 Project — Configuration Phase
 ────────────────────────────────────────────────────────────────
@@ -6527,9 +6580,14 @@ udp-portal/
 **URL structure:**
 
 ```
-/                              → redirect to /app/projects
+/                              → [v4.12, Plan #59/#60, D-P52] trang giới thiệu cho khách (dựng sẵn lúc build);
+                                 người đã đăng nhập ⇒ /app/home
 /login
-/register
+/register                      → [v4.12, D-P53] ô đồng ý Điều khoản bắt buộc
+/forgot-password               → [v4.12, Plan #60, D-P53] chỉ hiện link khi máy chủ cấu hình SMTP
+/reset-password#<token>        → [v4.12, Plan #60, D-P53] token ở fragment, như lời mời
+/terms, /privacy               → [v4.12, Plan #60, D-P53] công khai
+/llms.txt, /index.md           → [v4.12, Plan #60, D-P52] tệp tĩnh sinh lúc build, cho agent đọc
 /invite#<token>                → [v4.11, Plan #55] nhận lời mời — NGOÀI /app, token ở fragment
 /app/teams                     → [v4.11, Plan #55] nhóm của tôi
 /app/teams/:teamId             → [v4.11, Plan #55] thành viên, lời mời, project được cấp, cài đặt nhóm
@@ -7376,6 +7434,9 @@ Plan #25 dựng Portal theo §10 và theo bản mẫu đã duyệt (`docs/design
 | D-P48 | §2.2 ma trận quyền, §9 Members ("mời theo email"), §16 | Thêm thành viên chỉ khi người đó ĐÃ có tài khoản (404 nếu chưa); không có đơn vị nào lớn hơn một người — nhóm 10 người làm 5 project là 50 lần thêm tay | [v4.11, Plan #55] (1) **Lời mời bằng đường dẫn**: OWNER tạo lời mời (email + vai ≠ OWNER), máy chủ trả token `udp_inv_…` MỘT lần và chỉ giữ SHA-256; hạn 7 ngày, dùng một lần, thu hồi được, mời lại là thu hồi lời cũ; nhận chỉ khi email tài khoản trùng; sai/hết hạn/đã dùng/thu hồi cùng 404; token đi trong THÂN request (`/invitations/lookup`, `/accept`) và trong FRAGMENT của đường dẫn Portal. (2) **Nhóm** (`teams`, `team_members` OWNER/MEMBER) và **quyền của nhóm trên project** (`project_team_grants`, CHECK ≠ OWNER, người cấp phải thuộc nhóm). (3) **Vai hiệu lực** = vai cao nhất giữa thành viên trực tiếp và các nhóm; một chỗ tính (`core/access/project-access.ts`) cho middleware, danh sách project, trang chủ, SSE; không cache. (4) Guard `requireTeamRole` + lint `team-route-guard` cho `/teams/:teamId/*` | Gửi mail tự động đòi một dịch vụ mail — tài khoản có thể tính tiền và một bí mật SMTP phải giữ — trái yêu cầu cứng chi phí 0; đường dẫn chép được chạy ngay qua mọi kênh người mời đã có. Đường dẫn trong fragment + token trong thân request là cách duy nhất để token không vào log truy cập, log proxy, header Referer hay `?redirectTo=`. Tính vai ở một chỗ là thứ giữ cho "vào được project" và "vai gì" không lệch nhau giữa hai màn |
 | D-P49 | §14 (kết quả chỉ ở dạng chữ), §10.11 | Kết quả đo nằm trong tệp JSON và README; không màn hình nào cho thấy phép đo nào đã có số, số nào còn nợ, và con số đến từ đâu; E7 chỉ in ra console; DORA chỉ có theo từng project | [v4.11, Plan #56] Trang **Bằng chứng** trong Bảng điều khiển: số tĩnh đọc THẲNG từ `docs/measurements/raw/*.json` lúc build (chunk riêng) qua schema chung `@udp/shared-types/measurements` mà cả harness lẫn trang dùng; E7 ghi tệp thô như mọi phép đo; E10 sống qua `GET /admin/evidence/dora` (cùng `computeDora`); nguồn + tải tệp thô/CSV trên mọi thẻ; sổ thí nghiệm là mã, một phép kiểm giữ nó khớp bảng §14, thư mục tệp thô và sổ nợ | Bằng chứng cho luận văn phải kiểm lại được: một biểu đồ không nói nó đến từ commit nào, đo trên cây sạch hay không, ở hình học mạng nào thì chỉ là hình minh hoạ. Đọc tệp lúc build nghĩa là bản Portal của commit X hiện đúng bằng chứng của commit X, không cần máy chủ giữ tệp và chi phí 0. Trạng thái suy ra (không khai tay) và hiện cả ô KHÔNG ĐẠT (danh sách flag 839 ms so với ngưỡng 500 ms), cả đóng góp chưa đủ hai phép đo — đúng cam kết "công bố cả những ô thua" của §14 |
 | D-P50 | §10.6 Kiến trúc, §10.11 | Trang Kiến trúc chỉ có sơ đồ lồng nhau theo chứa đựng (cloud ⊃ mạng ⊃ cluster ⊃ công cụ theo bậc): không trả lời "hệ thống phục vụ ai, yêu cầu chảy qua đâu, dữ liệu nằm đâu"; Bảng điều khiển không có sơ đồ của chính UDP | [v4.11, Plan #57] (1) Trang Kiến trúc hai góc nhìn, **Tổng quan hệ thống** mặc định: bố cục C4 CỐ ĐỊNH theo vai trò của domain, cạnh vai trò nối qua domain chưa bật (`system-model.ts`, thuần), bốn con số với deploy 14 ngày và RED của production; sơ đồ cũ giữ nguyên ở `?view=infra`. (2) `architecture.deploys` từ CÙNG `dailyOutcomes` của E10; một định nghĩa cửa sổ ngày UTC (`utcDayWindow`) cho E10, trang chủ và Kiến trúc; gộp nhiều env thì một deployment là cặp (env, `deployment_id`) như Deployment Frequency của §2.2. (3) **Kiến trúc nền tảng** `/admin/architecture` từ ba route sẵn có, cạnh theo lời gọi có thật trong mã. (4) Không thư viện đồ thị: CSS grid + `LinkLayer` đo sau layout, nhãn trên lớp riêng, bản bảng thay thế | Hai sơ đồ đã duyệt có bố cục cố định dưới 30 nút; React Flow + ELK (~490 KB) chỉ đáng khi bố cục tự do — góc "Theo domain" chưa được duyệt. Cạnh vai trò ghi rõ là vai trò, không giả làm lưu lượng đo được; cạnh nền tảng đối chiếu với mã (bản mẫu từng vẽ S3 đọc Prometheus — sai, S1 mới đọc, D-P30). Chi phí 0: một trường trong response sẵn có, còn lại là Portal |
+| D-P51 | §10.3–§10.11, §10.10 Shared, §7.4 lý do quyết định | Màn được mô tả theo dữ liệu nó hiện, không theo người dùng lần đầu: không nói người mới làm gì trước; thuật ngữ (canary, drift, segment, OFREP, BYOC…) không giải thích; menu project và Bảng điều khiển là danh sách phẳng; danh sách quản trị là ngõ cụt; lý do quyết định rollout là câu tiếng Việt do Service 3 viết sẵn | [v4.12, Plan #58 + Plan #60 H1–H8] 41 mục UX-1…UX-41 (`docs/plans/plan58-de-xuat-ux.md`): (1) trạng thái nói đúng — flag nháp là "Nháp, chưa phục vụ", sức khoẻ project tách khỏi trạng thái vòng đời, dải quyết định rollout theo đúng quyết định; (2) lần đầu dùng — trang chủ người mới với ba bước, thẻ **Bắt đầu** tự đánh dấu, hướng dẫn cài SDK ngay sau khi tạo key, wizard có thanh bước và Quay lại, domain có câu giải thích và gói khuyến nghị; (3) bảng thuật ngữ vi/en một khái niệm một từ, chú giải bấm được, nút Trợ giúp cùng một chỗ trên mọi trang; (4) menu nhóm theo việc, dải **Cần xử lý** đầu Tổng quan quản trị, Ctrl K ở cả hai portal (một `CommandPalette` chung, mỗi portal khai nguồn mục), tiêu đề thẻ trình duyệt theo màn; (5) danh sách quản trị mở được panel chỉ-đọc, lọc và sắp xếp ở MÁY CHỦ (`/admin/users?platformRole=&order=`, `/admin/projects?search=&order=`, mỗi project kèm `latestProblemJob` bằng một truy vấn `DISTINCT ON`), nhật ký audit gọi tên (Service 2 ghi `flagKey`); (6) trợ năng — giữ focus trong menu và panel, lỗi gắn ô, phím tắt một phím tắt được, cổng Playwright bật ĐỦ luật axe WCAG 2.2 AA; (7) `Decision.detail` có mã + số (`NO_DATA`, `WARMING_UP`, `SETTLING`, `WITHIN_THRESHOLDS`, `BREACH` kèm nguyên nhân, `MANUAL_ONLY`), lưu ở `last_decision` và `rollout_events.reason_detail`; Portal viết câu theo ngôn ngữ, `reason` giữ làm nhật ký máy chủ và lý do gửi Service 2 | Bản đầu miễn phí và tự phục vụ: không ai hướng dẫn người mới, nên màn phải tự nói việc tiếp theo. Mức nghiêm trọng theo thang NN/g, đối chiếu từng điều với mã trên 42 màn × 5 lượt chụp. Lọc ở Portal trên trang đầu của danh sách là sai khi danh sách dài; mã lý do là quy tắc I37 (máy chủ trả mã, Portal dịch) áp vào chỗ cuối cùng còn câu tiếng Việt cố định. Không thư viện mới, không chi phí |
+| D-P52 | §10.3 (`/` chuyển thẳng tới `/login`), §10.4 | Người lạ mở địa chỉ gốc bị chuyển tới form đăng nhập: không biết UDP làm gì, chạy ở đâu, có tốn tiền không; SPA trống với máy tìm kiếm và agent | [v4.12, Plan #59 + Plan #60 QĐ-9, QĐ-10] `/` là **trang giới thiệu** cho khách (chunk lười, người dùng app không tải); người đã đăng nhập vẫn vào thẳng `/app/home`. Nội dung chỉ dùng số đếm được trong mã (16 domain, 72 công cụ — test đối chiếu catalog golden của Service 1; trần an toàn từ `DEFAULT_RESOURCE_QUOTA`), ảnh chụp thật của Portal (`demo:shots`, `<picture>` theo giao diện hệ thống), nhật ký thay đổi có ngày lấy từ lịch sử plan. Build thêm một lượt SSR của Vite (`src/prerender/entry.tsx`) và `scripts/prerender.mjs`: `dist/index.html` là trang ĐÃ VẼ (tiếng Việt) kèm `title`, `meta description`, Open Graph, CSS và `modulepreload` của chunk trang; `dist/app.html` là vỏ SPA; nginx `location = /` ⇒ `index.html`, mọi đường khác ⇒ `app.html`. Sinh luôn `llms.txt` (khuôn llmstxt.org) và `index.md` từ CHÍNH chữ của trang | Sản phẩm thương mại cần một trang nói nó là gì trước khi xin email. Dựng sẵn lúc build là 0 đồng và không thêm máy chủ Node (SSR lúc chạy thì cần); một nguồn chữ cho trang, HTML dựng sẵn và bản Markdown nên ba bản không lệch nhau. Luật trung thực: không lời chứng thực, không logo khách, không số bịa |
+| D-P53 | §10.4 Auth Flow, §2.2 `User`, §9 Auth | Chỉ có đăng ký và đăng nhập bằng mật khẩu; không điều khoản, không đồng ý; quên mật khẩu là mất tài khoản; không đăng nhập bằng GitHub | [v4.12, Plan #60 QĐ-6, QĐ-7, QĐ-8] (1) Trang công khai `/terms`, `/privacy` viết đúng những gì hệ thống làm; đăng ký phải tích ô đồng ý (không tích sẵn), Service 1 nhận `acceptTerms: true` và lưu `terms_version`, `terms_accepted_at`. (2) **Quên mật khẩu**: `POST /auth/password/forgot` luôn 202, token 32 byte lưu SHA-256, 30 phút, một lần, link ở fragment (`/reset-password#…`); `POST /auth/password/reset` đặt mật khẩu và thu hồi mọi phiên; thư qua SMTP (`SMTP_URL`, `MAIL_FROM`). (3) **GitHub OAuth**: `state` ký HMAC trong cookie httpOnly 10 phút; chỉ dùng email chính ĐÃ XÁC MINH; email đã có tài khoản mật khẩu thì KHÔNG tự liên kết; người mới qua GitHub phải đồng ý điều khoản ở trang đăng ký; bảng `user_identities`, `password_hash` NULL được. (4) `GET /auth/options` cho Portal biết tính năng nào đã cấu hình: thiếu SMTP hay thiếu `GITHUB_CLIENT_ID/SECRET` thì link và nút ẩn, không có nút bấm vào lỗi | Nghị định 13/2023/NĐ-CP: im lặng không phải đồng ý. Không lộ email nào có tài khoản (forgot luôn 202). Tự liên kết theo email mở đường chiếm tài khoản đặt trước vì UDP chưa xác minh email lúc đăng ký. SMTP (gói miễn phí của Brevo, Resend…) và OAuth App của GitHub đều 0 đồng. Hai trang pháp lý CẦN luật sư đọc trước khi mở công khai (sổ nợ `legal-review`) |
 | D-P36 | §11.1, §11.2, §8.3 áp image, §5.2 `PipelineTemplateParams`, §9 Project | Template §11.1 là khối mã trong tài liệu, không nói giao cho developer thế nào; "CI ghi image tag lúc render" trong khi luồng áp image §8.3 chỉ đổi `image`; §11.2 "quét repo" không nói quét bằng gì, lưu ở đâu; pipeline Golden Path không nói test theo runtime | [v4.11, Plan #48] Template là dự án chạy được trong monorepo (`packages/golden-path`), sinh qua `GET /golden-path`; patch áp image gắn nhãn pod `app.kubernetes.io/version`, manifest đọc nhãn vào `service.version`; quét qua API công khai GitHub/GitLab ở S1, kết quả ở `projects.repo_scan`; `PipelineTemplateParams.languageRuntime` ⇒ lệnh và image test theo runtime | Mã developer chép nguyên văn phải là mã đã chạy — v3 từng phát tán một cơ chế không chạy. Không có nhãn thì `service.version` đứng yên ở giá trị lúc apply đầu, canary SERVICE_LEVEL so hai phiên bản mang cùng nhãn. Quét cục bộ đòi developer cài công cụ; API công khai không tốn gì và không nhận host lạ. `npm test` trên project Python là pipeline luôn đỏ |
 | D-P35 | §6.5 toán tử `regex`, §6.6 đoạn mã Python, §6.8 "Bản Python" | Regex "cờ `u`, không backreference/lookaround" — mọi pattern V8 nhận là hợp lệ; bản Python "dùng lại vector test hash/delta" và nhận `picks=_picks` ở cả provider lẫn middleware | [v4.11, Plan #47] Ngữ pháp regex KHẢ CHUYỂN: `regexSyntaxIssue` từ chối thêm `\p{…}`, cờ nội tuyến và tên nhóm không phải định danh ASCII hoặc trùng — ở đường ghi của S1/S2 lẫn schema đọc của mọi SDK; vector dùng chung mở rộng sang regex (639 pattern) và giá trị mặc định của provider; phép so chéo ngôn ngữ với Service 2 thật; store theo request là MỘT `ContextVar` của module, không có tham số `picks` | Tập ký tự của `\p{…}` đổi theo phiên bản Unicode của runtime (ICU của V8 và bảng của Python không cùng nhịp): hai SDK không thể cho cùng kết quả, I26 vỡ bằng dữ liệu hợp lệ. Cờ nội tuyến và luật trùng tên đổi theo phiên bản V8 — cho phép chúng là để kết quả phụ thuộc bản Node của server. Vector hash/delta không phủ toán tử khó nhất; `picks` là cấu hình developer phải khai hai lần và có thể khai lệch |
 | D-P34 | §7.2 ATTRIBUTE_SPLIT (FLAG_LEVEL), §9 Internal S2, §10.9 | "Rule ATTRIBUTE_BASED/SEGMENT serve variant mới; promote = đổi default variant" — không nói rule có hình gì, ai đổi default, bằng quyền nào | [v4.11, Plan #46] Rule là phân phối HAI variant như canary (`canaryPairOf`), bậc duy nhất đưa nhóm khớp sang 100%; chiến lược mang `autoDecide`, `finish`, `ruleIssue` — reconciler không rẽ theo tên; không tự quyết thì mỗi nhịp vẫn đo và ghi HOLD kèm số; PROMOTE tay: S3 gọi `PATCH /internal/flag-envs/:id {defaultVariantId}` mang người bấm (audit I40) rồi đóng DONE; `canaryPairOf(…, allowFull)` nhận 100% khi "lên 100%" chưa phải xong | `PATCH /internal/rules/:id` chỉ đổi TRỌNG SỐ, không đổi tập variant — rule một variant thì rollout không có gì để đổi mà không nới quyền ghi của S3. Đổi default cần người làm thật: một thay đổi cấu hình production không được ẩn danh. Rẽ theo tên chiến lược là một `if` nữa mỗi lần thêm chiến lược |

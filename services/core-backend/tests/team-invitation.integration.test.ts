@@ -49,7 +49,12 @@ const freshEmail = (): string => `inv-guest-${randomUUID()}@udp.local`;
 async function registerAs(email: string): Promise<Actor> {
   const res = await request(app)
     .post(`${API}/auth/register`)
-    .send({ email, password: PASSWORD, name: "Khách được mời" })
+    .send({
+      email,
+      password: PASSWORD,
+      name: "Khách được mời",
+      acceptTerms: true,
+    })
     .expect(201);
   const raw: unknown = res.get("set-cookie");
   const cookies = Array.isArray(raw) ? (raw as string[]) : [String(raw)];

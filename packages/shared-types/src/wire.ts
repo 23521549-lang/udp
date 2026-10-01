@@ -79,6 +79,19 @@ export const authSessionResponseWire = z
 /** `GET /auth/me` */
 export const meResponseWire = z.object({ user: publicUserWire }).strict();
 
+/**
+ * [v4.12, Plan #60] `GET /auth/options` — công khai: những cách đăng nhập mà triển khai này bật. Portal ẩn "Quên mật
+ * khẩu" khi chưa cấu hình thư, và ẩn "Tiếp tục với GitHub" khi chưa có OAuth App.
+ */
+export const authOptionsResponseWire = z
+  .object({ passwordReset: z.boolean(), github: z.boolean() })
+  .strict();
+
+/** [v4.12, Plan #60] `POST /auth/password/forgot` — luôn 202 như nhau, có tài khoản hay không */
+export const passwordForgotResponseWire = z
+  .object({ status: z.literal("accepted") })
+  .strict();
+
 // ------------------------------------------------------------- project
 
 export const projectRoleWire = z.enum([

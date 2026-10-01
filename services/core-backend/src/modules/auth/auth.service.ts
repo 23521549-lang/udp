@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { env } from "@udp/config";
+import { env, LEGAL } from "@udp/config";
 import { ConflictError, UnauthenticatedError } from "@udp/http";
 import * as sessions from "./refresh-session.repository.js";
 import {
@@ -66,6 +66,25 @@ async function issueTokens(
   };
 }
 
+/** Mở một phiên mới (họ phiên mới) cho người vừa chứng minh danh tính — mật khẩu, hay GitHub (Plan #60 QĐ-8) */
+export async function startSession(
+  user: PublicUser,
+  ctx: sessions.SessionContext = {},
+): Promise<AuthResult> {
+  const family = sessions.newFamily();
+  return {
+    user,
+    tokens: await issueTokens(user, family, ctx),
+    familyId: family.familyId,
+  };
+}
+
+/** [v4.12, Plan #60 QĐ-6] Đồng ý Điều khoản ở phiên bản HIỆN HÀNH của máy chủ, lúc này */
+export const currentConsent = (): repository.TermsConsent => ({
+  termsVersion: LEGAL.termsVersion,
+  termsAcceptedAt: new Date(),
+});
+
 export async function register(
   input: RegisterInput,
   ctx: sessions.SessionContext = {},
@@ -77,14 +96,9 @@ export async function register(
     email: input.email,
     name: input.name,
     passwordHash: await hashPassword(input.password),
+    ...currentConsent(),
   });
-
-  const family = sessions.newFamily();
-  return {
-    user,
-    tokens: await issueTokens(user, family, ctx),
-    familyId: family.familyId,
-  };
+  return startSession(user, ctx);
 }
 
 export async function login(
@@ -93,9 +107,11 @@ export async function login(
 ): Promise<AuthResult> {
   const record = await repository.findWithPasswordHash(input.email);
 
-  if (!record) {
-    // Chạy một phép so sánh giả để nhánh này tốn thời gian tương đương nhánh
-    // có thật — nếu không, chênh lệch thời gian phản hồi tiết lộ email nào tồn tại.
+  /*
+   * Không có tài khoản, hay [v4.12] tài khoản GitHub chưa đặt mật khẩu: chạy một phép so sánh giả để nhánh này tốn
+   * thời gian tương đương nhánh có thật — nếu không, chênh lệch thời gian phản hồi tiết lộ email nào tồn tại.
+   */
+  if (!record || record.passwordHash === null) {
     await dummyVerify(input.password);
     throw new UnauthenticatedError(INVALID_CREDENTIALS);
   }
@@ -104,12 +120,7 @@ export async function login(
   const isValid = await verifyPassword(input.password, passwordHash);
   if (!isValid) throw new UnauthenticatedError(INVALID_CREDENTIALS);
 
-  const family = sessions.newFamily();
-  return {
-    user,
-    tokens: await issueTokens(user, family, ctx),
-    familyId: family.familyId,
-  };
+  return startSession(user, ctx);
 }
 
 /**

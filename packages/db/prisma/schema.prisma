@@ -327,14 +327,21 @@ model DomainCatalog {
 // ============================================================
 
 model User {
-  id           String       @id @default(uuid()) @db.Uuid
-  email        String       @unique @db.VarChar(255)
-  passwordHash String       @map("password_hash") @db.VarChar(255)
-  name         String       @db.VarChar(255)
-  platformRole PlatformRole @default(USER) @map("platform_role")
-  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  id              String       @id @default(uuid()) @db.Uuid
+  email           String       @unique @db.VarChar(255)
+  /// [v4.12, Plan #60 QĐ-8] NULL = tài khoản tạo bằng GitHub, chưa đặt mật khẩu (đặt được qua Quên mật khẩu).
+  /// Đăng nhập bằng mật khẩu với hash NULL đi đúng nhánh "sai thông tin", cùng thời gian như email không tồn tại.
+  passwordHash    String?      @map("password_hash") @db.VarChar(255)
+  name            String       @db.VarChar(255)
+  platformRole    PlatformRole @default(USER) @map("platform_role")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// [v4.12, Plan #60 QĐ-6] Phiên bản Điều khoản người dùng đã đồng ý (tích ô khi đăng ký, Nghị định 13/2023:
+  /// im lặng không phải đồng ý) và lúc đồng ý. NULL ở tài khoản tạo trước khi có Điều khoản; CHECK: hai cột cùng
+  /// NULL hoặc cùng có.
+  termsVersion    String?      @map("terms_version") @db.VarChar(20)
+  termsAcceptedAt DateTime?    @map("terms_accepted_at") @db.Timestamptz(3)
 
-  ownedProjects   Project[]         @relation("ProjectOwner")
+  ownedProjects   Project[]            @relation("ProjectOwner")
   memberships     ProjectMember[]
   createdKeys     SdkKey[]
   createdCreds    CloudCredential[]
@@ -346,8 +353,49 @@ model User {
   idempotencyKeys IdempotencyKey[]
   teamMemberships TeamMember[]
   invitationsSent Invitation[]
+  passwordResets  PasswordResetToken[]
+  identities      UserIdentity[]
 
   @@map("users")
+}
+
+/// [v4.12, Plan #60 QĐ-7] Token đặt lại mật khẩu gửi qua email. Chỉ lưu SHA-256 của token (như phiên và lời mời);
+/// token thật nằm ở fragment của đường dẫn (`/reset-password#<token>`) nên không vào log của máy chủ nào. Sống
+/// `AUTH.passwordResetTtlMinutes`, dùng MỘT lần (`used_at`); xin token mới thì token cũ chưa dùng của người đó bị
+/// đánh dấu đã dùng trong cùng transaction.
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// [v4.12, Plan #60 QĐ-8] Nhà cung cấp danh tính bên ngoài
+enum IdentityProvider {
+  GITHUB
+}
+
+/// [v4.12, Plan #60 QĐ-8] Liên kết tài khoản UDP với danh tính bên ngoài. Khoá theo id BẤT BIẾN của nhà cung cấp
+/// (id số của GitHub), không theo login hay email — hai thứ đó đổi được. Một người một liên kết mỗi nhà cung cấp.
+model UserIdentity {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  provider       IdentityProvider
+  providerUserId String           @map("provider_user_id") @db.VarChar(100)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@unique([userId, provider])
+  @@map("user_identities")
 }
 
 /// Phiên refresh token — một hàng cho mỗi lần cấp.

@@ -209,7 +209,12 @@ export const newUser = (label: string): User => ({
 
 export async function register(target: Target, user: User): Promise<Session> {
   const reply = await call(target, "POST", "/api/v1/auth/register", {
-    body: JSON.stringify({ ...user, name: `E2E ${user.email}` }),
+    body: JSON.stringify({
+      ...user,
+      name: `E2E ${user.email}`,
+      // [Plan #60 QĐ-6] Đăng ký phải tích ô đồng ý Điều khoản
+      acceptTerms: true,
+    }),
   });
   if (reply.status !== 201) {
     throw new Error(`đăng ký → ${String(reply.status)} ${reply.body}`);

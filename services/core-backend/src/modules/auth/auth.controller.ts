@@ -1,11 +1,25 @@
-import { Router, type Request } from "express";
-import { COOKIE_NAMES } from "@udp/config";
+import { Router, type Request, type Response } from "express";
+import { COOKIE_NAMES, env } from "@udp/config";
 import {
+  authOptionsResponseWire,
   authSessionResponseWire,
   meResponseWire,
+  passwordForgotResponseWire,
 } from "@udp/shared-types/wire";
-import { sendJson, UnauthenticatedError } from "@udp/http";
-import { clearAuthCookies, setAuthCookies } from "../../core/http/cookies.js";
+import {
+  logger,
+  NotFoundError,
+  sendJson,
+  UnauthenticatedError,
+  ValidationError,
+} from "@udp/http";
+import { appDepsOf } from "../../core/app-deps.js";
+import {
+  clearAuthCookies,
+  clearOAuthCookie,
+  setAuthCookies,
+  setOAuthCookie,
+} from "../../core/http/cookies.js";
 import { asyncHandler } from "@udp/http";
 import {
   requireAuth,
@@ -14,7 +28,17 @@ import {
 import { authRateLimiter } from "../../core/http/middlewares/rate-limit.middleware.js";
 import { validateBody } from "@udp/http";
 import * as authService from "./auth.service.js";
-import { loginSchema, registerSchema } from "./auth.types.js";
+import {
+  forgotPasswordSchema,
+  githubStartQuerySchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema,
+} from "./auth.types.js";
+import { GithubOAuthError } from "./github.client.js";
+import { githubSignIn, type GithubOutcome } from "./github.service.js";
+import { newOAuthState, verifyOAuthState } from "./oauth-state.js";
+import * as passwordReset from "./password-reset.service.js";
 
 export const authRouter: Router = Router();
 
@@ -109,6 +133,151 @@ authRouter.post(
     );
     const csrfToken = setAuthCookies(res, tokens, familyId);
     sendJson(res, authSessionResponseWire, { user, csrfToken });
+  }),
+);
+
+/**
+ * [v4.12, Plan #60] Những cách đăng nhập mà triển khai này bật — công khai (trang đăng nhập gọi trước khi có phiên).
+ */
+authRouter.get(
+  "/options",
+  asyncHandler((req, res) => {
+    const { mailer, github } = appDepsOf(req).auth;
+    sendJson(res, authOptionsResponseWire, {
+      passwordReset: mailer !== null,
+      github: github !== null,
+    });
+    return Promise.resolve();
+  }),
+);
+
+/** [v4.12, Plan #60 QĐ-7] Xin thư đặt lại mật khẩu — luôn 202 như nhau, có tài khoản hay không */
+authRouter.post(
+  "/password/forgot",
+  authRateLimiter,
+  validateBody(forgotPasswordSchema),
+  asyncHandler(async (req, res) => {
+    const { mailer } = appDepsOf(req).auth;
+    if (mailer === null) {
+      throw new NotFoundError(
+        "Triển khai này chưa bật gửi thư đặt lại mật khẩu",
+      );
+    }
+    await passwordReset.requestReset(req.body, mailer, env.CORS_ORIGIN);
+    sendJson(res, passwordForgotResponseWire, { status: "accepted" }, 202);
+  }),
+);
+
+/** [v4.12, Plan #60 QĐ-7] Đặt mật khẩu mới bằng token trong thư; mọi phiên cũ bị thu hồi */
+authRouter.post(
+  "/password/reset",
+  authRateLimiter,
+  validateBody(resetPasswordSchema),
+  asyncHandler(async (req, res) => {
+    await passwordReset.resetPassword(req.body, req);
+    res.status(204).end();
+  }),
+);
+
+/** Địa chỉ GitHub gọi về: CÙNG origin công khai với Portal (Portal proxy `/api` sang Service 1) */
+const githubCallbackUrl = (): string =>
+  `${env.CORS_ORIGIN}/api/v1/auth/github/callback`;
+
+/**
+ * Đích quay về sau khi đăng nhập GitHub: chỉ đường NỘI BỘ của hai khung và trang nhận lời mời (cùng luật
+ * `safeRedirect` của Portal) — nhận nguyên văn là một open redirect.
+ */
+export function safeReturnPath(target: string | null | undefined): string {
+  const fallback = "/app/home";
+  if (target === null || target === undefined) return fallback;
+  if (!/^\/(app|admin|invite)(\/|$|\?|#)/.test(target)) return fallback;
+  if (target.startsWith("//") || target.includes("\\")) return fallback;
+  return target;
+}
+
+/** [v4.12, Plan #60 QĐ-8] Bắt đầu đăng nhập GitHub: đặt `state` đã ký vào cookie rồi chuyển sang GitHub */
+authRouter.get(
+  "/github/start",
+  authRateLimiter,
+  asyncHandler((req, res) => {
+    const { github } = appDepsOf(req).auth;
+    if (github === null) {
+      throw new NotFoundError("Triển khai này chưa bật đăng nhập bằng GitHub");
+    }
+    const query = githubStartQuerySchema.safeParse(req.query);
+    if (!query.success) throw new ValidationError("Tham số không hợp lệ");
+    const { state, cookie } = newOAuthState({
+      intent: query.data.intent,
+      acceptTerms: query.data.acceptTerms === "1",
+      redirectTo: query.data.redirectTo ?? null,
+    });
+    setOAuthCookie(res, cookie);
+    res.redirect(302, github.authorizeUrl(state.state, githubCallbackUrl()));
+    return Promise.resolve();
+  }),
+);
+
+/** Kết cục ⇒ đường dẫn của Portal; lỗi nói bằng MÃ trên query, Portal viết câu theo ngôn ngữ */
+function portalUrlOf(outcome: GithubOutcome | "failed" | "denied"): string {
+  const to = (path: string) => `${env.CORS_ORIGIN}${path}`;
+  if (outcome === "failed") return to("/login?oauth=failed");
+  if (outcome === "denied") return to("/login?oauth=denied");
+  switch (outcome.kind) {
+    case "signed-in":
+      return to("/app/home");
+    case "email-taken":
+      return to("/login?oauth=email_taken");
+    case "no-account":
+      return to("/register?oauth=no_account");
+    case "no-email":
+      return to("/login?oauth=no_email");
+  }
+}
+
+/** [v4.12, Plan #60 QĐ-8] GitHub gọi về: kiểm `state`, đổi `code`, đăng nhập hay tạo tài khoản, chuyển về Portal */
+authRouter.get(
+  "/github/callback",
+  authRateLimiter,
+  asyncHandler(async (req, res) => {
+    const { github } = appDepsOf(req).auth;
+    if (github === null) {
+      throw new NotFoundError("Triển khai này chưa bật đăng nhập bằng GitHub");
+    }
+    const cookie: unknown = req.cookies[COOKIE_NAMES.oauthState];
+    clearOAuthCookie(res);
+    const q = req.query as Record<string, unknown>;
+    if (typeof q.error === "string") {
+      res.redirect(302, portalUrlOf("denied"));
+      return;
+    }
+    const state = verifyOAuthState(
+      typeof cookie === "string" ? cookie : undefined,
+      typeof q.state === "string" ? q.state : undefined,
+    );
+    if (state === null || typeof q.code !== "string") {
+      res.redirect(302, portalUrlOf("failed"));
+      return;
+    }
+    let outcome: GithubOutcome;
+    try {
+      const profile = await github.exchange(q.code, githubCallbackUrl());
+      outcome = await githubSignIn(profile, state, sessionContext(req));
+    } catch (err) {
+      if (!(err instanceof GithubOAuthError)) throw err;
+      logger.warn({ err }, "đăng nhập GitHub thất bại");
+      res.redirect(302, portalUrlOf("failed"));
+      return;
+    }
+    if (outcome.kind === "signed-in") {
+      const { tokens, familyId } = outcome.result;
+      setAuthCookies(res, tokens, familyId);
+      res.redirect(
+        302,
+        `${env.CORS_ORIGIN}${safeReturnPath(state.redirectTo)}`,
+      );
+      return;
+    }
+    res.redirect(302, portalUrlOf(outcome));
   }),
 );
 

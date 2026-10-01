@@ -61,7 +61,12 @@ export function testWorld(app: Express, admin: PrismaClient): TestWorld {
       const email = `${prefix}-${randomUUID()}@udp.local`;
       const res = await request(app)
         .post(`${API}/auth/register`)
-        .send({ email, password: PASSWORD, name: "Test User" })
+        .send({
+          email,
+          password: PASSWORD,
+          name: "Test User",
+          acceptTerms: true,
+        })
         .expect(201);
       emails.push(email);
       return {

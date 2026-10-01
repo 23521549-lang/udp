@@ -434,6 +434,32 @@ export const envSchema = z
     ),
     UDP_EXTERNAL_ID_SECRET: optionalSetting(z.string().min(32)),
 
+    // ---------- Thư gửi đi (Plan #60 QĐ-7, tuỳ chọn) ----------
+    /**
+     * [v4.12] SMTP để gửi thư đặt lại mật khẩu: `smtps://user:pass@host:465` hay `smtp://…:587` (STARTTLS). Nhiều dịch
+     * vụ có gói miễn phí (Brevo, Resend, Gmail với mật khẩu ứng dụng), nên hạ tầng vẫn 0 đồng. Đi CÙNG `MAIL_FROM`;
+     * thiếu cả hai thì tính năng tắt và Portal ẩn link "Quên mật khẩu" (`GET /auth/options`).
+     */
+    SMTP_URL: optionalSetting(
+      z
+        .string()
+        .url()
+        .refine(
+          (v) => v.startsWith("smtp://") || v.startsWith("smtps://"),
+          "phải bắt đầu bằng smtp:// hoặc smtps://",
+        ),
+    ),
+    /** Người gửi hiện trong thư, ví dụ `UDP <no-reply@udp.example>` */
+    MAIL_FROM: optionalSetting(z.string().min(3).max(200)),
+
+    // ---------- Đăng nhập bằng GitHub (Plan #60 QĐ-8, tuỳ chọn) ----------
+    /**
+     * [v4.12] OAuth App của GitHub (miễn phí). Callback khai trên GitHub: `<CORS_ORIGIN>/api/v1/auth/github/callback`.
+     * Hai biến đi CÙNG NHAU; thiếu cả hai thì nút "Tiếp tục với GitHub" ẩn.
+     */
+    GITHUB_CLIENT_ID: optionalSetting(z.string().min(1).max(100)),
+    GITHUB_CLIENT_SECRET: optionalSetting(z.string().min(1).max(200)),
+
     // ---------- Cloud MANAGED mode (tuỳ chọn) ----------
     /**
      * [v4.11] Cloud mà UDP nhận triển khai vào tài khoản CỦA CHÍNH NÓ, dùng identity nền
@@ -609,6 +635,32 @@ export const envSchema = z
         message:
           "MANAGED_AZURE_SUBSCRIPTION_ID và MANAGED_AZURE_RESOURCE_GROUP bắt buộc khi " +
           "MANAGED_CLOUDS có azure",
+      });
+    }
+
+    if ((env.SMTP_URL === undefined) !== (env.MAIL_FROM === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [env.SMTP_URL === undefined ? "SMTP_URL" : "MAIL_FROM"],
+        message:
+          "SMTP_URL và MAIL_FROM đi cùng nhau — có máy chủ thư mà không người gửi thì thư bị từ chối, có người gửi mà " +
+          "không máy chủ thì không gửi được gì",
+      });
+    }
+
+    if (
+      (env.GITHUB_CLIENT_ID === undefined) !==
+      (env.GITHUB_CLIENT_SECRET === undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: [
+          env.GITHUB_CLIENT_ID === undefined
+            ? "GITHUB_CLIENT_ID"
+            : "GITHUB_CLIENT_SECRET",
+        ],
+        message:
+          "GITHUB_CLIENT_ID và GITHUB_CLIENT_SECRET đi cùng nhau — thiếu một trong hai thì GitHub từ chối đổi mã",
       });
     }
 

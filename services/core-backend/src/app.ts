@@ -56,6 +56,12 @@ const CSRF_EXEMPT_PATHS = [
   "/auth/register",
   "/auth/login",
   "/invitations/lookup",
+  /*
+   * [v4.12, Plan #60 QĐ-7] Người quên mật khẩu chưa có phiên (chưa có cookie CSRF). Xin thư không ghi gì của ai ngoài
+   * một token chỉ chủ hộp thư đọc được; đặt lại cần đúng token trong thư — trang lạ không có nó.
+   */
+  "/auth/password/forgot",
+  "/auth/password/reset",
 ] as const;
 
 /**

@@ -66,6 +66,10 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     team_members: FULL,
     project_team_grants: FULL,
     invitations: FULL,
+    // [v4.12, Plan #60] Đặt lại mật khẩu và liên kết GitHub — vòng đời tài khoản, như refresh_sessions. S2/S3 không
+    // có quyền nào: `password_reset_tokens` chứa hash token.
+    password_reset_tokens: FULL,
+    user_identities: FULL,
     // config_version/config_hash thuộc S2 (và S3 trong nhánh kill-switch)
     environments: {
       SELECT: "*",

@@ -90,6 +90,17 @@ export const revokeFamily = async (familyId: string): Promise<void> => {
   });
 };
 
+/**
+ * [v4.12, Plan #60 QĐ-7] Thu hồi MỌI phiên của một người — sau khi đặt lại mật khẩu: ai đang giữ phiên cũ (có thể chính
+ * là lý do người dùng phải đặt lại) bị đăng xuất ở lần refresh kế tiếp.
+ */
+export const revokeAllForUser = async (userId: string): Promise<void> => {
+  await prisma.refreshSession.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+};
+
 export const revokeSession = async (sessionId: string): Promise<void> => {
   await prisma.refreshSession.updateMany({
     where: { id: sessionId, revokedAt: null },

@@ -21,6 +21,7 @@ import {
   inertProvisioning,
   noDomainAdapters,
   outsidePlatform,
+  noExternalAuth,
 } from "../tests/helpers/inert-deps.js";
 
 /**
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
     provisioning: inertProvisioning,
     repoSource: noRepoSource,
     platform: outsidePlatform,
+    auth: noExternalAuth,
   });
   const world = testWorld(app, admin);
   try {

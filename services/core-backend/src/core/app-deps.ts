@@ -32,6 +32,11 @@ import {
 } from "../modules/golden-path/repo-source.js";
 import type { ClusterTokenIssuer } from "../modules/cluster/cluster-token.js";
 import { platformProbeFromEnv, type PlatformProbe } from "./platform-probe.js";
+import { smtpMailer, type Mailer } from "./mail/mailer.js";
+import {
+  githubOAuth,
+  type GithubOAuth,
+} from "../modules/auth/github.client.js";
 
 /**
  * Phụ thuộc RA NGOÀI tiến trình của Service 1 — thứ test phải thay được mà không
@@ -89,6 +94,17 @@ export interface AppDeps {
    * PVC PostgreSQL, CronJob sao lưu, Certificate) — nạp một lần theo môi trường chạy; test tiêm bản giả.
    */
   platform: () => Promise<PlatformProbe>;
+  /**
+   * [v4.12, Plan #60 QĐ-7, QĐ-8] Đường ra ngoài của đăng nhập: thư đặt lại mật khẩu (SMTP) và OAuth GitHub. `null` khi
+   * chưa cấu hình — tính năng tắt và `GET /auth/options` báo cho Portal ẩn nút. Test tiêm bản giả, không gửi thư hay
+   * gọi GitHub thật.
+   */
+  auth: AuthRuntime;
+}
+
+export interface AuthRuntime {
+  mailer: Mailer | null;
+  github: GithubOAuth | null;
 }
 
 export type WithCluster = <T>(
@@ -156,6 +172,17 @@ export function defaultAppDeps(): AppDeps {
     },
     repoSource: createRepoSourceFactory(),
     platform: memoized(() => platformProbeFromEnv()),
+    auth: {
+      mailer:
+        env.SMTP_URL === undefined || env.MAIL_FROM === undefined
+          ? null
+          : smtpMailer(env.SMTP_URL, env.MAIL_FROM),
+      github:
+        env.GITHUB_CLIENT_ID === undefined ||
+        env.GITHUB_CLIENT_SECRET === undefined
+          ? null
+          : githubOAuth(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET),
+    },
   };
 }
 
