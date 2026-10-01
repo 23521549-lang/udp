@@ -1,5 +1,9 @@
+import { stepImage } from "@udp/config";
 import { z } from "zod";
-import { createPipelineStepAdapter } from "../../adapter-base/pipeline-steps.js";
+import {
+  createPipelineStepAdapter,
+  stepVersionSchema,
+} from "../../adapter-base/pipeline-steps.js";
 
 /**
  * Adapter Grype (§5.5 Security Scanning, Plan #37) — họ bước pipeline: quét lỗ hổng của ĐÚNG image
@@ -12,10 +16,7 @@ import { createPipelineStepAdapter } from "../../adapter-base/pipeline-steps.js"
 export const grypeConfigSchema = z.object({
   failOn: z.enum(["critical", "high", "medium", "low"]).default("high"),
   onlyFixed: z.boolean().default(true),
-  version: z
-    .string()
-    .regex(/^v\d+\.\d+\.\d+$/)
-    .default("v0.84.0"),
+  version: stepVersionSchema("grype"),
 });
 
 const { adapter, pipelineSteps } = createPipelineStepAdapter({
@@ -39,8 +40,7 @@ const { adapter, pipelineSteps } = createPipelineStepAdapter({
       {
         name: "quet-image",
         phase: "after-build",
-        // [Plan #61] Bản `-debug` có busybox: image thường dựng từ `scratch`, không có shell để chạy lệnh của bước
-        image: `anchore/grype:${parsed.version}-debug`,
+        image: stepImage("grype", parsed.version),
         commands: [
           [
             'grype "registry:$IMAGE_REF"',

@@ -1,5 +1,9 @@
+import { stepImage } from "@udp/config";
 import { z } from "zod";
-import { createPipelineStepAdapter } from "../../adapter-base/pipeline-steps.js";
+import {
+  createPipelineStepAdapter,
+  stepVersionSchema,
+} from "../../adapter-base/pipeline-steps.js";
 import { repoPathSchema } from "../../adapter-base/state-backend.js";
 
 /**
@@ -14,10 +18,7 @@ import { repoPathSchema } from "../../adapter-base/state-backend.js";
 export const ansibleConfigSchema = z.object({
   playbook: repoPathSchema.default("ansible/site.yml"),
   inventory: repoPathSchema.default("ansible/inventory"),
-  version: z
-    .string()
-    .regex(/^\d+\.\d+\.\d+$/)
-    .default("2.18.1"),
+  version: stepVersionSchema("ansible"),
   useVault: z.boolean().default(false),
   checkOnly: z.boolean().default(true),
 });
@@ -51,7 +52,7 @@ const { adapter, pipelineSteps } = createPipelineStepAdapter({
       {
         name: parsed.checkOnly ? "check" : "playbook",
         phase: "before-build",
-        image: `alpine/ansible:${parsed.version}`,
+        image: stepImage("ansible", parsed.version),
         commands: [
           'echo "$ANSIBLE_SSH_PRIVATE_KEY" > /tmp/udp_ssh_key',
           "chmod 600 /tmp/udp_ssh_key",

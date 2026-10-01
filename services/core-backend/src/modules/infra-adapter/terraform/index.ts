@@ -1,5 +1,9 @@
+import { stepImage } from "@udp/config";
 import { z } from "zod";
-import { createPipelineStepAdapter } from "../../adapter-base/pipeline-steps.js";
+import {
+  createPipelineStepAdapter,
+  stepVersionSchema,
+} from "../../adapter-base/pipeline-steps.js";
 import {
   backendCredentialEnv,
   describeBackend,
@@ -21,10 +25,7 @@ import {
 
 export const terraformConfigSchema = z.object({
   workingDirectory: repoPathSchema.default("infra"),
-  version: z
-    .string()
-    .regex(/^\d+\.\d+\.\d+$/)
-    .default("1.9.8"),
+  version: stepVersionSchema("terraform"),
   backend: stateBackendSchema,
   autoApply: z.boolean().default(false),
 });
@@ -80,7 +81,7 @@ const { adapter, pipelineSteps } = createPipelineStepAdapter({
       {
         name: "plan",
         phase: "before-build",
-        image: `hashicorp/terraform:${parsed.version}`,
+        image: stepImage("terraform", parsed.version),
         commands: [
           init,
           `terraform ${dir} plan -input=false -var="environment=$UDP_ENVIRONMENT" -out=tfplan`,

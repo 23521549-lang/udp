@@ -85,3 +85,160 @@ export const BUILD_PLATFORM = `linux/${NODE_ARCH}` as const;
 /** `name:tag@sha256:<64 hex>` — dạng ghim mà test của toolchain và của template đòi */
 export const PINNED_IMAGE =
   /^[a-z0-9.\-/]+(:[A-Za-z0-9_.-]+)?@sha256:[0-9a-f]{64}$/;
+
+interface StepImageSpec {
+  repo: string;
+  /** Hậu tố của tag sau phiên bản (`-debug`) */
+  tagSuffix: string;
+  /** Dạng phiên bản người dùng ghi trong cấu hình domain (không gồm digest) */
+  version: RegExp;
+  /** Mặc định của cấu hình domain */
+  latest: string;
+  /** Phiên bản ⇒ digest của image (index đa kiến trúc khi nhà phát hành có) */
+  pins: Readonly<Record<string, string>>;
+}
+
+/**
+ * [Plan #61 QĐ-8] Image của bước pipeline mà domain khác góp (Plan #37: Terraform, Pulumi, Ansible, Checkov, Grype,
+ * ZAP). Người dùng chọn PHIÊN BẢN trong cấu hình domain; UDP đổi nó thành image ghim digest ở bảng này. Phiên bản
+ * ngoài bảng phải ghi kèm digest (`1.2.3@sha256:…`), nên bước nào cũng chạy đúng image đã kiểm.
+ *
+ * Bản mặc định cũ vẫn trong bảng: project đã lưu nó không bị nâng âm thầm (Terraform nâng định dạng state một chiều).
+ * Pulumi: ba image theo runtime, CÙNG một tập phiên bản (test giữ điều đó).
+ */
+export const STEP_IMAGES = {
+  grype: {
+    repo: "anchore/grype",
+    // Bản `-debug` có busybox: image thường dựng từ `scratch`, không có shell để chạy lệnh của bước
+    tagSuffix: "-debug",
+    version: /^v\d+\.\d+\.\d+$/,
+    latest: "v0.119.0",
+    pins: {
+      "v0.119.0":
+        "sha256:166001ed93ae8463acad508c746586ced665abe9d817ae452ed9b781ddb6cebb",
+      "v0.84.0":
+        "sha256:b33d2dd2c6895857a62b01a4468b1417313a418de2166d34ced0fac679ad63be",
+    },
+  },
+  checkov: {
+    repo: "bridgecrew/checkov",
+    tagSuffix: "",
+    version: /^\d+\.\d+\.\d+$/,
+    latest: "3.3.22",
+    pins: {
+      "3.3.22":
+        "sha256:617c76e3f9b1f7907ebca9abb6b9d746844edcb48e9bd775e4692c69c1c6ac47",
+      "3.2.255":
+        "sha256:4aeb6ec527837beb5507392074b56df946545ebb34b8da8855c6814d80b6944a",
+    },
+  },
+  zap: {
+    repo: "ghcr.io/zaproxy/zaproxy",
+    tagSuffix: "",
+    version: /^\d+\.\d+\.\d+$/,
+    latest: "2.17.0",
+    pins: {
+      "2.17.0":
+        "sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef",
+      "2.15.0":
+        "sha256:8dc78e39fafc3281ac2cf54eab05c3ea02721a1ea58f1c135f981a57f4e218b1",
+    },
+  },
+  terraform: {
+    repo: "hashicorp/terraform",
+    tagSuffix: "",
+    version: /^\d+\.\d+\.\d+$/,
+    latest: "1.16.4",
+    pins: {
+      "1.16.4":
+        "sha256:985cdc6c1d9b0a65b83377f666efd2f740b47f02ac55be1ced3d18f7d3b0e829",
+      "1.9.8":
+        "sha256:18f9986038bbaf02cf49db9c09261c778161c51dcc7fb7e355ae8938459428cd",
+    },
+  },
+  "pulumi-nodejs": {
+    repo: "pulumi/pulumi-nodejs",
+    tagSuffix: "",
+    version: /^\d+\.\d+\.\d+$/,
+    latest: "3.267.0",
+    pins: {
+      "3.267.0":
+        "sha256:5ddf68eab8e39f14dff483cc807906b59280f2bb3268450e2ee28928abb3d9f8",
+      "3.136.1":
+        "sha256:0b7bc2da68b6f3baf321937aad704c6df27c359a928ea9eafd8d3177b0b9c6df",
+    },
+  },
+  "pulumi-python": {
+    repo: "pulumi/pulumi-python",
+    tagSuffix: "",
+    version: /^\d+\.\d+\.\d+$/,
+    latest: "3.267.0",
+    pins: {
+      "3.267.0":
+        "sha256:07d7335ccd4254ad8f1e4841155d4862f7a1e964a0d0bd6f1488da2fba851c5e",
+      "3.136.1":
+        "sha256:ff2fd2753debc649d36b6cbfb251d6c7fde600bfec241a4abeba91d72ac98f87",
+    },
+  },
+  "pulumi-go": {
+    repo: "pulumi/pulumi-go",
+    tagSuffix: "",
+    version: /^\d+\.\d+\.\d+$/,
+    latest: "3.267.0",
+    pins: {
+      "3.267.0":
+        "sha256:2c896c3d58543bcc7b04812d6355492a8f795d6ce6dee2375a11ff3f7673720c",
+      "3.136.1":
+        "sha256:8971a3e15eebb161e5d5c5d1395ac671f1ee11c5adfacc10f5b48e222708e20a",
+    },
+  },
+  ansible: {
+    repo: "alpine/ansible",
+    tagSuffix: "",
+    version: /^\d+\.\d+\.\d+$/,
+    latest: "2.21.0",
+    pins: {
+      "2.21.0":
+        "sha256:514964555c1132eb1948078a95ac6d50c21a49d540fca73176e66828e6ad19ac",
+      "2.18.1":
+        "sha256:22227b578da3371267201879f44de86569e9b531db536e1d9d2b83aed35b6cfc",
+    },
+  },
+} as const satisfies Record<string, StepImageSpec>;
+
+export type StepImageTool = keyof typeof STEP_IMAGES;
+
+const DIGEST = /^sha256:[0-9a-f]{64}$/;
+
+/** Phiên bản trong cấu hình domain ⇒ phần tag và digest (digest ghi kèm thắng bảng), `null` khi không ghim được */
+function stepPin(
+  tool: StepImageTool,
+  version: string,
+): { version: string; digest: string } | null {
+  const spec: StepImageSpec = STEP_IMAGES[tool];
+  const at = version.indexOf("@");
+  const bare = at >= 0 ? version.slice(0, at) : version;
+  if (!spec.version.test(bare)) return null;
+  const digest = at >= 0 ? version.slice(at + 1) : spec.pins[bare];
+  return digest !== undefined && DIGEST.test(digest)
+    ? { version: bare, digest }
+    : null;
+}
+
+/** Phiên bản dùng được: có trong bảng, hay đúng dạng và ghi kèm digest */
+export function isPinnedStepVersion(
+  tool: StepImageTool,
+  version: string,
+): boolean {
+  return stepPin(tool, version) !== null;
+}
+
+/** Phiên bản ⇒ `repo:tag@sha256:…` — schema của adapter đã chặn phiên bản không ghim được */
+export function stepImage(tool: StepImageTool, version: string): string {
+  const pin = stepPin(tool, version);
+  if (pin === null) {
+    throw new Error(`${tool}: phiên bản ${version} chưa ghim digest`);
+  }
+  const spec: StepImageSpec = STEP_IMAGES[tool];
+  return `${spec.repo}:${pin.version}${spec.tagSuffix}@${pin.digest}`;
+}

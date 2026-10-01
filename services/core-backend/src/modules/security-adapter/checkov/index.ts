@@ -1,5 +1,9 @@
+import { stepImage } from "@udp/config";
 import { z } from "zod";
-import { createPipelineStepAdapter } from "../../adapter-base/pipeline-steps.js";
+import {
+  createPipelineStepAdapter,
+  stepVersionSchema,
+} from "../../adapter-base/pipeline-steps.js";
 import { repoPathSchema } from "../../adapter-base/state-backend.js";
 
 /**
@@ -23,10 +27,7 @@ export const checkovConfigSchema = z.object({
     .min(1)
     .refine((f) => new Set(f).size === f.length, "framework lặp")
     .default(["terraform", "kubernetes", "dockerfile"]),
-  version: z
-    .string()
-    .regex(/^\d+\.\d+\.\d+$/)
-    .default("3.2.255"),
+  version: stepVersionSchema("checkov"),
   softFail: z.boolean().default(false),
 });
 
@@ -56,7 +57,7 @@ const { adapter, pipelineSteps } = createPipelineStepAdapter({
       {
         name: "quet-iac",
         phase: "before-build",
-        image: `bridgecrew/checkov:${parsed.version}`,
+        image: stepImage("checkov", parsed.version),
         commands: [
           [
             `checkov -d ${parsed.directory}`,

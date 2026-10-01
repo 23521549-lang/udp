@@ -1,5 +1,9 @@
+import { stepImage } from "@udp/config";
 import { z } from "zod";
-import { createPipelineStepAdapter } from "../../adapter-base/pipeline-steps.js";
+import {
+  createPipelineStepAdapter,
+  stepVersionSchema,
+} from "../../adapter-base/pipeline-steps.js";
 
 /**
  * Adapter OWASP ZAP (§5.5 Security Scanning, Plan #37) — họ bước pipeline: DAST baseline (quét
@@ -22,10 +26,7 @@ export const zapConfigSchema = z.object({
     .record(envName, targetUrl)
     .refine((t) => Object.keys(t).length > 0, "cần ít nhất một mục tiêu"),
   failOnWarnings: z.boolean().default(false),
-  version: z
-    .string()
-    .regex(/^\d+\.\d+\.\d+$/)
-    .default("2.15.0"),
+  version: stepVersionSchema("zap"),
 });
 
 const { adapter, pipelineSteps } = createPipelineStepAdapter({
@@ -56,7 +57,7 @@ const { adapter, pipelineSteps } = createPipelineStepAdapter({
       {
         name: "quet-dast",
         phase: "after-build",
-        image: `ghcr.io/zaproxy/zaproxy:${parsed.version}`,
+        image: stepImage("zap", parsed.version),
         commands: [
           `case "$UDP_ENVIRONMENT" in ${cases} *) TARGET= ;; esac`,
           '[ -n "$TARGET" ] || { echo "ZAP: environment $UDP_ENVIRONMENT không có URL mục tiêu"; exit 0; }',

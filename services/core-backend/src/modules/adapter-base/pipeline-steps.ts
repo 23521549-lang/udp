@@ -4,8 +4,14 @@ import type {
   PipelineStep,
   PipelineTemplateParams,
 } from "@udp/adapter-core";
+import {
+  isPinnedStepVersion,
+  PINNED_IMAGE,
+  STEP_IMAGES,
+  type StepImageTool,
+} from "@udp/config";
 import type { CapabilityId } from "@udp/shared-types";
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 import { createDescriptorAdapter } from "./descriptor.js";
 
 /**
@@ -92,6 +98,21 @@ export function createPipelineStepAdapter(spec: PipelineStepAdapterSpec): {
  */
 const UNSAFE_STEP_TEXT = /['\\%\n\r]/;
 
+/**
+ * [Plan #61 QĐ-8] Trường `version` của tool bước: mặc định bản mới nhất UDP đã ghim; bản ngoài bảng `STEP_IMAGES`
+ * phải ghi kèm digest — bước nào cũng chạy image ghim, không có tag trần đẩy đè được.
+ */
+export function stepVersionSchema(tool: StepImageTool) {
+  const spec = STEP_IMAGES[tool];
+  const pinned = Object.keys(spec.pins).join(", ");
+  return z
+    .string()
+    .refine((version) => isPinnedStepVersion(tool, version), {
+      message: `Phiên bản UDP đã ghim: ${pinned}. Bản khác: ghi kèm digest của image, ví dụ ${spec.latest}@sha256:<64 ký tự hex>`,
+    })
+    .default(spec.latest);
+}
+
 /** Tên bước thành tên job/task/stage ở mọi CI — Tekton đòi nhãn DNS, nên mọi CI dùng cùng luật */
 const STEP_NAME = /^[a-z0-9]([-a-z0-9]{0,30}[a-z0-9])?$/;
 
@@ -99,6 +120,11 @@ function assertSafe(step: Omit<PipelineStep, "tool">, toolId: string): void {
   if (!STEP_NAME.test(step.name)) {
     throw new Error(
       `tên bước của ${toolId} không phải nhãn kebab: ${step.name}`,
+    );
+  }
+  if (!PINNED_IMAGE.test(step.image)) {
+    throw new Error(
+      `image bước của ${toolId} không ghim digest: ${step.image.slice(0, 80)}`,
     );
   }
   const bad = [

@@ -4,7 +4,12 @@ import type {
   PipelineStep,
   PipelineTemplateParams,
 } from "@udp/adapter-core";
-import { BUILD_TOOLCHAIN, TEST_IMAGES } from "@udp/config";
+import {
+  BUILD_TOOLCHAIN,
+  STEP_IMAGES,
+  stepImage,
+  TEST_IMAGES,
+} from "@udp/config";
 import { parseAllDocuments } from "yaml";
 import { deployBodySchema, WebhookPayloadError } from "./cicd.js";
 import { stepId } from "./pipeline-steps.js";
@@ -58,7 +63,7 @@ const STEPS: PipelineStep[] = [
     tool: "grype",
     name: "quet-image",
     phase: "after-build",
-    image: "anchore/grype:v0.80.0",
+    image: stepImage("grype", STEP_IMAGES.grype.latest),
     commands: ['grype "$IMAGE_REF" --fail-on high'],
     env: {},
     secretEnv: [],
@@ -67,7 +72,7 @@ const STEPS: PipelineStep[] = [
     tool: "terraform",
     name: "plan",
     phase: "before-build",
-    image: "hashicorp/terraform:1.9.8",
+    image: stepImage("terraform", STEP_IMAGES.terraform.latest),
     commands: ["terraform -chdir=infra init -input=false"],
     env: { TF_IN_AUTOMATION: "1" },
     secretEnv: ["AWS_ACCESS_KEY_ID"],
@@ -76,7 +81,7 @@ const STEPS: PipelineStep[] = [
     tool: "checkov",
     name: "quet-iac",
     phase: "before-build",
-    image: "bridgecrew/checkov:3.2.255",
+    image: stepImage("checkov", STEP_IMAGES.checkov.latest),
     commands: ["checkov -d infra --quiet"],
     env: {},
     secretEnv: [],
@@ -202,11 +207,14 @@ const PUSH_CASES: {
   },
 ];
 
-/** Repository image của công cụ build mà UDP chọn — mọi lần xuất hiện phải kèm digest (QĐ-8) */
+/** Repository image của công cụ build và của bước domain khác mà UDP chọn — mọi lần xuất hiện phải kèm digest (QĐ-8) */
 const TOOLCHAIN_REPOS = [
-  ...Object.values(BUILD_TOOLCHAIN.images),
-  ...Object.values(TEST_IMAGES),
-].map((image) => image.split(":")[0] ?? image);
+  ...[
+    ...Object.values(BUILD_TOOLCHAIN.images),
+    ...Object.values(TEST_IMAGES),
+  ].map((image) => image.split(":")[0] ?? image),
+  ...Object.values(STEP_IMAGES).map((spec) => spec.repo),
+];
 
 /** Văn bản YAML của template — Jenkinsfile mang YAML của pod giữa hai dấu ba nháy */
 function yamlOf(toolId: string, text: string): string {

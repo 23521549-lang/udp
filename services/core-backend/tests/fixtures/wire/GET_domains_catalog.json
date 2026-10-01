@@ -571,7 +571,7 @@
                 {
                   "key": "version",
                   "required": false,
-                  "default": "2.18.1",
+                  "default": "2.21.0",
                   "kind": "string"
                 },
                 {
@@ -731,7 +731,7 @@
                 {
                   "key": "version",
                   "required": false,
-                  "default": "3.136.1",
+                  "default": "3.267.0",
                   "kind": "string"
                 },
                 {
@@ -780,7 +780,7 @@
                 {
                   "key": "version",
                   "required": false,
-                  "default": "1.9.8",
+                  "default": "1.16.4",
                   "kind": "string"
                 },
                 {
@@ -2332,7 +2332,7 @@
                 {
                   "key": "version",
                   "required": false,
-                  "default": "3.2.255",
+                  "default": "3.3.22",
                   "kind": "string"
                 },
                 {
@@ -2435,7 +2435,7 @@
                 {
                   "key": "version",
                   "required": false,
-                  "default": "v0.84.0",
+                  "default": "v0.119.0",
                   "kind": "string"
                 }
               ]
@@ -2555,7 +2555,7 @@
                 {
                   "key": "version",
                   "required": false,
-                  "default": "2.15.0",
+                  "default": "2.17.0",
                   "kind": "string"
                 }
               ]

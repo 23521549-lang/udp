@@ -1,5 +1,9 @@
+import { stepImage } from "@udp/config";
 import { z } from "zod";
-import { createPipelineStepAdapter } from "../../adapter-base/pipeline-steps.js";
+import {
+  createPipelineStepAdapter,
+  stepVersionSchema,
+} from "../../adapter-base/pipeline-steps.js";
 import {
   backendCredentialEnv,
   describeBackend,
@@ -29,10 +33,8 @@ const INSTALL: Record<(typeof RUNTIMES)[number], string | null> = {
 export const pulumiConfigSchema = z.object({
   workingDirectory: repoPathSchema.default("infra"),
   runtime: z.enum(RUNTIMES).default("nodejs"),
-  version: z
-    .string()
-    .regex(/^\d+\.\d+\.\d+$/)
-    .default("3.136.1"),
+  // Ba runtime cùng một tập phiên bản ghim (test của @udp/config giữ điều đó)
+  version: stepVersionSchema("pulumi-nodejs"),
   backend: stateBackendSchema,
   autoApply: z.boolean().default(false),
 });
@@ -74,7 +76,7 @@ const { adapter, pipelineSteps } = createPipelineStepAdapter({
       {
         name: parsed.autoApply ? "up" : "preview",
         phase: "before-build",
-        image: `pulumi/pulumi-${parsed.runtime}:${parsed.version}`,
+        image: stepImage(`pulumi-${parsed.runtime}`, parsed.version),
         commands: [
           ...(install === null
             ? []

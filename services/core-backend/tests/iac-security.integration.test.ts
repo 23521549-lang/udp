@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { env } from "@udp/config";
+import { BUILD_TOOLCHAIN, env, STEP_IMAGES, stepImage } from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
 import request from "supertest";
@@ -102,7 +102,7 @@ describe("bước pipeline (QĐ-3, QĐ-4)", () => {
     expect(step).toMatchObject({
       tool: "terraform",
       phase: "before-build",
-      image: "hashicorp/terraform:1.9.8",
+      image: stepImage("terraform", STEP_IMAGES.terraform.latest),
       secretEnv: [
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
@@ -136,7 +136,9 @@ describe("bước pipeline (QĐ-3, QĐ-4)", () => {
       { backend: { kind: "gcs", bucket: "acme-pulumi" }, runtime: "python" },
       project,
     );
-    expect(step!.image).toBe("pulumi/pulumi-python:3.136.1");
+    expect(step!.image).toBe(
+      `pulumi/pulumi-python:3.267.0@${STEP_IMAGES["pulumi-python"].pins["3.267.0"]}`,
+    );
     expect(step!.commands).toContain('pulumi login "gs://acme-pulumi/udp/web"');
     expect(step!.commands).toContain(
       'pulumi --cwd infra stack select --create "$UDP_ENVIRONMENT"',
@@ -167,7 +169,11 @@ describe("bước pipeline (QĐ-3, QĐ-4)", () => {
   });
 
   it("bước mang ký tự không an toàn cho template hay tên không phải nhãn ⇒ NÉM, không lọt vào template", () => {
-    const make = (command: string, name = "ok") =>
+    const make = (
+      command: string,
+      name = "ok",
+      image: string = BUILD_TOOLCHAIN.images.alpine,
+    ) =>
       createPipelineStepAdapter({
         domainType: "SECURITY",
         toolId: "gia",
@@ -180,7 +186,7 @@ describe("bước pipeline (QĐ-3, QĐ-4)", () => {
           {
             name,
             phase: "after-build",
-            image: "alpine:3.20",
+            image,
             commands: [command],
             env: {},
             secretEnv: [],
@@ -190,7 +196,33 @@ describe("bước pipeline (QĐ-3, QĐ-4)", () => {
     expect(() => make("echo 'x'")).toThrow(/không an toàn/);
     expect(() => make("echo 100%")).toThrow(/không an toàn/);
     expect(() => make("echo ok", "Ten Sai")).toThrow(/không phải nhãn/);
+    // [Plan #61 QĐ-8] Tag trần đẩy đè được: image bước phải ghim digest
+    expect(() => make("echo ok", "ok", "alpine:3.24")).toThrow(
+      /không ghim digest/,
+    );
     expect(make("echo ok")).toHaveLength(1);
+  });
+
+  it("phiên bản tool ngoài bảng ghim ⇒ lỗi chỉ cách sửa; ghi kèm digest ⇒ image đúng digest đó (Plan #61 QĐ-8)", async () => {
+    const { adapter, pipelineSteps } = await loadedOf("infra:terraform");
+    const backend = { kind: "gcs", bucket: "acme-tf" };
+    const loose = adapter.configSchema.safeParse({
+      backend,
+      version: "1.12.2",
+    });
+    expect(loose.success).toBe(false);
+    expect(JSON.stringify(loose.error?.issues)).toContain(
+      "ghi kèm digest của image",
+    );
+    const own = `sha256:${"b".repeat(64)}`;
+    const [step] = pipelineSteps!(
+      { backend, version: `1.12.2@${own}` },
+      project,
+    );
+    expect(step!.image).toBe(`hashicorp/terraform:1.12.2@${own}`);
+    // Bản mặc định cũ vẫn ghim: project đã lưu nó không bị nâng âm thầm
+    const [old] = pipelineSteps!({ backend, version: "1.9.8" }, project);
+    expect(old!.image).toBe(stepImage("terraform", "1.9.8"));
   });
 });
 
