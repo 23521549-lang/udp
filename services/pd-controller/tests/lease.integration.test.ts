@@ -130,6 +130,7 @@ describe("I17 — version là fencing token của mọi lần ghi", () => {
       breachStreak: 0,
       breachAt: null,
       metricSnapshot: null,
+      detail: null,
     };
     expect(await setLastDecision(s3, id, B, decision)).toBe(false);
     expect(await setLastDecision(s3, id, A, decision)).toBe(true);

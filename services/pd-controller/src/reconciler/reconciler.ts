@@ -31,7 +31,7 @@ import {
   updateIfVersion,
 } from "../rollout-session/session.repository.js";
 import { loadFlagTarget, type FlagTarget } from "../rollout-session/target.js";
-import type { Decision, TrackOutcome } from "@udp/shared-types";
+import type { Decision, DecisionDetail, TrackOutcome } from "@udp/shared-types";
 import type { IntentRow, SessionRow } from "../rollout-session/types.js";
 import type { FailReason } from "@udp/db";
 import {
@@ -168,6 +168,8 @@ interface FailedClose {
   triggeredBy: "AUTO" | "MANUAL";
   reason: string;
   snapshot: Decision["metricSnapshot"];
+  /** [Plan #60 QĐ-1] Mã + số của lý do khi việc đóng đến từ một vòng phân tích (tự rollback) */
+  detail?: DecisionDetail | null;
   causedByEventId?: string;
   /** Có mặt = traffic ĐÃ về `to`; vắng = traffic giữ nguyên, không DeploymentEvent */
   reverted?: {
@@ -273,6 +275,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
   const holdDecision = (
     reason: string,
     snapshot: Decision["metricSnapshot"] = null,
+    detail: DecisionDetail | null = null,
   ): Decision => ({
     decision: "HOLD",
     reason,
@@ -281,6 +284,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     breachStreak: 0,
     breachAt: null,
     metricSnapshot: snapshot,
+    detail,
   });
 
   // ---------------------------------------------------------------- bước ghi
@@ -302,8 +306,9 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     fence: Fence,
     reason: string,
     snapshot: Decision["metricSnapshot"] = null,
+    detail: DecisionDetail | null = null,
   ): Promise<Outcome> => {
-    await record(session, fence, holdDecision(reason, snapshot));
+    await record(session, fence, holdDecision(reason, snapshot, detail));
     return "hold";
   };
 
@@ -360,6 +365,8 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       triggeredBy: "AUTO" | "MANUAL";
       causedByEventId?: string;
       snapshot: Decision["metricSnapshot"];
+      /** [Plan #60 QĐ-1] Quyết định của vòng phân tích đã cho lên bậc — nhật ký nói được VÌ SAO lên */
+      decision?: Pick<Decision, "reason" | "detail">;
     },
   ): Promise<Outcome> => {
     const applied = await apply(
@@ -391,6 +398,12 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
         action: complete ? "COMPLETE" : "PROMOTE",
         trafficPercentage: to,
         triggeredBy: opts.triggeredBy,
+        ...(opts.decision === undefined
+          ? {}
+          : {
+              reason: opts.decision.reason,
+              reasonDetail: opts.decision.detail,
+            }),
         metricSnapshot: opts.snapshot,
         ...(opts.causedByEventId === undefined
           ? {}
@@ -432,6 +445,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
         trafficPercentage: reverted?.to ?? session.currentTrafficPercentage,
         triggeredBy: close.triggeredBy,
         reason: close.reason,
+        reasonDetail: close.detail ?? null,
         metricSnapshot: close.snapshot,
         ...(close.causedByEventId === undefined
           ? {}
@@ -476,6 +490,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       triggeredBy: "AUTO" | "MANUAL";
       reason: string;
       snapshot: Decision["metricSnapshot"];
+      detail?: DecisionDetail | null;
       causedByEventId?: string;
     },
   ): Promise<Outcome> => {
@@ -962,7 +977,8 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
       now: now(),
     };
     const gate = settleGate(ctx);
-    if (gate !== undefined) return holdWith(session, fence, gate);
+    if (gate !== undefined)
+      return holdWith(session, fence, gate.reason, null, gate.detail);
 
     const win = session.metricWindowSeconds;
     const [
@@ -993,6 +1009,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
         holdDecision(
           `${strategy.name} không tự quyết (§7.2): hai nhóm khác nhau về bản chất nên chênh lệch không quy được cho nhánh flag — promote (đổi variant mặc định) hay rollback bằng tay`,
           decision.metricSnapshot,
+          { code: "MANUAL_ONLY" },
         ),
       );
       return "hold";
@@ -1005,6 +1022,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
         action: "ROLLBACK",
         triggeredBy: "AUTO",
         reason: decision.reason,
+        detail: decision.detail,
         snapshot: decision.metricSnapshot,
       });
     }
@@ -1025,6 +1043,7 @@ export function createReconciler(deps: ReconcilerDeps): Reconciler {
     return stepUp(session, fence, target, strategy, to, {
       triggeredBy: "AUTO",
       snapshot: decision.metricSnapshot,
+      decision,
     });
   };
 

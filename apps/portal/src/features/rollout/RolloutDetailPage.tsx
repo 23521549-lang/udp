@@ -36,6 +36,7 @@ import { qk } from "../../lib/query-keys";
 import { ProjectBar } from "../project/ProjectBar";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
+import { decisionReason } from "./decision-reason";
 import { rolloutApi } from "./rollout-api";
 import { RolloutStatusLabel } from "./rollout-status";
 import { rolloutMessages } from "./rollout.messages";
@@ -262,7 +263,10 @@ function RolloutBody({ rollout }: { rollout: RolloutDetailWire }) {
           <Icon of={CircleX} />
           <div>
             <b>{m.autoRollback}</b>
-            <div>{decision?.reason ?? m.autoRollbackReason}</div>
+            <div>
+              {decisionReason(decision?.detail, decision?.reason) ??
+                m.autoRollbackReason}
+            </div>
           </div>
         </div>
       )}
@@ -489,18 +493,30 @@ function WhyStill({
               )}
             </b>
           ) : (
-            <b>{decision?.reason ?? m.waitingFirst}</b>
+            <b>
+              {decisionReason(decision?.detail, decision?.reason) ??
+                m.waitingFirst}
+            </b>
           )}
-          {decision?.breach === true && (
-            <div>
-              {m.breach(
-                decision.breachStreak,
-                maxBreaches,
-                decision.breachStreak + 1 >= maxBreaches,
-              )}
-              <InfoTip term="autoRollback" />
-            </div>
-          )}
+          {/* [Plan #60 QĐ-1] Lý do có mã đã nói "lần mấy/bao nhiêu": dòng dưới chỉ còn hệ quả của lần tới */}
+          {decision?.breach === true &&
+            (decision.detail?.code === "BREACH" ? (
+              decision.breachStreak + 1 >= maxBreaches && (
+                <div>
+                  {m.breachLast}
+                  <InfoTip term="autoRollback" />
+                </div>
+              )
+            ) : (
+              <div>
+                {m.breach(
+                  decision.breachStreak,
+                  maxBreaches,
+                  decision.breachStreak + 1 >= maxBreaches,
+                )}
+                <InfoTip term="autoRollback" />
+              </div>
+            ))}
         </div>
         {active && (
           <div className="c2 num">
@@ -630,7 +646,11 @@ function EventFeed({ events }: { events: RolloutEventWire[] }) {
               {m.event[e.action]}
             </b>{" "}
             {formatPercent(e.trafficPercentage)}
-            {e.reason !== null && <div className="c3">{e.reason}</div>}
+            {(e.reason !== null || e.reasonDetail !== null) && (
+              <div className="c3">
+                {decisionReason(e.reasonDetail, e.reason)}
+              </div>
+            )}
           </span>
           <span className="c3">{formatDateTime(e.createdAt)}</span>
         </li>

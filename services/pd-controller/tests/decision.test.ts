@@ -73,9 +73,9 @@ describe("§7.5 — warm-up và cửa sổ", () => {
 
   it("settleGate chặn đo cho tới lastStepAt + window + scrapeLag", () => {
     const stepAt = new Date(T0);
-    expect(settleGate(ctx({ lastStepAt: stepAt, now: T0 + 74_000 }))).toMatch(
-      /ổn định/,
-    );
+    expect(
+      settleGate(ctx({ lastStepAt: stepAt, now: T0 + 74_000 }))?.reason,
+    ).toMatch(/ổn định/);
     expect(
       settleGate(ctx({ lastStepAt: stepAt, now: T0 + 75_000 })),
     ).toBeUndefined();
@@ -225,6 +225,76 @@ describe("§7.5 — spike thoáng qua không huỷ rollout", () => {
       breach,
     );
     expect(d.decision).toBe("ROLLBACK");
+  });
+});
+
+/**
+ * [Plan #60 QĐ-1, UX-23] Mỗi lý do có MÃ + số đi cùng câu chữ: Portal viết câu theo ngôn ngữ người xem từ `detail`,
+ * nên số trong `detail` phải đúng những số đã đem ra so — không phải số làm tròn của câu chữ.
+ */
+describe("mã lý do cho giao diện hai ngôn ngữ", () => {
+  it("không dữ liệu, chưa đủ warm-up, chờ cửa sổ ổn định", () => {
+    expect(
+      decide(ctx(), samples({ req: 1_000, err: 0, hasData: false })).detail,
+    ).toEqual({ code: "NO_DATA" });
+    expect(decide(ctx(), samples({ req: 34.7, err: 0 })).detail).toEqual({
+      code: "WARMING_UP",
+      requests: 34,
+      needed: 100,
+    });
+    expect(
+      settleGate(ctx({ lastStepAt: new Date(T0), now: T0 + 60_000 }))?.detail,
+    ).toEqual({ code: "SETTLING", waitSeconds: 15 });
+  });
+
+  it("không vượt ngưỡng ⇒ WITHIN_THRESHOLDS", () => {
+    expect(
+      decide(ctx(), samples({ req: 3_000, err: 12, p99: 250 })).detail,
+    ).toEqual({ code: "WITHIN_THRESHOLDS" });
+  });
+
+  it("vượt ngưỡng: mọi nguyên nhân kèm số đo và ngưỡng, chuỗi streak/needed", () => {
+    const d = decide(
+      ctx(),
+      samples({ req: 3_000, err: 210, p99: 1_500 }, { req: 27_000, err: 81 }),
+    );
+    expect(d.detail).toMatchObject({ code: "BREACH", streak: 1, needed: 2 });
+    if (d.detail?.code !== "BREACH") throw new Error("thiếu BREACH");
+    expect(d.detail.causes.map((c) => c.kind)).toEqual([
+      "ERROR_RATE",
+      "RELATIVE_ERROR_RATE",
+      "LATENCY_P99",
+    ]);
+    expect(d.detail.causes[0]).toEqual({
+      kind: "ERROR_RATE",
+      rate: 0.07,
+      limit: 0.05,
+      errors: 210,
+      minErrors: 5,
+    });
+    expect(d.detail.causes[1]).toMatchObject({
+      kind: "RELATIVE_ERROR_RATE",
+      rate: 0.07,
+      factor: 1.5,
+      baselineRate: 0.003,
+    });
+    expect(d.detail.causes[2]).toEqual({
+      kind: "LATENCY_P99",
+      p99Ms: 1_500,
+      limitMs: 1_000,
+    });
+  });
+
+  it("đủ số lần liên tiếp ⇒ ROLLBACK mang CÙNG nguyên nhân, streak = needed", () => {
+    const breach = samples({ req: 3_000, err: 210 }, { req: 27_000, err: 81 });
+    const first = decide(ctx({ now: T0 }), breach);
+    const later = decide(ctx({ previous: first, now: T0 + 60_000 }), breach);
+    expect(later.decision).toBe("ROLLBACK");
+    expect(later.detail).toMatchObject({
+      code: "BREACH",
+      streak: 2,
+      needed: 2,
+    });
   });
 });
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ROLLOUT_EVENT } from "@udp/config";
 import { Prisma, type RolloutAction } from "@udp/db";
 import type { DbClient } from "../core/db.js";
-import type { MetricSnapshot } from "@udp/shared-types";
+import type { DecisionDetail, MetricSnapshot } from "@udp/shared-types";
 import { INTENT_ACTIONS, type IntentRow } from "./types.js";
 
 /**
@@ -71,6 +71,8 @@ export interface ExecutionEvent {
   trafficPercentage: number;
   triggeredBy: "AUTO" | "MANUAL";
   reason?: string;
+  /** [Plan #60 QĐ-1] Cùng lý do ở dạng mã + số — giao diện viết câu theo ngôn ngữ người xem */
+  reasonDetail?: DecisionDetail | null;
   metricSnapshot?: MetricSnapshot | null;
   /** Intent mà event này thi hành — `triggered_by` suy ra từ đây (§2.2) */
   causedByEventId?: string;
@@ -91,6 +93,9 @@ export async function recordExecution(
       ...(event.reason === undefined
         ? {}
         : { reason: event.reason.slice(0, ROLLOUT_EVENT.reasonMaxLength) }),
+      ...(event.reasonDetail === undefined || event.reasonDetail === null
+        ? {}
+        : { reasonDetail: event.reasonDetail }),
       ...(event.metricSnapshot === undefined || event.metricSnapshot === null
         ? {}
         : { metricSnapshot: event.metricSnapshot }),

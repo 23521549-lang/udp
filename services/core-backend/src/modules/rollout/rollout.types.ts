@@ -12,6 +12,7 @@ import {
   rolloutThresholdsSchema,
   trafficMatchSchema,
   type Decision,
+  type DecisionDetail,
   type IntentAction,
   type MetricSnapshot,
   type TrafficMatch,
@@ -157,6 +158,8 @@ export interface RolloutEventView {
   processedAt: string | null;
   trafficPercentage: number;
   reason: string | null;
+  /** [Plan #60 QĐ-1] Lý do dạng mã + số; `null` ở hàng cũ và sự kiện không đến từ một vòng phân tích */
+  reasonDetail: DecisionDetail | null;
   triggeredBy: string;
   actorUserId: string | null;
   causedByEventId: string | null;
@@ -174,6 +177,8 @@ export interface LastDecisionView {
   breachStreak: number;
   breachAt: string | null;
   at: string;
+  /** [Plan #60 QĐ-1] Mã + số của lý do — Portal viết câu theo ngôn ngữ người xem */
+  detail: DecisionDetail | null;
 }
 
 /** Hàng danh sách — đủ để vẽ bảng, không kèm lịch sử */

@@ -259,6 +259,8 @@ const vi = {
     waitingFirst: "Đang chờ lần đo đầu tiên.",
     breach: (streak: number, max: number, last: boolean) =>
       `Vượt ngưỡng ${String(streak)}/${String(max)}${last ? ", sẽ tự lùi lại nếu lần đo tới vẫn vượt" : ""}`,
+    /** [Plan #60 QĐ-1] Khi lý do (có mã) đã nói lần mấy: chỉ còn hệ quả */
+    breachLast: "Sẽ tự lùi lại nếu lần đo tới vẫn vượt.",
     nextAnalysis: (after: string) => `Đo lại sau ${after}. `,
     nextAnalysisNow: "Sắp đo lại. ",
     dwellLeft: (after: string) => `Đủ thời gian giữ bậc sau ${after}.`,
@@ -540,6 +542,8 @@ export const rolloutMessages = defineMessages({
       waitingFirst: "Waiting for the first measurement.",
       breach: (streak: number, max: number, last: boolean) =>
         `Threshold crossed ${String(streak)}/${String(max)}${last ? ", will roll back automatically if the next measurement also crosses it" : ""}`,
+      breachLast:
+        "Rolls back automatically if the next measurement also crosses it.",
       nextAnalysis: (after: string) => `Next measurement in ${after}. `,
       nextAnalysisNow: "Measuring again shortly. ",
       dwellLeft: (after: string) => `Step hold time ends in ${after}.`,

@@ -286,6 +286,8 @@ export async function executionEvents(sessionId: string): Promise<
     trafficPercentage: number;
     triggeredBy: string;
     causedByEventId: string | null;
+    /** [Plan #60 QĐ-1] Lý do dạng mã + số mà S3 ghi cùng sự kiện */
+    reasonDetail: unknown;
   }[]
 > {
   const rows = await admin.rolloutEvent.findMany({
@@ -296,6 +298,7 @@ export async function executionEvents(sessionId: string): Promise<
       trafficPercentage: true,
       triggeredBy: true,
       causedByEventId: true,
+      reasonDetail: true,
     },
   });
   return rows.map((r) => ({
@@ -303,6 +306,7 @@ export async function executionEvents(sessionId: string): Promise<
     trafficPercentage: Number(r.trafficPercentage),
     triggeredBy: r.triggeredBy,
     causedByEventId: r.causedByEventId,
+    reasonDetail: r.reasonDetail,
   }));
 }
 

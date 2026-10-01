@@ -23,6 +23,7 @@ import type {
   TeamInvitationWire,
   TeamRoleWire,
 } from "@udp/shared-types/wire";
+import type { DecisionCause, DecisionDetail } from "@udp/shared-types/rollout";
 import { refreshMyAccess } from "./access";
 import { auditTrail } from "./audit";
 import {
@@ -1897,14 +1898,25 @@ function measure(
  * Các ngưỡng một lần đo vượt, viết ĐÚNG như `decide()` của Service 3 (tuyệt đối kèm `minErrors`, tương đối so với
  * baseline kèm z-test, độ trễ p99); rỗng là trong ngưỡng.
  */
-function breachesOf(s: Snapshot, t: Thresholds): string[] {
+/** Mỗi ngưỡng bị vượt: câu chữ của Service 3 và [Plan #60 QĐ-1] cùng nguyên nhân dạng mã + số */
+function breachesOf(
+  s: Snapshot,
+  t: Thresholds,
+): { text: string; cause: DecisionCause }[] {
   const c = s.canary;
   const b = s.baseline;
-  const out: string[] = [];
+  const out: { text: string; cause: DecisionCause }[] = [];
   if (c.errorRate > t.errorRate && c.errorCount >= t.minErrors) {
-    out.push(
-      `errorRate ${c.errorRate.toFixed(4)} > ${String(t.errorRate)} (${String(c.errorCount)} lỗi ≥ minErrors ${String(t.minErrors)})`,
-    );
+    out.push({
+      text: `errorRate ${c.errorRate.toFixed(4)} > ${String(t.errorRate)} (${String(c.errorCount)} lỗi ≥ minErrors ${String(t.minErrors)})`,
+      cause: {
+        kind: "ERROR_RATE",
+        rate: c.errorRate,
+        limit: t.errorRate,
+        errors: c.errorCount,
+        minErrors: t.minErrors,
+      },
+    });
   }
   if (
     b.requestCount >= WARM_UP_REQUESTS &&
@@ -1912,26 +1924,50 @@ function breachesOf(s: Snapshot, t: Thresholds): string[] {
     c.errorRate > t.relativeErrorRate * b.errorRate &&
     s.zScore > Z_CRITICAL
   ) {
-    out.push(
-      `errorRate ${c.errorRate.toFixed(4)} > ${String(t.relativeErrorRate)} × baseline ${b.errorRate.toFixed(4)} (z = ${s.zScore.toFixed(2)})`,
-    );
+    out.push({
+      text: `errorRate ${c.errorRate.toFixed(4)} > ${String(t.relativeErrorRate)} × baseline ${b.errorRate.toFixed(4)} (z = ${s.zScore.toFixed(2)})`,
+      cause: {
+        kind: "RELATIVE_ERROR_RATE",
+        rate: c.errorRate,
+        factor: t.relativeErrorRate,
+        baselineRate: b.errorRate,
+        z: s.zScore,
+      },
+    });
   }
   if (c.latencyP99Ms !== undefined && c.latencyP99Ms > t.latencyP99Ms) {
-    out.push(
-      `p99 ${c.latencyP99Ms.toFixed(0)}ms > ${String(t.latencyP99Ms)}ms`,
-    );
+    out.push({
+      text: `p99 ${c.latencyP99Ms.toFixed(0)}ms > ${String(t.latencyP99Ms)}ms`,
+      cause: {
+        kind: "LATENCY_P99",
+        p99Ms: c.latencyP99Ms,
+        limitMs: t.latencyP99Ms,
+      },
+    });
   }
   return out;
 }
 
 /** Dữ liệu mẫu tự kiểm lúc dựng: số đo phải khớp quyết định đi kèm nó */
-function checked(s: Snapshot, t: Thresholds, breach: boolean): string {
-  const why = breachesOf(s, t);
-  if (why.length > 0 !== breach) {
-    throw new Error(`số đo mẫu không khớp quyết định: ${why.join("; ")}`);
+function checked(
+  s: Snapshot,
+  t: Thresholds,
+  breach: boolean,
+): { why: string; causes: DecisionCause[] } {
+  const found = breachesOf(s, t);
+  const why = found.map((f) => f.text).join("; ");
+  if (found.length > 0 !== breach) {
+    throw new Error(`số đo mẫu không khớp quyết định: ${why}`);
   }
-  return why.join("; ");
+  return { why, causes: found.map((f) => f.cause) };
 }
+
+/** [Plan #60 QĐ-1] Lý do "vượt ngưỡng lần streak/needed" dạng mã + số, như `decide()` của Service 3 */
+const breachDetail = (
+  streak: number,
+  needed: number,
+  causes: DecisionCause[],
+): DecisionDetail => ({ code: "BREACH", streak, needed, causes });
 
 /** Lần đo làm rollout thất bại: vượt tỉ lệ lỗi (mặc định) hay độ trễ p99 */
 function breachMeasure(spec: RolloutSpec, at: string): Snapshot {
@@ -1956,6 +1992,7 @@ function decisionOf(
   const decide = (
     decision: "PROMOTE" | "HOLD" | "ROLLBACK",
     reason: string,
+    detail: DecisionDetail,
     snap: Snapshot,
     breachStreak = 0,
   ) => ({
@@ -1966,6 +2003,7 @@ function decisionOf(
       breachStreak,
       breachAt: breachStreak > 0 ? snap.at : null,
       at: snap.at,
+      detail,
     },
     latestMetricSnapshot: snap,
   });
@@ -1973,12 +2011,18 @@ function decisionOf(
     decide(
       "HOLD",
       `Mới ${String(requests)}/${String(WARM_UP_REQUESTS)} request`,
+      { code: "WARMING_UP", requests, needed: WARM_UP_REQUESTS },
       measure(at, spec.workload, 0.0071, 0.005, { requests }),
     );
   const healthy = () => {
     const snap = measure(at, spec.workload, 0.0041, 0.0048);
     checked(snap, t, false);
-    return decide("PROMOTE", "Không vượt ngưỡng", snap);
+    return decide(
+      "PROMOTE",
+      "Không vượt ngưỡng",
+      { code: "WITHIN_THRESHOLDS" },
+      snap,
+    );
   };
   switch (spec.status) {
     case "PENDING":
@@ -1995,24 +2039,32 @@ function decisionOf(
         spec.baselineRate ?? 0.005,
         { requests: 1_840, p99Ms: 243 },
       );
-      const why = checked(snap, t, true);
+      const { why, causes } = checked(snap, t, true);
       return decide(
         "HOLD",
         `Vượt ngưỡng lần 1/${String(t.maxConsecutiveBreaches)}, chờ xác nhận: ${why}`,
+        breachDetail(1, t.maxConsecutiveBreaches, causes),
         snap,
         1,
       );
     }
     case "FAILED":
       // UDP tự rollback: quyết định cuối là ROLLBACK, cùng số đo của sự kiện ROLLBACK
-      return failure === undefined
-        ? {}
-        : decide(
-            "ROLLBACK",
-            `${checked(failure, t, true)}, trong ${String(t.maxConsecutiveBreaches)} lần đo liên tiếp`,
-            failure,
+      if (failure === undefined) return {};
+      {
+        const { why, causes } = checked(failure, t, true);
+        return decide(
+          "ROLLBACK",
+          `${why}, trong ${String(t.maxConsecutiveBreaches)} lần đo liên tiếp`,
+          breachDetail(
             t.maxConsecutiveBreaches,
-          );
+            t.maxConsecutiveBreaches,
+            causes,
+          ),
+          failure,
+          t.maxConsecutiveBreaches,
+        );
+      }
     case "DONE":
       return {};
   }
@@ -2066,6 +2118,7 @@ function buildRollout(
       processedAt: at,
       trafficPercentage: percent,
       reason: split ? null : "Không vượt ngưỡng",
+      reasonDetail: split ? null : { code: "WITHIN_THRESHOLDS" },
       triggeredBy: split ? "MANUAL" : "AUTO",
       actorUserId: split ? owner.id : null,
       causedByEventId: null,
@@ -2084,6 +2137,8 @@ function buildRollout(
       spec.end === "ROLLBACK" && actor === undefined
         ? breachMeasure(spec, at)
         : undefined;
+    const failed =
+      failure === undefined ? undefined : checked(failure, thresholds, true);
     events.push({
       id: newId(),
       action: spec.end,
@@ -2095,9 +2150,17 @@ function buildRollout(
           ? "Tạm dừng để kiểm tra log thanh toán"
           : spec.end === "COMPLETE"
             ? "Đạt 100%, đóng session"
-            : failure === undefined
+            : failed === undefined
               ? "Người dùng yêu cầu rollback"
-              : `${checked(failure, thresholds, true)}, trong ${String(thresholds.maxConsecutiveBreaches)} lần đo liên tiếp`,
+              : `${failed.why}, trong ${String(thresholds.maxConsecutiveBreaches)} lần đo liên tiếp`,
+      reasonDetail:
+        failed === undefined
+          ? null
+          : breachDetail(
+              thresholds.maxConsecutiveBreaches,
+              thresholds.maxConsecutiveBreaches,
+              failed.causes,
+            ),
       triggeredBy: actor === undefined ? "AUTO" : "MANUAL",
       actorUserId: actor?.id ?? null,
       causedByEventId: null,

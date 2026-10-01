@@ -542,6 +542,7 @@ const eventSelect = {
   processedAt: true,
   trafficPercentage: true,
   reason: true,
+  reasonDetail: true,
   triggeredBy: true,
   actorUserId: true,
   causedByEventId: true,

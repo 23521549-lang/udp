@@ -32,6 +32,7 @@ const state = (over: Partial<GateState> = {}): GateState => ({
     breachStreak: 0,
     breachAt: null,
     metricSnapshot: null,
+    detail: { code: "WITHIN_THRESHOLDS" },
   },
   lastStepAt: null,
   stepIntervalSeconds: 300,

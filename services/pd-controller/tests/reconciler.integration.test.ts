@@ -125,6 +125,11 @@ describe("Luồng 5 — vòng đời tự động", () => {
     const events = await executionEvents(id);
     expect(events.map((e) => e.action)).toEqual(["PROMOTE", "COMPLETE"]);
     expect(events.every((e) => e.triggeredBy === "AUTO")).toBe(true);
+    // [Plan #60 QĐ-1] Bậc đầu là khởi động (không có phép đo); bậc sau ghi lý do của vòng phân tích cho lên
+    expect(events.map((e) => e.reasonDetail)).toEqual([
+      null,
+      { code: "WITHIN_THRESHOLDS" },
+    ]);
     // DONE thì không claim được nữa
     await c.reconciler.reconcileOne(id);
     expect((await sessionState(id)).status).toBe("DONE");
@@ -148,6 +153,8 @@ describe("Luồng 5 — vòng đời tự động", () => {
     expect(state.lastDecision).toMatchObject({
       decision: "HOLD",
       breachStreak: 1,
+      // [Plan #60 QĐ-1] Cùng lý do ở dạng mã + số cho giao diện hai ngôn ngữ
+      detail: { code: "BREACH", streak: 1, needed: 2 },
     });
     expect(state.status).toBe("IN_PROGRESS");
 
@@ -174,6 +181,15 @@ describe("Luồng 5 — vòng đời tự động", () => {
       action: "ROLLBACK",
       trafficPercentage: 20,
       triggeredBy: "AUTO",
+      reasonDetail: {
+        code: "BREACH",
+        streak: 2,
+        needed: 2,
+        causes: [
+          { kind: "ERROR_RATE", rate: 0.07, errors: 210 },
+          { kind: "RELATIVE_ERROR_RATE", factor: 1.5 },
+        ],
+      },
     });
     const deployments = await admin.deploymentEvent.findMany({
       where: { rolloutSessionId: id },

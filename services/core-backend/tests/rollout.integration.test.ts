@@ -696,6 +696,84 @@ describe("đọc — hình dạng §9", () => {
     ).expect(400);
   });
 
+  it("[Plan #60 QĐ-1] lý do dạng mã + số đi nguyên vẹn ra Portal; hàng cũ ⇒ null; sai hình ⇒ null, giữ câu chữ", async () => {
+    const target = await newFlagTarget(
+      admin,
+      { projectId, environmentId: dev.id },
+      0,
+    );
+    const created = await create(bodyFor(dev, target)).expect(201);
+    const id = created.body.rollout.id as string;
+    const at = Date.UTC(2026, 9, 1, 3, 0, 0);
+    const breach = {
+      code: "BREACH",
+      streak: 2,
+      needed: 2,
+      causes: [
+        {
+          kind: "ERROR_RATE",
+          rate: 0.07,
+          limit: 0.05,
+          errors: 210,
+          minErrors: 5,
+        },
+        { kind: "LATENCY_P99", p99Ms: 1_500, limitMs: 1_000 },
+      ],
+    };
+    await admin.rolloutSession.update({
+      where: { id },
+      data: {
+        status: "IN_PROGRESS",
+        lastDecision: {
+          decision: "ROLLBACK",
+          reason:
+            "errorRate 0.0700 > 0.05; p99 1500ms > 1000ms — trong 2 lần đo liên tiếp",
+          at,
+          breach: true,
+          breachStreak: 2,
+          breachAt: at,
+          metricSnapshot: null,
+          detail: breach,
+        },
+      },
+    });
+    // Sự kiện thực thi của S3 (ghi bằng owner: không qua luật writer), một hàng cũ và một hàng sai hình
+    for (const [reason, reasonDetail] of [
+      ["Tự rollback", breach],
+      ["Hàng ghi trước Plan #60", undefined],
+      ["Mã lạ", { code: "UNKNOWN" }],
+    ] as const) {
+      await admin.rolloutEvent.create({
+        data: {
+          sessionId: id,
+          action: "ROLLBACK",
+          isIntent: false,
+          trafficPercentage: 0,
+          triggeredBy: "AUTO",
+          reason,
+          ...(reasonDetail === undefined ? {} : { reasonDetail }),
+        },
+      });
+    }
+
+    const detail = await as(
+      developer,
+      request(app).get(`${rolloutsUrl()}/${id}`),
+    ).expect(200);
+    expect(detail.body.rollout.lastDecision.detail).toEqual(breach);
+    const byReason = new Map(
+      (
+        detail.body.rollout.events as {
+          reason: string;
+          reasonDetail: unknown;
+        }[]
+      ).map((e) => [e.reason, e.reasonDetail]),
+    );
+    expect(byReason.get("Tự rollback")).toEqual(breach);
+    expect(byReason.get("Hàng ghi trước Plan #60")).toBeNull();
+    expect(byReason.get("Mã lạ")).toBeNull();
+  });
+
   it("mặc định của API trùng @default của cột (một nguồn sự thật — ROLLOUT_TIMING)", async () => {
     const rows = await admin.$queryRaw<
       { column_name: string; column_default: string | null }[]

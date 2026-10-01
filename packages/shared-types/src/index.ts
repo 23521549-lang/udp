@@ -76,6 +76,8 @@ export {
   canaryPairOf,
   DECISIONS,
   INTENT_ACTIONS,
+  decisionCauseSchema,
+  decisionDetailSchema,
   decisionSchema,
   metricQueriesSchema,
   metricSnapshotSchema,
@@ -91,6 +93,8 @@ export {
 export type {
   CanaryPair,
   Decision,
+  DecisionCause,
+  DecisionDetail,
   DecisionKind,
   IntentAction,
   MetricQueries,

@@ -1203,6 +1203,9 @@ model RolloutEvent {
   /// quyết định của hệ thống thay vì phải tin
   metricSnapshot    Json?         @map("metric_snapshot")
   reason            String?       @db.VarChar(255)
+  /// [v4.12] Lý do dạng mã + số (`decisionDetailSchema`) để giao diện viết câu theo ngôn ngữ người xem; NULL ở hàng
+  /// cũ và ở sự kiện không đến từ một vòng phân tích
+  reasonDetail      Json?         @map("reason_detail")
   triggeredBy       TriggeredBy   @map("triggered_by")
   actorUserId       String?       @map("actor_user_id") @db.Uuid
   /// Event thực thi này đang thi hành intent nào. NULL = reconciler tự quyết.

@@ -3,7 +3,7 @@ import type {
   RolloutDetailWire,
   RolloutSummaryWire,
 } from "@udp/shared-types/wire";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -16,6 +16,7 @@ import {
   finishedSince,
   watchedName,
 } from "../src/features/rollout/use-rollout-watcher";
+import { useLocaleStore } from "../src/i18n";
 import { qk } from "../src/lib/query-keys";
 import { API, golden, server } from "./msw";
 import { renderApp } from "./render";
@@ -69,6 +70,7 @@ describe("rollout: nhịp hỏi lại tự dừng (§10.14)", () => {
       breachStreak: 0,
       breachAt: null,
       at: new Date().toISOString(),
+      detail: null,
     };
     const intent = {
       id: "i",
@@ -209,6 +211,49 @@ describe("rollout: trang chi tiết", () => {
       await screen.findByText("Hệ thống đã tự rollback"),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Rollback" })).toBeNull();
+    // [Plan #60 QĐ-1] Lý do viết từ mã + số của golden (Service 3 ghi), không phải câu máy chủ viết sẵn
+    const reason =
+      "Vượt ngưỡng 2 lần đo liên tiếp: tỉ lệ lỗi 7% cao hơn ngưỡng 5% (210 lỗi); độ trễ p99 1.500 ms cao hơn ngưỡng 1.000 ms.";
+    expect(screen.getAllByText(reason)).toHaveLength(2);
+  });
+
+  it("[Plan #60 QĐ-1] tiếng Anh: lý do quyết định và nhật ký bằng tiếng Anh; hàng cũ không mã thì giữ câu máy chủ", async () => {
+    act(() => useLocaleStore.getState().setLocale("en"));
+    const { rollout } = golden<{ rollout: RolloutDetailWire }>(
+      "GET /projects/{id}/rollouts/{id}",
+    );
+    rollout.status = "IN_PROGRESS";
+    delete rollout.failReason;
+    delete rollout.pendingIntent;
+    rollout.lastDecision = {
+      decision: "HOLD",
+      reason: "Vượt ngưỡng lần 1/3, chờ xác nhận: p99 1300ms > 800ms",
+      breach: true,
+      breachStreak: 1,
+      breachAt: new Date().toISOString(),
+      at: new Date().toISOString(),
+      detail: {
+        code: "BREACH",
+        streak: 1,
+        needed: 3,
+        causes: [{ kind: "LATENCY_P99", p99Ms: 1_300, limitMs: 800 }],
+      },
+    };
+    const { detail } = setup(rollout);
+    renderApp(`/app/projects/${detail.project.id}/rollouts/${rollout.id}`);
+    expect(
+      await screen.findByText(
+        "Threshold crossed 1 of 3 times: p99 latency 1,300 ms above the 800 ms limit.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Vượt ngưỡng lần/)).toBeNull();
+    // Nhật ký: sự kiện có mã ⇒ tiếng Anh; hàng ghi trước Plan #60 ⇒ câu máy chủ, không bịa bản dịch
+    expect(
+      screen.getByText(
+        "Threshold crossed in 2 measurements in a row: error rate 7% above the 5% limit (210 errors); p99 latency 1,500 ms above the 1,000 ms limit.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Hàng ghi trước Plan #60")).toBeInTheDocument();
   });
 
   it("VIEWER xem được nhưng không có nút điều khiển", async () => {
@@ -240,10 +285,11 @@ describe("[Plan #58] rollout: dải quyết định và báo kết thúc", () =>
       breachStreak: 0,
       breachAt: null,
       at: new Date().toISOString(),
+      detail: { code: "WITHIN_THRESHOLDS" },
     };
     const { detail } = setup(rollout);
     renderApp(`/app/projects/${detail.project.id}/rollouts/${rollout.id}`);
-    const banner = (await screen.findByText("Không vượt ngưỡng")).closest(
+    const banner = (await screen.findByText("Không vượt ngưỡng.")).closest(
       ".alert",
     );
     expect(banner).toHaveClass("ok");

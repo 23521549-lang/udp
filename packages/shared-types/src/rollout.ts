@@ -198,6 +198,62 @@ export const DECISIONS = ["PROMOTE", "HOLD", "ROLLBACK"] as const;
 export type DecisionKind = (typeof DECISIONS)[number];
 
 /**
+ * [Plan #60 QĐ-1, UX-23] Một nguyên nhân vượt ngưỡng, kèm SỐ đo và ngưỡng — Portal tự viết câu theo ngôn ngữ của
+ * người xem thay vì hiện câu tiếng Việt Service 3 viết sẵn (§7.4, ba phép kiểm của `decide`).
+ */
+export const decisionCauseSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("ERROR_RATE"),
+    rate: z.number(),
+    limit: z.number(),
+    errors: z.number(),
+    minErrors: z.number(),
+  }),
+  z.object({
+    kind: z.literal("RELATIVE_ERROR_RATE"),
+    rate: z.number(),
+    factor: z.number(),
+    baselineRate: z.number(),
+    z: z.number(),
+  }),
+  z.object({
+    kind: z.literal("LATENCY_P99"),
+    p99Ms: z.number(),
+    limitMs: z.number(),
+  }),
+]);
+export type DecisionCause = z.infer<typeof decisionCauseSchema>;
+
+/**
+ * [Plan #60 QĐ-1] Lý do của một vòng phân tích dưới dạng MÃ + số. `reason` (chữ) vẫn đi cùng làm nhật ký máy chủ và
+ * lý do gửi Service 2; giao diện đọc `detail`.
+ *   - `NO_DATA`: nguồn metrics không trả dữ liệu cho nhánh canary (I7: không biết ≠ sạch)
+ *   - `WARMING_UP`: chưa đủ `warmUpRequests`
+ *   - `SETTLING`: cửa sổ đo chưa nằm trọn sau bậc mới (§7.5 vấn đề 6)
+ *   - `WITHIN_THRESHOLDS`: không vượt ngưỡng nào
+ *   - `BREACH`: vượt ngưỡng lần `streak`/`needed`; HOLD khi chưa đủ, ROLLBACK khi đủ
+ *   - `MANUAL_ONLY`: chiến lược không tự quyết (ATTRIBUTE_SPLIT, §7.2): số đo để người đọc, promote hay rollback tay
+ */
+export const decisionDetailSchema = z.discriminatedUnion("code", [
+  z.object({ code: z.literal("NO_DATA") }),
+  z.object({
+    code: z.literal("WARMING_UP"),
+    requests: z.number(),
+    needed: z.number(),
+  }),
+  z.object({ code: z.literal("SETTLING"), waitSeconds: z.number() }),
+  z.object({ code: z.literal("WITHIN_THRESHOLDS") }),
+  z.object({
+    code: z.literal("BREACH"),
+    streak: z.number().int().min(1),
+    needed: z.number().int().min(1),
+    causes: z.array(decisionCauseSchema).min(1),
+  }),
+  z.object({ code: z.literal("MANUAL_ONLY") }),
+]);
+export type DecisionDetail = z.infer<typeof decisionDetailSchema>;
+
+/**
  * `last_decision` (§2.2, §9): tên trường `decision` là hợp đồng với Portal, nên
  * thắng chữ `kind` trong code mẫu cũ của §7.1. `at` là epoch ms của đồng hồ
  * Service 3 — cùng đồng hồ với `analysis_interval` và cửa sổ đo; Service 1 đổi
@@ -217,6 +273,8 @@ export const decisionSchema = z.object({
    */
   breachAt: z.number().nullable().default(null),
   metricSnapshot: metricSnapshotSchema.nullable().default(null),
+  /** [Plan #60 QĐ-1] Mã + số của lý do; `null` ở hàng ghi trước Plan #60 và ở lý do vận hành (lỗi, ý định bị từ chối) */
+  detail: decisionDetailSchema.nullable().default(null),
 });
 /** Quyết định của một vòng phân tích — chính là thứ ghi vào `last_decision` */
 export type Decision = z.infer<typeof decisionSchema>;

@@ -1,9 +1,11 @@
 import { ACTIVE_ROLLOUT_STATUSES } from "@udp/config";
 import { logger } from "@udp/http";
 import {
+  decisionDetailSchema,
   decisionSchema,
   metricSnapshotSchema,
   trafficMatchSchema,
+  type DecisionDetail,
   type MetricSnapshot,
 } from "@udp/shared-types";
 import type { DetailRows, EventRow, SummaryRow } from "./rollout.repository.js";
@@ -45,6 +47,20 @@ function parseSnapshot(
   return snapshotView(parsed.data);
 }
 
+/** `reason_detail` qua CÙNG schema S3 dùng để ghi; sai hình thì bỏ (Portal hiện `reason` chữ) và log */
+function parseDetail(
+  raw: unknown,
+  where: { sessionId: string; eventId: string },
+): DecisionDetail | null {
+  if (raw === null || raw === undefined) return null;
+  const parsed = decisionDetailSchema.safeParse(raw);
+  if (!parsed.success) {
+    logger.warn(where, "reason_detail sai hình — bỏ qua khi trả Portal");
+    return null;
+  }
+  return parsed.data;
+}
+
 export function eventView(row: EventRow, sessionId: string): RolloutEventView {
   return {
     id: row.id,
@@ -53,6 +69,7 @@ export function eventView(row: EventRow, sessionId: string): RolloutEventView {
     processedAt: row.processedAt?.toISOString() ?? null,
     trafficPercentage: num(row.trafficPercentage),
     reason: row.reason,
+    reasonDetail: parseDetail(row.reasonDetail, { sessionId, eventId: row.id }),
     triggeredBy: row.triggeredBy,
     actorUserId: row.actorUserId,
     causedByEventId: row.causedByEventId,
@@ -106,6 +123,7 @@ export function detailView({
         breachAt:
           decision.data.breachAt === null ? null : iso(decision.data.breachAt),
         at: iso(decision.data.at),
+        detail: decision.data.detail,
       }
     : undefined;
   const latest =

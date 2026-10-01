@@ -34,6 +34,7 @@ function advanceRollout(
       trafficPercentage: next,
       // Cùng câu của `decide()` ở Service 3; số đo là lần đo trong ngưỡng đã cho phép lên bậc
       reason: "Không vượt ngưỡng",
+      reasonDetail: { code: "WITHIN_THRESHOLDS" },
       triggeredBy: "AUTO",
       actorUserId: null,
       causedByEventId: null,
@@ -58,6 +59,7 @@ function advanceRollout(
       breachStreak: 0,
       breachAt: null,
       at: nowIso(),
+      detail: { code: "WITHIN_THRESHOLDS" },
     };
   }
   syncRule(p, live, rollout.currentTrafficPercentage);

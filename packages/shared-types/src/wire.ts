@@ -8,6 +8,7 @@ import {
 } from "./flag-stats.js";
 import {
   DECISIONS,
+  decisionDetailSchema,
   INTENT_ACTIONS,
   metricQueriesSchema,
   trafficMatchSchema,
@@ -774,6 +775,8 @@ export const rolloutEventWire = z
     processedAt: isoDateTime.nullable(),
     trafficPercentage: z.number(),
     reason: z.string().nullable(),
+    /** [Plan #60 QĐ-1] Lý do dạng mã + số (Portal viết câu theo ngôn ngữ); `null` thì hiện `reason` */
+    reasonDetail: decisionDetailSchema.nullable(),
     triggeredBy: z.string(),
     actorUserId: uuid.nullable(),
     causedByEventId: uuid.nullable(),
@@ -844,6 +847,8 @@ export const rolloutDetailWire = z
         breachStreak: z.number().int().nonnegative(),
         breachAt: isoDateTime.nullable(),
         at: isoDateTime,
+        /** [Plan #60 QĐ-1] Mã + số của lý do; `null` ở quyết định cũ và lý do vận hành */
+        detail: decisionDetailSchema.nullable(),
       })
       .strict()
       .optional(),

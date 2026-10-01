@@ -2,7 +2,7 @@ import type { PrismaClient } from "@udp/db";
 import type { FailReason } from "@udp/db";
 import { ClusterCallFailedError } from "@udp/cluster-access";
 import { logger } from "@udp/http";
-import type { Decision } from "@udp/shared-types";
+import type { Decision, DecisionDetail } from "@udp/shared-types";
 import type { DbClient } from "../core/db.js";
 import type { ClusterAccessProvider } from "../cluster-access/provider.js";
 import { ClusterTokenUnavailableError } from "../cluster-access/token-client.js";
@@ -21,7 +21,7 @@ import {
 } from "../rollout-session/event.repository.js";
 import { updateIfVersion } from "../rollout-session/session.repository.js";
 import type { IntentRow, SessionRow } from "../rollout-session/types.js";
-import { decide, settleGate } from "./decision.js";
+import { decide, settleGate, type HoldReason } from "./decision.js";
 import type { Fence } from "./fence.js";
 import { applyStatusIntent, planIntent } from "./intent-processor.js";
 import type { Outcome } from "./reconciler.js";
@@ -47,6 +47,8 @@ type Close = {
   triggeredBy: "AUTO" | "MANUAL";
   reason: string;
   snapshot: Decision["metricSnapshot"];
+  /** [Plan #60 QĐ-1] Mã + số của lý do khi việc đóng đến từ một vòng phân tích (tự rollback) */
+  detail?: DecisionDetail | null;
   causedByEventId?: string;
 };
 
@@ -61,8 +63,13 @@ export interface ServiceLevelKit {
     fence: Fence,
     reason: string,
     snapshot?: Decision["metricSnapshot"],
+    detail?: DecisionDetail | null,
   ): Promise<Outcome>;
-  holdDecision(reason: string, snapshot?: Decision["metricSnapshot"]): Decision;
+  holdDecision(
+    reason: string,
+    snapshot?: Decision["metricSnapshot"],
+    detail?: DecisionDetail | null,
+  ): Decision;
   commitFenced(
     session: SessionRow,
     fence: Fence,
@@ -222,6 +229,7 @@ export function createServiceLevelBranch(
         trafficPercentage: 0,
         triggeredBy: close.triggeredBy,
         reason: close.reason,
+        reasonDetail: close.detail ?? null,
         metricSnapshot: close.snapshot,
         ...(close.causedByEventId === undefined
           ? {}
@@ -354,7 +362,7 @@ export function createServiceLevelBranch(
   const measure = async (
     session: SessionRow,
     namespaceOf: () => Promise<string>,
-  ): Promise<{ gate: string } | { decision: Decision }> => {
+  ): Promise<{ gate: HoldReason } | { decision: Decision }> => {
     const provider = kit.providerFor(session);
     const ctx = {
       thresholds: session.thresholds,
@@ -481,7 +489,14 @@ export function createServiceLevelBranch(
     }
 
     const measured = await measure(session, namespaceOf(session));
-    if ("gate" in measured) return kit.holdWith(session, fence, measured.gate);
+    if ("gate" in measured)
+      return kit.holdWith(
+        session,
+        fence,
+        measured.gate.reason,
+        null,
+        measured.gate.detail,
+      );
     const { decision } = measured;
 
     if (session.strategy !== "CANARY") {
@@ -492,6 +507,7 @@ export function createServiceLevelBranch(
         kit.holdDecision(
           `${session.strategy} không tự quyết (§7.2) — PROMOTE hay ROLLBACK bằng tay; số đo phiên bản mới vs cũ ở dưới`,
           decision.metricSnapshot,
+          { code: "MANUAL_ONLY" },
         ),
       );
       return "hold";
@@ -503,6 +519,7 @@ export function createServiceLevelBranch(
         action: "ROLLBACK",
         triggeredBy: "AUTO",
         reason: decision.reason,
+        detail: decision.detail,
         snapshot: decision.metricSnapshot,
       });
     }

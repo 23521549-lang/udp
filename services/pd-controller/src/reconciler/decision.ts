@@ -1,7 +1,12 @@
 import { ROLLOUT_ANALYSIS } from "@udp/config";
 import type { MetricSample } from "@udp/metrics-provider";
 import type { RolloutThresholds } from "@udp/shared-types";
-import type { Decision, MetricSnapshot } from "@udp/shared-types";
+import type {
+  Decision,
+  DecisionCause,
+  DecisionDetail,
+  MetricSnapshot,
+} from "@udp/shared-types";
 
 /**
  * Phân tích metrics và ra quyết định (§7.1 `decide`, §7.4, §7.5) — hàm THUẦN.
@@ -55,18 +60,27 @@ export function twoProportionZ(
   return se === 0 ? 0 : (p1 - p2) / se;
 }
 
+/** Lý do của một HOLD không đo: câu cho nhật ký và mã + số cho giao diện (Plan #60 QĐ-1) */
+export interface HoldReason {
+  reason: string;
+  detail: DecisionDetail;
+}
+
 /**
  * Cửa sổ metric đã nằm TRỌN sau bậc mới chưa. Trả lý do HOLD nếu chưa — reconciler
  * không đo gì cả trong lúc đó, tiết kiệm cả truy vấn lẫn một quyết định sai.
  */
-export function settleGate(ctx: AnalysisContext): string | undefined {
+export function settleGate(ctx: AnalysisContext): HoldReason | undefined {
   if (ctx.lastStepAt === null) return undefined;
   const readyAt =
     ctx.lastStepAt.getTime() +
     (ctx.metricWindowSeconds + ctx.scrapeLagSeconds) * 1000;
   if (ctx.now < readyAt) {
     const wait = Math.ceil((readyAt - ctx.now) / 1000);
-    return `Chờ cửa sổ metric ổn định sau bậc mới (${String(wait)}s nữa)`;
+    return {
+      reason: `Chờ cửa sổ metric ổn định sau bậc mới (${String(wait)}s nữa)`,
+      detail: { code: "SETTLING", waitSeconds: wait },
+    };
   }
   return undefined;
 }
@@ -114,7 +128,7 @@ function snapshotOf(
 
 export function decide(ctx: AnalysisContext, s: Samples): Decision {
   const snapshot = snapshotOf(s, ctx.metricWindowSeconds, ctx.now);
-  const hold = (reason: string): Decision => ({
+  const hold = (reason: string, detail: DecisionDetail): Decision => ({
     decision: "HOLD",
     reason,
     at: ctx.now,
@@ -122,11 +136,14 @@ export function decide(ctx: AnalysisContext, s: Samples): Decision {
     breachStreak: 0,
     breachAt: null,
     metricSnapshot: snapshot,
+    detail,
   });
 
   // [QUAN TRỌNG] Không có dữ liệu KHÔNG PHẢI là "không có lỗi" (I7)
   if (!s.canaryRequests.hasData || !s.canaryErrors.hasData) {
-    return hold("Nguồn metrics không trả dữ liệu cho nhánh canary");
+    return hold("Nguồn metrics không trả dữ liệu cho nhánh canary", {
+      code: "NO_DATA",
+    });
   }
 
   // Không có request nào thì không có tỉ lệ nào (0/0 = NaN qua mọi so sánh) —
@@ -135,20 +152,34 @@ export function decide(ctx: AnalysisContext, s: Samples): Decision {
     !(s.canaryRequests.value > 0) ||
     s.canaryRequests.value < ctx.warmUpRequests
   ) {
+    const requests = Math.floor(Math.max(0, s.canaryRequests.value));
     return hold(
-      `Mới ${String(Math.floor(Math.max(0, s.canaryRequests.value)))}/${String(ctx.warmUpRequests)} request`,
+      `Mới ${String(requests)}/${String(ctx.warmUpRequests)} request`,
+      {
+        code: "WARMING_UP",
+        requests,
+        needed: ctx.warmUpRequests,
+      },
     );
   }
 
   const t = ctx.thresholds;
   const canaryRate = s.canaryErrors.value / s.canaryRequests.value;
   const reasons: string[] = [];
+  const causes: DecisionCause[] = [];
 
   // (a) Ngưỡng tuyệt đối — kèm số lỗi tối thiểu, vì ở 100 request độ phân giải là 1%
   if (canaryRate > t.errorRate && s.canaryErrors.value >= t.minErrors) {
     reasons.push(
       `errorRate ${canaryRate.toFixed(4)} > ${String(t.errorRate)} (${String(s.canaryErrors.value)} lỗi ≥ minErrors ${String(t.minErrors)})`,
     );
+    causes.push({
+      kind: "ERROR_RATE",
+      rate: canaryRate,
+      limit: t.errorRate,
+      errors: s.canaryErrors.value,
+      minErrors: t.minErrors,
+    });
   }
 
   // (b) Ngưỡng tương đối so với baseline + kiểm định hai tỉ lệ — lọc nền lỗi sẵn có
@@ -166,6 +197,13 @@ export function decide(ctx: AnalysisContext, s: Samples): Decision {
       reasons.push(
         `errorRate ${canaryRate.toFixed(4)} > ${String(t.relativeErrorRate)} × baseline ${baseRate.toFixed(4)} (z = ${snapshot.zScore.toFixed(2)})`,
       );
+      causes.push({
+        kind: "RELATIVE_ERROR_RATE",
+        rate: canaryRate,
+        factor: t.relativeErrorRate,
+        baselineRate: baseRate,
+        z: snapshot.zScore,
+      });
     }
   }
 
@@ -174,6 +212,11 @@ export function decide(ctx: AnalysisContext, s: Samples): Decision {
     reasons.push(
       `p99 ${s.canaryP99.value.toFixed(0)}ms > ${String(t.latencyP99Ms)}ms`,
     );
+    causes.push({
+      kind: "LATENCY_P99",
+      p99Ms: s.canaryP99.value,
+      limitMs: t.latencyP99Ms,
+    });
   }
 
   if (reasons.length === 0) {
@@ -185,6 +228,7 @@ export function decide(ctx: AnalysisContext, s: Samples): Decision {
       breachStreak: 0,
       breachAt: null,
       metricSnapshot: snapshot,
+      detail: { code: "WITHIN_THRESHOLDS" },
     };
   }
 
@@ -194,6 +238,12 @@ export function decide(ctx: AnalysisContext, s: Samples): Decision {
    */
   const { streak, breachAt } = streakOf(ctx);
   const why = reasons.join("; ");
+  const detail: DecisionDetail = {
+    code: "BREACH",
+    streak,
+    needed: t.maxConsecutiveBreaches,
+    causes,
+  };
   if (streak >= t.maxConsecutiveBreaches) {
     return {
       decision: "ROLLBACK",
@@ -203,6 +253,7 @@ export function decide(ctx: AnalysisContext, s: Samples): Decision {
       breachStreak: streak,
       breachAt,
       metricSnapshot: snapshot,
+      detail,
     };
   }
   return {
@@ -213,6 +264,7 @@ export function decide(ctx: AnalysisContext, s: Samples): Decision {
     breachStreak: streak,
     breachAt,
     metricSnapshot: snapshot,
+    detail,
   };
 }
 

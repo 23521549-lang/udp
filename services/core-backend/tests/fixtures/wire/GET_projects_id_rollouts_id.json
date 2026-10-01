@@ -3,10 +3,10 @@
   "status": 200,
   "body": {
     "rollout": {
-      "id": "2fed0906-efb3-4ad2-aeb4-cfeb778cfd79",
-      "projectId": "1be98354-e142-4fb5-96dc-f0634d075b2c",
+      "id": "8ff152f4-ceb6-4a99-a6fe-68458767f547",
+      "projectId": "de0fd3ab-1688-4532-b888-03ebe10bc7ce",
       "environment": {
-        "id": "61391e3a-f004-4264-8dcc-87e3634c9f6d",
+        "id": "479a7d0e-6867-4bef-b8c2-84fdb82aa1cf",
         "name": "dev",
         "isProduction": false
       },
@@ -17,10 +17,10 @@
       "currentTrafficPercentage": 0,
       "baselinePercentage": 0,
       "flag": {
-        "id": "bfd695e4-cd10-4598-bf04-51aaf2f7ef65",
-        "key": "t-09951e1b",
+        "id": "12e51749-adce-4c7f-867f-2dbdaf88cef2",
+        "key": "t-8dea53af",
         "targetVariant": "on",
-        "targetingRuleId": "d1c2fc62-4943-4947-9f9d-52c3e045de5a"
+        "targetingRuleId": "62f3a7dd-9062-430d-88b2-ae2b8afa737c"
       },
       "workloadName": "checkout",
       "thresholds": {
@@ -37,41 +37,96 @@
       "metricWindowSeconds": 60,
       "maxDurationSeconds": 86400,
       "lastDecision": {
-        "decision": "HOLD",
-        "reason": "Mới 34/100 request",
-        "breach": false,
-        "breachStreak": 0,
-        "breachAt": null,
-        "at": "2026-09-22T10:00:00.000Z"
-      },
-      "latestMetricSnapshot": {
-        "canary": {
-          "requestCount": 100,
-          "errorCount": 1,
-          "errorRate": 0.01,
-          "hasData": true
-        },
-        "baseline": {
-          "requestCount": 100,
-          "errorCount": 1,
-          "errorRate": 0.01,
-          "hasData": true
-        },
-        "zScore": null,
-        "queries": {
-          "canary": [
-            "q1"
-          ],
-          "baseline": [
-            "q2"
+        "decision": "ROLLBACK",
+        "reason": "errorRate 0.0700 > 0.05; p99 1500ms > 1000ms — trong 2 lần đo liên tiếp",
+        "breach": true,
+        "breachStreak": 2,
+        "breachAt": "2026-10-01T03:00:00.000Z",
+        "at": "2026-10-01T03:00:00.000Z",
+        "detail": {
+          "code": "BREACH",
+          "streak": 2,
+          "needed": 2,
+          "causes": [
+            {
+              "kind": "ERROR_RATE",
+              "rate": 0.07,
+              "limit": 0.05,
+              "errors": 210,
+              "minErrors": 5
+            },
+            {
+              "kind": "LATENCY_P99",
+              "p99Ms": 1500,
+              "limitMs": 1000
+            }
           ]
-        },
-        "windowSeconds": 60,
-        "at": "2026-09-22T10:00:00.000Z"
+        }
       },
-      "events": [],
-      "createdAt": "2026-09-24T19:39:46.817Z",
-      "updatedAt": "2026-09-24T19:39:48.086Z"
+      "events": [
+        {
+          "id": "01a0f58a-8451-737f-bb38-b246af10f903",
+          "action": "ROLLBACK",
+          "isIntent": false,
+          "processedAt": null,
+          "trafficPercentage": 0,
+          "reason": "Mã lạ",
+          "reasonDetail": null,
+          "triggeredBy": "AUTO",
+          "actorUserId": null,
+          "causedByEventId": null,
+          "metricSnapshot": null,
+          "createdAt": "2026-10-01T03:38:10.898Z"
+        },
+        {
+          "id": "01a0f58a-8420-7795-9afc-d01b84fc0f45",
+          "action": "ROLLBACK",
+          "isIntent": false,
+          "processedAt": null,
+          "trafficPercentage": 0,
+          "reason": "Hàng ghi trước Plan #60",
+          "reasonDetail": null,
+          "triggeredBy": "AUTO",
+          "actorUserId": null,
+          "causedByEventId": null,
+          "metricSnapshot": null,
+          "createdAt": "2026-10-01T03:38:10.848Z"
+        },
+        {
+          "id": "01a0f58a-83ed-75be-bd09-6ca35cc18bad",
+          "action": "ROLLBACK",
+          "isIntent": false,
+          "processedAt": null,
+          "trafficPercentage": 0,
+          "reason": "Tự rollback",
+          "reasonDetail": {
+            "code": "BREACH",
+            "streak": 2,
+            "needed": 2,
+            "causes": [
+              {
+                "kind": "ERROR_RATE",
+                "rate": 0.07,
+                "limit": 0.05,
+                "errors": 210,
+                "minErrors": 5
+              },
+              {
+                "kind": "LATENCY_P99",
+                "p99Ms": 1500,
+                "limitMs": 1000
+              }
+            ]
+          },
+          "triggeredBy": "AUTO",
+          "actorUserId": null,
+          "causedByEventId": null,
+          "metricSnapshot": null,
+          "createdAt": "2026-10-01T03:38:10.797Z"
+        }
+      ],
+      "createdAt": "2026-10-01T03:38:09.448Z",
+      "updatedAt": "2026-10-01T03:38:10.746Z"
     }
   }
 }
