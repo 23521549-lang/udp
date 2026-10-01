@@ -71,12 +71,15 @@ export async function update(
         targetType: "FlagEnvConfig",
         targetId: id,
         environmentId: fresh.environmentId,
-        // `defaultVariant`, không `defaultVariantId`: xem `auditView` của flag.service
+        // `defaultVariant`, không `defaultVariantId`: xem `auditView` của flag.service. [Plan #60 QĐ-2] `flagKey`
+        // để nhật ký gọi tên flag — đối tượng của dòng là cấu hình theo environment, mã của nó không ai đọc được
         before: {
+          flagKey: fresh.flagKey,
           isEnabled: fresh.isEnabled,
           defaultVariant: fresh.defaultVariantId,
         },
         after: {
+          flagKey: fresh.flagKey,
           isEnabled: next.isEnabled,
           defaultVariant: next.defaultVariantId,
         },

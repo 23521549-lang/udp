@@ -373,6 +373,8 @@ describe("[v4.5] audit flag.rule.update do S2 ghi (I40)", () => {
     });
     expect(JSON.stringify(row.after)).toContain("ALL");
     expect(JSON.stringify(row.after)).not.toMatch(/salt/i);
+    // [Plan #60 QĐ-2] Nhật ký gọi tên flag được
+    expect(row.after).toMatchObject({ flagKey: expect.any(String) });
   });
 });
 

@@ -103,8 +103,9 @@ export async function replaceRules(
         targetType: "FlagEnvConfig",
         targetId: flagEnvConfigId,
         environmentId: target.environmentId,
-        before: { rules: existing.map(ruleAuditView) },
-        after: { rules: rules.map(ruleAuditView) },
+        // [Plan #60 QĐ-2] `flagKey` để nhật ký gọi tên flag thay vì mã của cấu hình theo environment
+        before: { flagKey: fresh.flagKey, rules: existing.map(ruleAuditView) },
+        after: { flagKey: fresh.flagKey, rules: rules.map(ruleAuditView) },
       });
       result = { rules, updatedAt: bumped.updatedAt };
     },

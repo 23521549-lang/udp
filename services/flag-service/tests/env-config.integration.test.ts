@@ -150,6 +150,15 @@ describe("PATCH /internal/flag-envs/:id — chạm đúng MỘT environment", ()
     const after = await versions();
     expect(after[devEnv]).toBe((before[devEnv] ?? -1) + 1);
     expect(after[prodEnv]).toBe(before[prodEnv]);
+
+    // [Plan #60 QĐ-2] Nhật ký gọi tên flag: đối tượng của dòng là cấu hình theo environment, mã của nó không ai đọc được
+    const row = await admin.auditLog.findFirstOrThrow({
+      where: { action: "flag.env.update", targetId: res.body.envConfig.id },
+      orderBy: { occurredAt: "desc" },
+      select: { before: true, after: true },
+    });
+    expect(row.before).toMatchObject({ flagKey, isEnabled: false });
+    expect(row.after).toMatchObject({ flagKey, isEnabled: true });
   });
 
   it("ghi outbox envconfig.toggled, và delta áp lên snapshot cũ cho ra đúng config_hash mới", async () => {
