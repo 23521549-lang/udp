@@ -21,6 +21,13 @@ import {
   notifyScript,
   templateValues,
 } from "../../adapter-base/pipeline-template.js";
+import {
+  dockerHostBuildLines,
+  needsOidc,
+  oidcAudience,
+  registrySecretNames,
+} from "../../adapter-base/packaging/build-script.js";
+import { BUILD_TOOLCHAIN } from "@udp/config";
 
 /**
  * Adapter GitLab CI (§5.5 CI/CD, Plan #36) — lớp nền mô tả + lớp bọc CI/CD.
@@ -75,7 +82,7 @@ const base = createDescriptorAdapter({
 const notifyJob = (status: "success" | "failure", when: string): string[] => [
   `udp-notify-${status}:`,
   "  stage: notify",
-  "  image: alpine:3.20",
+  `  image: ${BUILD_TOOLCHAIN.images.alpine}`,
   `  when: ${when}`,
   "  variables:",
   `    UDP_STATUS: "${status}"`,
@@ -114,6 +121,51 @@ const stepJobs = (steps: readonly PipelineStep[], stage: string): string[] =>
     ...step.commands.map((c) => `      ${c}`),
   ]);
 
+/**
+ * [Plan #61 QĐ-5, QĐ-6] Job build: Docker CLI cạnh dịch vụ dind (TLS), cùng đoạn shell với GitHub Actions và CircleCI.
+ * Đẩy bằng danh tính build ⇒ `id_tokens` cấp JWT có `aud` của cloud. Ảnh có digest sang job sau bằng dotenv.
+ */
+const buildJob = (params: PipelineTemplateParams): string[] => {
+  const images = BUILD_TOOLCHAIN.images;
+  const identity = params.build.identity;
+  const secrets = registrySecretNames(params.build.push, "gitlab-ci");
+  return [
+    "build:",
+    "  stage: build",
+    `  image: ${images.dockerCli}`,
+    "  services:",
+    `    - name: ${images.dockerDind}`,
+    "      alias: docker",
+    "  variables:",
+    '    DOCKER_TLS_CERTDIR: "/certs"',
+    ...(needsOidc(params.build, "gitlab-ci") && identity !== null
+      ? [
+          "  id_tokens:",
+          "    UDP_OIDC_TOKEN:",
+          `      aud: "${oidcAudience(identity)}"`,
+        ]
+      : []),
+    ...(secrets.length === 0
+      ? []
+      : [`  # cần biến CI/CD (masked): ${secrets.join(", ")}`]),
+    "  script:",
+    // `pack` tải bằng curl; image Docker CLI là Alpine
+    "    - apk add --no-cache curl",
+    "    - |",
+    ...[
+      ...dockerHostBuildLines(params.build, "gitlab-ci", {
+        image: "%IMAGE%",
+        commit: "$CI_COMMIT_SHA",
+        tmp: "/tmp/udp-build",
+      }),
+      'echo "UDP_IMAGE_REF=$UDP_IMAGE_REF" > build.env',
+    ].map((line) => `      ${line}`),
+    "  artifacts:",
+    "    reports:",
+    "      dotenv: build.env",
+  ];
+};
+
 const pipeline = (params: PipelineTemplateParams): string[] => {
   const before = stepsOf(params, "before-build");
   const after = stepsOf(params, "after-build");
@@ -135,6 +187,8 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     "default:",
     "  before_script:",
     `    - export ${environmentOfBranch("$CI_COMMIT_REF_NAME")}`,
+    // [Plan #61 QĐ-7] Job sau build nhận ảnh CÓ digest qua dotenv của job build
+    '    - export IMAGE_REF="${UDP_IMAGE_REF:-$IMAGE_REF}"',
     "workflow:",
     "  rules:",
     "    - if: '$CI_COMMIT_BRANCH =~ /^(%BRANCH_REGEX%)$/'",
@@ -143,13 +197,7 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     "  image: %TEST_IMAGE%",
     '  script: ["%TEST%"]',
     ...stepJobs(before, "before-build"),
-    "build:",
-    "  stage: build",
-    "  image: docker:27",
-    "  services: [docker:27-dind]",
-    "  script:",
-    '    - docker build -t "$IMAGE_REF" .',
-    '    - docker push "$IMAGE_REF"',
+    ...buildJob(params),
     ...stepJobs(after, "after-build"),
     ...notifyJob("success", "on_success"),
     ...notifyJob("failure", "on_failure"),

@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 44.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 46.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1162,7 +1162,7 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   thương mại phải do người có chuyên môn đọc theo Nghị định 13/2023/NĐ-CP và luật của nơi đặt máy chủ; trang hiện
   cũng chưa ghi pháp nhân, địa chỉ và kênh liên hệ thật (chưa có).
 - **Tiền đề:** pháp nhân hoặc người chịu trách nhiệm, địa chỉ liên hệ, nơi đặt máy chủ đã chốt (`vm-oracle-real`).
-- **Việc:** luật sư đọc hai trang (bản tiếng Việt là bản gốc); sửa `legal.messages.ts`; đổi `LEGAL.termsVersion`
+- **Runbook:** luật sư đọc hai trang (bản tiếng Việt là bản gốc); sửa `legal.messages.ts`; đổi `LEGAL.termsVersion`
   (`@udp/config`) và `LEGAL_VERSION` của Portal CÙNG lúc — test `auth-recovery.test.tsx` bắt hai số lệch.
 - **Đạt:** có ý kiến bằng văn bản rằng hai trang đủ cho việc mở công khai. **Không đạt:** thiếu điều khoản bắt buộc
   ⇒ thêm, và người đã đồng ý bản cũ thấy lại ô đồng ý khi đăng nhập (chưa dựng: hôm nay chỉ lưu bản đã đồng ý).

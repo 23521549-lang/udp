@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
+import { BUILD_NAMESPACE } from "../../adapter-base/packaging/build-script.js";
 
 /**
  * Adapter OPA Gatekeeper (§5.5 Policy & Governance, Plan #34) — họ Helm, chart `gatekeeper`.
@@ -44,7 +45,8 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
       auditInterval: parsed.auditIntervalSeconds,
       validatingWebhookFailurePolicy: parsed.failurePolicy,
       controllerManager: {
-        exemptNamespaces: [ctx.systemNamespace, "kube-system"],
+        // [Plan #61 QĐ-12] `udp-build`: pod build của CI trong cluster (BuildKit cần seccomp `Unconfined`)
+        exemptNamespaces: [ctx.systemNamespace, "kube-system", BUILD_NAMESPACE],
       },
     };
   },

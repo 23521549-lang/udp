@@ -113,6 +113,30 @@ describe("thân webhook", () => {
     expect(tagOf("registry.acme.dev:5000/web")).toBe("latest");
   });
 
+  it("[Plan #61 QĐ-7] tag@digest: thân webhook nhận, tag là commit, nhãn phiên bản là commit", () => {
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    const ref = `ghcr.io/acme/web:${sha}@sha256:${"c".repeat(64)}`;
+    const event = parseDeployBody(
+      "github-actions",
+      raw({ ...BODY, imageRef: ref }),
+    );
+    expect(event.imageRef).toBe(ref);
+    expect(tagOf(ref)).toBe(sha);
+    expect(versionLabelOf(ref)).toBe(sha);
+    expect(
+      tagOf(`registry.acme.dev:5000/web:v2@sha256:${"d".repeat(64)}`),
+    ).toBe("v2");
+    // Digest cụt hay hai digest vẫn bị từ chối
+    for (const bad of [
+      `ghcr.io/acme/web:v1@sha256:${"c".repeat(63)}`,
+      `ghcr.io/acme/web@sha256:${"c".repeat(64)}@sha256:${"c".repeat(64)}`,
+    ]) {
+      expect(() =>
+        parseDeployBody("x", raw({ ...BODY, imageRef: bad })),
+      ).toThrow(WebhookPayloadError);
+    }
+  });
+
   it("workloadSlugFor: bỏ dấu, nhãn DNS, rỗng ⇒ app", () => {
     expect(workloadSlugFor("Dự án Bán hàng")).toBe("du-an-ban-hang");
     expect(workloadSlugFor("***")).toBe("app");

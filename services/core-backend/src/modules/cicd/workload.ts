@@ -120,21 +120,23 @@ const LABEL_VALUE = /^([A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?)?$/;
 
 /**
  * [Plan #48 QĐ-3] Phiên bản của một image thành giá trị nhãn Kubernetes: tag (`…/web:0123456` ⇒
- * `0123456`), digest ⇒ 12 chữ số hex đầu, không tag ⇒ `latest`. `null` khi không thành nhãn hợp lệ
+ * `0123456`), chỉ digest ⇒ 12 chữ số hex đầu, không tag ⇒ `latest`. `null` khi không thành nhãn hợp lệ
  * (dài quá 63 ký tự, ký tự lạ) — patch khi đó không đụng nhãn, thay vì bị API server từ chối cả lần áp.
  */
 export function versionLabelOf(image: string): string | null {
   const at = image.indexOf("@");
-  const name = image.slice(image.lastIndexOf("/") + 1);
+  const bare = at >= 0 ? image.slice(0, at) : image;
+  const name = bare.slice(bare.lastIndexOf("/") + 1);
   const colon = name.lastIndexOf(":");
+  // [Plan #61 QĐ-7] Tag (commit) thắng digest khi có cả hai — `service.version` trên metric là commit
   const version =
-    at >= 0
-      ? image
-          .slice(at + 1)
-          .replace(/^sha256:/, "")
-          .slice(0, 12)
-      : colon >= 0
-        ? name.slice(colon + 1)
+    colon >= 0
+      ? name.slice(colon + 1)
+      : at >= 0
+        ? image
+            .slice(at + 1)
+            .replace(/^sha256:/, "")
+            .slice(0, 12)
         : "latest";
   return version.length <= 63 && LABEL_VALUE.test(version) ? version : null;
 }

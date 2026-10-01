@@ -129,11 +129,14 @@ export const deployBodySchema = z
     status: z.enum(["success", "failure"]),
     commitSha: z.string().regex(/^[0-9a-f]{7,40}$/),
     commitTimestamp: z.string().datetime({ offset: true }).optional(),
-    /** Image đầy đủ đã đẩy — vắng khi pipeline hỏng trước bước đẩy */
+    /**
+     * Image đầy đủ đã đẩy — vắng khi pipeline hỏng trước bước đẩy. [Plan #61 QĐ-7] Nhận `:tag`, `@sha256:…` và
+     * `:tag@sha256:…` (dạng pipeline UDP gửi: commit để đọc, digest để áp)
+     */
     imageRef: z
       .string()
       .regex(
-        /^[a-z0-9.-]+(:\d+)?(\/[a-z0-9._-]+)+(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|@sha256:[0-9a-f]{64})$/,
+        /^[a-z0-9.-]+(:\d+)?(\/[a-z0-9._-]+)+((:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})(@sha256:[0-9a-f]{64})?|@sha256:[0-9a-f]{64})$/,
       )
       .optional(),
     workloadName: z.string().regex(DNS_LABEL),

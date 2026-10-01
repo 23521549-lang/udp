@@ -50,6 +50,8 @@ const adapter: DomainAdapter = createRegistryAdapter({
       version: "1.0.0",
       providedBy: "container_registry:docker-hub",
       endpoint: `docker.io/${dockerHubConfigSchema.parse(config).namespace}`,
+      // [Plan #61 QĐ-6] Access token có quyền đẩy là secret của CI
+      attributes: { pushAuth: "basic" },
     },
   ],
 });

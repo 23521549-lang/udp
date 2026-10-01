@@ -49,7 +49,12 @@ const adapter: DomainAdapter = createRegistryAdapter({
         version: "1.0.0",
         providedBy: "container_registry:ecr",
         endpoint: `${serverOf(parsed)}/${parsed.repositoryPrefix}`,
-        attributes: { pullAuth: "node-identity" },
+        // [Plan #61 QĐ-6] CI đẩy bằng danh tính build (OIDC) — mật khẩu ECR sống 12 giờ
+        attributes: {
+          pullAuth: "node-identity",
+          pushAuth: "aws-ecr",
+          region: parsed.region,
+        },
       },
     ];
   },

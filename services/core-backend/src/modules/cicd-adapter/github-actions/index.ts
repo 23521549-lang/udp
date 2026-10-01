@@ -23,6 +23,15 @@ import {
   TEST_IN_CONTAINER,
 } from "../../adapter-base/pipeline-template.js";
 import { githubOwner } from "../../adapter-base/github.js";
+import {
+  dockerHostBuildLines,
+  effectivePush,
+  needsOidc,
+  registrySecretNames,
+} from "../../adapter-base/packaging/build-script.js";
+import { BUILD_TOOLCHAIN } from "@udp/config";
+
+const CHECKOUT = BUILD_TOOLCHAIN.actions.checkout;
 
 /**
  * Adapter GitHub Actions (§5.5 CI/CD, Plan #36) — lớp nền mô tả + lớp bọc CI/CD.
@@ -86,6 +95,32 @@ const stepLines = (steps: readonly PipelineStep[]): string[] =>
     `          ${dockerRunLine(step)}`,
   ]);
 
+/** [Plan #61 QĐ-6] Quyền tối thiểu của `GITHUB_TOKEN`: đọc mã; thêm `id-token` khi đẩy bằng danh tính build, `packages` khi đẩy GHCR */
+const permissions = (params: PipelineTemplateParams): string[] => {
+  const push = effectivePush(params.build.push, "github-actions");
+  return [
+    "permissions:",
+    "  contents: read",
+    ...(needsOidc(params.build, "github-actions") ? ["  id-token: write"] : []),
+    ...(push.kind === "github-token" ? ["  packages: write"] : []),
+  ];
+};
+
+/** Biến của bước build: token của lượt chạy cho GHCR, hay hai secret của registry dùng mật khẩu */
+const buildEnv = (params: PipelineTemplateParams): string[] => {
+  const push = effectivePush(params.build.push, "github-actions");
+  if (push.kind === "github-token") {
+    return ["        env:", "          GITHUB_TOKEN: ${{ github.token }}"];
+  }
+  const names = registrySecretNames(params.build.push, "github-actions");
+  return names.length === 0
+    ? []
+    : [
+        "        env:",
+        ...names.map((name) => `          ${name}: \${{ secrets.${name} }}`),
+      ];
+};
+
 const workflow = (params: PipelineTemplateParams): string[] => [
   "# .github/workflows/udp.yml — sinh bởi UDP (Golden Path, §11)",
   "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
@@ -93,6 +128,7 @@ const workflow = (params: PipelineTemplateParams): string[] => [
   "on:",
   "  push:",
   "    branches: [%BRANCHES%]",
+  ...permissions(params),
   "jobs:",
   "  build-and-deploy:",
   "    runs-on: ubuntu-latest",
@@ -104,12 +140,22 @@ const workflow = (params: PipelineTemplateParams): string[] => [
   "      - name: Chọn environment theo nhánh",
   "        run: |",
   `          echo "UDP_ENVIRONMENT=${environmentExpr("$GITHUB_REF_NAME")}" >> "$GITHUB_ENV"`,
-  "      - uses: actions/checkout@v4",
+  `      - uses: ${CHECKOUT.repo}@${CHECKOUT.sha} # ${CHECKOUT.version}`,
   "      - name: Test",
   `        run: ${TEST_IN_CONTAINER}`,
   ...stepLines(stepsOf(params, "before-build")),
   "      - name: Build và đẩy image",
-  '        run: docker build -t "$IMAGE_REF" . && docker push "$IMAGE_REF"',
+  ...buildEnv(params),
+  "        run: |",
+  ...[
+    ...dockerHostBuildLines(params.build, "github-actions", {
+      image: "%IMAGE%",
+      commit: "$GITHUB_SHA",
+      tmp: "$RUNNER_TEMP/udp-build",
+    }),
+    // [Plan #61 QĐ-7] Bước sau build và bước báo UDP dùng đúng digest vừa đẩy
+    'echo "IMAGE_REF=$UDP_IMAGE_REF" >> "$GITHUB_ENV"',
+  ].map((line) => `          ${line}`),
   ...stepLines(stepsOf(params, "after-build")),
   "      - name: Báo UDP",
   "        if: always()",

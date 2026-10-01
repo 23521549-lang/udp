@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./constants": "./src/constants.ts",
     "./domains": "./src/domains.ts",
-    "./env-schema": "./src/env-schema.ts"
+    "./env-schema": "./src/env-schema.ts",
+    "./build-toolchain": "./src/build-toolchain.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

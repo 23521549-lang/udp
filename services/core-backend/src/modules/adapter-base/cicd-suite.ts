@@ -4,8 +4,11 @@ import type {
   PipelineStep,
   PipelineTemplateParams,
 } from "@udp/adapter-core";
+import { BUILD_TOOLCHAIN, TEST_IMAGES } from "@udp/config";
+import { parseAllDocuments } from "yaml";
 import { deployBodySchema, WebhookPayloadError } from "./cicd.js";
 import { stepId } from "./pipeline-steps.js";
+import type { BuildPlan } from "@udp/adapter-core";
 
 /**
  * Bộ phép CI/CD dùng chung (Plan #36 AC-1) — chạy trên MỌI adapter họ CI/CD cạnh 42 phép của bộ
@@ -80,6 +83,21 @@ const STEPS: PipelineStep[] = [
   },
 ];
 
+/** [Plan #61] Kế hoạch build mẫu: GHCR, chiến lược tự động, test Node.js */
+const BUILD: BuildPlan = {
+  strategy: "auto",
+  context: ".",
+  dockerfile: "Dockerfile",
+  platform: "linux/amd64",
+  push: { kind: "github-token", server: "ghcr.io" },
+  identity: null,
+  test: {
+    kind: "run",
+    command: "npm ci && npm test",
+    image: TEST_IMAGES.nodejs,
+  },
+};
+
 const PARAMS: PipelineTemplateParams = {
   steps: STEPS,
   projectSlug: "web",
@@ -91,7 +109,113 @@ const PARAMS: PipelineTemplateParams = {
   flagKeys: ["checkout_v2", "search"],
   rolloutStrategy: "udp-driven",
   languageRuntime: "nodejs",
+  build: BUILD,
 };
+
+/**
+ * [Plan #61 QĐ-6] Ma trận đăng nhập registry: năm kiểu đẩy, kèm registry của cloud CHƯA có danh tính build. Mỗi ô
+ * có thứ phải thấy trong pipeline (`expect`) — không phụ thuộc cú pháp của CI.
+ */
+const PUSH_CASES: {
+  name: string;
+  registryRef: string;
+  build: Pick<BuildPlan, "push" | "identity">;
+  expect: string[];
+}[] = [
+  {
+    name: "basic",
+    registryRef: "registry.acme.vn/web-team",
+    build: {
+      push: { kind: "basic", server: "registry.acme.vn" },
+      identity: null,
+    },
+    expect: ["UDP_REGISTRY_USERNAME", "UDP_REGISTRY_PASSWORD"],
+  },
+  {
+    name: "aws-ecr",
+    registryRef: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/acme",
+    build: {
+      push: {
+        kind: "aws-ecr",
+        server: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com",
+        region: "ap-southeast-1",
+      },
+      identity: {
+        cloud: "aws",
+        roleArn: "arn:aws:iam::123456789012:role/udp/udp-build-web",
+      },
+    },
+    expect: [
+      "arn:aws:iam::123456789012:role/udp/udp-build-web",
+      "ecr get-login-password --region ap-southeast-1",
+      BUILD_TOOLCHAIN.images.awsCli,
+    ],
+  },
+  {
+    name: "gcp",
+    registryRef: "asia-southeast1-docker.pkg.dev/acme-prod/web",
+    build: {
+      push: { kind: "gcp", server: "asia-southeast1-docker.pkg.dev" },
+      identity: {
+        cloud: "gcp",
+        workloadIdentityProvider:
+          "projects/123456789/locations/global/workloadIdentityPools/udp-build/providers/github",
+        serviceAccount: "udp-build-web@acme-prod.iam.gserviceaccount.com",
+      },
+    },
+    expect: [
+      "udp-build-web@acme-prod.iam.gserviceaccount.com",
+      "gcloud auth print-access-token",
+      BUILD_TOOLCHAIN.images.gcloud,
+    ],
+  },
+  {
+    name: "azure-acr",
+    registryRef: "acmeprod.azurecr.io",
+    build: {
+      push: {
+        kind: "azure-acr",
+        server: "acmeprod.azurecr.io",
+        registryName: "acmeprod",
+      },
+      identity: {
+        cloud: "azure",
+        clientId: "11111111-2222-3333-4444-555555555555",
+        tenantId: "66666666-7777-8888-9999-000000000000",
+      },
+    },
+    // CircleCI đẩy ACR bằng token (QĐ-6) — ô này chỉ đòi máy chủ
+    expect: ["acmeprod.azurecr.io"],
+  },
+  {
+    name: "aws-ecr chưa có danh tính",
+    registryRef: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/acme",
+    build: {
+      push: {
+        kind: "aws-ecr",
+        server: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com",
+        region: "ap-southeast-1",
+      },
+      identity: null,
+    },
+    expect: ["Chua co danh tinh build"],
+  },
+];
+
+/** Repository image của công cụ build mà UDP chọn — mọi lần xuất hiện phải kèm digest (QĐ-8) */
+const TOOLCHAIN_REPOS = [
+  ...Object.values(BUILD_TOOLCHAIN.images),
+  ...Object.values(TEST_IMAGES),
+].map((image) => image.split(":")[0] ?? image);
+
+/** Văn bản YAML của template — Jenkinsfile mang YAML của pod giữa hai dấu ba nháy */
+function yamlOf(toolId: string, text: string): string {
+  if (toolId !== "jenkins") return text;
+  const open = "yaml '''";
+  const start = text.indexOf(open);
+  const end = text.indexOf("'''", start + open.length);
+  return start < 0 || end < 0 ? "" : text.slice(start + open.length, end);
+}
 
 /** HMAC-SHA256 hex — bộ ký mẫu cho nhà cung cấp dùng tiền tố + hex */
 export const hmacSigner =
@@ -229,22 +353,142 @@ export function runCicdSuite(
     );
 
     api.it(
-      "[Plan #48] bước test theo runtime: lệnh và image của runtime, runtime lạ dừng pipeline",
+      "[Plan #48, #61] bước test theo kế hoạch build: chạy lệnh, tắt tường minh, thiếu lệnh thì dừng",
       () => {
         const node = adapter.renderPipelineTemplate(PARAMS);
-        assert(node.includes("npm ci && npm test"), "nodejs thiếu lệnh npm");
+        assert(node.includes("npm ci && npm test"), "thiếu lệnh npm");
+        assert(node.includes(TEST_IMAGES.nodejs), "thiếu image test có digest");
         const python = adapter.renderPipelineTemplate({
           ...PARAMS,
-          languageRuntime: "python",
+          build: {
+            ...BUILD,
+            test: {
+              kind: "run",
+              command: "pip install -r requirements-dev.txt && pytest -q",
+              image: TEST_IMAGES.python,
+            },
+          },
         });
         assert(python.includes("pytest -q"), "python thiếu pytest");
-        assert(python.includes("python:3.12-slim"), "python thiếu image");
-        assert(!python.includes("npm"), "python vẫn chạy npm");
-        const other = adapter.renderPipelineTemplate({
+        assert(python.includes(TEST_IMAGES.python), "python thiếu image");
+        assert(!python.includes("npm ci"), "python vẫn chạy npm");
+        const missing = adapter.renderPipelineTemplate({
           ...PARAMS,
-          languageRuntime: "java",
+          build: { ...BUILD, test: { kind: "missing", language: "ruby" } },
         });
-        assert(other.includes("exit 1"), "runtime lạ không dừng pipeline");
+        assert(
+          missing.includes("ngon ngu ruby") && missing.includes("exit 1"),
+          "thiếu lệnh test mà không dừng pipeline",
+        );
+        const skip = adapter.renderPipelineTemplate({
+          ...PARAMS,
+          build: { ...BUILD, test: { kind: "skip" } },
+        });
+        assert(
+          skip.includes("Buoc test bi tat"),
+          "tắt bước test mà không nói rõ",
+        );
+      },
+    );
+
+    api.it(
+      "[Plan #61] đăng nhập registry theo kiểu đẩy, TRƯỚC build; ảnh có digest tới bước sau build và bước báo UDP",
+      () => {
+        for (const c of PUSH_CASES) {
+          const text = adapter.renderPipelineTemplate({
+            ...PARAMS,
+            registryRef: c.registryRef,
+            build: { ...BUILD, ...c.build },
+          });
+          for (const needle of c.expect) {
+            assert(text.includes(needle), `[${c.name}] thiếu "${needle}"`);
+          }
+          const login = Math.min(
+            ...[
+              "--password-stdin",
+              "/udp-auth/config.json",
+              "Chua co danh tinh build",
+            ]
+              .map((n) => text.indexOf(n))
+              .filter((i) => i >= 0),
+          );
+          const build = Math.min(
+            ...["docker buildx build", "buildctl-daemonless.sh"]
+              .map((n) => text.indexOf(n))
+              .filter((i) => i >= 0),
+          );
+          assert(
+            Number.isFinite(login) && Number.isFinite(build) && login < build,
+            `[${c.name}] đăng nhập không đứng trước build`,
+          );
+          assert(
+            text.includes("/cnb/lifecycle/creator") ||
+              text.includes('pack" build'),
+            `[${c.name}] thiếu đường Buildpacks`,
+          );
+          assert(
+            text.includes("@$UDP_DIGEST"),
+            `[${c.name}] ảnh không mang digest`,
+          );
+          // Lần cuối: Jenkins liệt kê container của bước trong YAML của pod TRƯỚC các stage
+          const grype = text.lastIndexOf("udp-grype-quet-image");
+          assert(
+            build < grype && grype < text.lastIndexOf("UDP_WEBHOOK_URL"),
+            `[${c.name}] bước sau build không nằm giữa build và báo UDP`,
+          );
+        }
+      },
+    );
+
+    api.it(
+      "[Plan #61 QĐ-8] không kaniko, không `docker build` trần; action ghim SHA, image công cụ ghim digest; YAML hợp lệ",
+      () => {
+        for (const c of PUSH_CASES) {
+          const text = adapter.renderPipelineTemplate({
+            ...PARAMS,
+            registryRef: c.registryRef,
+            build: { ...BUILD, ...c.build },
+          });
+          assert(!/kaniko/i.test(text), "còn kaniko");
+          assert(!text.includes("docker build -t"), "còn docker build trần");
+          for (const m of text.matchAll(/uses: *([^\s#]+)/g)) {
+            assert(
+              /@[0-9a-f]{40}$/.test(m[1] ?? ""),
+              `action không ghim SHA: ${m[1] ?? ""}`,
+            );
+          }
+          for (const repo of TOOLCHAIN_REPOS) {
+            let from = 0;
+            for (;;) {
+              const at = text.indexOf(`${repo}:`, from);
+              if (at < 0) break;
+              const rest = text.slice(at, at + 200);
+              assert(
+                /^[^\s'"]*@sha256:[0-9a-f]{64}/.test(rest),
+                `image công cụ không ghim digest: ${rest.slice(0, 60)}`,
+              );
+              from = at + 1;
+            }
+          }
+          const yaml = yamlOf(adapter.toolId, text);
+          assert(yaml.trim().length > 0, "không thấy YAML của template");
+          for (const doc of parseAllDocuments(yaml)) {
+            assert(
+              doc.errors.length === 0,
+              `[${c.name}] YAML lỗi: ${doc.errors
+                .map((e) => e.message)
+                .join("; ")
+                .slice(0, 200)}`,
+            );
+          }
+          // Groovy: trong ba nháy đơn, backslash là escape — chỉ được đứng cuối dòng (nối dòng của shell)
+          if (adapter.toolId === "jenkins") {
+            assert(
+              !/\\(?!\n)/.test(text),
+              "Jenkinsfile mang backslash giữa dòng",
+            );
+          }
+        }
       },
     );
 

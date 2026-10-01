@@ -90,6 +90,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
         version: "1.0.0",
         providedBy: "artifact_registry:nexus",
         endpoint: `${hostOf(parsed.externalUrl)}:${String(parsed.dockerPort)}`,
+        attributes: { pushAuth: "basic" },
       },
     ];
   },

@@ -21,11 +21,26 @@ import {
   notifyScript,
   templateValues,
 } from "../../adapter-base/pipeline-template.js";
+import {
+  AUTH_DIR,
+  BUILDER_SERVICE_ACCOUNT,
+  BUILD_NAMESPACE,
+  inClusterBuildContainers,
+  WORK_DIR,
+  type BuildContainer,
+} from "../../adapter-base/packaging/build-script.js";
+import { buildNamespaceCompanion } from "../../adapter-base/packaging/build-namespace.js";
+import { BUILD_TOOLCHAIN } from "@udp/config";
+
+/** Ảnh có digest trong workspace (tương đối với thư mục làm việc = workspace) — sau khi build xong mới có */
+const IMAGE_REF_DIR = ".udp-out";
+const IMAGE_REF_FILE = `${IMAGE_REF_DIR}/image-ref`;
 
 /**
  * Adapter Tekton (§5.5 CI/CD, Plan #36) — họ Helm (chart `tekton-pipeline`) + lớp bọc CI/CD.
  *
- * Pipeline chạy NGAY trong cluster của project (Kaniko build, không cần Docker daemon). Tekton
+ * Pipeline chạy NGAY trong cluster của project, ở namespace `udp-build` ([Plan #61] BuildKit không root hay
+ * Buildpacks, không cần Docker daemon — kaniko đã bị lưu trữ, và Task `kaniko` mà bản trước gọi không được cài). Tekton
  * không có webhook RA gốc: task `finally` của Pipeline mà UDP sinh ký thân bằng HMAC-SHA256 trong
  * `X-UDP-Signature: sha256=…` (QĐ-6). Registry đọc từ binding `registry.oci` — ghi thành
  * chú thích trên controller (người vận hành thấy pipeline đẩy đi đâu) và vào tham số `image` của
@@ -57,6 +72,7 @@ const base = createHelmBasedAdapter({
     repo: "https://cdfoundation.github.io/tekton-helm-chart",
   },
   releaseName: "udp-tekton",
+  companions: [buildNamespaceCompanion],
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
 
@@ -119,13 +135,15 @@ const stepTasks = (
     "              #!/bin/sh",
     "              set -e",
     `              export ${environmentOfBranch("$(params.branch)")}`,
-    '              export IMAGE_REF="$(params.image):$(params.revision)"',
+    // [Plan #61 QĐ-7] Ảnh CÓ digest do task build ghi vào workspace; trước build thì chưa có
+    `              export IMAGE_REF="$(cat ${IMAGE_REF_FILE} 2>/dev/null || echo $(params.image):$(params.revision))"`,
     ...step.commands.map((c) => `              ${c}`),
   ]);
 
 /** [Plan #48 QĐ-4] Test trong image của runtime, trên workspace mã nguồn — trước build và mọi bước khác */
 const TEST_TASK = [
   "    - name: test",
+  "      runAfter: [fetch-source]",
   "      workspaces:",
   "        - name: source",
   "          workspace: source",
@@ -141,18 +159,105 @@ const TEST_TASK = [
   "              %TEST%",
 ];
 
+/**
+ * [Plan #61 QĐ-12] Lấy mã nguồn — Pipeline cũ không có bước này nên workspace rỗng. Commit cụ thể lấy bằng `fetch`
+ * nông theo SHA; repo riêng đọc `.git-credentials` từ Secret `udp-git` (tuỳ chọn) của namespace `udp-build`.
+ */
+const FETCH_TASK = [
+  "    - name: fetch-source",
+  "      workspaces:",
+  "        - name: source",
+  "          workspace: source",
+  "      taskSpec:",
+  "        workspaces: [{ name: source }]",
+  "        volumes:",
+  "          - name: udp-git",
+  "            secret: { secretName: udp-git, optional: true }",
+  "        steps:",
+  "          - name: clone",
+  `            image: ${BUILD_TOOLCHAIN.images.git}`,
+  "            workingDir: $(workspaces.source.path)",
+  "            volumeMounts: [{ name: udp-git, mountPath: /udp-git }]",
+  "            script: |",
+  "              #!/bin/sh",
+  "              set -eu",
+  '              [ -f /udp-git/.git-credentials ] && git config --global credential.helper "store --file=/udp-git/.git-credentials"',
+  "              git init -q .",
+  '              git remote add origin "$(params.repo-url)"',
+  '              git fetch -q --depth 1 origin "$(params.revision)"',
+  "              git checkout -q FETCH_HEAD",
+];
+
+/** Một bước của task build — từ `BuildContainer` chung (build-script.ts) */
+const buildSteps = (containers: readonly BuildContainer[]): string[] =>
+  containers.flatMap((c) => [
+    `          - name: ${c.name}`,
+    `            image: ${c.image}`,
+    "            workingDir: $(workspaces.source.path)",
+    ...(c.runAsUser === null && !c.unconfined
+      ? []
+      : [
+          "            securityContext:",
+          ...(c.runAsUser === null
+            ? []
+            : [`              runAsUser: ${String(c.runAsUser)}`]),
+          ...(c.unconfined
+            ? [
+                "              seccompProfile: { type: Unconfined }",
+                "              appArmorProfile: { type: Unconfined }",
+              ]
+            : []),
+        ]),
+    ...(Object.keys(c.env).length + c.secretEnv.length === 0
+      ? []
+      : [
+          "            env:",
+          ...Object.entries(c.env)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .flatMap(([k, v]) => [
+              `              - name: ${k}`,
+              `                value: '${v}'`,
+            ]),
+          ...c.secretEnv.flatMap((name) => [
+            `              - name: ${name}`,
+            `                valueFrom: { secretKeyRef: { name: ${CI_SECRETS}, key: ${name} } }`,
+          ]),
+        ]),
+    "            volumeMounts:",
+    `              - { name: udp, mountPath: ${WORK_DIR} }`,
+    `              - { name: udp-auth, mountPath: ${AUTH_DIR} }`,
+    "            script: |",
+    "              #!/bin/sh",
+    ...c.script.map((line) => `              ${line}`),
+    // Bước cuối: ảnh có digest sang workspace cho task sau build và task báo UDP
+    ...(c.name === "udp-digest"
+      ? [
+          `              mkdir -p ${IMAGE_REF_DIR} && cp ${WORK_DIR}/out/image-ref ${IMAGE_REF_FILE}`,
+        ]
+      : []),
+  ]);
+
 const pipeline = (params: PipelineTemplateParams): string[] => {
   const before = stepsOf(params, "before-build");
   const after = stepsOf(params, "after-build");
+  const containers = inClusterBuildContainers(params.build, "tekton", {
+    image: "$(params.image)",
+    commit: "$(params.revision)",
+  });
   return [
     "# tekton/udp-pipeline.yaml — sinh bởi UDP (Golden Path, §11)",
     "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
+    `# Chạy một lượt ở namespace ${BUILD_NAMESPACE} bằng ServiceAccount ${BUILDER_SERVICE_ACCOUNT} (Tekton Triggers chưa có, §16):`,
+    `#   tkn pipeline start udp-%PROJECT% -n ${BUILD_NAMESPACE} --serviceaccount ${BUILDER_SERVICE_ACCOUNT} -p repo-url=<url> -p revision=<commit> -p branch=<nhánh> -w name=source,volumeClaimTemplateFile=<pvc.yaml>`,
+    `# Secret cần có ở ${BUILD_NAMESPACE}: udp-webhook (url, secret); ${CI_SECRETS} cho biến bí mật; udp-git (tuỳ chọn) cho repo riêng`,
     "apiVersion: tekton.dev/v1",
     "kind: Pipeline",
     "metadata:",
     "  name: udp-%PROJECT%",
+    `  namespace: ${BUILD_NAMESPACE}`,
     "spec:",
     "  params:",
+    "    - name: repo-url",
     "    - name: revision",
     "    - name: branch",
     "    - name: image",
@@ -162,29 +267,40 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     "  workspaces:",
     "    - name: source",
     "  tasks:",
+    ...FETCH_TASK,
     ...TEST_TASK,
     ...stepTasks(before, ["test"]),
-    "    - name: build-and-push",
+    "    - name: build",
     `      runAfter: [${["test", ...before.map(stepId)].join(", ")}]`,
-    "      taskRef: { name: kaniko }",
-    "      params:",
-    "        - name: IMAGE",
-    "          value: $(params.image):$(params.revision)",
     "      workspaces:",
     "        - name: source",
     "          workspace: source",
-    ...stepTasks(after, ["build-and-push"]),
+    "      taskSpec:",
+    "        workspaces: [{ name: source }]",
+    "        volumes:",
+    "          - name: udp",
+    "            emptyDir: {}",
+    "          - name: udp-auth",
+    "            emptyDir: {}",
+    "        steps:",
+    ...buildSteps(containers),
+    ...stepTasks(after, ["build"]),
     "  finally:",
     "    - name: notify-udp",
     // Trạng thái GỘP của mọi task — bước của domain khác hỏng cũng là pipeline hỏng
     "      params:",
     "        - name: status",
     "          value: $(tasks.status)",
+    "      workspaces:",
+    "        - name: source",
+    "          workspace: source",
     "      taskSpec:",
     "        params: [{ name: status }]",
+    "        workspaces: [{ name: source }]",
     "        steps:",
     "          - name: notify",
-    "            image: alpine:3.20",
+    `            image: ${BUILD_TOOLCHAIN.images.alpine}`,
+    "            workingDir: $(workspaces.source.path)",
     "            env:",
     "              - name: UDP_WEBHOOK_URL",
     "                valueFrom: { secretKeyRef: { name: udp-webhook, key: url } }",
@@ -197,7 +313,7 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     '              UDP_STATUS=$(case "$(params.status)" in Succeeded|Completed) echo success;; *) echo failure;; esac)',
     "              COMMIT_SHA=$(params.revision) COMMIT_TS= PIPELINE_ID=$(context.pipelineRun.name)",
     "              REPO=%PROJECT% REF=$(params.branch) ACTOR=tekton",
-    '              IMAGE_REF=$([ "$UDP_STATUS" = success ] && echo "$(params.image):$(params.revision)" || echo "")',
+    `              IMAGE_REF=$([ "$UDP_STATUS" = success ] && cat ${IMAGE_REF_FILE} || echo "")`,
     `              ${environmentOfBranch("$(params.branch)")}`,
     ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
       (line) => `              ${line}`,

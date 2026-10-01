@@ -90,6 +90,28 @@ export {
 } from "./domain.js";
 
 export type {
+  BuildIdentity,
+  BuildIdentityCloud,
+  BuildPlan,
+  BuildStrategy,
+  BuildTest,
+  RegistryPush,
+  RegistryPushKind,
+} from "./build.js";
+export {
+  assertBuildPlanSafe,
+  BUILD_STRATEGIES,
+  BUILD_TEXT_RULES,
+  BuildPlanError,
+  CLOUD_PUSH_KINDS,
+  identityCloudOf,
+  isSafeBuildPath,
+  REGISTRY_PUSH_KINDS,
+  registryPushOf,
+  registryServerOf,
+} from "./build.js";
+
+export type {
   ProvisionedResourceRow,
   ProvisionStep,
   ResourceStatus,

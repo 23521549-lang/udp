@@ -39,7 +39,8 @@ const { adapter, pipelineSteps } = createPipelineStepAdapter({
       {
         name: "quet-image",
         phase: "after-build",
-        image: `anchore/grype:${parsed.version}`,
+        // [Plan #61] Bản `-debug` có busybox: image thường dựng từ `scratch`, không có shell để chạy lệnh của bước
+        image: `anchore/grype:${parsed.version}-debug`,
         commands: [
           [
             'grype "registry:$IMAGE_REF"',

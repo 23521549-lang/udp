@@ -21,6 +21,23 @@ import {
   notifyScript,
   templateValues,
 } from "../../adapter-base/pipeline-template.js";
+import {
+  AUTH_DIR,
+  BUILDER_SERVICE_ACCOUNT,
+  BUILD_NAMESPACE,
+  inClusterBuildContainers,
+  WORK_DIR,
+  type BuildContainer,
+} from "../../adapter-base/packaging/build-script.js";
+import { buildNamespaceCompanion } from "../../adapter-base/packaging/build-namespace.js";
+import { BUILD_TOOLCHAIN } from "@udp/config";
+
+/** Hai volume tạm của pod: thư mục làm việc của build và thông tin đăng nhập registry */
+const VOLUME_MOUNTS = [
+  "    volumes:",
+  `      - { name: udp, path: ${WORK_DIR} }`,
+  `      - { name: udp-auth, path: ${AUTH_DIR} }`,
+];
 
 /**
  * Adapter Drone CI (§5.5 CI/CD, Plan #36) — họ Helm, hai release: `drone` (server) rồi
@@ -87,6 +104,7 @@ const base = createHelmBasedAdapter({
     };
   },
   companions: [
+    buildNamespaceCompanion,
     {
       releaseName: "udp-drone-runner",
       chart: { name: "drone-runner-kube", version: "0.1.10", repo: REPO },
@@ -95,7 +113,10 @@ const base = createHelmBasedAdapter({
           DRONE_RPC_HOST: `udp-drone.${ctx.systemNamespace}`,
           DRONE_RPC_PROTO: "http",
           DRONE_RUNNER_ENVIRON: `UDP_REGISTRY:${registryRefOf(ctx.resolved)}`,
+          // [Plan #61 QĐ-12] Pod pipeline ở `udp-build` (bản trước: `default`)
+          DRONE_NAMESPACE_DEFAULT: BUILD_NAMESPACE,
         },
+        rbac: { buildNamespaces: [BUILD_NAMESPACE] },
         extraSecretNamesForEnvFrom: [SECRET],
       }),
     },
@@ -113,7 +134,8 @@ const base = createHelmBasedAdapter({
 
 const notifyStep = (status: "success" | "failure"): string[] => [
   `  - name: notify-udp-${status}`,
-  "    image: alpine:3.20",
+  `    image: ${BUILD_TOOLCHAIN.images.alpine}`,
+  ...VOLUME_MOUNTS,
   "    environment:",
   "      UDP_WEBHOOK_URL: { from_secret: udp_webhook_url }",
   "      UDP_WEBHOOK_SECRET: { from_secret: udp_webhook_secret }",
@@ -123,7 +145,7 @@ const notifyStep = (status: "success" | "failure"): string[] => [
   "      - export COMMIT_SHA=$DRONE_COMMIT_SHA COMMIT_TS= PIPELINE_ID=$DRONE_BUILD_NUMBER",
   "      - export REPO=$DRONE_REPO REF=$DRONE_BRANCH ACTOR=$DRONE_COMMIT_AUTHOR",
   status === "success"
-    ? '      - export IMAGE_REF="%IMAGE%:$DRONE_COMMIT_SHA"'
+    ? `      - export IMAGE_REF="$(cat ${WORK_DIR}/out/image-ref)"`
     : '      - export IMAGE_REF=""',
   "      - |",
   `        ${environmentOfBranch("$DRONE_BRANCH")}`,
@@ -142,6 +164,7 @@ const stepSteps = (steps: readonly PipelineStep[]): string[] =>
   steps.flatMap((step) => [
     `  - name: ${stepId(step)}`,
     `    image: ${step.image}`,
+    ...VOLUME_MOUNTS,
     ...(step.secretEnv.length + Object.keys(step.env).length === 0
       ? []
       : [
@@ -154,8 +177,35 @@ const stepSteps = (steps: readonly PipelineStep[]): string[] =>
     "    commands:",
     "      - |",
     `        export ${environmentOfBranch("$DRONE_BRANCH")}`,
-    '        export IMAGE_REF="%IMAGE%:$DRONE_COMMIT_SHA"',
+    // [Plan #61 QĐ-7] Ảnh CÓ digest do bước build ghi; trước build thì chưa có
+    `        export IMAGE_REF="$(cat ${WORK_DIR}/out/image-ref 2>/dev/null || echo %IMAGE%:$DRONE_COMMIT_SHA)"`,
     ...step.commands.map((c) => `        ${c}`),
+  ]);
+
+/**
+ * [Plan #61 QĐ-12] Bước build — từ `BuildContainer` chung. Drone không đặt seccomp cho từng bước, nên BuildKit (không
+ * root) chạy `privileged`: repo phải được đánh dấu Trusted trong Drone (§16). Builder Buildpacks không cần quyền gì.
+ */
+const buildSteps = (containers: readonly BuildContainer[]): string[] =>
+  containers.flatMap((c) => [
+    `  - name: ${c.name}`,
+    `    image: ${c.image}`,
+    ...(c.unconfined ? ["    privileged: true"] : []),
+    ...VOLUME_MOUNTS,
+    ...(Object.keys(c.env).length + c.secretEnv.length === 0
+      ? []
+      : [
+          "    environment:",
+          ...Object.entries(c.env)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([k, v]) => `      ${k}: '${v}'`),
+          ...c.secretEnv.map(
+            (name) => `      ${name}: { from_secret: ${name.toLowerCase()} }`,
+          ),
+        ]),
+    "    commands:",
+    "      - |",
+    ...c.script.map((line) => `        ${line}`),
   ]);
 
 const pipeline = (params: PipelineTemplateParams): string[] => [
@@ -164,20 +214,27 @@ const pipeline = (params: PipelineTemplateParams): string[] => [
   "kind: pipeline",
   "type: kubernetes",
   "name: udp",
+  `service_account_name: ${BUILDER_SERVICE_ACCOUNT}`,
   "trigger:",
   "  branch: [%BRANCHES%]",
   "environment:",
   '  UDP_TRACKED_FLAGS: "%FLAGS%"',
+  "volumes:",
+  "  - name: udp",
+  "    temp: {}",
+  "  - name: udp-auth",
+  "    temp: {}",
   "steps:",
   "  - name: test",
   "    image: %TEST_IMAGE%",
   '    commands: ["%TEST%"]',
   ...stepSteps(stepsOf(params, "before-build")),
-  "  - name: build-and-push",
-  "    image: plugins/kaniko",
-  "    settings:",
-  "      repo: %IMAGE%",
-  "      tags: [${DRONE_COMMIT_SHA}]",
+  ...buildSteps(
+    inClusterBuildContainers(params.build, "drone", {
+      image: "%IMAGE%",
+      commit: "$DRONE_COMMIT_SHA",
+    }),
+  ),
   ...stepSteps(stepsOf(params, "after-build")),
   ...notifyStep("success"),
   ...notifyStep("failure"),

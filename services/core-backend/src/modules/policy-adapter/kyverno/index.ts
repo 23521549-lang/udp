@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { DomainAdapter, ReadOnlyAdapterContext } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
+import { BUILD_NAMESPACE } from "../../adapter-base/packaging/build-script.js";
 
 /**
  * Adapter Kyverno (§5.5 Policy & Governance, Plan #34) — họ Helm, hai release: `kyverno` (engine)
@@ -8,7 +9,7 @@ import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
  *
  * Mức PSS (`baseline`/`restricted`) và chế độ (`Audit`/`Enforce`) là cấu hình; mặc định Audit —
  * bật Enforce trên một project đang chạy mà chưa audit là chặn deploy của khách không báo trước.
- * Webhook miễn trừ `udp-system` và `kube-system` (QĐ-1).
+ * Webhook miễn trừ `udp-system` và `kube-system` (QĐ-1), và `udp-build` — nơi CI trong cluster build image (Plan #61).
  */
 
 export const kyvernoConfigSchema = z.object({
@@ -23,6 +24,8 @@ const REPO = "https://kyverno.github.io/kyverno/";
 const exempt = (ctx: ReadOnlyAdapterContext): string[] => [
   ctx.systemNamespace,
   "kube-system",
+  // [Plan #61 QĐ-12] Pod build của CI trong cluster: BuildKit không root cần seccomp `Unconfined`
+  BUILD_NAMESPACE,
 ];
 
 const adapter: DomainAdapter = createHelmBasedAdapter({

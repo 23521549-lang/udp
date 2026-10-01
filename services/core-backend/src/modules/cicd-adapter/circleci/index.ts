@@ -22,6 +22,7 @@ import {
   templateValues,
   TEST_IN_CONTAINER,
 } from "../../adapter-base/pipeline-template.js";
+import { dockerHostBuildLines } from "../../adapter-base/packaging/build-script.js";
 
 /**
  * Adapter CircleCI (§5.5 CI/CD, Plan #36) — lớp nền mô tả + lớp bọc CI/CD.
@@ -112,7 +113,18 @@ const config = (params: PipelineTemplateParams): string[] => [
   "      - checkout",
   `      - run: ${TEST_IN_CONTAINER}`,
   ...stepRuns(stepsOf(params, "before-build")),
-  '      - run: docker build -t "$IMAGE_REF" . && docker push "$IMAGE_REF"',
+  "      - run:",
+  "          name: Build và đẩy image",
+  "          command: |",
+  ...[
+    ...dockerHostBuildLines(params.build, "circleci", {
+      image: "%IMAGE%",
+      commit: "$CIRCLE_SHA1",
+      tmp: "/tmp/udp-build",
+    }),
+    // [Plan #61 QĐ-7] Bước sau build và bước báo UDP dùng đúng digest vừa đẩy
+    'echo "export IMAGE_REF=$UDP_IMAGE_REF" >> "$BASH_ENV"',
+  ].map((line) => `            ${line}`),
   ...stepRuns(stepsOf(params, "after-build")),
   ...notifyStep("success", "on_success"),
   ...notifyStep("failure", "on_fail"),

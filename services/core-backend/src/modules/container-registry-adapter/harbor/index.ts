@@ -16,6 +16,15 @@ import type { PullCredentialDeclaration } from "../../adapter-base/registry-pull
 export const harborConfigSchema = z.object({
   /** URL công khai mà `docker push/pull` dùng — phải là https */
   externalUrl: z.string().regex(/^https:\/\/[a-z0-9.-]+(:\d{2,5})?$/),
+  /**
+   * [Plan #61] Project của Harbor chứa image — Harbor đòi `host/<project>/<repository>`, nên đẩy `host/<slug>` bị
+   * từ chối. `library` là project Harbor tạo sẵn khi cài.
+   */
+  project: z
+    .string()
+    .regex(/^[a-z0-9]+([._-][a-z0-9]+)*$/)
+    .max(255)
+    .default("library"),
   adminPassword: z
     .string()
     .min(8)
@@ -72,14 +81,19 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     harborAdminPassword: harborConfigSchema.parse(config).adminPassword,
   }),
 
-  bindings: (_ctx, config) => [
-    {
-      id: "registry.oci",
-      version: "1.0.0",
-      providedBy: "container_registry:harbor",
-      endpoint: hostOf(harborConfigSchema.parse(config).externalUrl),
-    },
-  ],
+  bindings: (_ctx, config) => {
+    const parsed = harborConfigSchema.parse(config);
+    return [
+      {
+        id: "registry.oci",
+        version: "1.0.0",
+        providedBy: "container_registry:harbor",
+        endpoint: `${hostOf(parsed.externalUrl)}/${parsed.project}`,
+        // [Plan #61 QĐ-6] Robot account có quyền đẩy là secret của CI
+        attributes: { pushAuth: "basic" },
+      },
+    ];
+  },
 });
 
 export default adapter;

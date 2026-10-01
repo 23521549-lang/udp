@@ -51,14 +51,16 @@ function flatHeaders(req: Request): Record<string, string> {
   return out;
 }
 
-/** Tag hay digest của image: `…/web:abc` ⇒ `abc`, `…/web@sha256:…` ⇒ `sha256:…` */
+/**
+ * Tag hay digest của image: `…/web:abc` ⇒ `abc`, `…/web@sha256:…` ⇒ `sha256:…`. [Plan #61 QĐ-7] Có cả hai
+ * (`…/web:<commit>@sha256:…` — dạng pipeline UDP gửi) ⇒ tag: người đọc thấy commit, deploy vẫn áp nguyên chuỗi.
+ */
 export function tagOf(imageRef: string): string {
   const at = imageRef.indexOf("@");
-  if (at >= 0) return imageRef.slice(at + 1);
-  const colon = imageRef.lastIndexOf(":");
-  return colon > imageRef.lastIndexOf("/")
-    ? imageRef.slice(colon + 1)
-    : "latest";
+  const bare = at >= 0 ? imageRef.slice(0, at) : imageRef;
+  const colon = bare.lastIndexOf(":");
+  if (colon > bare.lastIndexOf("/")) return bare.slice(colon + 1);
+  return at >= 0 ? imageRef.slice(at + 1) : "latest";
 }
 
 /** Chữ ký đúng mới mở được secret; mọi đường trượt khác là cùng một 401 */

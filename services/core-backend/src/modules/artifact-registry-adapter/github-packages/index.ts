@@ -53,6 +53,7 @@ const adapter: DomainAdapter = createRegistryAdapter({
         version: "1.0.0",
         providedBy: "artifact_registry:github-packages",
         endpoint: `ghcr.io/${owner}`,
+        attributes: { pushAuth: "github-token" },
       },
     ];
   },

@@ -9,6 +9,7 @@ import { createApp } from "../src/app.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { isCicdAdapter } from "../src/modules/cicd/cicd-webhook.service.js";
 import { createRegistry } from "../src/modules/domain/domain-adapter.registry.js";
+import { buildPlanOf } from "../src/modules/packaging/build-plan.js";
 import { PIPELINE_PATHS } from "../src/modules/golden-path/golden-path.service.js";
 import {
   createRepoSourceFactory,
@@ -171,6 +172,8 @@ describe("GET /projects/:id/golden-path", () => {
         providedBy: "container-registry:ghcr",
         schemaVersion: "1.0.0",
         endpoint: "ghcr.io/acme",
+        // [Plan #61 QĐ-6] Như binding mà adapter GHCR ghi
+        attributes: { pushAuth: "github-token" },
       },
     });
     try {
@@ -306,6 +309,13 @@ describe("đường tệp pipeline theo tool", () => {
         rolloutStrategy: "udp-driven",
         steps: [],
         languageRuntime: "nodejs",
+        build: buildPlanOf({
+          languageRuntime: "nodejs",
+          registry: {
+            endpoint: "ghcr.io/a",
+            attributes: { pushAuth: "github-token" },
+          },
+        }),
       });
       expect(text.split("\n")[0], adapter.toolId).toContain(
         PIPELINE_PATHS[adapter.toolId] ?? "?",

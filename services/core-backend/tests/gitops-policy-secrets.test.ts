@@ -83,6 +83,8 @@ describe("Policy không bao giờ chặn chính UDP (AC-3)", () => {
       );
       expect(values, adapter.toolId).toContain(SYSTEM_NS);
       expect(values, adapter.toolId).toContain("kube-system");
+      // [Plan #61 QĐ-12] Pod build của CI trong cluster (BuildKit cần seccomp `Unconfined`)
+      expect(values, adapter.toolId).toContain("udp-build");
     }
   });
 });

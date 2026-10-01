@@ -9,12 +9,13 @@ Spec: `docs/plans/plan61-spec.md`. Mỗi đợt: mã + test + cổng, rồi mộ
 2. `@udp/adapter-core`: `BuildPlan`, `RegistryPush`, `BuildIdentity` (kiểu thuần) + `PipelineTemplateParams.build`.
 3. Registry: chín adapter khai `pushAuth` (+ `region` cho ECR, `registryName` cho ACR) trong thuộc tính binding
    `registry.oci`; test hợp đồng của registry đòi có `pushAuth` hợp lệ.
-4. `adapter-base/build/` (mới):
-   - `oidc.ts` — JWT theo CI (GitHub, GitLab, CircleCI, TokenRequest trong cluster) và audience theo cloud.
-   - `registry-login.ts` — dòng shell đăng nhập theo `RegistryPush` cho hai môi trường (máy có Docker / trong cluster).
-   - `build-commands.ts` — Dockerfile (buildx / buildctl-daemonless) và Buildpacks (pack / creator), ra digest.
+4. `adapter-base/packaging/` (mới):
+   - `build-script.ts` — đoạn shell dùng chung: chọn chiến lược, JWT theo CI (GitHub, GitLab, CircleCI, TokenRequest
+     trong cluster) và `aud` theo cloud, đăng nhập theo `RegistryPush` cho hai môi trường, build Dockerfile (buildx /
+     buildctl-daemonless) và Buildpacks (pack / creator), đọc digest, bước test.
    - `build-namespace.ts` — release `raw` đi kèm: namespace `udp-build`, SA `udp-builder`, Role tự xin token, LimitRange,
      NetworkPolicy chặn ingress.
+   - Service 1: `modules/packaging/build-plan.ts` dựng `BuildPlan`.
 5. Sáu adapter CI viết lại phần build: đăng nhập → build (theo chiến lược của 61a: `auto` chọn Dockerfile/Buildpacks đã có
    từ 61a ở máy có Docker; trong cluster đủ cả hai) → `IMAGE_REF` có digest → bước sau build → báo UDP. Jenkins: pod
    template, bước domain là container; Tekton: `git-clone`, task build, task `detect`; Drone: namespace và SA. Không

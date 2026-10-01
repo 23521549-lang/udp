@@ -8,6 +8,7 @@ import type {
 } from "@udp/shared-types/wire";
 import type { Request } from "express";
 import { prisma } from "../../core/db.js";
+import { buildPlanOf } from "../packaging/build-plan.js";
 import { API_PREFIX } from "../../core/http/api-prefix.js";
 import { auditEntry } from "../audit/audit.service.js";
 import { bindingsOfProject } from "../capability/capability-binding.repository.js";
@@ -127,9 +128,10 @@ export async function pipelineTemplate(
       select: { domainType: true, selectedTool: true, toolConfig: true },
     }),
   ]);
-  const registryRef = bindings.find(
+  const registryBinding = bindings.find(
     (b) => b.capabilityId === "registry.oci",
-  )?.endpoint;
+  );
+  const registryRef = registryBinding?.endpoint;
   if (registryRef == null) {
     throw new ConflictError(
       "Chưa có registry.oci — bật một Container Registry trước khi sinh pipeline",
@@ -144,6 +146,11 @@ export async function pipelineTemplate(
       environments: project.environments,
       registryRef,
       languageRuntime: project.languageRuntime,
+      // [Plan #61] Build thế nào: chiến lược, đăng nhập registry, danh tính build, bước test
+      build: buildPlanOf({
+        languageRuntime: project.languageRuntime,
+        registry: registryBinding,
+      }),
       flagKeys: tracked.map((t) => t.flag.key).sort(),
       rolloutStrategy: bindings.some(
         (b) => b.capabilityId === "traffic.control",

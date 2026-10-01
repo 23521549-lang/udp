@@ -85,6 +85,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
         version: "1.0.0",
         providedBy: "artifact_registry:artifactory",
         endpoint: hostOf(url),
+        attributes: { pushAuth: "basic" },
       },
     ];
   },

@@ -46,6 +46,8 @@ const adapter: DomainAdapter = createRegistryAdapter({
       providedBy: "container_registry:ghcr",
       // Tên image trên GHCR luôn viết thường, kể cả khi tên tổ chức có chữ hoa
       endpoint: `ghcr.io/${ghcrConfigSchema.parse(config).owner.toLowerCase()}`,
+      // [Plan #61 QĐ-6] GitHub Actions đẩy bằng `GITHUB_TOKEN`; CI khác bằng token là secret
+      attributes: { pushAuth: "github-token" },
     },
   ],
 });

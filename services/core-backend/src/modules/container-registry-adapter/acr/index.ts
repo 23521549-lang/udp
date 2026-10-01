@@ -55,6 +55,9 @@ const adapter: DomainAdapter = createRegistryAdapter({
         attributes: {
           pullAuth:
             parsed.tokenName === undefined ? "node-identity" : "pull-secret",
+          // [Plan #61 QĐ-6] CI đẩy bằng federated credential của managed identity
+          pushAuth: "azure-acr",
+          registryName: parsed.registryName,
         },
       },
     ];

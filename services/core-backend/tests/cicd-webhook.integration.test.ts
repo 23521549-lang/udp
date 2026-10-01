@@ -384,6 +384,8 @@ describe("template pipeline", () => {
         providedBy: "container_registry:ghcr",
         schemaVersion: "1.0.0",
         endpoint: "ghcr.io/acme",
+        // [Plan #61 QĐ-6] Như binding mà adapter GHCR ghi
+        attributes: { pushAuth: "github-token" },
       },
     });
 

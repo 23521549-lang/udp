@@ -38,22 +38,25 @@ interface BuildPlan {
   strategy: "auto" | "dockerfile" | "buildpacks";
   context: string; // thư mục build, tương đối, "." mặc định
   dockerfile: string; // tương đối với context
-  platform: "linux/amd64"; // QĐ-11
+  platform: string; // "linux/amd64" (QĐ-11)
   push: RegistryPush;
   identity: BuildIdentity | null; // bắt buộc với registry của cloud (QĐ-6)
-  test: { command: string; image: string } | { skip: true } | null; // null ⇒ thiếu lệnh ⇒ dừng
-  rebase: boolean; // 61c
-  signing: SigningPlan | null; // 61d
+  test:
+    | { kind: "run"; command: string; image: string }
+    | { kind: "skip" }
+    | { kind: "missing"; language: string };
 }
 ```
+
+61c thêm `rebase`, 61d thêm `signing`.
 
 `RegistryPush` là `basic` | `github-token` | `aws-ecr` | `gcp` | `azure-acr`, kèm máy chủ và tham số của kiểu.
 Service 1 dựng `BuildPlan` từ cài đặt build của project (QĐ-9), binding `registry.oci` và cấu hình của adapter CI.
 
-**QĐ-4 — Chọn chiến lược lúc chạy.** `auto`: có `<context>/<dockerfile>` ⇒ BuildKit, không có ⇒ Buildpacks — điều kiện
-viết trong pipeline (GitHub: output của bước `detect`; GitLab: `rules: exists`; CircleCI, Drone: điều kiện shell;
-Jenkins: `fileExists`; Tekton: kết quả của task `detect` + `when`). Ghim `dockerfile` mà thiếu tệp ⇒ bước build dừng với
-lời nhắn; ghim `buildpacks` ⇒ bỏ qua Dockerfile.
+**QĐ-4 — Chọn chiến lược lúc chạy.** `auto`: có `<context>/<dockerfile>` ⇒ BuildKit, không có ⇒ Buildpacks — một điều
+kiện shell CHUNG cho cả sáu CI: máy có Docker rẽ nhánh trong một bước; trong cluster, bước chuẩn bị ghi chiến lược ra
+`/udp/strategy` và hai bước build tự bỏ qua khi không phải lượt của mình (Tekton không cần `when`, Jenkins không cần
+`fileExists`). Ghim `dockerfile` mà thiếu tệp ⇒ dừng với lời nhắn; ghim `buildpacks` ⇒ bỏ qua Dockerfile.
 
 **QĐ-5 — Lệnh build.**
 
@@ -116,13 +119,15 @@ mới `packaging`: chiến lược dự đoán và lý do. Rust: Buildpacks Pake
 `linux/amd64`. Hằng `NODE_ARCH = "amd64"` đặt cạnh bảng cỡ node của cloud adapter; test khẳng định mọi cỡ node là x86 —
 thêm node Graviton/Ampere thì test đỏ, buộc sửa kế hoạch build.
 
-**QĐ-12 — CI trong cluster.** Bộ nền dùng chung `adapter-base/build-namespace.ts`: release `raw` đi kèm dựng namespace
+**QĐ-12 — CI trong cluster.** Bộ nền dùng chung `adapter-base/packaging/build-namespace.ts`: release `raw` đi kèm dựng namespace
 `udp-build` (không ResourceQuota, LimitRange mặc định đủ cho BuildKit, chặn ingress), ServiceAccount `udp-builder`, Role
 cho nó tự xin token. Jenkins: `agent.namespace: udp-build`, pod template trong Jenkinsfile (container test, công cụ,
-BuildKit, builder) — bước của domain khác thành container của pod thay cho `docker run`. Drone:
+BuildKit, builder) — bước của domain khác thành container của pod thay cho `docker run`; container không bắt buộc UID
+chạy bằng root vì bước `sh` của Jenkins ghi `$WORKSPACE@tmp` (builder vẫn hạ quyền: `creator` tự `RunAs` UID 1001). Drone:
 `DRONE_NAMESPACE_DEFAULT` + `rbac.buildNamespaces` = `udp-build`, `service_account_name: udp-builder`. Tekton: task
 `git-clone` nhúng (`alpine/git`), PipelineRun ở `udp-build` với `udp-builder`; cách tạo PipelineRun ghi trong tệp sinh ra
-(Tekton Triggers chưa có — §16, có từ trước plan này). Kyverno miễn trừ thêm `udp-build`.
+(Tekton Triggers chưa có — §16, có từ trước plan này); ảnh có digest sang task sau qua workspace, không qua result —
+`finally` bị bỏ qua khi result của task hỏng vắng, mà bước báo UDP lúc hỏng phải chạy. Kyverno miễn trừ thêm `udp-build`.
 
 **QĐ-13 — SBOM, provenance, rebase (61c).** Dockerfile: `--sbom=true --provenance=mode=max` (BuildKit lưu trong image
 index — chạy cả với registry thiếu API referrers). Buildpacks: SBOM có sẵn trong image (Paketo: CycloneDX, SPDX, Syft).

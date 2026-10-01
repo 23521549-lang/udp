@@ -6,6 +6,7 @@ import type {
   CapabilityId,
 } from "@udp/shared-types";
 import type { ZodType } from "zod";
+import type { BuildPlan } from "./build.js";
 import type { ResourceQuota } from "./cloud.js";
 import { readOnlyAccess } from "./cluster.js";
 import type {
@@ -253,9 +254,15 @@ export interface PipelineTemplateParams {
   steps: PipelineStep[];
   /**
    * [v4.11, Plan #48] `Project.languageRuntime` — bước test chạy lệnh và image của runtime đó
-   * (`nodejs`, `python`); runtime khác ⇒ bước test báo thiếu lệnh rồi dừng pipeline
+   * (`nodejs`, `python`); runtime khác ⇒ bước test báo thiếu lệnh rồi dừng pipeline.
+   * [Plan #61] Giữ cho tương thích; bước test đọc `build.test`.
    */
   languageRuntime: string;
+  /**
+   * [Plan #61 QĐ-2] Kế hoạch build: chiến lược, thư mục, cách đăng nhập registry, danh tính build, bước test. Mở
+   * rộng BỐI CẢNH (như `environments` của D-P29) — không đổi phương thức nào của `CicdDomainAdapter`.
+   */
+  build: BuildPlan;
 }
 
 /** CI/CD adapter mở rộng thêm phần webhook — §8.3 nhắc nhưng v3 không có trong interface */

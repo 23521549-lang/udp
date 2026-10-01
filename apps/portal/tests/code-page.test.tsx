@@ -56,8 +56,9 @@ describe("Golden Path (Create New)", () => {
     const dockerfile = within(list).getByRole("button", { name: "Dockerfile" });
     await userEvent.click(dockerfile);
     expect(dockerfile).toHaveAttribute("aria-pressed", "true");
+    // [Plan #61] Image nền ghim digest (tag để đọc)
     expect(screen.getByLabelText("Nội dung Dockerfile")).toHaveTextContent(
-      "FROM python:3.12-slim",
+      /FROM python:3\.12[.0-9]*-slim@sha256:[0-9a-f]{64}/,
     );
     for (const note of tree.notes) {
       expect(screen.getByText(note)).toBeInTheDocument();

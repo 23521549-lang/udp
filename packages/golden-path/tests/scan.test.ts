@@ -77,7 +77,10 @@ describe("scanRepository (§11.2)", () => {
     expect(scan.flagLevelReady).toBe(false);
     const dockerfile = scan.findings.find((f) => f.id === "dockerfile");
     expect(dockerfile?.suggestion?.file?.path).toBe("Dockerfile");
-    expect(dockerfile?.suggestion?.file?.content).toContain("node:22-alpine");
+    // [Plan #61] Image nền ghim digest (tag để đọc)
+    expect(dockerfile?.suggestion?.file?.content).toMatch(
+      /FROM node:22[.0-9]*-alpine@sha256:[0-9a-f]{64}/,
+    );
   });
 
   it("Python có provider nhưng thiếu middleware ⇒ chưa sẵn sàng", async () => {

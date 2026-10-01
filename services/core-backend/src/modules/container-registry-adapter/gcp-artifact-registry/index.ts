@@ -42,7 +42,8 @@ const adapter: DomainAdapter = createRegistryAdapter({
       version: "1.0.0",
       providedBy: "container_registry:gcp-artifact-registry",
       endpoint: endpointOf(gcpArtifactRegistryConfigSchema.parse(config)),
-      attributes: { pullAuth: "node-identity" },
+      // [Plan #61 QĐ-6] CI đẩy bằng Workload Identity Federation, không khoá JSON
+      attributes: { pullAuth: "node-identity", pushAuth: "gcp" },
     },
   ],
 });
