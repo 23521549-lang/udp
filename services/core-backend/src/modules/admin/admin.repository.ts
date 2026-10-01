@@ -1,31 +1,48 @@
-import type { JobState, PlatformRole, Prisma, ProjectStatus } from "@udp/db";
+import {
+  Prisma,
+  type JobState,
+  type PlatformRole,
+  type ProjectStatus,
+} from "@udp/db";
 import { prisma } from "../../core/db.js";
 
 /**
  * [v4.11, Plan #53] Mọi danh sách admin theo trang: `take`/`skip` cho trang, và `count` trên CÙNG
  * điều kiện cho `total` — một nguồn điều kiện, để tổng không lệch với trang.
  */
-const userWhere = (search: string | undefined): Prisma.UserWhereInput =>
-  search === undefined
+/** [Plan #60 QĐ-3] Bộ lọc của danh sách người dùng — đúng những gì `listUsersQuerySchema` nhận */
+export interface UserFilter {
+  search?: string | undefined;
+  platformRole?: PlatformRole | undefined;
+}
+
+const userWhere = ({
+  search,
+  platformRole,
+}: UserFilter): Prisma.UserWhereInput => ({
+  ...(search === undefined
     ? {}
     : {
         OR: [
           { email: { contains: search, mode: "insensitive" } },
           { name: { contains: search, mode: "insensitive" } },
         ],
-      };
+      }),
+  ...(platformRole === undefined ? {} : { platformRole }),
+});
 
-export const countUsers = (search: string | undefined) =>
-  prisma.user.count({ where: userWhere(search) });
+export const countUsers = (filter: UserFilter) =>
+  prisma.user.count({ where: userWhere(filter) });
 
 export const listUsers = (
-  search: string | undefined,
+  filter: UserFilter,
+  order: Prisma.SortOrder,
   take: number,
   skip: number,
 ) =>
   prisma.user.findMany({
-    where: userWhere(search),
-    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    where: userWhere(filter),
+    orderBy: [{ createdAt: order }, { id: "asc" }],
     take,
     skip,
     select: {
@@ -100,21 +117,39 @@ export async function setPlatformRole(
   });
 }
 
-const projectWhere = (
-  status: ProjectStatus | undefined,
-): Prisma.ProjectWhereInput => (status === undefined ? {} : { status });
+/** [Plan #60 QĐ-3] Bộ lọc của danh sách project — `search` khớp tên project hoặc email của chủ */
+export interface ProjectFilter {
+  status?: ProjectStatus | undefined;
+  search?: string | undefined;
+}
 
-export const countProjects = (status: ProjectStatus | undefined) =>
-  prisma.project.count({ where: projectWhere(status) });
+const projectWhere = ({
+  status,
+  search,
+}: ProjectFilter): Prisma.ProjectWhereInput => ({
+  ...(status === undefined ? {} : { status }),
+  ...(search === undefined
+    ? {}
+    : {
+        OR: [
+          { name: { contains: search, mode: "insensitive" } },
+          { owner: { email: { contains: search, mode: "insensitive" } } },
+        ],
+      }),
+});
+
+export const countProjects = (filter: ProjectFilter) =>
+  prisma.project.count({ where: projectWhere(filter) });
 
 export const listProjects = (
-  status: ProjectStatus | undefined,
+  filter: ProjectFilter,
+  order: Prisma.SortOrder,
   take: number,
   skip: number,
 ) =>
   prisma.project.findMany({
-    where: projectWhere(status),
-    orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    where: projectWhere(filter),
+    orderBy: [{ createdAt: order }, { id: "asc" }],
     take,
     skip,
     select: {
@@ -131,6 +166,35 @@ export const listProjects = (
       },
     },
   });
+
+export interface ProblemJobRow {
+  id: string;
+  projectId: string;
+  jobType: string;
+  state: string;
+  lastError: unknown;
+  updatedAt: Date;
+}
+
+/**
+ * [Plan #60 QĐ-3, H8] Job "có vấn đề" mới nhất của MỖI project trong danh sách — một truy vấn `DISTINCT ON`, thay cho
+ * việc Portal tìm trong trang đầu (50 dòng) của ba tab Job lỗi: project có job lỗi cũ hơn 50 job khác thì trước đây
+ * panel nói "không có job lỗi".
+ */
+export const latestProblemJobs = (
+  projectIds: readonly string[],
+  states: readonly JobState[],
+): Promise<ProblemJobRow[]> =>
+  projectIds.length === 0
+    ? Promise.resolve([])
+    : prisma.$queryRaw<ProblemJobRow[]>(Prisma.sql`
+        SELECT DISTINCT ON (project_id)
+               id, project_id AS "projectId", job_type::text AS "jobType", state::text AS state,
+               last_error AS "lastError", updated_at AS "updatedAt"
+          FROM provisioning_jobs
+         WHERE project_id IN (${Prisma.join(projectIds.map((id) => Prisma.sql`${id}::uuid`))})
+           AND state::text IN (${Prisma.join([...states])})
+         ORDER BY project_id, updated_at DESC, id`);
 
 /**
  * Metadata credential — KHÔNG đọc cột mã hoá nào (`encrypted_*`, `nonce`, `auth_tag`):

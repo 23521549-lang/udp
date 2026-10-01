@@ -4,9 +4,15 @@ import {
   type EvidenceDoraDays,
 } from "@udp/shared-types/wire";
 
+/** [Plan #60 QĐ-3] Mới tạo trước (mặc định) hay cũ nhất trước — cùng nghĩa ở mọi danh sách quản trị */
+const listOrder = z.enum(["desc", "asc"]).default("desc");
+
 export const listUsersQuerySchema = z
   .object({
     search: z.string().trim().min(1).max(100).optional(),
+    /** [Plan #60 QĐ-3, H1] Lọc theo vai toàn hệ thống (ô "Vai" của trang Người dùng) */
+    platformRole: z.enum(["USER", "PLATFORM_ADMIN"]).optional(),
+    order: listOrder,
     limit: z.coerce.number().int().min(1).max(100).default(50),
     offset: z.coerce.number().int().min(0).default(0),
   })
@@ -23,11 +29,24 @@ export const listProjectsQuerySchema = z
     status: z
       .enum(["DRAFT", "PROVISIONING", "ACTIVE", "ERROR", "DELETED"])
       .optional(),
+    /** [Plan #60 QĐ-3, H1] Tên project hoặc email của chủ, không phân biệt hoa thường */
+    search: z.string().trim().min(1).max(100).optional(),
+    order: listOrder,
     limit: z.coerce.number().int().min(1).max(100).default(50),
     offset: z.coerce.number().int().min(0).default(0),
   })
   .strict();
 export type AdminProjectsQuery = z.infer<typeof listProjectsQuerySchema>;
+
+/**
+ * [Plan #60 QĐ-3, H8] Trạng thái job "có vấn đề" — ba tab của trang Job lỗi, và thứ panel project hiện ở mục "Job lỗi
+ * gần nhất". Một nơi khai để danh sách project và trang Job lỗi không lệch nhau.
+ */
+export const PROBLEM_JOB_STATES = [
+  "COMPENSATION_FAILED",
+  "FAILED",
+  "CANCEL_REQUESTED",
+] as const;
 
 export const listJobsQuerySchema = z
   .object({

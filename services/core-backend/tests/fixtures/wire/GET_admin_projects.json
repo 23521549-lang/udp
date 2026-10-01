@@ -4,16 +4,17 @@
   "body": {
     "projects": [
       {
-        "id": "7c282847-da4d-4274-a1e3-538425032590",
-        "name": "p-d794130f",
+        "id": "e0bc4fa0-64ca-4faf-bfe5-60087ace3344",
+        "name": "p-c17986f5",
         "status": "DRAFT",
         "owner": {
-          "id": "70a4f768-f250-4201-bbaf-3694978c0f48",
-          "email": "admin-plain-c5beea52-f1bf-4ad8-9a07-4e79e78cded4@udp.local"
+          "id": "5a2af2eb-0c92-4b6c-ba1d-289be4d62452",
+          "email": "admin-plain-31406ef9-2343-4538-99ce-41a55e8d10d5@udp.local"
         },
         "memberCount": 1,
         "cloudProvider": null,
-        "createdAt": "2026-09-29T17:45:02.558Z"
+        "createdAt": "2026-10-01T04:34:50.824Z",
+        "latestProblemJob": null
       },
       {
         "id": "3b883359-3712-4906-a7cb-52693e3cd80f",
@@ -25,7 +26,8 @@
         },
         "memberCount": 0,
         "cloudProvider": null,
-        "createdAt": "2026-09-28T15:08:43.444Z"
+        "createdAt": "2026-09-28T15:08:43.444Z",
+        "latestProblemJob": null
       },
       {
         "id": "023ee7de-3372-42a3-8efc-89cda1a5b6d2",
@@ -37,7 +39,8 @@
         },
         "memberCount": 0,
         "cloudProvider": null,
-        "createdAt": "2026-09-28T15:08:10.581Z"
+        "createdAt": "2026-09-28T15:08:10.581Z",
+        "latestProblemJob": null
       },
       {
         "id": "106c28c3-cf89-4c3c-93ba-a80a1930900f",
@@ -49,7 +52,8 @@
         },
         "memberCount": 2,
         "cloudProvider": null,
-        "createdAt": "2026-09-26T14:04:01.681Z"
+        "createdAt": "2026-09-26T14:04:01.681Z",
+        "latestProblemJob": null
       },
       {
         "id": "468d52bf-be14-4e53-a337-dbc8f7e3e174",
@@ -61,7 +65,8 @@
         },
         "memberCount": 1,
         "cloudProvider": null,
-        "createdAt": "2026-09-26T13:49:59.830Z"
+        "createdAt": "2026-09-26T13:49:59.830Z",
+        "latestProblemJob": null
       },
       {
         "id": "62c5c773-43c8-4ed7-929d-c852bea3be73",
@@ -73,7 +78,8 @@
         },
         "memberCount": 4,
         "cloudProvider": null,
-        "createdAt": "2026-09-26T13:49:59.169Z"
+        "createdAt": "2026-09-26T13:49:59.169Z",
+        "latestProblemJob": null
       },
       {
         "id": "bb771985-5caa-4771-b59b-341edc278e44",
@@ -85,7 +91,8 @@
         },
         "memberCount": 1,
         "cloudProvider": null,
-        "createdAt": "2026-09-26T12:25:28.976Z"
+        "createdAt": "2026-09-26T12:25:28.976Z",
+        "latestProblemJob": null
       },
       {
         "id": "e76b10c8-745d-4b02-adba-357b8b94a779",
@@ -97,7 +104,8 @@
         },
         "memberCount": 4,
         "cloudProvider": null,
-        "createdAt": "2026-09-26T12:25:28.390Z"
+        "createdAt": "2026-09-26T12:25:28.390Z",
+        "latestProblemJob": null
       },
       {
         "id": "7c195105-3c60-46d4-a7bf-202b9ce39562",
@@ -109,7 +117,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:55:40.517Z"
+        "createdAt": "2026-09-25T22:55:40.517Z",
+        "latestProblemJob": null
       },
       {
         "id": "9f64f989-7995-4016-9a49-f7199c127a25",
@@ -121,7 +130,20 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:55:19.590Z"
+        "createdAt": "2026-09-25T22:55:19.590Z",
+        "latestProblemJob": {
+          "id": "52ea9adb-3377-4140-b453-2759861593a4",
+          "jobType": "PROVISION",
+          "state": "FAILED",
+          "lastError": {
+            "at": "2026-09-25T22:55:39.263Z",
+            "step": "COMPENSATION",
+            "message": "subnet-public-b: Error: Connection terminated unexpectedly",
+            "orphans": [],
+            "domainTeardownFailures": []
+          },
+          "updatedAt": "2026-09-25T22:55:39.335Z"
+        }
       },
       {
         "id": "0843cf80-4fce-4a36-beb6-e9cde963184e",
@@ -133,7 +155,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:54:59.073Z"
+        "createdAt": "2026-09-25T22:54:59.073Z",
+        "latestProblemJob": null
       },
       {
         "id": "1038f4d9-5eb8-4ec9-a950-d33406f2ed77",
@@ -145,7 +168,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:54:39.528Z"
+        "createdAt": "2026-09-25T22:54:39.528Z",
+        "latestProblemJob": null
       },
       {
         "id": "2541d89c-cb4c-4050-af15-fafacfdc01db",
@@ -157,7 +181,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:54:21.189Z"
+        "createdAt": "2026-09-25T22:54:21.189Z",
+        "latestProblemJob": null
       },
       {
         "id": "45235af8-5d3e-461f-8ca0-66951d69ea95",
@@ -169,7 +194,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:54:03.342Z"
+        "createdAt": "2026-09-25T22:54:03.342Z",
+        "latestProblemJob": null
       },
       {
         "id": "a7f2942e-2dac-4158-a024-8293050b9161",
@@ -181,7 +207,19 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:53:45.280Z"
+        "createdAt": "2026-09-25T22:53:45.280Z",
+        "latestProblemJob": {
+          "id": "5d4d2cd9-996d-4586-b9da-9791b105cf12",
+          "jobType": "DOMAIN_APPLY",
+          "state": "FAILED",
+          "lastError": {
+            "at": "2026-09-25T22:54:02.854Z",
+            "step": "DOMAIN_APPLY",
+            "message": "MONITORING: healthcheck trả healthy = false",
+            "orphans": []
+          },
+          "updatedAt": "2026-09-25T22:54:02.903Z"
+        }
       },
       {
         "id": "2fd81410-07bb-4462-a1ac-82faef3139ab",
@@ -193,7 +231,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:53:26.862Z"
+        "createdAt": "2026-09-25T22:53:26.862Z",
+        "latestProblemJob": null
       },
       {
         "id": "7bf1951b-2f6c-4723-8ba8-d05fbc4f3e1e",
@@ -205,7 +244,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:53:09.092Z"
+        "createdAt": "2026-09-25T22:53:09.092Z",
+        "latestProblemJob": null
       },
       {
         "id": "2aab347a-998e-4fbf-897f-567cb3cb58f7",
@@ -217,7 +257,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:52:52.996Z"
+        "createdAt": "2026-09-25T22:52:52.996Z",
+        "latestProblemJob": null
       },
       {
         "id": "5eccb41b-264a-4226-a98d-52e12c97bb75",
@@ -229,7 +270,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:52:32.909Z"
+        "createdAt": "2026-09-25T22:52:32.909Z",
+        "latestProblemJob": null
       },
       {
         "id": "6a0056b7-31fd-46b2-94a7-73393237f921",
@@ -241,7 +283,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:52:13.342Z"
+        "createdAt": "2026-09-25T22:52:13.342Z",
+        "latestProblemJob": null
       },
       {
         "id": "a6ef7d90-aebe-43a8-aed1-9a501edc289a",
@@ -253,7 +296,20 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:51:54.958Z"
+        "createdAt": "2026-09-25T22:51:54.958Z",
+        "latestProblemJob": {
+          "id": "3eb0cef8-5994-4cde-b2b1-df2b3b36c8b1",
+          "jobType": "PROVISION",
+          "state": "FAILED",
+          "lastError": {
+            "at": "2026-09-25T22:52:12.309Z",
+            "step": "COMPENSATION",
+            "message": "lượt cuối của worker đã dừng giữa chừng — đối soát bù trừ",
+            "orphans": [],
+            "domainTeardownFailures": []
+          },
+          "updatedAt": "2026-09-25T22:52:12.359Z"
+        }
       },
       {
         "id": "08028469-e231-4105-be49-fab27877e940",
@@ -265,7 +321,20 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:51:50.987Z"
+        "createdAt": "2026-09-25T22:51:50.987Z",
+        "latestProblemJob": {
+          "id": "206c4fd3-4fac-4d2e-8186-53107763c311",
+          "jobType": "PROVISION",
+          "state": "FAILED",
+          "lastError": {
+            "at": "2026-09-25T22:51:54.449Z",
+            "step": "COMPENSATION",
+            "message": "hủy theo yêu cầu",
+            "orphans": [],
+            "domainTeardownFailures": []
+          },
+          "updatedAt": "2026-09-25T22:51:54.498Z"
+        }
       },
       {
         "id": "3e2f91be-9134-4cd6-9cc5-5e0a124b3a66",
@@ -277,7 +346,20 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:51:33.589Z"
+        "createdAt": "2026-09-25T22:51:33.589Z",
+        "latestProblemJob": {
+          "id": "2b5e044a-d06b-48ad-a092-12ab8f052bc5",
+          "jobType": "PROVISION",
+          "state": "FAILED",
+          "lastError": {
+            "at": "2026-09-25T22:51:50.037Z",
+            "step": "COMPENSATION",
+            "message": "hủy theo yêu cầu",
+            "orphans": [],
+            "domainTeardownFailures": []
+          },
+          "updatedAt": "2026-09-25T22:51:50.090Z"
+        }
       },
       {
         "id": "e5a46672-f2cd-4fd1-8178-0132426c83ee",
@@ -289,7 +371,20 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:51:17.578Z"
+        "createdAt": "2026-09-25T22:51:17.578Z",
+        "latestProblemJob": {
+          "id": "8a0c23b1-9279-45b6-aaf8-53a763c24d76",
+          "jobType": "PROVISION",
+          "state": "FAILED",
+          "lastError": {
+            "at": "2026-09-25T22:51:32.649Z",
+            "step": "COMPENSATION",
+            "message": "hủy theo yêu cầu",
+            "orphans": [],
+            "domainTeardownFailures": []
+          },
+          "updatedAt": "2026-09-25T22:51:32.709Z"
+        }
       },
       {
         "id": "d88462f3-92e9-402f-8d72-368b6ace6db5",
@@ -301,7 +396,20 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:50:58.382Z"
+        "createdAt": "2026-09-25T22:50:58.382Z",
+        "latestProblemJob": {
+          "id": "959bc14b-341d-4302-9a36-b6fe8bd8c20c",
+          "jobType": "PROVISION",
+          "state": "FAILED",
+          "lastError": {
+            "at": "2026-09-25T22:51:16.658Z",
+            "step": "COMPENSATION",
+            "message": "domain PROGRESSIVE_DELIVERY: chart không cài được",
+            "orphans": [],
+            "domainTeardownFailures": []
+          },
+          "updatedAt": "2026-09-25T22:51:16.711Z"
+        }
       },
       {
         "id": "3c2b400d-cfa1-4776-8cc5-451ef7eb6932",
@@ -313,7 +421,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:50:38.834Z"
+        "createdAt": "2026-09-25T22:50:38.834Z",
+        "latestProblemJob": null
       },
       {
         "id": "2f1ef685-98f9-490a-9dfb-c4d9534280af",
@@ -325,7 +434,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:50:22.729Z"
+        "createdAt": "2026-09-25T22:50:22.729Z",
+        "latestProblemJob": null
       },
       {
         "id": "0e6baff8-0cda-4f19-8b42-67a43164285e",
@@ -337,7 +447,20 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:49:51.885Z"
+        "createdAt": "2026-09-25T22:49:51.885Z",
+        "latestProblemJob": {
+          "id": "618385e0-be43-49a4-b576-9e1583c7db39",
+          "jobType": "PROVISION",
+          "state": "FAILED",
+          "lastError": {
+            "at": "2026-09-25T22:50:07.292Z",
+            "step": "COMPENSATION",
+            "message": "cluster: Error: InsufficientCapacity",
+            "orphans": [],
+            "domainTeardownFailures": []
+          },
+          "updatedAt": "2026-09-25T22:50:07.343Z"
+        }
       },
       {
         "id": "4f4bfae9-1714-4187-a1eb-ef3c1201247d",
@@ -349,7 +472,20 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:49:34.769Z"
+        "createdAt": "2026-09-25T22:49:34.769Z",
+        "latestProblemJob": {
+          "id": "b63b758f-a28a-45fd-96e4-42b73502fc32",
+          "jobType": "PROVISION",
+          "state": "FAILED",
+          "lastError": {
+            "at": "2026-09-25T22:49:50.786Z",
+            "step": "COMPENSATION",
+            "message": "cluster: Error: InsufficientCapacity",
+            "orphans": [],
+            "domainTeardownFailures": []
+          },
+          "updatedAt": "2026-09-25T22:49:50.839Z"
+        }
       },
       {
         "id": "1c54cd42-b83b-4afc-8b56-33dbc10758c9",
@@ -361,7 +497,8 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T22:49:18.702Z"
+        "createdAt": "2026-09-25T22:49:18.702Z",
+        "latestProblemJob": null
       },
       {
         "id": "be70053a-2a26-4f9b-9782-e3911e1d8f4c",
@@ -373,7 +510,8 @@
         },
         "memberCount": 1,
         "cloudProvider": null,
-        "createdAt": "2026-09-25T09:03:19.491Z"
+        "createdAt": "2026-09-25T09:03:19.491Z",
+        "latestProblemJob": null
       },
       {
         "id": "7eb537c8-1cd7-4638-88d6-b296da29a41d",
@@ -385,7 +523,14 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T09:03:13.534Z"
+        "createdAt": "2026-09-25T09:03:13.534Z",
+        "latestProblemJob": {
+          "id": "5b535ae4-3812-4cc0-be25-4d1a23310e96",
+          "jobType": "PROVISION",
+          "state": "COMPENSATION_FAILED",
+          "lastError": null,
+          "updatedAt": "2026-09-25T09:03:14.663Z"
+        }
       },
       {
         "id": "51bb2d6a-d1c8-459d-837e-33c49460b7f7",
@@ -397,7 +542,14 @@
         },
         "memberCount": 3,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T09:03:09.892Z"
+        "createdAt": "2026-09-25T09:03:09.892Z",
+        "latestProblemJob": {
+          "id": "d93abb22-97c9-47be-8bdd-4c99624706a5",
+          "jobType": "PROVISION",
+          "state": "FAILED",
+          "lastError": null,
+          "updatedAt": "2026-09-25T09:03:21.807Z"
+        }
       },
       {
         "id": "2d9da20e-a9ca-4222-9fcd-0d49eab42603",
@@ -409,7 +561,22 @@
         },
         "memberCount": 1,
         "cloudProvider": "AWS",
-        "createdAt": "2026-09-25T08:56:28.960Z"
+        "createdAt": "2026-09-25T08:56:28.960Z",
+        "latestProblemJob": {
+          "id": "0784ee03-b14e-4c0f-bba7-fb849208677d",
+          "jobType": "PROVISION",
+          "state": "COMPENSATION_FAILED",
+          "lastError": {
+            "at": "2026-09-25T19:25:23.752Z",
+            "step": "COMPENSATION",
+            "message": "lượt cuối của worker đã dừng giữa chừng — đối soát bù trừ",
+            "orphans": [
+              "2d9da20e-a9ca-4222-9fcd-0d49eab42603:NETWORK:route-table:rtb-private"
+            ],
+            "domainTeardownFailures": []
+          },
+          "updatedAt": "2026-09-25T19:25:23.809Z"
+        }
       },
       {
         "id": "073e95c5-86fb-447b-9539-b2f907e03e1b",
@@ -421,7 +588,8 @@
         },
         "memberCount": 0,
         "cloudProvider": null,
-        "createdAt": "2026-09-22T23:10:55.687Z"
+        "createdAt": "2026-09-22T23:10:55.687Z",
+        "latestProblemJob": null
       },
       {
         "id": "477d3a98-1631-4aa1-8619-6db1c851bfea",
@@ -433,7 +601,8 @@
         },
         "memberCount": 0,
         "cloudProvider": null,
-        "createdAt": "2026-09-22T23:10:55.334Z"
+        "createdAt": "2026-09-22T23:10:55.334Z",
+        "latestProblemJob": null
       },
       {
         "id": "8c18fa34-1e84-4ea1-ae3a-46d522c70ee0",
@@ -445,7 +614,8 @@
         },
         "memberCount": 0,
         "cloudProvider": null,
-        "createdAt": "2026-09-22T23:09:02.620Z"
+        "createdAt": "2026-09-22T23:09:02.620Z",
+        "latestProblemJob": null
       },
       {
         "id": "8c7ed379-3628-4ace-9680-726f5cbd5fcb",
@@ -457,7 +627,8 @@
         },
         "memberCount": 0,
         "cloudProvider": null,
-        "createdAt": "2026-09-22T23:09:02.302Z"
+        "createdAt": "2026-09-22T23:09:02.302Z",
+        "latestProblemJob": null
       },
       {
         "id": "f0b621b9-6474-4f76-a9d1-73fe60179899",
@@ -469,7 +640,8 @@
         },
         "memberCount": 0,
         "cloudProvider": null,
-        "createdAt": "2026-09-22T23:09:01.937Z"
+        "createdAt": "2026-09-22T23:09:01.937Z",
+        "latestProblemJob": null
       },
       {
         "id": "723727e9-0c2f-4fca-aae4-5aa461c409b3",
@@ -481,7 +653,8 @@
         },
         "memberCount": 0,
         "cloudProvider": null,
-        "createdAt": "2026-09-21T20:39:38.190Z"
+        "createdAt": "2026-09-21T20:39:38.190Z",
+        "latestProblemJob": null
       },
       {
         "id": "1da31038-b255-4601-b8af-059276e4d1fc",
@@ -493,7 +666,8 @@
         },
         "memberCount": 1,
         "cloudProvider": null,
-        "createdAt": "2026-09-09T10:21:09.903Z"
+        "createdAt": "2026-09-09T10:21:09.903Z",
+        "latestProblemJob": null
       },
       {
         "id": "00000000-0000-4000-8000-000000000010",
@@ -505,7 +679,8 @@
         },
         "memberCount": 1,
         "cloudProvider": null,
-        "createdAt": "2026-09-08T04:27:30.686Z"
+        "createdAt": "2026-09-08T04:27:30.686Z",
+        "latestProblemJob": null
       }
     ],
     "total": 42

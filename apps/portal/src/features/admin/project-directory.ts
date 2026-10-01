@@ -6,7 +6,7 @@ import { ADMIN_PAGE_SIZE, adminApi, type AdminProjectRow } from "./admin-api";
 const DIRECTORY_STALE_MS = 60_000;
 
 const page = (offset: number) => ({
-  queryKey: qk.adminProjects("", offset),
+  queryKey: qk.adminProjects({}, offset),
   queryFn: () => adminApi.projects({}, offset),
   staleTime: DIRECTORY_STALE_MS,
 });

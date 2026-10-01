@@ -13,6 +13,22 @@
  * Miễn trừ phải KHAI, không phải bỏ sót: `flagEnvs` (ma trận hiện MỌI env cùng lúc),
  * `segments`/`segment` (segment thuộc PROJECT, một bản cho mọi env — §2.2).
  */
+/**
+ * [Plan #60 H6] Bộ lọc của hai danh sách quản trị nằm NGUYÊN trong key, có kiểu: TanStack băm object theo khoá đã sắp
+ * và bỏ khoá `undefined`, nên `{}` và `{ search: undefined }` là cùng một mục cache (danh bạ project dùng chung trang
+ * Project không lọc).
+ */
+interface AdminUsersKeyFilter {
+  search?: string | undefined;
+  platformRole?: string | undefined;
+  order?: "asc" | undefined;
+}
+interface AdminProjectsKeyFilter {
+  search?: string | undefined;
+  status?: string | undefined;
+  order?: "asc" | undefined;
+}
+
 export const qk = {
   me: () => ["me"] as const,
   /** [Plan #53] Trang chủ của người đang đăng nhập — mọi project của họ trong một lời gọi */
@@ -119,10 +135,10 @@ export const qk = {
   job: (projectId: string, jobId: string) => ["job", projectId, jobId] as const,
 
   /** [Plan #53] Theo trang: `offset` trong key — mỗi trang một mục cache */
-  adminUsers: (search: string, offset: number) =>
-    ["admin", "users", search, offset] as const,
-  adminProjects: (status: string, offset: number) =>
-    ["admin", "projects", status, offset] as const,
+  adminUsers: (filter: AdminUsersKeyFilter, offset: number) =>
+    ["admin", "users", filter, offset] as const,
+  adminProjects: (filter: AdminProjectsKeyFilter, offset: number) =>
+    ["admin", "projects", filter, offset] as const,
   adminCredentials: () => ["admin", "credentials"] as const,
   adminJobs: (state: string, offset: number) =>
     ["admin", "jobs", state, offset] as const,

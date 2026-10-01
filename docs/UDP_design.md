@@ -5908,9 +5908,9 @@ GET    /api/v1/admin/platform                 [v4.11, Plan #53, D-P42] cụm ch�
                                               Certificate, UDP_RELEASE; mỗi tín hiệu độc lập, đọc
                                               không được ⇒ unavailable kèm lý do (NOT_IN_CLUSTER,
                                               NOT_CONFIGURED, FORBIDDEN, UNAVAILABLE)
-GET    /api/v1/admin/users?search=&limit=&offset=   [Plan #53] kèm total
+GET    /api/v1/admin/users?search=&platformRole=&order=&limit=&offset=   [Plan #53] kèm total; [Plan #60] lọc vai, order=asc|desc
 PATCH  /api/v1/admin/users/:id/platform-role
-GET    /api/v1/admin/projects?status=&limit=&offset= [Plan #53] kèm total
+GET    /api/v1/admin/projects?status=&search=&order=&limit=&offset= [Plan #53] kèm total; [Plan #60] search = tên hoặc email chủ; mỗi dòng kèm latestProblemJob
 GET    /api/v1/admin/credentials              chỉ metadata + fingerprint, không giải mã
 GET    /api/v1/admin/jobs?state=&limit=&offset=      [NEW] job hỏng toàn hệ thống; [Plan #53] total
 GET    /api/v1/admin/orphan-resources         [NEW] quét theo tag udp.project

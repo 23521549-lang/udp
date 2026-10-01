@@ -146,7 +146,7 @@ function PeekBody({ project: p }: { project: AdminProjectRow }) {
         <dt>{t.created}</dt>
         <dd>{formatDateTime(p.createdAt)}</dd>
       </dl>
-      <LastJob projectId={p.id} />
+      <LastJob project={p} />
       <Credentials projectId={p.id} />
       <PeekSection
         title={m.orphans}
@@ -162,33 +162,26 @@ function PeekBody({ project: p }: { project: AdminProjectRow }) {
   );
 }
 
-/** Job lỗi mới nhất của project trong trang đầu của ba tab Job lỗi — cùng cache với trang đó */
-function LastJob({ projectId }: { projectId: string }) {
+/**
+ * Job "có vấn đề" mới nhất của project — [Plan #60 H8] Service 1 trả sẵn trong dòng của danh sách project (một truy
+ * vấn `DISTINCT ON`), không còn tìm trong trang đầu của ba tab Job lỗi (sót job cũ hơn 50 job khác).
+ */
+function LastJob({ project }: { project: AdminProjectRow }) {
   const m = useMessages(adminMessages).peek;
-  const lists = useQueries({
-    queries: ADMIN_JOB_STATES.map((state) => ({
-      queryKey: qk.adminJobs(state, 0),
-      queryFn: () => adminApi.jobs(state, 0),
-    })),
-  });
-  const failed = lists.find((q) => q.isError);
-  const job = lists
-    .flatMap((q) => q.data?.jobs ?? [])
-    .filter((j) => j.project.id === projectId)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const job = project.latestProblemJob;
   const state = ADMIN_JOB_STATES.find((s) => s === job?.state);
   return (
     <PeekSection
       title={m.lastJob}
       action={
         state !== undefined && (
-          <Link to="/admin/jobs" search={{ state, project: projectId }}>
+          <Link to="/admin/jobs" search={{ state, project: project.id }}>
             {m.openJobs}
           </Link>
         )
       }
     >
-      {job !== undefined ? (
+      {job !== null ? (
         <div className="peek-job">
           <p className="job-h">
             <span>{jobTypeLabel(job.jobType)}</span>
@@ -201,13 +194,6 @@ function LastJob({ projectId }: { projectId: string }) {
           </p>
           <JobErrorText lastError={job.lastError} />
         </div>
-      ) : lists.some((q) => q.isPending) ? (
-        <Loading />
-      ) : failed !== undefined ? (
-        <ErrorState
-          error={failed.error}
-          onRetry={() => void failed.refetch()}
-        />
       ) : (
         <p className="c3">{m.noJob}</p>
       )}

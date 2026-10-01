@@ -1099,6 +1099,20 @@ export const adminProjectsResponseWire = z
           memberCount: z.number().int().nonnegative(),
           cloudProvider: cloudProviderWire.nullable(),
           createdAt: isoDateTime,
+          /**
+           * [Plan #60 QĐ-3, H8] Job "có vấn đề" mới nhất (dọn chưa hết, thất bại, đang huỷ) — panel project của Bảng
+           * điều khiển đọc từ đây; `null` là không có
+           */
+          latestProblemJob: z
+            .object({
+              id: uuid,
+              jobType: z.string(),
+              state: z.string(),
+              lastError: z.unknown(),
+              updatedAt: isoDateTime,
+            })
+            .strict()
+            .nullable(),
         })
         .strict(),
     ),

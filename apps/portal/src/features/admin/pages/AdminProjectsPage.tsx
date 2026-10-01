@@ -12,7 +12,7 @@ import { useSearchInput } from "../../../lib/use-search-input";
 import { PROVIDER_LABEL } from "../../project/cloud/cloud-labels";
 import { projectStatusMessages } from "../../project/project-status.messages";
 import { ProjectStatus } from "../../project/ProjectStatus";
-import { ADMIN_PAGE_SIZE, adminApi, filterKey } from "../admin-api";
+import { ADMIN_PAGE_SIZE, adminApi } from "../admin-api";
 import {
   ADMIN_PROJECT_STATUSES,
   CREATED_DEFAULT,
@@ -47,7 +47,7 @@ export function AdminProjectsPage() {
   };
   const filtered = filter.status !== undefined || filter.search !== undefined;
   const projects = useQuery({
-    queryKey: qk.adminProjects(filterKey(filter), offset),
+    queryKey: qk.adminProjects(filter, offset),
     queryFn: () => adminApi.projects(filter, offset),
     placeholderData: keepPreviousData,
   });

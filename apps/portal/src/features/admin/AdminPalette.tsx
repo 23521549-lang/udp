@@ -28,7 +28,7 @@ import {
   usePaletteStore,
   type PaletteItem,
 } from "../project/CommandPalette";
-import { adminApi, filterKey } from "./admin-api";
+import { adminApi } from "./admin-api";
 import { adminMessages } from "./admin.messages";
 import { useProjectDirectory } from "./project-directory";
 
@@ -74,7 +74,7 @@ function AdminPalette({ onClose }: { onClose: () => void }) {
   }, [query]);
   const searching = term.length >= USER_SEARCH_MIN;
   const users = useQuery({
-    queryKey: qk.adminUsers(filterKey({ search: term }), 0),
+    queryKey: qk.adminUsers({ search: term === "" ? undefined : term }, 0),
     queryFn: () => adminApi.users({ search: term }, 0),
     enabled: searching,
     staleTime: 10_000,

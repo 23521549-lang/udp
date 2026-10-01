@@ -39,6 +39,19 @@ const SHOP = "11111111-1111-4111-8111-111111111111";
 const BILLING = "22222222-2222-4222-8222-222222222222";
 const OLD = "33333333-3333-4333-8333-333333333333";
 
+/** [Plan #60 H8] Job "có vấn đề" mới nhất mà Service 1 trả kèm dòng project — cùng job với danh sách Job lỗi dưới */
+const problem = (id: string, state: string, name: string) => ({
+  id,
+  jobType: "PROVISION",
+  state,
+  lastError: {
+    step: "NETWORK",
+    message: `Không xoá được NAT của ${name}`,
+    orphans: ["nat"],
+  },
+  updatedAt: ago(1),
+});
+
 const PROJECTS = [
   {
     id: SHOP,
@@ -48,6 +61,11 @@ const PROJECTS = [
     memberCount: 3,
     cloudProvider: "AWS",
     createdAt: ago(40),
+    latestProblemJob: problem(
+      "f0000001-0000-4000-8000-000000000001",
+      "COMPENSATION_FAILED",
+      "shop",
+    ),
   },
   {
     id: BILLING,
@@ -60,6 +78,11 @@ const PROJECTS = [
     memberCount: 1,
     cloudProvider: "AZURE",
     createdAt: ago(20),
+    latestProblemJob: problem(
+      "f0000002-0000-4000-8000-000000000002",
+      "FAILED",
+      "billing",
+    ),
   },
   {
     id: OLD,
@@ -69,6 +92,7 @@ const PROJECTS = [
     memberCount: 1,
     cloudProvider: null,
     createdAt: ago(90),
+    latestProblemJob: null,
   },
 ];
 

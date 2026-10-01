@@ -67,6 +67,29 @@ const ORPHAN_USD_PER_HOUR: Record<string, number> = {
   ManagedCluster: 0.1,
 };
 
+/** [Plan #60 H8] Ba trạng thái "có vấn đề" — như `PROBLEM_JOB_STATES` của Service 1 */
+const PROBLEM_STATES = new Set([
+  "COMPENSATION_FAILED",
+  "FAILED",
+  "CANCEL_REQUESTED",
+]);
+
+function latestProblemJobOf(p: Db["projects"][number]) {
+  const job = p.jobs
+    .map(({ detail }) => detail.job)
+    .filter((j) => PROBLEM_STATES.has(j.state))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  return job === undefined
+    ? null
+    : {
+        id: job.id,
+        jobType: job.jobType,
+        state: job.state,
+        lastError: job.lastError,
+        updatedAt: job.updatedAt,
+      };
+}
+
 /** Tài nguyên mồ côi toàn hệ thống — trang Tài nguyên mồ côi và thẻ ở Tổng quan dùng chung */
 export function orphansOf(db: Db) {
   const resources = db.projects.flatMap((p) =>
@@ -180,8 +203,8 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
           .filter(
             (p) =>
               search === "" ||
-              p.project.name.includes(search) ||
-              ownerEmail(p).includes(search),
+              p.project.name.toLowerCase().includes(search) ||
+              ownerEmail(p).toLowerCase().includes(search),
           )
           .sort(byCreated(req, (p) => p.project.createdAt)),
       );
@@ -197,6 +220,8 @@ export function registerAuthAdminRoutes(router: Router, db: Db): void {
             memberCount: p.members.length,
             cloudProvider: p.cloud?.provider ?? null,
             createdAt: p.project.createdAt,
+            // [Plan #60 H8] Như Service 1: job "có vấn đề" mới nhất của project
+            latestProblemJob: latestProblemJobOf(p),
           };
         }),
       });

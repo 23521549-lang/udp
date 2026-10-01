@@ -9,20 +9,22 @@ import { ConflictError, NotFoundError } from "@udp/http";
 import { auditEntry } from "../audit/audit.service.js";
 import { providerFromDb } from "../provisioning/provider-codec.js";
 import * as repository from "./admin.repository.js";
-import type {
-  AdminJobsQuery,
-  AdminProjectsQuery,
-  ListUsersQuery,
-  UpdatePlatformRoleInput,
+import {
+  PROBLEM_JOB_STATES,
+  type AdminJobsQuery,
+  type AdminProjectsQuery,
+  type ListUsersQuery,
+  type UpdatePlatformRoleInput,
 } from "./admin.types.js";
 
 const iso = (d: Date | null): string | null =>
   d === null ? null : d.toISOString();
 
 export async function users(query: ListUsersQuery) {
+  const filter = { search: query.search, platformRole: query.platformRole };
   const [rows, total] = await Promise.all([
-    repository.listUsers(query.search, query.limit, query.offset),
-    repository.countUsers(query.search),
+    repository.listUsers(filter, query.order, query.limit, query.offset),
+    repository.countUsers(filter),
   ]);
   return {
     users: rows.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() })),
@@ -62,19 +64,41 @@ export async function setPlatformRole(
 }
 
 export async function projects(query: AdminProjectsQuery) {
+  const filter = { status: query.status, search: query.search };
   const [rows, total] = await Promise.all([
-    repository.listProjects(query.status, query.limit, query.offset),
-    repository.countProjects(query.status),
+    repository.listProjects(filter, query.order, query.limit, query.offset),
+    repository.countProjects(filter),
   ]);
-  const projects = rows.map((p) => ({
-    id: p.id,
-    name: p.name,
-    status: p.status,
-    owner: p.owner,
-    memberCount: p._count.members,
-    cloudProvider: p.credentials[0]?.provider ?? null,
-    createdAt: p.createdAt.toISOString(),
-  }));
+  const jobs = new Map(
+    (
+      await repository.latestProblemJobs(
+        rows.map((p) => p.id),
+        PROBLEM_JOB_STATES,
+      )
+    ).map((j) => [j.projectId, j]),
+  );
+  const projects = rows.map((p) => {
+    const job = jobs.get(p.id);
+    return {
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      owner: p.owner,
+      memberCount: p._count.members,
+      cloudProvider: p.credentials[0]?.provider ?? null,
+      createdAt: p.createdAt.toISOString(),
+      latestProblemJob:
+        job === undefined
+          ? null
+          : {
+              id: job.id,
+              jobType: job.jobType,
+              state: job.state,
+              lastError: job.lastError ?? null,
+              updatedAt: job.updatedAt.toISOString(),
+            },
+    };
+  });
   return { projects, total };
 }
 

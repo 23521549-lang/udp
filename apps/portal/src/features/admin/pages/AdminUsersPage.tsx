@@ -19,7 +19,7 @@ import { formatDateTime } from "../../../lib/format";
 import { qk, qkPrefix } from "../../../lib/query-keys";
 import { useSearchInput } from "../../../lib/use-search-input";
 import { useAuthStore } from "../../auth/auth-store";
-import { ADMIN_PAGE_SIZE, adminApi, filterKey } from "../admin-api";
+import { ADMIN_PAGE_SIZE, adminApi } from "../admin-api";
 import {
   ADMIN_ROLES,
   CREATED_DEFAULT,
@@ -97,7 +97,7 @@ export function AdminUsersPage() {
 
   const [pending, setPending] = useState<AdminUserWire | null>(null);
   const users = useQuery({
-    queryKey: qk.adminUsers(filterKey(filter), offset),
+    queryKey: qk.adminUsers(filter, offset),
     queryFn: () => adminApi.users(filter, offset),
     placeholderData: keepPreviousData,
   });

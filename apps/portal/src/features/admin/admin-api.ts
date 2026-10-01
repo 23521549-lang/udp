@@ -28,17 +28,6 @@ export interface AdminListFilter {
   order?: "asc" | undefined;
 }
 
-/**
- * Bộ lọc thành MỘT chuỗi ổn định cho tham số chuỗi của `qk.adminUsers`/`qk.adminProjects` (dạng query string, khoá
- * xếp theo tên): hai bộ lọc khác nhau là hai mục cache khác nhau; không lọc gì là "" — cùng mục với danh bạ project.
- */
-export const filterKey = (f: AdminListFilter): string =>
-  Object.entries(f)
-    .filter(([, v]) => v !== undefined && v !== "")
-    .map(([k, v]) => `${k}=${String(v)}`)
-    .sort()
-    .join("&");
-
 export const adminApi = {
   overview: () => api(adminOverviewResponseWire, "/admin/overview"),
   platform: () => api(adminPlatformResponseWire, "/admin/platform"),

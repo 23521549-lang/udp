@@ -130,6 +130,89 @@ describe("dữ liệu /admin", () => {
     expect(mine?.memberCount).toBe(1);
   });
 
+  it("[Plan #60 H1] người dùng lọc theo vai; thứ tự cũ nhất trước theo `order=asc`; vai lạ ⇒ 400", async () => {
+    const tail = plain.email.slice("admin-plain-".length);
+    const ids = async (query: string) =>
+      (
+        (await call(root, "get", `/admin/users?${query}`).expect(200)).body
+          .users as { id: string }[]
+      ).map((u) => u.id);
+    expect(await ids(`search=${tail}&platformRole=USER`)).toEqual([
+      plain.userId,
+    ]);
+    expect(await ids(`search=${tail}&platformRole=PLATFORM_ADMIN`)).toEqual([]);
+    const rootTail = root.email.slice("admin-root-".length);
+    expect(await ids(`search=${rootTail}&platformRole=PLATFORM_ADMIN`)).toEqual(
+      [root.userId],
+    );
+    await call(root, "get", "/admin/users?platformRole=OWNER").expect(400);
+
+    const created = async (order: string) =>
+      (
+        (
+          await call(
+            root,
+            "get",
+            `/admin/users?search=udp.local&order=${order}&limit=100`,
+          ).expect(200)
+        ).body.users as { createdAt: string }[]
+      ).map((u) => u.createdAt);
+    const asc = await created("asc");
+    expect(asc).toEqual([...asc].sort());
+    const desc = await created("desc");
+    expect(desc).toEqual([...desc].sort().reverse());
+  });
+
+  it("[Plan #60 H1, H8] project tìm theo tên hay email chủ; job có vấn đề mới nhất đi kèm từng dòng", async () => {
+    const rowOf = async () => {
+      const res = await call(
+        root,
+        "get",
+        `/admin/projects?search=${encodeURIComponent(plain.email.toUpperCase())}`,
+      ).expect(200);
+      expect(res.body.total).toBe(1);
+      return res.body.projects[0] as {
+        id: string;
+        latestProblemJob: { id: string; state: string } | null;
+      };
+    };
+    expect(await rowOf()).toMatchObject({
+      id: plainProject.projectId,
+      latestProblemJob: null,
+    });
+
+    const job = (state: "FAILED" | "COMPENSATION_FAILED" | "DONE", at: Date) =>
+      admin.provisioningJob.create({
+        data: {
+          projectId: plainProject.projectId,
+          jobType: "PROVISION",
+          state,
+          payload: {},
+          ...(state === "DONE"
+            ? {}
+            : { lastError: { code: "TEST", message: "x" } }),
+          updatedAt: at,
+        },
+        select: { id: true },
+      });
+    const now = Date.now();
+    const failed = await job("FAILED", new Date(now - 60_000));
+    // Job xong gần hơn KHÔNG phải job có vấn đề: dòng vẫn chỉ job thất bại
+    await job("DONE", new Date(now - 30_000));
+    expect((await rowOf()).latestProblemJob).toMatchObject({
+      id: failed.id,
+      state: "FAILED",
+    });
+    const stuck = await job("COMPENSATION_FAILED", new Date(now - 10_000));
+    expect((await rowOf()).latestProblemJob).toMatchObject({
+      id: stuck.id,
+      state: "COMPENSATION_FAILED",
+    });
+    await admin.provisioningJob.deleteMany({
+      where: { projectId: plainProject.projectId },
+    });
+  });
+
   it("orphan: nói rõ chưa quét cloud (cloudScanned = false)", async () => {
     const res = await call(root, "get", "/admin/orphan-resources").expect(200);
     expect(res.body.cloudScanned).toBe(false);
