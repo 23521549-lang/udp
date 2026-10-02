@@ -7,6 +7,8 @@ import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { resetTrustedDeployKeyCache } from "../src/modules/cicd/trusted-deploy.js";
+import type { ClusterIssuerKeys } from "../src/core/app-deps.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { createRegistry } from "../src/modules/domain/domain-adapter.registry.js";
 import { keyIdOf } from "../src/modules/packaging/signing-keys.js";
@@ -50,7 +52,11 @@ const enqueued: string[] = [];
  * ngoài ý muốn thì đỏ ngay thay vì lặng lẽ ra Internet trong CI. Riêng họ test Trusted Deploy tiêm một
  * `fetch` phục vụ JWKS của khoá sinh trong tiến trình.
  */
-const appWith = (egressFetch: typeof fetch) =>
+const appWith = (
+  egressFetch: typeof fetch,
+  /** [Plan #61 61d-2b-1] `null` = tiến trình không có đường ra cụm (mặc định, như phần lớn bộ test) */
+  clusterIssuerKeys: ClusterIssuerKeys | null = null,
+) =>
   createApp({
     metricsFor: () => new FakeMetricsProvider(),
     flagService: createFlagServiceClient({
@@ -78,6 +84,7 @@ const appWith = (egressFetch: typeof fetch) =>
       withCluster: null,
       scanDrift: null,
       clusterToken: null,
+      clusterIssuerKeys,
       flaggerGateBaseUrl: null,
     },
     egressFetch,
@@ -1188,7 +1195,9 @@ describe("bật/tắt Trusted Deploy bằng tay (Plan #61 QĐ-17)", () => {
     ).toMatchObject({ before: { required: true }, after: { required: false } });
   });
 
-  it("CI mà UDP chưa kiểm được token ⇒ không BẬT được (409), nhưng vẫn TẮT được", async () => {
+  it("CI trong cụm mà project CHƯA có cụm ⇒ không BẬT được (409), nhưng vẫn TẮT được", async () => {
+    // [Plan #61 61d-2b-1] Jenkins giờ kiểm được — nhưng khoá kiểm nằm ở cụm của project, mà project trong
+    // bộ test này chưa provision cụm nào, nên lý do đúng là `CLUSTER_NOT_READY`
     await admin.domainConfig.updateMany({
       where: { projectId, domainType: "CICD" },
       data: { selectedTool: "jenkins" },
@@ -1199,7 +1208,7 @@ describe("bật/tắt Trusted Deploy bằng tay (Plan #61 QĐ-17)", () => {
     expect(seen.body.cicd.trustedDeploy).toEqual({
       required: false,
       available: false,
-      unavailableReason: "IN_CLUSTER_CI",
+      unavailableReason: "CLUSTER_NOT_READY",
     });
 
     await put(maintainer, true).expect(409);
@@ -1240,5 +1249,187 @@ describe("bật/tắt Trusted Deploy bằng tay (Plan #61 QĐ-17)", () => {
     ).expect(400);
     await put(maintainer, "true").expect(400);
     expect(await requiredOf()).toBe(false);
+  });
+});
+
+/**
+ * [Plan #61 61d-2b-1] Trusted Deploy của ba CI chạy TRONG CỤM, qua HTTP thật và database thật (I42).
+ *
+ * `tests/trusted-deploy.test.ts` đã soi lõi xác minh bằng 12 ô tất định. Ở đây kiểm thứ chỉ thấy được khi
+ * có cả đường webhook, cả transaction và cả bảng: token của pod build đi hết đường và tiêu đúng một lần;
+ * một `sub` khác bị chặn VÀ hàng audit nói ra chủ thể nhận được; và một tiến trình không có đường ra cụm
+ * trả 503 chứ không lặng lẽ deploy.
+ */
+describe("Trusted Deploy của CI trong cụm qua HTTP thật (I42)", () => {
+  const CLUSTER_ISS = "https://oidc.eks.ap-southeast-1.amazonaws.com/id/UDP";
+  const SUBJECT = "system:serviceaccount:udp-build:udp-builder";
+
+  let saKey: CryptoKey;
+  let saJwk: Record<string, unknown>;
+  /** Số lượt UDP đọc khoá của cụm — oracle cho cache */
+  let reads: number;
+  let clusterApp: typeof app;
+  /** App có đúng cấu hình trên, nhưng KHÔNG có đường ra cụm */
+  let noClusterApp: typeof app;
+
+  const jenkinsUrl = () => hookUrl(projectId, "jenkins");
+
+  async function saToken(
+    over: { sub?: string; jti?: string; aud?: string } = {},
+  ): Promise<string> {
+    const now = Math.floor(Date.now() / 1000);
+    return await new SignJWT({
+      sub: over.sub ?? SUBJECT,
+      "kubernetes.io": { namespace: "udp-build" },
+      jti: over.jti ?? `jti-${randomUUID()}`,
+      iat: now,
+      exp: now + 600,
+    })
+      .setProtectedHeader({ alg: "RS256", kid: "k-cum" })
+      .setIssuer(CLUSTER_ISS)
+      .setAudience(over.aud ?? `${env.CORS_ORIGIN}${jenkinsUrl()}`)
+      .sign(saKey);
+  }
+
+  /** Gửi như bước báo của Jenkins: header chữ ký của nó là `X-UDP-Signature` */
+  function jenkinsHook(
+    payload: unknown,
+    opts: { bearer?: string; on?: typeof app } = {},
+  ) {
+    const raw = JSON.stringify(payload);
+    const sig = createHmac("sha256", secret).update(raw).digest("hex");
+    const req = request(opts.on ?? clusterApp)
+      .post(jenkinsUrl())
+      .set("content-type", "application/json")
+      .set("x-udp-signature", `sha256=${sig}`);
+    if (opts.bearer !== undefined) {
+      req.set("authorization", `Bearer ${opts.bearer}`);
+    }
+    return req.send(raw);
+  }
+
+  beforeAll(async () => {
+    const pair = await generateKeyPair("RS256", { extractable: true });
+    saKey = pair.privateKey;
+    saJwk = {
+      ...(await exportJWK(pair.publicKey)),
+      alg: "RS256",
+      kid: "k-cum",
+    };
+    clusterApp = appWith(noEgress, () => {
+      reads += 1;
+      return Promise.resolve({
+        issuer: CLUSTER_ISS,
+        algorithms: ["RS256"],
+        jwks: { keys: [saJwk] },
+      });
+    });
+    noClusterApp = appWith(noEgress, null);
+  });
+
+  beforeEach(async () => {
+    reads = 0;
+    resetTrustedDeployKeyCache();
+    await admin.webhookTokenUse.deleteMany({ where: { projectId } });
+    await admin.deploymentEvent.deleteMany({ where: { projectId } });
+    await admin.auditLog.deleteMany({
+      where: { projectId, action: "cicd.webhook.rejected" },
+    });
+    await admin.domainConfig.updateMany({
+      where: { projectId, domainType: "CICD" },
+      data: { selectedTool: "jenkins", oidcRequired: false },
+    });
+  });
+
+  afterAll(async () => {
+    await admin.domainConfig.updateMany({
+      where: { projectId, domainType: "CICD" },
+      data: {
+        selectedTool: "github-actions",
+        toolConfig: { repository: "acme/web" },
+        oidcRequired: false,
+      },
+    });
+  });
+
+  it("token của pod build ⇒ deploy, một hàng token, chế độ bắt buộc TỰ BẬT", async () => {
+    const payload = body();
+    const res = await jenkinsHook(payload, { bearer: await saToken() }).expect(
+      202,
+    );
+
+    expect(res.body.status).toBe("started");
+    expect(await admin.webhookTokenUse.count({ where: { projectId } })).toBe(1);
+    const row = await admin.domainConfig.findFirstOrThrow({
+      where: { projectId, domainType: "CICD" },
+      select: { oidcRequired: true },
+    });
+    expect(row.oidcRequired).toBe(true);
+    // Issuer lưu trong hàng token là chuỗi của CỤM, không một chuỗi ghim trong mã
+    const use = await admin.webhookTokenUse.findFirstOrThrow({
+      where: { projectId },
+      select: { issuer: true, tokenId: true },
+    });
+    expect(use.issuer).toBe(CLUSTER_ISS);
+    expect(use.tokenId).toMatch(/^jti-/);
+  });
+
+  it("gửi lại CÙNG token với thân y nguyên ⇒ 200 duplicate, vẫn một sự kiện và một hàng token", async () => {
+    const payload = body();
+    const token = await saToken();
+    const first = await jenkinsHook(payload, { bearer: token }).expect(202);
+    const again = await jenkinsHook(payload, { bearer: token }).expect(200);
+
+    expect(again.body).toEqual({
+      deploymentId: first.body.deploymentId,
+      status: "duplicate",
+    });
+    expect(await admin.webhookTokenUse.count({ where: { projectId } })).toBe(1);
+    // Khoá của cụm đọc đúng MỘT lần cho hai lời báo
+    expect(reads).toBe(1);
+  });
+
+  it("`sub` của một ServiceAccount KHÁC ⇒ 401, và audit nói ra chủ thể nhận được", async () => {
+    await jenkinsHook(body(), {
+      bearer: await saToken({ sub: "system:serviceaccount:default:app" }),
+    }).expect(401);
+
+    expect(await admin.deploymentEvent.count({ where: { projectId } })).toBe(0);
+    const audit = await admin.auditLog.findFirstOrThrow({
+      where: { projectId, action: "cicd.webhook.rejected" },
+      orderBy: { occurredAt: "desc" },
+      select: { after: true },
+    });
+    const detail = JSON.stringify(audit.after);
+    expect(detail).toContain("TOKEN_CLAIM_MISMATCH");
+    expect(detail).toContain("system:serviceaccount:default:app");
+    // Và tuyệt đối không chứa chính token
+    expect(detail).not.toContain("eyJ");
+  });
+
+  it("tiến trình không có đường ra cụm ⇒ 503, không sự kiện nào, không hàng token nào", async () => {
+    await jenkinsHook(body(), {
+      bearer: await saToken(),
+      on: noClusterApp,
+    }).expect(503);
+
+    expect(await admin.deploymentEvent.count({ where: { projectId } })).toBe(0);
+    expect(await admin.webhookTokenUse.count({ where: { projectId } })).toBe(0);
+  });
+
+  it("HMAC sai + Bearer hợp lệ ⇒ 401 đồng nhất và KHÔNG một lượt đọc cụm nào", async () => {
+    const raw = JSON.stringify(body());
+    const sig = createHmac("sha256", "bi-mat-sai").update(raw).digest("hex");
+    const res = await request(clusterApp)
+      .post(jenkinsUrl())
+      .set("content-type", "application/json")
+      .set("x-udp-signature", `sha256=${sig}`)
+      .set("authorization", `Bearer ${await saToken()}`)
+      .send(raw)
+      .expect(401);
+
+    expect(JSON.stringify(res.body)).not.toMatch(/TOKEN_/);
+    // Webhook không được làm việc đắt tiền (credential cloud, token quản trị) trên dữ liệu chưa xác thực
+    expect(reads).toBe(0);
   });
 });

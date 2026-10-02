@@ -202,6 +202,17 @@ export type SignatureRejection = (typeof SIGNATURE_REJECTIONS)[number];
  * lớp retry nào thử lại, và đúng vậy), còn lỗi hạ tầng là RETRYABLE (503 — để `curl --retry` của bước báo
  * và runner tự lành; trả 401 cho một lần JWKS không với tới là một lỗi không bao giờ tự khỏi).
  */
+/**
+ * [Plan #61 61d-2b-1] Ba CI chạy TRONG CỤM của project.
+ *
+ * Ở `@udp/shared-types` vì cả Service 1 và Portal cần đúng tập này: Service 1 để chọn đường xác minh theo
+ * cụm, Portal để nói ra bậc bảo đảm yếu hơn ("không chứng minh nhánh"). Một bản chép thứ hai trong Portal
+ * sẽ trôi khỏi bản của backend đúng vào ngày thêm CI thứ bảy.
+ *
+ * `packages/design-lint/tests/trusted-deploy-providers.test.ts` ghim dòng này đối chiếu §8.3.
+ */
+export const IN_CLUSTER_CI = ["jenkins", "tekton", "drone"] as const;
+
 export const TRUSTED_DEPLOY_REJECTIONS = [
   /** `oidcRequired` đã bật mà lời báo không mang `Authorization` */
   "TOKEN_MISSING",

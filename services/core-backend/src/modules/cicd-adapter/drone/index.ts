@@ -28,6 +28,7 @@ import {
   BUILDER_SERVICE_ACCOUNT,
   BUILD_NAMESPACE,
   inClusterBuildContainers,
+  notifyTokenLines,
   WORK_DIR,
   type BuildContainer,
 } from "../../adapter-base/packaging/build-script.js";
@@ -142,6 +143,7 @@ const base = createHelmBasedAdapter({
 const notifyStep = (
   status: "success" | "failure",
   signed: boolean,
+  webhookUrl: string,
 ): string[] => [
   `  - name: notify-udp-${status}`,
   `    image: ${BUILD_TOOLCHAIN.images.alpine}`,
@@ -163,9 +165,10 @@ const notifyStep = (
     : []),
   "      - |",
   `        ${environmentOfBranch("$DRONE_BRANCH")}`,
-  ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
-    (line) => `        ${line}`,
-  ),
+  ...notifyScript(
+    '-H "X-UDP-Signature: sha256=$SIG"',
+    notifyTokenLines(webhookUrl),
+  ).map((line) => `        ${line}`),
   "    when:",
   `      status: [${status}]`,
 ];
@@ -278,7 +281,10 @@ const rebasePipeline = (params: PipelineTemplateParams): string[] => [
     ...(params.build.signing === null
       ? []
       : [`UDP_SIGNATURE_B64=$(cat ${SIGNATURE_FILE})`]),
-    ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"'),
+    ...notifyScript(
+      '-H "X-UDP-Signature: sha256=$SIG"',
+      notifyTokenLines(params.webhookUrl),
+    ),
   ].map((line) => `        ${line}`),
 ];
 
@@ -330,8 +336,8 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     ...stepSteps(stepsOf(params, "after-build")),
     // Ký sau bước sau build: chỉ image đã qua quét mới được ký
     ...buildSteps(sign),
-    ...notifyStep("success", sign.length > 0),
-    ...notifyStep("failure", sign.length > 0),
+    ...notifyStep("success", sign.length > 0, params.webhookUrl),
+    ...notifyStep("failure", sign.length > 0, params.webhookUrl),
     ...(schedule === null ? [] : rebasePipeline(params)),
   ];
 };

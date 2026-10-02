@@ -143,6 +143,7 @@ function ports(
           getClient: () =>
             Promise.reject(new Error("ô này không chạm tới cluster")),
           proxyService: () => Promise.reject(new Error("không dùng")),
+          issuerKeys: () => Promise.reject(new Error("không dùng")),
           probe: () =>
             Promise.resolve({
               status: "SUCCESS" as const,
@@ -437,6 +438,7 @@ function notifyContext(): Parameters<Dependent["adapter"]["deploy"]>[0] {
       clusterId: "c-notify",
       getClient: () => Promise.reject(new Error("không dùng")),
       proxyService: () => Promise.reject(new Error("không dùng")),
+      issuerKeys: () => Promise.reject(new Error("không dùng")),
       probe: () =>
         Promise.resolve({
           status: "SUCCESS" as const,

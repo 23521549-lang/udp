@@ -6,6 +6,7 @@ import {
   type RegistryPush,
 } from "@udp/adapter-core";
 import { BUILD_TOOLCHAIN } from "@udp/config";
+import { CICD_WEBHOOK } from "@udp/config/constants";
 
 /**
  * [Plan #61 QĐ-4..QĐ-7] Các đoạn shell mà sáu CI/CD adapter dùng để build image — MỘT nơi viết, sáu cú pháp chỉ đặt
@@ -576,6 +577,44 @@ export function tokenRequestLines(audience: string, file: string): string[] {
     ].join(" "),
     `[ -s ${file} ] || { echo "Khong xin duoc token cua ServiceAccount ${BUILDER_SERVICE_ACCOUNT}"; exit 1; }`,
     `chmod 0644 ${file}`,
+  ];
+}
+
+/**
+ * [Plan #61 61d-2b-1] Token của bước BÁO: chỉ nằm trong BIẾN, sống 10 phút, và không bao giờ giết lời báo.
+ *
+ * Ba điểm khác `tokenRequestLines`, mỗi điểm có một lý do đo được:
+ *  1. **Không ghi tệp.** Bản kia ghi token ra `/udp-auth` rồi `chmod 0644` — một volume chia cho MỌI
+ *     container của pod build, tức đặt một token deploy được ở nơi mã của khách chạm tới. Bước báo đọc biến
+ *     `$UDP_OIDC_TOKEN` nên để nguyên trong biến là đủ (I24: token không xuống đĩa).
+ *  2. **`expirationSeconds` 600, không 3600.** Trần chính sách của UDP là `CICD_WEBHOOK.tokenMaxAgeSeconds`
+ *     = 600 giây, nên cấp một token sống gấp sáu lần trần là vô ích và là rủi ro thuần.
+ *  3. **Hỏng thì BỎ QUA, không `exit`.** Bản kia mở bằng `set -eu` và `exit 1`, nên ở nhánh `failure` của
+ *     Jenkins hay Drone, một lượt xin token hỏng sẽ giết luôn lời báo THẤT BẠI — UDP mất hẳn tin về lượt
+ *     build hỏng. Ở đây biến để rỗng, và `notifyScript` chỉ gửi header khi biến khác rỗng: thiếu token thì
+ *     hành vi đúng là 401 nếu chế độ bắt buộc đang bật (fail-closed), không phải mất lời báo.
+ */
+export function notifyTokenLines(audience: string): string[] {
+  const body = JSON.stringify({
+    apiVersion: "authentication.k8s.io/v1",
+    kind: "TokenRequest",
+    spec: {
+      audiences: [audience],
+      expirationSeconds: CICD_WEBHOOK.tokenMaxAgeSeconds,
+    },
+  });
+  return [
+    "UDP_SA=/var/run/secrets/kubernetes.io/serviceaccount",
+    [
+      "UDP_OIDC_TOKEN=$(curl -sSf",
+      '--cacert "$UDP_SA/ca.crt"',
+      '-H "Authorization: Bearer $(cat $UDP_SA/token)"',
+      '-H "Content-Type: application/json"',
+      "-X POST",
+      `"https://kubernetes.default.svc/api/v1/namespaces/${BUILD_NAMESPACE}/serviceaccounts/${BUILDER_SERVICE_ACCOUNT}/token"`,
+      `-d '${body}'`,
+      `| grep -oE '"token": ?"[^"]+"' | sed -E 's/^"token": ?"//; s/"$//' || true)`,
+    ].join(" "),
   ];
 }
 

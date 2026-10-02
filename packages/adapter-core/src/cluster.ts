@@ -130,6 +130,33 @@ export interface ClusterAccess extends ReadOnlyClusterAccess {
   ): Promise<Response>;
 
   /**
+   * [v4.12, Plan #61 61d-2b-1] Khoá CÔNG KHAI mà API server dùng để ký token ServiceAccount của chính
+   * cluster này, cộng chuỗi `issuer` và danh sách thuật toán mà nó khai.
+   *
+   * Vì sao nó ở đây mà không phải một lời gọi `fetch` ở tầng nghiệp vụ: đây là đường duy nhất Service 1
+   * kiểm được token của một CI chạy TRONG cụm (Jenkins, Tekton, Drone — §8.3), và nó phải đi qua đúng cổng
+   * mà ADR-06 quy định cho mọi lần chạm cluster tenant. Khoá lấy tại `/openid/v1/jwks` **trên kết nối API
+   * server đã xác thực**, KHÔNG theo `jwks_uri` của discovery document: như vậy phép kiểm không phụ thuộc
+   * một địa chỉ ngoài có với tới được hay không, và một cụm riêng tư vẫn kiểm được.
+   *
+   * Quyền: ClusterRole `system:service-account-issuer-discovery` của Kubernetes gắn sẵn cho nhóm
+   * `system:serviceaccounts` bằng một ClusterRoleBinding **mặc định**, nên `udp-tooling` đọc được hai đường
+   * dẫn này mà UDP không cấp thêm gì — `cluster/bootstrap.ts` không có một dòng nào cho việc này (§12.2).
+   *
+   * Vì sao KHÔNG đặt trên `ReadOnlyClusterAccess`: nửa chỉ-đọc là kiểu mà đường quét drift nhận, và nó
+   * không cần khoá nào. Để ở nửa đầy đủ thì `readOnlyAccess()` không phải chuyển tiếp gì (không ai phải
+   * nhớ), và đường quét drift *không thể* gọi.
+   */
+  issuerKeys(): Promise<{
+    /** Chuỗi `iss` mà token của cụm mang — đọc từ discovery document của chính cụm */
+    issuer: string;
+    /** `id_token_signing_alg_values_supported`; Kubernetes suy nó TỪ KHOÁ nên không ghim cứng được */
+    algorithms: readonly string[];
+    /** JWKS thô — bên gọi tự dựng bộ kiểm cục bộ từ nó */
+    jwks: unknown;
+  }>;
+
+  /**
    * Kiểm nhanh trước khi chạy luồng dài.
    *
    * Phát hiện "không vào được cluster" ở phút thứ 12 sau khi đã tạo nửa hạ tầng là đúng

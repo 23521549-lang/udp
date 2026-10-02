@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -99,6 +101,59 @@ describe("enum của Prisma và bản chép trên dây", () => {
 
     expect(new Set(grantableProjectRoleWire.options)).toEqual(
       new Set(Object.values(ProjectRole).filter((r) => r !== "OWNER")),
+    );
+  });
+});
+
+/**
+ * [v4.12, Plan #61 61d-2b-1] Lý do "Trusted Deploy chưa khả dụng" có BA bản chép, và không gì giữ chúng.
+ *
+ * Bản một: union `TrustedDeployUnavailable` trong `cicd/trusted-deploy.ts` (thứ mã backend dùng để quyết).
+ * Bản hai: zod enum của `cicdStatusResponseWire` trong `wire.ts` (cổng của dây — một giá trị thiếu ở đây là
+ * một response hợp lệ bị Portal từ chối ở tầng parse).
+ * Bản ba: các nhánh `if` trong `CicdPanel.tsx` (câu người dùng đọc).
+ *
+ * Hình dạng của lỗi nếu trôi: backend thêm một lý do, dây từ chối nó ⇒ mục CI/CD của Portal **trắng** với
+ * một lỗi parse, không phải một câu giải thích. Đợt 61d-2b-1 đổi đúng enum này (`IN_CLUSTER_CI` chết,
+ * `CLUSTER_NOT_READY` ra đời), nên đây là lúc rẻ nhất để đóng chốt.
+ */
+describe("lý do Trusted Deploy chưa khả dụng: mã, dây, và Portal", () => {
+  const ROOT = resolve(import.meta.dirname, "../../..");
+  const read = (rel: string) => readFileSync(resolve(ROOT, rel), "utf8");
+
+  /** Các giá trị của union `TrustedDeployUnavailable` trong mã backend */
+  function inCode(): string[] {
+    const src = read(
+      "services/core-backend/src/modules/cicd/trusted-deploy.ts",
+    );
+    const start = src.indexOf("export type TrustedDeployUnavailable =");
+    expect(start, "không thấy TrustedDeployUnavailable").toBeGreaterThan(-1);
+    const decl = src.slice(start, src.indexOf(";", start));
+    return [...decl.matchAll(/"([A-Z_]+)"/g)].map((m) => m[1] ?? "").sort();
+  }
+
+  it("zod enum của dây khai ĐÚNG tập lý do của mã", () => {
+    const src = read("packages/shared-types/src/wire.ts");
+    const start = src.indexOf("unavailableReason: z");
+    expect(start, "không thấy unavailableReason trong wire").toBeGreaterThan(
+      -1,
+    );
+    const decl = src.slice(start, src.indexOf(".nullable()", start));
+    const onWire = [...decl.matchAll(/"([A-Z_]+)"/g)].map((m) => m[1] ?? "");
+    expect(onWire.sort()).toEqual(inCode());
+  });
+
+  it("Portal có một câu cho MỌI lý do, và không nhánh chết nào", () => {
+    const panel = read("apps/portal/src/features/domain/CicdPanel.tsx");
+    const handled = [
+      ...panel.matchAll(/unavailableReason === "([A-Z_]+)"/g),
+    ].map((m) => m[1] ?? "");
+    /**
+     * `NO_PROVIDER` cố ý KHÔNG có nhánh riêng: nó rơi vào câu mặc định ("chờ token hợp lệ đầu tiên"), vì
+     * project chưa bật CI thì mục này còn chưa hiện. Mọi lý do CÒN LẠI phải có câu của nó.
+     */
+    expect(handled.sort()).toEqual(
+      inCode().filter((code) => code !== "NO_PROVIDER"),
     );
   });
 });

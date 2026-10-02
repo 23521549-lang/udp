@@ -42,6 +42,7 @@ export const inertProvisioning: ProvisioningRuntime = {
   withCluster: null,
   scanDrift: null,
   clusterToken: null,
+  clusterIssuerKeys: null,
   flaggerGateBaseUrl: null,
 };
 

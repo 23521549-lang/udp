@@ -29,6 +29,7 @@ import {
   BUILDER_SERVICE_ACCOUNT,
   BUILD_NAMESPACE,
   inClusterBuildContainers,
+  notifyTokenLines,
   inClusterLoginContainers,
   WORK_DIR,
   type BuildContainer,
@@ -381,7 +382,10 @@ const rebasePipeline = (params: PipelineTemplateParams): string[] => [
     ...(params.build.signing === null
       ? []
       : [`UDP_SIGNATURE_B64=$(cat ${SIGNATURE_FILE})`]),
-    ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"'),
+    ...notifyScript(
+      '-H "X-UDP-Signature: sha256=$SIG"',
+      notifyTokenLines(params.webhookUrl),
+    ),
   ].map((line) => `              ${line}`),
 ];
 
@@ -476,9 +480,10 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
           `              UDP_SIGNATURE_B64=$([ "$UDP_STATUS" = success ] && cat ${SIGNATURE_WS_FILE} || echo "")`,
         ]),
     `              ${environmentOfBranch("$(params.branch)")}`,
-    ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
-      (line) => `              ${line}`,
-    ),
+    ...notifyScript(
+      '-H "X-UDP-Signature: sha256=$SIG"',
+      notifyTokenLines(params.webhookUrl),
+    ).map((line) => `              ${line}`),
     ...(schedule === null ? [] : rebasePipeline(params)),
   ];
 };

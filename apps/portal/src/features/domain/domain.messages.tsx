@@ -129,8 +129,10 @@ export const domainMessages = defineMessages({
         "Đang bắt buộc: lời báo phải mang token của chính lượt chạy CI",
       trustedDeployWaiting:
         "Chờ token hợp lệ đầu tiên, rồi tự bật. Secret webhook một mình không chứng minh được lời báo đến từ lượt chạy nào",
-      trustedDeployInCluster:
-        "Chưa khả dụng với CI chạy trong cụm: token của chúng là token ServiceAccount, cần quyền mà UDP chưa có trong cụm của bạn",
+      trustedDeployClusterNotReady:
+        "CI chạy trong cụm: cần cụm dựng xong, vì khoá kiểm token nằm ở chính cụm của project",
+      trustedDeployClusterOnly:
+        "Với CI chạy trong cụm, token chứng minh lời báo đến từ một pod build trong cụm của project này, nhưng nó KHÔNG chứng minh nhánh. Luật nhánh do tệp pipeline trong repo giữ",
       trustedDeployCircleciIds:
         "Thiếu Organization ID hoặc Project ID của CircleCI: không có chúng thì không suy ra được nơi phát token",
       trustedDeployRequire: "Bắt buộc Trusted Deploy",
@@ -280,8 +282,10 @@ export const domainMessages = defineMessages({
         "Required: every report must carry a token from the CI run itself",
       trustedDeployWaiting:
         "Waiting for the first valid token, then it turns on by itself. The webhook secret alone cannot prove which run sent a report",
-      trustedDeployInCluster:
-        "Not available for in-cluster CI: their tokens are ServiceAccount tokens, which needs a permission UDP does not yet hold in your cluster",
+      trustedDeployClusterNotReady:
+        "In-cluster CI: the cluster must finish provisioning first, because the key that verifies the token lives in the project's own cluster",
+      trustedDeployClusterOnly:
+        "For in-cluster CI the token proves the report came from a build pod in this project's cluster, but it does NOT prove the branch. The branch rule is held by the pipeline file in your repository",
       trustedDeployCircleciIds:
         "CircleCI Organization ID or Project ID is missing: without them the token issuer cannot be derived",
       trustedDeployRequire: "Require Trusted Deploy",

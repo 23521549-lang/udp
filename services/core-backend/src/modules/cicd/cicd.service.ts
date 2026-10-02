@@ -20,6 +20,7 @@ import { isCicdAdapter } from "./cicd-webhook.service.js";
 import {
   absoluteWebhookUrlOf,
   expectationOf,
+  IN_CLUSTER_CI,
   webhookPathOf,
 } from "./trusted-deploy.js";
 import {
@@ -54,6 +55,26 @@ async function cicdRowOf(projectId: string) {
 }
 
 /**
+ * [Plan #61 61d-2b-1] Project đã có cụm dùng được chưa — ĐÚNG vị từ mà đường ra cụm dùng.
+ *
+ * Không phải một phép kiểm xấp xỉ: `clusterOf` của `job-kit` tìm chính hàng này (`kind === "cluster"`,
+ * `status === "READY"`, có `providerId`) rồi mới dựng `ClusterAccess`. Hỏi một câu khác ở đây — ví dụ "có
+ * job PROVISION nào DONE chưa" — sẽ cho Portal nói "khả dụng" trong khi đường xác minh vẫn trả 503.
+ */
+const clusterReadyFor = async (
+  tx: Pick<typeof prisma, "provisionedResource">,
+  projectId: string,
+): Promise<boolean> =>
+  (await tx.provisionedResource.count({
+    where: {
+      projectId,
+      kind: "cluster",
+      status: "READY",
+      providerId: { not: null },
+    },
+  })) > 0;
+
+/**
  * Trusted Deploy khả dụng chưa, và nếu chưa thì vì sao — Portal nói lại nguyên văn lý do.
  *
  * `available` false nghĩa là UDP KHÔNG kiểm được token của provider đang bật, nên KHÔNG được cho bật chế
@@ -64,6 +85,16 @@ export function trustedDeployStateOf(row: {
   selectedTool: string | null;
   toolConfig: unknown;
   oidcRequired: boolean;
+  /**
+   * [61d-2b-1] Project đã có cụm provision xong chưa.
+   *
+   * Vì sao là một ĐẦU VÀO chứ không tra ở đây: hàm này thuần và đồng bộ, và nó được gọi từ hai chỗ
+   * (`status` và `setOidcRequired`) — mỗi chỗ đã có transaction và truy vấn riêng. Tra database bên trong
+   * sẽ biến một hàm thuần thành một hàm I/O mà hai bên gọi không điều khiển được.
+   *
+   * Chỉ nhánh CI-trong-cụm đọc nó: ba CI SaaS kiểm được token mà không cần cụm nào.
+   */
+  clusterReady: boolean;
 }): CicdStatusWire["trustedDeploy"] {
   const provider = row.selectedTool;
   const expectation =
@@ -76,18 +107,36 @@ export function trustedDeployStateOf(row: {
           // nên chỉ cần một giá trị hợp lệ; chuỗi thật dựng ở đường webhook từ `absoluteWebhookUrlOf`.
           webhookUrl: "https://unused.invalid",
         });
-  return "unavailable" in expectation
-    ? {
-        required: row.oidcRequired,
-        available: false,
-        unavailableReason: expectation.unavailable,
-      }
-    : { required: row.oidcRequired, available: true, unavailableReason: null };
+  if ("unavailable" in expectation) {
+    return {
+      required: row.oidcRequired,
+      available: false,
+      unavailableReason: expectation.unavailable,
+    };
+  }
+  // Khoá kiểm của CI trong cụm nằm Ở CHÍNH cụm của project, nên chưa có cụm là chưa kiểm được
+  if (expectation.kind === "cluster" && !row.clusterReady) {
+    return {
+      required: row.oidcRequired,
+      available: false,
+      unavailableReason: "CLUSTER_NOT_READY",
+    };
+  }
+  return {
+    required: row.oidcRequired,
+    available: true,
+    unavailableReason: null,
+  };
 }
 
 export async function status(projectId: string): Promise<CicdStatusWire> {
   const row = await enabledCicd(projectId);
   const provider = row?.selectedTool ?? null;
+  // Chỉ hỏi database thêm một câu khi provider LÀ một CI trong cụm — ba CI SaaS không cần cụm nào
+  const clusterReady =
+    provider !== null && IN_CLUSTER_CI.some((name: string) => name === provider)
+      ? await clusterReadyFor(prisma, projectId)
+      : false;
   return {
     provider,
     webhookPath: provider === null ? null : webhookPathOf(projectId, provider),
@@ -98,6 +147,7 @@ export async function status(projectId: string): Promise<CicdStatusWire> {
       selectedTool: provider,
       toolConfig: row?.toolConfig ?? null,
       oidcRequired: row?.oidcRequired ?? false,
+      clusterReady,
     }),
   };
 }
@@ -146,6 +196,9 @@ export async function setOidcRequired(
         selectedTool: locked.selected_tool,
         toolConfig: locked.tool_config,
         oidcRequired: locked.oidc_required,
+        // Đọc trong CÙNG transaction đang giữ hàng CICD: một lượt gỡ cụm đi qua giữa hai câu sẽ cho bật
+        // một cổng mà UDP không kiểm nổi
+        clusterReady: await clusterReadyFor(tx, projectId),
       });
       if (!state.available) {
         throw new ConflictError(

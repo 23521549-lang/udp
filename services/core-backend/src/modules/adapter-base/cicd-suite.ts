@@ -11,7 +11,9 @@ import {
   stepImage,
   TEST_IMAGES,
 } from "@udp/config";
+import { IN_CLUSTER_CI } from "@udp/shared-types";
 import { parseAllDocuments } from "yaml";
+import { BUILDER_SERVICE_ACCOUNT } from "./packaging/build-script.js";
 import { deployBodySchema, WebhookPayloadError } from "./cicd.js";
 import { stepId } from "./pipeline-steps.js";
 import type { BuildPlan, BuildSigning } from "@udp/adapter-core";
@@ -450,6 +452,31 @@ export function runCicdSuite(
           "UDP_OIDC_TOKEN",
         ]) {
           assert(text.includes(needle), `template thiếu "${needle}"`);
+        }
+        /**
+         * [Plan #61 61d-2b-1] Ba CI chạy TRONG CỤM phải thật sự XIN token, không chỉ mang biến.
+         *
+         * Needle `UDP_OIDC_TOKEN` ở trên được thoả bởi chính dòng header có điều kiện, nên một mình nó
+         * không phân biệt "có xin token" với "chỉ gửi nếu có sẵn". Với ba CI trong cụm, bước báo phải gọi
+         * `TokenRequest` của API server bằng chính token của pod; thiếu nó thì Trusted Deploy của chúng
+         * không bao giờ chạy mà mọi test khác vẫn xanh.
+         */
+        if (IN_CLUSTER_CI.some((name: string) => name === adapter.toolId)) {
+          for (const needle of [
+            `/serviceaccounts/${BUILDER_SERVICE_ACCOUNT}/token`,
+            "UDP_OIDC_TOKEN=$(curl -sSf",
+            // Token KHÔNG được ghi xuống tệp nào trong bước báo (I24)
+            `"audiences":["${PARAMS.webhookUrl}"]`,
+          ]) {
+            assert(
+              text.includes(needle),
+              `template của CI trong cụm thiếu "${needle}"`,
+            );
+          }
+          assert(
+            !new RegExp("UDP_OIDC_TOKEN[^\\r\\n]*>").test(text),
+            "bước báo ghi token ra tệp — I24 cấm",
+          );
         }
         for (const field of Object.keys(deployBodySchema.shape)) {
           assert(

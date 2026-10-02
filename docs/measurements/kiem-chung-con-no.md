@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 49.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 50.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1247,6 +1247,40 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   khoá sau lượt đo).
 - **Ảnh hưởng tới kết luận:** AC-8 và AC-10 của Plan #61 đứng ở mức hợp đồng, bundle thật của cosign và E2E với khoá tệp;
   câu "image được ký bằng khoá KMS của chính project ở cả ba cloud" chưa được chứng minh trên hạ tầng thật.
+
+## trusted-deploy-cluster — token ServiceAccount của ba CI trong cụm, trên một cụm Kubernetes thật
+
+- **Vì sao nợ:** Plan #61 61d-2b-1 đo được mọi thứ đo được **không cần cụm thật**: `issuerKeys` qua một
+  transport giả (đúng hai URL, đúng thứ tự, Bearer của `udp-system/udp-tooling`, và một ô khẳng định nó
+  KHÔNG đi theo `jwks_uri`), lõi xác minh qua 12 ô tất định với khoá RSA và EC sinh trong tiến trình và danh
+  sách thuật toán tiêm vào, và đường webhook qua 5 ô tích hợp trên database thật (chủ thể sai, không có
+  đường ra cụm, HMAC sai ⇒ 0 lượt đọc cụm, dùng một lần theo `jti`). Chưa đo: một token do **API server
+  thật** phát, đọc bằng khoá của **chính cụm đó**. Bốn thứ chỉ lượt đó chứng minh được: (a)
+  ClusterRoleBinding mặc định `system:service-account-issuer-discovery` thật sự cho `udp-tooling` đọc hai
+  đường dẫn đó trên EKS, AKS và GKE — ba nhà cung cấp đều có thể đã siết RBAC mặc định; (b)
+  `id_token_signing_alg_values_supported` thật của ba nhà cung cấp (quyết định allowlist bốn giá trị có đủ
+  hay không); (c) `jti` có mặt trong token của `TokenRequest` trên bản Kubernetes ba nhà cung cấp đang chạy
+  (ổn định từ 1.32 theo KEP-4193, nhưng chưa thấy bằng mắt); (d) chuỗi `iss` thật của cụm bằng đúng chuỗi
+  discovery document khai — ba nhà cung cấp dùng ba hình khác nhau, và UDP cố ý **không** ghim hình nào.
+- **Tiền đề:** một cụm EKS/AKS/GKE do UDP provision xong (như `packaging-real`), một CI trong cụm đã cài
+  (Jenkins rẻ nhất), và Service 1 có credential cloud của project đó.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- trusted-deploy-cluster.real` (tệp CHƯA CÓ; nó chạy một
+  lượt build Jenkins, chờ lần deploy có `trustedDeploy: VERIFIED`, rồi gửi lại đúng thân cũ để thấy
+  `duplicate` và một thân đã đổi để thấy 401).
+- **Đạt:** lượt báo đầu ⇒ 202 và `trustedDeploy: VERIFIED`, đúng một hàng `webhook_token_uses` với
+  `token_id` là một UUID và `issuer` bằng chuỗi cụm khai; chế độ bắt buộc tự bật; gửi lại thân y nguyên ⇒
+  200 `duplicate`; thân đổi ⇒ 401 `TOKEN_REPLAYED`. Ghi vào §8.3: chuỗi `iss` thật, danh sách alg, và
+  `exp − iat` thật. **Không đạt:** 403 khi đọc `/openid/v1/jwks` ⇒ nhà cung cấp đã siết RBAC mặc định, phải
+  quay về lối TokenReview và mở lại dòng giới hạn ở §16; thiếu `jti` ⇒ bản Kubernetes dưới 1.32, phải ghi
+  trần phiên bản vào §16; `iss` không khớp ⇒ đọc hàng audit `cicd.webhook.rejected` lấy chuỗi thật rồi sửa
+  **cách đọc issuer**, tuyệt đối không nới phép so.
+- **Tài nguyên:** như `packaging-real`; không tốn thêm tiền (không dịch vụ mới), chỉ cần một cụm đang chạy.
+- **Ảnh hưởng tới kết luận:** AC-11 với ba CI trong cụm hiện được chứng minh ở mức **cơ chế** (đường đọc
+  khoá, hai nửa buộc token vào project, phép kiểm chủ thể, tính một-lần do database cưỡng chế) nhưng chưa ở
+  mức **liên thông với một API server thật**. Câu "Trusted Deploy phủ cả sáu CI" phải đọc là: đã đúng với
+  token đúng hình dạng và khoá đúng nguồn, chưa chạy với token do một cụm thật phát. Và bậc bảo đảm của ba
+  CI đó vẫn thấp hơn ba CI SaaS một bậc — xem dòng §16 "không chứng minh nhánh", đó không phải một món nợ
+  kiểm chứng mà là một giới hạn thiết kế.
 
 ## trusted-deploy-real — token OIDC thật của ba nhà cung cấp, qua UDP có địa chỉ công khai
 

@@ -2877,6 +2877,20 @@ interface ClusterAccess extends ReadOnlyClusterAccess {
     namespace: string; service: string; port: number; scheme: "http" | "https";
   }, path: string, init?: RequestInit): Promise<Response>;
 
+  /**
+   * [v4.12, Plan #61 61d-2b-1] Khoá CÔNG KHAI mà API server dùng để ký token ServiceAccount của chính
+   * cluster này — đường duy nhất Service 1 kiểm được token của một CI chạy TRONG cụm (§8.3). Đọc
+   * `/.well-known/openid-configuration` rồi `/openid/v1/jwks` TRÊN kết nối API server đã xác thực, KHÔNG
+   * theo `jwks_uri` của discovery: như vậy phép kiểm không phụ thuộc một địa chỉ ngoài, và cụm riêng tư vẫn
+   * kiểm được. Quyền đến từ ClusterRoleBinding MẶC ĐỊNH `system:service-account-issuer-discovery` của
+   * Kubernetes (nhóm `system:serviceaccounts`) nên §12.2 không cấp thêm gì và bootstrap không đổi.
+   * Cố ý KHÔNG đặt ở `ReadOnlyClusterAccess`: đường quét drift không cần khoá, và để ở nửa đầy đủ thì
+   * `readOnlyAccess()` không phải chuyển tiếp gì.
+   */
+  issuerKeys(): Promise<{
+    issuer: string; algorithms: readonly string[]; jwks: unknown;
+  }>;
+
   /** Kiểm nhanh trước khi chạy luồng dài: endpoint có tới được, token có cấp được */
   probe(): Promise<AdapterResult<{ reachable: boolean; serverVersion?: string }>>;
 }
@@ -5463,6 +5477,76 @@ sequenceDiagram
 > Mỗi lần từ chối ghi `AuditLog` `cicd.webhook.rejected` ở một câu riêng; token không bao giờ vào audit,
 > log hay `metadata` (I24).
 
+> **[v4.12, Plan #61 61d-2b-1, QĐ-17] Trusted Deploy cho ba CI chạy TRONG CỤM — khoá kiểm đọc từ chính
+> cụm của project (AC-11, I42).** Jenkins, Tekton và Drone không có nhà cung cấp OIDC nào ở ngoài: token
+> của chúng là **bound ServiceAccount token** do API server của cụm phát. Bước báo xin token bằng
+> `TokenRequest` ngay trong chính nó, với `aud` = đúng địa chỉ webhook tuyệt đối; Service 1 kiểm bằng khoá
+> công khai lấy tại `/openid/v1/jwks` **trên kết nối API server của cụm của project đó**.
+>
+> | tool | chủ thể BẮT BUỘC | nguồn `aud` | KHÔNG chứng minh được |
+> | --- | --- | --- | --- |
+> | `jenkins` | `system:serviceaccount:udp-build:udp-builder` | `webhook-url` | `nhánh` |
+> | `tekton` | `system:serviceaccount:udp-build:udp-builder` | `webhook-url` | `nhánh` |
+> | `drone` | `system:serviceaccount:udp-build:udp-builder` | `webhook-url` | `nhánh` |
+>
+> Bảng trên là bản chép thứ hai; bản thứ nhất là `IN_CLUSTER_TRUSTED_DEPLOY` và `IN_CLUSTER_CI` trong mã, và
+> `design-lint/tests/trusted-deploy-providers.test.ts` khẳng định hai bên bằng nhau.
+>
+> **Vì sao đọc khoá chứ không gọi TokenReview, và vì sao việc đó KHÔNG cần quyền mới.** ClusterRole
+> `system:service-account-issuer-discovery` của Kubernetes cho `get` trên `/.well-known/openid-configuration`
+> và `/openid/v1/jwks`, và ClusterRoleBinding **mặc định** của nó buộc vào nhóm `system:serviceaccounts` —
+> mọi ServiceAccount trong cụm, kể cả `udp-system/udp-tooling` (đọc tại `bootstrappolicy/policy.go` của
+> Kubernetes, 03/10/2026). Nên lối này **không** thêm một verb nào vào §12.2, **không** phải bootstrap lại
+> cụm đang chạy, và `cluster/bootstrap.ts` không đổi một dòng. Lối TokenReview đòi cả ba: verb
+> `authentication.k8s.io/tokenreviews: create` mà không SA nào của §12.2 có, một lượt bootstrap lại mọi cụm,
+> và `ClusterAccess.write()` phải đổi kiểu trả về để đọc được `status` — một lần phá vỡ interface hạng nhất
+> (ADR-06). Khoá lấy tại `/openid/v1/jwks` chứ **không** theo `jwks_uri` của discovery document: như vậy
+> phép kiểm không phụ thuộc một địa chỉ ngoài có với tới được hay không, bất kể `jwks_uri` trỏ đâu, và một
+> cụm riêng tư vẫn kiểm được. Chuỗi `issuer` thì vẫn đọc từ discovery, vì đó là chuỗi token mang trong `iss`.
+>
+> **Hai nửa buộc token vào project, và cần CẢ HAI.** (1) `aud` chặn dùng chéo project — nhưng `aud` do pod
+> tự khai, nên một pod trong cụm của project X **xin được** token mang `aud` của project Y. (2) Khoá kiểm
+> lấy từ cụm của ĐÚNG project đang nhận webhook (mỗi project một cụm; tên cụm tất định theo `projectId`),
+> nên token của cụm X không qua được phép kiểm ở project Y. **Chủ thể không làm được việc này:** mọi cụm
+> đều có cùng `system:serviceaccount:udp-build:udp-builder` — đó cũng là lý do pool Workload Identity của
+> GCP tách theo project.
+>
+> **Chủ thể vẫn phải kiểm, vì một lý do khác.** Thiếu phép kiểm đó thì **mọi pod trong cụm** — kể cả chính
+> ứng dụng đang được deploy — xin được token với `aud` của webhook rồi tự deploy image bất kỳ. `jose`
+> **không** kiểm `sub` (đã đo), nên phép kiểm này nằm ở mã của UDP, và hàng audit của lần từ chối ghi **chủ
+> thể nhận được** (một claim, không phải token — I24 vẫn nguyên) vì không có nó thì một lượt Tekton chạy
+> thiếu cờ `--serviceaccount` là một lần 401 không ai truy được.
+>
+> **Thuật toán đọc TỪ CỤM, không ghim cứng.** `id_token_signing_alg_values_supported` của Kubernetes suy từ
+> **khoá đang hoạt động** nên có thể là `RS256` hay `ES256`/`ES384`/`ES512`; ghim `RS256` như ba CI SaaS sẽ
+> chặn một cụm dùng khoá EC (đo 03/10/2026: `jose` trả `ERR_JOSE_ALG_NOT_ALLOWED`). Lấy danh sách của cụm
+> rồi **giao với allowlist** `RS256, ES256, ES384, ES512`; giao rỗng ⇒ **503**, không bao giờ rơi về HMAC.
+> `HS*` và `none` không bao giờ có trong danh sách của Kubernetes, nên alg-confusion đóng ở hai lớp.
+>
+> **Một BẬC yếu hơn ba CI SaaS, và phải đọc đúng như vậy.** Token ServiceAccount **không có** claim repo hay
+> ref, và quyền tạo pod trong `udp-build` đến từ RBAC của chart CI chứ không từ UDP, còn nội dung pipeline là
+> **tệp trong repo của khách**. Nên lớp này chứng minh "lời báo đến từ một pod build trong namespace
+> `udp-build` của đúng cụm của project này" — **không** chứng minh commit, **không** chứng minh nhánh. Hệ quả
+> phải công bố: với ba CI trong cụm, kẻ kiểm soát repo vượt được **cả** cổng chữ ký của 61d-1, vì khoá KMS
+> cũng chỉ ràng theo chủ thể đó. Luật nhánh vẫn do tệp pipeline giữ, và Portal nói đúng câu đó.
+>
+> **Cache: hai bộ, và một cache ÂM.** Khoá của cụm cache theo `projectId` (mỗi project một cụm), **không**
+> phục vụ bản cũ (`staleMs = 0`): lý lẽ "nhà cung cấp sập thì vẫn deploy được" là lý lẽ của SaaS, còn cụm
+> không với tới được thì job deploy cũng không áp được gì — giữ khoá cũ chỉ mở một cửa sổ cho khoá đã xoay.
+> Và lần thử HỎNG cũng được ghi mốc (cache âm) để `cooldownMs` có hiệu lực khi chưa có bản khoá nào: mỗi lượt
+> đọc cụm kéo theo một lần lấy credential cloud + một token quản trị + hai lời gọi API server, nên không có
+> nó thì một kẻ có secret HMAC của một project đang hỏng cụm biến webhook thành máy bơm vào cloud của khách.
+>
+> **Không thêm mã từ chối nào.** Không lấy được khoá (chưa có cụm, cụm không với tới, tiến trình không có
+> đường ra cụm) ⇒ `TOKEN_KEYS_UNAVAILABLE` ⇒ 503 retryable; `sub` sai ⇒ `TOKEN_CLAIM_MISMATCH`; `iss` khác
+> chuỗi cụm khai ⇒ `TOKEN_ISSUER_UNEXPECTED`. Tính một-lần vẫn do `webhook_token_uses` cưỡng chế (I41) với
+> `token_id` = `jti` — token của `TokenRequest` có `jti` ổn định từ Kubernetes 1.32 (KEP-4193), và **mỗi lời
+> gọi `TokenRequest` cấp một token mới** nên hai lượt build không chia nhau một `jti`. Đó cũng là lý do
+> **không** dùng projected ServiceAccount token volume: token của nó do kubelet cấp và dùng lại suốt vòng đời.
+> Công tắc `oidc_required` dùng chung đường của 61d-2a; `CLUSTER_NOT_READY` là lý do "chưa khả dụng" khi
+> project chưa có cụm READY trong sổ tài nguyên.
+
+
 **Vì sao `deployment_id` là bắt buộc chứ không phải trang trí [v4]:** cả năm chỉ số DORA đều tính từ `DeploymentEvent`, và bốn trong năm cần biết **những sự kiện nào thuộc cùng một lần deploy**:
 
 | Chỉ số DORA | Cột cần có | Thiếu thì sao |
@@ -7920,6 +8004,16 @@ ADR-01 dựa hoàn toàn vào bất biến "ba bên ghi vào cluster nhưng khô
 | `udp-traffic` | Service 3 (§7.3) | `virtualservices`, `trafficsplits`, ingress: create/update/patch; `rollouts`: get + **[v4.11, Plan #51, D-P39]** subresource `rollouts/status`: patch — promote, promote-full, abort, retry đều là patch lên `status` (đúng các patch `kubectl argo rollouts` gửi; bản trước ghi `rollouts/promote|abort|retry`, những subresource CRD của Argo không có); `canaries`: get; `services/proxy`: get **chỉ trên service của nguồn metrics** | **Không** `patch` trên `deployments`, **không** `patch` trên `rollouts` (chỉ subresource). Nên S3 không thể sửa `spec.template` kể cả khi có bug |
 | `udp-tooling` | Domain adapter chạy trong worker của S1 (§8.2, §8.6) | Helm release, CRD, operator CR trong `udp-system`; `secrets` **chỉ** trong `udp-system` (khoá của agent, Plan #31); CR theo namespace env | **Không** đụng `deployments` của workload tenant, **không** đụng đối tượng traffic |
 
+> **[v4.12, Plan #61 61d-2b-1] Một quyền KHÔNG do UDP cấp, và nó quan trọng vì đúng điều đó.** Đường kiểm
+> token của ba CI chạy trong cụm (§8.3) đọc `/.well-known/openid-configuration` và `/openid/v1/jwks` của
+> API server bằng `udp-tooling`. Quyền ấy đến từ ClusterRole `system:service-account-issuer-discovery` của
+> **chính Kubernetes**, mà ClusterRoleBinding **mặc định** của nó buộc vào nhóm `system:serviceaccounts` —
+> nên mọi ServiceAccount trong cụm đều có, kể cả ba SA ở bảng trên. UDP **không cấp** nó và cũng **không thu
+> hồi được** nó: `cluster/bootstrap.ts` không có một dòng nào về nó, và bảng trên chỉ khai những gì Role do
+> UDP tạo mở ra. Viết ra đây vì nó là lý do lối JWKS-của-cụm không phải bootstrap lại cụm nào, và vì một
+> lượt phân tích audit log của API server sẽ thấy hai lời gọi `get` mà bảng trên không giải thích.
+> `packages/design-lint/tests/cluster-bootstrap.test.ts` chốt rằng bootstrap vẫn không cấp quyền đó.
+
 Cả ba đều **không** có: `secrets` ngoài namespace của mình (ngoại lệ duy nhất **[v4.11, D-P26]**: `udp-tooling` được `get/update/patch` đúng Secret `udp-registry-pull` ở namespace environment — `resourceNames`, không `create`/`list`/`delete`), `escalate`/`bind` (leo thang RBAC), `pods/exec` (vào shell container của tenant — không luồng nào ở §8 cần), và không dùng wildcard `*` ở bất kỳ verb hay resource nào.
 
 > **Hệ quả với ADR-06:** `POST /internal/clusters/:id/token` nhận thêm tham số `audience` để biết cấp token của SA nào. Service 3 chỉ xin được `udp-traffic`; nếu nó xin `udp-workload` thì Service 1 từ chối, vì danh tính bên gọi đã được xác định bằng `TokenReview` (T12).
@@ -8160,6 +8254,7 @@ export function runCloudAdapterContract(
 | **I39** | **ORPHAN_RULE được cưỡng chế ở tầng database, cả hai chiều** [v4 — §6.7] | SQL chạy thẳng, không qua ORM — vì đường ghi của Service 3 (§1.2) không đi qua Zod nên trigger là hàng rào duy nhất. (a) Lưu rule có `serve` trỏ variant của flag khác — bị chặn. (b) Xóa variant còn được `serve` tham chiếu — bị chặn lúc COMMIT. (c) Đặt `default_variant_id` của flag A bằng variant của flag B — bị chặn; FK chỉ cưỡng chế *tồn tại*, không cưỡng chế *quyền sở hữu*. (d) `serve` sai hình dạng — `kind` lạ, JSON null, thiếu `weights`, `variantId` rỗng hoặc không phải uuid — **đều phải bị chặn**: trả mảng rỗng cho hình dạng không hiểu là im lặng cho qua. (e) Xóa cả FeatureFlag vẫn phải CHẠY TRÓT — constraint trigger hoãn tới COMMIT chính là để không chặn nhầm ca này. Chiều lưu ra `UDP01` → 422 `ORPHAN_RULE`; chiều xoá ra `UDP02` → 409 `VARIANT_IN_USE`. **Hai mã phải KHÁC nhau** — dùng chung một mã là mất `retryable`, và test phải khẳng định đúng mã chứ không chỉ khẳng định "có lỗi". **[v4.3]** (f) `serve.weights` phải tăng dần nghiêm ngặt theo `variantId` (`UDP04`, lỗi của writer ⇒ 500, không vào `ERROR_CATALOG` — cùng tiền lệ `UDP03`); serve vừa trỏ variant lạ vừa sai thứ tự báo `UDP01`; hàng cũ chưa sắp vẫn sửa được cột khác |
 | **I40** | **Audit ghi cùng transaction với thay đổi nó mô tả** [v4.5 — §8.4] | (a) Một bước SAU hàng audit hỏng (tính `config_hash`) ⇒ hàng audit biến mất cùng thay đổi, `config_version` đứng yên — phép thử duy nhất phân biệt "cùng transaction" với "ghi riêng", vì mọi lỗi nghiệp vụ (409, 422) ném TRƯỚC hàng audit. Qua HTTP, dưới role `udp_s2` thật: (b) mỗi lời gọi ghi flag để lại đúng MỘT hàng mang người làm, IP, UA của người dùng — kể cả khi Portal tự gửi header nội bộ, S1 bỏ qua chúng; (c) thay đổi bị từ chối (409, 428, 403) không để lại hàng nào; (d) IP sai dạng — kể cả IPv6 kèm zone mà `INET` không nhận — bị bỏ chứ không làm lùi thay đổi; (e) thiếu người làm ⇒ 400, không ghi ẩn danh; (f) `before`/`after` của `flag.rule.update` không có `bucket_salt`. Bug mà bất biến chặn: dual-write — S1 ghi audit sau khi S2 commit thì mất dấu khi S1 hỏng giữa chừng, ghi trước thì audit kể về một thay đổi không xảy ra. **[v4.9]** Cùng phép thử áp cho `segment.create`/`update`/`delete`, `sdkkey.create`/`sdkkey.revoke` và `flag.activate`/`flag.archive`/`flag.restore` **[v4.11, Plan #44]** và `flag.variants.update` (`flag-variants.integration.test.ts`: một hàng mang người làm; mọi ca từ chối không để hàng nào) |
 | **I41** | **Một token OIDC của một lượt chạy CI không bao giờ dùng được lần thứ hai, và điều đó do database cưỡng chế** [v4.12, Plan #61 61d-2a — §8.3, AC-11] | Cùng họ I22 và I39: cưỡng chế ở tầng database chứ không ở code review, vì nếu vỡ thì hệ thống sai một cách ÂM THẦM — một lượt replay được nhận thì deploy vẫn xanh và không ai thấy gì. (a) Gửi lại cùng một token với thân ĐỔI (ví dụ đổi `environment` sang production) ⇒ từ chối, KHÔNG có `DeploymentEvent` mới, và một hàng `AuditLog` `cicd.webhook.rejected` được ghi — qua HTTP thật, dưới role `udp_s1` thật, không mock. (b) Gửi lại cùng token với thân GIỐNG HỆT từng byte ⇒ coi là retry của CI: trả lại đúng kết quả cũ, vẫn đúng MỘT `DeploymentEvent` và đúng MỘT hàng `WebhookTokenUse` — phép thử phân biệt "một lần ghi" với "idempotency key", và là thứ chặn việc một lượt retry hợp lệ làm build đỏ trong khi deploy đã chạy thật. (c) Token ký hoàn hảo bằng khoá của một issuer KHÔNG thuộc cấu hình project ⇒ từ chối **và không một lời gọi mạng nào phát ra** (issuer mong đợi tính từ `tool_config` TRƯỚC mọi I/O; lấy discovery theo `iss` chưa xác minh là một bypass toàn phần cộng một primitive SSRF). (d) Lấy JWKS đi qua `createEgressFetch`: issuer trỏ vào một địa chỉ nội bộ ⇒ chặn ở tầng egress, không phải timeout. Bug mà bất biến chặn: secret HMAC lộ (đã nêu ở T6) thì kẻ bắt được một lời báo cũ sẽ phát lại được nó, và không phép kiểm nào trong mã chặn nổi nếu "một lần" không phải một ràng buộc của database |
+| **I42** | **Khoá kiểm token của một CI chạy trong cụm luôn lấy từ CHÍNH cụm của project đang nhận webhook, không bao giờ từ một địa chỉ ngoài** [v4.12, Plan #61 61d-2b-1 — §8.3, §12.2, AC-11] | Cùng họ I41: vỡ thì hệ thống sai ÂM THẦM — một pod build trong cụm của project X deploy được vào project Y mà lượt deploy vẫn xanh. Bốn nửa, mỗi nửa một ô test: (a) token ký bằng khoá của một cụm KHÁC ⇒ từ chối, và phép khẳng định cho thấy UDP chỉ hỏi khoá của cụm của đúng project đó; (b) `sub` là một ServiceAccount khác trong CÙNG cụm ⇒ từ chối `TOKEN_CLAIM_MISMATCH` — chặn leo thang nội cụm, kể cả từ chính ứng dụng đang được deploy; (c) khoá lấy tại `/openid/v1/jwks` TRÊN kết nối API server đã xác thực, không bao giờ theo `jwks_uri` của discovery — transport giả khẳng định đúng hai URL và không một lời gọi nào rời tiến trình; (d) `id_token_signing_alg_values_supported` của cụm giao rỗng với allowlist ⇒ **503**, KHÔNG rơi về HMAC |
 
 ### 13.4 Kiểm thử bơm lỗi (fault injection)
 
@@ -8392,13 +8487,15 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | Rollback không xử lý migration cơ sở dữ liệu | Rollback schema là bài toán độc lập; chuẩn expand/contract là trách nhiệm của ứng dụng | Kiểm tra tương thích schema trước khi rollout |
 | Không xử lý sticky session ở tầng L7 | Consistent hashing đã cho tính nhất quán ở tầng ứng dụng | Session affinity ở ingress |
 | Golden Path (mẫu dự án + hook telemetry) chỉ Node.js và Python | Đủ để demo; hook telemetry là phần cần port sang ngôn ngữ khác. **[v4.12, Plan #61]** ĐÓNG GÓI thì không còn giới hạn này: Buildpacks build Node.js, Python, Go, Java, .NET, Ruby, PHP, web tĩnh; ngôn ngữ khác (Rust…) build bằng Dockerfile của repo | Mẫu và hook cho Java, Go, .NET |
+| **[v4.12, Plan #61 61d-2b-1] Tekton: Trusted Deploy chỉ chạy khi lượt chạy dùng đúng ServiceAccount** | `Pipeline` của Tekton không khai được ServiceAccount (nó là trường của `PipelineRun`, mà UDP chưa sinh `PipelineRun` vì chưa có Tekton Triggers — xem dòng trên), nên SA chỉ nằm trong chú thích lệnh `tkn pipeline start … --serviceaccount udp-builder` ở đầu tệp. Chạy thiếu cờ đó thì pod dùng SA `default` ⇒ `sub` sai ⇒ lời báo bị từ chối 401 (**fail-closed**, không phải deploy không kiểm). Để lần đỏ đó truy được, hàng audit `cicd.webhook.rejected` ghi **chủ thể nhận được** | Tekton Triggers: lúc đó UDP sinh `PipelineRun` và đặt được `taskRunTemplate.serviceAccountName` |
 | **[v4.12, Plan #61] Tekton chưa tự chạy: lượt build và lượt rebase khởi bằng `tkn`** | UDP chưa cài Tekton Triggers (EventListener cần lộ endpoint vào cluster của khách); tệp pipeline in sẵn lệnh `tkn` và giờ rebase gợi ý | Tekton Triggers + CronJob tạo PipelineRun |
 | **[v4.12, Plan #61] Drone build Dockerfile cần repo Trusted** | Drone không đặt seccomp cho từng bước, nên BuildKit không root chạy `privileged` trong namespace `udp-build`; Buildpacks không cần quyền gì | Runner Drone hỗ trợ securityContext theo bước |
 | **[v4.12, Plan #61] Lịch rebase của GitLab, CircleCI, Drone tạo trong cài đặt của CI** | Ba CI này không khai lịch trong tệp pipeline; mục Đóng gói chỉ đúng chỗ, giờ và lệnh | — |
 | **[v4.12, Plan #61] Ký bằng KMS thật chưa chạy** | Lệnh ký của sáu CI qua `bash -n` và bộ hợp đồng; cổng deploy kiểm bundle thật của cosign; job `signing-e2e` ký bằng khoá tệp (cùng lệnh, khác giá trị `--key`). Gọi KMS của ba cloud bằng thông tin đăng nhập liên kết từ JWT của CI cần tài khoản cloud thật. Sổ nợ: `signing-kms-real` | Chạy lượt `signing-kms-real` cùng `packaging-real` |
-| **[v4.12, Plan #61 61d-2a] Trusted Deploy chưa khả dụng với ba CI chạy trong cụm** | Jenkins, Tekton và Drone chạy trong cụm của project nên token của chúng là token ServiceAccount, không phải JWT của một nhà cung cấp SaaS. Kiểm nó cần một trong hai thứ, và **cả hai đều chạm phía cụm**: quyền `authentication.k8s.io/tokenreviews` (không ServiceAccount nào của §12.2 có, và phải bootstrap lại mọi cụm đang chạy), hay JWKS của chính cụm (Service 1 chưa lưu URL issuer, mà mọi cụm lại cùng một chủ thể `system:serviceaccount:udp-build:udp-builder` nên chỉ issuer nhận diện được project). Ba CI đó giữ HMAC như trước và Portal nói rõ lý do | 61d-2b quyết giữa hai lối, với "mọi cụm cùng một chủ thể" làm đầu vào |
+| **[v4.12, Plan #61 61d-2b-1] Trusted Deploy của ba CI trong cụm KHÔNG chứng minh nhánh** | Token của Jenkins, Tekton và Drone là bound ServiceAccount token, và token đó **không mang claim repo hay ref** nào. Thêm nữa quyền tạo pod trong `udp-build` đến từ RBAC của chart CI chứ không từ UDP, còn nội dung pipeline là tệp trong repo của khách. Nên lớp này chứng minh "lời báo đến từ một pod build trong cụm của đúng project này" — không chứng minh commit, không chứng minh nhánh; với ba CI đó, kẻ kiểm soát repo vượt được **cả** cổng chữ ký của 61d-1 vì khoá KMS cũng chỉ ràng theo cùng chủ thể. Luật nhánh do tệp pipeline giữ, và Portal nói đúng câu đó ở mục CI/CD | Một claim do UDP đặt vào token (cần Tekton Triggers hay một bộ ký trong cụm), hay bước báo chạy trong pod do UDP tạo |
 | **[v4.12, Plan #61 61d-2a] `aud` của CircleCI không buộc token vào đúng project** | Đã đọc tại tài liệu CircleCI: `aud` mặc định LÀ `ORGANIZATION_ID`, và đổi nó cần một tính năng riêng ở mức tổ chức chứ **không đặt được trong `config.yml`**. Nên với CircleCI, `aud` chỉ chặn dùng chéo tổ chức: mọi job trong cùng tổ chức đều có token mang đúng `aud` đó, và việc buộc token vào project dựa HOÀN TOÀN vào claim `oidc.circleci.com/project-id`. GitHub và GitLab không có điểm yếu này vì `aud` của chúng là địa chỉ webhook tuyệt đối | CircleCI mở custom audience ở mức project, hay UDP đòi thêm một claim riêng |
 | **[v4.12, Plan #61 61d-2a] Chưa chạy với token do nhà cung cấp THẬT phát** | Lõi xác minh có 22 ô tất định (khoá sinh trong tiến trình, đồng hồ tiêm vào, `fetch` tiêm vào) và đưỡng webhook có 7 ô tích hợp trên database thật, nhưng ba thứ chỉ một lượt với nhà cung cấp thật chứng minh được: `aud` thật khớp chuỗi renderer in ra, `exp − iat` thật của từng nhà cung cấp, và JWKS thật lấy được qua `createEgressFetch` kể cả sau một lượt xoay khoá. Sổ nợ: `trusted-deploy-real` | Cần UDP có địa chỉ công khai; không tốn tiền |
+| **[v4.12, Plan #61 61d-2b-1] Chưa chạy với token do một API server THẬT phát** | Lõi xác minh có 12 ô tất định (khoá RSA và EC sinh trong tiến trình, danh sách thuật toán tiêm vào, cổng đọc cụm tiêm vào), `issuerKeys` có 4 ô trên một transport giả, và đường webhook có 5 ô trên database thật; nhưng bốn thứ chỉ một cụm thật chứng minh được: ClusterRoleBinding mặc định của EKS/AKS/GKE có thật sự cho `udp-tooling` đọc hai đường dẫn đó, danh sách thuật toán thật của chúng, `jti` có mặt thật, và chuỗi `iss` thật bằng chuỗi discovery khai. Sổ nợ: `trusted-deploy-cluster` | Chạy cùng lượt `packaging-real`; không tốn thêm tiền |
 | **[v4.12, Plan #61 61d-2b-0] Project đã chạy script danh tính trước 03/10/2026 phải chạy lại** | GitHub đổi hình chủ thể JWT: từ 15/07/2026 mọi repo **mới tạo, đổi tên, hay chuyển chủ** phát `sub` = `repo:<owner>@<ownerId>/<name>@<repoId>:ref:…` thay vì hình theo tên (changelog GitHub 23/04/2026). Script của UDP giờ tin CẢ HAI hình — hình theo tên vẫn an toàn vì chỉ repo có trước mốc đó và chưa đổi tên mới phát được nó — nhưng vai trò IAM và federated credential đã tạo bằng **script cũ** chỉ tin hình theo tên, và UDP không có quyền sửa chúng từ xa. Hệ quả: repo mới tạo, mới đổi tên hay mới chuyển chủ sẽ không đẩy và không ký được cho tới khi chủ tài khoản cloud chạy lại script. Mục Đóng gói nói đúng câu đó dưới script | Một lượt provision lại danh tính do UDP chủ động, khi UDP có quyền IAM trong tài khoản khách (hiện không, và cố ý không — QĐ-6) |
 | **[v4.12, Plan #61 61d-2b-0] GitHub + Azure: tối đa 10 nhánh** | Azure cho **20** federated identity credential mỗi managed identity và FIC cổ điển **không có ký tự đại diện**; bản "flexible" có ký tự đại diện thì chưa nhận CircleCI và chưa dùng được qua `az` (tài liệu Microsoft, 18/09/2026). Mỗi nhánh của GitHub tốn 2 credential (hình tên + hình bất biến) nên trần thật là 10 nhánh, tức `main` cộng 9 environment không phải production. Vượt trần thì script **dừng ở dòng đầu** với câu nói rõ, không tạo nửa vời | Azure mở FIC linh hoạt cho nhiều issuer hơn, hay UDP nhóm nhánh theo tiền tố |
 | **[v4.12, Plan #61] CircleCI trên Azure chưa ký được** | Chủ thể JWT của CircleCI mang id người chạy, federated credential của Azure đòi khớp đúng (bản "flexible" chưa nhận CircleCI); mục Ký image nói lý do, image deploy như trước, không chữ ký | Bộ ký trong cụm (61d-2b-2) |
@@ -8551,7 +8648,7 @@ _UDP Technical Design Document v4.0_
 | Mã lỗi rải rác ở §5.3, §9, §12 | **Danh mục 25 mã** ([v4.5] thêm `CONFIRMATION_REQUIRED`; [v4.9] thêm `FLAG_RECENTLY_EVALUATED`, `SEGMENT_IN_USE`; [v4.11] thêm `CLOUD_MISMATCH`) trong `@udp/shared-types` sinh ra type, khóa i18n và tài liệu; trường `fixableBy` điều khiển hành vi UI (**I36**, **I37**) |
 | Một dòng cảnh báo về cache lẫn giữa environment | **Bảng 18 màn hình** có query key và quy tắc invalidate, kiểm bằng test (**I38**) |
 
-Cùng đợt này bổ sung **§6.8** (`@udp/openfeature-provider` — package mang C1 vào ứng dụng của khách, trước đó chỉ tồn tại dưới dạng `import` trong code mẫu), **§4.6** (`ClusterAccess` — đường duy nhất chạm cluster tenant, trước đó chỉ có một dòng phác trong cây thư mục §3.1), và **bộ contract test thứ hai dành riêng cho Cloud Adapter** (bộ cũ hoàn toàn mang hình dạng Domain Adapter, trong khi C3 tuyên bố chính hợp đồng của Cloud Adapter). Tổng cuối: **43 bất biến** (thêm I39 — ORPHAN_RULE cưỡng chế ở tầng database; [v4.5] I40 — audit cùng transaction với thay đổi), 16 phép đo, 8 ADR.
+Cùng đợt này bổ sung **§6.8** (`@udp/openfeature-provider` — package mang C1 vào ứng dụng của khách, trước đó chỉ tồn tại dưới dạng `import` trong code mẫu), **§4.6** (`ClusterAccess` — đường duy nhất chạm cluster tenant, trước đó chỉ có một dòng phác trong cây thư mục §3.1), và **bộ contract test thứ hai dành riêng cho Cloud Adapter** (bộ cũ hoàn toàn mang hình dạng Domain Adapter, trong khi C3 tuyên bố chính hợp đồng của Cloud Adapter). Tổng cuối: **44 bất biến** (thêm I39 — ORPHAN_RULE cưỡng chế ở tầng database; [v4.5] I40 — audit cùng transaction với thay đổi), 16 phép đo, 8 ADR.
 
 **Lan xuống toàn bộ tài liệu:** §8 viết lại 5 luồng và thêm luồng thứ 6 · §9 bổ sung endpoint `/internal/clusters/:id/token`, `track`/`untrack`, nhóm day-2, catalog, cùng quy ước `Idempotency-Key` và lỗi RFC 9457 · §10 thêm §10.13 với 12 màn hình mới và sửa rule builder theo mô hình `serve` · §11 viết lại toàn bộ telemetry template và sửa lỗi ký HMAC sai chuỗi byte trong pipeline mẫu · §12 thêm T11 (SSRF), T12 (endpoint nội bộ), T13 (token cluster) và bảng RBAC ba ServiceAccount · §13 thêm test hợp đồng cho day-2 và hai base class · §16 gỡ ba giới hạn đã hết hiệu lực và thêm bảy giới hạn thật của v4.
 

@@ -109,6 +109,8 @@ function fakeAccess(clusterId: string): ClusterAccess {
         write: () => Promise.resolve(),
       }),
     proxyService: () => Promise.reject(new Error("không proxy trong test")),
+    issuerKeys: () =>
+      Promise.reject(new Error("không đọc khoá issuer trong test")),
     probe: () =>
       Promise.resolve({ status: "SUCCESS", data: { reachable: true } }),
   };
@@ -1326,6 +1328,7 @@ function appFor(
       withCluster: null,
       scanDrift,
       clusterToken: null,
+      clusterIssuerKeys: null,
       flaggerGateBaseUrl: null,
     },
   });

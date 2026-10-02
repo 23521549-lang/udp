@@ -1797,16 +1797,21 @@ export const cicdStatusResponseWire = z
          * [v4.12, Plan #61 61d-2a] Trusted Deploy đã bắt buộc chưa, và vì sao chưa bật được.
          *
          * `available` false nghĩa là UDP KHÔNG kiểm được token của provider đang bật — CircleCI thiếu
-         * `organizationId`/`projectId` (không suy ra được issuer), hay provider là một CI chạy trong cụm
-         * (chờ 61d-2b). Khi đó không cho bật `required`, vì bật một cổng mà UDP không kiểm nổi là tự khoá
-         * project ra ngoài.
+         * `organizationId`/`projectId` (không suy ra được issuer), hay provider là một CI chạy trong cụm mà
+         * project CHƯA có cụm provision xong (`CLUSTER_NOT_READY` — không có cụm thì không có khoá nào để
+         * kiểm). Khi đó không cho bật `required`, vì bật một cổng mà UDP không kiểm nổi là tự khoá project
+         * ra ngoài.
          */
         trustedDeploy: z
           .object({
             required: z.boolean(),
             available: z.boolean(),
             unavailableReason: z
-              .enum(["IN_CLUSTER_CI", "MISSING_CIRCLECI_IDS", "NO_PROVIDER"])
+              .enum([
+                "CLUSTER_NOT_READY",
+                "MISSING_CIRCLECI_IDS",
+                "NO_PROVIDER",
+              ])
               .nullable(),
           })
           .strict(),

@@ -231,6 +231,7 @@ export {
   buildTestSettingSchema,
   DEFAULT_BUILD_SETTINGS,
   identityLineSchema,
+  IN_CLUSTER_CI,
   isSafeBuildPath,
   kmsCloudOf,
   oidcRequiredSchema,

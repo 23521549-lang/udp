@@ -493,3 +493,121 @@ describe("AC-18 — tham số identity là bắt buộc ở tầng kiểu", () =
     expect(fake.writes).toHaveLength(1);
   });
 });
+
+/**
+ * [Plan #61 61d-2b-1] `issuerKeys()` — khoá công khai của chính cluster, đọc trên kết nối API server.
+ *
+ * Bốn tính chất, và mỗi cái chặn một cách hỏng khác: ĐÚNG hai đường dẫn (không một lời gọi nào rời tiến
+ * trình); Bearer là token của `udp-system/udp-tooling` (một identity khác là một quyền khác của §12.2);
+ * danh sách thuật toán lấy TỪ cụm chứ không ghim cứng; và thiếu thông tin ⇒ fail-closed chứ không đoán.
+ */
+describe("issuerKeys — khoá ký token SA của chính cluster (Plan #61 61d-2b-1)", () => {
+  const DISCOVERY = {
+    issuer: "https://oidc.vi-du.test/id/ABC",
+    jwks_uri: "https://ra-internet.vi-du.test/keys",
+    id_token_signing_alg_values_supported: ["RS256"],
+  };
+  const JWKS = { keys: [{ kty: "RSA", kid: "k1", alg: "RS256" }] };
+
+  const serve = () =>
+    transportOf((url) => {
+      if (url.endsWith("/.well-known/openid-configuration")) {
+        return new Response(JSON.stringify(DISCOVERY), { status: 200 });
+      }
+      if (url.endsWith("/openid/v1/jwks")) {
+        return new Response(JSON.stringify(JWKS), { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+  it("đọc ĐÚNG hai đường dẫn của API server, đúng thứ tự, và KHÔNG theo jwks_uri", async () => {
+    const { transport, seen } = serve();
+    const { source, asked } = tokensOf();
+    const access = createDirectClusterAccess({
+      clusterId: "c1",
+      apiEndpoint: ENDPOINT,
+      transport,
+      tokens: source,
+    });
+
+    const got = await access.issuerKeys();
+
+    // `toEqual` chứ không `toContain`: một lời gọi THỪA (ví dụ đi theo `jwks_uri`) là đỏ
+    expect(seen.map((r) => r.url)).toEqual([
+      `${ENDPOINT}/.well-known/openid-configuration`,
+      `${ENDPOINT}/openid/v1/jwks`,
+    ]);
+    expect(got).toEqual({
+      issuer: DISCOVERY.issuer,
+      algorithms: ["RS256"],
+      jwks: JWKS,
+    });
+    // Quyền này là của `tooling` theo §12.2 — không phải `workload` hay `traffic`
+    expect(asked).toEqual(["udp-system/udp-tooling"]);
+    for (const r of seen) {
+      expect(new Headers(r.init.headers).get("authorization")).toBe(
+        "Bearer token-cua-udp-system/udp-tooling",
+      );
+    }
+  });
+
+  it("thuật toán lấy TỪ cụm: cụm dùng khoá EC thì danh sách là ES256", async () => {
+    const { transport } = transportOf((url) =>
+      url.endsWith("/openid/v1/jwks")
+        ? new Response(JSON.stringify(JWKS), { status: 200 })
+        : new Response(
+            JSON.stringify({
+              ...DISCOVERY,
+              id_token_signing_alg_values_supported: ["ES256", "ES384"],
+            }),
+            { status: 200 },
+          ),
+    );
+    const access = createDirectClusterAccess({
+      clusterId: "c1",
+      apiEndpoint: ENDPOINT,
+      transport,
+      tokens: tokensOf().source,
+    });
+
+    expect((await access.issuerKeys()).algorithms).toEqual(["ES256", "ES384"]);
+  });
+
+  it("discovery thiếu thuật toán ⇒ danh sách RỖNG, không đoán RS256", async () => {
+    const { transport } = transportOf((url) =>
+      url.endsWith("/openid/v1/jwks")
+        ? new Response(JSON.stringify(JWKS), { status: 200 })
+        : new Response(JSON.stringify({ issuer: DISCOVERY.issuer }), {
+            status: 200,
+          }),
+    );
+    const access = createDirectClusterAccess({
+      clusterId: "c1",
+      apiEndpoint: ENDPOINT,
+      transport,
+      tokens: tokensOf().source,
+    });
+
+    // Rỗng là một câu trả lời: bên gọi giao nó với allowlist nên rỗng ⇒ "không kiểm được" ⇒ 503
+    expect((await access.issuerKeys()).algorithms).toEqual([]);
+  });
+
+  it("thiếu issuer, hay API server từ chối ⇒ NÉM, không trả một nửa", async () => {
+    for (const handler of [
+      (url: string) =>
+        url.endsWith("/openid/v1/jwks")
+          ? new Response(JSON.stringify(JWKS), { status: 200 })
+          : new Response(JSON.stringify({ jwks_uri: "x" }), { status: 200 }),
+      (_url: string) => new Response("forbidden", { status: 403 }),
+    ]) {
+      const { transport } = transportOf(handler);
+      const access = createDirectClusterAccess({
+        clusterId: "c1",
+        apiEndpoint: ENDPOINT,
+        transport,
+        tokens: tokensOf().source,
+      });
+      await expect(access.issuerKeys()).rejects.toThrow();
+    }
+  });
+});

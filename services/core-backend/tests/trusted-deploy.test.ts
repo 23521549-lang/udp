@@ -129,6 +129,7 @@ describe("Trusted Deploy — issuer suy từ cấu hình, không từ token", ()
       expected: githubExpectation(),
       authorization: `Bearer ${await githubToken(signer)}`,
       egressFetch: net.fetch,
+      clusterKeys: null,
       now: NOW,
     });
 
@@ -144,6 +145,7 @@ describe("Trusted Deploy — issuer suy từ cấu hình, không từ token", ()
       expected: githubExpectation(),
       authorization: `Bearer ${await githubToken(evil, { iss: "https://evil.test" })}`,
       egressFetch: net.fetch,
+      clusterKeys: null,
       now: NOW,
     });
 
@@ -165,11 +167,19 @@ describe("Trusted Deploy — issuer suy từ cấu hình, không từ token", ()
     ).toEqual({ unavailable: "MISSING_CIRCLECI_IDS" });
   });
 
-  it("ba CI trong cụm chưa khả dụng tới 61d-2b, và nói đúng lý do", () => {
+  it("ba CI trong cụm: mong đợi theo CỤM, chủ thể ghim, không claim repo hay ref", () => {
     for (const provider of ["jenkins", "tekton", "drone"]) {
       expect(
         expectationOf({ provider, toolConfig: {}, webhookUrl: WEBHOOK }),
-      ).toEqual({ unavailable: "IN_CLUSTER_CI" });
+      ).toEqual({
+        kind: "cluster",
+        provider,
+        // `aud` là địa chỉ webhook tuyệt đối, như GitHub và GitLab
+        audience: WEBHOOK,
+        // Chủ thể là phép kiểm chặn leo thang nội cụm: mọi pod khác trong cụm có `sub` khác
+        subject: "system:serviceaccount:udp-build:udp-builder",
+        tokenIdClaim: "jti",
+      });
     }
   });
 
@@ -183,7 +193,9 @@ describe("Trusted Deploy — issuer suy từ cấu hình, không từ token", ()
       },
       webhookUrl: WEBHOOK,
     });
-    if ("unavailable" in got) throw new Error("circleci phải khả dụng");
+    if ("unavailable" in got || got.kind !== "provider") {
+      throw new Error("circleci phải khả dụng và là một nhà cung cấp SaaS");
+    }
     expect(got.audience).toBe("11111111-2222-3333-4444-555555555555");
     expect(got.issuer).toBe(
       "https://oidc.circleci.com/org/11111111-2222-3333-4444-555555555555",
@@ -199,6 +211,7 @@ describe("Trusted Deploy — thời gian, với đồng hồ tiêm vào", () => 
       expected: githubExpectation(),
       authorization: `Bearer ${await githubToken(signer, over)}`,
       egressFetch: net.fetch,
+      clusterKeys: null,
       now,
     });
   };
@@ -263,6 +276,7 @@ describe("Trusted Deploy — khoá và thuật toán", () => {
         expected: githubExpectation(),
         authorization: `Bearer ${await githubToken(signer, { aud: "https://khac.test/hook" })}`,
         egressFetch: net.fetch,
+        clusterKeys: null,
         now: NOW,
       }),
     ).toMatchObject({ kind: "rejected", code: "TOKEN_AUDIENCE_MISMATCH" });
@@ -276,6 +290,7 @@ describe("Trusted Deploy — khoá và thuật toán", () => {
         expected: githubExpectation(),
         authorization: `Bearer ${await githubToken(other)}`,
         egressFetch: net.fetch,
+        clusterKeys: null,
         now: NOW,
       }),
     ).toMatchObject({ kind: "rejected", code: "TOKEN_INVALID" });
@@ -289,6 +304,7 @@ describe("Trusted Deploy — khoá và thuật toán", () => {
         expected: githubExpectation(),
         authorization: `Bearer ${await githubToken(es, { alg: "ES256" })}`,
         egressFetch: net.fetch,
+        clusterKeys: null,
         now: NOW,
       }),
     ).toMatchObject({ kind: "rejected", code: "TOKEN_INVALID" });
@@ -304,6 +320,7 @@ describe("Trusted Deploy — khoá và thuật toán", () => {
         expected: githubExpectation(),
         authorization: `Bearer ${await githubToken(signer, { kid: null })}`,
         egressFetch: net.fetch,
+        clusterKeys: null,
         now: NOW,
       }),
     ).toMatchObject({ kind: "rejected", code: "TOKEN_INVALID" });
@@ -316,6 +333,7 @@ describe("Trusted Deploy — khoá và thuật toán", () => {
         expected: githubExpectation(),
         authorization: `Bearer ${await githubToken(signer)}`,
         egressFetch: net.fetch,
+        clusterKeys: null,
         now: NOW,
       }),
     ).toMatchObject({ kind: "rejected", code: "TOKEN_KEYS_UNAVAILABLE" });
@@ -327,6 +345,7 @@ describe("Trusted Deploy — khoá và thuật toán", () => {
       expected: githubExpectation(),
       authorization: `Bearer ${await githubToken(signer)}`,
       egressFetch: ok.fetch,
+      clusterKeys: null,
       now: NOW,
     });
     expect(first).toMatchObject({ kind: "verified" });
@@ -343,6 +362,7 @@ describe("Trusted Deploy — khoá và thuật toán", () => {
           exp: Math.floor(later.getTime() / 1000) + 300,
         })}`,
         egressFetch: dead.fetch,
+        clusterKeys: null,
         now: later,
       }),
     ).toMatchObject({ kind: "verified", tokenId: "jti-2" });
@@ -359,6 +379,7 @@ describe("Trusted Deploy — hình dạng header và claim bắt buộc", () => 
         expected: githubExpectation(),
         authorization: undefined,
         egressFetch: net().fetch,
+        clusterKeys: null,
         now: NOW,
       }),
     ).toEqual({ kind: "absent" });
@@ -372,6 +393,7 @@ describe("Trusted Deploy — hình dạng header và claim bắt buộc", () => 
           expected: githubExpectation(),
           authorization: header,
           egressFetch: spy.fetch,
+          clusterKeys: null,
           now: NOW,
         }),
       ).toMatchObject({ kind: "rejected", code: "TOKEN_MALFORMED" });
@@ -385,6 +407,7 @@ describe("Trusted Deploy — hình dạng header và claim bắt buộc", () => 
         expected: githubExpectation(),
         authorization: `Bearer ${await githubToken(signer, { repository: "acme/khac" })}`,
         egressFetch: net().fetch,
+        clusterKeys: null,
         now: NOW,
       }),
     ).toMatchObject({ kind: "rejected", code: "TOKEN_CLAIM_MISMATCH" });
@@ -396,6 +419,7 @@ describe("Trusted Deploy — hình dạng header và claim bắt buộc", () => 
         expected: githubExpectation(),
         authorization: `Bearer ${await githubToken(signer, { jti: null })}`,
         egressFetch: net().fetch,
+        clusterKeys: null,
         now: NOW,
       }),
     ).toMatchObject({ kind: "rejected", code: "TOKEN_CLAIM_MISMATCH" });
@@ -407,6 +431,7 @@ describe("Trusted Deploy — hình dạng header và claim bắt buộc", () => 
         expected: githubExpectation(),
         authorization: `Bearer ${await githubToken(signer, { ref: "refs/heads/feature-x" })}`,
         egressFetch: net().fetch,
+        clusterKeys: null,
         now: NOW,
       }),
     ).toMatchObject({ kind: "verified", ref: "refs/heads/feature-x" });
@@ -424,7 +449,9 @@ describe("Trusted Deploy — hàng rào egress thật nằm trong đường đi"
       },
       webhookUrl: WEBHOOK,
     });
-    if ("unavailable" in got) throw new Error("gitlab phải khả dụng");
+    if ("unavailable" in got || got.kind !== "provider") {
+      throw new Error("gitlab phải khả dụng và là một nhà cung cấp SaaS");
+    }
     expect(got.keys).toEqual({
       kind: "direct",
       jwksUri: "https://169.254.169.254/oauth/discovery/keys",
@@ -441,6 +468,7 @@ describe("Trusted Deploy — hàng rào egress thật nằm trong đường đi"
           cb(null, [{ address: "169.254.169.254", family: 4 }]);
         },
       }),
+      clusterKeys: null,
       now: NOW,
     });
 
@@ -449,5 +477,314 @@ describe("Trusted Deploy — hàng rào egress thật nằm trong đường đi"
       code: "TOKEN_KEYS_UNAVAILABLE",
     });
     expect((verdict as { detail: string }).detail).toMatch(/egress|Không gọi/i);
+  });
+});
+
+/**
+ * [Plan #61 61d-2b-1] Nhánh CI-trong-cụm: khoá kiểm lấy từ CHÍNH cụm của project (I42).
+ *
+ * Cùng kỷ luật với phần trên — khoá sinh trong tiến trình, đồng hồ tiêm vào, cổng đọc cụm tiêm vào — nên
+ * không ô nào cần một cụm thật. Thứ các ô này chốt là bốn nửa của I42 cộng hai tính chất của cache.
+ */
+describe("Trusted Deploy — ba CI trong cụm, khoá từ chính cụm (I42)", () => {
+  const CLUSTER_ISS = "https://oidc.eks.ap-southeast-1.amazonaws.com/id/ABC";
+  const JENKINS_WEBHOOK = "https://udp.test/api/v1/webhooks/cicd/p-1/jenkins";
+  const SUBJECT = "system:serviceaccount:udp-build:udp-builder";
+
+  const clusterExpectation = (): TrustedDeployExpectation => {
+    const got = expectationOf({
+      provider: "jenkins",
+      toolConfig: {},
+      webhookUrl: JENKINS_WEBHOOK,
+    });
+    if ("unavailable" in got) throw new Error("jenkins phải khả dụng");
+    return got;
+  };
+
+  /** Token bound SA của pod build — mọi claim đúng trừ thứ mỗi ô cố ý đổi */
+  async function saToken(
+    signerOf: Signer,
+    over: {
+      iss?: string;
+      aud?: string;
+      sub?: string;
+      jti?: string | null;
+      alg?: string;
+    } = {},
+  ): Promise<string> {
+    const now = Math.floor(NOW.getTime() / 1000);
+    const claims: Record<string, unknown> = {
+      sub: over.sub ?? SUBJECT,
+      "kubernetes.io": { namespace: "udp-build" },
+      iat: now,
+      exp: now + 3600,
+    };
+    if (over.jti !== null) claims.jti = over.jti ?? "jti-cum-1";
+    return await new SignJWT(claims)
+      .setProtectedHeader({
+        alg: over.alg ?? "RS256",
+        kid: signerOf.jwk.kid as string,
+      })
+      .setIssuer(over.iss ?? CLUSTER_ISS)
+      .setAudience(over.aud ?? JENKINS_WEBHOOK)
+      .sign(signerOf.key);
+  }
+
+  /** Cổng đọc cụm, đếm số lượt đọc — số đó là oracle của cache và của cache ÂM */
+  function clusterPort(
+    read: () => Promise<{
+      issuer: string;
+      algorithms: readonly string[];
+      jwks: unknown;
+    }>,
+    cacheKey = "p-1",
+  ): { port: { cacheKey: string; read: typeof read }; reads: () => number } {
+    let count = 0;
+    return {
+      port: {
+        cacheKey,
+        read: () => {
+          count += 1;
+          return read();
+        },
+      },
+      reads: () => count,
+    };
+  }
+
+  const servesCluster = (
+    signerOf: Signer,
+    algorithms: readonly string[] = ["RS256"],
+    issuer = CLUSTER_ISS,
+  ) =>
+    clusterPort(() =>
+      Promise.resolve({ issuer, algorithms, jwks: { keys: [signerOf.jwk] } }),
+    );
+
+  /** `egressFetch` của nhánh cụm phải KHÔNG BAO GIỜ được gọi — đường đọc là `ClusterAccess` */
+  const noEgress = (() => {
+    throw new Error("nhánh cụm không được gọi egressFetch");
+  }) as unknown as typeof fetch;
+
+  it("token của pod build: nhận, và KHÔNG một lời gọi egress nào", async () => {
+    const { port, reads } = servesCluster(signer);
+    const verdict = await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${await saToken(signer)}`,
+      egressFetch: noEgress,
+      clusterKeys: port,
+      now: NOW,
+    });
+
+    expect(verdict).toMatchObject({
+      kind: "verified",
+      issuer: CLUSTER_ISS,
+      tokenId: "jti-cum-1",
+      // Token SA không mang claim ref: lớp này KHÔNG chứng minh nhánh (§8.3, §16)
+      ref: null,
+    });
+    expect(reads()).toBe(1);
+  });
+
+  it("chủ thể là một ServiceAccount KHÁC trong cùng cụm ⇒ từ chối (chặn leo thang nội cụm)", async () => {
+    const { port } = servesCluster(signer);
+    const verdict = await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${await saToken(signer, {
+        sub: "system:serviceaccount:default:app",
+      })}`,
+      egressFetch: noEgress,
+      clusterKeys: port,
+      now: NOW,
+    });
+
+    expect(verdict).toMatchObject({
+      kind: "rejected",
+      code: "TOKEN_CLAIM_MISMATCH",
+    });
+    // Thông điệp mang chủ thể NHẬN ĐƯỢC: không có nó, một lượt Tekton thiếu cờ SA là 401 không truy được
+    expect((verdict as { detail: string }).detail).toContain(
+      "system:serviceaccount:default:app",
+    );
+  });
+
+  it("token ký bằng khoá của CỤM KHÁC, cùng kid ⇒ từ chối ở chữ ký", async () => {
+    const other = await newSigner(signer.jwk.kid as string);
+    const { port } = servesCluster(signer);
+    const verdict = await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${await saToken(other)}`,
+      egressFetch: noEgress,
+      clusterKeys: port,
+      now: NOW,
+    });
+
+    expect(verdict).toMatchObject({ kind: "rejected", code: "TOKEN_INVALID" });
+  });
+
+  it("`iss` không phải chuỗi cụm khai ⇒ từ chối, kể cả khi chữ ký đúng", async () => {
+    const { port } = servesCluster(signer);
+    const verdict = await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${await saToken(signer, {
+        iss: "https://cum-khac.test/id/XYZ",
+      })}`,
+      egressFetch: noEgress,
+      clusterKeys: port,
+      now: NOW,
+    });
+
+    expect(verdict).toMatchObject({
+      kind: "rejected",
+      code: "TOKEN_ISSUER_UNEXPECTED",
+    });
+  });
+
+  it("`aud` của project khác ⇒ từ chối", async () => {
+    const { port } = servesCluster(signer);
+    const verdict = await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${await saToken(signer, {
+        aud: "https://udp.test/api/v1/webhooks/cicd/p-2/jenkins",
+      })}`,
+      egressFetch: noEgress,
+      clusterKeys: port,
+      now: NOW,
+    });
+
+    expect(verdict).toMatchObject({
+      kind: "rejected",
+      code: "TOKEN_AUDIENCE_MISMATCH",
+    });
+  });
+
+  it("cụm dùng khoá EC: nhận ES256 — ghim cứng RS256 sẽ chặn chính cụm đó", async () => {
+    const ec = await newSigner("k-ec", "ES256");
+    const { port } = servesCluster(ec, ["ES256"]);
+    const verdict = await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${await saToken(ec, { alg: "ES256" })}`,
+      egressFetch: noEgress,
+      clusterKeys: port,
+      now: NOW,
+    });
+
+    expect(verdict).toMatchObject({ kind: "verified" });
+  });
+
+  it("cụm khai thuật toán ngoài allowlist ⇒ 503 retryable, KHÔNG 401", async () => {
+    const { port } = servesCluster(signer, ["HS256"]);
+    const verdict = await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${await saToken(signer)}`,
+      egressFetch: noEgress,
+      clusterKeys: port,
+      now: NOW,
+    });
+
+    // Lý do là hạ tầng (cụm khai thứ UDP không kiểm được), nên nó phải retryable — không phải lỗi của token
+    expect(verdict).toMatchObject({
+      kind: "rejected",
+      code: "TOKEN_KEYS_UNAVAILABLE",
+    });
+  });
+
+  it("tiến trình không có đường ra cụm ⇒ 503, không bao giờ bỏ qua phép kiểm", async () => {
+    const verdict = await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${await saToken(signer)}`,
+      egressFetch: noEgress,
+      clusterKeys: null,
+      now: NOW,
+    });
+
+    expect(verdict).toMatchObject({
+      kind: "rejected",
+      code: "TOKEN_KEYS_UNAVAILABLE",
+    });
+  });
+
+  it("cache: hai lời báo liên tiếp đọc cụm ĐÚNG một lần", async () => {
+    const { port, reads } = servesCluster(signer);
+    for (const jti of ["jti-a", "jti-b"]) {
+      const verdict = await verifyTrustedDeploy({
+        expected: clusterExpectation(),
+        authorization: `Bearer ${await saToken(signer, { jti })}`,
+        egressFetch: noEgress,
+        clusterKeys: port,
+        now: NOW,
+      });
+      expect(verdict).toMatchObject({ kind: "verified" });
+    }
+    expect(reads()).toBe(1);
+  });
+
+  /**
+   * Cache ÂM — chốt cho đúng lỗ mà vòng QA của plan 61d-2b tìm ra.
+   *
+   * Trước đợt này, `cache.set` chỉ chạy trên đường thành công, nên khi chưa có bản khoá nào thì MỌI lời báo
+   * hỏng đều đi đọc lại ngay. Với nhánh cụm, mỗi lượt đọc là một lần lấy credential cloud + một token quản
+   * trị + hai lời gọi API server ⇒ một kẻ có secret HMAC biến webhook thành máy bơm vào cloud của khách.
+   */
+  it("cache ÂM: cụm hỏng, hai lời báo liên tiếp đọc cụm ĐÚNG một lần", async () => {
+    const { port, reads } = clusterPort(() =>
+      Promise.reject(new Error("cụm không với tới")),
+    );
+    for (const jti of ["jti-a", "jti-b"]) {
+      const verdict = await verifyTrustedDeploy({
+        expected: clusterExpectation(),
+        authorization: `Bearer ${await saToken(signer, { jti })}`,
+        egressFetch: noEgress,
+        clusterKeys: port,
+        now: NOW,
+      });
+      expect(verdict).toMatchObject({
+        kind: "rejected",
+        code: "TOKEN_KEYS_UNAVAILABLE",
+      });
+    }
+    expect(reads()).toBe(1);
+  });
+
+  it("cache ÂM hết hạn sau cooldown ⇒ thử lại đúng MỘT lần nữa", async () => {
+    const { port, reads } = clusterPort(() =>
+      Promise.reject(new Error("cụm không với tới")),
+    );
+    const call = async (now: Date) =>
+      await verifyTrustedDeploy({
+        expected: clusterExpectation(),
+        authorization: `Bearer ${await saToken(signer)}`,
+        egressFetch: noEgress,
+        clusterKeys: port,
+        now,
+      });
+
+    await call(NOW);
+    await call(new Date(NOW.getTime() + 29_000));
+    expect(reads()).toBe(1);
+    await call(new Date(NOW.getTime() + 31_000));
+    expect(reads()).toBe(2);
+  });
+
+  it("I24: cache KHÔNG giữ token nào, chỉ khoá công khai", async () => {
+    const { port } = servesCluster(signer);
+    const token = await saToken(signer);
+    await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${token}`,
+      egressFetch: noEgress,
+      clusterKeys: port,
+      now: NOW,
+    });
+
+    // Lượt đọc thứ hai phục vụ từ cache: nếu cache giữ token thì nó sẽ nằm trong `jwks` đã lưu
+    const second = await verifyTrustedDeploy({
+      expected: clusterExpectation(),
+      authorization: `Bearer ${token}`,
+      egressFetch: noEgress,
+      clusterKeys: port,
+      now: NOW,
+    });
+    expect(JSON.stringify(second)).not.toContain(token.split(".")[2]);
   });
 });

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { IN_CLUSTER_CI } from "@udp/shared-types";
 import type { CicdStatusWire } from "@udp/shared-types/wire";
 import { KeyRound, ShieldCheck, Workflow } from "lucide-react";
 import { useState } from "react";
@@ -31,8 +32,8 @@ function trustedDeployText(
 ): string {
   const text = (key: string) => String(m[key]);
   if (state.required) return text("trustedDeployOn");
-  if (state.unavailableReason === "IN_CLUSTER_CI") {
-    return text("trustedDeployInCluster");
+  if (state.unavailableReason === "CLUSTER_NOT_READY") {
+    return text("trustedDeployClusterNotReady");
   }
   if (state.unavailableReason === "MISSING_CIRCLECI_IDS") {
     return text("trustedDeployCircleciIds");
@@ -85,6 +86,10 @@ export function CicdPanel() {
         <dt>{m.trustedDeploy}</dt>
         <dd>{trustedDeployText(cicd.trustedDeploy, m)}</dd>
       </dl>
+      {/* [Plan #61 61d-2b-1] Bậc bảo đảm của CI trong cụm yếu hơn ba CI SaaS, và phải nói ra */}
+      {IN_CLUSTER_CI.some((name: string) => name === cicd.provider) && (
+        <p className="c3">{m.trustedDeployClusterOnly}</p>
+      )}
       <div className="form-actions" style={{ justifyContent: "flex-start" }}>
         {can(project.myRole, "MAINTAINER") && (
           <button

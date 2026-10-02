@@ -122,6 +122,8 @@ cicdWebhookRouter.post(
       registry: await appDepsOf(req).domainRegistry(),
       enqueueDeploy: appDepsOf(req).provisioning.enqueueDeploy,
       egressFetch: appDepsOf(req).egressFetch,
+      // [Plan #61 61d-2b-1] Chỉ ba CI trong cụm dùng; `null` ⇒ 503 retryable chứ không bỏ qua phép kiểm
+      clusterIssuerKeys: appDepsOf(req).provisioning.clusterIssuerKeys,
     });
     const accepted =
       outcome.status === "started" || outcome.status === "pending";

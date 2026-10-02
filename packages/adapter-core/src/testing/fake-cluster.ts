@@ -41,6 +41,12 @@ export interface FakeClusterOptions {
   /** `probe()` trả về không tới được */
   unreachable?: boolean;
   serverVersion?: string;
+  /**
+   * [Plan #61 61d-2b-1] Thứ `issuerKeys()` trả về. Không khai ⇒ **ném**, đúng như một cụm chưa bật
+   * issuer discovery: test nào cần đường đó phải nói ra là nó cần, chứ không nhận một giá trị mặc định
+   * im lặng (cùng lý lẽ với `denyIdentities`).
+   */
+  issuerKeys?: { issuer: string; algorithms: readonly string[]; jwks: unknown };
 }
 
 export interface FakeClusterAccess extends ClusterAccess {
@@ -52,6 +58,8 @@ export interface FakeClusterAccess extends ClusterAccess {
   snapshot(): Readonly<Record<string, unknown>>;
   /** Số lần xin token, theo identity — để kiểm bộ nhớ đệm token (I24) */
   readonly tokenRequests: Readonly<Record<ControlPlaneIdentity, number>>;
+  /** [Plan #61 61d-2b-1] Số lần `issuerKeys()` được gọi — oracle cho cache khoá của cụm */
+  readonly issuerKeyReads: number;
   reset(): void;
 }
 
@@ -71,6 +79,7 @@ export function createFakeClusterAccess(
   options: FakeClusterOptions = {},
 ): FakeClusterAccess {
   const calls: FakeCall[] = [];
+  let issuerKeyReads = 0;
   const tokenRequests: Record<ControlPlaneIdentity, number> = {
     workload: 0,
     traffic: 0,
@@ -166,6 +175,17 @@ export function createFakeClusterAccess(
       );
     },
 
+    issuerKeys() {
+      const keys = options.issuerKeys;
+      if (keys === undefined) {
+        return Promise.reject(
+          new Error("FakeCluster: chưa khai issuerKeys cho cụm giả này"),
+        );
+      }
+      issuerKeyReads += 1;
+      return Promise.resolve(keys);
+    },
+
     probe() {
       const reachable = options.unreachable !== true;
       return Promise.resolve({
@@ -177,6 +197,10 @@ export function createFakeClusterAccess(
             : { serverVersion: options.serverVersion }),
         },
       });
+    },
+
+    get issuerKeyReads() {
+      return issuerKeyReads;
     },
 
     get calls() {
@@ -200,6 +224,7 @@ export function createFakeClusterAccess(
      */
     reset() {
       calls.length = 0;
+      issuerKeyReads = 0;
       tokenRequests.workload = 0;
       tokenRequests.traffic = 0;
       tokenRequests.tooling = 0;

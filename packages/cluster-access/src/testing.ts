@@ -162,6 +162,8 @@ export class FakeCluster {
       getClient: (as) => Promise.resolve(this.client(as)),
       proxyService: () =>
         Promise.reject(new Error("FakeCluster không proxy service")),
+      issuerKeys: () =>
+        Promise.reject(new Error("FakeCluster không có khoá issuer")),
       probe: () =>
         Promise.resolve({ status: "SUCCESS", data: { reachable: true } }),
     };

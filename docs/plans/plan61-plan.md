@@ -696,6 +696,60 @@ không khi xin token hỏng? (g) `--retry` mới có làm một lượt từ ch�
    **không test nào canh**, nên phải tự cập nhật ở cuối mỗi đợt.
 4. `plan61-spec.md` QĐ-1 nói 61d-2b gồm cả hai việc ⇒ thêm một dòng cho việc chia ba (tiền lệ: `plan61-plan.md:288`).
 
+### 61d-2b-1 — đã làm, và những chỗ CHỆCH plan (R5)
+
+1. **`IN_CLUSTER_CI` dời sang `@udp/shared-types`, plan không nói.** Plan chỉ nói "giữ nguyên cả cú pháp" cái hằng
+   đó trong `trusted-deploy.ts`. Làm xong mới thấy Portal cũng cần đúng tập đó (để in câu "không chứng minh nhánh"
+   cho đúng ba tool), và một bản chép trong Portal là bản chép thứ ba — nó sẽ trôi đúng vào ngày thêm CI thứ bảy.
+   Nên hằng về `shared-types`, backend `export { IN_CLUSTER_CI }` lại cho hai chỗ đang import từ nó, và phép kiểm
+   ghi sổ kép của design-lint trỏ sang tệp mới. Bản chép trong mock của bản xem thử giữ nguyên: mock LÀ một hiện
+   thực độc lập của backend, đó là lý do nó tồn tại.
+2. **Cổng đọc khoá nhận `cacheKey` do bên gọi truyền, không tự suy.** Plan viết "cache theo `clusterId`". Không làm
+   được như thế: `clusterId` chỉ biết được SAU khi đã dựng `ClusterAccess`, tức sau khi đã trả giá một lần lấy
+   credential cloud — đúng cái mà cache sinh ra để tránh. Cổng nhận `cacheKey = projectId`, và điều đó đúng vì mỗi
+   project một cụm (tên cụm tất định theo `projectId`, `clusterOf` đọc hàng `cluster` READY của chính project).
+3. **Dùng CHUNG bộ nhớ đệm `ClusterAccess` với đường đo metrics,** thay vì dựng bộ thứ hai. Một lượt dựng
+   `ClusterAccess` kéo theo một lần lấy credential cloud và một token quản trị, nên hai bộ đệm là gấp đôi việc đó
+   cho cùng một project trong cùng một hạn token. `index.ts` giờ dựng một bộ và đưa cho cả hai.
+4. **`notifyTokenLines` là một hàm MỚI, không phải tham số thêm của `tokenRequestLines`.** Plan viết "biến thể". Ba
+   điểm khác nhau (không ghi tệp, 600 giây, không `set -eu`/`exit`) đều nằm ở THÂN hàm, nên một tham số `mode` sẽ
+   biến một hàm 20 dòng thành hai nhánh song song trong một thân — khó đọc hơn hai hàm, và dễ gọi sai hơn.
+   `tokenRequestLines` cũ không đổi một dòng: nó vẫn là đường đăng nhập registry của bước build.
+5. **Bộ hợp đồng CI/CD được một phép kiểm MẠNH hơn plan đòi.** Plan chỉ nói "thêm needle". Needle
+   `UDP_OIDC_TOKEN` có từ 61d-2a đã được thoả bởi chính dòng header có điều kiện, nên một mình nó không phân biệt
+   "có xin token" với "chỉ gửi nếu có sẵn" — ba CI trong cụm sẽ xanh mà không bao giờ xin token. Giờ với đúng ba
+   tool đó, bộ hợp đồng đòi thấy lời gọi `TokenRequest`, đòi `audiences` bằng đúng `webhookUrl`, và khẳng định
+   **không** có dấu chuyển hướng nào sau `UDP_OIDC_TOKEN` (I24: token không xuống tệp). Đã kiểm rằng phép kiểm
+   mới THẬT SỰ chạy: cố ý làm sai một needle ⇒ đúng ba tệp đỏ (jenkins, tekton, drone), sửa lại ⇒ 324/324.
+6. **Thêm một chốt design-lint plan không nghĩ tới: `cluster-bootstrap.test.ts`.** Câu chịu lực của cả mục này là
+   "bootstrap không đổi một dòng". Nó giờ là một test: `bootstrap.ts` không nhắc `nonResourceURLs`, `openid`,
+   `issuer-discovery` hay `tokenreviews`; §12.2 có câu nói quyền đó là quyền mặc định của Kubernetes và UDP không
+   thu hồi được; và `issuerKeys` dùng đúng identity `tooling`, không đi theo `jwks_uri`.
+7. **Một em-dash trong chữ giao diện làm `tests/design-lint.test.ts` của Portal đỏ.** Luật của repo (không em-dash
+   trong chữ người dùng đọc) bắt đúng hai câu mới. Sửa bằng cách viết lại câu, không bằng cách nới luật.
+
+**Cổng đã qua:** `pnpm typecheck` (core-backend, Portal, pd-controller) 0 lỗi; `prettier --check` toàn repo sạch;
+`trusted-deploy` **34/34** (22 cũ + 12 ô mới của nhánh cụm, gồm cache âm và cooldown); `cicd-webhook` tích hợp
+**42/42** (thêm 5 ô HTTP thật cho nhánh cụm); bộ hợp đồng sáu CI **324/324**; `cluster-access` **31/31** (thêm 4 ô
+cho `issuerKeys`); design-lint **172/172** (28 tệp, thêm `cluster-bootstrap` và hai chốt enum); `@udp/adapter-core`
+422; `@udp/shared-types` 130; `@udp/config` 46; Portal 365; bản xem thử 17. **Không migration** (không tệp nào
+trong `packages/db` thay đổi).
+
+**Kiểm thoái cấp (R11) — trả bằng ô test, không bằng lập luận:**
+(a) ba CI SaaS không đổi hành vi: 22 ô cũ của `trusted-deploy` và 7 ô Trusted Deploy của 61d-2a vẫn xanh nguyên,
+và `algorithms` của chúng vẫn là `[spec.alg]` lấy từ bảng khai báo;
+(b) `aud` của ba CI trong cụm không lỏng hơn: một ô gửi token mang `aud` của project khác ⇒ 401;
+(c) cụm không với tới được KHÔNG mở đường tắt: hai ô (`clusterKeys: null` và cụm ném) đều ra **503**, và một ô
+khẳng định không sự kiện deploy nào, không hàng token nào;
+(d) `issuerKeys` KHÔNG mở gì cho đường quét drift hay Service 3: nó nằm ở `ClusterAccess` chứ không ở nửa chỉ-đọc,
+và một ô design-lint khẳng định `readOnlyAccess()` phơi đúng ba thành viên;
+(e) lời gọi hỏi khoá không bao giờ chạy trước khi HMAC đúng: ô HTTP "HMAC sai + Bearer hợp lệ" khẳng định
+`reads === 0`;
+(f) bước báo **thất bại** vẫn tới được khi xin token hỏng: `notifyTokenLines` kết thúc bằng `|| true` và không có
+`exit`, và bộ hợp đồng chạy `bash -n` cho cả sáu CI ở mọi ô;
+(g) `--retry` không làm một lượt 401 bị gửi lại: `curl --retry` chỉ thử lại lỗi tạm (5xx, lỗi mạng), và lượt gửi
+lại mang CÙNG thân nên rơi đúng nhánh `duplicate` của I41 — ô "gửi lại cùng token thân y nguyên" đã chốt điều đó.
+
 ## 61d-3 — Kyverno (AC-12)
 
 1. Adapter Kyverno 2.0.0: chart 3.9.x / `kyverno-policies` 3.9.x; nâng qua §8.6; replicas ≥ 2 khi Deny; `failurePolicy`

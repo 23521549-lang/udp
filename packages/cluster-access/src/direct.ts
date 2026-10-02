@@ -263,6 +263,58 @@ export function createDirectClusterAccess(
     },
 
     /**
+     * [Plan #61 61d-2b-1] Khoá công khai của chính cluster — hai lời gọi, không một lời gọi ra Internet.
+     *
+     * Thứ tự là bắt buộc: discovery document trước (nó mang chuỗi `issuer` mà token sẽ khai trong `iss`),
+     * rồi `/openid/v1/jwks`. **Không** đi theo `jwks_uri` của discovery: với EKS/AKS/GKE nó là một địa chỉ
+     * khác, nên đi theo nó biến một đường đọc đã xác thực thành một lời gọi mạng ngoài — và một cụm riêng tư
+     * thì không với tới. Đọc thẳng `/openid/v1/jwks` trên CÙNG kết nối API server cho đúng tập khoá ấy.
+     *
+     * Identity là `tooling`: quyền này không do UDP cấp mà đến từ ClusterRoleBinding **mặc định**
+     * `system:service-account-issuer-discovery` của Kubernetes (gắn cho nhóm `system:serviceaccounts`), nên
+     * mọi SA của §12.2 đọc được; `tooling` là SA của những việc không thuộc workload và traffic.
+     */
+    async issuerKeys() {
+      const token = await tokenFor("tooling");
+      const get = async (path: string): Promise<unknown> => {
+        const res = await transport.request(`${apiEndpoint}${path}`, {
+          method: "GET",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          throw new ClusterCallFailedError(res.status, "get", path);
+        }
+        return await res.json();
+      };
+
+      const doc = (await get("/.well-known/openid-configuration")) as {
+        issuer?: unknown;
+        id_token_signing_alg_values_supported?: unknown;
+      };
+      const issuer = doc.issuer;
+      const algorithms = doc.id_token_signing_alg_values_supported;
+      if (typeof issuer !== "string" || issuer === "") {
+        throw new ClusterCallFailedError(
+          200,
+          "get",
+          "/.well-known/openid-configuration",
+        );
+      }
+      return {
+        issuer,
+        /**
+         * Thiếu hay sai kiểu ⇒ danh sách RỖNG, không phải một mặc định đoán được.
+         * Bên gọi giao danh sách này với allowlist của nó, nên rỗng nghĩa là "không kiểm được" (503) —
+         * fail-closed. Đoán `["RS256"]` ở đây sẽ là một phép kiểm dựa trên điều không ai khai.
+         */
+        algorithms: Array.isArray(algorithms)
+          ? algorithms.filter((a): a is string => typeof a === "string")
+          : [],
+        jwks: await get("/openid/v1/jwks"),
+      };
+    },
+
+    /**
      * `probe()` tồn tại vì §8.1 và §8.3 là những luồng dài.
      *
      * Phát hiện "không vào được cluster" ở phút thứ 12 sau khi đã tạo nửa hạ tầng là đúng

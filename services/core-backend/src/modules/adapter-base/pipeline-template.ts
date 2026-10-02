@@ -89,7 +89,12 @@ export function notifyScript(
     '    signature:(if $sig == "" then "" else ($sig | @base64d | fromjson) end)}',
     '    | with_entries(select(.value != ""))\')',
     "SIG=$(printf '%s' \"$BODY\" | openssl dgst -sha256 -hmac \"$UDP_WEBHOOK_SECRET\" -hex | sed 's/^.* //')",
-    'curl -sS --fail -X POST "$UDP_WEBHOOK_URL" \\',
+    // [Plan #61 61d-2b-1] `--retry` là nửa còn thiếu của mã 503: cổng Trusted Deploy trả 503 cho lỗi hạ
+    // tầng (không lấy được khoá công khai) với lý lẽ "bước báo tự thử lại", mà bước báo trước đợt này
+    // KHÔNG có `--retry` — nên một lượt cụm chập chờn làm pipeline đỏ sau khi image đã đẩy. `curl` chỉ thử
+    // lại lỗi tạm (5xx, lỗi mạng), không thử lại 401, nên một lần từ chối vẫn là terminal. Lượt gửi lại
+    // mang CÙNG thân nên nó rơi đúng nhánh `duplicate` của I41, không sinh sự kiện deploy thứ hai.
+    'curl -sS --fail --retry 5 --retry-delay 5 -X POST "$UDP_WEBHOOK_URL" \\',
     "  -H 'Content-Type: application/json' \\",
     `  ${signatureHeader} \\`,
     // [Plan #61 QD-17, 61d-2a] Trusted Deploy: token OIDC cua CHINH luot chay nay, neu nha cung cap cap

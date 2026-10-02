@@ -5,11 +5,11 @@ người tiếp theo"; tệp đó giữ nguyên phần 61d-1 và phần phát hi
 `docs/UDP_design.md`; của phép đo là `docs/measurements/` (nợ trong `kiem-chung-con-no.md`); của từng plan là
 `docs/plans/`.
 
-**Trạng thái một câu:** Plan #61 đã xong 61a, 61b, 61c, 61d-1, **61d-2a** và **61d-2b-0** — lời báo của pipeline giờ
-mang token OIDC của chính lượt chạy CI, token đó dùng đúng một lần do database cưỡng chế, ba nhà cung cấp SaaS đã nối
-đủ, và script danh tính build chỉ còn tin những chủ thể KHÔNG lấy lại được. Còn 61d-2b-1 (Trusted Deploy cho ba CI
-trong cụm), 61d-2b-2 (bộ ký trong cụm), 61d-3 (Kyverno), rồi Plan #62 (phát hành SDK). 49 mục nợ kiểm chứng. Hạ tầng
-của dự án tốn đúng 0 đồng.
+**Trạng thái một câu:** Plan #61 đã xong 61a, 61b, 61c, 61d-1, **61d-2a**, **61d-2b-0** và **61d-2b-1** — lời báo
+của pipeline giờ mang token OIDC của chính lượt chạy CI ở **cả sáu CI**, token đó dùng đúng một lần do database cưỡng
+chế, script danh tính build chỉ còn tin những chủ thể KHÔNG lấy lại được, và ba CI chạy trong cụm được kiểm bằng khoá
+công khai đọc từ chính cụm của project. Còn 61d-2b-2 (bộ ký trong cụm cho CircleCI + Azure), 61d-3 (Kyverno), rồi
+Plan #62 (phát hành SDK). 50 mục nợ kiểm chứng. Hạ tầng của dự án tốn đúng 0 đồng.
 
 ## 1. 61d-2a — đã làm
 
@@ -117,14 +117,49 @@ một repo cùng tên khác id để khẳng định nó KHÔNG khớp. Nếu m�
 hai ô đó là chỗ nó đỏ. Và quy tắc rút ra đáng mang sang mọi chỗ khác: **ràng theo claim bất biến, đừng ràng theo tên**
 — tên thì trống rồi lấy lại được, id thì không bao giờ dùng lại.
 
-## 6. Việc tiếp
+## 6. 61d-2b-1 — Trusted Deploy cho Jenkins, Tekton, Drone
 
-**61d-2b-1 — Trusted Deploy cho Jenkins, Tekton, Drone.** Quyết định đã CHỐT, và lý do mà bàn giao bản trước nêu đã
-không còn đúng: không cần lưu issuer, không cần quyền mới, không cần bootstrap lại. ClusterRoleBinding **mặc định**
-của Kubernetes (`system:service-account-issuer-discovery` gắn cho nhóm `system:serviceaccounts`) cho mọi
-ServiceAccount — kể cả `udp-tooling` — đọc `/openid/v1/jwks` trên API server, nên UDP kiểm token SA bằng khoá của
-**chính cụm của project**, và chính cái khoá đó (không phải chuỗi issuer) là thứ buộc token vào project. Kế hoạch chi
-tiết, gồm cả chín điểm mà ba vòng QA tìm ra, nằm ở `docs/plans/plan61-plan.md`.
+**Dữ kiện làm đổi cả thiết kế:** ClusterRoleBinding **mặc định** của Kubernetes
+(`system:service-account-issuer-discovery`, gắn cho nhóm `system:serviceaccounts`) cho **mọi** ServiceAccount — kể cả
+`udp-tooling` — đọc `/.well-known/openid-configuration` và `/openid/v1/jwks` trên API server. Nên UDP kiểm được token
+ServiceAccount mà **không** thêm một verb nào vào §12.2, **không** bootstrap lại cụm nào, và **không** phải lưu URL
+issuer ở đâu. Bàn giao bản trước nói "chỉ issuer nhận diện được project nên phải học và lưu issuer lúc provision" —
+câu đó giờ sai: thứ buộc token vào project là **KHOÁ** của cụm, không phải chuỗi issuer.
 
-Sau đó: **61d-2b-2** (bộ ký trong cụm cho CircleCI + Azure — Azure vẫn chưa nhận CircleCI, đã kiểm lại tại tài liệu
-Microsoft ngày 18/09/2026), 61d-3 (Kyverno), tài liệu và Playwright cuối Plan #61, rồi Plan #62.
+**Hai nửa buộc token vào project, và cần cả hai.** `aud` chặn dùng chéo project, nhưng `aud` do pod tự khai nên một
+pod trong cụm X xin được token mang `aud` của project Y; khoá kiểm lấy từ cụm của ĐÚNG project đang nhận webhook là
+nửa còn lại. Chủ thể **không** làm được việc đó: mọi cụm đều có cùng `system:serviceaccount:udp-build:udp-builder`.
+
+**Nhưng chủ thể vẫn phải kiểm, vì một lý do khác** — và đây là chỗ đáng tiền nhất của đợt: thiếu phép kiểm `sub` thì
+**mọi pod trong cụm**, kể cả chính ứng dụng đang được deploy, xin được token với `aud` của webhook rồi tự deploy image
+bất kỳ. `jose` không kiểm `sub` (đã đo), nên phép kiểm đó phải ở mã của UDP.
+
+**Bậc bảo đảm thấp hơn ba CI SaaS một bậc, và đã công bố ở §16.** Token ServiceAccount không mang claim repo hay ref;
+quyền tạo pod trong `udp-build` đến từ RBAC của chart CI chứ không từ UDP; và nội dung pipeline là tệp trong repo của
+khách. Nên lớp này chứng minh "lời báo đến từ một pod build trong cụm của đúng project này", **không** chứng minh
+nhánh — và với ba CI đó, kẻ kiểm soát repo vượt được cả cổng chữ ký của 61d-1 vì khoá KMS cũng chỉ ràng theo cùng chủ
+thể. Portal nói đúng câu đó.
+
+**Năm chỗ tôi sửa vì vòng QA chỉ ra, không vì plan:** cache **âm** (trước đó lỗi không được nhớ, nên webhook của một
+project đang hỏng cụm thành máy bơm lời gọi vào cloud của khách); `staleMs = 0` cho nhánh cụm (giữ khoá cũ 24 giờ
+không mua được tính khả dụng nào vì cụm hỏng thì deploy cũng không áp được gì); `CLUSTER_NOT_READY` tính ở hai chỗ
+GỌI chứ không trong hàm thuần (plan để hở, không ai tính được nó); token của bước báo nằm trong **biến** 600 giây
+thay vì tệp `0644` 1 giờ trong volume chung; và `curl --retry` — hoá ra chú thích "503 để curl tự lành" của 61d-2a là
+**sai**, bước báo sinh ra chưa bao giờ có `--retry`.
+
+**Cho người tiếp:** nếu một ngày ai đó "dọn RBAC" và cấp quyền issuer-discovery trong `cluster/bootstrap.ts`, ba điều
+cùng sai (§12.2 nói sai sự thật, mọi cụm cần bootstrap lại, lý lẽ "không thêm verb nào" mất hiệu lực) — nên
+`packages/design-lint/tests/cluster-bootstrap.test.ts` biến đúng lần sửa đó thành test đỏ. Và đừng dời `issuerKeys`
+xuống `ReadOnlyClusterAccess`: đặt ở nửa đầy đủ là lý do đường quét drift không gọi được nó, và một ô design-lint
+khẳng định `readOnlyAccess()` phơi đúng ba thành viên.
+
+## 7. Việc tiếp
+
+**61d-2b-2 — bộ ký trong cụm cho CircleCI + Azure.** Việc duy nhất còn lại của 61d-2 phải **GHI** vào cụm khách, nên
+nó là đợt riêng. Đầu vào đã chốt: Azure vẫn **chưa** nhận CircleCI (tài liệu Microsoft 18/09/2026: FIC linh hoạt chỉ
+nhận GitHub, GitLab, Terraform Cloud), nên không có đường nào khác. Và một điều phải viết vào §8.3 cùng §16 ngay khi
+làm: chữ ký do UDP đặt **sau** cổng deploy KHÔNG chứng minh nguồn gốc build, nó chỉ chứng minh "UDP đã cho phép byte
+này" — giá trị thật của nó là để Kyverno (61d-3) có chữ ký mà kiểm lúc admission. Kế hoạch chi tiết viết khi bắt đầu
+(R1); phạm vi đã phác ở `docs/plans/plan61-plan.md`.
+
+Sau đó: 61d-3 (Kyverno), tài liệu và Playwright cuối Plan #61, rồi Plan #62.

@@ -138,18 +138,28 @@ const { queue, kit } = await startJobs().catch((err: unknown) => {
   process.exit(1);
 });
 
+/**
+ * [v4.11, Plan #39 / v4.12, Plan #61 61d-2b-1] MỘT bộ nhớ đệm `ClusterAccess` cho cả hai bên đọc cụm:
+ * đo metrics qua proxy, và đọc khoá công khai của cụm cho Trusted Deploy của ba CI trong cụm.
+ *
+ * Dùng chung chứ không hai bản: một lượt dựng `ClusterAccess` kéo theo một lần lấy credential cloud và một
+ * token quản trị, nên hai bộ đệm nghĩa là gấp đôi việc đó cho cùng một project trong cùng một hạn token.
+ */
+const clusterAccess = createClusterAccessCache({
+  resolve: kit.projectClusterAccess,
+});
+
 const app = createApp({
   ...deps,
-  // [v4.11, Plan #39] Prometheus trong cluster đọc qua proxy của API server, truy cập nhớ theo hạn token
-  metricsFor: createMetricsFor(
-    createClusterAccessCache({ resolve: kit.projectClusterAccess }),
-  ),
+  metricsFor: createMetricsFor(clusterAccess),
   provisioning: {
     ...deps.provisioning,
     enqueue: queue.enqueueJob,
     enqueueDeploy: queue.enqueueDeploy,
     withCluster: kit.withProjectCluster,
     clusterToken: kit.projectClusterToken,
+    clusterIssuerKeys: async (projectId) =>
+      await (await clusterAccess.get(projectId)).issuerKeys(),
     scanDrift: async (projectId, domainType) => {
       await sweepDrift(kit, { only: [projectId], domainType });
     },

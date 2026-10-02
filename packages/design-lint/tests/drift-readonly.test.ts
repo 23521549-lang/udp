@@ -81,6 +81,26 @@ describe("tài liệu và mã cùng khai bối cảnh chỉ đọc", () => {
     expect(fn).toContain("read<T>(verb: K8sReadVerb, ref: ObjectRef)");
     expect(fn).not.toContain("write");
   });
+
+  /**
+   * [Plan #61 61d-2b-1] `readOnlyAccess` phơi ĐÚNG ba thành viên, không hơn.
+   *
+   * Vì sao chốt con số: `issuerKeys()` cố ý nằm ở `ClusterAccess` chứ không ở nửa chỉ-đọc, nên đường quét
+   * drift *không thể* đọc khoá của cụm. Nếu một ngày ai đó dời nó xuống `ReadOnlyClusterAccess` thì `tsc`
+   * sẽ đòi `readOnlyAccess` chuyển tiếp — và người sửa dễ chuyển tiếp cho xong việc, mở lại đúng cái bề mặt
+   * mà §8.6 muốn hẹp. Phép kiểm này buộc lần sửa đó phải là một quyết định được viết ra.
+   */
+  it("readOnlyAccess phơi đúng ba thành viên: mode, clusterId, getClient", () => {
+    const code = read(resolve(CORE, "cluster.ts"));
+    const start = code.indexOf("export function readOnlyAccess(");
+    const fn = code.slice(start, start + code.slice(start).indexOf("\n}\n"));
+    const returned = fn.slice(fn.indexOf("return {"));
+    const members = [
+      ...returned.matchAll(/^ {4}(?:async )?([a-zA-Z]+)[(:]/gm),
+    ].map((m) => m[1]);
+    expect(members).toEqual(["mode", "clusterId", "getClient"]);
+    expect(returned).not.toContain("issuerKeys");
+  });
 });
 
 describe("không adapter nào nới lại quyền ghi cho đường quét drift", () => {

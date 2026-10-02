@@ -27,6 +27,7 @@ import {
   BUILDER_SERVICE_ACCOUNT,
   BUILD_NAMESPACE,
   inClusterBuildContainers,
+  notifyTokenLines,
   WORK_DIR,
   type BuildContainer,
 } from "../../adapter-base/packaging/build-script.js";
@@ -128,7 +129,11 @@ const base = createHelmBasedAdapter({
   ],
 });
 
-const notify = (status: "success" | "failure", signed: boolean): string[] => [
+const notify = (
+  status: "success" | "failure",
+  signed: boolean,
+  webhookUrl: string,
+): string[] => [
   "      container('udp-notify') {",
   "        sh '''",
   "          apk add --no-cache jq curl openssl >/dev/null",
@@ -142,9 +147,12 @@ const notify = (status: "success" | "failure", signed: boolean): string[] => [
         `          export UDP_SIGNATURE_B64=$(cat ${SIGNATURE_FILE} 2>/dev/null || true)`,
       ]
     : []),
-  ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
-    (line) => `          ${line}`,
-  ),
+  ...notifyScript(
+    '-H "X-UDP-Signature: sha256=$SIG"',
+    // [Plan #61 61d-2b-1] Token của CHÍNH pod này: container `udp-notify` nằm trong pod chạy bằng
+    // `udp-builder`, nên `/var/run/secrets/kubernetes.io/serviceaccount` có mặt ở đây
+    notifyTokenLines(webhookUrl),
+  ).map((line) => `          ${line}`),
   "        '''",
   "      }",
 ];
@@ -375,8 +383,9 @@ const notifyPost = (
   status: "success" | "failure",
   rebase: boolean,
   signed: boolean,
+  webhookUrl: string,
 ): string[] => {
-  if (!rebase) return notify(status, signed);
+  if (!rebase) return notify(status, signed, webhookUrl);
   const when =
     status === "success"
       ? "env.UDP_KIND != 'rebase' || env.IMAGE_REF"
@@ -384,7 +393,7 @@ const notifyPost = (
   return [
     "      script {",
     `        if (${when}) {`,
-    ...notify(status, signed).map((line) => `    ${line}`),
+    ...notify(status, signed, webhookUrl).map((line) => `    ${line}`),
     "        }",
     "      }",
   ];
@@ -465,10 +474,10 @@ const jenkinsfile = (params: PipelineTemplateParams): string[] => {
     "  }",
     "  post {",
     "    success {",
-    ...notifyPost("success", onTimer, signed),
+    ...notifyPost("success", onTimer, signed, params.webhookUrl),
     "    }",
     "    failure {",
-    ...notifyPost("failure", onTimer, signed),
+    ...notifyPost("failure", onTimer, signed, params.webhookUrl),
     "    }",
     "  }",
     "}",

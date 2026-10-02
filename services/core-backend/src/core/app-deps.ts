@@ -118,6 +118,16 @@ export interface AuthRuntime {
   github: GithubOAuth | null;
 }
 
+/**
+ * [Plan #61 61d-2b-1] Đọc khoá công khai của cụm của một project. Bản thật đi qua bộ nhớ đệm
+ * `createClusterAccessCache` (một lượt dựng `ClusterAccess` kéo theo một lần lấy credential cloud).
+ */
+export type ClusterIssuerKeys = (projectId: string) => Promise<{
+  issuer: string;
+  algorithms: readonly string[];
+  jwks: unknown;
+}>;
+
 export type WithCluster = <T>(
   projectId: string,
   use: (access: ClusterAccess) => Promise<T>,
@@ -143,6 +153,14 @@ export interface ProvisioningRuntime {
    * nên chỉ tiến trình chạy worker cung cấp; `null` ⇒ route trả 503.
    */
   clusterToken: ClusterTokenIssuer | null;
+  /**
+   * [v4.12, Plan #61 61d-2b-1] Khoá công khai mà API server của cụm dùng để ký token ServiceAccount — đường
+   * DUY NHẤT kiểm được lời báo của một CI chạy trong cụm (Jenkins, Tekton, Drone; §8.3).
+   *
+   * Cần credential cloud để dựng `ClusterAccess`, nên chỉ tiến trình chạy worker cung cấp; `null` ⇒ Trusted
+   * Deploy của ba CI đó trả **503 retryable**, KHÔNG bao giờ "bỏ qua phép kiểm" (cùng khuôn `withCluster`).
+   */
+  clusterIssuerKeys: ClusterIssuerKeys | null;
   /**
    * [v4.11, Plan #51 QĐ-9] URL gốc của Service 3 nhìn từ cluster tenant — webhook gate của `Canary` (Flagger)
    * trỏ về đây (`PD_CONTROLLER_WEBHOOK_URL`); `null` ⇒ rollout SERVICE_LEVEL với Flagger trả 422.
@@ -177,6 +195,7 @@ export function defaultAppDeps(): AppDeps {
       enqueue: null,
       enqueueDeploy: null,
       withCluster: null,
+      clusterIssuerKeys: null,
       scanDrift: null,
       clusterToken: null,
       flaggerGateBaseUrl: env.PD_CONTROLLER_WEBHOOK_URL ?? null,

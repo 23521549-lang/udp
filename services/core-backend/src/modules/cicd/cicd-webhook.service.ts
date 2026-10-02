@@ -20,6 +20,7 @@ import type {
 import type { DeployAcceptedResponseWire } from "@udp/shared-types/wire";
 import type { Request } from "express";
 import { z } from "zod";
+import type { ClusterIssuerKeys } from "../../core/app-deps.js";
 import { prisma } from "../../core/db.js";
 import { WebhookPayloadError } from "../adapter-base/cicd.js";
 import { auditEntry } from "../audit/audit.service.js";
@@ -478,6 +479,8 @@ async function verifyDeployToken(args: {
   environment: { name: string; isProduction: boolean };
   authorization: string | undefined;
   egressFetch: typeof fetch;
+  /** [61d-2b-1] `null` ⇒ tiến trình này không có đường ra cụm ⇒ 503 cho ba CI trong cụm */
+  clusterIssuerKeys: ClusterIssuerKeys | null;
   request: Request;
 }): Promise<{ tokenId: string; issuer: string; expiresAt: Date } | null> {
   const { projectId, provider, cicd, environment, request } = args;
@@ -527,6 +530,19 @@ async function verifyDeployToken(args: {
     expected,
     authorization: args.authorization,
     egressFetch: args.egressFetch,
+    /**
+     * Cổng đọc khoá của cụm — `cacheKey` là `projectId` vì mỗi project một cụm.
+     *
+     * `null` (tiến trình không có đường ra cụm) đi vào `TOKEN_KEYS_UNAVAILABLE` ⇒ 503 retryable, chứ không
+     * thành "không kiểm gì": một tiến trình thiếu credential cloud không được phép nới cổng bảo mật.
+     */
+    clusterKeys:
+      args.clusterIssuerKeys === null
+        ? null
+        : {
+            cacheKey: projectId,
+            read: () => args.clusterIssuerKeys!(projectId),
+          },
     now: new Date(),
   });
   if (verdict.kind === "rejected") {
@@ -577,6 +593,13 @@ export async function receiveWebhook(args: {
    * Tiêm vào cũng là cách làm bộ test khẳng định được "không một lời gọi mạng nào phát ra".
    */
   egressFetch: typeof fetch;
+  /**
+   * [Plan #61 61d-2b-1] Đường đọc khoá công khai của cụm của project — chỉ ba CI chạy trong cụm dùng.
+   *
+   * `null` nghĩa là tiến trình này không có credential cloud (tiền lệ `withCluster: null` của `AppDeps`),
+   * và hệ quả là **503 retryable**, không phải một lượt deploy không kiểm token.
+   */
+  clusterIssuerKeys: ClusterIssuerKeys | null;
 }): Promise<DeployAcceptedResponseWire> {
   const { projectId, provider, rawBody, request } = args;
   const cicd = await verified(
@@ -622,6 +645,7 @@ export async function receiveWebhook(args: {
     },
     authorization: flatHeaders(request).authorization,
     egressFetch: args.egressFetch,
+    clusterIssuerKeys: args.clusterIssuerKeys,
     request,
   });
 
