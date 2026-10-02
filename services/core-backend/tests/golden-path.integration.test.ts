@@ -309,6 +309,7 @@ describe("đường tệp pipeline theo tool", () => {
         projectSlug: "web",
         environments: [{ name: "prod", isProduction: true }],
         registryRef: "ghcr.io/a",
+        webhookUrl: "https://udp.test/api/v1/webhooks/cicd/p1/github-actions",
         flagKeys: [],
         rolloutStrategy: "udp-driven",
         steps: [],

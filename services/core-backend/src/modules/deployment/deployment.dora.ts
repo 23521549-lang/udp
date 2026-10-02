@@ -223,6 +223,11 @@ export interface DeploymentView {
   rebase: boolean;
   /** [Plan #61 QĐ-16] Phán quyết của cổng deploy — `null` khi không kiểm */
   signature: "VERIFIED" | SignatureRejection | null;
+  /**
+   * [Plan #61 QĐ-17, 61d-2a] Lời báo có mang token OIDC của đúng lượt chạy và token đó đã được xác minh.
+   * Chỉ `VERIFIED` hay `null`: một lần từ chối là lỗi XÁC THỰC nên không sinh bản ghi deployment nào.
+   */
+  trustedDeploy: "VERIFIED" | null;
   rolloutSessionId: string | null;
   restoresDeploymentId: string | null;
   startedAt: string;
@@ -243,6 +248,16 @@ function signatureOf(metadata: unknown): DeploymentView["signature"] {
   const { keyId, code } = signature as { keyId?: unknown; code?: unknown };
   if (typeof keyId === "string") return "VERIFIED";
   return SIGNATURE_REJECTIONS.find((c) => c === code) ?? null;
+}
+
+/** Trusted Deploy đã xác minh: metadata của sự kiện mở đầu mang `trustedDeploy.tokenId` */
+function trustedDeployOf(metadata: unknown): DeploymentView["trustedDeploy"] {
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const trusted = (metadata as { trustedDeploy?: unknown }).trustedDeploy;
+  if (typeof trusted !== "object" || trusted === null) return null;
+  return typeof (trusted as { tokenId?: unknown }).tokenId === "string"
+    ? "VERIFIED"
+    : null;
 }
 
 /**
@@ -279,6 +294,10 @@ export function groupDeployments(
       signature:
         sorted.map((e) => signatureOf(e.metadata)).find((v) => v !== null) ??
         null,
+      trustedDeploy:
+        sorted
+          .map((e) => trustedDeployOf(e.metadata))
+          .find((v) => v !== null) ?? null,
       rolloutSessionId:
         sorted.map((e) => e.rolloutSessionId).find((v) => v !== null) ?? null,
       restoresDeploymentId:

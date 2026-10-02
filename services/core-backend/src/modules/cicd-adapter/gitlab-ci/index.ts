@@ -102,11 +102,19 @@ const notifyJob = (
   status: "success" | "failure",
   when: string,
   rebase: boolean,
+  webhookUrl: string,
 ): string[] => [
   `udp-notify-${status}:`,
   "  stage: notify",
   `  image: ${BUILD_TOOLCHAIN.images.alpine}`,
   ...(rebase ? whenOf(when, true) : [`  when: ${when}`]),
+  // [Plan #61 QĐ-17, 61d-2a] Trusted Deploy: GitLab tự tiêm token OIDC của lượt chạy vào biến mang đúng
+  // tên khai ở đây, nên bước báo không phải gọi gì để lấy nó — và nhờ vậy token không bao giờ vượt ranh
+  // giới job, thứ mà trần 10 phút của UDP sẽ đánh chết. `aud` in THẲNG chuỗi tuyệt đối của máy chủ, không
+  // dùng biến `$UDP_WEBHOOK_URL` do người dùng dán: lệch một dấu `/` là 401 vĩnh viễn.
+  "  id_tokens:",
+  "    UDP_OIDC_TOKEN:",
+  `      aud: ${JSON.stringify(webhookUrl)}`,
   "  variables:",
   `    UDP_STATUS: "${status}"`,
   "  script:",
@@ -340,8 +348,8 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     ...buildJob(params, rebase),
     ...stepJobs(after, "after-build", rebase),
     ...signJob(params, rebase),
-    ...notifyJob("success", "on_success", rebase),
-    ...notifyJob("failure", "on_failure", rebase),
+    ...notifyJob("success", "on_success", rebase, params.webhookUrl),
+    ...notifyJob("failure", "on_failure", rebase, params.webhookUrl),
     ...(rebase ? rebaseJob(params) : []),
   ];
 };

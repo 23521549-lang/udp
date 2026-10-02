@@ -202,7 +202,15 @@ describe("secret webhook (AC-5)", () => {
     expect(res.body.cicd).toEqual({
       provider: "github-actions",
       webhookPath: `/api/v1/webhooks/cicd/${projectId}/github-actions`,
+      // [Plan #61 61d-2a] Máy chủ là nguồn sự thật duy nhất cho địa chỉ tuyệt đối: `aud` của token phải
+      // bằng đúng chuỗi này, và Portal in lại chính nó thay vì tự ghép từ `window.location.origin`
+      webhookUrl: `${env.CORS_ORIGIN}/api/v1/webhooks/cicd/${projectId}/github-actions`,
       secretSet: false,
+      trustedDeploy: {
+        required: false,
+        available: true,
+        unavailableReason: null,
+      },
     });
     await hook(body(), { key: "bat-ky" }).expect(401);
   });

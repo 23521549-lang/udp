@@ -33,6 +33,7 @@ import {
   isOwnImage,
   verifyDeploySignature,
 } from "./signature-gate.js";
+import { bodyDigestOf, recordTokenUse } from "./token-use.repository.js";
 import {
   absoluteWebhookUrlOf,
   expectationOf,
@@ -47,6 +48,19 @@ import { isSealedWebhookSecret, openWebhookSecret } from "./webhook-secret.js";
  * chối trước khi chữ ký đúng là CÙNG MỘT 401 — "project không có", "chưa bật CI", "chưa sinh
  * secret" và "chữ ký sai" không phân biệt được, để webhook không thành một oracle dò project.
  */
+
+/**
+ * [Plan #61 61d-2a] Tin hieu noi bo: token da dung roi va than lan nay KHAC lan dau.
+ *
+ * Nem de transaction rollback — khong duoc ghi `deployment_events` nao cho mot luot replay. Vi rollback
+ * xoa luon moi thu ghi trong transaction do, hang audit phai ghi o mot cau RIENG sau no (§8.3 doi ghi nhan
+ * moi lan verify that bai de thay do quet).
+ */
+class TokenReplayed extends Error {
+  constructor(readonly tokenId: string) {
+    super("token cua luot chay nay da duoc dung voi mot than khac");
+  }
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PROVIDER = /^[a-z0-9-]{1,50}$/;
@@ -329,6 +343,54 @@ async function signatureVerdict(
  * Chữ ký hợp lệ đầu tiên ⇒ bật bắt buộc, cùng transaction: từ đây image không chữ ký không deploy được. Chỉ sửa đúng
  * một trường của JSON — không ghi đè cài đặt mà người dùng lưu cùng lúc.
  */
+/**
+ * [Plan #61 QĐ-17, 61d-2a] Tu bat che do bat buoc o TOKEN HOP LE DAU TIEN.
+ *
+ * Cung khuon `enforceSigning` cua 61d-1, ke ca chi tiet de quen nhat: `AND oidc_required = false` roi kiem
+ * so hang doi, nen nhat ky SYSTEM ghi dung MOT lan chu khong mot hang moi webhook.
+ *
+ * Co nam o HANG CICD, nen mot lan doi `selected_tool` phai dua no ve false — y nghia cua no phu thuoc nha
+ * cung cap (issuer, claim, cach xin token). Viec do do mot trigger o tang database lo (migration
+ * `oidc_required_reset_on_tool_change`), khong phai mot doan ma o day: dat o day thi moi duong ghi tuong
+ * lai phai nho lam lai.
+ */
+async function enforceOidc(
+  tx: Prisma.TransactionClient,
+  args: {
+    projectId: string;
+    cicdConfigId: string;
+    provider: string;
+    tokenId: string;
+    deploymentId: string;
+    request: Request;
+  },
+): Promise<void> {
+  const changed = await tx.$executeRaw`
+    UPDATE domain_configs
+    SET oidc_required = true
+    WHERE id = ${args.cicdConfigId}::uuid
+      AND oidc_required = false`;
+  if (changed === 0) return;
+  await tx.auditLog.create({
+    data: {
+      projectId: args.projectId,
+      ...auditEntry({
+        action: "cicd.trusted-deploy.required",
+        targetType: "Project",
+        targetId: args.projectId,
+        actorType: "SYSTEM",
+        // Chi ma dinh danh cua token, khong bao gio chinh token (I24, §8.3)
+        after: {
+          provider: args.provider,
+          tokenId: args.tokenId,
+          deploymentId: args.deploymentId,
+        },
+        request: args.request,
+      }),
+    },
+  });
+}
+
 async function enforceSigning(
   tx: Prisma.TransactionClient,
   projectId: string,
@@ -354,6 +416,39 @@ async function enforceSigning(
       }),
     },
   });
+}
+
+/**
+ * Mot luot replay: ghi audit o cau RIENG (transaction vua rollback nen khong con gi de ghi cung) roi nem
+ * 401. Mo ta nam o §8.3: moi lan verify that bai phai duoc ghi nhan de thay do quet.
+ */
+async function onReplay(args: {
+  projectId: string;
+  provider: string;
+  tokenId: string;
+  request: Request;
+}): Promise<never> {
+  await prisma.auditLog.create({
+    data: {
+      projectId: args.projectId,
+      ...auditEntry({
+        action: "cicd.webhook.rejected",
+        targetType: "Project",
+        targetId: args.projectId,
+        actorType: "SYSTEM",
+        // Chi ma va dinh danh cua token, khong bao gio chinh token (I24, §8.3)
+        after: {
+          provider: args.provider,
+          trustedDeploy: "TOKEN_REPLAYED",
+          tokenId: args.tokenId,
+        },
+        request: args.request,
+      }),
+    },
+  });
+  throw new UnauthenticatedError(
+    "Trusted Deploy tu choi loi bao: TOKEN_REPLAYED — token cua luot chay nay da duoc dung voi mot than khac",
+  );
 }
 
 /**
@@ -412,7 +507,7 @@ async function verifyDeployToken(args: {
   const expected = expectationOf({
     provider,
     toolConfig: cicd.toolConfig,
-    audience: absoluteWebhookUrlOf(projectId, provider),
+    webhookUrl: absoluteWebhookUrlOf(projectId, provider),
   });
   if ("unavailable" in expected) {
     // Không được bật cờ cho một provider UDP chưa kiểm được (Portal chặn, và `setOidcRequired` chặn lại),
@@ -530,115 +625,175 @@ export async function receiveWebhook(args: {
 
   const slug = await assertOwnImage(projectId, provider, event, request);
 
-  const outcome = await prisma.$transaction(async (tx) => {
-    // Chống trùng theo pipeline, dưới khoá của (environment, pipeline): hai lần gửi lại đến cùng
-    // lúc (retry mạng của CI) không được thành hai lần deploy
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${environment.id}:${event.pipelineId}`}, 0))`;
-    const seen = await tx.deploymentEvent.findFirst({
-      where: {
-        projectId,
-        environmentId: environment.id,
-        pipelineId: event.pipelineId,
-        triggeredBy: "WEBHOOK",
-      },
-      select: { deploymentId: true },
-    });
-    if (seen !== null) {
-      return { deploymentId: seen.deploymentId, status: "duplicate" as const };
-    }
-    // [Plan #61 QĐ-13] UDP quyết lượt rebase: chỉ deploy khi production đang chạy ĐÚNG commit này với digest khác
-    if (event.kind === "rebase" && event.imageRef !== undefined) {
-      const decision = decideRebase(
-        await latestDeployment(tx, {
+  const outcome = await prisma
+    .$transaction(async (tx) => {
+      // Chống trùng theo pipeline, dưới khoá của (environment, pipeline): hai lần gửi lại đến cùng
+      // lúc (retry mạng của CI) không được thành hai lần deploy
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${environment.id}:${event.pipelineId}`}, 0))`;
+      const seen = await tx.deploymentEvent.findFirst({
+        where: {
           projectId,
           environmentId: environment.id,
-          workloadName: event.workloadName,
-        }),
-        event.imageRef,
-      );
-      if (decision.action === "unchanged") {
-        return {
-          deploymentId: decision.deploymentId,
-          status: "unchanged" as const,
-        };
-      }
-      if (decision.action === "skipped") {
-        return {
-          deploymentId: decision.deploymentId,
-          status: "skipped" as const,
-          reason: decision.reason,
-        };
-      }
-    }
-    const deploymentId = randomUUID();
-    const base = eventBase(projectId, environment.id, provider, event);
-    if (!deploys(event)) {
-      await tx.deploymentEvent.create({
-        data: { ...base, deploymentId, eventType: "DEPLOY_FAILURE" },
+          pipelineId: event.pipelineId,
+          triggeredBy: "WEBHOOK",
+        },
+        select: { deploymentId: true },
       });
-      return { deploymentId, status: "failure-recorded" as const };
-    }
-    // Khoá dòng project tới hết transaction: lượt bật bắt buộc và lượt đọc nó không lướt qua nhau. NO KEY: không chặn
-    // các bảng khác ghi khoá ngoại tới project
-    const [row] = await tx.$queryRaw<{ build_settings: unknown }[]>`
+      if (seen !== null) {
+        return {
+          deploymentId: seen.deploymentId,
+          status: "duplicate" as const,
+        };
+      }
+      // [Plan #61 QĐ-13] UDP quyết lượt rebase: chỉ deploy khi production đang chạy ĐÚNG commit này với digest khác
+      if (event.kind === "rebase" && event.imageRef !== undefined) {
+        const decision = decideRebase(
+          await latestDeployment(tx, {
+            projectId,
+            environmentId: environment.id,
+            workloadName: event.workloadName,
+          }),
+          event.imageRef,
+        );
+        if (decision.action === "unchanged") {
+          return {
+            deploymentId: decision.deploymentId,
+            status: "unchanged" as const,
+          };
+        }
+        if (decision.action === "skipped") {
+          return {
+            deploymentId: decision.deploymentId,
+            status: "skipped" as const,
+            reason: decision.reason,
+          };
+        }
+      }
+      const deploymentId = randomUUID();
+
+      // [Plan #61 QĐ-17, 61d-2a] Tiêu token ĐÚNG ở đây: sau nhánh chống trùng và sau quyết định rebase, tức
+      // tại điểm mà mọi đường còn lại đều ghi đúng một `deployment_events`. Đặt sớm hơn thì một lượt chạy bị
+      // bỏ qua (`duplicate`, `unchanged`, `skipped`) cũng đốt mất token của nó.
+      if (trusted !== null) {
+        const use = await recordTokenUse(tx, {
+          projectId,
+          issuer: trusted.issuer,
+          tokenId: trusted.tokenId,
+          pipelineId: event.pipelineId,
+          environmentId: environment.id,
+          bodyDigest: bodyDigestOf(rawBody),
+          deploymentId,
+          expiresAt: trusted.expiresAt,
+        });
+        if (use.kind === "replayed") {
+          // Ném để transaction rollback: không ghi sự kiện deploy nào. Audit cho lần này ghi ở câu riêng
+          // SAU transaction, vì ghi trong đây sẽ mất cùng lượt rollback.
+          throw new TokenReplayed(trusted.tokenId);
+        }
+        if (use.kind === "retry") {
+          // Thân giống hệt lần đầu ⇒ retry thật của CI. Trả lại kết quả cũ chứ không để bước báo đỏ trong
+          // khi lần deploy kia đã chạy thật.
+          return {
+            deploymentId: use.deploymentId ?? deploymentId,
+            status: "duplicate" as const,
+          };
+        }
+      }
+      const base = eventBase(projectId, environment.id, provider, event);
+      if (!deploys(event)) {
+        await tx.deploymentEvent.create({
+          data: { ...base, deploymentId, eventType: "DEPLOY_FAILURE" },
+        });
+        return { deploymentId, status: "failure-recorded" as const };
+      }
+      // Khoá dòng project tới hết transaction: lượt bật bắt buộc và lượt đọc nó không lướt qua nhau. NO KEY: không chặn
+      // các bảng khác ghi khoá ngoại tới project
+      const [row] = await tx.$queryRaw<{ build_settings: unknown }[]>`
       SELECT build_settings FROM projects WHERE id = ${projectId}::uuid FOR NO KEY UPDATE`;
-    const signing = settingsOf(row?.build_settings).signing;
-    const verdict = await signatureVerdict(tx, {
-      projectId,
-      environment: { ...environment, name: event.environment },
-      event,
-      slug,
-      signing,
-    });
-    if (verdict.kind === "rejected") {
+      const signing = settingsOf(row?.build_settings).signing;
+      const verdict = await signatureVerdict(tx, {
+        projectId,
+        environment: { ...environment, name: event.environment },
+        event,
+        slug,
+        signing,
+      });
+      if (verdict.kind === "rejected") {
+        await tx.deploymentEvent.create({
+          data: {
+            ...base,
+            deploymentId,
+            eventType: "DEPLOY_FAILURE",
+            metadata: {
+              ...base.metadata,
+              reason: `Cổng deploy từ chối image: ${verdict.code} (${verdict.detail})`,
+              signature: { code: verdict.code, detail: verdict.detail },
+            },
+          },
+        });
+        return {
+          deploymentId,
+          status: "rejected" as const,
+          code: verdict.code,
+          detail: verdict.detail,
+        };
+      }
+      const [eventType, status] = environment.autoDeploy
+        ? (["DEPLOY_START", "started"] as const)
+        : // §2.2: không cho deploy tự động ⇒ bản ghi chờ, người có quyền duyệt trên Portal
+          (["DEPLOY_PENDING", "pending"] as const);
       await tx.deploymentEvent.create({
         data: {
           ...base,
           deploymentId,
-          eventType: "DEPLOY_FAILURE",
+          eventType,
           metadata: {
             ...base.metadata,
-            reason: `Cổng deploy từ chối image: ${verdict.code} (${verdict.detail})`,
-            signature: { code: verdict.code, detail: verdict.detail },
+            ...(verdict.kind === "verified"
+              ? {
+                  signature: {
+                    keyId: verdict.keyId,
+                    issuedAt: verdict.issuedAt,
+                  },
+                }
+              : {}),
+            // [Plan #61 61d-2a] Chỉ mã định danh của token, không bao giờ chính token (I24, §8.3)
+            ...(trusted === null
+              ? {}
+              : { trustedDeploy: { tokenId: trusted.tokenId } }),
           },
         },
       });
-      return {
-        deploymentId,
-        status: "rejected" as const,
-        code: verdict.code,
-        detail: verdict.detail,
-      };
-    }
-    const [eventType, status] = environment.autoDeploy
-      ? (["DEPLOY_START", "started"] as const)
-      : // §2.2: không cho deploy tự động ⇒ bản ghi chờ, người có quyền duyệt trên Portal
-        (["DEPLOY_PENDING", "pending"] as const);
-    await tx.deploymentEvent.create({
-      data: {
-        ...base,
-        deploymentId,
-        eventType,
-        ...(verdict.kind === "verified"
-          ? {
-              metadata: {
-                ...base.metadata,
-                signature: { keyId: verdict.keyId, issuedAt: verdict.issuedAt },
-              },
-            }
-          : {}),
-      },
-    });
-    if (verdict.kind === "verified" && !signing.enforce) {
-      await enforceSigning(
-        tx,
+      // [Plan #61 61d-2a] Tu bat Trusted Deploy sau khi su kien deploy da duoc ghi, trong CUNG transaction
+      if (trusted !== null && !cicd.oidcRequired) {
+        await enforceOidc(tx, {
+          projectId,
+          cicdConfigId: cicd.cicdConfigId,
+          provider,
+          tokenId: trusted.tokenId,
+          deploymentId,
+          request,
+        });
+      }
+      if (verdict.kind === "verified" && !signing.enforce) {
+        await enforceSigning(
+          tx,
+          projectId,
+          { keyId: verdict.keyId, deploymentId },
+          request,
+        );
+      }
+      return { deploymentId, status };
+    })
+    .catch(async (err: unknown) => {
+      if (!(err instanceof TokenReplayed)) throw err;
+      return await onReplay({
         projectId,
-        { keyId: verdict.keyId, deploymentId },
+        provider,
+        tokenId: err.tokenId,
         request,
-      );
-    }
-    return { deploymentId, status };
-  });
+      });
+    });
 
   if (outcome.status === "rejected") {
     // Sự kiện từ chối đã ghi (Portal hiện lý do); 422 làm bước báo của CI đỏ — người đẩy code thấy ngay

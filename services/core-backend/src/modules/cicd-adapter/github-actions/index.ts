@@ -106,14 +106,31 @@ const permissions = (params: PipelineTemplateParams): string[] => {
   return [
     "permissions:",
     "  contents: read",
-    // JWT cho cloud: đẩy bằng danh tính build, hay ký bằng khoá KMS (Plan #61 QĐ-14)
-    ...(needsOidc(params.build, "github-actions") ||
-    params.build.signing !== null
-      ? ["  id-token: write"]
-      : []),
+    // JWT cho cloud (đẩy bằng danh tính build, hay ký bằng khoá KMS — QĐ-14) VÀ cho Trusted Deploy
+    // (QĐ-17, 61d-2a: bước báo xin token OIDC của lượt chạy). Từ 61d-2a luôn cần, nên không còn điều kiện.
+    "  id-token: write",
     ...(push.kind === "github-token" ? ["  packages: write"] : []),
   ];
 };
+
+/**
+ * [Plan #61 QĐ-17, 61d-2a] Token OIDC cua luot chay, xin NGAY TRONG buoc bao.
+ *
+ * Khong ghi ra tep, artifact hay job output, va khong truyen giua hai job. Ly do khong phai ve sinh ma la
+ * KHA DUNG: mot job `report` cho duyet environment 40 phut se mang token 40 phut tuoi va bi tran 10 phut
+ * cua UDP danh chet — voi che do bat buoc da bat thi project khong deploy production duoc qua dung luong
+ * duyet ho dang dung.
+ *
+ * `audience` in THANG chuoi tuyet doi cua may chu, khong dung bien `$UDP_WEBHOOK_URL` do nguoi dung dan:
+ * `aud` phai bang dung chuoi ma bo kiem mong doi, lech mot dau `/` la 401 vinh vien.
+ */
+const oidcTokenLines = (webhookUrl: string): string[] => [
+  `UDP_OIDC_AUD=${JSON.stringify(encodeURIComponent(webhookUrl))}`,
+  "UDP_OIDC_TOKEN=$(curl -sS --fail" +
+    ' -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN"' +
+    ' "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$UDP_OIDC_AUD"' +
+    " | jq -r '.value')",
+];
 
 /** Biến đăng nhập registry: token của lượt chạy cho GHCR, hay hai secret của registry dùng mật khẩu */
 const registryEnv = (params: PipelineTemplateParams): string[] => {
@@ -203,7 +220,10 @@ const rebaseJob = (params: PipelineTemplateParams): string[] => [
           }),
         ]),
     ...rebaseNotifyVars("refs/heads/main"),
-    ...notifyScript('-H "X-Hub-Signature-256: sha256=$SIG"'),
+    ...notifyScript(
+      '-H "X-Hub-Signature-256: sha256=$SIG"',
+      oidcTokenLines(params.webhookUrl),
+    ),
   ].map((line) => `          ${line}`),
 ];
 
@@ -268,9 +288,10 @@ const workflow = (params: PipelineTemplateParams): string[] => {
     "          ACTOR: ${{ github.actor }}",
     "        run: |",
     '          [ "$UDP_STATUS" = "success" ] || IMAGE_REF=""',
-    ...notifyScript('-H "X-Hub-Signature-256: sha256=$SIG"').map(
-      (line) => `          ${line}`,
-    ),
+    ...notifyScript(
+      '-H "X-Hub-Signature-256: sha256=$SIG"',
+      oidcTokenLines(params.webhookUrl),
+    ).map((line) => `          ${line}`),
     ...(schedule === null ? [] : rebaseJob(params)),
   ];
 };

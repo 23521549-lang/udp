@@ -3,7 +3,7 @@
   "status": 200,
   "body": {
     "deployment": {
-      "deploymentId": "48021f5b-8897-4071-b5c2-5a1d4e4372a6",
+      "deploymentId": "929afeb7-98e9-455f-86fe-5f00423f1ac0",
       "status": "DEPLOY_START",
       "workloadName": null,
       "imageTag": "v9",
@@ -11,15 +11,16 @@
       "triggeredBy": "WEBHOOK",
       "rebase": false,
       "signature": null,
+      "trustedDeploy": null,
       "rolloutSessionId": null,
       "restoresDeploymentId": null,
-      "startedAt": "2026-10-01T19:04:50.778Z",
-      "lastEventAt": "2026-10-01T19:04:50.778Z",
+      "startedAt": "2026-10-02T13:45:46.249Z",
+      "lastEventAt": "2026-10-02T13:45:46.249Z",
       "events": [
         {
-          "id": "01a0f911-d5db-72a3-a422-c05e7bde0ac8",
+          "id": "01a0fd14-1297-7698-9ac7-9e075db99d44",
           "eventType": "DEPLOY_START",
-          "occurredAt": "2026-10-01T19:04:50.778Z"
+          "occurredAt": "2026-10-02T13:45:46.249Z"
         }
       ]
     }

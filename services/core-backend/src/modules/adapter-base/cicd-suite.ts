@@ -108,6 +108,8 @@ const BUILD: BuildPlan = {
 const PARAMS: PipelineTemplateParams = {
   steps: STEPS,
   projectSlug: "web",
+  // [Plan #61 61d-2a] Dia chi webhook tuyet doi do may chu dung — `aud` cua Trusted Deploy
+  webhookUrl: "https://udp.test/api/v1/webhooks/cicd/p1/github-actions",
   environments: [
     { name: "dev", isProduction: false },
     { name: "prod", isProduction: true },
@@ -442,6 +444,10 @@ export function runCicdSuite(
           "prod",
           "UDP_WEBHOOK_SECRET",
           PARAMS.rolloutStrategy,
+          // [Plan #61 QĐ-17, 61d-2a] Bước báo mang token OIDC của lượt chạy (Trusted Deploy, AC-11).
+          // Header viết có điều kiện `${UDP_OIDC_TOKEN:+...}` nên pipeline của project chưa bật chế độ
+          // bắt buộc không đổi hành vi; cái phải luôn có mặt là chính biến đó.
+          "UDP_OIDC_TOKEN",
         ]) {
           assert(text.includes(needle), `template thiếu "${needle}"`);
         }

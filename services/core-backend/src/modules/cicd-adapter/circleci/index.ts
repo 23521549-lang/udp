@@ -91,7 +91,7 @@ const notifyStep = (status: "success" | "failure", when: string): string[] => [
   "            export COMMIT_SHA=$CIRCLE_SHA1 COMMIT_TS= PIPELINE_ID=$CIRCLE_WORKFLOW_ID",
   "            export REPO=$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME REF=$CIRCLE_BRANCH ACTOR=$CIRCLE_USERNAME",
   ...(status === "success" ? [] : ['            export IMAGE_REF=""']),
-  ...notifyScript('-H "circleci-signature: v1=$SIG"').map(
+  ...notifyScript('-H "circleci-signature: v1=$SIG"', OIDC_TOKEN_LINES).map(
     (line) => `            ${line}`,
   ),
 ];
@@ -175,9 +175,21 @@ const rebaseJob = (params: PipelineTemplateParams): string[] => [
           }),
         ]),
     ...rebaseNotifyVars("$CIRCLE_BRANCH"),
-    ...notifyScript('-H "circleci-signature: v1=$SIG"'),
+    ...notifyScript('-H "circleci-signature: v1=$SIG"', OIDC_TOKEN_LINES),
   ].map((line) => `            ${line}`),
 ];
+
+/**
+ * [Plan #61 QD-17, 61d-2a] Trusted Deploy: CircleCI tiem san token OIDC cua luot chay vao
+ * `$CIRCLE_OIDC_TOKEN_V2`, nen buoc bao chi can doi ten bien.
+ *
+ * Da kiem tai tai lieu CircleCI (02/10/2026): `aud` mac dinh LA ORGANIZATION_ID, va doi no can mot tinh
+ * nang rieng o muc to chuc ("OIDC Tokens With Custom Claims") chu KHONG dat duoc trong `config.yml`. Nen
+ * bo kiem cua UDP mong doi `aud` = `organizationId`, va cai gia phai cong bo (§16): voi CircleCI, `aud`
+ * khong buoc token vao dung project nay — moi job trong cung to chuc deu co token mang dung `aud` do, nen
+ * viec buoc token vao project doi hoan toan sang claim `oidc.circleci.com/project-id`.
+ */
+const OIDC_TOKEN_LINES = ['UDP_OIDC_TOKEN="$CIRCLE_OIDC_TOKEN_V2"'];
 
 /** Điều kiện lượt theo lịch — `pipeline.trigger_source` đã ngừng hỗ trợ từ 01/08/2026, dùng `pipeline.trigger.type` */
 const SCHEDULED = "equal: [schedule, << pipeline.trigger.type >>]";

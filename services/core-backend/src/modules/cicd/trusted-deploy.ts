@@ -138,9 +138,10 @@ export const absoluteWebhookUrlOf = (
 export function expectationOf(args: {
   provider: string | null;
   toolConfig: unknown;
-  audience: string;
+  /** Dia chi webhook TUYET DOI — la `aud` mong doi voi GitHub va GitLab */
+  webhookUrl: string;
 }): TrustedDeployExpectation | { unavailable: TrustedDeployUnavailable } {
-  const { provider, toolConfig, audience } = args;
+  const { provider, toolConfig, webhookUrl } = args;
   if (provider === null) return { unavailable: "NO_PROVIDER" };
   if (IN_CLUSTER_PROVIDERS.has(provider))
     return { unavailable: "IN_CLUSTER_CI" };
@@ -156,7 +157,7 @@ export function expectationOf(args: {
         kind: "direct",
         jwksUri: "https://token.actions.githubusercontent.com/.well-known/jwks",
       },
-      audience,
+      audience: webhookUrl,
       repoClaim: { name: "repository", value: cfg.repository },
       refClaim: "ref",
       tokenIdClaim: "jti",
@@ -170,7 +171,7 @@ export function expectationOf(args: {
       provider,
       issuer: base,
       keys: { kind: "direct", jwksUri: `${base}/oauth/discovery/keys` },
-      audience,
+      audience: webhookUrl,
       repoClaim: { name: "project_path", value: cfg.projectPath },
       refClaim: "ref",
       tokenIdClaim: "jti",
@@ -191,7 +192,15 @@ export function expectationOf(args: {
       // Tài liệu của CircleCI không công bố đường JWKS, nên phải đi discovery — nhưng CHỈ trên issuer
       // mong đợi, và `jwks_uri` trả về phải cùng origin với nó.
       keys: { kind: "discover", issuer },
-      audience,
+      // [Da kiem tai tai lieu CircleCI, 02/10/2026] `aud` mac dinh LA ORGANIZATION_ID, va doi no can mot
+      // tinh nang rieng o muc to chuc ("OIDC Tokens With Custom Claims") chu KHONG dat duoc trong
+      // `config.yml` theo bien. Nen `aud` mong doi la chinh orgId.
+      //
+      // Phai noi thang cai gia: voi CircleCI, `aud` khong con buoc token vao dung project nay, tham chi
+      // khong buoc vao UDP — moi job trong cung to chuc deu co token mang dung `aud` do. Toan bo viec
+      // buoc token vao project doi sang claim `project-id` o duoi. Hai nha cung cap kia khong co diem yeu
+      // nay vi `aud` cua chung la dia chi webhook tuyet doi. Ghi o §16.
+      audience: cfg.organizationId,
       repoClaim: {
         name: "oidc.circleci.com/project-id",
         value: cfg.projectId,

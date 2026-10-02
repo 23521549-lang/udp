@@ -4,8 +4,14 @@
   "body": {
     "cicd": {
       "provider": "github-actions",
-      "webhookPath": "/api/v1/webhooks/cicd/0fd560a8-c9ee-4e71-962a-a935699f5f89/github-actions",
-      "secretSet": false
+      "webhookPath": "/api/v1/webhooks/cicd/61d313ad-88b5-4067-906f-86fd73aa666a/github-actions",
+      "webhookUrl": "http://localhost:5173/api/v1/webhooks/cicd/61d313ad-88b5-4067-906f-86fd73aa666a/github-actions",
+      "secretSet": false,
+      "trustedDeploy": {
+        "required": false,
+        "available": true,
+        "unavailableReason": null
+      }
     }
   }
 }

@@ -5,7 +5,9 @@ import {
   jsonTooLargeHandler,
   normalizedPathOf,
   sendJson,
+  validateBody,
 } from "@udp/http";
+import { oidcRequiredSchema } from "@udp/shared-types";
 import {
   cicdSecretResponseWire,
   cicdStatusResponseWire,
@@ -43,6 +45,28 @@ projectCicdRouter.get(
   asyncHandler(async (req, res) => {
     sendJson(res, cicdStatusResponseWire, {
       cicd: await cicd.status(projectIdParam(req)),
+    });
+  }),
+);
+
+/**
+ * [Plan #61 QĐ-17, 61d-2a] Bat/tat Trusted Deploy — thao tac RIENG, khong di kem luu cau hinh domain.
+ *
+ * Cung khuon `PUT /build/signing-enforce` cua 61d-1, va vi cung mot ly do: mot Portal mo tu truoc luc UDP
+ * tu bat che do nay khong duoc vo tinh tat no khi luu mot thu khac.
+ */
+projectCicdRouter.put(
+  "/domains/CICD/oidc-required",
+  requireAuth,
+  requireMinProjectRole("MAINTAINER"),
+  validateBody(oidcRequiredSchema),
+  asyncHandler(async (req, res) => {
+    sendJson(res, cicdStatusResponseWire, {
+      cicd: await cicd.setOidcRequired(
+        projectIdParam(req),
+        (req.body as { required: boolean }).required,
+        req,
+      ),
     });
   }),
 );

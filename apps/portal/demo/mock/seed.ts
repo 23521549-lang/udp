@@ -1443,6 +1443,7 @@ function deploymentsFor(
       triggeredBy: "WEBHOOK",
       rebase: false,
       signature: null,
+      trustedDeploy: null,
       rolloutSessionId: null,
       restoresDeploymentId: null,
       startedAt: iso(startMs),
@@ -2497,7 +2498,15 @@ function buildProject(spec: ProjectSpec, extras: Extras): ProjectRecord {
       ? {
           provider: "github-actions",
           webhookPath: `/api/v1/webhooks/cicd/${id}/github-actions`,
+          // [Plan #61 61d-2a] May chu la nguon su that cua dia chi tuyet doi: `aud` cua token phai bang
+          // dung chuoi nay, nen Portal in lai no thay vi tu ghep tu `window.location.origin`
+          webhookUrl: `https://udp.example.com/api/v1/webhooks/cicd/${id}/github-actions`,
           secretSet: true,
+          trustedDeploy: {
+            required: false,
+            available: true,
+            unavailableReason: null,
+          },
         }
       : null,
     adminOnly: spec.myRole === null,
@@ -2853,6 +2862,7 @@ function addPendingProdDeploy(p: ProjectRecord): void {
     triggeredBy: "WEBHOOK",
     rebase: false,
     signature: null,
+    trustedDeploy: null,
     rolloutSessionId: null,
     restoresDeploymentId: null,
     startedAt: at,
@@ -2908,6 +2918,7 @@ function addRollbacks(p: ProjectRecord): void {
       triggeredBy: by,
       rebase: false,
       signature: null,
+      trustedDeploy: null,
       rolloutSessionId: failed.id,
       restoresDeploymentId: restored.deploymentId,
       startedAt: at,

@@ -273,6 +273,18 @@ export interface PipelineTemplateParams {
    * rộng BỐI CẢNH (như `environments` của D-P29) — không đổi phương thức nào của `CicdDomainAdapter`.
    */
   build: BuildPlan;
+  /**
+   * [Plan #61 QĐ-17, 61d-2a] Địa chỉ webhook TUYỆT ĐỐI của project, do máy chủ dựng.
+   *
+   * Một mở rộng bối cảnh nữa, cùng hạng với `build`. Nó cần vì Trusted Deploy đòi `aud` của token BẰNG
+   * đúng chuỗi mà bộ kiểm mong đợi, và chuỗi đó chỉ máy chủ biết: biến `UDP_WEBHOOK_URL` trong CI là giá
+   * trị NGƯỜI DÙNG dán vào, nên lệch một dấu `/`, một cổng, hay `http` vs `https` là 401 vĩnh viễn mà
+   * không có gì chẩn đoán được. In thẳng chuỗi của máy chủ vào template xoá hẳn chế độ hỏng đó.
+   *
+   * E1 KHÔNG đổi: nó đếm số lần phải NỚI LỎNG bộ hợp đồng (§13.2), còn đây không nới lỏng phép kiểm nào —
+   * cùng lý do mà `build` của 61b không làm E1 tăng.
+   */
+  webhookUrl: string;
 }
 
 /** CI/CD adapter mở rộng thêm phần webhook — §8.3 nhắc nhưng v3 không có trong interface */

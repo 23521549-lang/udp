@@ -72,9 +72,9 @@ export function trustedDeployStateOf(row: {
       : expectationOf({
           provider,
           toolConfig: row.toolConfig,
-          // `aud` không ảnh hưởng tới việc provider có kiểm được hay không, nên chỗ này chỉ cần một chuỗi
-          // hợp lệ; chuỗi thật dựng ở đường webhook.
-          audience: "https://unused.invalid",
+          // Chuỗi này không ảnh hưởng tới việc provider có kiểm được hay không (câu hỏi duy nhất ở đây),
+          // nên chỉ cần một giá trị hợp lệ; chuỗi thật dựng ở đường webhook từ `absoluteWebhookUrlOf`.
+          webhookUrl: "https://unused.invalid",
         });
   return "unavailable" in expectation
     ? {
@@ -100,6 +100,83 @@ export async function status(projectId: string): Promise<CicdStatusWire> {
       oidcRequired: row?.oidcRequired ?? false,
     }),
   };
+}
+
+/**
+ * [Plan #61 QĐ-17, 61d-2a] Bat/tat Trusted Deploy bang tay — MAINTAINER, co nhat ky.
+ *
+ * Mot thao tac RIENG, dung khuon `signing-enforce` cua 61d-1: khong di kem viec luu cau hinh domain, de
+ * mot Portal mo tu truoc luc UDP tu bat khong vo tinh tat no khi luu thu khac.
+ *
+ * Hai tien dieu kien, ca hai deu la van xa cho mot trang thai khong sua duoc tu UI:
+ *  - Khong cho BAT khi UDP chua kiem duoc token cua provider dang bat (CircleCI thieu hai id, hay provider
+ *    la mot CI chay trong cum — cho 61d-2b). Bat mot cong ma UDP khong kiem noi la tu khoa project ra
+ *    ngoai. Cung ly le voi `setSigningEnforce` tu choi bat khi chua co khoa.
+ *  - TAT thi khong co tien dieu kien nao: no la van xa, va mot van xa co dieu kien thi khong phai van xa.
+ *
+ * Khoa hang `domain_configs` bang `FOR NO KEY UPDATE` trong transaction: duong webhook doc hang do NGOAI
+ * transaction cua no, nen hai luot di qua nhau se ghi de ket luan cua nhau.
+ */
+export async function setOidcRequired(
+  projectId: string,
+  required: boolean,
+  request: Request,
+): Promise<CicdStatusWire> {
+  await prisma.$transaction(async (tx) => {
+    const [locked] = await tx.$queryRaw<
+      {
+        id: string;
+        selected_tool: string | null;
+        tool_config: unknown;
+        oidc_required: boolean;
+      }[]
+    >`
+      SELECT id, selected_tool, tool_config, oidc_required
+        FROM domain_configs
+       WHERE project_id = ${projectId}::uuid
+         AND domain_type = 'CICD'
+         AND is_enabled = true
+       FOR NO KEY UPDATE`;
+    if (locked === undefined || locked.selected_tool === null) {
+      throw new ConflictError("Project chua bat domain CI/CD");
+    }
+    if (locked.oidc_required === required) return;
+    if (required) {
+      const state = trustedDeployStateOf({
+        selectedTool: locked.selected_tool,
+        toolConfig: locked.tool_config,
+        oidcRequired: locked.oidc_required,
+      });
+      if (!state.available) {
+        throw new ConflictError(
+          `UDP chua kiem duoc token cua CI dang bat (${state.unavailableReason ?? "?"}): bat Trusted Deploy luc nay se chan moi lan deploy`,
+        );
+      }
+    }
+    await tx.domainConfig.update({
+      where: { id: locked.id },
+      data: {
+        oidcRequired: required,
+        project: {
+          update: {
+            auditLogs: {
+              create: auditEntry({
+                action: required
+                  ? "cicd.trusted-deploy.required"
+                  : "cicd.trusted-deploy.unrequired",
+                targetType: "Project",
+                targetId: projectId,
+                before: { required: !required },
+                after: { required },
+                request,
+              }),
+            },
+          },
+        },
+      },
+    });
+  });
+  return await status(projectId);
 }
 
 /** Sinh (hay xoay) secret — giá trị rõ CHỈ có trong response này; audit không mang nó */
@@ -199,6 +276,7 @@ export async function pipelineTemplate(
       steps: stepsOfEnabled(registry, enabled, projectSlug),
       environments: project.environments,
       registryRef,
+      webhookUrl: absoluteWebhookUrlOf(projectId, row.provider),
       languageRuntime: project.languageRuntime,
       // [Plan #61] Build thế nào: chiến lược, đăng nhập registry, danh tính build, bước test
       build: buildPlanOf({

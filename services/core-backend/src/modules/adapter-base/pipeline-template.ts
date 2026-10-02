@@ -62,8 +62,21 @@ export function templateValues(
  * Trường rỗng (timestamp, image khi build hỏng) bị bỏ khỏi thân — schema của UDP không nhận chuỗi
  * rỗng. `signatureHeader` là dòng `-H` của nhà cung cấp, dùng `$SIG` hay `$UDP_WEBHOOK_SECRET`.
  */
-export function notifyScript(signatureHeader: string): string[] {
+export function notifyScript(
+  signatureHeader: string,
+  /**
+   * [Plan #61 QĐ-17, 61d-2a] Dòng shell đặt `UDP_OIDC_TOKEN`, cho nhà cung cấp phải lấy token bằng lệnh.
+   *
+   * Phải đi QUA đây chứ không ghép ở adapter: mỗi adapter áp phép thụt lề của riêng nó, và ở hai trong sáu
+   * chỗ phép đó chỉ áp cho kết quả của hàm này — nên dòng ghép bên ngoài rơi sai cột và sinh YAML không
+   * hợp lệ. Bộ hợp đồng CI/CD bắt đúng lỗi đó, nên chỗ nối duy nhất là tham số này.
+   *
+   * GitLab không dùng nó: `id_tokens:` của GitLab tiêm token thành biến ở mức YAML, không cần lệnh nào.
+   */
+  tokenLines: readonly string[] = [],
+): string[] {
   return [
+    ...tokenLines,
     "BODY=$(jq -nc \\",
     '  --arg env "$UDP_ENVIRONMENT" --arg status "$UDP_STATUS" \\',
     '  --arg sha "$COMMIT_SHA" --arg ts "$COMMIT_TS" --arg image "$IMAGE_REF" \\',
@@ -79,6 +92,9 @@ export function notifyScript(signatureHeader: string): string[] {
     'curl -sS --fail -X POST "$UDP_WEBHOOK_URL" \\',
     "  -H 'Content-Type: application/json' \\",
     `  ${signatureHeader} \\`,
+    // [Plan #61 QD-17, 61d-2a] Trusted Deploy: token OIDC cua CHINH luot chay nay, neu nha cung cap cap
+    // duoc. Rong thi KHONG gui header — pipeline cua project chua bat che do bat buoc khong doi hanh vi.
+    '  ${UDP_OIDC_TOKEN:+-H "Authorization: Bearer $UDP_OIDC_TOKEN"} \\',
     '  --data-binary "$BODY"',
   ];
 }

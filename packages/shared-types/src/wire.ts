@@ -22,7 +22,6 @@ import {
   BUILD_LANGUAGES,
   buildSettingsSchema,
   SIGNATURE_REJECTIONS,
-  TRUSTED_DEPLOY_REJECTIONS,
 } from "./build.js";
 import { capabilityPreferenceSchema } from "./domain-api.js";
 import { PROVISION_BLOCKERS } from "./provisioning-api.js";
@@ -953,14 +952,16 @@ export const deploymentWire = z
     signature: z.enum(["VERIFIED", ...SIGNATURE_REJECTIONS]).nullable(),
     /**
      * [Plan #61 QĐ-17, 61d-2a] Trusted Deploy: `VERIFIED` — lời báo mang token OIDC của đúng lượt chạy và
-     * token đó đã được xác minh; mã từ chối — không deploy; `null` — không kiểm (chưa bắt buộc mà pipeline
-     * chưa gửi token, hay lần deploy không đi qua webhook). Trường RIÊNG, không nhồi vào `signature`: hai
-     * cổng chứng minh hai thứ khác nhau — chữ ký image chứng minh BYTE được deploy, cái này chứng minh
-     * LƯỢT CHẠY là thật — và nhồi chung sẽ lặng lẽ đổi ngữ nghĩa của danh sách deployment và của DORA.
+     * token đó đã được xác minh; `null` — không kiểm (chưa bắt buộc mà pipeline chưa gửi token, hay lần
+     * deploy không đi qua webhook). Trường RIÊNG, không nhồi vào `signature`: hai cổng chứng minh hai thứ
+     * khác nhau — chữ ký image chứng minh BYTE được deploy, cái này chứng minh LƯỢT CHẠY là thật.
+     *
+     * Chỉ hai giá trị, và đó là một quyết định có chủ đích: một lần Trusted Deploy TỪ CHỐI không sinh bản
+     * ghi deployment nào. Nó là cổng XÁC THỰC, cùng hạng với HMAC, nên dấu vết của nó là `AuditLog`
+     * `cicd.webhook.rejected`. Nếu nó ghi `DEPLOY_FAILURE` thì ai có secret HMAC sẽ bơm được sự kiện hỏng
+     * vô hạn và làm bẩn Change Failure Rate của DORA.
      */
-    trustedDeploy: z
-      .enum(["VERIFIED", ...TRUSTED_DEPLOY_REJECTIONS])
-      .nullable(),
+    trustedDeploy: z.enum(["VERIFIED"]).nullable(),
     rolloutSessionId: uuid.nullable(),
     restoresDeploymentId: uuid.nullable(),
     startedAt: isoDateTime,
