@@ -155,11 +155,13 @@ khẳng định `readOnlyAccess()` phơi đúng ba thành viên.
 
 ## 7. Việc tiếp
 
-**61d-2b-2 — bộ ký trong cụm cho CircleCI + Azure.** Việc duy nhất còn lại của 61d-2 phải **GHI** vào cụm khách, nên
-nó là đợt riêng. Đầu vào đã chốt: Azure vẫn **chưa** nhận CircleCI (tài liệu Microsoft 18/09/2026: FIC linh hoạt chỉ
-nhận GitHub, GitLab, Terraform Cloud), nên không có đường nào khác. Và một điều phải viết vào §8.3 cùng §16 ngay khi
-làm: chữ ký do UDP đặt **sau** cổng deploy KHÔNG chứng minh nguồn gốc build, nó chỉ chứng minh "UDP đã cho phép byte
-này" — giá trị thật của nó là để Kyverno (61d-3) có chữ ký mà kiểm lúc admission. Kế hoạch chi tiết viết khi bắt đầu
-(R1); phạm vi đã phác ở `docs/plans/plan61-plan.md`.
+**61d-3 (Kyverno, AC-12) đi TRƯỚC 61d-2b-2 — một lần đổi thứ tự, có lý do đo được.** Vòng lập kế hoạch chi tiết của
+61d-2b-2 lật một dữ kiện: `cluster/bootstrap.ts` **không** cho `udp-tooling` quyền `batch/jobs` nào, và namespace
+`udp-build` chỉ tồn tại ở project dùng CI trong cụm — nên một bộ ký trong cụm đòi **quyền mới trên cụm khách cộng
+một lượt bootstrap lại mọi cụm đang chạy**. Đó đúng là cái giá mà QĐ-1 đã từ chối cho lối TokenReview, và lần này nó
+chỉ mua được **một** tổ hợp CI × cloud. AC-12 thì là một tiêu chí nghiệm thu. Phân tích đầy đủ (ba thiết kế, cái giá
+của từng lối, và ba việc phải quyết trước dòng mã đầu) nằm ở `docs/plans/plan61-plan.md`; dòng §16 vẫn đúng và vẫn
+trỏ `(61d-2b-2)`, nên không có nợ nào bị bỏ lửng.
 
-Sau đó: 61d-3 (Kyverno), tài liệu và Playwright cuối Plan #61, rồi Plan #62.
+Vậy thứ tự còn lại: **61d-3** (Kyverno), rồi **61d-2b-2** (bộ ký trong cụm), rồi tài liệu và Playwright cuối Plan
+#61, rồi Plan #62.

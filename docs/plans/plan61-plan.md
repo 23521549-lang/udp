@@ -750,6 +750,60 @@ và một ô design-lint khẳng định `readOnlyAccess()` phơi đúng ba thà
 (g) `--retry` không làm một lượt 401 bị gửi lại: `curl --retry` chỉ thử lại lỗi tạm (5xx, lỗi mạng), và lượt gửi
 lại mang CÙNG thân nên rơi đúng nhánh `duplicate` của I41 — ô "gửi lại cùng token thân y nguyên" đã chốt điều đó.
 
+## 61d-2b-2 — bộ ký trong cụm: phân tích, và quyết định HOÃN lại sau 61d-3
+
+Vòng lập kế hoạch chi tiết (R1) của mục này lật một dữ kiện làm đổi cái giá của nó, nên phần này ghi lại phân tích
+đầy đủ thay vì một plan thi công. Quyết định: **làm 61d-3 (Kyverno, AC-12) trước**, và 61d-2b-2 giữ nguyên dòng
+giới hạn đã công bố ở §16 cho tới khi làm. Lý do ở cuối.
+
+### Dữ kiện đã xác minh (R7)
+
+| #   | Câu hỏi                                                       | Kết quả, tại mã                                                                                                                                                                                                                               |
+| --- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | AKS của UDP có bật OIDC issuer và workload identity chưa?     | **Rồi, cả hai.** `cloud-adapters/src/azure/resources/cluster.ts:53-54`: `oidcIssuerProfile: { enabled: true }`, `securityProfile: { workloadIdentity: { enabled: true } }`. Nên lối ký trong cụm **không** cần đổi đường provisioning.        |
+| 2   | Có sẵn mảnh nào để ký trong cụm?                              | Gần đủ: image `azureCli` ghim digest (`build-toolchain.ts`), cosign ghim version + sha256, `kmsCredentialLines` + `signLines` của `sign-script.ts` (dùng lại nguyên), và lệnh đăng nhập ACR bằng federated token (`build-script.ts:151-156`). |
+| 3   | `udp-tooling` tạo được `Job` trong cụm khách chưa?            | **Chưa.** `cluster/bootstrap.ts`: ba nhóm rule của `tooling` chỉ có `helmreleases`, `helmrepositories`, `configmaps`, `secrets` (trong `udp-system`), một Secret tên cố định ở namespace environment, và CRD. **Không** `batch/jobs`.         |
+| 4   | Namespace `udp-build` có sẵn cho project dùng CircleCI không? | **Không.** Nó do `buildNamespaceCompanion` tạo, mà companion đó chỉ đi kèm release của **ba CI trong cụm**. Project dùng CircleCI không có namespace đó.                                                                                      |
+| 5   | Bootstrap chạy lại được không?                                | Được, nhưng không tự động: `clusters.bootstrap` gọi từ `provision.job.ts` (lượt provision) và `environment-apply.job.ts` khi **THÊM** environment. Nên một cụm đang chạy chỉ nhận quyền mới ở lần thêm environment kế tiếp.                   |
+
+### Ba thiết kế, và vì sao chọn lối ký trong cụm nếu làm
+
+- **(A) Job ký trong cụm của project** — dùng lại toàn bộ đoạn shell ký đã viết và đã được bộ hợp đồng kiểm. Giá:
+  một Role mới (`batch/jobs: create, get`) cho `udp-tooling`, một namespace mới (không dùng được `udp-build`, dữ kiện
+  4; và không nên dùng `udp-system` vì pod ký giữ token ký được bằng khoá KMS của project), **sửa `bootstrap.ts` ⇒
+  mọi cụm đang chạy phải bootstrap lại** (dữ kiện 5), cộng §12.2, I25 và bộ test của bootstrap.
+- **(B) Service 1 tự ký, gọi REST của Key Vault** — không chạm cụm. Giá: viết một bộ ký OCI/cosign bằng TypeScript
+  (DSSE + simple signing + đẩy referrer), tức một bản hiện thực thứ hai của định dạng mà `@sigstore/verify` và
+  Kyverno phải đọc được. Đó là nợ kỹ thuật dài hạn và là chỗ sai âm thầm (chữ ký đúng hình nhưng Kyverno từ chối).
+- **(C) UDP cấp token Azure ngắn hạn cho lượt chạy CircleCI đã xác minh** — mạnh nhất về nguồn gốc (chữ ký do CHÍNH
+  lượt chạy tạo, khác (A) và (B) đều là chữ ký của UDP), và dùng lại được bộ xác minh Trusted Deploy của 61d-2a.
+  Nhưng nó đổi một nguyên tắc khai sinh: QĐ-6 nói UDP chỉ lưu **mã định danh không bí mật** và không bao giờ giữ hay
+  phát credential cloud cho lượt build. (C) biến UDP thành một **bộ phát credential cloud** — một hướng tin cậy mới,
+  và bán kính thiệt hại của một lỗi trong bộ xác minh lúc đó là "ký được bằng khoá KMS của khách", không còn là
+  "deploy được một image". Đổi nguyên tắc đó là việc của **spec**, không phải của một mục trong plan.
+
+Chọn **(A)** nếu làm. Và một điều phải viết vào §8.3 cùng §16 ngay khi làm: chữ ký do UDP đặt **sau** cổng deploy
+KHÔNG chứng minh nguồn gốc build — nó chỉ chứng minh "UDP đã cho phép byte này". Giá trị thật của nó là để Kyverno
+(61d-3) có chữ ký mà kiểm lúc admission.
+
+### Vì sao HOÃN, và vì sao hoãn không phải thoái cấp
+
+1. **Cái giá là đúng cái giá mà 61d-2b-1 vừa tránh được.** Lối TokenReview bị loại ở QĐ-1 vì "quyền mới trên cụm
+   khách + bootstrap lại mọi cụm đang chạy". (A) đòi đúng hai thứ đó. Nhận nó cho **một** tổ hợp CI × cloud
+   (CircleCI + Azure) là một trao đổi tệ hơn hẳn trao đổi mà 61d-2b-1 đã từ chối cho **ba** CI.
+2. **AC-12 là tiêu chí nghiệm thu, 61d-2b-2 thì không.** 61d-3 (Kyverno) đóng một AC của khoá luận; 61d-2b-2 đóng một
+   dòng §16 đã công bố và đã thoái cấp **có kiểm soát** (không chữ ký, image vẫn deploy, chế độ bắt buộc không bật
+   được — người dùng thấy đúng lý do ở mục Ký image).
+3. **Làm 61d-3 trước còn làm giá trị của (A) ĐO ĐƯỢC.** Sau khi Kyverno kiểm chữ ký lúc admission, câu "project
+   CircleCI + Azure không bật được kiểm chữ ký của Kyverno" trở thành một hệ quả cụ thể, chứ không phải một suy đoán.
+4. **Không để lại nợ:** dòng §16 vẫn đúng và vẫn trỏ `(61d-2b-2)`; phân tích ba thiết kế nằm ở đây; không mã nào bị
+   bỏ nửa vời. Thứ duy nhất đổi là **thứ tự**, và R5 đòi ghi lại đúng việc đó — đây là chỗ ghi.
+
+**Nếu quay lại làm (A), ba việc phải quyết trước dòng mã đầu:** (i) namespace riêng (`udp-sign`) hay mở `udp-build`
+cho mọi project; (ii) `udp-tooling` chờ Job bằng `get` trên `batch/jobs` hay đọc một ConfigMap do Job ghi (chênh nhau
+một verb); (iii) cụm chưa bootstrap lại thì bước ký trả mã gì — phải là một mã **nói rõ cần bootstrap lại**, không
+phải một 403 chung.
+
 ## 61d-3 — Kyverno (AC-12)
 
 1. Adapter Kyverno 2.0.0: chart 3.9.x / `kyverno-policies` 3.9.x; nâng qua §8.6; replicas ≥ 2 khi Deny; `failurePolicy`

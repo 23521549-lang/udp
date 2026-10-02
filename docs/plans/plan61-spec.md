@@ -56,6 +56,14 @@ ba việc phải **GHI** vào cụm khách ⇒ **61d-2b-2**, với một điều
 deploy **không** chứng minh nguồn gốc build, nó chỉ chứng minh "UDP đã cho phép byte này", và giá trị thật của nó là
 để Kyverno (61d-3) có chữ ký mà kiểm lúc admission.
 
+**[03/10/2026] 61d-3 làm TRƯỚC 61d-2b-2.** Quyết khi viết plan chi tiết cho 61d-2b-2 (R1), vì một dữ kiện kiểm
+được: `cluster/bootstrap.ts` không cho `udp-tooling` một quyền `batch/jobs` nào và namespace `udp-build` chỉ tồn tại
+ở project dùng CI trong cụm, nên bộ ký trong cụm đòi quyền mới trên cụm khách **cộng một lượt bootstrap lại mọi cụm
+đang chạy** — đúng cái giá mà QĐ-1 đã từ chối cho lối TokenReview, lần này chỉ để mua một tổ hợp CI × cloud. AC-12
+(Kyverno) là tiêu chí nghiệm thu nên đi trước; 61d-2b-2 giữ nguyên dòng giới hạn đã công bố ở §16 (không chữ ký,
+image vẫn deploy, chế độ bắt buộc không bật được, mục Ký image nói đúng lý do) cho tới khi làm. Phân tích ba thiết kế
+nằm ở `plan61-plan.md`.
+
 **QĐ-2 — Ranh giới giao diện (E1).** `PipelineTemplateParams` thêm `build: BuildPlan` — một MỞ RỘNG BỐI CẢNH như
 `environments` của D-P29, không đổi tên hay thêm phương thức của `CicdDomainAdapter`; `languageRuntime` giữ (tương
 thích) nhưng bước test đọc `build.test`. Registry khai cách đẩy bằng THUỘC TÍNH của binding `registry.oci`
