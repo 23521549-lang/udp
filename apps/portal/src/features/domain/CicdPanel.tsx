@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Workflow } from "lucide-react";
+import type { CicdStatusWire } from "@udp/shared-types/wire";
+import { KeyRound, ShieldCheck, Workflow } from "lucide-react";
 import { useState } from "react";
 import { CodeBlock } from "../../components/CodeBlock";
 import { Dialog } from "../../components/Dialog";
@@ -18,11 +19,41 @@ import { domainMessages } from "./domain.messages";
  * Golden Path của tool đang bật. Đọc — VIEWER; xem template — DEVELOPER (người dán nó vào repo);
  * sinh/xoay secret — MAINTAINER, cùng bậc với lưu cấu hình domain (§8.6).
  */
+/**
+ * [Plan #61 61d-2a] Trạng thái Trusted Deploy, nói đúng lý do khi chưa khả dụng.
+ *
+ * "Chưa khả dụng" KHÔNG được hiển thị như "đang tắt": tắt là một lựa chọn, còn chưa khả dụng là UDP không
+ * kiểm được token của CI đang bật — và người dùng phải biết phải làm gì để mở nó.
+ */
+function trustedDeployText(
+  state: CicdStatusWire["trustedDeploy"],
+  m: { [k: string]: unknown },
+): string {
+  const text = (key: string) => String(m[key]);
+  if (state.required) return text("trustedDeployOn");
+  if (state.unavailableReason === "IN_CLUSTER_CI") {
+    return text("trustedDeployInCluster");
+  }
+  if (state.unavailableReason === "MISSING_CIRCLECI_IDS") {
+    return text("trustedDeployCircleciIds");
+  }
+  return text("trustedDeployWaiting");
+}
+
 export function CicdPanel() {
   const { project } = useProjectContext();
+  const queryClient = useQueryClient();
   const status = useQuery({
     queryKey: qk.cicd(project.id),
     queryFn: () => domainApi.cicd(project.id),
+  });
+  // [Plan #61 61d-2a] Bật/tắt Trusted Deploy — thao tác riêng, không đi kèm lưu cấu hình domain
+  const oidc = useMutation({
+    mutationFn: (required: boolean) =>
+      domainApi.setOidcRequired(project.id, required),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: qk.cicd(project.id) });
+    },
   });
   const [showTemplate, setShowTemplate] = useState(false);
   const [secretOpen, setSecretOpen] = useState(false);
@@ -37,14 +68,22 @@ export function CicdPanel() {
     <section aria-label={m.title}>
       <h2 className="h2">{m.title}</h2>
       <p className="c3">{m.lead}</p>
+      {/*
+        [Plan #61 61d-2a] In chuỗi của MÁY CHỦ, không ghép từ `window.location.origin`.
+        Trusted Deploy đòi `aud` của token bằng đúng chuỗi mà bộ kiểm mong đợi, mà bộ kiểm chỉ
+        có cấu hình máy chủ — ghép ở trình duyệt thì hai bên lệch một dấu `/` là 401 vĩnh viễn
+        và không có gì chẩn đoán được.
+      */}
       <CodeBlock
-        code={`${window.location.origin}${cicd.webhookPath}`}
+        code={cicd.webhookUrl ?? ""}
         label={m.url}
         copyLabel={m.copyUrl}
       />
       <dl className="props">
         <dt>{m.secret}</dt>
         <dd>{cicd.secretSet ? m.secretSet : m.secretUnset}</dd>
+        <dt>{m.trustedDeploy}</dt>
+        <dd>{trustedDeployText(cicd.trustedDeploy, m)}</dd>
       </dl>
       <div className="form-actions" style={{ justifyContent: "flex-start" }}>
         {can(project.myRole, "MAINTAINER") && (
@@ -55,6 +94,19 @@ export function CicdPanel() {
           >
             <Icon of={KeyRound} />
             {cicd.secretSet ? m.rotate : m.generate}
+          </button>
+        )}
+        {can(project.myRole, "MAINTAINER") && cicd.trustedDeploy.available && (
+          <button
+            type="button"
+            className="btn"
+            disabled={oidc.isPending}
+            onClick={() => oidc.mutate(!cicd.trustedDeploy.required)}
+          >
+            <Icon of={ShieldCheck} />
+            {cicd.trustedDeploy.required
+              ? m.trustedDeployRelease
+              : m.trustedDeployRequire}
           </button>
         )}
         {can(project.myRole, "DEVELOPER") && (

@@ -288,6 +288,52 @@ về bảo mật ghim chính xác — `@sigstore/verify 4.1.2`, `undici 7.30.0`)
 **Cũng phải sửa spec:** QĐ-1 của `plan61-spec.md` nói "61d chia ba". Việc chia 61d-2 thành 61d-2a/61d-2b là một quyết
 định mới, nên thêm một dòng vào QĐ-1 để spec vẫn là bản đã duyệt chứ không phải plan tự mở rộng.
 
+### 61d-2a — đã làm, và những chỗ CHỆCH plan (R5)
+
+Ghi ra vì plan và mã không được trôi khỏi nhau, và vì mỗi chỗ chệch dưới đây đều do một dữ kiện đo được, không do tiện tay.
+
+1. **`aud` của CircleCI là `organizationId`, không phải địa chỉ webhook.** Plan viết `aud` = địa chỉ webhook cho cả ba
+   nhà cung cấp và tự đánh dấu "việc CircleCI cho nội suy biến vào `aud` là giả định CHƯA KIỂM". Đã kiểm tại tài liệu
+   CircleCI: `aud` mặc định LÀ `ORGANIZATION_ID` và đổi nó cần một tính năng riêng ở mức tổ chức chứ không đặt được
+   trong `config.yml`. Nên dùng đúng đường lùi đã đăng ký trước trong plan, và công bố cái giá ở §16: với CircleCI,
+   `aud` không buộc token vào đúng project nên việc buộc đó dựa hoàn toàn vào claim `project-id`.
+2. **Renderer in THẲNG địa chỉ tuyệt đối, qua một mở rộng bối cảnh `PipelineTemplateParams.webhookUrl`.** Plan định
+   dựa vào biến `$UDP_WEBHOOK_URL`; nhưng biến đó là giá trị NGƯỜI DÙNG dán vào, nên `aud` sẽ suy từ trình duyệt họ
+   đang mở. In chuỗi của máy chủ xoá hẳn chế độ hỏng "lệch một dấu `/` là 401 vĩnh viễn". **E1 không đổi**: nó đếm số
+   lần phải NỚI LỎNG bộ hợp đồng (§13.2), còn đây không nới lỏng phép kiểm nào — cùng lý do mà `build` của 61b không
+   làm E1 tăng.
+3. **Cờ `oidcRequired` là CỘT RIÊNG trên `domain_configs`, và reset bằng TRIGGER.** Plan để ngỏ chỗ lưu. Đường ghi duy
+   nhất của `tool_config` là `replaceDomains`, vốn ghi đè toàn phần và chỉ chạy khi project còn sửa được ⇒ cờ nằm
+   trong đó sẽ bị xoá im lặng và không bao giờ tự bật được. Reset khi đổi tool làm ở tầng database vì `tool_config`
+   không phải đường ghi duy nhất của hàng CICD.
+4. **Trường `trustedDeploy` trên dây thu hẹp còn `VERIFIED | null`.** Plan định mang cả tập mã từ chối. Nhưng một lần
+   từ chối là lỗi XÁC THỰC nên không sinh bản ghi deployment nào — ghi `DEPLOY_FAILURE` cho nó sẽ để ai có secret HMAC
+   bơm sự kiện hỏng vô hạn và làm bẩn Change Failure Rate. Mã từ chối đi đường `AuditLog`, nên enum trên dây chỉ khai
+   những giá trị thật sự xảy ra.
+5. **Dòng xin token đi QUA `notifyScript`, không ghép ở adapter.** Bộ hợp đồng CI/CD bắt được: ở hai trong sáu chỗ,
+   phép thụt lề chỉ áp cho kết quả của `notifyScript` nên dòng ghép bên ngoài rơi sai cột và sinh YAML không hợp lệ.
+6. **Đường CI-trong-cụm dời sang 61d-2b** (đã ghi ở đầu mục này và ở QĐ-1 của spec). Dữ kiện mang sang: KHÔNG dùng
+   projected ServiceAccount token volume — token của nó dùng lại suốt vòng đời nên hai lượt build trong cùng một giờ
+   có cùng một `jti` và đập vào chính bảng "dùng một lần"; `tokenRequestLines` đã có sẵn và cấp token mới mỗi lần.
+
+7. **Route `PUT /oidc-required` phải có mẫu golden và test HTTP riêng — phát hiện bởi chính bộ hợp đồng dây.**
+   Plan không nói gì về việc này, và tôi làm thiếu: route mới đi `sendJson` nhưng không được khai trong `ROUTES` của
+   `tests/wire-golden.test.ts` và không ô test nào gọi nó qua HTTP (sáu ô Trusted Deploy cũ sửa cờ thẳng ở database).
+   `wire-golden` đỏ đúng chỗ đó: "không route sendJson nào thiếu dòng trong ROUTES". Cách sửa KHÔNG phải khai thêm một
+   dòng vào `NO_GOLDEN_YET` — đó là nới lỏng một cổng để che một lỗ test — mà là viết sáu ô HTTP thật cho route
+   (bậc quyền MAINTAINER, thân `strict`, idempotent không ghi nhật ký lần hai, tiền điều kiện 409, **van xả tắt được
+   kể cả khi `available` đã false**, và trigger database hạ cờ khi đổi CI). Mẫu golden sinh ra từ chính lượt chạy đó.
+   Bài học ghi lại: một route mới KHÔNG được coi là xong khi service của nó có test — tầng route có ba tính chất
+   riêng mà chỉ đường HTTP đo được.
+
+**Cổng đã qua:** typecheck và prettier toàn repo; `prisma migrate diff` không khác biệt; `db:verify-chain` xanh;
+design-lint 162/162 (thêm luật sổ kép cho bảng nhà cung cấp và luật retention cho bảng token); bộ hợp đồng sáu CI
+324/324; `trusted-deploy` 22/22 (tất định, không gọi mạng); `cicd-webhook` 37/37 (gồm 7 ô Trusted Deploy qua HTTP và
+database thật, và 6 ô cho route bật/tắt); `wire-golden` 124/124; `@udp/db` 358/358; Portal 365 + 17.
+
+**Còn nợ kiểm chứng:** `trusted-deploy-real` — chưa chạy với token do nhà cung cấp THẬT phát (cần UDP có địa chỉ công
+khai; không tốn tiền). Chi tiết và dấu hiệu đạt ở `docs/measurements/kiem-chung-con-no.md`.
+
 ## 61d-3 — Kyverno (AC-12)
 
 1. Adapter Kyverno 2.0.0: chart 3.9.x / `kyverno-policies` 3.9.x; nâng qua §8.6; replicas ≥ 2 khi Deny; `failurePolicy`

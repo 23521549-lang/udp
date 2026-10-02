@@ -124,6 +124,17 @@ export const domainMessages = defineMessages({
       copyUrl: "Sao chép địa chỉ",
       secret: "Secret webhook",
       secretSet: "Đã sinh (không xem lại được)",
+      trustedDeploy: "Trusted Deploy",
+      trustedDeployOn:
+        "Đang bắt buộc: lời báo phải mang token của chính lượt chạy CI",
+      trustedDeployWaiting:
+        "Chờ token hợp lệ đầu tiên, rồi tự bật. Secret webhook một mình không chứng minh được lời báo đến từ lượt chạy nào",
+      trustedDeployInCluster:
+        "Chưa khả dụng với CI chạy trong cụm: token của chúng là token ServiceAccount, cần quyền mà UDP chưa có trong cụm của bạn",
+      trustedDeployCircleciIds:
+        "Thiếu Organization ID hoặc Project ID của CircleCI: không có chúng thì không suy ra được nơi phát token",
+      trustedDeployRequire: "Bắt buộc Trusted Deploy",
+      trustedDeployRelease: "Thôi bắt buộc",
       secretUnset: "Chưa sinh: mọi webhook đều bị từ chối",
       rotate: "Xoay secret",
       generate: "Sinh secret",
@@ -264,6 +275,17 @@ export const domainMessages = defineMessages({
       copyUrl: "Copy URL",
       secret: "Webhook secret",
       secretSet: "Generated (cannot be viewed again)",
+      trustedDeploy: "Trusted Deploy",
+      trustedDeployOn:
+        "Required: every report must carry a token from the CI run itself",
+      trustedDeployWaiting:
+        "Waiting for the first valid token, then it turns on by itself. The webhook secret alone cannot prove which run sent a report",
+      trustedDeployInCluster:
+        "Not available for in-cluster CI: their tokens are ServiceAccount tokens, which needs a permission UDP does not yet hold in your cluster",
+      trustedDeployCircleciIds:
+        "CircleCI Organization ID or Project ID is missing: without them the token issuer cannot be derived",
+      trustedDeployRequire: "Require Trusted Deploy",
+      trustedDeployRelease: "Stop requiring",
       secretUnset: "Not generated: every webhook is rejected",
       rotate: "Rotate secret",
       generate: "Generate secret",

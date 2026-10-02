@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 48.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 49.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1240,3 +1240,36 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   khoá sau lượt đo).
 - **Ảnh hưởng tới kết luận:** AC-8 và AC-10 của Plan #61 đứng ở mức hợp đồng, bundle thật của cosign và E2E với khoá tệp;
   câu "image được ký bằng khoá KMS của chính project ở cả ba cloud" chưa được chứng minh trên hạ tầng thật.
+
+## trusted-deploy-real — token OIDC thật của ba nhà cung cấp, qua UDP có địa chỉ công khai
+
+- **Vì sao nợ:** Plan #61 61d-2a đo được mọi thứ đo được **không cần nhà cung cấp thật**: lõi xác minh qua 22
+  ô tất định (khoá sinh trong tiến trình, đồng hồ tiêm vào, `fetch` tiêm vào, `fetch` toàn cục bị thay bằng
+  một hàm ném), và đường webhook qua 7 ô tích hợp trên database thật (retry khác replay, token tiêu đúng một
+  lần, chế độ bắt buộc tự bật, 401 đồng nhất của §8.3 khi HMAC sai). Chưa đo: một token do **GitHub,
+  GitLab hay CircleCI thật** phát, đi qua Internet tới một UDP có địa chỉ công khai. Ba thứ chỉ lượt đó
+  chứng minh được: (a) `aud` mà nhà cung cấp thật đặt BẰNG chuỗi mà renderer in vào template — toàn bộ
+  thiết kế `aud` dựa vào điều này và một lệch dấu `/` là 401 vĩnh viễn; (b) `exp − iat` thật của mỗi nhà
+  cung cấp, con số quyết định lề của `udp_prune_webhook_token_uses` và chưa tra được ở bàn giấy; (c) JWKS
+  thật lấy được qua `createEgressFetch` và `kid` của nó khớp token — kể cả sau một lượt xoay khoá của nhà
+  cung cấp.
+- **Tiền đề:** như `packaging-real` (ba CI thật, UDP có địa chỉ công khai HTTPS mà nhà cung cấp gọi tới
+  được), cộng: project GitHub có `permissions: id-token: write`; một instance GitLab (gitlab.com là đủ);
+  một tổ chức CircleCI có Organization ID và Project ID điền vào cấu hình domain CI/CD.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- trusted-deploy.real` (tệp CHƯA CÓ; nó đẩy một commit
+  cho mỗi nhà cung cấp, chờ lần deploy có `trustedDeploy: VERIFIED`, rồi gửi lại ĐÚNG thân cũ để thấy
+  `duplicate` và gửi thân đã đổi `environment` để thấy 401 `TOKEN_REPLAYED`).
+- **Đạt:** mỗi nhà cung cấp: lần báo đầu ⇒ 202 và `trustedDeploy: VERIFIED`, chế độ bắt buộc tự bật, đúng
+  một hàng `webhook_token_uses`; gửi lại thân y nguyên ⇒ 200 `duplicate` và vẫn đúng một sự kiện; thân đổi
+  ⇒ 401 và một hàng `cicd.webhook.rejected`. Ghi lại `exp − iat` đo được vào bảng §8.3. **Không đạt:** `aud`
+  lệch ⇒ đọc `detail` của hàng audit để thấy chuỗi nhà cung cấp đã gửi, rồi sửa `CORS_ORIGIN` chứ đừng nới
+  phép so; JWKS không với tới ⇒ phải thấy **503** chứ không 401, và tuyệt đối không được deploy; CircleCI
+  `aud` không phải `organizationId` ⇒ tính năng custom claims của họ đã đổi, xem lại bảng §8.3.
+- **Tài nguyên:** như `packaging-real`; không tốn tiền (ba nhà cung cấp đều cấp token OIDC trong gói miễn
+  phí), chỉ cần một địa chỉ công khai cho UDP.
+- **Ảnh hưởng tới kết luận:** AC-11 hiện được chứng minh ở mức **cơ chế** (lõi xác minh, thứ tự tầng, tính
+  một-lần do database cưỡng chế) nhưng chưa ở mức **liên thông với nhà cung cấp thật**. Vì vậy câu "Trusted
+  Deploy thay được secret tĩnh" phải đọc là: đã đúng với token đúng hình dạng, chưa chạy với token do ba
+  nhà cung cấp thật phát. Riêng `aud` của CircleCI còn một giới hạn đã công bố ở §16: nó là
+  `organizationId` nên không buộc token vào đúng project, và việc buộc đó dựa hoàn toàn vào claim
+  `oidc.circleci.com/project-id`.

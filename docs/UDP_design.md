@@ -5414,6 +5414,55 @@ sequenceDiagram
 > khoá dòng project trong cùng transaction; bật/tắt tay là thao tác riêng có nhật ký (`PUT
 > /projects/:id/build/signing-enforce`). Danh sách deployment mang phán quyết của cổng (`signature`).
 
+
+> **[v4.12, Plan #61 61d-2a, QĐ-17] Trusted Deploy — lời báo mang token OIDC của chính lượt chạy (AC-11).**
+> Lớp thứ ba trên cùng một webhook, và nó chứng minh một thứ KHÁC hai lớp kia: HMAC chứng minh **thân**
+> không bị sửa, chữ ký image chứng minh **byte** được deploy, Trusted Deploy chứng minh **lượt chạy** là
+> thật. Cần nó vì `UDP_WEBHOOK_SECRET` rất hay được đặt làm org-level secret, nên một repo khác trong cùng
+> tổ chức đọc được nó — lúc đó claim của token là cổng cuối cùng.
+>
+> **Bảng nhà cung cấp.** Mọi giá trị dưới đây đã xác minh ngày 02/10/2026 tại tài liệu và tại chính OIDC
+> discovery document, không lấy từ trí nhớ. Đây là bản chép thứ hai; bản thứ nhất là
+> `TRUSTED_DEPLOY_PROVIDERS` trong `cicd/trusted-deploy.ts`, và
+> `packages/design-lint/tests/trusted-deploy-providers.test.ts` khẳng định hai bên bằng nhau — một lỗi
+> chính tả trong chuỗi issuer khi đó thành một test đỏ, chứ không thành "từ chối mọi thứ" bí ẩn ở
+> production.
+>
+> | provider | issuer | jwksPath | alg | tokenIdClaim | repoClaim | refClaim | audience |
+> | --- | --- | --- | --- | --- | --- | --- | --- |
+> | `github-actions` | `https://token.actions.githubusercontent.com` | `/.well-known/jwks` | `RS256` | `jti` | `repository` | `ref` | `webhook-url` |
+> | `gitlab-ci` | `config:gitlabUrl` | `/oauth/discovery/keys` | `RS256` | `jti` | `project_path` | `ref` | `webhook-url` |
+> | `circleci` | `https://oidc.circleci.com/org/{organizationId}` | `discovery` | `RS256` | `oidc.circleci.com/job-id` | `oidc.circleci.com/project-id` | `oidc.circleci.com/vcs-ref` | `config:organizationId` |
+>
+> **Bốn luật khai sinh, mỗi luật chặn một đường tấn công cụ thể.** (1) **Issuer suy từ CẤU HÌNH, không bao
+> giờ từ `iss` của token** — lấy discovery theo `iss` của một token chưa xác minh là bypass toàn phần, không
+> chỉ SSRF: kẻ có secret HMAC dựng issuer của mình, trả JWKS của mình, ký token với mọi claim nó muốn, và
+> chữ ký sẽ ĐÚNG. (2) **Mọi lời gọi mạng đi `createEgressFetch`** (§12.1 T11): `gitlabUrl` là cấu hình
+> MAINTAINER lưu được và regex của nó nhận cả một địa chỉ nội bộ. Vì vậy KHÔNG dùng `createRemoteJWKSet`
+> của `jose` (nó đi `fetch` toàn cục); tự lấy JWKS rồi `createLocalJWKSet`, và đổi lại còn giữ được bản
+> khoá cũ khi nhà cung cấp hỏng. (3) **`aud` dựng CHỈ từ cấu hình máy chủ** — `TRUST_PROXY_HOPS` mặc định 0
+> nên `req.hostname` LÀ header `Host` do bên gọi đặt, dựng `aud` mong đợi từ đó biến phép kiểm thành "chuỗi
+> của kẻ tấn công bằng chính nó"; `projectId` hạ về chữ thường vì regex UUID của webhook là
+> case-insensitive. (4) **Xác minh chạy NGOÀI transaction và SAU `verified()`** — ngoài transaction vì nó
+> gọi mạng và transaction đang giữ một advisory lock cùng một dòng project đã khoá; sau `verified()` vì mục
+> (1) ở trên quy định bốn tình huống trước đó là CÙNG một 401.
+>
+> **Dùng một lần, và retry khác replay (I41).** Bảng `WebhookTokenUse` giữ `(issuer, token_id)` unique;
+> `body_digest` là thứ phân biệt hai ca: gửi lại với thân GIỐNG HỆT từng byte là retry của CI (phản hồi mất
+> trên đường về sau khi server đã commit) ⇒ trả lại kết quả cũ; thân KHÁC ⇒ replay ⇒ từ chối. So theo
+> `pipeline_id` là không đủ vì phép chống trùng sẵn có tính cả `environment_id`. Ghi bằng
+> `ON CONFLICT DO NOTHING` chứ không bắt lỗi trùng khoá (`23505` abort cả transaction nên sau nó không đọc
+> được hàng cũ). Token bị tiêu **đúng khi** một `DeploymentEvent` được commit.
+>
+> **Chế độ bắt buộc** `domain_configs.oidc_required`: tự bật ở token hợp lệ đầu tiên (cùng transaction,
+> nhật ký SYSTEM đúng một lần), bật/tắt tay là `PUT /projects/:id/domains/CICD/oidc-required` (MAINTAINER,
+> không cho bật khi UDP chưa kiểm được token của CI đang bật), và một **trigger** đưa nó về `false` khi
+> `selected_tool` đổi. Luật còn lại, mirror cổng chữ ký: **token CÓ mà không xác minh được ⇒ LUÔN từ chối,
+> bất kể chế độ**; thiếu token ⇒ chỉ từ chối khi chế độ đã bật. Lỗi hạ tầng (không lấy được khoá công khai)
+> ⇒ **503** để bước báo tự thử lại; lỗi token hay claim ⇒ **401** terminal, và tuyệt đối KHÔNG rơi về HMAC.
+> Mỗi lần từ chối ghi `AuditLog` `cicd.webhook.rejected` ở một câu riêng; token không bao giờ vào audit,
+> log hay `metadata` (I24).
+
 **Vì sao `deployment_id` là bắt buộc chứ không phải trang trí [v4]:** cả năm chỉ số DORA đều tính từ `DeploymentEvent`, và bốn trong năm cần biết **những sự kiện nào thuộc cùng một lần deploy**:
 
 | Chỉ số DORA | Cột cần có | Thiếu thì sao |
@@ -7824,7 +7873,7 @@ UDP giữ credential cloud của người khác và có quyền thay đổi hạ
 | T3 | **Rò credential qua log** | SDK cloud ném lỗi có kèm credential trong `error.config` | `ResolvedCredential` chặn serialize; hàm `redact()` dùng chung ở request logger, `AuditLog`, `ProvisioningJob.last_error` |
 | T4 | **Leo thang quyền ngang** | User A đọc/sửa project của User B bằng cách đổi `projectId` trên URL | `requireProjectRole` kiểm tra `ProjectMember` ở **mọi** endpoint có `:projectId`; test tích hợp quét toàn bộ route để bảo đảm không route nào thiếu (§13) |
 | T5 | **Leo thang quyền dọc** | DEVELOPER bật flag ở production | Ma trận quyền §2.2. **[v4.5]** Module `flag` của S1 kiểm `Environment.is_production` sau khi xác định (project, flag, env) — mức quyền chỉ biết sau khi đọc env nên không làm ở middleware; bật ở production còn cần xác nhận hai bước (428 `CONFIRMATION_REQUIRED`) |
-| T6 | **Giả mạo webhook** | Gửi POST giả để kích hoạt deploy image độc hại | Verify chữ ký theo từng nhà cung cấp, so sánh hằng thời gian; secret mã hóa, xoay vòng được; ghi nhận lần verify thất bại để phát hiện dò quét. **[v4.12, Plan #61]** Secret lộ cũng không đủ: image phải thuộc repository của project và mang chữ ký của khoá KMS của project, đúng commit, đúng nhánh của environment, mới hơn bản đang chạy (cổng deploy §8.3) |
+| T6 | **Giả mạo webhook** | Gửi POST giả để kích hoạt deploy image độc hại | Verify chữ ký theo từng nhà cung cấp, so sánh hằng thời gian; secret mã hóa, xoay vòng được; ghi nhận lần verify thất bại để phát hiện dò quét. **[v4.12, Plan #61]** Secret lộ cũng không đủ: image phải thuộc repository của project và mang chữ ký của khoá KMS của project, đúng commit, đúng nhánh của environment, mới hơn bản đang chạy (cổng deploy §8.3). **[v4.12, Plan #61 61d-2a]** Lớp thứ ba, Trusted Deploy (AC-11): lỗi báo phải mang token OIDC của CHÍNH lượt chạy CI, và token đó dùng đúng MỘT lần (I41). Đây là lớp duy nhất chứng minh được **lượt chạy** là thật: hai lớp trên chỉ chứng minh thân không bị sửa và byte được deploy. Cần nó vì `UDP_WEBHOOK_SECRET` rất hay được đặt làm org-level secret, nên một repo khác trong cùng tổ chức đọc được nó — lúc đó claim của token là cổng cuối cùng |
 | T7 | **Lạm dụng SDK endpoint** | Dùng key hợp lệ để bào tài nguyên | Rate limit theo key (mở stream có limiter và trần riêng); `last_used_at` phát hiện bất thường; **[v4.9]** thu hồi key: request mới bị từ chối ngay, stream đang mở không nhận thêm dữ liệu và đóng NGAY khi replica thấy `sdkkey.revoked`; vòng kiểm 5 giây chỉ còn là lưới dự phòng |
 | T8 | **Tài nguyên mồ côi tiêu tiền** | Job chết giữa chừng | Sổ `ProvisionedResource` ghi **trước** lời gọi cloud + compensation theo thứ tự ngược + tag `udp.project` + `orphan-scan.job` + `GET /admin/orphan-resources` (§4.4, §8.1). Tài nguyên xóa không được đánh `ORPHAN_SUSPECTED` chứ không nuốt lỗi |
 | T9 | **CSRF trên Portal** | Trang độc dụ trình duyệt gọi API bằng cookie sẵn có | Cookie `httpOnly` + `SameSite=Lax` + header `X-CSRF-Token` (double-submit) — giữ nguyên từ v2 |
@@ -8346,7 +8395,10 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | **[v4.12, Plan #61] Drone build Dockerfile cần repo Trusted** | Drone không đặt seccomp cho từng bước, nên BuildKit không root chạy `privileged` trong namespace `udp-build`; Buildpacks không cần quyền gì | Runner Drone hỗ trợ securityContext theo bước |
 | **[v4.12, Plan #61] Lịch rebase của GitLab, CircleCI, Drone tạo trong cài đặt của CI** | Ba CI này không khai lịch trong tệp pipeline; mục Đóng gói chỉ đúng chỗ, giờ và lệnh | — |
 | **[v4.12, Plan #61] Ký bằng KMS thật chưa chạy** | Lệnh ký của sáu CI qua `bash -n` và bộ hợp đồng; cổng deploy kiểm bundle thật của cosign; job `signing-e2e` ký bằng khoá tệp (cùng lệnh, khác giá trị `--key`). Gọi KMS của ba cloud bằng thông tin đăng nhập liên kết từ JWT của CI cần tài khoản cloud thật. Sổ nợ: `signing-kms-real` | Chạy lượt `signing-kms-real` cùng `packaging-real` |
-| **[v4.12, Plan #61] CircleCI trên Azure chưa ký được** | Chủ thể JWT của CircleCI mang id người chạy, federated credential của Azure đòi khớp đúng (bản "flexible" chưa nhận CircleCI); mục Ký image nói lý do, image deploy như trước, không chữ ký | Bộ ký trong cụm (61d-2) |
+| **[v4.12, Plan #61 61d-2a] Trusted Deploy chưa khả dụng với ba CI chạy trong cụm** | Jenkins, Tekton và Drone chạy trong cụm của project nên token của chúng là token ServiceAccount, không phải JWT của một nhà cung cấp SaaS. Kiểm nó cần một trong hai thứ, và **cả hai đều chạm phía cụm**: quyền `authentication.k8s.io/tokenreviews` (không ServiceAccount nào của §12.2 có, và phải bootstrap lại mọi cụm đang chạy), hay JWKS của chính cụm (Service 1 chưa lưu URL issuer, mà mọi cụm lại cùng một chủ thể `system:serviceaccount:udp-build:udp-builder` nên chỉ issuer nhận diện được project). Ba CI đó giữ HMAC như trước và Portal nói rõ lý do | 61d-2b quyết giữa hai lối, với "mọi cụm cùng một chủ thể" làm đầu vào |
+| **[v4.12, Plan #61 61d-2a] `aud` của CircleCI không buộc token vào đúng project** | Đã đọc tại tài liệu CircleCI: `aud` mặc định LÀ `ORGANIZATION_ID`, và đổi nó cần một tính năng riêng ở mức tổ chức chứ **không đặt được trong `config.yml`**. Nên với CircleCI, `aud` chỉ chặn dùng chéo tổ chức: mọi job trong cùng tổ chức đều có token mang đúng `aud` đó, và việc buộc token vào project dựa HOÀN TOÀN vào claim `oidc.circleci.com/project-id`. GitHub và GitLab không có điểm yếu này vì `aud` của chúng là địa chỉ webhook tuyệt đối | CircleCI mở custom audience ở mức project, hay UDP đòi thêm một claim riêng |
+| **[v4.12, Plan #61 61d-2a] Chưa chạy với token do nhà cung cấp THẬT phát** | Lõi xác minh có 22 ô tất định (khoá sinh trong tiến trình, đồng hồ tiêm vào, `fetch` tiêm vào) và đưỡng webhook có 7 ô tích hợp trên database thật, nhưng ba thứ chỉ một lượt với nhà cung cấp thật chứng minh được: `aud` thật khớp chuỗi renderer in ra, `exp − iat` thật của từng nhà cung cấp, và JWKS thật lấy được qua `createEgressFetch` kể cả sau một lượt xoay khoá. Sổ nợ: `trusted-deploy-real` | Cần UDP có địa chỉ công khai; không tốn tiền |
+| **[v4.12, Plan #61] CircleCI trên Azure chưa ký được** | Chủ thể JWT của CircleCI mang id người chạy, federated credential của Azure đòi khớp đúng (bản "flexible" chưa nhận CircleCI); mục Ký image nói lý do, image deploy như trước, không chữ ký | Bộ ký trong cụm (61d-2b) |
 | **[v4.11, Plan #48] Quét repo chỉ GitHub và GitLab (gitlab.com)** | API công khai, chi phí 0 và host gọi đi cố định (không SSRF); Bitbucket, GitLab tự host, Gitea cần thêm nguồn. Repo lớn hơn trần một lượt quét cho phát hiện `unknown` thay vì kết luận | Thêm `RepoSource` cho host khác; quét bằng CLI chạy trong CI của khách |
 | Import Existing Repo chỉ phát hiện và đề xuất | Giảm rủi ro tự sửa code của người dùng | Tự tạo PR thêm dependency và hook |
 | Cloud Adapter chỉ provision K8s cluster + network cơ bản | Đủ để chứng minh kiến trúc pluggable | Serverless, managed database |

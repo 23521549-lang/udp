@@ -50,10 +50,10 @@ projectCicdRouter.get(
 );
 
 /**
- * [Plan #61 QĐ-17, 61d-2a] Bat/tat Trusted Deploy — thao tac RIENG, khong di kem luu cau hinh domain.
+ * [Plan #61 QĐ-17, 61d-2a] Bật/tắt Trusted Deploy — thao tác RIÊNG, không đi kèm việc lưu cấu hình domain.
  *
- * Cung khuon `PUT /build/signing-enforce` cua 61d-1, va vi cung mot ly do: mot Portal mo tu truoc luc UDP
- * tu bat che do nay khong duoc vo tinh tat no khi luu mot thu khac.
+ * Cùng khuôn `PUT /build/signing-enforce` của 61d-1, và vì cùng một lý do: một Portal mở từ trước lúc UDP
+ * tự bật chế độ này không được vô tình tắt nó khi lưu một thứ khác.
  */
 projectCicdRouter.put(
   "/domains/CICD/oidc-required",

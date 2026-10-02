@@ -50,8 +50,58 @@ import { gitlabCiConfigSchema } from "../cicd-adapter/gitlab-ci/index.js";
 export type TrustedDeployUnavailable =
   "NO_PROVIDER" | "IN_CLUSTER_CI" | "MISSING_CIRCLECI_IDS";
 
+/**
+ * [Plan #61 QĐ-17, 61d-2a] Bảng nhà cung cấp OIDC — **khai báo**, không rải trong một hàm.
+ *
+ * Mọi giá trị ở đây đã được xác minh ngày 02/10/2026 tại tài liệu và tại chính OIDC discovery document của
+ * nhà cung cấp, không lấy từ trí nhớ. Nó là bản chép thứ nhất; bản thứ hai là bảng trong §8.3 của
+ * `UDP_design.md`, và `packages/design-lint/tests/trusted-deploy-providers.test.ts` khẳng định hai bên
+ * bằng nhau. Lý do ghi sổ kép: một lỗi chính tả trong chuỗi issuer khi đó thành một test đỏ, chứ không
+ * thành "từ chối mọi thứ" bí ẩn ở production — đúng khuôn `cluster-identity.test.ts` đã dùng cho §12.2.
+ */
+export const TRUSTED_DEPLOY_PROVIDERS = {
+  "github-actions": {
+    issuer: "https://token.actions.githubusercontent.com",
+    /** Đường JWKS đã đọc tại discovery document, nên ghim thẳng: không một lời gọi discovery nào */
+    jwksPath: "/.well-known/jwks",
+    alg: "RS256",
+    tokenIdClaim: "jti",
+    repoClaim: "repository",
+    refClaim: "ref",
+    /** `aud` mong đợi là địa chỉ webhook tuyệt đối */
+    audience: "webhook-url",
+  },
+  "gitlab-ci": {
+    /** Issuer là `gitlabUrl` trong cấu hình project — GitLab tự host dùng domain của chính nó */
+    issuer: "config:gitlabUrl",
+    jwksPath: "/oauth/discovery/keys",
+    alg: "RS256",
+    tokenIdClaim: "jti",
+    repoClaim: "project_path",
+    refClaim: "ref",
+    audience: "webhook-url",
+  },
+  circleci: {
+    issuer: "https://oidc.circleci.com/org/{organizationId}",
+    /** Tài liệu CircleCI KHÔNG công bố đường JWKS, nên phải đi discovery trên đúng issuer mong đợi */
+    jwksPath: "discovery",
+    alg: "RS256",
+    /** CircleCI không phát `jti` (đã đọc tại tài liệu) — job-id là UUID của một job */
+    tokenIdClaim: "oidc.circleci.com/job-id",
+    repoClaim: "oidc.circleci.com/project-id",
+    refClaim: "oidc.circleci.com/vcs-ref",
+    /**
+     * `aud` mặc định LÀ organizationId, và đổi nó cần một tính năng riêng ở mức tổ chức chứ không đặt
+     * được trong `config.yml`. Cái giá phải công bố (§16): với CircleCI, `aud` không buộc token vào đúng
+     * project này — mọi job trong cùng tổ chức đều có token mang đúng `aud` đó — nên việc buộc token vào
+     * project đổi hoàn toàn sang claim `repoClaim` ở trên.
+     */
+    audience: "config:organizationId",
+  },
+} as const;
+
 /** Ba CI chạy TRONG CỤM: token của chúng là token ServiceAccount, chờ 61d-2b (§16) */
-const IN_CLUSTER_PROVIDERS = new Set(["jenkins", "tekton", "drone"]);
+export const IN_CLUSTER_CI = ["jenkins", "tekton", "drone"] as const;
 
 /** Nơi lấy khoá công khai: `direct` là đường JWKS đã biết, `discover` phải đọc discovery document trước */
 type KeySource =
@@ -138,75 +188,66 @@ export const absoluteWebhookUrlOf = (
 export function expectationOf(args: {
   provider: string | null;
   toolConfig: unknown;
-  /** Dia chi webhook TUYET DOI — la `aud` mong doi voi GitHub va GitLab */
+  /** Địa chỉ webhook TUYỆT ĐỐI — là `aud` mong đợi với GitHub và GitLab */
   webhookUrl: string;
 }): TrustedDeployExpectation | { unavailable: TrustedDeployUnavailable } {
   const { provider, toolConfig, webhookUrl } = args;
   if (provider === null) return { unavailable: "NO_PROVIDER" };
-  if (IN_CLUSTER_PROVIDERS.has(provider))
+  if (IN_CLUSTER_CI.some((name) => name === provider)) {
     return { unavailable: "IN_CLUSTER_CI" };
+  }
 
   if (provider === "github-actions") {
     const cfg = githubActionsConfigSchema.parse(toolConfig);
+    const spec = TRUSTED_DEPLOY_PROVIDERS["github-actions"];
     return {
       provider,
-      issuer: "https://token.actions.githubusercontent.com",
-      // Đường JWKS đã đọc tại discovery document của GitHub (02/10/2026) nên ghim thẳng: không một lời
-      // gọi discovery nào, tức một bề mặt mạng ít hơn.
-      keys: {
-        kind: "direct",
-        jwksUri: "https://token.actions.githubusercontent.com/.well-known/jwks",
-      },
+      issuer: spec.issuer,
+      // Đường JWKS lấy từ bảng khai báo ở trên (đã đọc tại discovery document của GitHub), nên ghim thẳng:
+      // không một lời gọi discovery nào, tức một bề mặt mạng ít hơn.
+      keys: { kind: "direct", jwksUri: `${spec.issuer}${spec.jwksPath}` },
       audience: webhookUrl,
-      repoClaim: { name: "repository", value: cfg.repository },
-      refClaim: "ref",
-      tokenIdClaim: "jti",
+      repoClaim: { name: spec.repoClaim, value: cfg.repository },
+      refClaim: spec.refClaim,
+      tokenIdClaim: spec.tokenIdClaim,
     };
   }
 
   if (provider === "gitlab-ci") {
     const cfg = gitlabCiConfigSchema.parse(toolConfig);
+    const spec = TRUSTED_DEPLOY_PROVIDERS["gitlab-ci"];
     const base = normalizeOrigin(cfg.gitlabUrl);
     return {
       provider,
       issuer: base,
-      keys: { kind: "direct", jwksUri: `${base}/oauth/discovery/keys` },
+      keys: { kind: "direct", jwksUri: `${base}${spec.jwksPath}` },
       audience: webhookUrl,
-      repoClaim: { name: "project_path", value: cfg.projectPath },
-      refClaim: "ref",
-      tokenIdClaim: "jti",
+      repoClaim: { name: spec.repoClaim, value: cfg.projectPath },
+      refClaim: spec.refClaim,
+      tokenIdClaim: spec.tokenIdClaim,
     };
   }
 
   if (provider === "circleci") {
     const cfg = circleciConfigSchema.parse(toolConfig);
+    const spec = TRUSTED_DEPLOY_PROVIDERS.circleci;
     // Fail-closed: `iss` của CircleCI là `.../org/<orgId>`, nên thiếu `organizationId` là KHÔNG CÓ issuer
-    // mong đợi. Lấy issuer từ token để lấp chỗ trống chính là đường bypass mà luật 1 cấm.
+    // mong đợi. Lấy issuer từ token để lấp chỗ trống chính là đường bypass toàn phần mà luật 1 cấm.
     if (cfg.organizationId === undefined || cfg.projectId === undefined) {
       return { unavailable: "MISSING_CIRCLECI_IDS" };
     }
-    const issuer = `https://oidc.circleci.com/org/${cfg.organizationId}`;
+    const issuer = spec.issuer.replace("{organizationId}", cfg.organizationId);
     return {
       provider,
       issuer,
       // Tài liệu của CircleCI không công bố đường JWKS, nên phải đi discovery — nhưng CHỈ trên issuer
       // mong đợi, và `jwks_uri` trả về phải cùng origin với nó.
       keys: { kind: "discover", issuer },
-      // [Da kiem tai tai lieu CircleCI, 02/10/2026] `aud` mac dinh LA ORGANIZATION_ID, va doi no can mot
-      // tinh nang rieng o muc to chuc ("OIDC Tokens With Custom Claims") chu KHONG dat duoc trong
-      // `config.yml` theo bien. Nen `aud` mong doi la chinh orgId.
-      //
-      // Phai noi thang cai gia: voi CircleCI, `aud` khong con buoc token vao dung project nay, tham chi
-      // khong buoc vao UDP — moi job trong cung to chuc deu co token mang dung `aud` do. Toan bo viec
-      // buoc token vao project doi sang claim `project-id` o duoi. Hai nha cung cap kia khong co diem yeu
-      // nay vi `aud` cua chung la dia chi webhook tuyet doi. Ghi o §16.
+      // `aud` mặc định LÀ organizationId: xem lý lẽ và cái giá ở bảng khai báo phía trên.
       audience: cfg.organizationId,
-      repoClaim: {
-        name: "oidc.circleci.com/project-id",
-        value: cfg.projectId,
-      },
-      refClaim: "oidc.circleci.com/vcs-ref",
-      tokenIdClaim: "oidc.circleci.com/job-id",
+      repoClaim: { name: spec.repoClaim, value: cfg.projectId },
+      refClaim: spec.refClaim,
+      tokenIdClaim: spec.tokenIdClaim,
     };
   }
 

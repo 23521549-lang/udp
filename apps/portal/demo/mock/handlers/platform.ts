@@ -2,6 +2,7 @@ import {
   buildSettingsSchema,
   DEFAULT_BUILD_SETTINGS,
   kmsCloudOf,
+  oidcRequiredSchema,
   signingEnforceSchema,
 } from "@udp/shared-types/build";
 import type {
@@ -284,6 +285,48 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
         { domainSetVersion, domains, preferences, job },
         running ? 202 : 200,
       );
+    })
+    // [Plan #61 QĐ-17, 61d-2a] Bật/tắt Trusted Deploy - thao tác riêng, có nhật ký; không cho bật khi UDP
+    // chưa kiểm được token của CI đang bật, vì bật một cổng không kiểm nổi là tự khoá project ra ngoài
+    .on("PUT", "/projects/:id/domains/CICD/oidc-required", (req, [id = ""]) => {
+      const p = projectOf(db, id);
+      if (p.cicd === null) {
+        throw new HttpProblem(
+          409,
+          "CICD_NOT_ENABLED",
+          "Project chưa bật domain CI/CD",
+        );
+      }
+      const parsed = oidcRequiredSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new HttpProblem(400, "VALIDATION_FAILED", "Thân không hợp lệ");
+      }
+      const { required } = parsed.data;
+      if (required && !p.cicd.trustedDeploy.available) {
+        throw new HttpProblem(
+          409,
+          "CONFLICT",
+          "UDP chưa kiểm được token của CI đang bật",
+        );
+      }
+      if (p.cicd.trustedDeploy.required !== required) {
+        audit(
+          db,
+          p,
+          required
+            ? "cicd.trusted-deploy.required"
+            : "cicd.trusted-deploy.unrequired",
+          "Project",
+          p.project.id,
+          { required: !required },
+          { required },
+        );
+        p.cicd = {
+          ...p.cicd,
+          trustedDeploy: { ...p.cicd.trustedDeploy, required },
+        };
+      }
+      return ok({ cicd: p.cicd });
     })
     .on("GET", "/projects/:id/domains/CICD/webhook", (_req, [id = ""]) => {
       const p = projectOf(db, id);

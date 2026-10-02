@@ -58,15 +58,15 @@ export const noRepoSource: RepoSourceFactory = () => {
 export const noExternalAuth: AuthRuntime = { mailer: null, github: null };
 
 /**
- * [v4.12, Plan #61 61d-2a] Khong loi ra mang.
+ * [v4.12, Plan #61 61d-2a] Không lối ra mạng.
  *
- * Day vua la mot phu thuoc tro vua la mot SENTINEL: neu mot duong ma nao do di goi mang trong mot test
- * khong chu y goi mang, no nem o day thay vi lang le di ra Internet trong CI. Test nao THAT SU can kiem
- * duong lay khoa cong khai thi tiem mot ban ghi lai loi goi cua rieng no, va khang dinh danh sach URL da
- * goi bang `toEqual` - so tuyet doi lam mot loi goi THUA thanh do.
+ * Đây vừa là một phụ thuộc trơ vừa là một SENTINEL: nếu một đường mã nào đó đi gọi mạng trong một test
+ * không chủ ý gọi mạng, nó ném ở đây thay vì lặng lẽ đi ra Internet trong CI. Test nào THẬT SỰ cần kiểm
+ * đường lấy khoá công khai thì tiêm một bản ghi lại lời gọi của riêng nó, và khẳng định danh sách URL đã
+ * gọi bằng `toEqual` - so tuyệt đối làm một lời gọi THỪA thành đỏ.
  */
 export const noEgress: typeof fetch = (input) => {
   throw new Error(
-    `test: ma goi mang ra ngoai ma khong tiem egressFetch - ${String(input)}`,
+    `test: mã gọi mạng ra ngoài mà không tiêm egressFetch - ${String(input)}`,
   );
 };

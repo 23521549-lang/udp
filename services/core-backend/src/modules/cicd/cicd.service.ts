@@ -103,19 +103,19 @@ export async function status(projectId: string): Promise<CicdStatusWire> {
 }
 
 /**
- * [Plan #61 QĐ-17, 61d-2a] Bat/tat Trusted Deploy bang tay — MAINTAINER, co nhat ky.
+ * [Plan #61 QĐ-17, 61d-2a] Bật/tắt Trusted Deploy bằng tay — MAINTAINER, có nhật ký.
  *
- * Mot thao tac RIENG, dung khuon `signing-enforce` cua 61d-1: khong di kem viec luu cau hinh domain, de
- * mot Portal mo tu truoc luc UDP tu bat khong vo tinh tat no khi luu thu khac.
+ * Một thao tác RIÊNG, đúng khuôn `signing-enforce` của 61d-1: không đi kèm việc lưu cấu hình domain, để
+ * một Portal mở từ trước lúc UDP tự bật không vô tình tắt nó khi lưu thứ khác.
  *
- * Hai tien dieu kien, ca hai deu la van xa cho mot trang thai khong sua duoc tu UI:
- *  - Khong cho BAT khi UDP chua kiem duoc token cua provider dang bat (CircleCI thieu hai id, hay provider
- *    la mot CI chay trong cum — cho 61d-2b). Bat mot cong ma UDP khong kiem noi la tu khoa project ra
- *    ngoai. Cung ly le voi `setSigningEnforce` tu choi bat khi chua co khoa.
- *  - TAT thi khong co tien dieu kien nao: no la van xa, va mot van xa co dieu kien thi khong phai van xa.
+ * Hai tiền điều kiện, và cả hai đều nhắm vào một trạng thái không sửa được từ UI:
+ *  - Không cho BẬT khi UDP chưa kiểm được token của provider đang bật (CircleCI thiếu hai id, hay provider
+ *    là một CI chạy trong cụm — chờ 61d-2b). Bật một cổng mà UDP không kiểm nổi là tự khoá project ra
+ *    ngoài. Cùng lý lẽ với `setSigningEnforce` từ chối bật khi chưa có khoá.
+ *  - TẮT thì không có tiền điều kiện nào: nó là van xả, và một van xả có điều kiện thì không phải van xả.
  *
- * Khoa hang `domain_configs` bang `FOR NO KEY UPDATE` trong transaction: duong webhook doc hang do NGOAI
- * transaction cua no, nen hai luot di qua nhau se ghi de ket luan cua nhau.
+ * Khoá hàng `domain_configs` bằng `FOR NO KEY UPDATE` trong transaction: đường webhook đọc hàng đó NGOÀI
+ * transaction của nó, nên hai lượt đi qua nhau sẽ ghi đè kết luận của nhau.
  */
 export async function setOidcRequired(
   projectId: string,
@@ -138,7 +138,7 @@ export async function setOidcRequired(
          AND is_enabled = true
        FOR NO KEY UPDATE`;
     if (locked === undefined || locked.selected_tool === null) {
-      throw new ConflictError("Project chua bat domain CI/CD");
+      throw new ConflictError("Project chưa bật domain CI/CD");
     }
     if (locked.oidc_required === required) return;
     if (required) {
@@ -149,7 +149,7 @@ export async function setOidcRequired(
       });
       if (!state.available) {
         throw new ConflictError(
-          `UDP chua kiem duoc token cua CI dang bat (${state.unavailableReason ?? "?"}): bat Trusted Deploy luc nay se chan moi lan deploy`,
+          `UDP chưa kiểm được token của CI đang bật (${state.unavailableReason ?? "?"}): bật Trusted Deploy lúc này sẽ chặn mọi lần deploy`,
         );
       }
     }

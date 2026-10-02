@@ -119,6 +119,8 @@ const ROUTES: Record<string, ZodTypeAny> = {
   "GET /projects/{id}/domains/CICD/webhook": wire.cicdStatusResponseWire,
   "POST /projects/{id}/domains/CICD/webhook-secret":
     wire.cicdSecretResponseWire,
+  // [Plan #61 QĐ-17] Bật/tắt Trusted Deploy — thao tác riêng, trả lại cả trạng thái CI/CD
+  "PUT /projects/{id}/domains/CICD/oidc-required": wire.cicdStatusResponseWire,
   "GET /projects/{id}/golden-path": wire.goldenPathResponseWire,
   "GET /projects/{id}/repo-scan": wire.repoScanResponseWire,
   "POST /projects/{id}/repo-scan": wire.repoScanResponseWire,

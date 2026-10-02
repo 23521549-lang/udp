@@ -50,15 +50,15 @@ import { isSealedWebhookSecret, openWebhookSecret } from "./webhook-secret.js";
  */
 
 /**
- * [Plan #61 61d-2a] Tin hieu noi bo: token da dung roi va than lan nay KHAC lan dau.
+ * [Plan #61 61d-2a] Tín hiệu nội bộ: token đã dùng rồi, và thân lần này KHÁC lần đầu.
  *
- * Nem de transaction rollback — khong duoc ghi `deployment_events` nao cho mot luot replay. Vi rollback
- * xoa luon moi thu ghi trong transaction do, hang audit phai ghi o mot cau RIENG sau no (§8.3 doi ghi nhan
- * moi lan verify that bai de thay do quet).
+ * Ném để transaction rollback — không được ghi `deployment_events` nào cho một lượt replay. Vì rollback
+ * xoá luôn mọi thứ ghi trong transaction đó, hàng audit phải ghi ở một câu RIÊNG sau nó (§8.3 đòi ghi nhận
+ * mọi lần verify thất bại để thấy dò quét).
  */
 class TokenReplayed extends Error {
   constructor(readonly tokenId: string) {
-    super("token cua luot chay nay da duoc dung voi mot than khac");
+    super("token của lượt chạy này đã được dùng với một thân khác");
   }
 }
 
@@ -344,15 +344,15 @@ async function signatureVerdict(
  * một trường của JSON — không ghi đè cài đặt mà người dùng lưu cùng lúc.
  */
 /**
- * [Plan #61 QĐ-17, 61d-2a] Tu bat che do bat buoc o TOKEN HOP LE DAU TIEN.
+ * [Plan #61 QĐ-17, 61d-2a] Tự bật chế độ bắt buộc ở TOKEN HỢP LỆ ĐẦU TIÊN.
  *
- * Cung khuon `enforceSigning` cua 61d-1, ke ca chi tiet de quen nhat: `AND oidc_required = false` roi kiem
- * so hang doi, nen nhat ky SYSTEM ghi dung MOT lan chu khong mot hang moi webhook.
+ * Cùng khuôn `enforceSigning` của 61d-1, kể cả chi tiết dễ quên nhất: `AND oidc_required = false` rồi kiểm
+ * số hàng đổi, nên nhật ký SYSTEM ghi đúng MỘT lần chứ không một hàng mỗi webhook.
  *
- * Co nam o HANG CICD, nen mot lan doi `selected_tool` phai dua no ve false — y nghia cua no phu thuoc nha
- * cung cap (issuer, claim, cach xin token). Viec do do mot trigger o tang database lo (migration
- * `oidc_required_reset_on_tool_change`), khong phai mot doan ma o day: dat o day thi moi duong ghi tuong
- * lai phai nho lam lai.
+ * Cờ nằm ở HÀNG CICD, nên một lần đổi `selected_tool` phải đưa nó về false — ý nghĩa của nó phụ thuộc nhà
+ * cung cấp (issuer, claim, cách xin token). Việc đó do một trigger ở tầng database lo (migration
+ * `oidc_required_reset_on_tool_change`), không phải một đoạn mã ở đây: đặt ở đây thì mọi đường ghi tương
+ * lai phải nhớ làm lại.
  */
 async function enforceOidc(
   tx: Prisma.TransactionClient,
@@ -379,7 +379,7 @@ async function enforceOidc(
         targetType: "Project",
         targetId: args.projectId,
         actorType: "SYSTEM",
-        // Chi ma dinh danh cua token, khong bao gio chinh token (I24, §8.3)
+        // Chỉ mã định danh của token, không bao giờ chính token (I24, §8.3)
         after: {
           provider: args.provider,
           tokenId: args.tokenId,
@@ -419,8 +419,8 @@ async function enforceSigning(
 }
 
 /**
- * Mot luot replay: ghi audit o cau RIENG (transaction vua rollback nen khong con gi de ghi cung) roi nem
- * 401. Mo ta nam o §8.3: moi lan verify that bai phai duoc ghi nhan de thay do quet.
+ * Một lượt replay: ghi audit ở câu RIÊNG (transaction vừa rollback nên không còn gì để ghi cùng) rồi ném
+ * 401. Mô tả nằm ở §8.3: mọi lần verify thất bại phải được ghi nhận để thấy dò quét.
  */
 async function onReplay(args: {
   projectId: string;
@@ -436,7 +436,7 @@ async function onReplay(args: {
         targetType: "Project",
         targetId: args.projectId,
         actorType: "SYSTEM",
-        // Chi ma va dinh danh cua token, khong bao gio chinh token (I24, §8.3)
+        // Chỉ mã và định danh của token, không bao giờ chính token (I24, §8.3)
         after: {
           provider: args.provider,
           trustedDeploy: "TOKEN_REPLAYED",
@@ -447,7 +447,7 @@ async function onReplay(args: {
     },
   });
   throw new UnauthenticatedError(
-    "Trusted Deploy tu choi loi bao: TOKEN_REPLAYED — token cua luot chay nay da duoc dung voi mot than khac",
+    "Trusted Deploy từ chối lời báo: TOKEN_REPLAYED — token của lượt chạy này đã được dùng với một thân khác",
   );
 }
 
@@ -764,7 +764,7 @@ export async function receiveWebhook(args: {
           },
         },
       });
-      // [Plan #61 61d-2a] Tu bat Trusted Deploy sau khi su kien deploy da duoc ghi, trong CUNG transaction
+      // [Plan #61 61d-2a] Tự bật Trusted Deploy sau khi sự kiện deploy đã được ghi, trong CÙNG transaction
       if (trusted !== null && !cicd.oidcRequired) {
         await enforceOidc(tx, {
           projectId,

@@ -60,6 +60,12 @@ export const domainApi = {
     }),
   cicd: (projectId: string) =>
     api(cicdStatusResponseWire, `${d(projectId)}/CICD/webhook`),
+  /** [Plan #61 61d-2a] Bật/tắt Trusted Deploy — thao tác riêng, không đi kèm lưu cấu hình domain */
+  setOidcRequired: (projectId: string, required: boolean) =>
+    api(cicdStatusResponseWire, `${d(projectId)}/CICD/oidc-required`, {
+      method: "PUT",
+      body: { required },
+    }),
   /** Giá trị rõ của secret CHỈ có trong response này — không vào cache query */
   rotateWebhookSecret: (projectId: string) =>
     api(cicdSecretResponseWire, `${d(projectId)}/CICD/webhook-secret`, {

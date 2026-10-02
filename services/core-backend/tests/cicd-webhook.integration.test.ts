@@ -1,10 +1,11 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { exportJWK, generateKeyPair, SignJWT, type CryptoKey } from "jose";
 import { resolve } from "node:path";
 import { env, workloadSlugFor } from "@udp/config";
 import { createPrismaClient, observeQueries, Prisma } from "@udp/db";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { createRegistry } from "../src/modules/domain/domain-adapter.registry.js";
@@ -41,37 +42,48 @@ const admin = createPrismaClient({
 });
 
 const enqueued: string[] = [];
-const app = createApp({
-  metricsFor: () => new FakeMetricsProvider(),
-  flagService: createFlagServiceClient({
-    baseUrl: "http://127.0.0.1:9",
-    secret: env.INTERNAL_SERVICE_SECRET,
-  }),
-  oidcIssuer: null,
-  cloud: inertCloudPlatform,
-  repoSource: noRepoSource,
-  egressFetch: noEgress,
-  platform: outsidePlatform,
-  auth: noExternalAuth,
-  domainRegistry: (() => {
-    const loaded = createRegistry({
-      root: resolve(import.meta.dirname, "../src/modules"),
-    });
-    return () => loaded;
-  })(),
-  provisioning: {
-    egressCidrs: [],
-    enqueue: null,
-    enqueueDeploy: (deploymentId) => {
-      enqueued.push(deploymentId);
-      return Promise.resolve();
+
+/**
+ * [Plan #61 61d-2a] Cùng một bộ phụ thuộc, chỉ khác đường ra mạng.
+ *
+ * Phần lớn bộ test không chạm mạng nên dùng `noEgress` — một sentinel NÉM, để một đường mã đi gọi mạng
+ * ngoài ý muốn thì đỏ ngay thay vì lặng lẽ ra Internet trong CI. Riêng họ test Trusted Deploy tiêm một
+ * `fetch` phục vụ JWKS của khoá sinh trong tiến trình.
+ */
+const appWith = (egressFetch: typeof fetch) =>
+  createApp({
+    metricsFor: () => new FakeMetricsProvider(),
+    flagService: createFlagServiceClient({
+      baseUrl: "http://127.0.0.1:9",
+      secret: env.INTERNAL_SERVICE_SECRET,
+    }),
+    oidcIssuer: null,
+    cloud: inertCloudPlatform,
+    repoSource: noRepoSource,
+    platform: outsidePlatform,
+    auth: noExternalAuth,
+    domainRegistry: (() => {
+      const loaded = createRegistry({
+        root: resolve(import.meta.dirname, "../src/modules"),
+      });
+      return () => loaded;
+    })(),
+    provisioning: {
+      egressCidrs: [],
+      enqueue: null,
+      enqueueDeploy: (deploymentId) => {
+        enqueued.push(deploymentId);
+        return Promise.resolve();
+      },
+      withCluster: null,
+      scanDrift: null,
+      clusterToken: null,
+      flaggerGateBaseUrl: null,
     },
-    withCluster: null,
-    scanDrift: null,
-    clusterToken: null,
-    flaggerGateBaseUrl: null,
-  },
-});
+    egressFetch,
+  });
+
+const app = appWith(noEgress);
 
 let world: TestWorld;
 let owner: Actor;
@@ -141,17 +153,28 @@ const body = (over: Record<string, unknown> = {}) => ({
 /** Gửi như bước "báo UDP" của template: ký ĐÚNG chuỗi byte gửi đi */
 function hook(
   payload: unknown,
-  opts: { key?: string; url?: string; raw?: string } = {},
+  opts: {
+    key?: string;
+    url?: string;
+    raw?: string;
+    /** [Plan #61 61d-2a] Token OIDC của lượt chạy — Trusted Deploy */
+    bearer?: string;
+    /** App có `egressFetch` phục vụ JWKS; mặc định là app chung (`noEgress`) */
+    on?: typeof app;
+  } = {},
 ) {
   const raw = opts.raw ?? JSON.stringify(payload);
   const sig = createHmac("sha256", opts.key ?? secret)
     .update(raw)
     .digest("hex");
-  return request(app)
+  const req = request(opts.on ?? app)
     .post(opts.url ?? hookUrl())
     .set("content-type", "application/json")
-    .set("x-hub-signature-256", `sha256=${sig}`)
-    .send(raw);
+    .set("x-hub-signature-256", `sha256=${sig}`);
+  if (opts.bearer !== undefined) {
+    req.set("authorization", `Bearer ${opts.bearer}`);
+  }
+  return req.send(raw);
 }
 
 const eventsOf = (deploymentId: string) =>
@@ -877,5 +900,345 @@ describe("mốc giờ của sự kiện deploy (Plan #61, sửa trong 61d-1)", (
 
     expect(verdict.tangDan).toBe(true);
     expect(verdict.sauLucMoTransaction).toBe(true);
+  });
+});
+
+/**
+ * [Plan #61 QĐ-17, 61d-2a] Trusted Deploy qua HTTP THẬT và database thật — phép khẳng định của **I41**.
+ *
+ * Bộ test tất định ở `tests/trusted-deploy.test.ts` đã soi lõi xác minh. Ở đây kiểm thứ chỉ đo được khi
+ * có cả transaction, cả bảng, và cả thứ tự của đường webhook:
+ *
+ *  - **retry khác replay.** Một lượt gửi lại với thân GIỐNG HỆT từng byte là chuyện bình thường của CI
+ *    (phản hồi mất trên đường về sau khi server đã commit), và nó phải trả lại kết quả cũ chứ không làm
+ *    bước báo đỏ trong khi deploy đã chạy thật. Một lượt gửi lại với thân KHÁC là replay và phải bị chặn.
+ *    Chỉ `body_digest` phân biệt được hai ca đó: phép chống trùng sẵn có tính cả `environment_id`, nên
+ *    cùng `pipeline_id` mà đổi `environment` sang production sẽ lọt.
+ *  - **token tiêu đúng một lần**, và chỉ khi một `deployment_events` được commit.
+ *  - **chế độ bắt buộc tự bật** ở token hợp lệ đầu tiên, nhật ký SYSTEM ghi đúng một lần.
+ *  - **thứ tự tầng**: HMAC sai + Bearer hợp lệ ⇒ 401 ĐỒNG NHẤT của §8.3 và KHÔNG một lời gọi mạng nào —
+ *    webhook không được thành oracle dò project, và không được làm việc đắt tiền trên dữ liệu chưa xác thực.
+ */
+describe("Trusted Deploy qua HTTP thật (Plan #61 QĐ-17, I41)", () => {
+  const ISS = "https://token.actions.githubusercontent.com";
+  const JWKS_URI = `${ISS}/.well-known/jwks`;
+
+  let signingKey: CryptoKey;
+  let calls: string[];
+  let tdApp: typeof app;
+
+  const audience = () =>
+    `${env.CORS_ORIGIN}${API}/webhooks/cicd/${projectId}/github-actions`;
+
+  /** Token của một lượt chạy GitHub Actions: mọi claim đúng trừ những gì ô test cố ý đổi */
+  async function runToken(
+    over: { jti?: string; ref?: string; aud?: string } = {},
+  ): Promise<string> {
+    const now = Math.floor(Date.now() / 1000);
+    return await new SignJWT({
+      repository: "acme/web",
+      ref: over.ref ?? "refs/heads/dev",
+      jti: over.jti ?? `jti-${randomUUID()}`,
+      iat: now,
+      exp: now + 300,
+    })
+      .setProtectedHeader({ alg: "RS256", kid: "k-test" })
+      .setIssuer(ISS)
+      .setAudience(over.aud ?? audience())
+      .sign(signingKey);
+  }
+
+  const usesOf = () => admin.webhookTokenUse.count({ where: { projectId } });
+  const eventsOfPipeline = (pipelineId: string) =>
+    admin.deploymentEvent.count({ where: { projectId, pipelineId } });
+  const oidcRequired = async (): Promise<boolean> =>
+    (
+      await admin.domainConfig.findFirstOrThrow({
+        where: { projectId, domainType: "CICD" },
+        select: { oidcRequired: true },
+      })
+    ).oidcRequired;
+
+  beforeAll(async () => {
+    const pair = await generateKeyPair("RS256", { extractable: true });
+    signingKey = pair.privateKey;
+    const jwk = {
+      ...(await exportJWK(pair.publicKey)),
+      alg: "RS256",
+      kid: "k-test",
+    };
+    calls = [];
+    tdApp = appWith(((input: string | URL | Request) => {
+      const url = String(input);
+      calls.push(url);
+      if (url !== JWKS_URI) {
+        return Promise.resolve(new Response("not found", { status: 404 }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ keys: [jwk] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    }) as typeof fetch);
+  });
+
+  beforeEach(async () => {
+    calls = [];
+    await admin.webhookTokenUse.deleteMany({ where: { projectId } });
+    await admin.deploymentEvent.deleteMany({ where: { projectId } });
+    await admin.domainConfig.updateMany({
+      where: { projectId, domainType: "CICD" },
+      data: { oidcRequired: false },
+    });
+  });
+
+  it("token hợp lệ ⇒ deploy, một hàng token, nhãn VERIFIED, và chế độ bắt buộc TỰ BẬT", async () => {
+    const payload = body();
+    const res = await hook(payload, {
+      bearer: await runToken(),
+      on: tdApp,
+    }).expect(202);
+
+    expect(res.body.status).toBe("started");
+    expect(await usesOf()).toBe(1);
+    expect(await oidcRequired()).toBe(true);
+
+    const list = await as(
+      viewer,
+      request(tdApp).get(
+        `${API}/projects/${projectId}/deployments?envId=${envs.dev!.id}`,
+      ),
+    ).expect(200);
+    const row = (
+      list.body.deployments as {
+        deploymentId: string;
+        trustedDeploy: unknown;
+      }[]
+    ).find((d) => d.deploymentId === res.body.deploymentId);
+    expect(row?.trustedDeploy).toBe("VERIFIED");
+
+    // Nhật ký SYSTEM ghi ĐÚNG một lần, không một hàng mỗi webhook
+    expect(
+      await admin.auditLog.count({
+        where: { projectId, action: "cicd.trusted-deploy.required" },
+      }),
+    ).toBe(1);
+  });
+
+  it("gửi lại CÙNG token với thân y nguyên ⇒ 200 duplicate, vẫn đúng MỘT sự kiện và MỘT hàng token", async () => {
+    const payload = body();
+    const token = await runToken();
+    const first = await hook(payload, { bearer: token, on: tdApp }).expect(202);
+    const again = await hook(payload, { bearer: token, on: tdApp }).expect(200);
+
+    expect(again.body).toEqual({
+      deploymentId: first.body.deploymentId,
+      status: "duplicate",
+    });
+    expect(await usesOf()).toBe(1);
+    expect(await eventsOfPipeline(payload.pipelineId)).toBe(1);
+  });
+
+  it("gửi lại CÙNG token với thân ĐỔI sang production ⇒ 401, không sự kiện mới, có nhật ký từ chối", async () => {
+    const token = await runToken();
+    await hook(body(), { bearer: token, on: tdApp }).expect(202);
+    const before = await admin.deploymentEvent.count({ where: { projectId } });
+
+    // Cùng token, cùng pipelineId, nhưng ĐỔI environment: phép chống trùng theo pipeline KHÔNG bắt được
+    // ca này vì nó tính cả environment — chỉ `body_digest` chặn.
+    const replay = body({ environment: "prod", ref: "refs/heads/main" });
+    await hook(replay, { bearer: token, on: tdApp }).expect(401);
+
+    expect(await admin.deploymentEvent.count({ where: { projectId } })).toBe(
+      before,
+    );
+    expect(
+      await admin.auditLog.count({
+        where: { projectId, action: "cicd.webhook.rejected" },
+      }),
+    ).toBeGreaterThan(0);
+  });
+
+  it("đã bắt buộc mà lời báo KHÔNG mang token ⇒ 401, không sự kiện nào", async () => {
+    await hook(body(), { bearer: await runToken(), on: tdApp }).expect(202);
+    expect(await oidcRequired()).toBe(true);
+
+    const before = await admin.deploymentEvent.count({ where: { projectId } });
+    await hook(body(), { on: tdApp }).expect(401);
+    expect(await admin.deploymentEvent.count({ where: { projectId } })).toBe(
+      before,
+    );
+  });
+
+  it("token sai ⇒ LUÔN từ chối, kể cả khi chế độ bắt buộc còn TẮT", async () => {
+    expect(await oidcRequired()).toBe(false);
+    await hook(body(), {
+      bearer: await runToken({ aud: "https://khac.test/hook" }),
+      on: tdApp,
+    }).expect(401);
+    expect(await usesOf()).toBe(0);
+  });
+
+  it("nhánh lấy từ CLAIM: token của nhánh phụ không deploy được production", async () => {
+    await hook(body({ environment: "prod", ref: "refs/heads/main" }), {
+      bearer: await runToken({ ref: "refs/heads/feature-x" }),
+      on: tdApp,
+    }).expect(401);
+    expect(await usesOf()).toBe(0);
+  });
+
+  it("HMAC sai + Bearer hợp lệ ⇒ 401 ĐỒNG NHẤT của §8.3 và KHÔNG một lời gọi mạng nào", async () => {
+    const res = await hook(body(), {
+      key: "bi-mat-sai",
+      bearer: await runToken(),
+      on: tdApp,
+    }).expect(401);
+
+    // Thân 401 không mang mã phân biệt lý do — webhook không thành oracle dò project
+    expect(JSON.stringify(res.body)).not.toMatch(/TOKEN_/);
+    // Và không làm việc đắt tiền trên dữ liệu chưa xác thực
+    expect(calls).toEqual([]);
+  });
+});
+
+/**
+ * [Plan #61 QĐ-17, 61d-2a] Bật/tắt Trusted Deploy bằng tay — route riêng, và bốn tính chất của nó.
+ *
+ * Vì sao phải đi qua HTTP thật chứ không gọi thẳng service: ba trong bốn tính chất chỉ tồn tại ở tầng
+ * route và chỉ đường này đo được - bậc quyền MAINTAINER, thân `strict` (một Portal cũ gửi thêm trường
+ * phải đỏ ngay chứ không được ghi im lặng), và chuỗi dây mà Portal đọc. Route này cũng là chỗ DUY NHẤT
+ * sinh mẫu golden cho `PUT /projects/{id}/domains/CICD/oidc-required`, nên thiếu nó thì `wire-golden`
+ * đỏ ở phép kiểm "mọi route sendJson có mẫu".
+ *
+ * Tính chất thứ tư nằm ở tầng service nhưng chỉ thấy được khi có cả database: **tắt KHÔNG có tiền điều
+ * kiện**. Một project đã bật, rồi đổi sang CI mà UDP chưa kiểm được token, vẫn phải tự mở được van. Nếu
+ * phép tắt cũng đòi `available` thì project tắc hẳn và chỉ sửa được bằng SQL tay.
+ */
+describe("bật/tắt Trusted Deploy bằng tay (Plan #61 QĐ-17)", () => {
+  const url = () => cicdUrl("/oidc-required");
+
+  const requiredOf = async (): Promise<boolean> =>
+    (
+      await admin.domainConfig.findFirstOrThrow({
+        where: { projectId, domainType: "CICD" },
+        select: { oidcRequired: true },
+      })
+    ).oidcRequired;
+
+  const auditOf = (action: string) =>
+    admin.auditLog.count({ where: { projectId, action } });
+
+  const put = (actor: Actor, required: unknown) =>
+    as(actor, request(app).put(url()).send({ required }));
+
+  beforeEach(async () => {
+    await admin.domainConfig.updateMany({
+      where: { projectId, domainType: "CICD" },
+      data: {
+        selectedTool: "github-actions",
+        toolConfig: { repository: "acme/web" },
+        oidcRequired: false,
+      },
+    });
+    await admin.auditLog.deleteMany({
+      where: { projectId, action: { startsWith: "cicd.trusted-deploy." } },
+    });
+  });
+
+  it("VIEWER và DEVELOPER không bật được; MAINTAINER bật ⇒ dây nói đúng trạng thái mới, nhật ký một hàng", async () => {
+    await put(viewer, true).expect(403);
+    await put(developer, true).expect(403);
+
+    const res = await put(maintainer, true).expect(200);
+    expect(res.body.cicd.trustedDeploy).toEqual({
+      required: true,
+      available: true,
+      unavailableReason: null,
+    });
+    // Route trả về TRẠNG THÁI ĐẦY ĐỦ chứ không chỉ cờ vừa đổi: Portal vẽ lại cả mục bằng một response
+    expect(res.body.cicd.webhookUrl).toBe(
+      `${env.CORS_ORIGIN}${API}/webhooks/cicd/${projectId}/github-actions`,
+    );
+    expect(res.body.cicd.provider).toBe("github-actions");
+    expect(res.body.cicd.webhookPath).toBe(
+      `${API}/webhooks/cicd/${projectId}/github-actions`,
+    );
+    expect(await requiredOf()).toBe(true);
+    expect(await auditOf("cicd.trusted-deploy.required")).toBe(1);
+  });
+
+  it("bật khi đã bật ⇒ 200 và KHÔNG thêm nhật ký - phép ghi là idempotent", async () => {
+    await put(maintainer, true).expect(200);
+    const again = await put(maintainer, true).expect(200);
+
+    expect(again.body.cicd.trustedDeploy.required).toBe(true);
+    expect(await auditOf("cicd.trusted-deploy.required")).toBe(1);
+  });
+
+  it("tắt ⇒ nhật ký ghi hàng unrequired mang cả trước và sau", async () => {
+    await put(maintainer, true).expect(200);
+    const off = await put(maintainer, false).expect(200);
+
+    expect(off.body.cicd.trustedDeploy.required).toBe(false);
+    expect(
+      await admin.auditLog.findFirst({
+        where: { projectId, action: "cicd.trusted-deploy.unrequired" },
+      }),
+    ).toMatchObject({ before: { required: true }, after: { required: false } });
+  });
+
+  it("CI mà UDP chưa kiểm được token ⇒ không BẬT được (409), nhưng vẫn TẮT được", async () => {
+    await admin.domainConfig.updateMany({
+      where: { projectId, domainType: "CICD" },
+      data: { selectedTool: "jenkins" },
+    });
+    const seen = await as(viewer, request(app).get(cicdUrl("/webhook"))).expect(
+      200,
+    );
+    expect(seen.body.cicd.trustedDeploy).toEqual({
+      required: false,
+      available: false,
+      unavailableReason: "IN_CLUSTER_CI",
+    });
+
+    await put(maintainer, true).expect(409);
+    expect(await requiredOf()).toBe(false);
+
+    // Van xả: cờ còn bật trong khi provider đã thành thứ UDP chưa kiểm được (một lượt bootstrap lại cụm,
+    // hay một hàng chữa tay) thì đường TẮT vẫn phải đi được, không đòi `available`
+    await admin.domainConfig.updateMany({
+      where: { projectId, domainType: "CICD" },
+      data: { oidcRequired: true },
+    });
+    await put(maintainer, false).expect(200);
+    expect(await requiredOf()).toBe(false);
+  });
+
+  it("đổi CI ⇒ trigger ở DATABASE đưa cờ về false, không chờ một đường mã nào nhớ làm việc đó", async () => {
+    await put(maintainer, true).expect(200);
+
+    await admin.domainConfig.updateMany({
+      where: { projectId, domainType: "CICD" },
+      data: {
+        selectedTool: "gitlab-ci",
+        toolConfig: {
+          gitlabUrl: "https://gitlab.com",
+          projectPath: "acme/web",
+        },
+      },
+    });
+
+    expect(await requiredOf()).toBe(false);
+  });
+
+  it("thân phải ĐÚNG hình: thiếu trường, thêm trường, hay sai kiểu ⇒ 400", async () => {
+    await as(maintainer, request(app).put(url()).send({})).expect(400);
+    await as(
+      maintainer,
+      request(app).put(url()).send({ required: true, extra: 1 }),
+    ).expect(400);
+    await put(maintainer, "true").expect(400);
+    expect(await requiredOf()).toBe(false);
   });
 });
