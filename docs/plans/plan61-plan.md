@@ -334,6 +334,368 @@ database thật, và 6 ô cho route bật/tắt); `wire-golden` 124/124; `@udp/d
 **Còn nợ kiểm chứng:** `trusted-deploy-real` — chưa chạy với token do nhà cung cấp THẬT phát (cần UDP có địa chỉ công
 khai; không tốn tiền). Chi tiết và dấu hiệu đạt ở `docs/measurements/kiem-chung-con-no.md`.
 
+## 61d-2b — chia ba đợt, và vì sao
+
+Chữ cũ của 61d-2b (`plan61-plan.md:171`) gồm hai việc: bộ ký trong cụm cho CircleCI + Azure, **và** Trusted Deploy
+cho ba CI trong cụm. Vòng kiểm dữ kiện ngoài của đợt này (R7, bảng dưới) làm đổi cả phạm vi lẫn thứ tự:
+
+- Dữ kiện 5 phát hiện **một lỗi đang sống**: `sub` của GitHub Actions đã đổi hình từ 15/07/2026, mà script danh tính
+  của UDP so theo hình cũ ở AWS và Azure ⇒ mọi repo GitHub tạo (hay đổi tên, hay chuyển chủ) sau mốc đó **không đẩy
+  và không ký được**. Vòng QA của plan này tìm thêm ba lỗ cùng họ "UDP tin nhiều hơn cần" trong chính tệp đó. Đó là
+  sửa lỗi, không phải tính năng mới, nên nó đi **trước**.
+- Dữ kiện 1 làm Trusted Deploy cho ba CI trong cụm rẻ đi hẳn một bậc: không quyền mới, không bootstrap lại cụm đang
+  chạy, không lưu issuer. Nó vô hiệu hoá chính lý do mà §16:8398 đang nêu.
+- Dữ kiện 4 xác nhận bộ ký trong cụm vẫn là lối duy nhất cho CircleCI + Azure, và nó là việc **duy nhất** trong ba
+  việc phải GHI vào cụm khách (namespace/SA/Role mới, Job, image cosign ghim digest, quyền đẩy chữ ký).
+
+Vậy: **61d-2b-0** = chủ thể tin cậy của script danh tính (sửa lỗi). **61d-2b-1** = Trusted Deploy cho Jenkins,
+Tekton, Drone (chỉ ĐỌC khoá công khai của cụm). **61d-2b-2** = bộ ký trong cụm (plan chi tiết viết khi bắt đầu, R1),
+với đầu vào đã chốt: chữ ký do UDP đặt **sau** cổng deploy không chứng minh nguồn gốc build, chỉ chứng minh "UDP đã
+cho phép byte này" — giá trị thật là để Kyverno (61d-3) có chữ ký mà kiểm lúc admission; câu đó phải vào §8.3 và §16
+bằng đúng chữ đó.
+
+### Dữ kiện ngoài đã xác minh (R7) — đọc ngày 03/10/2026 tại nguồn
+
+| #   | Câu hỏi quyết định thiết kế                                           | Kết quả, và nguồn                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | UDP đọc được khoá công khai của cụm mà **không** cần quyền mới không? | **Được, không cần quyền nào.** Kubernetes `plugin/pkg/auth/authorizer/rbac/bootstrappolicy/policy.go`: ClusterRole `system:service-account-issuer-discovery` cho `get` trên `/.well-known/openid-configuration` và `/openid/v1/jwks`; ClusterRoleBinding mặc định là `NewClusterBinding("system:service-account-issuer-discovery").Groups(serviceaccount.AllServiceAccountsGroup)` — **mọi ServiceAccount trong cụm**, kể cả `udp-system/udp-tooling`. |
+| 2   | Token của `TokenRequest` có `jti` không?                              | **Có, ổn định từ 1.32.** KEP-4193: `ServiceAccountTokenJTI` alpha 1.29, beta 1.30, stable **v1.32**; nội dung là "generates a UUID which can be later used to trace the requests that a specific issued token has made to the apiserver". UDP chạy Kubernetes 1.33–1.35 (ma trận Kyverno của 61d-3).                                                                                                                                                   |
+| 3   | Ghim RS256 cho token SA được không?                                   | **Không.** `pkg/serviceaccount/openidmetadata.go`: `id_token_signing_alg_values_supported` **suy từ khoá đang hoạt động** — `RS256` (RSA) hay `ES256`/`ES384`/`ES512` (ECDSA P-256/384/521); `response_types_supported` cố định `["id_token"]`. `HS*` và `none` không bao giờ xuất hiện.                                                                                                                                                               |
+| 4   | Azure đã nhận CircleCI chưa?                                          | **Chưa.** Microsoft Learn "Flexible federated identity credentials (preview)", `ms.date` 18/09/2026: "Flexible federated identity credentials support is currently provided for matching against GitHub, GitLab, and Terraform Cloud issued tokens." Cùng trang: FIC cổ điển trần **20** mỗi identity, và FIC linh hoạt **chưa dùng được qua Azure CLI/PowerShell/Terraform**.                                                                         |
+| 5   | `sub` của GitHub Actions có đổi hình không?                           | **Đã đổi và đã hiệu lực.** GitHub Changelog 23/04/2026: hình cũ `repo:octocat/my-repo:ref:refs/heads/main`, hình mới `repo:octocat@123456/my-repo@456789:ref:refs/heads/main`; **từ 15/07/2026 áp tự động** cho repo mới tạo, đổi tên, hay chuyển chủ. Claim `repository` **không đổi** — đó là lý do Trusted Deploy của 61d-2a (đọc `repository`/`ref`, không đọc `sub`) miễn nhiễm.                                                                  |
+
+**`jose` 6.2.12 — đo bằng script, khoá sinh trong tiến trình, không một lời gọi mạng nào:**
+
+| Câu hỏi                                                        | Kết quả                                                                                               |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `ES256` với `algorithms: ["ES256"]`                            | **Nhận**                                                                                              |
+| `ES256` với `algorithms: ["RS256"]` (ghim cứng như ba CI SaaS) | Từ chối `ERR_JOSE_ALG_NOT_ALLOWED` ⇒ ghim RS256 sẽ chặn một cụm dùng khoá EC                          |
+| `RS256` và `ES256` với `algorithms: ["RS256","ES256"]`         | Nhận cả hai ⇒ cụm đang xoay khoá vẫn chạy                                                             |
+| `algorithms: []` (giao với allowlist ra rỗng)                  | Từ chối `ERR_JOSE_ALG_NOT_ALLOWED` ⇒ danh sách rỗng **fail-closed**, là lớp thứ hai dưới phép trả 503 |
+| `sub` là một ServiceAccount khác                               | **`jose` NHẬN** ⇒ phép kiểm chủ thể phải do mã của UDP làm, không có sẵn                              |
+| Token ký bằng khoá cụm khác, cùng `kid`                        | Từ chối `ERR_JWS_SIGNATURE_VERIFICATION_FAILED`                                                       |
+
+## 61d-2b-0 — chủ thể tin cậy của script danh tính (sửa lỗi)
+
+Bốn lỗ, cùng một họ: script tin một chủ thể rộng hơn chủ thể nó muốn tin. Cả bốn nằm trong
+`services/core-backend/src/modules/packaging/identity-script.ts`.
+
+### Mục 0.1 — ghim hai số id bất biến của GitHub
+
+- _Làm gì:_ mọi chỗ so `sub` của GitHub nhận **hai chủ thể KHỚP ĐÚNG**, không ký tự đại diện: hình cũ
+  `repo:<owner>/<name>:ref:refs/heads/<b>` và hình bất biến
+  `repo:<owner>@<ownerId>/<name>@<repoId>:ref:refs/heads/<b>`. AWS: thêm vào mảng của `StringLike`
+  (`identity-script.ts:202` đã nhận mảng). Azure: FIC thứ hai cho mỗi nhánh.
+- _Vì sao KHÔNG dùng `repo:<owner>@*/<name>@*`:_ `*` của `StringLike` khớp **zero hoặc nhiều** ký tự nên nó bỏ luôn
+  hai số id — đúng hai số mà hình bất biến sinh ra để chặn. Kịch bản thật: repo `acme/web` đổi tên ⇒ tên cũ trống ⇒
+  ai tạo được repo trong org đó tạo lại `acme/web` ⇒ token repo MỚI khớp trust policy ⇒ đẩy image vào
+  `<registryRef>/<slug>` (qua `assertOwnImage`) **và ký bằng khoá KMS của project** ⇒ qua luôn cổng chữ ký 61d-1.
+  Chiều owner bị chiếm tên cũng vậy. Một hình lỏng hơn (`repo:acme*/web*`) còn khớp cả `acme-khac/web`.
+- _Vì sao GIỮ hình cũ lại an toàn — lý lẽ duy nhất biện minh cho nó:_ từ 15/07/2026 GitHub áp hình bất biến cho mọi
+  repo **mới tạo, đổi tên, hay chuyển chủ** (dữ kiện 5). Nên một `sub` hình CŨ chỉ có thể đến từ một repo đã tồn tại
+  trước mốc đó và **chưa bao giờ** đổi tên hay chuyển chủ — tức đúng repo của project. Repo của kẻ tấn công (luôn là
+  repo mới) phát hình bất biến, không khớp hình cũ; mà hình bất biến thì đã ghim id. Hai hình khớp đúng ⇒ đóng lỗ
+  squat **và** không làm chết project có repo cũ. Câu này phải nằm trong chú thích mã, không chỉ trong plan.
+- _Hai số id lấy ở đâu:_ **trong script**, `curl https://api.github.com/repos/<owner>/<name>` lấy `.id` và
+  `.owner.id`; repo riêng tư cần `GH_TOKEN`. UDP **không** lưu được credential GitHub: `repo-source.ts:9-15` ghi rõ
+  token của lượt quét "chỉ sống trong lượt quét: không log, không lưu", nên backend không có đường tự đọc hai số đó
+  lúc sinh script. Không đọc được ⇒ **script dừng** với câu nói đúng việc cần làm (`export GH_TOKEN=… rồi chạy lại`):
+  một script chạy nửa vời để lại danh tính chạy được hôm nay và chết đúng ngày repo đổi tên — lỗi không ai truy được.
+- _GCP: ràng theo id, không theo tên._ `gcpCondition:430` đang ràng `assertion.repository` (TÊN) — cùng lỗ squat, chỉ
+  chưa ai gọi tên. Đổi: mapping thêm `attribute.repository_id=assertion.repository_id`, điều kiện CEL ràng
+  `assertion.repository_id` + `assertion.repository_owner_id` + `assertion.ref`.
+- _Ở đâu:_ `identity-script.ts` (`awsSubjects`, `azureScript`, `gcpMapping`, `gcpCondition`, một hàm chung sinh dòng
+  đọc id), `apps/portal/demo/mock/build.ts:297-299` (chuỗi chủ thể minh hoạ của bản xem thử), §16 một dòng, và mục
+  Đóng gói của Portal: project đã chạy script trước đợt này **phải chạy lại** — câu đó hiện ở "việc cần làm".
+- _Ảnh hưởng lan sang:_ `tests/identity-script.test.ts` (bộ 3 cloud × 4 CI × 2 registry; `:155` chạy `bash -n` nên
+  lệnh `curl` mới phải đúng cú pháp; `:177` khẳng định không có `refs/heads/*`), `tests/packaging.integration.test.ts:206-208`
+  (đang `toContain("repo:acme/web:ref:refs/heads/main")` — giữ, và thêm khẳng định hình bất biến).
+
+### Mục 0.2 — federated credential của Azure phải HỘI TỤ
+
+- _Làm gì:_ `federate()` hiện là `show || create` (`identity-script.ts:483-486`) — không `update`, không xoá. Sửa:
+  so chủ thể hiện có, khác thì `delete` rồi `create`; và **xoá** FIC `github-*`/`gitlab-*` không còn trong `branches`.
+- _Vì sao:_ header của chính script khai "Chạy lại an toàn: chỉ tạo thứ chưa có và **đưa quyền về đúng mô tả**"
+  (`:122`), mà AWS làm đúng thế (`update-assume-role-policy`, `:204-208`) còn Azure thì không ⇒ chủ thể của một
+  environment đã xoá vẫn được tin mãi. Sau mục 0.1 mỗi nhánh tốn **2** FIC nên trần 20 của Azure (dữ kiện 4) thành
+  10 nhánh: script kiểm trước và dừng với câu nói rõ, thay vì để `az` trả lỗi hạn mức ở nhánh thứ 11.
+- _Ảnh hưởng lan sang:_ `tests/identity-script.test.ts` thêm ô "có lệnh xoá FIC lạc" và ô trần nhánh.
+
+### Mục 0.3 — pool Workload Identity của GCP: thu hẹp từ cả pool xuống một attribute
+
+- _Làm gì:_ `identity-script.ts:364` bind `principalSet://…/workloadIdentityPools/$POOL/*` ⇒ **mọi** provider từng
+  tạo trong pool mạo danh được service account, mà provider đặt tên theo loại CI (`:301`) nên đổi CI vẫn để provider
+  cũ sống: project chuyển từ GitHub sang Jenkins-trong-cụm vẫn cho repo GitHub cũ đẩy và ký. Sửa: bind theo
+  **attribute** — GitHub `attribute.repository_id/<id>`, GitLab `attribute.project_path/<path>`, CircleCI
+  `attribute.project_id/<id>`, in-cluster `subject/system:serviceaccount:udp-build:udp-builder`. **Tiền tố là một
+  phần của giá trị:** `subject/` đi với `principal://` (một danh tính), `attribute.<tên>/` đi với `principalSet://`
+  (một tập) — dùng lẫn thì IAM từ chối member.
+- _Vì sao bind theo attribute mà không theo provider:_ tra tài liệu GCP (Principal identifiers), `principalSet` chỉ
+  có ba hình — `attribute.<tên>/<giá trị>`, `subject/<chủ thể>`, và `/*` cho cả pool. **Không có** hình theo provider.
+- _Hội tụ:_ tập loại CI là hữu hạn và UDP biết hết, nên script **xoá** member của các loại CI khác và member `/*` cũ,
+  rồi thêm member của loại đang bật ⇒ chạy lại sau khi đổi CI là hội tụ thật.
+- _Ảnh hưởng lan sang:_ `tests/identity-script.test.ts` (ô "không còn member cả-pool", ô "có lệnh xoá member của loại
+  CI khác").
+
+### Kiểm chứng của 61d-2b-0 (R9) — so chuỗi, không gọi mạng, không cần cloud
+
+1. AWS: trust policy có **đúng hai** chủ thể mỗi nhánh, cả hai khớp đúng; và `not.toContain("@*")` — ô này chốt đúng
+   lỗ P1 để không ai "tiện tay" đưa ký tự đại diện trở lại.
+2. Một ô lập luận-thành-test: chuỗi `sub` của một repo cùng tên khác id **không** khớp bất kỳ chủ thể nào script sinh
+   (so chuỗi thuần, không cần IAM).
+3. Azure: hai FIC mỗi nhánh, có lệnh xoá FIC lạc, có kiểm trần 20.
+4. GCP: điều kiện CEL ràng `repository_id` + `repository_owner_id`; member là `attribute.repository_id/<id>`; không
+   còn member `/*`; có lệnh xoá member của ba loại CI còn lại.
+5. `bash -n` xanh cho cả 24 tổ hợp (3 cloud × 4 CI × 2 registry) — bộ test đã có, chỉ cần không làm đỏ.
+6. Thiếu `GH_TOKEN` với repo riêng tư: script dừng, và câu nhắn chứa đúng chữ `GH_TOKEN`.
+7. Bản xem thử: chuỗi chủ thể minh hoạ bằng chuỗi script thật sinh (một hàm dùng chung, không hai bản chép).
+
+### Đường lùi (R10) và kiểm thoái cấp (R11) của 61d-2b-0
+
+Không migration, không đổi dữ liệu, không đổi dây ⇒ `git revert` một commit. Script chỉ **thêm** chủ thể tin cậy và
+**xoá** chủ thể lạc; project đã chạy script cũ không hỏng thêm, và chạy lại script mới đưa về đúng mô tả.
+
+Kiểm thoái cấp: (a) có chủ thể nào ngoài repo/project của chính project trở nên tin cậy không; (b) project có repo
+GitHub **cũ** (hình `sub` cũ) có còn đẩy và ký được không; (c) việc xoá member/FIC lạc có xoá thứ UDP không tạo ra
+không (chỉ xoá theo đúng tên UDP sinh); (d) `bash -n` và 24 tổ hợp có còn xanh không; (e) ba cloud × bốn CI có cloud
+nào mất đường đẩy registry không.
+
+### 61d-2b-0 — đã làm, và những chỗ CHỆCH plan (R5)
+
+1. **Cảnh báo "chạy lại script" là một CÂU dưới script, không phải một mã việc cần làm.** Plan viết "câu đó hiện ở
+   việc cần làm". Làm xong mới thấy không làm được đúng thế: `buildTodoWire` là danh sách việc UDP **biết chắc** còn
+   thiếu, mà `settings.identity` chỉ lưu ARN/clientId — **không có dấu thời gian**, nên UDP không phân biệt được danh
+   tính tạo bằng script cũ với danh tính tạo bằng script mới. Một mã việc cần làm hiện ra cho mọi project GitHub
+   (kể cả project vừa chạy script mới) là một việc cần làm nói sai sự thật. Nên: một câu ở mục Danh tính build, chỉ
+   khi `ci === "github-actions"`, nói rõ mốc 03/10/2026 — người đọc tự biết mình thuộc bên nào. Không thêm giá trị
+   nào vào dây.
+2. **Thêm một dòng đe doạ T14, plan không dự kiến.** Lỗ của mục 0.1 không phải "sai định dạng" mà là một đường tấn
+   công có tên: lấy lại một cái TÊN đã trống (repo-jacking). §12.1 là chỗ của nó, và viết nó ở đó mới giải thích được
+   vì sao hai lỗ còn lại (pool cả-POOL của GCP, FIC không hội tụ của Azure) là **cùng một họ** chứ không phải ba việc
+   rời. Bảng §16 giữ hai dòng giới hạn còn lại sau khi sửa (phải chạy lại script; trần 10 nhánh của GitHub + Azure).
+3. **Sửa một chú thích SAI mà chính 61d-2a viết ra.** `cicd-webhook.service.ts` nói 503 là "để `curl --retry` của
+   bước báo tự lành", nhưng `pipeline-template.ts:92` sinh `curl -sS --fail` **không có** `--retry`. Không gộp
+   `--retry` vào đợt này (nó đổi template của cả sáu CI nên thuộc 61d-2b-1, nơi 503 thành lối ra thường gặp), nhưng
+   để nguyên một câu sai trong mã là nợ ⇒ chú thích giờ nói đúng hiện trạng và trỏ sang đợt sẽ sửa.
+4. **GCP: mapping thêm cả `attribute.repository_owner_id`,** không chỉ `repository_id`. Điều kiện CEL ràng cả hai số
+   (một id repo là duy nhất toàn cục nên về lý chỉ cần nó, nhưng ràng cả hai là điều mà chính Microsoft đòi ở FIC
+   linh hoạt của họ — "must match `sub` and one or both of the following immutable claims" — và nó làm điều kiện đọc
+   được bằng mắt).
+5. **Một lỗi của chính tôi, bắt được bằng cách tra tài liệu trước khi tin mã mình vừa viết.** Bản đầu dùng
+   `principalSet://…/subject/system:serviceaccount:udp-build:udp-builder` cho CI trong cụm. Tài liệu "Principal
+   identifiers" của GCP chỉ có `principal://…/subject/<chủ thể>` cho một danh tính, còn `principalSet://` dành cho
+   `attribute.<tên>/<giá trị>`, `group/<id>` và `*`. Dùng lẫn thì IAM từ chối member và project CI-trong-cụm không
+   đẩy được — mà không ô test nào bắt được, vì test chỉ so chuỗi. Giờ `gcpPrincipal` trả về **cả tiền tố**, và ô test
+   khẳng định đúng tiền tố cho từng loại CI.
+6. **Dọn member/credential lạc làm bằng cách LIỆT KÊ rồi lọc theo tiền tố của chính UDP,** không bằng cách dựng lại
+   danh sách cho từng loại CI. Lý do đo được: script chỉ biết cấu hình của loại CI **đang bật**, nên nó không dựng
+   nổi chuỗi member của loại khác (ví dụ `projectPath` của GitLab khi project đang dùng GitHub). Liệt kê rồi lọc
+   `"$POOL_PREFIX"*` (GCP) và `github-*|gitlab-*|udp-builder` (Azure) hội tụ được mà vẫn không chạm thứ UDP không tạo.
+
+**Cổng đã qua:** `pnpm typecheck` (backend + Portal) 0 lỗi; `prettier --check` sạch; `identity-script` **38/38** (29
+cũ + 9 mới, gồm `bash -n` cho cả 24 tổ hợp cloud × CI × registry); `packaging` tích hợp 8/8; design-lint 162/162;
+Portal 365; bản xem thử 17/17.
+
+**Kiểm thoái cấp (R11) — trả bằng ô test:** (a) không chủ thể nào ngoài repo của project trở nên tin cậy —
+`not.toContain("@*")`, `not.toContain("acme*")`, và một ô dựng đúng chuỗi `sub` của repo cùng tên khác id rồi khẳng
+định nó **không** nằm trong tập chủ thể được tin; (b) project có repo GitHub cũ vẫn đẩy và ký được — cả hai hình chủ
+thể đều có mặt, khẳng định bằng `toEqual` trên tập 4 chuỗi; (c) phép dọn chỉ xoá tên UDP đặt — khẳng định đúng hai
+mẫu lọc; (d) `bash -n` xanh cho 24 tổ hợp, kể cả nhánh vượt trần 20 FIC; (e) ba cloud × bốn CI không cloud nào mất
+đường đẩy registry — vòng test cũ vẫn xanh nguyên.
+
+## 61d-2b-1 — Trusted Deploy cho Jenkins, Tekton, Drone
+
+### Mục 1.1 — `ClusterAccess.issuerKeys()`
+
+- _Làm gì:_ thêm đúng một phương thức vào `ClusterAccess` (`packages/adapter-core/src/cluster.ts`):
+  `issuerKeys(): Promise<{ issuer: string; algorithms: readonly string[]; jwks: unknown }>`; hiện thực ở
+  `cluster-access/src/direct.ts` bằng `tokenFor("tooling")` + `transport.request` tới
+  `${apiEndpoint}/.well-known/openid-configuration` rồi `${apiEndpoint}/openid/v1/jwks`.
+- _Vì sao đặt trên `ClusterAccess` mà KHÔNG trên `ReadOnlyClusterAccess`:_ nửa chỉ-đọc là kiểu mà đường quét drift
+  nhận, và nó không cần đọc khoá. Đặt ở nửa đầy đủ được ba thứ: `readOnlyAccess()` (`cluster.ts:155-172`) **không
+  phải sửa một dòng** nên không ai phải nhớ chuyển tiếp, đường quét drift **không gọi được**, và Service 3 (tự dựng
+  `ClusterAccess` từ token) không nhận thêm năng lực nào qua nửa chỉ-đọc.
+- _Vì sao là phương thức MỚI chứ không nới `read`:_ `read` nhận `ObjectRef` (apiVersion/kind/namespace/name); hai
+  đường dẫn trên không phải tài nguyên, không có GVK. Khuôn đã có: `proxyService` cũng là một phương thức riêng vì
+  cùng lý do. §4.6 nói `proxyService` là "cách duy nhất gọi **service** trong cluster" — `/openid/v1/jwks` là đường
+  của API server, không phải một Service, nên không rơi vào câu đó.
+- _E1 không tăng, nhưng phải nói đúng lý do:_ §13.2 định nghĩa E1 là **số lần nới lỏng bộ hợp đồng** (0, chốt bằng
+  `E1-relaxations.json`); chiều "số lần phá vỡ interface" ở §14. Số E1 thật không tăng vì `packages/experiments/scripts/e1.ts:47-48,112-113`
+  chỉ đọc `adapter-core/src/domain.ts` và `cloud.ts`, và `adapter-interface-freeze.test.ts` chỉ phủ ba interface
+  adapter ⇒ `cluster.ts` nằm **ngoài phạm vi đo**. Đó là một lỗ của phép đo, **không phải giấy phép** — nên ghi thành
+  chữ ở §4.6 rằng bề mặt này cũng đáng đóng băng, và để nó làm ứng viên cho một plan sau.
+- _Ở đâu (QA đếm đủ, plan trước thiếu 5 chỗ):_ `adapter-core/src/cluster.ts` (interface `ClusterAccess`),
+  `cluster-access/src/direct.ts` (hiện thực), `adapter-core/src/testing/fake-cluster.ts`,
+  `cluster-access/src/testing.ts`, `services/core-backend/tests/provision-job.integration.test.ts:102`
+  (object literal `fakeAccess`), `services/core-backend/tests/day2-upgrade.test.ts:140` và `:435` (hai object `k8s`),
+  **và `docs/UDP_design.md:2858`** — §4.6 trích nguyên văn khối `interface ClusterAccess extends …`, mà
+  `design-lint/tests/drift-readonly.test.ts:42-48` đọc đúng khối đó. Ba chỗ ép `as unknown as ClusterAccess`
+  (`cost.integration.test.ts:44`, `metrics-source.integration.test.ts:234`, `cluster-access-cache.test.ts:124`)
+  **không** phải sửa; `pd-controller/src/cluster-access/provider.ts` uỷ quyền `createDirectClusterAccess` nên tự theo.
+- _Consumer trong cùng đợt (R6):_ mục 1.2.
+- _Chốt mới:_ một ô khẳng định `readOnlyAccess()` phơi **đúng ba** thành viên (`mode`, `clusterId`, `getClient`) —
+  nếu ai đó sau này dời `issuerKeys` xuống nửa chỉ-đọc mà quên chuyển tiếp thì đỏ ngay. (`drift-readonly.test.ts:82`
+  đang khẳng định thân `readOnlyAccess` không chứa chuỗi `write`; mục này không chạm nó.)
+
+### Mục 1.2 — đường xác minh cho ba CI trong cụm
+
+- _Làm gì, một câu:_ lời báo mang **bound SA token** xin bằng `TokenRequest` ngay trong bước báo với `aud` = đúng địa
+  chỉ webhook tuyệt đối; Service 1 kiểm bằng khoá công khai đọc từ **chính cụm của project đó**.
+- _Hai nửa buộc token vào project, cần cả hai:_ (a) `aud` chặn dùng chéo project — nhưng `aud` do pod tự khai, nên
+  một pod trong cụm của project X **xin được** token mang `aud` của project Y; (b) khoá kiểm lấy từ cụm của ĐÚNG
+  project đang nhận webhook (`job-kit.ts:288-305` lấy cụm từ lượt PROVISION xong gần nhất của project — mỗi project
+  một cụm, tên cụm tất định theo `projectId`), nên token của cụm X không qua được phép kiểm ở project Y. **Chủ thể
+  không làm được việc này:** mọi cụm đều có cùng `system:serviceaccount:udp-build:udp-builder`.
+- _Chủ thể vẫn phải kiểm, vì một lý do khác:_ nó phải bằng đúng chuỗi trên. Thiếu phép kiểm đó thì **mọi pod trong
+  cụm** — kể cả chính ứng dụng đang được deploy — xin được token với `aud` của webhook và tự deploy image bất kỳ.
+  Và `jose` **không** kiểm `sub` (đã đo), nên phép kiểm này phải do mã của UDP làm.
+- _Bảo đảm đạt được, phát biểu đúng bậc:_ lớp này chứng minh **"lời báo đến từ một pod build trong namespace
+  `udp-build` của đúng cụm của project này"** — **không** chứng minh commit, **không** chứng minh nhánh. Hai lý do,
+  cả hai đo được: token SA không có claim repo hay ref; và quyền **tạo pod** trong `udp-build` đến từ RBAC của chart
+  CI (`build-namespace.ts:15-16`), còn nội dung pipeline là **tệp trong repo của khách**. Hệ quả phải công bố: với ba
+  CI trong cụm, kẻ kiểm soát repo vượt được **cả** cổng chữ ký 61d-1, vì khoá KMS cũng chỉ ràng theo
+  `assertion.sub=='…udp-builder'` (`identity-script.ts:437`). Đây là một BẬC yếu hơn ba CI SaaS và không được viết
+  chung một câu với chúng.
+- _Thuật toán đọc từ cụm, không ghim cứng:_ `verifyTrustedDeploy` đang ghim `algorithms: ["RS256"]`
+  (`trusted-deploy.ts:463`) ⇒ tham số hoá. Nhánh cụm lấy `id_token_signing_alg_values_supported` của chính cụm, giao
+  với allowlist `["RS256","ES256","ES384","ES512"]`; giao rỗng ⇒ **503**, không rơi về HMAC (và `jose` với danh sách
+  rỗng cũng fail-closed — lớp thứ hai, đã đo).
+- _Cache: HAI cache, và cache ÂM._ Plan trước lẫn hai thứ. `createClusterAccessCache`
+  (`cluster/cluster-access-cache.ts:27-61`) cache **ClusterAccess theo `projectId`**, hết hạn theo token quản trị,
+  **không** stale, **không** cooldown — dùng lại nguyên vẹn cho việc lấy `ClusterAccess`. `KEY_CACHE` của
+  `trusted-deploy.ts` khoá theo `expected.issuer`; nhánh cụm khoá theo `clusterId`. Và phải thêm **cache âm**:
+  `trusted-deploy.ts:354-376` chỉ `cache.set` trên đường thành công, nên khi chưa có hàng cũ thì mọi request hỏng
+  đều fetch lại ngay — với nhánh cụm, mỗi lượt là một lần lấy credential cloud + `getClusterStatus` +
+  `getKubeAuthToken` + hai lời gọi API server, tức một kẻ có secret HMAC biến webhook thành máy bơm vào cloud của
+  khách. Ghi `attemptedAt` cả khi hỏng và tôn trọng `cooldownMs`. Việc này **lợi cho cả ba CI SaaS**.
+- _`staleMs` của nhánh cụm = 0._ Lý lẽ "giữ bản cũ khi nhà cung cấp hỏng" là lý lẽ của SaaS. Cụm không với tới được
+  thì job deploy cũng không áp được gì ⇒ giữ khoá cũ 24 giờ không mua tính khả dụng nào, chỉ mở cửa sổ 24 giờ cho
+  khoá đã bị cụm xoay.
+- _Công tắc, và chỗ tính được nó:_ giá trị enum `"IN_CLUSTER_CI"` của `TrustedDeployUnavailable` **chết**; hằng
+  `IN_CLUSTER_CI = ["jenkins","tekton","drone"]` (`trusted-deploy.ts:104`) **giữ nguyên cả cú pháp** (design-lint
+  ghim nguyên văn dòng đó). Giá trị mới là **`CLUSTER_NOT_READY`** — không dùng `NO_CLUSTER` vì
+  `IdentityScriptProblem` (`identity-script.ts:72`) đã có chuỗi đó với nghĩa khác và hai union cùng hiện trên một
+  panel Portal. **`trustedDeployStateOf` (`cicd.service.ts:63-86`) là hàm thuần trên một hàng `domain_configs` nên
+  không ai tính được trạng thái cụm** (lỗi R6 của plan trước): thêm một đầu vào `clusterReady: boolean` và tính nó ở
+  hai chỗ gọi (`cicd.service.ts:97` của `status()`, `:145` của `setOidcRequired`) bằng một truy vấn sổ tài nguyên;
+  `expectationOf` **giữ nguyên tính thuần**.
+- _Ba renderer, năm chỗ gọi `notifyScript`:_ jenkins `:145` (dùng cho cả success và failure), tekton `:384` (rebase)
+  và `:479` (build), drone `:166` (build) và `:281` (rebase). Dòng token đi qua tham số `tokenLines` — mọi chỗ đều
+  áp thụt lề cho cả `tokenLines` nên an toàn.
+- _Biến thể `tokenRequestLines` cho bước báo (ba sửa, mỗi sửa một lý do đo được):_ (i) **không ghi tệp** — bản hiện
+  tại ghi token ra tệp rồi `chmod 0644` trong `/udp-auth`, volume chia cho mọi container của pod build, tức đặt một
+  token deploy được ở nơi mã của khách chạm tới; bước báo đọc **biến** `$UDP_OIDC_TOKEN` nên để nguyên trong biến là
+  đủ; (ii) `expirationSeconds: 600` thay vì 3600 — trần chính sách là `CICD_WEBHOOK.tokenMaxAgeSeconds = 600`, cấp
+  token sống gấp 6 lần trần là vô ích và là rủi ro thuần; (iii) **không được giết lời báo** — dòng đầu của bản hiện
+  tại là `set -eu`, nên ở nhánh `failure` của Jenkins/Drone, xin token hỏng sẽ giết luôn lời báo thất bại: biến thể
+  phải `|| true` và để trống biến, và `notifyScript:97` vốn chỉ gửi header khi biến khác rỗng ⇒ thiếu token thì
+  hành vi đúng là 401 khi chế độ bắt buộc đang bật (fail-closed), không phải mất hẳn lời báo.
+- _`curl` sinh ra phải có `--retry`:_ `pipeline-template.ts:92` sinh `curl -sS --fail` **không** `--retry`, nên câu
+  "503 để `curl --retry` tự lành" trong chú thích 61d-2a là **sai**. Với nhánh cụm, 503 thành lối ra thường gặp
+  (credential cloud chậm, cụm chập chờn) ⇒ thêm `--retry 5 --retry-delay 5`. Lượt gửi lại mang **cùng thân** nên rơi
+  đúng nhánh `duplicate` của I41 — tính chất đó đã có ô test từ 61d-2a.
+- _Tekton không bảo đảm được chủ thể, và phải nói ra:_ `Pipeline`/`taskSpec` của Tekton **không khai ServiceAccount**
+  (`tekton/index.ts:408-412`, `:456-481`); SA chỉ nằm trong **chú thích hướng dẫn** `tkn pipeline start …
+--serviceaccount udp-builder` (`:399-406`) vì Tekton Triggers chưa có (§16). Ai chạy thiếu cờ đó thì pod dùng SA
+  `default` ⇒ `sub` = `system:serviceaccount:udp-build:default` ⇒ `TOKEN_CLAIM_MISMATCH` (fail-closed, nhưng là một
+  lần đỏ khó truy). Nên: hàng audit của lần từ chối ghi **chủ thể nhận được** (claim, không phải token — cùng lý lẽ
+  với việc 61d-2a ghi `aud` nhận được), và §16 + Portal nói rõ Tekton phải chạy bằng đúng SA đó.
+- _Ảnh hưởng lan sang (QA đếm đủ):_ `trusted-deploy.ts` (`TrustedDeployUnavailable:50`, `TrustedDeployExpectation:111`
+  — thêm discriminant `kind` vào kiểu **chưa có** discriminant, `KeySource:107`, `expectationOf:188`, `fetchKeys:311`,
+  `keysFor:334`, `verifyTrustedDeploy:398` ở bốn chỗ đọc claim), `cicd-webhook.service.ts:507,524`,
+  `cicd.service.ts:63,97,145`, `app-deps.ts` (cổng mới), `index.ts` (nối bản thật),
+  `tests/helpers/inert-deps.ts` (sentinel), `wire.ts:1809`, `CicdPanel.tsx:34`, `domain.messages.tsx:132` (vi) +
+  `:283` (en), `tests/cicd-webhook.integration.test.ts:1202`, `tests/trusted-deploy.test.ts:172`. **Fixture vàng và
+  seed KHÔNG phải sửa** — cả ba chỗ đang là `"unavailableReason": null` (plan trước nói sai).
+
+### Bất biến mới I42 (R1), và vì sao I41 không phủ
+
+I41 ô (d) khai "Lấy JWKS đi qua `createEgressFetch`" — đường CI-trong-cụm đi `ClusterAccess`, không đi
+`createEgressFetch`, nên **không được** tuyên bố I41 đã phủ. Thêm:
+
+> **I42** — **Khoá kiểm token của một CI chạy trong cụm luôn lấy từ CHÍNH cụm của project đang nhận webhook, không
+> bao giờ từ một địa chỉ ngoài.** Cùng họ I41: vỡ thì hệ thống sai ÂM THẦM — một pod build trong cụm của project X
+> deploy được vào project Y mà lượt deploy vẫn xanh. Bốn nửa: (a) token ký bằng khoá của một cụm KHÁC ⇒ từ chối, và
+> phép khẳng định cho thấy UDP chỉ hỏi khoá của cụm của đúng project đó; (b) `sub` là một ServiceAccount khác trong
+> CÙNG cụm ⇒ từ chối `TOKEN_CLAIM_MISMATCH`; (c) khoá lấy tại `/openid/v1/jwks` TRÊN kết nối API server, không bao
+> giờ theo `jwks_uri` của discovery; (d) danh sách alg của cụm giao rỗng với allowlist ⇒ 503, KHÔNG rơi về HMAC.
+
+`docs/UDP_design.md:8551` "Tổng cuối: **43 bất biến**" ⇒ **44** (`design-lint/tests/references.test.ts:120-124`
+khẳng định con số đó bằng số hàng `I<số>` đếm được).
+
+### Fitness function (R9, phần design-lint)
+
+- `trusted-deploy-providers.test.ts`: (i) giữ hằng `IN_CLUSTER_CI` **nguyên dạng cú pháp**; (ii) **không** nhồi ba CI
+  trong cụm vào `TRUSTED_DEPLOY_PROVIDERS` (test `:116-121` khẳng định chúng không chồng nhau); (iii) bảng thứ hai
+  trong §8.3 có **4 cột** (tool, chủ thể, nguồn `aud`, điều KHÔNG chứng minh được) ⇒ 5 ô, khác 8 ô của bảng cũ, nên
+  `tableInDesign()` (`:79` chỉ nhận hàng có đúng `FIELDS.length + 1` ô) không hút lẫn; thêm hằng
+  `IN_CLUSTER_TRUSTED_DEPLOY` + parser riêng + khẳng định riêng cho bảng đó.
+- `enum-mirrors.test.ts`: ghim `TrustedDeployUnavailable` ↔ zod `wire.ts:1809` ↔ nhánh `CicdPanel.tsx` — hôm nay
+  không gì giữ ba bên, mà đợt này đổi đúng enum đó.
+- Chốt "bootstrap không cấp quyền issuer-discovery": `cluster/bootstrap.ts` không có `nonResourceURLs` và không nhắc
+  `openid`/`issuer-discovery`, **và** §12.2 có ghi chú ClusterRole mặc định. Đây là câu chịu lực của cả mục 1.1 (nó
+  là lý do lối này rẻ, và là lý do §12.2 còn đúng sự thật) — biến nó thành test thì một ngày ai đó "tiện tay" cấp
+  quyền trong bootstrap sẽ đỏ.
+- §12.2 thêm bằng **câu văn xuôi** dưới bảng, **không thêm hàng**: `cluster-identity.test.ts` khẳng định bảng có đúng
+  ba hàng SA. Câu đó phải nói: quyền này đến từ ClusterRoleBinding **mặc định** của Kubernetes, UDP không cấp và
+  **không thu hồi được**.
+
+### Kiểm chứng của 61d-2b-1 (R9) — tất định, không gọi mạng, không cần cụm thật
+
+1. `issuerKeys` với transport giả: **đúng hai** URL, đúng thứ tự, Bearer của `udp-system/udp-tooling`, so bằng
+   `toEqual` (một lời gọi thừa là đỏ).
+2. Cụm khai `["ES256"]` ⇒ token ES256 nhận; cụm khai `["RS256"]` mà token ES256 ⇒ từ chối; cụm khai `["HS256"]` ⇒
+   giao rỗng ⇒ **503**, không phải 401.
+3. `sub` là `system:serviceaccount:default:app` ⇒ từ chối `TOKEN_CLAIM_MISMATCH` (ô chặn leo thang nội cụm).
+4. Token ký bằng khoá **cụm khác** (hai cặp khoá sinh trong tiến trình, cùng `kid`) ⇒ từ chối ở chữ ký.
+5. `aud` của project khác ⇒ từ chối; và cùng token gửi tới webhook của project khác ⇒ từ chối.
+6. Cổng lấy khoá rỗng (tiến trình không có đường ra cụm) ⇒ **503** `TOKEN_KEYS_UNAVAILABLE`, không sự kiện deploy nào.
+7. **Cache âm:** cụm hỏng, hai request liên tiếp ⇒ **đúng MỘT** lượt gọi (so bằng `toEqual` trên danh sách lời gọi).
+8. **I24:** nội dung cache không chứa chuỗi JWT nào (cache giữ khoá CÔNG KHAI, không giữ token).
+9. HMAC sai + Bearer hợp lệ của CI trong cụm ⇒ 401 đồng nhất **và** `expect(calls).toEqual([])` — không một lời gọi
+   cụm nào trước khi HMAC đúng.
+10. Dùng một lần với `jti` của token SA, qua HTTP thật: thân y nguyên ⇒ 200 `duplicate` một hàng token; thân đổi ⇒ 401.
+11. Bước báo: `bash -n` xanh; token nằm trong **biến**, không có `chmod` nào trên nó; `expirationSeconds: 600`; nhánh
+    `failure` vẫn gửi được lời báo khi xin token hỏng; `curl` có `--retry`.
+12. `readOnlyAccess()` phơi đúng ba thành viên.
+13. Cộng: `pnpm typecheck`, `format:check`, `prisma migrate diff` không khác biệt (**không migration**), bộ hợp đồng
+    sáu CI, design-lint, `@udp/db`, Portal, và bộ test core-backend chia hai chặng.
+
+### Đường lùi (R10)
+
+Không migration, không đổi dữ liệu ⇒ `git revert` một commit. `oidcRequired` của ba CI trong cụm mặc định `false` và
+chỉ tự bật ở token hợp lệ đầu tiên ⇒ pipeline chưa sinh lại vẫn chạy như cũ (HMAC).
+
+Cửa sổ lệch phiên bản của dây: Portal là **image riêng** (`deploy/docker/portal.Dockerfile`) nên một tab Portal cũ
+hay một lượt roll chưa xong sẽ lỗi parse ở giá trị enum mới. Cửa sổ đó **đã có từ trước và không do đợt này tạo ra**:
+chính 61d-2a thêm hai khoá (`webhookUrl`, `trustedDeploy`) vào cùng object `.strict()` này, mà `.strict()` thì Portal
+cũ từ chối khoá lạ. Giữ enum strict (nới `.catch(null)` sẽ làm bộ hợp đồng golden nhận cả chuỗi rác từ backend — mua
+tương thích bằng chính tính chất golden sinh ra để giữ); sửa bằng một lượt tải lại. "Dung sai lệch phiên bản của hợp
+đồng dây" ghi vào danh sách ứng viên plan sau.
+
+### Kiểm thoái cấp (R11)
+
+(a) Ba CI SaaS có bị đổi hành vi gì không (bảng nhà cung cấp, thứ tự tầng, tập mã từ chối)? (b) `aud` của ba CI trong
+cụm có bị nhận lỏng hơn ba CI SaaS không? (c) Một cụm không với tới được có mở đường tắt nào về HMAC, và có chặn
+deploy của project **chưa** bật cờ không? (d) `issuerKeys` có mở đường nào cho Service 3 hay cho đường quét drift
+không? (e) Lời gọi hỏi khoá có bao giờ chạy TRƯỚC khi HMAC đúng không? (f) Bước báo **thất bại** có còn tới được
+không khi xin token hỏng? (g) `--retry` mới có làm một lượt từ chối 401 bị gửi lại nhiều lần không (401 là terminal,
+`curl --retry` chỉ thử lại 5xx)?
+
+## Chỗ CHỆCH so với lập luận cũ, phải ghi (R5)
+
+1. `plan61-plan.md:158-161` tính "phải nới một interface hạng nhất (ADR-06, §4.6)" là cái giá của lối TokenReview và
+   nói "việc mà `cluster-identity.test.ts` canh" — **câu đó sai**: tệp đó chỉ canh `IDENTITY_SERVICE_ACCOUNTS` đối
+   chiếu §12.2. Hôm nay **không** test nào ghim bề mặt `ClusterAccess` vào §4.6 (chỉ `drift-readonly.test.ts` đọc
+   khối trích trong §4.6 để kiểm chuyện khác). Cái giá thật của lối TokenReview vẫn còn nguyên và lớn hơn: verb mới
+   trên cụm khách + bootstrap lại + `write()` phải đổi kiểu trả về.
+2. §16:8398 nêu lý do "Service 1 chưa lưu URL issuer, mà mọi cụm lại cùng một chủ thể". 61d-2b-1 **vô hiệu hoá** lý
+   do đó, nhưng không bằng cách lưu issuer: nó buộc theo **khoá của cụm** chứ không theo chuỗi issuer. Đó là một
+   quyết định, không phải một dòng xoá im lặng.
+3. §16:8400 khai "Lõi xác minh có 22 ô tất định và đường webhook có 7 ô" — hai con số đó lệch sau mỗi đợt thêm ô và
+   **không test nào canh**, nên phải tự cập nhật ở cuối mỗi đợt.
+4. `plan61-spec.md` QĐ-1 nói 61d-2b gồm cả hai việc ⇒ thêm một dòng cho việc chia ba (tiền lệ: `plan61-plan.md:288`).
+
 ## 61d-3 — Kyverno (AC-12)
 
 1. Adapter Kyverno 2.0.0: chart 3.9.x / `kyverno-policies` 3.9.x; nâng qua §8.6; replicas ≥ 2 khi Deny; `failurePolicy`

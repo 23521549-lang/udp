@@ -1208,9 +1208,16 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   với `imageRef` dạng `repo:commit@sha256:…`, rồi kích lượt theo lịch và chờ lần deploy `rebase`).
 - **Đạt:** mỗi ô CI × cloud: đẩy được bằng mật khẩu ngắn hạn (không secret dài hạn nào trong CI của
   registry cloud), image chạy được và mang SBOM; lượt rebase đổi digest khi run image có bản mới,
-  giữ digest khi không, và Service 1 trả `unchanged`/`skipped` đúng lúc. **Không đạt:** trust policy
-  từ chối JWT ⇒ sửa script danh tính của cloud đó; BuildKit không khởi động trên node ⇒ xem lại
-  securityContext; `rebaser` không đọc được thông tin đăng nhập ⇒ xem lại thứ tự hạ quyền.
+  giữ digest khi không, và Service 1 trả `unchanged`/`skipped` đúng lúc. **[61d-2b-0]** Thêm vào cùng lượt
+  đó, ba thứ chỉ cloud thật trả lời được về chủ thể tin cậy: (a) IAM của AWS nhận trust policy có HAI chủ
+  thể `StringLike` khớp đúng cho mỗi nhánh, và một repo tạo sau 15/07/2026 (hình `sub` bất biến) đẩy được;
+  (b) `az identity federated-credential update` đổi được chủ thể của một credential đã có, và lượt chạy
+  lại dọn đúng credential của nhánh đã xoá; (c) IAM của GCP nhận member `principal://…/subject/…` cho CI
+  trong cụm và `principalSet://…/attribute.repository_id/…` cho GitHub — hai tiền tố khác nhau, và dùng lẫn
+  thì IAM từ chối. **Không đạt:** trust policy từ chối JWT ⇒ đọc `sub` thật trong log của CI rồi sửa script
+  danh tính của cloud đó, **đừng** nới phép so bằng ký tự đại diện (xem T14 của §12.1); BuildKit không khởi
+  động trên node ⇒ xem lại securityContext; `rebaser` không đọc được thông tin đăng nhập ⇒ xem lại thứ tự
+  hạ quyền.
 - **Tài nguyên:** ba cụm (~3 GiB mỗi cụm, lần lượt) + tài khoản miễn phí ở năm CI dịch vụ;
   Jenkins/Tekton/Drone cài bằng chính adapter.
 - **Ảnh hưởng tới kết luận:** AC-1…AC-7 của Plan #61 đứng ở mức hợp đồng, `bash -n` và build thật

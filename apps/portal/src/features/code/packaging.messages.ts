@@ -137,6 +137,9 @@ const vi = {
   identityMissing: "Chưa có danh tính build.",
   scriptLabel: (cloud: string) => `Script danh tính build cho ${cloud}`,
   scriptCopy: "Sao chép script",
+  /** [Plan #61 61d-2b-0] GitHub đổi hình chủ thể JWT từ 15/07/2026 — danh tính chạy script cũ không tin hình mới */
+  scriptRerun:
+    "Đã chạy script này trước 03/10/2026? Chạy lại: GitHub đã đổi hình chủ thể trong token (thêm id của chủ sở hữu và id của repo), nên bản cũ không tin token của repo mới tạo, mới đổi tên, hay mới chuyển chủ.",
   paste: "Dòng kết quả của script",
   pasteHint: "Dán nguyên dòng UDP_BUILD_IDENTITY=… mà script in ra ở cuối.",
   pasteInvalid:
@@ -345,6 +348,8 @@ const en: typeof vi = {
   identityMissing: "No build identity yet.",
   scriptLabel: (cloud: string) => `Build identity script for ${cloud}`,
   scriptCopy: "Copy script",
+  scriptRerun:
+    "Ran this script before 2026-10-03? Run it again: GitHub changed the subject format in its tokens (it now includes the owner id and the repository id), so the older identity does not trust tokens from a repository that was just created, renamed, or transferred.",
   paste: "The script's result line",
   pasteHint:
     "Paste the whole UDP_BUILD_IDENTITY=… line the script prints at the end.",

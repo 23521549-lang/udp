@@ -464,9 +464,11 @@ async function onReplay(args: {
  *    có secret HMAC chỉ cần BỎ header là xong, trên mọi project chưa bật cờ.
  *  - Thiếu token ⇒ chỉ từ chối khi `oidcRequired`.
  *
- * Mã HTTP tách theo họ lý do: lỗi hạ tầng (không lấy được khoá công khai) ⇒ 503 để `curl --retry` của bước
- * báo và runner tự lành; lỗi của token hay claim ⇒ 401 terminal. Trả 401 cho một lần JWKS không với tới là
- * một lỗi không bao giờ tự khỏi. Và tuyệt đối KHÔNG rơi về HMAC khi JWKS hỏng: rơi về HMAC chính là thoái
+ * Mã HTTP tách theo họ lý do: lỗi hạ tầng (không lấy được khoá công khai) ⇒ 503, lỗi của token hay claim ⇒
+ * 401 terminal. Trả 401 cho một lần JWKS không với tới là một lỗi không bao giờ tự khỏi. **Lưu ý một nửa
+ * còn thiếu** (phát hiện trong vòng QA của 61d-2b): bước báo mà `notifyScript` sinh ra hiện là
+ * `curl -sS --fail`, KHÔNG có `--retry`, nên 503 hôm nay làm bước báo đỏ chứ chưa tự lành; `--retry` thêm
+ * vào trong 61d-2b-1 cùng lúc với nhánh CI-trong-cụm, nơi 503 thành lối ra thường gặp. Và tuyệt đối KHÔNG rơi về HMAC khi JWKS hỏng: rơi về HMAC chính là thoái
  * cấp mà chế độ bắt buộc sinh ra để chặn, và nó biến một sự cố của nhà cung cấp thành đường tắt.
  */
 async function verifyDeployToken(args: {

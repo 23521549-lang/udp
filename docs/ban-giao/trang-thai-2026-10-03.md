@@ -5,10 +5,11 @@ người tiếp theo"; tệp đó giữ nguyên phần 61d-1 và phần phát hi
 `docs/UDP_design.md`; của phép đo là `docs/measurements/` (nợ trong `kiem-chung-con-no.md`); của từng plan là
 `docs/plans/`.
 
-**Trạng thái một câu:** Plan #61 đã xong 61a, 61b, 61c, 61d-1 và **61d-2a** — lời báo của pipeline giờ mang token OIDC
-của chính lượt chạy CI, token đó dùng đúng một lần do database cưỡng chế, và ba nhà cung cấp SaaS (GitHub Actions,
-GitLab CI, CircleCI) đã nối đủ. Còn 61d-2b (bộ ký trong cụm + Trusted Deploy cho ba CI trong cụm), 61d-3 (Kyverno),
-rồi Plan #62 (phát hành SDK). 49 mục nợ kiểm chứng. Hạ tầng của dự án tốn đúng 0 đồng.
+**Trạng thái một câu:** Plan #61 đã xong 61a, 61b, 61c, 61d-1, **61d-2a** và **61d-2b-0** — lời báo của pipeline giờ
+mang token OIDC của chính lượt chạy CI, token đó dùng đúng một lần do database cưỡng chế, ba nhà cung cấp SaaS đã nối
+đủ, và script danh tính build chỉ còn tin những chủ thể KHÔNG lấy lại được. Còn 61d-2b-1 (Trusted Deploy cho ba CI
+trong cụm), 61d-2b-2 (bộ ký trong cụm), 61d-3 (Kyverno), rồi Plan #62 (phát hành SDK). 49 mục nợ kiểm chứng. Hạ tầng
+của dự án tốn đúng 0 đồng.
 
 ## 1. 61d-2a — đã làm
 
@@ -81,12 +82,49 @@ rồi Plan #62 (phát hành SDK). 49 mục nợ kiểm chứng. Hạ tầng củ
   `adapter-base/packaging/build-script.ts` đã có `tokenRequestLines(audience, file)` cấp token mới mỗi lần, và Role
   `udp-builder-token` đã cho phép đúng việc đó — đây cũng là chữ của QĐ-17.
 
-## 5. Việc tiếp
+## 5. 61d-2b-0 — sửa một lỗ mà không test nào bắt được
 
-**61d-2b** — bộ ký trong cụm cho CircleCI + Azure, **và** Trusted Deploy cho ba CI trong cụm. Quyết định còn mở, và
-đầu vào quan trọng nhất đã có: cả hai lối đều chạm phía cụm, và **mọi cụm đều có cùng một chủ thể**
-`system:serviceaccount:udp-build:udp-builder` nên chủ thể không nhận diện được project — chỉ issuer làm được. Nghĩa là
-toàn bộ bảo mật của lối JWKS-của-cụm nằm ở chỗ issuer được lưu đúng, còn lối TokenReview đòi quyền mới trên cụm khách
-cộng một lượt bootstrap lại.
+Đây là một **lỗi đang sống**, tìm ra khi kiểm giả định ngoài cho kế hoạch 61d-2b, không phải một tính năng.
 
-Sau đó: 61d-3 (Kyverno), tài liệu và Playwright cuối Plan #61, rồi Plan #62.
+**Lỗi:** GitHub đổi hình chủ thể trong token OIDC — từ **15/07/2026**, mọi repo mới tạo, đổi tên, hay chuyển chủ phát
+`sub` = `repo:<owner>@<ownerId>/<name>@<repoId>:ref:…` thay vì hình theo tên (changelog GitHub 23/04/2026). Script
+danh tính của UDP so theo hình cũ ở AWS và Azure, nên những repo đó **không đẩy và không ký được**. GCP miễn nhiễm vì
+nó ràng theo claim `repository`, và Trusted Deploy của 61d-2a cũng miễn nhiễm vì cùng lý do đó — đọc claim nghiệp vụ
+chứ không đọc `sub`. Bài học nằm sẵn trong chính sự tương phản ấy.
+
+**Và một lỗ nguy hiểm hơn, suýt do chính bản sửa đầu của tôi mở ra.** Tôi định cho AWS nhận
+`repo:<owner>@*/<name>@*:ref:…`, lấy lý do "tên owner không chứa `@`". Vòng QA chỉ ra dấu `*` của `StringLike` khớp cả
+chuỗi RỖNG, nên hình đó bỏ luôn hai số id — đúng hai số mà hình bất biến sinh ra để chặn. Kịch bản: project đổi tên
+repo ⇒ tên `acme/web` trống ⇒ ai tạo được repo trong org đó tạo lại tên ấy ⇒ token của repo MỚI khớp chủ thể được tin
+⇒ đẩy image vào đúng repository của project **và ký bằng khoá KMS của project**, tức qua cả cổng chữ ký của 61d-1.
+Giờ nó là **T14** của §12.1.
+
+**Cách sửa, và vì sao giữ được hình cũ:** tin HAI chủ thể **khớp đúng**, không ký tự đại diện nào. Hình cũ giữ lại
+vẫn an toàn, và điều đó chứng minh được chứ không phải hy vọng: từ 15/07/2026 GitHub áp hình bất biến cho mọi repo
+mới tạo, đổi tên hay chuyển chủ, nên một `sub` hình cũ chỉ có thể đến từ repo đã tồn tại trước mốc đó và chưa bao giờ
+đổi tên — tức đúng repo của project. Repo của kẻ tấn công luôn là repo mới nên nó phát hình bất biến, mà hình bất biến
+thì đã ghim id.
+
+**Hai lỗ cùng họ, cùng được đóng trong đợt này:** (1) pool Workload Identity của GCP bind `…/$POOL/*` — CẢ POOL — nên
+mọi provider từng tạo trong pool mạo danh được service account; một project đổi từ GitHub sang Jenkins-trong-cụm vẫn
+để repo GitHub cũ đẩy và ký. Giờ bind theo đúng một `principalSet` theo attribute, và lượt chạy lại **dọn** member cũ.
+(2) federated credential của Azure chỉ `show || create`, không bao giờ `update` — nên một chủ thể đã đổi được tin mãi,
+trái đúng câu "chạy lại đưa quyền về đúng mô tả" ở đầu chính script đó. Giờ có `update` và có dọn credential của nhánh
+đã xoá.
+
+**Cho người tiếp:** `tests/identity-script.test.ts` giờ khẳng định `not.toContain("@*")` và dựng đúng chuỗi `sub` của
+một repo cùng tên khác id để khẳng định nó KHÔNG khớp. Nếu một ngày có ai muốn "đơn giản hoá" bằng ký tự đại diện,
+hai ô đó là chỗ nó đỏ. Và quy tắc rút ra đáng mang sang mọi chỗ khác: **ràng theo claim bất biến, đừng ràng theo tên**
+— tên thì trống rồi lấy lại được, id thì không bao giờ dùng lại.
+
+## 6. Việc tiếp
+
+**61d-2b-1 — Trusted Deploy cho Jenkins, Tekton, Drone.** Quyết định đã CHỐT, và lý do mà bàn giao bản trước nêu đã
+không còn đúng: không cần lưu issuer, không cần quyền mới, không cần bootstrap lại. ClusterRoleBinding **mặc định**
+của Kubernetes (`system:service-account-issuer-discovery` gắn cho nhóm `system:serviceaccounts`) cho mọi
+ServiceAccount — kể cả `udp-tooling` — đọc `/openid/v1/jwks` trên API server, nên UDP kiểm token SA bằng khoá của
+**chính cụm của project**, và chính cái khoá đó (không phải chuỗi issuer) là thứ buộc token vào project. Kế hoạch chi
+tiết, gồm cả chín điểm mà ba vòng QA tìm ra, nằm ở `docs/plans/plan61-plan.md`.
+
+Sau đó: **61d-2b-2** (bộ ký trong cụm cho CircleCI + Azure — Azure vẫn chưa nhận CircleCI, đã kiểm lại tại tài liệu
+Microsoft ngày 18/09/2026), 61d-3 (Kyverno), tài liệu và Playwright cuối Plan #61, rồi Plan #62.

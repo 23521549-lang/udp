@@ -197,6 +197,7 @@ function awsScript(
           'aws iam add-client-id-to-open-id-connect-provider --open-id-connect-provider-arn "$PROVIDER_ARN" --client-id sts.amazonaws.com 2>/dev/null || true',
         ]),
     "",
+    ...(ci.kind === "github-actions" ? githubIdLines(ci.repository) : []),
     "# Vai trò chỉ tin đúng chủ thể của CI",
     "cat > /tmp/udp-trust.json <<JSON",
     `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"$PROVIDER_ARN"},"Action":"sts:AssumeRoleWithWebIdentity","Condition":{"StringEquals":{"$ISSUER_HOST:aud":"sts.amazonaws.com"},"StringLike":{"$ISSUER_HOST:sub":${JSON.stringify(subjects)}}}}]}`,
@@ -252,14 +253,66 @@ function awsIssuerHost(ci: CiIdentityConfig): string {
   }
 }
 
-/** Chủ thể JWT được tin — AWS cho `*` trong `StringLike` */
+/**
+ * [Plan #61 61d-2b-0] Hai số id bất biến của repo GitHub, đọc NGAY TRONG script.
+ *
+ * Vì sao cần: từ 15/07/2026 GitHub đưa id của chủ sở hữu và id của repo vào `sub`
+ * (`repo:<owner>@<ownerId>/<name>@<repoId>:ref:…`) cho mọi repo **mới tạo, đổi tên, hay chuyển chủ** — đọc tại
+ * changelog "Immutable subject claims for GitHub Actions OIDC tokens" ngày 23/04/2026. Chủ thể theo TÊN không còn
+ * khớp những repo đó, nên trước đợt này mọi repo GitHub tạo sau mốc đó không đẩy và không ký được ở AWS và Azure.
+ *
+ * Vì sao đọc trong script chứ không để UDP điền: token GitHub của lượt quét repo "chỉ sống trong lượt quét: không
+ * log, không lưu" (`golden-path/repo-source.ts`), nên backend không có credential nào để tự đọc hai số này.
+ *
+ * Vì sao DỪNG khi không đọc được, thay vì lặng lẽ chỉ tạo chủ thể theo tên: một script chạy nửa vời để lại một
+ * danh tính chạy được hôm nay và chết đúng ngày repo bị đổi tên — lỗi không ai gắn được về nguyên nhân.
+ */
+function githubIdLines(repository: string): string[] {
+  return [
+    `# Hai số id bất biến của ${repository} — GitHub đưa chúng vào chủ thể JWT từ 15/07/2026.`,
+    "# Repo riêng tư: export GH_TOKEN=<token đọc repo> trước khi chạy.",
+    `GH_REPO=${repository}`,
+    'GH_JSON=$(curl -fsSL -H "Accept: application/vnd.github+json" ${GH_TOKEN:+-H "Authorization: Bearer $GH_TOKEN"} "https://api.github.com/repos/$GH_REPO") || {',
+    '  echo "Khong doc duoc id cua repo $GH_REPO. Repo rieng tu thi: export GH_TOKEN=<token doc repo> roi chay lai." >&2',
+    "  exit 1",
+    "}",
+    `REPO_ID=$(printf '%s' "$GH_JSON" | jq -r .id)`,
+    `OWNER_ID=$(printf '%s' "$GH_JSON" | jq -r .owner.id)`,
+    'case "$REPO_ID.$OWNER_ID" in',
+    '  *[!0-9.]*|.*|*.) echo "GitHub tra ve id khong phai so: $REPO_ID $OWNER_ID" >&2; exit 1 ;;',
+    "esac",
+    "",
+  ];
+}
+
+/**
+ * Hai chủ thể GitHub của MỘT nhánh, cả hai **khớp đúng**: hình theo tên và hình bất biến ghim hai số id.
+ *
+ * Vì sao không dùng một hình có ký tự đại diện (ví dụ `repo:<owner>@<sao>` rồi tên repo cũng `@<sao>`): dấu sao
+ * của `StringLike` khớp zero hoặc
+ * nhiều ký tự nên nó bỏ luôn hai số id — đúng hai số mà hình bất biến sinh ra để chặn. Lúc đó repo `acme/web` đổi
+ * tên là tên cũ trống, ai tạo được repo trong org đó tạo lại `acme/web`, và token của repo MỚI khớp chủ thể được
+ * tin ⇒ đẩy được image vào đúng repository của project và **ký bằng khoá KMS của project**.
+ *
+ * Vì sao giữ hình theo TÊN lại an toàn: từ 15/07/2026 GitHub áp hình bất biến cho mọi repo mới tạo, đổi tên, hay
+ * chuyển chủ. Nên một `sub` hình tên chỉ có thể đến từ một repo đã tồn tại trước mốc đó và chưa bao giờ đổi tên —
+ * tức đúng repo của project. Repo của kẻ tấn công luôn là repo mới, nên nó phát hình bất biến, mà hình bất biến thì
+ * đã ghim id. Hai hình khớp đúng vừa đóng lỗ đó vừa không làm chết project có repo cũ.
+ */
+function githubSubjects(repository: string, branch: string): string[] {
+  const [owner = "", name = ""] = repository.split("/");
+  return [
+    `repo:${repository}:ref:refs/heads/${branch}`,
+    `repo:${owner}@$OWNER_ID/${name}@$REPO_ID:ref:refs/heads/${branch}`,
+  ];
+}
+
+/** Chủ thể JWT được tin — AWS cho `*` trong `StringLike`, nhưng GitHub thì ghim id, xem `githubSubjects` */
 function awsSubjects(input: IdentityScriptInput): string[] {
   const ci = input.ci;
   switch (ci.kind) {
     case "github-actions":
-      return input.branches.map(
-        (b) => `repo:${ci.repository}:ref:refs/heads/${b}`,
-      );
+      return input.branches.flatMap((b) => githubSubjects(ci.repository, b));
     case "gitlab-ci":
       return input.branches.map(
         (b) => `project_path:${ci.projectPath}:ref_type:branch:ref:${b}`,
@@ -336,6 +389,7 @@ function gcpScript(input: IdentityScriptInput, ownRegistry: boolean): string[] {
       : []),
     'PROJECT_NUMBER=$(gcloud projects describe "$PROJECT" --format="value(projectNumber)")',
     "",
+    ...(ci.kind === "github-actions" ? githubIdLines(ci.repository) : []),
     "# Pool Workload Identity RIÊNG của project này",
     'gcloud iam workload-identity-pools describe "$POOL" --project "$PROJECT" --location global >/dev/null 2>&1 ||',
     `  gcloud iam workload-identity-pools create "$POOL" --project "$PROJECT" --location global --display-name "UDP build ${input.slug}"`,
@@ -361,7 +415,27 @@ function gcpScript(input: IdentityScriptInput, ownRegistry: boolean): string[] {
           'gcloud artifacts repositories add-iam-policy-binding "$REPOSITORY" --project "$PROJECT" --location "$LOCATION" --member "serviceAccount:$SA" --role roles/artifactregistry.writer >/dev/null',
         ]
       : []),
-    'gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" --role roles/iam.workloadIdentityUser --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/*" >/dev/null',
+    "",
+    // [Plan #61 61d-2b-0] Trước đợt này member là `…/workloadIdentityPools/$POOL/*` — CẢ POOL, nên MỌI provider
+    // từng tạo trong pool mạo danh được service account này. Provider đặt tên theo loại CI, nên một project đổi từ
+    // GitHub sang Jenkins-trong-cụm vẫn để provider GitHub cũ đẩy và ký được. Thu hẹp xuống đúng một chủ thể.
+    //
+    // `principalSet` của GCP chỉ có ba hình — `attribute.<tên>/<giá trị>`, `subject/<chủ thể>`, và `/*` cho cả pool
+    // (tài liệu Principal identifiers) — nên hình đúng ở đây là theo ATTRIBUTE, không có hình theo provider.
+    "# Chỉ ĐÚNG một chủ thể được mạo danh service account",
+    `WANT="${gcpPrincipal(ci)}"`,
+    'POOL_PATH="/locations/global/workloadIdentityPools/$POOL/"',
+    "# Xoá member cũ của CHÍNH pool này (kể cả member cả-pool của script trước đợt 61d-2b-0); không chạm gì khác",
+    'MEMBERS=$(gcloud iam service-accounts get-iam-policy "$SA" --project "$PROJECT" --format=json |',
+    "  jq -r '.bindings[]? | select(.role==\"roles/iam.workloadIdentityUser\") | .members[]?')",
+    "for m in $MEMBERS; do",
+    '  case "$m" in',
+    '    "$WANT") ;;',
+    '    principal://*"$POOL_PATH"*|principalSet://*"$POOL_PATH"*)',
+    '      gcloud iam service-accounts remove-iam-policy-binding "$SA" --project "$PROJECT" --role roles/iam.workloadIdentityUser --member "$m" >/dev/null ;;',
+    "  esac",
+    "done",
+    'gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT" --role roles/iam.workloadIdentityUser --member "$WANT" >/dev/null',
     ...(input.cloud.region === null
       ? []
       : [
@@ -383,6 +457,31 @@ function gcpScript(input: IdentityScriptInput, ownRegistry: boolean): string[] {
         : "gcpkms://projects/$PROJECT/locations/$REGION/keyRings/udp/cryptoKeys/$KEY/versions/1",
     ),
   ];
+}
+
+/**
+ * Chủ thể được phép mạo danh service account của project — HẸP, không phải cả pool.
+ *
+ * Mỗi loại CI ràng theo attribute bất biến của chính nó, nên một provider cũ còn sót trong pool cũng không khớp
+ * (token của nó không mang attribute đang được ràng).
+ *
+ * Tiền tố là một phần của giá trị, không phải chi tiết nhỏ: tài liệu "Principal identifiers" của GCP cho `subject/`
+ * đi với **`principal://`** (một danh tính duy nhất) còn `attribute.<tên>/<giá trị>` đi với **`principalSet://`**
+ * (một TẬP). Dùng lẫn thì IAM từ chối member, và một project CI-trong-cụm sẽ không đẩy được.
+ */
+function gcpPrincipal(ci: CiIdentityConfig): string {
+  const pool =
+    "iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL";
+  switch (ci.kind) {
+    case "github-actions":
+      return `principalSet://${pool}/attribute.repository_id/$REPO_ID`;
+    case "gitlab-ci":
+      return `principalSet://${pool}/attribute.project_path/${ci.projectPath}`;
+    case "circleci":
+      return `principalSet://${pool}/attribute.project_id/${ci.projectId ?? ""}`;
+    case "in-cluster":
+      return `principal://${pool}/subject/${inClusterSubject()}`;
+  }
 }
 
 function gcpProviderId(
@@ -411,7 +510,9 @@ function gcpIssuer(ci: CiIdentityConfig): string {
 function gcpMapping(ci: CiIdentityConfig): string {
   switch (ci.kind) {
     case "github-actions":
-      return "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref";
+      // [Plan #61 61d-2b-0] `repository_id` và `repository_owner_id` là hai claim BẤT BIẾN: tên repo đổi được và
+      // tên trống thì ai cũng tạo lại được, id thì không bao giờ dùng lại
+      return "google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.ref=assertion.ref";
     case "gitlab-ci":
       return "google.subject=assertion.sub,attribute.project_path=assertion.project_path,attribute.ref=assertion.ref";
     case "circleci":
@@ -428,7 +529,10 @@ function gcpCondition(input: IdentityScriptInput): string {
     `[${input.branches.map((b) => `'${prefix}${b}'`).join(", ")}]`;
   switch (ci.kind) {
     case "github-actions":
-      return `assertion.repository=='${ci.repository}' && assertion.ref in ${refs("refs/heads/")}`;
+      return (
+        "assertion.repository_id=='$REPO_ID' && assertion.repository_owner_id=='$OWNER_ID' && assertion.ref in " +
+        refs("refs/heads/")
+      );
     case "gitlab-ci":
       return `assertion.project_path=='${ci.projectPath}' && assertion.ref_type=='branch' && assertion.ref in ${refs("")}`;
     case "circleci":
@@ -439,6 +543,51 @@ function gcpCondition(input: IdentityScriptInput): string {
 }
 
 // ------------------------------------------------------------------------------------------ Azure
+
+/** Trần federated identity credential của một managed identity (tài liệu Microsoft, 18/09/2026) */
+const AZURE_FIC_LIMIT = 20;
+
+/**
+ * Các lời gọi `federate` của Azure, và một cổng cho trần 20.
+ *
+ * GitHub tốn HAI credential mỗi nhánh (hình tên + hình bất biến), nên trần 20 thành 10 nhánh. Vượt trần thì script
+ * dừng NGAY ở dòng đầu với câu nói rõ, chứ không chạy tới credential thứ 21 rồi để `az` trả lỗi hạn mức giữa đường —
+ * lúc đó danh tính đã nửa vời và không ai biết thiếu nhánh nào.
+ */
+function azureFederateLines(
+  input: IdentityScriptInput,
+  ci: CiIdentityConfig,
+): string[] {
+  if (ci.kind === "in-cluster") {
+    return input.cluster === null
+      ? []
+      : [
+          `ISSUER=$(az aks show --ids "${input.cluster.providerId}" --query oidcIssuerProfile.issuerUrl --output tsv)`,
+          `federate udp-builder "$ISSUER" "${inClusterSubject()}"`,
+        ];
+  }
+  const calls =
+    ci.kind === "github-actions"
+      ? input.branches.flatMap((b) =>
+          githubSubjects(ci.repository, b).map(
+            (subject, i) =>
+              `federate github-${i === 0 ? "" : "imm-"}${b} ${GITHUB_ISSUER} "${subject}"`,
+          ),
+        )
+      : ci.kind === "gitlab-ci"
+        ? input.branches.map(
+            (b) =>
+              `federate gitlab-${b} ${ci.gitlabUrl} "project_path:${ci.projectPath}:ref_type:branch:ref:${b}"`,
+          )
+        : [];
+  return calls.length > AZURE_FIC_LIMIT
+    ? [
+        `echo "Project co ${String(input.branches.length)} nhanh, can ${String(calls.length)} federated credential nhung Azure chi cho ${String(AZURE_FIC_LIMIT)} moi identity." >&2`,
+        'echo "Bot so environment khong phai production, roi sinh lai script." >&2',
+        "exit 1",
+      ]
+    : calls;
+}
 
 function azureScript(
   input: IdentityScriptInput,
@@ -479,23 +628,33 @@ function azureScript(
     'PRINCIPAL_ID=$(az identity show --resource-group "$GROUP" --name "$NAME" --query principalId --output tsv)',
     'TENANT_ID=$(az identity show --resource-group "$GROUP" --name "$NAME" --query tenantId --output tsv)',
     "",
+    ...(ci.kind === "github-actions" ? githubIdLines(ci.repository) : []),
+    // [Plan #61 61d-2b-0] Azure chỉ nhận chủ thể KHỚP ĐÚNG (bản "flexible" có ký tự đại diện chưa nhận CircleCI và
+    // chưa dùng được qua `az` — đọc tại tài liệu Microsoft 18/09/2026), nên mỗi nhánh một credential, và GitHub là
+    // HAI (hình tên + hình bất biến, xem `githubSubjects`). Trần của Azure là 20 credential mỗi identity.
     "# Federated credential: Azure chỉ nhận chủ thể KHỚP ĐÚNG — mỗi nhánh một credential",
+    // `update` chứ không chỉ `create`: header của script này khai "chạy lại đưa quyền về đúng mô tả", và AWS làm
+    // đúng thế bằng `update-assume-role-policy`. Chỉ `show || create` thì một chủ thể đã đổi được tin mãi mãi.
     "federate() {",
-    '  az identity federated-credential show --resource-group "$GROUP" --identity-name "$NAME" --name "$1" >/dev/null 2>&1 ||',
+    '  if az identity federated-credential show --resource-group "$GROUP" --identity-name "$NAME" --name "$1" >/dev/null 2>&1; then',
+    `    az identity federated-credential update --resource-group "$GROUP" --identity-name "$NAME" --name "$1" --issuer "$2" --subject "$3" --audiences ${audience} >/dev/null`,
+    "  else",
     `    az identity federated-credential create --resource-group "$GROUP" --identity-name "$NAME" --name "$1" --issuer "$2" --subject "$3" --audiences ${audience} >/dev/null`,
+    "  fi",
+    '  FIC_WANT="$FIC_WANT $1"',
     "}",
-    ...(ci.kind === "in-cluster" && input.cluster !== null
-      ? [
-          `ISSUER=$(az aks show --ids "${input.cluster.providerId}" --query oidcIssuerProfile.issuerUrl --output tsv)`,
-          `federate udp-builder "$ISSUER" "${inClusterSubject()}"`,
-        ]
-      : input.branches.map((b) =>
-          ci.kind === "github-actions"
-            ? `federate github-${b} ${GITHUB_ISSUER} "repo:${ci.repository}:ref:refs/heads/${b}"`
-            : ci.kind === "gitlab-ci"
-              ? `federate gitlab-${b} ${ci.gitlabUrl} "project_path:${ci.projectPath}:ref_type:branch:ref:${b}"`
-              : "",
-        )),
+    'FIC_WANT=""',
+    ...azureFederateLines(input, ci),
+    "",
+    // Chủ thể của một environment đã xoá không được tin tiếp. Chỉ xoá credential mang đúng tên UDP sinh ra.
+    "# Dọn credential của nhánh không còn: UDP chỉ xoá tên do chính nó đặt",
+    'for n in $(az identity federated-credential list --resource-group "$GROUP" --identity-name "$NAME" --query "[].name" --output tsv); do',
+    '  case " $FIC_WANT " in *" $n "*) continue ;; esac',
+    '  case "$n" in',
+    "    github-*|gitlab-*|udp-builder)",
+    '      az identity federated-credential delete --resource-group "$GROUP" --identity-name "$NAME" --name "$n" --yes >/dev/null ;;',
+    "  esac",
+    "done",
     ...(registry === null
       ? []
       : [

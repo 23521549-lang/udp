@@ -246,6 +246,138 @@ describe("script danh tính build và khoá ký", () => {
     }
   });
 
+  /**
+   * [Plan #61 61d-2b-0] Chủ thể bất biến của GitHub Actions.
+   *
+   * Vì sao cả họ test này tồn tại: GitHub đổi hình `sub` từ 15/07/2026 sang
+   * `repo:<owner>@<ownerId>/<name>@<repoId>:ref:…` cho mọi repo mới tạo, đổi tên hay chuyển chủ. Chủ thể theo TÊN
+   * không khớp những repo đó nữa — mà đó là lỗi KHÔNG ô test nào trước đây bắt được, vì bộ test chỉ so chuỗi tên.
+   *
+   * Và nó chốt luôn chiều ngược lại, chiều nguy hiểm hơn: **không được** sửa bằng một hình có ký tự đại diện.
+   */
+  describe("chủ thể bất biến của GitHub (61d-2b-0)", () => {
+    const githubSubjectsIn = (text: string): string[] =>
+      [...text.matchAll(/repo:[^"']+:ref:refs\/heads\/[a-z]+/g)].map(
+        (m) => m[0],
+      );
+
+    it("AWS: mỗi nhánh đúng HAI chủ thể, cả hai khớp đúng, không một ký tự đại diện nào", () => {
+      const text = scriptOf(input("aws"));
+      expect(githubSubjectsIn(text).sort()).toEqual(
+        [
+          "repo:acme@$OWNER_ID/web@$REPO_ID:ref:refs/heads/dev",
+          "repo:acme@$OWNER_ID/web@$REPO_ID:ref:refs/heads/main",
+          "repo:acme/web:ref:refs/heads/dev",
+          "repo:acme/web:ref:refs/heads/main",
+        ].sort(),
+      );
+      // Lỗ đã bị chặn: `@*` bỏ luôn hai số id, tức bỏ đúng thứ hình bất biến sinh ra để chặn
+      expect(text).not.toContain("@*");
+      expect(text).not.toContain("acme*");
+    });
+
+    it("một repo CÙNG TÊN nhưng khác id không khớp chủ thể nào script sinh ra", () => {
+      // Thay hai biến shell bằng id thật của project, rồi so như IAM so: các chuỗi này không có ký tự đại
+      // diện nào nên `StringLike` thành phép so BẰNG
+      const resolved = githubSubjectsIn(scriptOf(input("aws"))).map((sub) =>
+        sub.replace("$OWNER_ID", "65").replace("$REPO_ID", "74"),
+      );
+
+      // Chủ thể của chính project thì khớp
+      expect(resolved).toContain("repo:acme@65/web@74:ref:refs/heads/main");
+      // Repo của kẻ tấn công: cùng tên `acme/web` (tên cũ đã trống sau một lượt đổi tên), id khác
+      expect(resolved).not.toContain(
+        "repo:acme@65/web@888:ref:refs/heads/main",
+      );
+      expect(resolved).not.toContain(
+        "repo:acme@999/web@888:ref:refs/heads/main",
+      );
+    });
+
+    it("ba cloud đều đọc hai số id, và nói đúng việc cần làm khi repo riêng tư", () => {
+      for (const cloud of ["aws", "gcp", "azure"] as const) {
+        const text = scriptOf(input(cloud));
+        expect(text).toContain("https://api.github.com/repos/$GH_REPO");
+        expect(text).toContain("GH_TOKEN");
+        // Dừng hẳn, không lặng lẽ chỉ tạo chủ thể theo tên
+        expect(text).toMatch(/Khong doc duoc id cua repo[\s\S]*exit 1/);
+      }
+    });
+
+    it("CI không phải GitHub thì không gọi GitHub API", () => {
+      for (const ciName of ["gitlab", "jenkins"] as const) {
+        const text = scriptOf(
+          input("aws", { ci: CIS[ciName] as CiIdentityConfig }),
+        );
+        expect(text).not.toContain("api.github.com");
+        expect(text).not.toContain("GH_TOKEN");
+      }
+    });
+
+    it("GCP ràng theo claim BẤT BIẾN, không theo tên repo", () => {
+      const text = scriptOf(input("gcp"));
+      expect(text).toContain(
+        "assertion.repository_id=='$REPO_ID' && assertion.repository_owner_id=='$OWNER_ID'",
+      );
+      expect(text).toContain("attribute.repository_id=assertion.repository_id");
+      // Tên repo không còn là thứ quyết định lòng tin
+      expect(text).not.toContain("assertion.repository==");
+    });
+  });
+
+  /**
+   * [Plan #61 61d-2b-0] Hai lỗ cùng họ "UDP tin nhiều hơn cần", tìm thấy trong vòng QA của plan 61d-2b.
+   */
+  describe("hội tụ và phạm vi của chủ thể tin cậy (61d-2b-0)", () => {
+    it("Azure: federated credential HỘI TỤ, và credential của nhánh đã xoá bị dọn", () => {
+      const text = scriptOf(input("azure"));
+      // Trước đợt này chỉ có `show || create`: một chủ thể đã đổi thì được tin mãi
+      expect(text).toContain("az identity federated-credential update");
+      expect(text).toContain("az identity federated-credential delete");
+      expect(text).toContain("--yes");
+      // Chỉ dọn tên do chính UDP đặt
+      expect(text).toContain("github-*|gitlab-*|udp-builder");
+    });
+
+    it("Azure: vượt trần 20 credential ⇒ script dừng ngay, không tạo nửa vời", () => {
+      const many = Array.from({ length: 11 }, (_, i) => `env${String(i)}`);
+      const text = scriptOf(input("azure", { branches: ["main", ...many] }));
+      expect(text).toMatch(/Azure chi cho 20 moi identity[\s\S]*exit 1/);
+      expect(text).not.toContain("federate github-main");
+      expect(bashN(text)).toBe("");
+    });
+
+    it("GCP: service account chỉ cho MỘT chủ thể mạo danh, không cho cả pool", () => {
+      const text = scriptOf(input("gcp"));
+      expect(text).toContain(
+        'WANT="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/attribute.repository_id/$REPO_ID"',
+      );
+      // Member cũ là cả pool ⇒ mọi provider từng tạo đều mạo danh được
+      expect(text).not.toContain("workloadIdentityPools/$POOL/*");
+      // Và phải DỌN member cũ, nếu không lượt chạy lại chỉ thêm chứ không thu hẹp
+      expect(text).toContain("remove-iam-policy-binding");
+      expect(text).toContain('principal://*"$POOL_PATH"*');
+    });
+
+    it("GCP: mỗi loại CI một chủ thể hẹp của chính nó", () => {
+      // Tiền tố là một phần của phép khẳng định: `subject/` phải đi với `principal://`, attribute với
+      // `principalSet://` — dùng lẫn thì IAM từ chối member (tài liệu Principal identifiers của GCP)
+      const pool =
+        "iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL";
+      const want: Record<string, string> = {
+        gitlab: `principalSet://${pool}/attribute.project_path/acme/platform/web`,
+        circleci: `principalSet://${pool}/attribute.project_id/66666666-7777-8888-9999-000000000000`,
+        jenkins: `principal://${pool}/subject/system:serviceaccount:udp-build:udp-builder`,
+      };
+      for (const [ciName, member] of Object.entries(want)) {
+        const text = scriptOf(
+          input("gcp", { ci: CIS[ciName] as CiIdentityConfig }),
+        );
+        expect(text).toContain(`WANT="${member}"`);
+      }
+    });
+  });
+
   it("thiếu điều kiện ⇒ mã việc cần làm, không có script", () => {
     expect(
       identityScript(

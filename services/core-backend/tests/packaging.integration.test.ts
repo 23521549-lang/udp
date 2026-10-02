@@ -203,8 +203,12 @@ describe("GET /projects/:id/build", () => {
       cloud: "aws",
     });
     expect(before.identityScript?.cloud).toBe("aws");
+    // [Plan #61 61d-2b-0] Cả hai hình chủ thể: hình tên (repo có trước 15/07/2026) và hình bất biến ghim id
     expect(before.identityScript?.text).toContain(
       "repo:acme/web:ref:refs/heads/main",
+    );
+    expect(before.identityScript?.text).toContain(
+      "repo:acme@$OWNER_ID/web@$REPO_ID:ref:refs/heads/main",
     );
     expect(before.todo).toContainEqual({
       code: "BUILD_IDENTITY",

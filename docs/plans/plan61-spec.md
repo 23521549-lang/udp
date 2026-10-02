@@ -41,6 +41,21 @@ nên chỉ issuer nhận diện được project — tức phải học và lưu
 cụm cho CircleCI + Azure cùng Trusted Deploy cho ba CI trong cụm, và quyết lối nào ở đó. Tới hết 61d-2a, AC-11 đạt cho
 ba CI SaaS; ba CI trong cụm giữ HMAC và Portal nói rõ "chưa khả dụng" kèm lý do.
 
+**[03/10/2026] 61d-2b chia ba: 61d-2b-0, 61d-2b-1, 61d-2b-2.** Quyết sau vòng kiểm dữ kiện ngoài của kế hoạch
+61d-2b, vì ba lý do đều là dữ kiện mới, không phải ước lượng lại. (1) Lượt kiểm phát hiện **một lỗi đang sống**: `sub`
+của GitHub Actions đã đổi sang hình bất biến `repo:<owner>@<id>/<name>@<id>:ref:…` và **đã áp tự động từ 15/07/2026**
+cho repo mới tạo, đổi tên hay chuyển chủ, mà script danh tính của UDP so theo hình cũ ở AWS và Azure ⇒ những repo đó
+không đẩy và không ký được; vòng QA tìm thêm ba lỗ cùng họ trong chính tệp đó. Sửa lỗi đi trước tính năng, nên nó
+thành **61d-2b-0**. (2) Lý do chặn cứng mà QĐ-1 nêu cho lối JWKS-của-cụm đã **không còn đúng**: ClusterRoleBinding
+MẶC ĐỊNH của Kubernetes (`system:service-account-issuer-discovery` gắn cho nhóm `system:serviceaccounts`) cho mọi
+ServiceAccount — kể cả `udp-tooling` — đọc `/openid/v1/jwks` trên API server, nên UDP kiểm được token SA mà **không**
+thêm quyền nào, **không** bootstrap lại cụm, và **không** phải lưu issuer: nó buộc token vào project bằng KHOÁ của
+cụm chứ không bằng chuỗi issuer. Đó là **61d-2b-1**. (3) Bộ ký trong cụm vẫn là lối duy nhất cho CircleCI + Azure
+(tài liệu Microsoft 18/09/2026: FIC linh hoạt chỉ nhận GitHub, GitLab, Terraform Cloud), và nó là việc duy nhất trong
+ba việc phải **GHI** vào cụm khách ⇒ **61d-2b-2**, với một điều phải công bố ngay từ spec: chữ ký do UDP đặt sau cổng
+deploy **không** chứng minh nguồn gốc build, nó chỉ chứng minh "UDP đã cho phép byte này", và giá trị thật của nó là
+để Kyverno (61d-3) có chữ ký mà kiểm lúc admission.
+
 **QĐ-2 — Ranh giới giao diện (E1).** `PipelineTemplateParams` thêm `build: BuildPlan` — một MỞ RỘNG BỐI CẢNH như
 `environments` của D-P29, không đổi tên hay thêm phương thức của `CicdDomainAdapter`; `languageRuntime` giữ (tương
 thích) nhưng bước test đọc `build.test`. Registry khai cách đẩy bằng THUỘC TÍNH của binding `registry.oci`

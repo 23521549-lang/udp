@@ -294,9 +294,11 @@ function demoScript(
   ci: string,
   signing: { kms: string; publicKey: string } | null,
 ): string {
+  // [Plan #61 61d-2b-0] Hình bất biến của GitHub: script thật tin CẢ HAI hình, nhưng bản xem thử chỉ in một
+  // chuỗi minh hoạ, nên in hình mới — hình mà mọi repo tạo sau 15/07/2026 phát ra
   const subject = IN_CLUSTER.has(ci)
     ? "system:serviceaccount:udp-build:udp-builder"
-    : `repo:acme/${slug}:ref:refs/heads/main`;
+    : `repo:acme@1234/${slug}@5678:ref:refs/heads/main`;
   const lines: Record<Cloud, string[]> = {
     aws: [
       `ROLE=udp-build-${slug}`,

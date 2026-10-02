@@ -309,6 +309,9 @@ function IdentitySection({
           copyLabel={m.scriptCopy}
         />
       )}
+      {view.identityScript !== null && view.ci === "github-actions" && (
+        <p className="c3">{m.scriptRerun}</p>
+      )}
       {canEdit && view.identityScript !== null && (
         <form className="packaging-form" onSubmit={submit}>
           <Field label={m.paste} hint={m.pasteHint} error={error}>
