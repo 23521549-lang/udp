@@ -3,12 +3,12 @@
   "status": 201,
   "body": {
     "member": {
-      "userId": "bbac18c9-ea8e-4e57-abae-ad17de0f5fad",
+      "userId": "fd76cd62-8147-4381-8797-d721945fcc29",
       "projectRole": "MAINTAINER",
-      "createdAt": "2026-09-24T19:34:55.900Z",
+      "createdAt": "2026-10-01T20:03:37.438Z",
       "user": {
-        "id": "bbac18c9-ea8e-4e57-abae-ad17de0f5fad",
-        "email": "res-maint-413be535-ae1b-4b36-9ea6-7a811bf49459@udp.local",
+        "id": "fd76cd62-8147-4381-8797-d721945fcc29",
+        "email": "cicd-maintainer-6b284ec5-db74-44c9-87d6-6b2dcd93ad0f@udp.local",
         "name": "Test User"
       }
     }

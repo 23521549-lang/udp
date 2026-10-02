@@ -27,6 +27,7 @@ import {
 } from "../../adapter-base/pipeline-template.js";
 import { dockerHostBuildLines } from "../../adapter-base/packaging/build-script.js";
 import { dockerHostRebaseLines } from "../../adapter-base/packaging/rebase-script.js";
+import { dockerHostSignLines } from "../../adapter-base/packaging/sign-script.js";
 
 /**
  * Adapter CircleCI (§5.5 CI/CD, Plan #36) — lớp nền mô tả + lớp bọc CI/CD.
@@ -104,6 +105,38 @@ const stepRuns = (steps: readonly PipelineStep[]): string[] =>
     `            ${dockerRunLine(step)}`,
   ]);
 
+/** [Plan #61 QĐ-14] Ký image có digest ở `digest` (biểu thức shell); ra `UDP_SIGNATURE_B64` */
+const signLinesOf = (
+  params: PipelineTemplateParams,
+  vars: { digest: string; commit: string; ref: string; run: string },
+): string[] =>
+  dockerHostSignLines(params.build, "circleci", {
+    image: "%IMAGE%",
+    project: "%PROJECT%",
+    tmp: "/tmp/udp-sign",
+    ...vars,
+  });
+
+/** Bước "Ký image": sau bước sau build (chỉ image đã qua quét mới được ký), trước bước báo UDP */
+const signStep = (params: PipelineTemplateParams): string[] =>
+  params.build.signing === null
+    ? []
+    : [
+        "      - run:",
+        "          name: Ký image",
+        "          command: |",
+        ...[
+          'UDP_DIGEST="${IMAGE_REF##*@}"',
+          ...signLinesOf(params, {
+            digest: "$UDP_DIGEST",
+            commit: "$CIRCLE_SHA1",
+            ref: "$CIRCLE_BRANCH",
+            run: "$CIRCLE_WORKFLOW_ID",
+          }),
+          'echo "export UDP_SIGNATURE_B64=$UDP_SIGNATURE_B64" >> "$BASH_ENV"',
+        ].map((line) => `            ${line}`),
+      ];
+
 /**
  * Executor `machine`: Docker chạy ngay trên máy của job. Với `docker` + `setup_remote_docker` thì
  * engine ở máy khác và `docker run -v` không thấy thư mục làm việc — bước của domain khác hỏng.
@@ -129,6 +162,18 @@ const rebaseJob = (params: PipelineTemplateParams): string[] => [
       commit: "$CIRCLE_SHA1",
       tmp: "/tmp/udp-rebase",
     }),
+    // Digest mới của lượt rebase cũng phải được ký — image chưa ký không qua cổng deploy
+    ...(params.build.signing === null
+      ? []
+      : [
+          'UDP_DIGEST="${UDP_IMAGE_REF##*@}"',
+          ...signLinesOf(params, {
+            digest: "$UDP_DIGEST",
+            commit: "$CIRCLE_SHA1",
+            ref: "main",
+            run: "$PIPELINE_ID",
+          }),
+        ]),
     ...rebaseNotifyVars("$CIRCLE_BRANCH"),
     ...notifyScript('-H "circleci-signature: v1=$SIG"'),
   ].map((line) => `            ${line}`),
@@ -175,6 +220,7 @@ const config = (params: PipelineTemplateParams): string[] => {
       'echo "export IMAGE_REF=$UDP_IMAGE_REF" >> "$BASH_ENV"',
     ].map((line) => `            ${line}`),
     ...stepRuns(stepsOf(params, "after-build")),
+    ...signStep(params),
     ...notifyStep("success", "on_success"),
     ...notifyStep("failure", "on_fail"),
     ...(schedule === null ? [] : rebaseJob(params)),

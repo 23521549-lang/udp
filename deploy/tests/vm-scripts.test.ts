@@ -61,10 +61,12 @@ describe("phiên bản ghim (versions.env)", () => {
     expect(versions["K3S_VERSION"]).toMatch(/^v\d+\.\d+\.\d+\+k3s\d+$/);
     expect(versions["CERT_MANAGER_VERSION"]).toMatch(/^v\d+\.\d+\.\d+$/);
     expect(versions["NODE_VERSION"]).toMatch(/^v22\.\d+\.\d+$/);
-    const [, minor] =
-      /^v22\.(\d+)\./.exec(versions["NODE_VERSION"] ?? "") ?? [];
-    // engines: node >= 22.12.0 (pg-boss 12)
-    expect(Number(minor)).toBeGreaterThanOrEqual(12);
+    const [minor = 0, patch = 0] = (versions["NODE_VERSION"] ?? "")
+      .slice("v22.".length)
+      .split(".")
+      .map(Number);
+    // engines: node >= 22.22.2 (@sigstore/verify 4 — Service 1 kiểm chữ ký image, Plan #61)
+    expect(minor > 22 || (minor === 22 && patch >= 2)).toBe(true);
   });
 
   it("bootstrap.sh đọc CHÍNH tệp đó và dùng cả ba — không phiên bản nào viết cứng ở chỗ khác", () => {

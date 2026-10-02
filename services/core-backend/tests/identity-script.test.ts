@@ -5,17 +5,18 @@ import {
   identityScript,
   type CiIdentityConfig,
   type ClusterRef,
+  type IdentityScriptInput,
 } from "../src/modules/packaging/identity-script.js";
 
 /**
- * [Plan #61 QĐ-6] Script danh tính build: cú pháp bash đúng ở MỌI ô (cloud × CI), chỉ tin đúng chủ thể của project, chỉ
- * được đẩy vào đúng repository, không tạo khoá nào. Chạy thật trên ba cloud là sổ nợ `cicd-webhook-real`.
+ * [Plan #61 QĐ-6, QĐ-14] Script danh tính build: cú pháp bash đúng ở MỌI ô (cloud × CI × registry), chỉ tin đúng chủ
+ * thể của project, chỉ được đẩy vào đúng repository, tạo khoá ký trong KMS của cloud của project (bất kể registry) và
+ * chỉ cấp quyền ký trên đúng khoá đó, không tạo khoá dài hạn nào. Chạy thật trên ba cloud là sổ nợ `packaging-real`.
  */
 
-const REGISTRIES: Record<
-  "aws" | "gcp" | "azure",
-  { push: RegistryPush; endpoint: string }
-> = {
+type Cloud = "aws" | "gcp" | "azure";
+
+const REGISTRIES: Record<Cloud, { push: RegistryPush; endpoint: string }> = {
   aws: {
     push: {
       kind: "aws-ecr",
@@ -38,6 +39,18 @@ const REGISTRIES: Record<
   },
 };
 
+/** Registry không thuộc cloud nào — project vẫn ký bằng KMS ở cloud của nó */
+const GHCR = {
+  push: { kind: "github-token", server: "ghcr.io" } as RegistryPush,
+  endpoint: "ghcr.io/acme",
+};
+
+const REGIONS: Record<Cloud, string> = {
+  aws: "ap-southeast-1",
+  gcp: "asia-southeast1",
+  azure: "southeastasia",
+};
+
 const CIS: Record<string, CiIdentityConfig> = {
   github: { kind: "github-actions", repository: "acme/web" },
   gitlab: {
@@ -53,7 +66,7 @@ const CIS: Record<string, CiIdentityConfig> = {
   jenkins: { kind: "in-cluster", tool: "jenkins" },
 };
 
-const CLUSTERS: Record<"aws" | "gcp" | "azure", ClusterRef> = {
+const CLUSTERS: Record<Cloud, ClusterRef> = {
   aws: {
     provider: "aws",
     providerId: "udp-web-a1b2",
@@ -72,127 +85,190 @@ const CLUSTERS: Record<"aws" | "gcp" | "azure", ClusterRef> = {
   },
 };
 
+const input = (
+  cloud: Cloud,
+  over: Partial<IdentityScriptInput> = {},
+): IdentityScriptInput => ({
+  slug: "web",
+  cloud: { provider: cloud, region: REGIONS[cloud] },
+  push: REGISTRIES[cloud].push,
+  registryEndpoint: REGISTRIES[cloud].endpoint,
+  ci: CIS.github as CiIdentityConfig,
+  branches: ["main", "dev"],
+  cluster: CLUSTERS[cloud],
+  ...over,
+});
+
+const scriptOf = (i: IdentityScriptInput): string => {
+  const result = identityScript(i);
+  if (!result.ok) throw new Error(`không sinh được script: ${result.problem}`);
+  return result.text;
+};
+
 const bashN = (text: string): string => {
   const r = spawnSync("bash", ["-n"], { input: text, encoding: "utf8" });
   return r.status === 0 ? "" : r.stderr;
 };
 
-describe("script danh tính build", () => {
+/** Lệnh tạo khoá ký và cấp quyền ký ĐÚNG khoá, theo cloud */
+const SIGNING: Record<Cloud, readonly string[]> = {
+  aws: [
+    "--key-spec ECC_NIST_P256 --key-usage SIGN_VERIFY",
+    '"Action":["kms:Sign","kms:GetPublicKey","kms:DescribeKey"],"Resource":"$KEY_ARN"',
+    '--arg key "awskms:///$KEY_ARN"',
+  ],
+  gcp: [
+    "--purpose asymmetric-signing --default-algorithm ec-sign-p256-sha256",
+    '--member "serviceAccount:$SA" --role roles/cloudkms.signerVerifier',
+    "/cryptoKeys/$KEY/versions/1",
+  ],
+  azure: [
+    "--kty EC --curve P-256 --ops sign verify",
+    '--role "Key Vault Crypto User" --scope "$KEY_SCOPE"',
+    "--enable-rbac-authorization true",
+  ],
+};
+
+describe("script danh tính build và khoá ký", () => {
   for (const cloud of ["aws", "gcp", "azure"] as const) {
     for (const [ciName, ci] of Object.entries(CIS)) {
-      it(`${cloud} · ${ciName}: bash -n, chủ thể đúng, đúng repository, không khoá`, () => {
-        const result = identityScript({
-          slug: "web",
-          push: REGISTRIES[cloud].push,
-          registryEndpoint: REGISTRIES[cloud].endpoint,
-          ci,
-          branches: ["main", "dev"],
-          cluster: CLUSTERS[cloud],
+      for (const registry of ["cloud", "ghcr"] as const) {
+        const name = `${cloud} · ${ciName} · registry ${registry}`;
+        it(`${name}: bash -n, chủ thể đúng, khoá ký đúng cloud, không khoá dài hạn`, () => {
+          const result = identityScript(
+            input(cloud, {
+              ci,
+              ...(registry === "ghcr"
+                ? { push: GHCR.push, registryEndpoint: GHCR.endpoint }
+                : {}),
+            }),
+          );
+          if (cloud === "azure" && ciName === "circleci") {
+            // Chủ thể JWT của CircleCI mang id người chạy: Azure không federation được ⇒ ký trong cụm (Plan #61 QĐ-17)
+            expect(result).toEqual({ ok: false, problem: "CIRCLECI_AZURE" });
+            return;
+          }
+          expect(result.ok).toBe(true);
+          if (!result.ok) return;
+          expect(result.cloud).toBe(cloud);
+          const text = result.text;
+          expect(bashN(text)).toBe("");
+          expect(text).toContain("set -euo pipefail");
+          expect(text).toMatch(
+            /printf "UDP_BUILD_IDENTITY=%s\\n" "\$\(jq -nc .*--rawfile pub \/tmp\/udp-sign\.pem/,
+          );
+          expect(text).toContain("signing:{key:$key,publicKey:$pub}");
+          for (const needle of SIGNING[cloud]) expect(text).toContain(needle);
+          // Không khoá dài hạn nào: không access key, không khoá service account, không secret của app
+          expect(text).not.toMatch(
+            /create-access-key|service-accounts keys create|credential reset|--create-cert/,
+          );
+          const subject =
+            ciName === "github"
+              ? "acme/web"
+              : ciName === "gitlab"
+                ? "acme/platform/web"
+                : ciName === "circleci"
+                  ? "66666666-7777-8888-9999-000000000000"
+                  : "system:serviceaccount:udp-build:udp-builder";
+          expect(text).toContain(subject);
+          if (ciName === "github" || ciName === "gitlab") {
+            expect(text).toContain("dev");
+            expect(text).not.toContain("refs/heads/*");
+          }
+          // Quyền đẩy registry chỉ khi registry là của chính cloud này
+          const pushGrant = {
+            aws: "udp-build-push",
+            gcp: "roles/artifactregistry.writer",
+            azure: "--role AcrPush",
+          }[cloud];
+          if (registry === "cloud") expect(text).toContain(pushGrant);
+          else expect(text).not.toContain(pushGrant);
         });
-        if (cloud === "azure" && ciName === "circleci") {
-          // CircleCI đẩy ACR bằng token: không có script
-          expect(result).toEqual({ ok: false, problem: "NOT_CLOUD_REGISTRY" });
-          return;
-        }
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
-        expect(result.cloud).toBe(cloud);
-        expect(bashN(result.text)).toBe("");
-        expect(result.text).toContain("set -euo pipefail");
-        expect(result.text).toContain("UDP_BUILD_IDENTITY=");
-        // Không tạo khoá dài hạn ở cloud nào
-        expect(result.text).not.toMatch(
-          /create-access-key|keys create|credential reset|--create-cert/,
-        );
-        const subject =
-          ciName === "github"
-            ? "acme/web"
-            : ciName === "gitlab"
-              ? "acme/platform/web"
-              : ciName === "circleci"
-                ? "66666666-7777-8888-9999-000000000000"
-                : "system:serviceaccount:udp-build:udp-builder";
-        expect(result.text).toContain(subject);
-        if (ciName === "github" || ciName === "gitlab") {
-          // Chỉ nhánh của các environment — không phải mọi nhánh
-          expect(result.text).toContain("main");
-          expect(result.text).toContain("dev");
-          expect(result.text).not.toContain("refs/heads/*");
-        }
-      });
+      }
     }
   }
 
-  it("AWS: vai trò chỉ đẩy vào ĐÚNG repository <tiền tố>/<slug>", () => {
-    const result = identityScript({
-      slug: "web",
-      push: REGISTRIES.aws.push,
-      registryEndpoint: REGISTRIES.aws.endpoint,
-      ci: CIS.github as CiIdentityConfig,
-      branches: ["main"],
-      cluster: null,
-    });
-    if (!result.ok) throw new Error("không sinh được script");
-    expect(result.text).toContain("REPOSITORY=acme/web");
-    expect(result.text).toContain(
-      '"Resource":"arn:aws:ecr:$REGION:$ACCOUNT:repository/$REPOSITORY"',
+  it("AWS: vai trò chỉ đẩy vào ĐÚNG repository <tiền tố>/<slug>; khoá ở region của project", () => {
+    const text = scriptOf(
+      input("aws", { cloud: { provider: "aws", region: "eu-west-1" } }),
+    );
+    expect(text).toContain("REPOSITORY=acme/web");
+    expect(text).toContain(
+      '"Resource":"arn:aws:ecr:$REGISTRY_REGION:$ACCOUNT:repository/$REPOSITORY"',
+    );
+    expect(text).toContain("REGION=eu-west-1");
+    expect(text).toContain("REGISTRY_REGION=ap-southeast-1");
+    expect(text).toContain("KEY_ALIAS=alias/udp-sign-web");
+  });
+
+  it("GCP: pool riêng của project; registry ngoài cloud ⇒ project lấy từ Cloud Shell, khoá ở region của project", () => {
+    const own = scriptOf(input("gcp", { ci: CIS.jenkins as CiIdentityConfig }));
+    expect(own).toContain("POOL=udp-web");
+    expect(own).toContain("CLUSTER_PROJECT");
+    expect(own).toContain("PROJECT=acme-prod");
+    const other = scriptOf(
+      input("gcp", { push: GHCR.push, registryEndpoint: GHCR.endpoint }),
+    );
+    expect(other).toContain(
+      'PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"',
+    );
+    expect(other).toContain("REGION=asia-southeast1");
+  });
+
+  it("Azure: Key Vault tên riêng theo subscription; người chạy nhận quyền data plane, phân quyền lan có thử lại giới hạn", () => {
+    const text = scriptOf(input("azure"));
+    expect(text).toContain(
+      "VAULT=udp-web-$(az account show --query id --output tsv | sha256sum | cut -c1-6)",
+    );
+    expect(text).toContain('--role "Key Vault Crypto Officer"');
+    expect(text).toContain("for _ in $(seq 1 30); do");
+    expect(text).toContain(
+      '--arg key "azurekms://$VAULT.vault.azure.net/udp-sign"',
     );
   });
 
-  it("GCP: pool riêng của project (chủ thể SA build trùng nhau giữa các cluster)", () => {
-    const result = identityScript({
-      slug: "web",
-      push: REGISTRIES.gcp.push,
-      registryEndpoint: REGISTRIES.gcp.endpoint,
-      ci: CIS.jenkins as CiIdentityConfig,
-      branches: ["main"],
-      cluster: CLUSTERS.gcp,
-    });
-    if (!result.ok) throw new Error("không sinh được script");
-    expect(result.text).toContain("POOL=udp-web");
-    expect(result.text).toContain("CLUSTER_PROJECT");
+  it("project chưa có cloud (region null): chỉ phần đẩy registry như trước Plan #61d, không khoá ký, dòng không có signing", () => {
+    for (const cloud of ["aws", "gcp", "azure"] as const) {
+      const text = scriptOf(
+        input(cloud, { cloud: { provider: cloud, region: null } }),
+      );
+      expect(bashN(text)).toBe("");
+      expect(text).not.toMatch(/kms|keyvault|udp-sign|signing:/);
+      expect(text).toMatch(/printf "UDP_BUILD_IDENTITY=%s\\n" "\$\(jq -nc /);
+      expect(text).toContain(
+        {
+          aws: "udp-build-push",
+          gcp: "roles/artifactregistry.writer",
+          azure: "--role AcrPush",
+        }[cloud],
+      );
+    }
   });
 
   it("thiếu điều kiện ⇒ mã việc cần làm, không có script", () => {
     expect(
-      identityScript({
-        slug: "web",
-        push: REGISTRIES.aws.push,
-        registryEndpoint: REGISTRIES.aws.endpoint,
-        ci: { kind: "circleci", organizationId: null, projectId: null },
-        branches: ["main"],
-        cluster: null,
-      }),
+      identityScript(
+        input("aws", {
+          ci: { kind: "circleci", organizationId: null, projectId: null },
+        }),
+      ),
     ).toEqual({ ok: false, problem: "CIRCLECI_IDS" });
     expect(
-      identityScript({
-        slug: "web",
-        push: REGISTRIES.aws.push,
-        registryEndpoint: REGISTRIES.aws.endpoint,
-        ci: CIS.jenkins as CiIdentityConfig,
-        branches: ["main"],
-        cluster: null,
-      }),
+      identityScript(
+        input("aws", { ci: CIS.jenkins as CiIdentityConfig, cluster: null }),
+      ),
     ).toEqual({ ok: false, problem: "NO_CLUSTER" });
     expect(
-      identityScript({
-        slug: "web",
-        push: REGISTRIES.aws.push,
-        registryEndpoint: REGISTRIES.aws.endpoint,
-        ci: CIS.jenkins as CiIdentityConfig,
-        branches: ["main"],
-        cluster: CLUSTERS.gcp,
-      }),
+      identityScript(
+        input("aws", {
+          ci: CIS.jenkins as CiIdentityConfig,
+          cluster: CLUSTERS.gcp,
+        }),
+      ),
     ).toEqual({ ok: false, problem: "CLUSTER_OTHER_CLOUD" });
     expect(
-      identityScript({
-        slug: "web",
-        push: { kind: "basic", server: "registry.acme.vn" },
-        registryEndpoint: "registry.acme.vn/web",
-        ci: CIS.github as CiIdentityConfig,
-        branches: ["main"],
-        cluster: null,
-      }),
-    ).toEqual({ ok: false, problem: "NOT_CLOUD_REGISTRY" });
+      identityScript(input("azure", { ci: CIS.circleci as CiIdentityConfig })),
+    ).toEqual({ ok: false, problem: "CIRCLECI_AZURE" });
   });
 });

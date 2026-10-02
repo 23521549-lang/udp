@@ -32,6 +32,10 @@ import {
 } from "../../adapter-base/packaging/build-script.js";
 import { buildNamespaceCompanion } from "../../adapter-base/packaging/build-namespace.js";
 import { inClusterRebaseContainers } from "../../adapter-base/packaging/rebase-script.js";
+import {
+  inClusterSignContainers,
+  SIGNATURE_FILE,
+} from "../../adapter-base/packaging/sign-script.js";
 import { BUILD_TOOLCHAIN } from "@udp/config";
 
 /**
@@ -124,7 +128,7 @@ const base = createHelmBasedAdapter({
   ],
 });
 
-const notify = (status: "success" | "failure"): string[] => [
+const notify = (status: "success" | "failure", signed: boolean): string[] => [
   "      container('udp-notify') {",
   "        sh '''",
   "          apk add --no-cache jq curl openssl >/dev/null",
@@ -132,6 +136,12 @@ const notify = (status: "success" | "failure"): string[] => [
   "          export COMMIT_SHA=$GIT_COMMIT COMMIT_TS= PIPELINE_ID=$BUILD_TAG",
   "          export REPO=$JOB_NAME REF=$BRANCH_NAME ACTOR=jenkins",
   ...(status === "success" ? [] : ['          export IMAGE_REF=""']),
+  // [Plan #61 QĐ-16] Chữ ký do stage ký để lại trên volume chung của pod: cổng deploy của UDP kiểm
+  ...(status === "success" && signed
+    ? [
+        `          export UDP_SIGNATURE_B64=$(cat ${SIGNATURE_FILE} 2>/dev/null || true)`,
+      ]
+    : []),
   ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
     (line) => `          ${line}`,
   ),
@@ -307,12 +317,38 @@ function podContainerFor(
   return same.name;
 }
 
+/** [Plan #61 QĐ-14] Ký image: trong container sẵn có của pod (cùng image và quyền), ghi chữ ký lên volume chung */
+const signLinesIn = (
+  sign: readonly BuildContainer[],
+  pod: readonly BuildContainer[],
+): string[] =>
+  sign.flatMap((c) => shIn(podContainerFor(c, pod), "        ", c.script));
+
+/** Stage "Ký image": sau stage sau build (chỉ image đã qua quét mới được ký), trước bước báo UDP của `post` */
+const signStage = (
+  sign: readonly BuildContainer[],
+  pod: readonly BuildContainer[],
+  rebase: boolean,
+): string[] =>
+  sign.length === 0
+    ? []
+    : [
+        "    stage('Ký image') {",
+        ...(rebase ? [NOT_ON_TIMER] : []),
+        "      steps {",
+        ...signLinesIn(sign, pod),
+        "      }",
+        "    }",
+      ];
+
 /**
  * [Plan #61 QĐ-13] Stage của lượt theo lịch: rebase image Buildpacks của commit đầu `main`; ảnh có digest mới vào
- * `IMAGE_REF` — không phải Buildpacks thì `IMAGE_REF` rỗng và bước báo bỏ qua.
+ * `IMAGE_REF` — không phải Buildpacks thì `IMAGE_REF` rỗng và bước báo bỏ qua. Digest mới cũng được ký (không có ảnh
+ * mới thì bước ký dừng xanh).
  */
 const rebaseStage = (
   rebase: readonly BuildContainer[],
+  sign: readonly BuildContainer[],
   pod: readonly BuildContainer[],
 ): string[] => [
   "    stage('Vá image nền (rebase)') {",
@@ -326,6 +362,7 @@ const rebaseStage = (
       shIn(podContainerFor(c, pod), "        ", c.script),
     ),
   ),
+  ...signLinesIn(sign, pod),
   "        container('udp-digest') {",
   `          script { env.IMAGE_REF = sh(script: 'cat ${WORK_DIR}/out/image-ref 2>/dev/null || true', returnStdout: true).trim() }`,
   "        }",
@@ -337,8 +374,9 @@ const rebaseStage = (
 const notifyPost = (
   status: "success" | "failure",
   rebase: boolean,
+  signed: boolean,
 ): string[] => {
-  if (!rebase) return notify(status);
+  if (!rebase) return notify(status, signed);
   const when =
     status === "success"
       ? "env.UDP_KIND != 'rebase' || env.IMAGE_REF"
@@ -346,7 +384,7 @@ const notifyPost = (
   return [
     "      script {",
     `        if (${when}) {`,
-    ...notify(status).map((line) => `    ${line}`),
+    ...notify(status, signed).map((line) => `    ${line}`),
     "        }",
     "      }",
   ];
@@ -366,6 +404,14 @@ const jenkinsfile = (params: PipelineTemplateParams): string[] => {
           commit: "$GIT_COMMIT",
         });
   const onTimer = rebase !== null;
+  const sign = inClusterSignContainers(params.build, {
+    image: "%IMAGE%",
+    project: "%PROJECT%",
+    commit: "$GIT_COMMIT",
+    ref: "$BRANCH_NAME",
+    run: "$BUILD_TAG",
+  });
+  const signed = sign.length > 0;
   return [
     "// Jenkinsfile — sinh bởi UDP (Golden Path, §11)",
     "// Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
@@ -414,14 +460,15 @@ const jenkinsfile = (params: PipelineTemplateParams): string[] => {
     "      }",
     "    }",
     ...stepStages(stepsOf(params, "after-build"), onTimer),
-    ...(rebase === null ? [] : rebaseStage(rebase, build)),
+    ...signStage(sign, build, onTimer),
+    ...(rebase === null ? [] : rebaseStage(rebase, sign, build)),
     "  }",
     "  post {",
     "    success {",
-    ...notifyPost("success", onTimer),
+    ...notifyPost("success", onTimer, signed),
     "    }",
     "    failure {",
-    ...notifyPost("failure", onTimer),
+    ...notifyPost("failure", onTimer, signed),
     "    }",
     "  }",
     "}",

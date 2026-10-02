@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { asyncHandler, sendJson, validateBody } from "@udp/http";
-import { buildSettingsSchema, type BuildSettings } from "@udp/shared-types";
+import {
+  buildSettingsSchema,
+  signingEnforceSchema,
+  type BuildSettings,
+} from "@udp/shared-types";
 import { buildViewWire } from "@udp/shared-types/wire";
 import { requireAuth } from "../../core/http/middlewares/auth.middleware.js";
 import {
@@ -40,6 +44,25 @@ projectPackagingRouter.put(
       await packaging.updateBuildSettings(
         projectIdParam(req),
         req.body as BuildSettings,
+        req,
+      ),
+    );
+  }),
+);
+
+/** [Plan #61 QĐ-16] Chế độ bắt buộc chữ ký: thao tác riêng, không đi kèm lưu cài đặt build */
+projectPackagingRouter.put(
+  "/build/signing-enforce",
+  requireAuth,
+  requireMinProjectRole("MAINTAINER"),
+  validateBody(signingEnforceSchema),
+  asyncHandler(async (req, res) => {
+    sendJson(
+      res,
+      buildViewWire,
+      await packaging.setSigningEnforce(
+        projectIdParam(req),
+        (req.body as { enforce: boolean }).enforce,
         req,
       ),
     );

@@ -1,6 +1,7 @@
 import {
   BUILD_TEXT_RULES,
   isSafeBuildPath,
+  kmsCloudOf,
   type CapabilityBinding,
 } from "@udp/shared-types";
 
@@ -95,6 +96,19 @@ export interface BuildPlan {
   /** Bắt buộc với registry của cloud; thiếu thì bước đăng nhập dừng với lời nhắn */
   identity: BuildIdentity | null;
   test: BuildTest;
+  /** [Plan #61 QĐ-14] Ký image sau khi build — `null` khi project chưa có khoá ký hay CI chưa ký được */
+  signing: BuildSigning | null;
+}
+
+/**
+ * [Plan #61 QĐ-14] Ký image bằng khoá KMS ở cloud của CHÍNH project: `key` là URI cosign nhận, `identity` là danh
+ * tính của project ở cloud đó (bước ký gọi KMS bằng JWT của lượt chạy) — có khi khác danh tính đẩy registry (registry
+ * không thuộc cloud). `compat`: thêm chữ ký simple signing cho podman/CRI-O.
+ */
+export interface BuildSigning {
+  key: string;
+  identity: BuildIdentity;
+  compat: boolean;
 }
 
 /** Thuộc tính của binding `registry.oci` ⇒ cách đẩy. Thiếu hay sai ⇒ `null` (Service 1 báo áp lại domain registry) */
@@ -163,6 +177,20 @@ const check = (ok: boolean, message: string): void => {
   if (!ok) throw new BuildPlanError(message);
 };
 
+/** Mã định danh của danh tính đúng định dạng của cloud — chúng đi thẳng vào kịch bản */
+function assertIdentitySafe(id: BuildIdentity): void {
+  if (id.cloud === "aws") {
+    check(AWS_ROLE_ARN.test(id.roleArn), "ARN vai trò lạ");
+  }
+  if (id.cloud === "gcp") {
+    check(GCP_PROVIDER.test(id.workloadIdentityProvider), "provider GCP lạ");
+    check(GCP_SERVICE_ACCOUNT.test(id.serviceAccount), "service account lạ");
+  }
+  if (id.cloud === "azure") {
+    check(UUID.test(id.clientId) && UUID.test(id.tenantId), "id Azure lạ");
+  }
+}
+
 /** Ném `BuildPlanError` khi một chuỗi của kế hoạch không an toàn cho template — renderer gọi trước khi vẽ */
 export function assertBuildPlanSafe(plan: BuildPlan): void {
   check(
@@ -191,6 +219,15 @@ export function assertBuildPlanSafe(plan: BuildPlan): void {
   if (plan.push.kind === "azure-acr") {
     check(ACR_NAME.test(plan.push.registryName), "tên ACR lạ");
   }
+  if (plan.signing !== null) {
+    const keyCloud = kmsCloudOf(plan.signing.key);
+    check(keyCloud !== null, "URI khoá KMS lạ");
+    check(
+      keyCloud === plan.signing.identity.cloud,
+      `danh tính ${plan.signing.identity.cloud} không ký được bằng khoá ${String(keyCloud)}`,
+    );
+    assertIdentitySafe(plan.signing.identity);
+  }
   const id = plan.identity;
   if (id !== null) {
     const wanted = identityCloudOf(plan.push.kind);
@@ -198,15 +235,7 @@ export function assertBuildPlanSafe(plan: BuildPlan): void {
       wanted === null || wanted === id.cloud,
       `danh tính ${id.cloud} không đẩy được vào registry ${plan.push.kind}`,
     );
-    if (id.cloud === "aws")
-      check(AWS_ROLE_ARN.test(id.roleArn), "ARN vai trò lạ");
-    if (id.cloud === "gcp") {
-      check(GCP_PROVIDER.test(id.workloadIdentityProvider), "provider GCP lạ");
-      check(GCP_SERVICE_ACCOUNT.test(id.serviceAccount), "service account lạ");
-    }
-    if (id.cloud === "azure") {
-      check(UUID.test(id.clientId) && UUID.test(id.tenantId), "id Azure lạ");
-    }
+    assertIdentitySafe(id);
   }
   if (plan.test.kind === "run") {
     check(

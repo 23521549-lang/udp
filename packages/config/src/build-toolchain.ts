@@ -23,7 +23,7 @@ export const BUILD_TOOLCHAIN = {
     dockerDind:
       "docker:29.8.2-dind@sha256:7dcdfc4a20246236f558175182ccace1eb15a41bd3eb119dd2284f393498b7c1",
     awsCli:
-      "amazon/aws-cli:2.37.7@sha256:95f8d1e6d31aaa16997d1406eb532b0ca6a9830fe8a859c37a0fd223f10959e5",
+      "amazon/aws-cli:2.37.8@sha256:420ab345e847291b541b45d989535f55bcff957c27fa1100fae4aa233e86398c",
     gcloud:
       "google/cloud-sdk:587.0.0-slim@sha256:7c2dbc4eeba1e500b788be19cae33599cefe3294949a62c034bd1c2002329f69",
     azureCli:
@@ -41,6 +41,23 @@ export const BUILD_TOOLCHAIN = {
     /** sha256 của `pack-v<version>-linux.tgz` công bố cạnh bản phát hành */
     linuxSha256:
       "dc0ee1e931cf8a106d7555a01a214864f9acb60b77adf15d69b74df4404758e9",
+  },
+  /**
+   * [Plan #61 QĐ-14] Ký image (bundle Sigstore + chữ ký tương thích). Nâng cosign thì bản mới phải kéo
+   * `sigstore/sigstore` ≥ v1.10.10: lỗi Azure KMS sigstore#2409 (ghép sai chữ ký EC) có từ v1.10.9; 3.1.3 dùng v1.10.8.
+   */
+  cosign: {
+    version: "3.1.3",
+    /** sha256 của `cosign-linux-amd64` công bố trong `cosign_checksums.txt` */
+    linuxSha256:
+      "4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71",
+  },
+  /** Gắn chữ ký tương thích vào registry — cosign khuyên dùng oras thay `cosign attach` (bị xoá ở v4) */
+  oras: {
+    version: "1.3.4",
+    /** sha256 của `oras_<version>_linux_amd64.tar.gz` công bố trong `oras_<version>_checksums.txt` */
+    linuxSha256:
+      "f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454",
   },
   actions: {
     checkout: {
@@ -81,6 +98,14 @@ export const TEST_IMAGES = {
  */
 export const NODE_ARCH = "amd64";
 export const BUILD_PLATFORM = `linux/${NODE_ARCH}` as const;
+
+/**
+ * [Plan #61 QĐ-14] Signing config của cosign KHÔNG khai dịch vụ nào: không Fulcio, không Rekor, không TSA — ký bằng
+ * khoá KMS, image riêng tư không lộ tên hay digest ra sổ minh bạch công khai. Đúng nội dung `cosign signing-config
+ * create` sinh ra; đây là cách cosign v3 khuyên dùng thay cờ `--tlog-upload=false` (sắp bỏ).
+ */
+export const SIGNING_CONFIG_JSON =
+  '{"mediaType":"application/vnd.dev.sigstore.signingconfig.v0.2+json","rekorTlogConfig":{},"tsaConfig":{}}';
 
 /** `name:tag@sha256:<64 hex>` — dạng ghim mà test của toolchain và của template đòi */
 export const PINNED_IMAGE =

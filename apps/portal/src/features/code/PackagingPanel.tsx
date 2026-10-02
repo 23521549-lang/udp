@@ -3,21 +3,30 @@ import {
   BUILD_LANGUAGES,
   BUILD_STRATEGIES,
   BUILD_TEXT_RULES,
-  buildIdentitySchema,
+  identityLineSchema,
   isSafeBuildPath,
-  type BuildIdentityInput,
   type BuildLanguage,
   type BuildSettings,
+  type IdentityLine,
 } from "@udp/shared-types/build";
 import type { BuildTodoWire, BuildViewWire } from "@udp/shared-types/wire";
-import { CircleCheck, CircleX, KeyRound, TriangleAlert } from "lucide-react";
+import {
+  CircleCheck,
+  CircleX,
+  KeyRound,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { CodeBlock } from "../../components/CodeBlock";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Field } from "../../components/Field";
 import { Icon } from "../../components/Icon";
 import { InfoTip } from "../../components/InfoTip";
 import { ErrorState, Loading } from "../../components/States";
+import { Switch } from "../../components/Switch";
 import { useMessages } from "../../i18n";
+import { formatDateTime } from "../../lib/format";
 import { qk } from "../../lib/query-keys";
 import { useProjectContext } from "../project/ProjectLayout";
 import { can } from "../project/roles";
@@ -40,13 +49,14 @@ export function PackagingPanel() {
   return <PackagingView view={build.data} />;
 }
 
-/** Lưu cài đặt: kết quả mới vào cache; pipeline và Golden Path (mang pipeline) đọc lại */
-function useSaveBuild() {
+/** Kết quả mới vào cache; pipeline và Golden Path (mang pipeline) đọc lại */
+function useBuildMutation<T>(
+  call: (projectId: string, input: T) => Promise<BuildViewWire>,
+) {
   const { project } = useProjectContext();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (settings: BuildSettings) =>
-      codeApi.saveBuild(project.id, settings),
+    mutationFn: (input: T) => call(project.id, input),
     onSuccess: (data) => {
       queryClient.setQueryData(qk.projectBuild(project.id), data);
       void queryClient.invalidateQueries({
@@ -58,6 +68,8 @@ function useSaveBuild() {
     },
   });
 }
+
+const useSaveBuild = () => useBuildMutation(codeApi.saveBuild);
 
 function PackagingView({ view }: { view: BuildViewWire }) {
   const m = useMessages(packagingMessages);
@@ -111,6 +123,7 @@ function PackagingView({ view }: { view: BuildViewWire }) {
       {view.identity.required && (
         <IdentitySection view={view} canEdit={canEdit} />
       )}
+      {view.ci !== null && <SigningSection view={view} canEdit={canEdit} />}
       <SettingsForm view={view} canEdit={canEdit} />
     </section>
   );
@@ -180,6 +193,8 @@ function todoText(m: PackagingText, t: BuildTodoWire): string {
     }
     case "BUILD_IDENTITY":
       return m.todo.BUILD_IDENTITY(m.cloud[t.cloud]);
+    case "SIGNING_KEY":
+      return m.todo.SIGNING_KEY(m.cloud[t.cloud]);
     case "TEST_COMMAND":
       return m.todo.TEST_COMMAND(m.languageName[t.language]);
     case "NEEDS_DOCKERFILE":
@@ -216,8 +231,11 @@ function Todo({ view }: { view: BuildViewWire }) {
 
 const IDENTITY_PREFIX = "UDP_BUILD_IDENTITY=";
 
-/** Dòng script in ra (có hay không tiền tố, có thể kèm các dòng khác) ⇒ danh tính, hay `null` */
-export function parseIdentityLine(text: string): BuildIdentityInput | null {
+/**
+ * Dòng script in ra (có hay không tiền tố, có thể kèm các dòng khác) ⇒ danh tính và, khi script tạo khoá ký, `signing`
+ * (URI KMS và khoá CÔNG KHAI) — hay `null`
+ */
+export function parseIdentityLine(text: string): IdentityLine | null {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -228,7 +246,7 @@ export function parseIdentityLine(text: string): BuildIdentityInput | null {
     ? line.slice(IDENTITY_PREFIX.length)
     : line;
   try {
-    const parsed = buildIdentitySchema.safeParse(JSON.parse(json));
+    const parsed = identityLineSchema.safeParse(JSON.parse(json));
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
@@ -251,18 +269,23 @@ function IdentitySection({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const identity = parseIdentityLine(pasted);
-    if (identity === null) {
+    const line = parseIdentityLine(pasted);
+    if (line === null) {
       setError(m.pasteInvalid);
       return;
     }
-    if (identity.cloud !== cloud) {
+    if (line.cloud !== cloud) {
       setError(m.pasteWrongCloud(cloudName));
       return;
     }
     setError(undefined);
+    const { signing, ...identity } = line;
     save.mutate(
-      { ...view.settings, identity },
+      {
+        ...view.settings,
+        identity,
+        signing: { ...view.settings.signing, keys: withKey(view, signing) },
+      },
       { onSuccess: () => setPasted("") },
     );
   };
@@ -305,6 +328,183 @@ function IdentitySection({
           </button>
           {save.isError && <ErrorState error={save.error} />}
         </form>
+      )}
+    </div>
+  );
+}
+
+type SigningKeys = BuildSettings["signing"]["keys"];
+
+/** Khoá vừa dán lên ĐẦU danh sách (khoá đầu là khoá ký), bỏ bản trùng, giữ trong giới hạn 5 khoá */
+function withKey(
+  view: BuildViewWire,
+  key: IdentityLine["signing"],
+): SigningKeys {
+  const keys = view.settings.signing.keys;
+  if (key === undefined) return keys;
+  return [
+    { publicKey: key.publicKey, kms: key.key },
+    ...keys.filter((k) => k.publicKey !== key.publicKey),
+  ].slice(0, 5);
+}
+
+/**
+ * [Plan #61 QĐ-14, QĐ-16] Ký image: khoá (dấu vân tay, URI KMS, ngày thêm), chữ ký tương thích, chế độ bắt buộc. Cổng
+ * deploy tự bật bắt buộc ở chữ ký hợp lệ đầu tiên; tắt hay bật tay là thao tác riêng, có xác nhận và nhật ký.
+ */
+function SigningSection({
+  view,
+  canEdit,
+}: {
+  view: BuildViewWire;
+  canEdit: boolean;
+}) {
+  const m = useMessages(packagingMessages);
+  const save = useSaveBuild();
+  const enforce = useBuildMutation(codeApi.setSigningEnforce);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [confirmEnforce, setConfirmEnforce] = useState<boolean | null>(null);
+  const signing = view.settings.signing;
+  const keys = signing.keys;
+
+  const removeKey = (id: string) =>
+    save.mutate(
+      {
+        ...view.settings,
+        signing: { ...signing, keys: keys.filter((k) => k.id !== id) },
+      },
+      { onSuccess: () => setRemoving(null) },
+    );
+
+  return (
+    <div className="packaging-identity">
+      <h3>
+        <Icon of={ShieldCheck} />
+        {m.signingTitle}
+        <InfoTip term="imageSigning" />
+      </h3>
+      <p className="c3">{m.signingWhy}</p>
+      {view.signing.available && <p className="c3">{m.signingCost}</p>}
+      {view.signing.reason !== null && (
+        <p className="stt warn">
+          <Icon of={CircleX} />
+          {m.signingBlocked[view.signing.reason]}
+        </p>
+      )}
+      {keys.length === 0 ? (
+        view.signing.available && <p className="c3">{m.noKeys}</p>
+      ) : (
+        <>
+          <div
+            className="table-wrap"
+            tabIndex={0}
+            role="region"
+            aria-label={m.keys}
+          >
+            <table className="dtable">
+              <thead>
+                <tr>
+                  <th scope="col">{m.keyId}</th>
+                  <th scope="col">{m.keyKms}</th>
+                  <th scope="col">{m.keyAdded}</th>
+                  <th scope="col">
+                    <span className="visually-hidden">{m.keyActions}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {keys.map((k, i) => (
+                  <tr key={k.id ?? k.publicKey}>
+                    <td>
+                      <span className="mono">{k.id}</span>{" "}
+                      <span className="c3">
+                        {i === 0 ? m.keySigning : m.keyAccepted}
+                      </span>
+                    </td>
+                    <td className="mono">{k.kms}</td>
+                    <td>
+                      {k.addedAt === undefined ? "" : formatDateTime(k.addedAt)}
+                    </td>
+                    <td>
+                      {canEdit && k.id !== undefined && (
+                        <button
+                          type="button"
+                          className="btn danger"
+                          onClick={() => setRemoving(k.id ?? null)}
+                        >
+                          {m.removeKey(k.id)}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="packaging-row">
+            <span className="l">{m.compat}</span>
+            <span>
+              <Switch
+                checked={signing.compat}
+                label={m.compat}
+                disabled={!canEdit || save.isPending}
+                onChange={(compat) =>
+                  save.mutate({
+                    ...view.settings,
+                    signing: { ...signing, compat },
+                  })
+                }
+              />{" "}
+              <span className="c3">{m.compatHint}</span>
+            </span>
+          </div>
+          <div className="packaging-row">
+            <span className={signing.enforce ? "stt" : "stt warn"}>
+              <Icon of={signing.enforce ? CircleCheck : TriangleAlert} />
+              {signing.enforce ? m.enforced : m.waiting}
+            </span>
+            {/* Bật bắt buộc khi pipeline không ký được thì mọi lần deploy đều bị từ chối */}
+            {canEdit && (signing.enforce || view.signing.available) && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setConfirmEnforce(!signing.enforce)}
+              >
+                {signing.enforce ? m.enforceOff : m.enforceOn}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+      {save.isError && <ErrorState error={save.error} />}
+      {removing !== null && (
+        <ConfirmDialog
+          title={m.removeKeyTitle}
+          description={
+            keys.length === 1 ? m.removeLastKeyBody : m.removeKeyBody(removing)
+          }
+          confirmLabel={m.removeKeyConfirm}
+          danger
+          busy={save.isPending}
+          onConfirm={() => removeKey(removing)}
+          onClose={() => setRemoving(null)}
+        />
+      )}
+      {confirmEnforce !== null && (
+        <ConfirmDialog
+          title={confirmEnforce ? m.enforceOnTitle : m.enforceOffTitle}
+          description={confirmEnforce ? m.enforceOnBody : m.enforceOffBody}
+          confirmLabel={confirmEnforce ? m.enforceOn : m.enforceOff}
+          danger={!confirmEnforce}
+          busy={enforce.isPending}
+          error={enforce.isError ? enforce.error.message : undefined}
+          onConfirm={() =>
+            enforce.mutate(confirmEnforce, {
+              onSuccess: () => setConfirmEnforce(null),
+            })
+          }
+          onClose={() => setConfirmEnforce(null)}
+        />
       )}
     </div>
   );

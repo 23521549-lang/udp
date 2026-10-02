@@ -127,6 +127,8 @@ const ROUTES: Record<string, ZodTypeAny> = {
   // [Plan #61] Mục Đóng gói: cài đặt build, dự đoán, việc cần làm, script danh tính
   "GET /projects/{id}/build": wire.buildViewWire,
   "PUT /projects/{id}/build": wire.buildViewWire,
+  // [Plan #61 QĐ-16] Bật/tắt bắt buộc chữ ký — thao tác riêng, trả lại mục Đóng gói
+  "PUT /projects/{id}/build/signing-enforce": wire.buildViewWire,
   /** CI gọi, không phải Portal — nhưng đi `sendJson` nên cũng có mẫu và schema */
   "POST /webhooks/cicd/{id}/github-actions": wire.deployAcceptedResponseWire,
 

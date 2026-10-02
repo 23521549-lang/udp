@@ -33,6 +33,7 @@ import {
   registrySecretNames,
 } from "../../adapter-base/packaging/build-script.js";
 import { dockerHostRebaseLines } from "../../adapter-base/packaging/rebase-script.js";
+import { dockerHostSignLines } from "../../adapter-base/packaging/sign-script.js";
 import { BUILD_TOOLCHAIN } from "@udp/config";
 
 const CHECKOUT = BUILD_TOOLCHAIN.actions.checkout;
@@ -105,7 +106,11 @@ const permissions = (params: PipelineTemplateParams): string[] => {
   return [
     "permissions:",
     "  contents: read",
-    ...(needsOidc(params.build, "github-actions") ? ["  id-token: write"] : []),
+    // JWT cho cloud: đẩy bằng danh tính build, hay ký bằng khoá KMS (Plan #61 QĐ-14)
+    ...(needsOidc(params.build, "github-actions") ||
+    params.build.signing !== null
+      ? ["  id-token: write"]
+      : []),
     ...(push.kind === "github-token" ? ["  packages: write"] : []),
   ];
 };
@@ -125,6 +130,37 @@ const buildEnv = (params: PipelineTemplateParams): string[] => {
   const env = registryEnv(params);
   return env.length === 0 ? [] : ["        env:", ...env];
 };
+
+/** [Plan #61 QĐ-14] Ký image có digest ở `digest` (biểu thức shell); `UDP_SIGNATURE_B64` cho bước báo UDP */
+const signLinesOf = (
+  params: PipelineTemplateParams,
+  vars: { digest: string; commit: string; ref: string; run: string },
+): string[] =>
+  dockerHostSignLines(params.build, "github-actions", {
+    image: "%IMAGE%",
+    project: "%PROJECT%",
+    tmp: "$RUNNER_TEMP/udp-sign",
+    ...vars,
+  });
+
+/** Bước "Ký image" của job build: sau bước sau build (chỉ image đã qua quét mới được ký), trước bước báo UDP */
+const signStep = (params: PipelineTemplateParams): string[] =>
+  params.build.signing === null
+    ? []
+    : [
+        "      - name: Ký image",
+        "        run: |",
+        ...[
+          'UDP_DIGEST="${IMAGE_REF##*@}"',
+          ...signLinesOf(params, {
+            digest: "$UDP_DIGEST",
+            commit: "$GITHUB_SHA",
+            ref: "$GITHUB_REF_NAME",
+            run: "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT",
+          }),
+          'echo "UDP_SIGNATURE_B64=$UDP_SIGNATURE_B64" >> "$GITHUB_ENV"',
+        ].map((line) => `          ${line}`),
+      ];
 
 /**
  * [Plan #61 QĐ-13] Job của lượt theo lịch: rebase image Buildpacks của commit đầu `main` rồi báo UDP (`kind: rebase`).
@@ -154,6 +190,18 @@ const rebaseJob = (params: PipelineTemplateParams): string[] => [
       commit: "$COMMIT_SHA",
       tmp: "$RUNNER_TEMP/udp-rebase",
     }),
+    // Digest mới của lượt rebase cũng phải được ký — image chưa ký không qua cổng deploy
+    ...(params.build.signing === null
+      ? []
+      : [
+          'UDP_DIGEST="${UDP_IMAGE_REF##*@}"',
+          ...signLinesOf(params, {
+            digest: "$UDP_DIGEST",
+            commit: "$COMMIT_SHA",
+            ref: "main",
+            run: "$PIPELINE_ID",
+          }),
+        ]),
     ...rebaseNotifyVars("refs/heads/main"),
     ...notifyScript('-H "X-Hub-Signature-256: sha256=$SIG"'),
   ].map((line) => `          ${line}`),
@@ -205,6 +253,7 @@ const workflow = (params: PipelineTemplateParams): string[] => {
       'echo "IMAGE_REF=$UDP_IMAGE_REF" >> "$GITHUB_ENV"',
     ].map((line) => `          ${line}`),
     ...stepLines(stepsOf(params, "after-build")),
+    ...signStep(params),
     "      - name: Báo UDP",
     "        if: always()",
     "        env:",

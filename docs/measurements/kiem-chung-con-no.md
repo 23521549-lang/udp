@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 47.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 48.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1216,3 +1216,27 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
 - **Ảnh hưởng tới kết luận:** AC-1…AC-7 của Plan #61 đứng ở mức hợp đồng, `bash -n` và build thật
   trên GitHub Actions; câu "sáu CI × chín registry đẩy được không cần khoá dài hạn" và "image
   Buildpacks được vá theo lịch" chưa được chứng minh trên hạ tầng thật.
+
+## signing-kms-real — ký image bằng KMS thật ở ba cloud và cổng deploy với pipeline thật
+
+- **Vì sao nợ:** Plan #61 61d-1: lệnh ký của sáu CI qua `bash -n` ở mọi ô và thứ tự quét → ký → báo được bộ hợp đồng
+  kiểm; cổng deploy kiểm bundle THẬT do cosign 3.1.3 ký (test đơn vị) và bundle cùng hình qua HTTP thật trên database
+  thật (test tích hợp: ràng buộc repository, đủ bốn mã từ chối, tự bật bắt buộc); job CI `signing-e2e` ký bằng ĐÚNG đoạn
+  shell renderer sinh với khoá tệp trên zot và distribution rồi kiểm bằng cosign, skopeo và cổng deploy (chỉ chạy trên
+  GitHub Actions; lượt chạy đầu sau khi người dùng đẩy commit 61d-1). Chưa đo: cosign gọi KMS thật (`awskms://`,
+  `gcpkms://`, `azurekms://`) bằng thông tin đăng nhập liên kết từ JWT của CI (AWS web identity, GCP `external_account`,
+  Azure workload identity); script danh tính tạo khoá và cấp quyền ký ĐÚNG khoá ở ba cloud (Key Vault RBAC lan quyền có
+  thử lại); bước ký trong cụm (Jenkins, Tekton, Drone) xin token ServiceAccount với `aud` của cloud; CRI-O/podman trên node
+  thật đọc chữ ký tương thích; registry thật không có API referrers (GHCR).
+- **Tiền đề:** như `packaging-real` (ba cloud, sáu CI, UDP có địa chỉ công khai) và quyền tạo khoá KMS ở mỗi cloud.
+- **Lệnh:** `pnpm --filter @udp/core-backend test -- signing.real` (tệp CHƯA CÓ; nó chạy script danh tính, dán dòng kết
+  quả, đẩy một commit, chờ lần deploy có `signature: VERIFIED`, rồi gửi lại bundle cũ để thấy `SIGNATURE_STALE` và một
+  image không chữ ký để thấy `SIGNATURE_MISSING`).
+- **Đạt:** mỗi ô CI × cloud: bước ký xanh không secret dài hạn, `cosign verify --key` với khoá công khai qua, Service 1 ghi
+  `VERIFIED` và tự bật bắt buộc; `skopeo` với policy `sigstoreSigned` nhận chữ ký tương thích. **Không đạt:** KMS từ chối
+  ⇒ sửa quyền trong script danh tính của cloud đó; cosign không đổi được JWT ⇒ xem lại biến thông tin đăng nhập; Azure
+  ký hỏng ở cosign bản mới ⇒ đối chiếu sigstore#2409 (cosign 3.1.3 dùng sigstore 1.10.8, trước lỗi).
+- **Tài nguyên:** như `packaging-real`; chi phí KMS ở tài khoản thử (AWS KMS 1 USD mỗi khoá mỗi tháng, tính theo giờ — xoá
+  khoá sau lượt đo).
+- **Ảnh hưởng tới kết luận:** AC-8 và AC-10 của Plan #61 đứng ở mức hợp đồng, bundle thật của cosign và E2E với khoá tệp;
+  câu "image được ký bằng khoá KMS của chính project ở cả ba cloud" chưa được chứng minh trên hạ tầng thật.

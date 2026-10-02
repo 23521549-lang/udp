@@ -78,7 +78,10 @@ export function latestWorkloads(projectId: string): Promise<WorkloadRow[]> {
     WHERE project_id = ${projectId}::uuid
       AND workload_name IS NOT NULL
       AND event_type <> 'FLAG_CHANGE'
-    ORDER BY environment_id, workload_name, occurred_at DESC`);
+    -- [Plan #61, sua trong 61d-1] id DESC de DISTINCT ON co mot khoa sap TOAN PHAN: hai su kien cung moc thi
+    -- Postgres duoc quyen giu hang nao cung duoc, va so do kien truc se hien eventType/imageTag khac nhau
+    -- giua hai lan tai cung du lieu. id o day la khoa chot cho tinh xac dinh, khong phai mot dong ho.
+    ORDER BY environment_id, workload_name, occurred_at DESC, id DESC`);
 }
 
 /** `{projectId}:{step}:{kind}:{name}` ⇒ `name` (tên có thể chứa `:` — giữ nguyên phần còn lại) */

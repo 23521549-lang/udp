@@ -10,6 +10,7 @@ import {
   createFlagServiceClient,
   type FlagServiceClient,
 } from "./clients/flag-service.client.js";
+import { createEgressFetch } from "./egress/egress.js";
 import { createMetricsFor } from "./metrics-source.js";
 import {
   oidcIssuerFromConfig,
@@ -89,6 +90,16 @@ export interface AppDeps {
    * tiêm nguồn trong bộ nhớ, không bao giờ gọi mạng thật.
    */
   repoSource: RepoSourceFactory;
+  /**
+   * [v4.12, Plan #61 61d-2a] `fetch` đã bọc hàng rào egress, cho đường HTTP của tiến trình API.
+   *
+   * Trước đợt này `createEgressFetch()` chỉ được nối vào worker job, nên tiến trình phục vụ webhook không
+   * có bản đã bọc. Trusted Deploy đi lấy khoá công khai từ một địa chỉ mà cấu hình của project quyết định
+   * (`tool_config.gitlabUrl`), tức đúng hình dạng SSRF mà §12.1 T11 mô tả và `createEgressFetch` chặn
+   * ngay trong `lookup`. Tiêm vào theo khuôn `repoSource`: test đưa một bản giả và khẳng định được "không
+   * một lời gọi mạng nào phát ra".
+   */
+  egressFetch: typeof fetch;
   /**
    * [v4.11, Plan #53 QĐ-6] Tín hiệu của CHÍNH cụm đang chạy UDP cho Bảng điều khiển nền tảng (node,
    * PVC PostgreSQL, CronJob sao lưu, Certificate) — nạp một lần theo môi trường chạy; test tiêm bản giả.
@@ -171,6 +182,7 @@ export function defaultAppDeps(): AppDeps {
       flaggerGateBaseUrl: env.PD_CONTROLLER_WEBHOOK_URL ?? null,
     },
     repoSource: createRepoSourceFactory(),
+    egressFetch: createEgressFetch(),
     platform: memoized(() => platformProbeFromEnv()),
     auth: {
       mailer:

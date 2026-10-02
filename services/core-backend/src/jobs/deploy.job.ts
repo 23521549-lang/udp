@@ -193,7 +193,11 @@ async function lastSuccessfulImage(
       eventType: "DEPLOY_SUCCESS",
       deploymentId: { not: start.deploymentId },
     },
-    orderBy: { occurredAt: "desc" },
+    // [Plan #61, sửa trong 61d-1] Đây là truy vấn QUYẾT ĐỊNH thứ ba đọc thứ tự `occurred_at`: kết quả của nó là
+    // image mà `watchDeploy` hoàn tác VỀ khi deploy hỏng, nên chọn sai hàng là hoàn tác về một bản KHÁC bản đang
+    // chạy. `occurred_at` do database cấp (`clock_timestamp()`, micro giây) nên không phụ thuộc đồng hồ của tiến
+    // trình ghi; `id` là khoá chốt cho tính xác định, không phải một đồng hồ (xem `cicd/rebase-decision.ts`).
+    orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
     select: { deploymentId: true },
   });
   if (success === null) return undefined;

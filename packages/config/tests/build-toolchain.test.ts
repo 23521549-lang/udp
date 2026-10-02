@@ -5,6 +5,7 @@ import {
   isPinnedStepVersion,
   NODE_ARCH,
   PINNED_IMAGE,
+  SIGNING_CONFIG_JSON,
   STEP_IMAGES,
   stepImage,
   TEST_IMAGES,
@@ -23,10 +24,16 @@ describe("BUILD_TOOLCHAIN", () => {
     }
   });
 
-  it("action ghim theo SHA 40 ký tự; pack có sha256 của tệp tải", () => {
+  it("action ghim theo SHA 40 ký tự; pack, cosign, oras có sha256 của tệp tải", () => {
     expect(BUILD_TOOLCHAIN.actions.checkout.sha).toMatch(/^[0-9a-f]{40}$/);
-    expect(BUILD_TOOLCHAIN.pack.linuxSha256).toMatch(/^[0-9a-f]{64}$/);
-    expect(BUILD_TOOLCHAIN.pack.version).toMatch(/^\d+\.\d+\.\d+$/);
+    for (const tool of [
+      BUILD_TOOLCHAIN.pack,
+      BUILD_TOOLCHAIN.cosign,
+      BUILD_TOOLCHAIN.oras,
+    ]) {
+      expect(tool.linuxSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(tool.version).toMatch(/^\d+\.\d+\.\d+$/);
+    }
   });
 
   it("PINNED_IMAGE từ chối tag trần, latest và digest cụt", () => {
@@ -95,5 +102,19 @@ describe("STEP_IMAGES", () => {
       );
       expect(() => stepImage(tool, version)).toThrow(/chưa ghim digest/);
     }
+  });
+});
+
+describe("SIGNING_CONFIG_JSON", () => {
+  it("signing config v0.2 không khai Fulcio, Rekor hay TSA nào", () => {
+    const config = JSON.parse(SIGNING_CONFIG_JSON) as Record<string, unknown>;
+    expect(config.mediaType).toBe(
+      "application/vnd.dev.sigstore.signingconfig.v0.2+json",
+    );
+    for (const service of ["caUrls", "oidcUrls", "rekorTlogUrls", "tsaUrls"]) {
+      expect(config[service] ?? [], service).toEqual([]);
+    }
+    // Không nháy đơn: nằm trong `printf '%s' '…'` của mọi CI
+    expect(SIGNING_CONFIG_JSON).not.toContain("'");
   });
 });

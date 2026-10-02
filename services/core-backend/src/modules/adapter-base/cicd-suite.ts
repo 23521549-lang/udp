@@ -14,7 +14,7 @@ import {
 import { parseAllDocuments } from "yaml";
 import { deployBodySchema, WebhookPayloadError } from "./cicd.js";
 import { stepId } from "./pipeline-steps.js";
-import type { BuildPlan } from "@udp/adapter-core";
+import type { BuildPlan, BuildSigning } from "@udp/adapter-core";
 
 /**
  * Bộ phép CI/CD dùng chung (Plan #36 AC-1) — chạy trên MỌI adapter họ CI/CD cạnh 42 phép của bộ
@@ -102,6 +102,7 @@ const BUILD: BuildPlan = {
     command: "npm ci && npm test",
     image: TEST_IMAGES.nodejs,
   },
+  signing: null,
 };
 
 const PARAMS: PipelineTemplateParams = {
@@ -125,6 +126,49 @@ const NO_REBASE: PipelineTemplateParams = {
 };
 
 const REBASE = rebaseScheduleOf(BUILD, PARAMS.projectSlug);
+
+/** Danh tính build AWS của project mẫu — vừa đẩy ECR vừa ký bằng KMS */
+const AWS_IDENTITY = {
+  cloud: "aws",
+  roleArn: "arn:aws:iam::123456789012:role/udp/udp-build-web",
+} as const;
+
+/** [Plan #61 QĐ-14] Khoá ký KMS của project mẫu, ký kèm chữ ký tương thích */
+const SIGNING: BuildSigning = {
+  key: "awskms:///arn:aws:kms:ap-southeast-1:123456789012:key/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+  identity: AWS_IDENTITY,
+  compat: true,
+};
+
+/**
+ * Hai ô ký: registry của chính cloud (một danh tính vừa đẩy vừa ký) và registry ngoài cloud (GHCR đẩy bằng token của
+ * CI, chỉ việc ký cần danh tính)
+ */
+const SIGN_CASES: { name: string; registryRef: string; build: BuildPlan }[] = [
+  {
+    name: "ECR + KMS",
+    registryRef: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/acme",
+    build: {
+      ...BUILD,
+      push: {
+        kind: "aws-ecr",
+        server: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com",
+        region: "ap-southeast-1",
+      },
+      identity: AWS_IDENTITY,
+      signing: SIGNING,
+    },
+  },
+  {
+    name: "GHCR + KMS",
+    registryRef: "ghcr.io/acme",
+    build: { ...BUILD, signing: SIGNING },
+  },
+];
+
+/** Số lần `needle` xuất hiện trong `text` */
+const countOf = (text: string, needle: string): number =>
+  text.split(needle).length - 1;
 
 /**
  * [Plan #61 QĐ-13] Dấu hiệu của lượt theo lịch ở từng CI: có lịch, lượt build bỏ qua lượt theo lịch, lượt rebase chỉ
@@ -592,6 +636,92 @@ export function runCicdSuite(
             !bare.includes(stepId(step)),
             `không có bước mà template vẫn có ${stepId(step)}`,
           );
+        }
+      },
+    );
+
+    api.it(
+      "[Plan #61 QĐ-14, QĐ-16] ký sau bước quét, trước bước báo UDP; chữ ký tới bước báo; digest của lượt rebase cũng được ký",
+      () => {
+        const SIGN = 'cosign" sign --yes';
+        for (const c of SIGN_CASES) {
+          const params = {
+            ...PARAMS,
+            registryRef: c.registryRef,
+            build: c.build,
+          };
+          const text = adapter.renderPipelineTemplate({
+            ...params,
+            build: { ...c.build, strategy: "dockerfile" },
+          });
+          for (const needle of [
+            `--key "${SIGNING.key}"`,
+            "-a dev.udp.project=web",
+            "-a dev.udp.commit=",
+            "-a dev.udp.ref=",
+            "-a dev.udp.issued-at=",
+            '--signing-config "$UDP_TMP/signing-config.json"',
+            ".sig", // chữ ký tương thích simple signing
+            "AWS_ROLE_ARN=arn:aws:iam::123456789012:role/udp/udp-build-web",
+          ]) {
+            assert(text.includes(needle), `[${c.name}] thiếu "${needle}"`);
+          }
+          const sign = text.indexOf(SIGN);
+          assert(
+            countOf(text, SIGN) === 1,
+            `[${c.name}] lượt build phải ký đúng MỘT lần`,
+          );
+          assert(
+            text.lastIndexOf("udp-grype-quet-image") < sign &&
+              sign < text.lastIndexOf("UDP_WEBHOOK_URL"),
+            `[${c.name}] bước ký không nằm giữa bước quét và bước báo UDP`,
+          );
+          // Tạo ra (base64 của bundle), chuyển cho bước báo, bước báo gửi đi
+          assert(
+            countOf(text.slice(sign), "UDP_SIGNATURE_B64") >= 3,
+            `[${c.name}] chữ ký không tới bước báo UDP`,
+          );
+          for (const doc of parseAllDocuments(yamlOf(adapter.toolId, text))) {
+            assert(
+              doc.errors.length === 0,
+              `[${c.name}] YAML lỗi: ${doc.errors
+                .map((e) => e.message)
+                .join("; ")
+                .slice(0, 200)}`,
+            );
+          }
+          const rebase = adapter.renderPipelineTemplate(params);
+          assert(
+            countOf(rebase, SIGN) === 2,
+            `[${c.name}] lượt rebase không ký digest mới`,
+          );
+        }
+        const plain = adapter.renderPipelineTemplate(PARAMS);
+        assert(!plain.includes("cosign"), "không khoá ký mà vẫn có bước ký");
+      },
+    );
+
+    api.it(
+      "biến shell `${…}` tới được shell: Drone thay `${…}` trước khi đọc YAML ⇒ phải thoát thành `$${…}`",
+      () => {
+        if (adapter.toolId !== "drone") return;
+        for (const params of [
+          PARAMS,
+          ...SIGN_CASES.map((c) => ({
+            ...PARAMS,
+            registryRef: c.registryRef,
+            build: c.build,
+          })),
+          ...PUSH_CASES.map((c) => ({
+            ...PARAMS,
+            registryRef: c.registryRef,
+            build: { ...BUILD, ...c.build },
+          })),
+        ]) {
+          const text = adapter.renderPipelineTemplate(params);
+          assert(!/(?<!\$)\$\{/.test(text), "còn `${` chưa thoát");
+          // `$$` đứng riêng cũng bị runner đổi thành `$`
+          assert(!/\$\$(?!\{)/.test(text), "còn `$$` không đi với `{`");
         }
       },
     );

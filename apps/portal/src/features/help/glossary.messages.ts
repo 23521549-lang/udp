@@ -40,6 +40,7 @@ export const TERMS = [
   "approval",
   "buildpacks",
   "buildIdentity",
+  "imageSigning",
   "rebase",
 ] as const;
 export type TermKey = (typeof TERMS)[number];
@@ -190,6 +191,10 @@ export const glossaryMessages = defineMessages({
         name: "Danh tính build",
         def: "Vai trò trong cloud của bạn mà CI dùng để đẩy image, qua token ngắn hạn (OIDC). Không có khoá nào được lưu; chỉ đúng repo và nhánh của project dùng được.",
       },
+      imageSigning: {
+        name: "Ký image",
+        def: "Pipeline ký image vừa build bằng khoá trong KMS của cloud của project. UDP kiểm chữ ký bằng khoá công khai trước khi deploy: image lạ, image của nhánh khác hay chữ ký cũ đều bị từ chối.",
+      },
     } satisfies Record<TermKey, Term>,
   },
   en: {
@@ -331,6 +336,10 @@ export const glossaryMessages = defineMessages({
       buildIdentity: {
         name: "Build identity",
         def: "A role in your cloud that CI uses to push images through short-lived tokens (OIDC). No key is stored; only this project's repository and branches can use it.",
+      },
+      imageSigning: {
+        name: "Image signing",
+        def: "The pipeline signs each image it builds with a key in your project cloud's KMS. UDP checks the signature with the public key before deploying: a foreign image, an image from another branch or an old signature is rejected.",
       },
     },
   },

@@ -55,8 +55,9 @@ export function templateValues(
 /**
  * Lệnh shell "báo UDP": biến vào là `UDP_STATUS`, `COMMIT_SHA`, `COMMIT_TS`, `IMAGE_REF`,
  * `PIPELINE_ID`, `REPO`, `REF`, `ACTOR`, `UDP_ENVIRONMENT`, `UDP_WEBHOOK_URL` (địa chỉ ĐẦY ĐỦ mà
- * Portal hiện, đã gồm project và provider), `UDP_WEBHOOK_SECRET`, và `UDP_KIND` tuỳ chọn (`rebase` ở
- * lượt theo lịch, Plan #61 QĐ-13). `PIPELINE_ID` phải khác nhau
+ * Portal hiện, đã gồm project và provider), `UDP_WEBHOOK_SECRET`, và hai biến tuỳ chọn: `UDP_KIND`
+ * (`rebase` ở lượt theo lịch, Plan #61 QĐ-13), `UDP_SIGNATURE_B64` (bundle chữ ký image dạng base64 một
+ * dòng — đi qua được biến môi trường của mọi CI — cổng deploy kiểm, QĐ-16). `PIPELINE_ID` phải khác nhau
  * giữa hai lượt chạy lại của cùng pipeline — UDP chống trùng theo nó.
  * Trường rỗng (timestamp, image khi build hỏng) bị bỏ khỏi thân — schema của UDP không nhận chuỗi
  * rỗng. `signatureHeader` là dòng `-H` của nhà cung cấp, dùng `$SIG` hay `$UDP_WEBHOOK_SECRET`.
@@ -68,9 +69,12 @@ export function notifyScript(signatureHeader: string): string[] {
     '  --arg sha "$COMMIT_SHA" --arg ts "$COMMIT_TS" --arg image "$IMAGE_REF" \\',
     '  --arg wl "%PROJECT%" --arg run "$PIPELINE_ID" --arg repo "$REPO" \\',
     '  --arg ref "$REF" --arg actor "$ACTOR" --arg kind "${UDP_KIND:-}" \\',
+    '  --arg sig "${UDP_SIGNATURE_B64:-}" \\',
     "  '{environment:$env, status:$status, commitSha:$sha, commitTimestamp:$ts,",
     "    imageRef:$image, workloadName:$wl, pipelineId:$run, repo:$repo, ref:$ref,",
-    '    actor:$actor, kind:$kind} | with_entries(select(.value != ""))\')',
+    "    actor:$actor, kind:$kind,",
+    '    signature:(if $sig == "" then "" else ($sig | @base64d | fromjson) end)}',
+    '    | with_entries(select(.value != ""))\')',
     "SIG=$(printf '%s' \"$BODY\" | openssl dgst -sha256 -hmac \"$UDP_WEBHOOK_SECRET\" -hex | sed 's/^.* //')",
     'curl -sS --fail -X POST "$UDP_WEBHOOK_URL" \\',
     "  -H 'Content-Type: application/json' \\",

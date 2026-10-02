@@ -26,12 +26,13 @@ import {
 } from "./helpers/api.js";
 import { tapServiceLog, type LogTap } from "./helpers/log-tap.js";
 import {
-  noRepoSource,
   inertCloudPlatform,
-  noDomainAdapters,
   inertProvisioning,
-  outsidePlatform,
+  noDomainAdapters,
+  noEgress,
   noExternalAuth,
+  noRepoSource,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -152,6 +153,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
+    egressFetch: noEgress,
     platform: outsidePlatform,
     auth: noExternalAuth,
     domainRegistry: noDomainAdapters,

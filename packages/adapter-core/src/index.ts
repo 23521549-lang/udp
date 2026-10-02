@@ -93,6 +93,7 @@ export type {
   BuildIdentity,
   BuildIdentityCloud,
   BuildPlan,
+  BuildSigning,
   BuildStrategy,
   BuildTest,
   RegistryPush,

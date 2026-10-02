@@ -18,7 +18,12 @@ import {
   cloudProviderSchema,
   cloudRegionSchema,
 } from "./cloud-api.js";
-import { BUILD_LANGUAGES, buildSettingsSchema } from "./build.js";
+import {
+  BUILD_LANGUAGES,
+  buildSettingsSchema,
+  SIGNATURE_REJECTIONS,
+  TRUSTED_DEPLOY_REJECTIONS,
+} from "./build.js";
 import { capabilityPreferenceSchema } from "./domain-api.js";
 import { PROVISION_BLOCKERS } from "./provisioning-api.js";
 
@@ -941,6 +946,21 @@ export const deploymentWire = z
     triggeredBy: z.enum(["WEBHOOK", "MANUAL", "ROLLBACK", "AUTO"]),
     /** [Plan #61 QĐ-13] Lần deploy do rebase theo lịch: cùng commit, lớp hệ điều hành mới */
     rebase: z.boolean(),
+    /**
+     * [Plan #61 QĐ-16] Cổng deploy: `VERIFIED` — chữ ký image đúng khoá của project; mã từ chối — không deploy; `null` —
+     * không kiểm (project chưa có khoá, chưa bắt buộc mà pipeline chưa ký, hay lần deploy không qua webhook)
+     */
+    signature: z.enum(["VERIFIED", ...SIGNATURE_REJECTIONS]).nullable(),
+    /**
+     * [Plan #61 QĐ-17, 61d-2a] Trusted Deploy: `VERIFIED` — lời báo mang token OIDC của đúng lượt chạy và
+     * token đó đã được xác minh; mã từ chối — không deploy; `null` — không kiểm (chưa bắt buộc mà pipeline
+     * chưa gửi token, hay lần deploy không đi qua webhook). Trường RIÊNG, không nhồi vào `signature`: hai
+     * cổng chứng minh hai thứ khác nhau — chữ ký image chứng minh BYTE được deploy, cái này chứng minh
+     * LƯỢT CHẠY là thật — và nhồi chung sẽ lặng lẽ đổi ngữ nghĩa của danh sách deployment và của DORA.
+     */
+    trustedDeploy: z
+      .enum(["VERIFIED", ...TRUSTED_DEPLOY_REJECTIONS])
+      .nullable(),
     rolloutSessionId: uuid.nullable(),
     restoresDeploymentId: uuid.nullable(),
     startedAt: isoDateTime,
@@ -1761,7 +1781,34 @@ export const cicdStatusResponseWire = z
       .object({
         provider: z.string().nullable(),
         webhookPath: z.string().nullable(),
+        /**
+         * [v4.12, Plan #61 61d-2a] Địa chỉ webhook TUYỆT ĐỐI, do máy chủ dựng.
+         *
+         * Trước đợt này Portal tự ghép `window.location.origin + webhookPath` ở trình duyệt, nên chuỗi mà
+         * người dùng dán vào CI suy từ trình duyệt họ đang mở. Trusted Deploy đòi `aud` của token BẰNG
+         * chuỗi đó, và bên kiểm chỉ có cấu hình máy chủ — hai nguồn thì lệch một dấu `/` là 401 vĩnh viễn
+         * và không có gì chẩn đoán được. Nên máy chủ thành nguồn sự thật duy nhất (R8) và Portal in lại
+         * đúng chuỗi này.
+         */
+        webhookUrl: z.string().nullable(),
         secretSet: z.boolean(),
+        /**
+         * [v4.12, Plan #61 61d-2a] Trusted Deploy đã bắt buộc chưa, và vì sao chưa bật được.
+         *
+         * `available` false nghĩa là UDP KHÔNG kiểm được token của provider đang bật — CircleCI thiếu
+         * `organizationId`/`projectId` (không suy ra được issuer), hay provider là một CI chạy trong cụm
+         * (chờ 61d-2b). Khi đó không cho bật `required`, vì bật một cổng mà UDP không kiểm nổi là tự khoá
+         * project ra ngoài.
+         */
+        trustedDeploy: z
+          .object({
+            required: z.boolean(),
+            available: z.boolean(),
+            unavailableReason: z
+              .enum(["IN_CLUSTER_CI", "MISSING_CIRCLECI_IDS", "NO_PROVIDER"])
+              .nullable(),
+          })
+          .strict(),
       })
       .strict(),
   })
@@ -1891,6 +1938,8 @@ export const buildTodoWire = z.discriminatedUnion("code", [
     })
     .strict(),
   z.object({ code: z.literal("BUILD_IDENTITY"), cloud: cloudEnum }).strict(),
+  /** [Plan #61 QĐ-14] Danh tính có rồi mà chưa có khoá ký (dán từ script cũ) — chạy lại script để tạo khoá */
+  z.object({ code: z.literal("SIGNING_KEY"), cloud: cloudEnum }).strict(),
   z.object({ code: z.literal("CIRCLECI_IDS") }).strict(),
   z.object({ code: z.literal("NO_CLUSTER") }).strict(),
   z.object({ code: z.literal("CLUSTER_OTHER_CLOUD") }).strict(),
@@ -1974,6 +2023,17 @@ export const buildViewWire = z
      * `schedule`: lịch nằm sẵn trong tệp pipeline (GitHub Actions, Jenkins), phải tạo trong cài đặt của CI (GitLab,
      * CircleCI, Drone), hay tự lập (Tekton chưa có Triggers).
      */
+    /**
+     * [Plan #61 QĐ-14] Ký image được không: cần cloud của project (danh tính ký ở đó, bất kể registry); CircleCI + Azure
+     * chưa federation được (chủ thể JWT của CircleCI mang id người chạy) — ký bằng bộ ký trong cụm (Trusted Deploy).
+     * Khoá, chế độ bắt buộc, chữ ký tương thích nằm ở `settings.signing`.
+     */
+    signing: z
+      .object({
+        available: z.boolean(),
+        reason: z.enum(["NO_CLOUD", "CIRCLECI_AZURE"]).nullable(),
+      })
+      .strict(),
     rebase: z
       .object({
         hour: z.number().int().min(0).max(23),

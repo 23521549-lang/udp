@@ -20,6 +20,7 @@ const plan: BuildPlan = {
   push: { kind: "github-token", server: "ghcr.io" },
   identity: null,
   test: { kind: "skip" },
+  signing: null,
 };
 const lines = dockerHostBuildLines(plan, "github-actions", {
   image,

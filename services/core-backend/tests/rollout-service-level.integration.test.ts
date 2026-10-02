@@ -31,9 +31,10 @@ import {
   inertCloudPlatform,
   inertProvisioning,
   noDomainAdapters,
+  noEgress,
+  noExternalAuth,
   noRepoSource,
   outsidePlatform,
-  noExternalAuth,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -68,6 +69,7 @@ const app = createApp({
   oidcIssuer: null,
   cloud: inertCloudPlatform,
   repoSource: noRepoSource,
+  egressFetch: noEgress,
   platform: outsidePlatform,
   auth: noExternalAuth,
   domainRegistry: noDomainAdapters,

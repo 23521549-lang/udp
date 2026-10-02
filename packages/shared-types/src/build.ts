@@ -59,6 +59,16 @@ export const BUILD_TEXT_RULES = {
   COMMAND: /^[^"'\\%`\n\r]{1,500}$/,
   IMAGE:
     /^[a-z0-9][a-z0-9._\-/]*(:[A-Za-z0-9_.-]{1,128})?(@sha256:[0-9a-f]{64})?$/,
+  /** [Plan #61 QĐ-14] URI khoá KMS mà cosign nhận — một dạng mỗi cloud */
+  KMS_AWS:
+    /^awskms:\/\/\/arn:aws:kms:[a-z0-9-]{4,30}:\d{12}:key\/[0-9a-f-]{36}$/,
+  KMS_GCP:
+    /^gcpkms:\/\/projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/locations\/[a-z0-9-]{2,40}\/keyRings\/[A-Za-z0-9_-]{1,63}\/cryptoKeys\/[A-Za-z0-9_-]{1,63}\/versions\/\d{1,4}$/,
+  KMS_AZURE:
+    /^azurekms:\/\/[a-z0-9-]{3,24}\.vault\.azure\.net\/[A-Za-z0-9-]{1,127}$/,
+  /** Khoá CÔNG KHAI dạng PEM — khoá bí mật (`BEGIN … PRIVATE KEY`) không khớp */
+  PUBLIC_KEY_PEM:
+    /^-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]{40,800}\n-----END PUBLIC KEY-----\n?$/,
 } as const;
 
 /** Đường dẫn tương đối, không `..`, không tuyệt đối */
@@ -101,6 +111,127 @@ export const buildIdentitySchema = z.discriminatedUnion("cloud", [
 ]);
 export type BuildIdentityInput = z.infer<typeof buildIdentitySchema>;
 
+/** Cloud của một URI khoá KMS — `null` khi không phải dạng nào của ba cloud */
+export function kmsCloudOf(uri: string): "aws" | "gcp" | "azure" | null {
+  if (BUILD_TEXT_RULES.KMS_AWS.test(uri)) return "aws";
+  if (BUILD_TEXT_RULES.KMS_GCP.test(uri)) return "gcp";
+  if (BUILD_TEXT_RULES.KMS_AZURE.test(uri)) return "azure";
+  return null;
+}
+
+const kmsUri = z
+  .string()
+  .max(300)
+  .refine((uri) => kmsCloudOf(uri) !== null, "URI khoá KMS không đúng dạng");
+
+/**
+ * [Plan #61 QĐ-14] Khoá ký của project: khoá bí mật ở KMS của cloud, UDP chỉ giữ khoá CÔNG KHAI (kiểm chữ ký) và URI
+ * (pipeline gọi KMS ký). `id` (dấu vân tay) và `addedAt` do Service 1 điền khi lưu.
+ */
+export const signingKeySchema = z
+  .object({
+    id: z
+      .string()
+      .regex(/^[0-9a-f]{16}$/)
+      .optional(),
+    publicKey: z.string().regex(BUILD_TEXT_RULES.PUBLIC_KEY_PEM),
+    kms: kmsUri,
+    addedAt: z.string().datetime({ offset: true }).optional(),
+  })
+  .strict();
+export type SigningKey = z.infer<typeof signingKeySchema>;
+
+/**
+ * Ký image: khoá MỚI NHẤT (đầu danh sách) ký, mọi khoá trong danh sách được chấp nhận khi kiểm — xoay khoá không gián
+ * đoạn. `compat`: thêm chữ ký simple signing cho podman/CRI-O. `enforce`: thiếu chữ ký thì không deploy — Service 1 tự
+ * bật khi nhận chữ ký hợp lệ đầu tiên; bật/tắt tay là thao tác riêng (`PUT /build/signing-enforce`), lưu cài đặt build
+ * giữ nguyên giá trị đang có.
+ */
+export const buildSigningSchema = z
+  .object({
+    keys: z.array(signingKeySchema).max(5).default([]),
+    compat: z.boolean().default(true),
+    enforce: z.boolean().default(false),
+  })
+  .strict();
+
+/**
+ * Dòng `UDP_BUILD_IDENTITY=…` mà script danh tính in: danh tính và, khi script tạo khoá ký, `signing` — Portal tách:
+ * danh tính vào `identity`, khoá vào đầu `signing.keys`.
+ */
+const lineSigning = z
+  .object({
+    key: kmsUri,
+    publicKey: z.string().regex(BUILD_TEXT_RULES.PUBLIC_KEY_PEM),
+  })
+  .strict()
+  .optional();
+const [awsIdentity, gcpIdentity, azureIdentity] = buildIdentitySchema.options;
+export const identityLineSchema = z.discriminatedUnion("cloud", [
+  awsIdentity.extend({ signing: lineSigning }),
+  gcpIdentity.extend({ signing: lineSigning }),
+  azureIdentity.extend({ signing: lineSigning }),
+]);
+export type IdentityLine = z.infer<typeof identityLineSchema>;
+
+/** `PUT /projects/:id/build/signing-enforce` — bật/tắt chế độ bắt buộc chữ ký (MAINTAINER, có nhật ký) */
+export const signingEnforceSchema = z.object({ enforce: z.boolean() }).strict();
+
+/** [Plan #61 QĐ-16] Lý do cổng deploy từ chối một image */
+export const SIGNATURE_REJECTIONS = [
+  "SIGNATURE_MISSING",
+  "SIGNATURE_INVALID",
+  "SIGNATURE_MISMATCH",
+  "SIGNATURE_STALE",
+] as const;
+export type SignatureRejection = (typeof SIGNATURE_REJECTIONS)[number];
+
+/**
+ * [Plan #61 QĐ-17, 61d-2a] Lý do Trusted Deploy từ chối một lời báo (AC-11).
+ *
+ * Cố ý KHÔNG vào `ERROR_CATALOG`, cùng lý lẽ với `SIGNATURE_REJECTIONS`: catalog là 25 mã mà Portal hiển
+ * thị cho người dùng, nó không có mã 401 hay 403 nào, và `problem.ts` kiểm số mã LÚC NẠP MODULE nên thêm
+ * một mã là sửa năm chỗ và làm service sập nếu quên. Đây là phán quyết của một cổng xác thực, đi theo
+ * đường của nó: `metadata` của lần deploy, rồi lên dây ở một trường RIÊNG.
+ *
+ * Trường riêng chứ không nhồi vào enum `signature`: hai cổng chứng minh hai thứ khác nhau — chữ ký image
+ * chứng minh BYTE được deploy, Trusted Deploy chứng minh LƯỢT CHẠY là thật — và nhồi chung sẽ lặng lẽ đổi
+ * ngữ nghĩa của danh sách deployment và của DORA.
+ *
+ * Phân biệt hai họ lý do, vì chúng có mã HTTP khác nhau: lỗi của token hay claim là TERMINAL (401 — không
+ * lớp retry nào thử lại, và đúng vậy), còn lỗi hạ tầng là RETRYABLE (503 — để `curl --retry` của bước báo
+ * và runner tự lành; trả 401 cho một lần JWKS không với tới là một lỗi không bao giờ tự khỏi).
+ */
+export const TRUSTED_DEPLOY_REJECTIONS = [
+  /** `oidcRequired` đã bật mà lời báo không mang `Authorization` */
+  "TOKEN_MISSING",
+  /** Header có mà không phải một JWT ba phần, hay quá dài */
+  "TOKEN_MALFORMED",
+  /** Chữ ký sai, thuật toán không được ghim, hay JWKS không có khoá khớp */
+  "TOKEN_INVALID",
+  /** `iss` không bằng issuer suy từ cấu hình của project — chặn trước mọi lời gọi mạng */
+  "TOKEN_ISSUER_UNEXPECTED",
+  /** `aud` không bằng địa chỉ webhook tuyệt đối của chính project này */
+  "TOKEN_AUDIENCE_MISMATCH",
+  /** `exp` đã qua, `nbf` chưa tới, hay `iat` cũ hơn trần chính sách */
+  "TOKEN_EXPIRED",
+  /** Claim của token lệch cấu hình: repo, nhánh, hay environment không được phép */
+  "TOKEN_CLAIM_MISMATCH",
+  /** Token đã dùng rồi, và thân lần này KHÁC lần đầu — một lượt replay, không phải retry */
+  "TOKEN_REPLAYED",
+  /** Không lấy được khoá công khai của nơi phát, kể cả bản đã cache — HẠ TẦNG, retryable */
+  "TOKEN_KEYS_UNAVAILABLE",
+] as const;
+export type TrustedDeployRejection = (typeof TRUSTED_DEPLOY_REJECTIONS)[number];
+
+/** Lý do thuộc hạ tầng ⇒ 503 và retryable; mọi lý do khác là terminal ⇒ 401 */
+export const TRUSTED_DEPLOY_RETRYABLE: readonly TrustedDeployRejection[] = [
+  "TOKEN_KEYS_UNAVAILABLE",
+];
+
+/** `PUT /projects/:id/domains/CICD/oidc-required` — bật/tắt Trusted Deploy (MAINTAINER, có nhật ký) */
+export const oidcRequiredSchema = z.object({ required: z.boolean() }).strict();
+
 /** Bước test: mặc định theo ngôn ngữ, lệnh tự khai, hay tắt tường minh */
 export const buildTestSettingSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("default") }).strict(),
@@ -125,6 +256,7 @@ export const buildSettingsSchema = z
     language: z.enum(BUILD_LANGUAGES).nullable().default(null),
     test: buildTestSettingSchema.default({ mode: "default" }),
     identity: buildIdentitySchema.nullable().default(null),
+    signing: buildSigningSchema.default({}),
   })
   .strict();
 export type BuildSettings = z.infer<typeof buildSettingsSchema>;

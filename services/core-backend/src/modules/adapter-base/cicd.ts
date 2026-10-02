@@ -146,6 +146,8 @@ export const deployBodySchema = z
     actor: z.string().min(1).max(255),
     /** [Plan #61 QĐ-13] Lượt rebase theo lịch — vắng là lượt build thường */
     kind: z.literal("rebase").optional(),
+    /** [Plan #61 QĐ-16] Bundle Sigstore của chữ ký image (JSON) — cổng deploy kiểm bằng khoá công khai của project */
+    signature: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -191,5 +193,6 @@ export function parseDeployBody(
       ? {}
       : { commitTimestamp: b.commitTimestamp }),
     ...(b.kind === undefined ? {} : { kind: b.kind }),
+    ...(b.signature === undefined ? {} : { signature: b.signature }),
   };
 }

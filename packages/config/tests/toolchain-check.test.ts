@@ -10,8 +10,10 @@ import {
   imageFinding,
   isActionable,
   newerTags,
-  packFinding,
   parseImageRef,
+  pinnedReleases,
+  publishedSha256Of,
+  releaseFinding,
   parseVersionTag,
   pinnedImages,
   renderReport,
@@ -179,33 +181,53 @@ describe("toolchain:check — phân loại", () => {
     ).toBe("ok");
   });
 
-  it("pack: sha256 công bố phải khớp bản ghim; bản vá là việc cần làm", () => {
-    const { version, linuxSha256 } = BUILD_TOOLCHAIN.pack;
-    const [major, minor, patch] = version.split(".").map(Number) as [
-      number,
-      number,
-      number,
-    ];
+  it("pack, cosign, oras: sha256 công bố phải khớp bản ghim; bản vá là việc cần làm, dòng mới chỉ để biết", () => {
+    for (const release of pinnedReleases()) {
+      const [major, minor, patch] = release.version.split(".").map(Number) as [
+        number,
+        number,
+        number,
+      ];
+      const ok = {
+        latestTag: `v${release.version}`,
+        publishedSha256: release.sha256,
+      };
+      expect(releaseFinding(release, ok).status, release.key).toBe("ok");
+      expect(
+        releaseFinding(release, {
+          ...ok,
+          latestTag: `v${String(major)}.${String(minor)}.${String(patch + 1)}`,
+        }).status,
+      ).toBe("update");
+      expect(
+        releaseFinding(release, {
+          ...ok,
+          latestTag: `v${String(major)}.${String(minor + 1)}.0`,
+        }).status,
+      ).toBe("newer-line");
+      expect(
+        releaseFinding(release, { ...ok, publishedSha256: "0".repeat(64) })
+          .status,
+      ).toBe("broken");
+    }
+    expect(pinnedReleases().map((r) => r.key)).toEqual([
+      "pack",
+      "cosign",
+      "oras",
+    ]);
+  });
+
+  it("đọc sha256 công bố: tệp riêng một dòng trần, hay danh sách chung theo tên tệp", () => {
+    const sha = "a".repeat(64);
+    expect(publishedSha256Of(`${sha}\n`, "pack-v1-linux.tgz")).toBe(sha);
     expect(
-      packFinding({ latestTag: `v${version}`, publishedSha256: linuxSha256 })
-        .status,
-    ).toBe("ok");
-    expect(
-      packFinding({
-        latestTag: `v${String(major)}.${String(minor)}.${String(patch + 1)}`,
-        publishedSha256: linuxSha256,
-      }).status,
-    ).toBe("update");
-    expect(
-      packFinding({
-        latestTag: `v${String(major)}.${String(minor + 1)}.0`,
-        publishedSha256: linuxSha256,
-      }).status,
-    ).toBe("newer-line");
-    expect(
-      packFinding({ latestTag: `v${version}`, publishedSha256: "0".repeat(64) })
-        .status,
-    ).toBe("broken");
+      publishedSha256Of(
+        `${"b".repeat(64)}  cosign-darwin-amd64\n${sha}  cosign-linux-amd64\n`,
+        "cosign-linux-amd64",
+      ),
+    ).toBe(sha);
+    expect(publishedSha256Of(`${sha} *oras.tar.gz`, "oras.tar.gz")).toBe(sha);
+    expect(publishedSha256Of("không có gì", "x")).toBeNull();
   });
 
   it("actions/checkout: tag ghim phải trỏ đúng SHA ghim", () => {

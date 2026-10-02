@@ -16,12 +16,13 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import {
-  noRepoSource,
   inertCloudPlatform,
   inertProvisioning,
   noDomainAdapters,
-  outsidePlatform,
+  noEgress,
   noExternalAuth,
+  noRepoSource,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -51,6 +52,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
+    egressFetch: noEgress,
     platform: outsidePlatform,
     auth: noExternalAuth,
     domainRegistry: noDomainAdapters,

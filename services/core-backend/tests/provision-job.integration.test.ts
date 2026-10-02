@@ -45,10 +45,11 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import {
-  noRepoSource,
   inertProvisioning,
-  outsidePlatform,
+  noEgress,
   noExternalAuth,
+  noRepoSource,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 import {
   simCloudPlatform,
@@ -451,6 +452,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: platform,
     repoSource: noRepoSource,
+    egressFetch: noEgress,
     platform: outsidePlatform,
     auth: noExternalAuth,
     domainRegistry: () => Promise.resolve(domainsWith().registry),
@@ -1310,6 +1312,7 @@ function appFor(
     oidcIssuer: null,
     cloud: platform,
     repoSource: noRepoSource,
+    egressFetch: noEgress,
     platform: outsidePlatform,
     auth: noExternalAuth,
     domainRegistry: () => Promise.resolve(registry),

@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "UDP — Configurable DevOps Platform with Integrated Feature Flags and Progressive Delivery",
-  "//engines": "22.12: pg-boss 12 (hàng đợi job, ADR-02) khai engines node >=22.12.0; CI và máy dev đã chạy Node 22. Mốc cũ 20.11 là vì prisma.config.ts dùng import.meta.dirname — 22.12 vẫn thoả",
+  "//engines": "22.22.2: @sigstore/verify 4 (Service 1 kiểm chữ ký image, Plan #61 QĐ-16) — cùng dòng LTS 22, bản vá bảo mật; máy ảo production chạy 22.23.3. Mốc trước 22.12 là của pg-boss 12 (ADR-02), 20.11 của import.meta.dirname — đều vẫn thoả",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.22.2"
   },
   "packageManager": "pnpm@9.12.0",
   "scripts": {

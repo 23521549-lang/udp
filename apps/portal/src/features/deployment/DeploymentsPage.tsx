@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { DeploymentWire } from "@udp/shared-types/wire";
-import { CircleAlert, CircleCheck, CircleX } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleX,
+  ShieldCheck,
+  ShieldX,
+} from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Icon } from "../../components/Icon";
@@ -145,6 +151,13 @@ function DeploymentRow({ deployment: d }: { deployment: DeploymentWire }) {
           <span className="stt">
             {m.rebase}
             <InfoTip term="rebase" />
+          </span>
+        )}
+        {d.signature !== null && (
+          <span className={d.signature === "VERIFIED" ? "stt" : "stt warn"}>
+            <Icon of={d.signature === "VERIFIED" ? ShieldCheck : ShieldX} />
+            {m.signature[d.signature]}
+            <InfoTip term="imageSigning" />
           </span>
         )}
         {d.rolloutSessionId !== null && (

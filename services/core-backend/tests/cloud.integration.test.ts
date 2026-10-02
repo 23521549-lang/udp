@@ -24,12 +24,13 @@ import {
   type SimCloudPlatform,
 } from "./helpers/cloud-platform.js";
 import {
-  noRepoSource,
   inertCloudPlatform,
-  noDomainAdapters,
   inertProvisioning,
-  outsidePlatform,
+  noDomainAdapters,
+  noEgress,
   noExternalAuth,
+  noRepoSource,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 import { tapServiceLog, type LogTap } from "./helpers/log-tap.js";
 import type { CloudPlatform } from "../src/modules/cloud/cloud.platform.js";
@@ -64,6 +65,7 @@ const appOn = (cloud: CloudPlatform) =>
     oidcIssuer: null,
     cloud,
     repoSource: noRepoSource,
+    egressFetch: noEgress,
     platform: outsidePlatform,
     auth: noExternalAuth,
     domainRegistry: noDomainAdapters,

@@ -7,6 +7,7 @@ type Push = NonNullable<BuildViewWire["registry"]>["push"];
 type Reason = BuildViewWire["prediction"]["reason"];
 type Strategy = BuildViewWire["settings"]["strategy"];
 type Source = BuildViewWire["language"]["source"];
+type SigningBlocked = NonNullable<BuildViewWire["signing"]["reason"]>;
 
 /** Câu chỉ cách đặt lịch rebase của một CI: biểu thức cron và giờ `HH:MM` (UTC) */
 export type RebaseHow = (cron: string, time: string) => string;
@@ -92,6 +93,8 @@ const vi = {
       "Registry được bật từ trước bản này: áp lại domain Container Registry để UDP biết cách đẩy image.",
     BUILD_IDENTITY: (cloud: string) =>
       `Chạy script danh tính build bên dưới trên ${cloud}, rồi dán dòng kết quả vào ô.`,
+    SIGNING_KEY: (cloud: string) =>
+      `Danh tính build có từ trước khi UDP ký image: chạy lại script bên dưới trên ${cloud} (bản mới tạo thêm khoá ký trong KMS), rồi dán dòng kết quả.`,
     CIRCLECI_IDS:
       "Điền Organization ID và Project ID của CircleCI trong cấu hình domain CI/CD: danh tính build chỉ tin đúng project này.",
     NO_CLUSTER:
@@ -141,6 +144,48 @@ const vi = {
   pasteWrongCloud: (cloud: string) =>
     `Đây là danh tính của cloud khác: registry của project cần danh tính ${cloud}.`,
   saveIdentity: "Lưu danh tính",
+  // [Plan #61 QĐ-14, QĐ-16] Ký image và cổng deploy
+  signingTitle: "Ký image",
+  signingWhy:
+    "Pipeline ký image bằng khoá trong KMS của cloud của project, ngay sau các bước quét. UDP chỉ giữ khoá công khai và chỉ deploy image có chữ ký đúng: secret webhook có lộ cũng không deploy được image lạ.",
+  signingBlocked: {
+    NO_CLOUD:
+      "Project chưa kết nối cloud: khoá ký nằm trong KMS của cloud của project, nên cần kết nối cloud trước. Tới lúc đó image vẫn deploy như cũ, chưa ký.",
+    CIRCLECI_AZURE:
+      "CircleCI chưa ký được trên Azure: Azure không nhận token OIDC của CircleCI. UDP sẽ ký trong cụm ở bản sau; tới lúc đó image vẫn deploy như cũ, chưa ký.",
+  } satisfies Record<SigningBlocked, string>,
+  noKeys:
+    "Chưa có khoá ký: script danh tính ở trên tạo khoá trong KMS, dán dòng kết quả của nó là xong.",
+  signingCost:
+    "Khoá nằm trong KMS của cloud của bạn và tính phí ở đó: AWS KMS 1 USD mỗi khoá mỗi tháng cộng 0,15 USD mỗi 10 000 lần ký; GCP và Azure theo bảng giá của họ. UDP không thu thêm.",
+  keys: "Khoá ký",
+  keyId: "Dấu vân tay",
+  keyKms: "Khoá trong KMS",
+  keyAdded: "Ngày thêm",
+  keySigning: "Đang ký",
+  keyAccepted: "Vẫn được chấp nhận",
+  keyActions: "Thao tác",
+  removeKey: (id: string) => `Gỡ khoá ${id}`,
+  removeKeyTitle: "Gỡ khoá ký?",
+  removeKeyBody: (id: string) =>
+    `Image ký bằng khoá ${id} sẽ không deploy được nữa. Khoá vẫn còn trong KMS: xoá nó trong cloud nếu không dùng nữa.`,
+  removeLastKeyBody:
+    "Đây là khoá cuối cùng: gỡ nó thì UDP thôi kiểm chữ ký và tắt chế độ bắt buộc. Pipeline sinh lại sẽ không ký nữa.",
+  removeKeyConfirm: "Gỡ khoá",
+  compat: "Chữ ký tương thích",
+  compatHint:
+    "Thêm chữ ký dạng simple signing để podman, skopeo, CRI-O và bootc cũng kiểm được image.",
+  enforced: "Bắt buộc: image không có chữ ký hợp lệ không được deploy.",
+  waiting:
+    "Chờ chữ ký hợp lệ đầu tiên: UDP tự bật bắt buộc khi nhận được nó. Sinh lại pipeline để bước ký có mặt.",
+  enforceOff: "Tắt bắt buộc",
+  enforceOn: "Bắt buộc ngay",
+  enforceOffTitle: "Tắt bắt buộc chữ ký?",
+  enforceOffBody:
+    "Image không có chữ ký sẽ deploy được cho tới lần pipeline gửi chữ ký hợp lệ kế tiếp, lúc đó UDP tự bật lại. Chữ ký sai vẫn luôn bị từ chối. Việc này được ghi vào nhật ký.",
+  enforceOnTitle: "Bắt buộc chữ ký ngay?",
+  enforceOnBody:
+    "Từ giờ image không có chữ ký hợp lệ sẽ không được deploy. Chỉ bật khi pipeline đang chạy đã có bước ký.",
   settingsTitle: "Cài đặt build",
   readOnly: "Chỉ Người bảo trì trở lên đổi được cài đặt build.",
   strategy: "Chiến lược",
@@ -256,6 +301,8 @@ const en: typeof vi = {
       "The registry was enabled before this release: re-apply the Container Registry domain so UDP knows how to push.",
     BUILD_IDENTITY: (cloud: string) =>
       `Run the build identity script below in ${cloud}, then paste the line it prints.`,
+    SIGNING_KEY: (cloud: string) =>
+      `The build identity predates image signing: run the script below again in ${cloud} (the new one also creates a signing key in KMS), then paste the line it prints.`,
     CIRCLECI_IDS:
       "Fill in the CircleCI Organization ID and Project ID in the CI/CD domain settings: the build identity trusts only this project.",
     NO_CLUSTER:
@@ -306,6 +353,47 @@ const en: typeof vi = {
   pasteWrongCloud: (cloud: string) =>
     `That identity is for another cloud: the project's registry needs a ${cloud} identity.`,
   saveIdentity: "Save identity",
+  signingTitle: "Image signing",
+  signingWhy:
+    "The pipeline signs the image with a key in your project cloud's KMS, right after the scan steps. UDP keeps only the public key and deploys only images with a valid signature: even a leaked webhook secret cannot deploy a foreign image.",
+  signingBlocked: {
+    NO_CLOUD:
+      "The project has no cloud connected yet: the signing key lives in the KMS of the project's cloud, so connect a cloud first. Until then images deploy as before, unsigned.",
+    CIRCLECI_AZURE:
+      "CircleCI cannot sign on Azure yet: Azure does not accept CircleCI's OIDC tokens. UDP will sign inside the cluster in a later release; until then images deploy as before, unsigned.",
+  },
+  noKeys:
+    "No signing key yet: the identity script above creates one in KMS; paste the line it prints and you are done.",
+  signingCost:
+    "The key lives in your cloud's KMS and is billed there: AWS KMS charges 1 USD per key per month plus 0.15 USD per 10,000 signatures; GCP and Azure follow their own price lists. UDP charges nothing extra.",
+  keys: "Signing keys",
+  keyId: "Fingerprint",
+  keyKms: "Key in KMS",
+  keyAdded: "Added",
+  keySigning: "Signing",
+  keyAccepted: "Still accepted",
+  keyActions: "Actions",
+  removeKey: (id: string) => `Remove key ${id}`,
+  removeKeyTitle: "Remove the signing key?",
+  removeKeyBody: (id: string) =>
+    `Images signed with key ${id} can no longer be deployed. The key stays in KMS: delete it in your cloud if you no longer need it.`,
+  removeLastKeyBody:
+    "This is the last key: removing it stops UDP checking signatures and turns enforcement off. A regenerated pipeline will no longer sign.",
+  removeKeyConfirm: "Remove key",
+  compat: "Compatible signature",
+  compatHint:
+    "Also add a simple signing signature so podman, skopeo, CRI-O and bootc can verify the image.",
+  enforced: "Enforced: images without a valid signature are not deployed.",
+  waiting:
+    "Waiting for the first valid signature: UDP turns enforcement on when it arrives. Regenerate the pipeline so it has the signing step.",
+  enforceOff: "Stop enforcing",
+  enforceOn: "Enforce now",
+  enforceOffTitle: "Stop enforcing signatures?",
+  enforceOffBody:
+    "Unsigned images can be deployed until the pipeline next sends a valid signature, at which point UDP turns enforcement back on. Invalid signatures are always rejected. This is recorded in the audit log.",
+  enforceOnTitle: "Enforce signatures now?",
+  enforceOnBody:
+    "From now on, images without a valid signature are not deployed. Only do this once the running pipeline has the signing step.",
   settingsTitle: "Build settings",
   readOnly: "Only Maintainers and above can change the build settings.",
   strategy: "Strategy",

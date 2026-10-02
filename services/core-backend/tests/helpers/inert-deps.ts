@@ -56,3 +56,17 @@ export const noRepoSource: RepoSourceFactory = () => {
 
 /** [v4.12, Plan #60] Không thư, không GitHub: hai tính năng tắt như một triển khai chưa cấu hình */
 export const noExternalAuth: AuthRuntime = { mailer: null, github: null };
+
+/**
+ * [v4.12, Plan #61 61d-2a] Khong loi ra mang.
+ *
+ * Day vua la mot phu thuoc tro vua la mot SENTINEL: neu mot duong ma nao do di goi mang trong mot test
+ * khong chu y goi mang, no nem o day thay vi lang le di ra Internet trong CI. Test nao THAT SU can kiem
+ * duong lay khoa cong khai thi tiem mot ban ghi lai loi goi cua rieng no, va khang dinh danh sach URL da
+ * goi bang `toEqual` - so tuyet doi lam mot loi goi THUA thanh do.
+ */
+export const noEgress: typeof fetch = (input) => {
+  throw new Error(
+    `test: ma goi mang ra ngoai ma khong tiem egressFetch - ${String(input)}`,
+  );
+};

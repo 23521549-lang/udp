@@ -1,0 +1,93 @@
+-- [Plan #61, sửa trong 61d-1] Mốc giờ của chuỗi sự kiện deploy do DATABASE cấp, không phải đồng hồ của writer.
+--
+-- Đo được 02/10/2026 (một transaction rồi rollback): Prisma Client sinh giá trị của `@default(now())` ở
+-- MÁY, không ở database — giá trị lưu lệch 13 ms so với đồng hồ JS và 1 567 ms so với `now()` của
+-- database, vì máy dev chạy nhanh hơn Supabase 1,5 giây.
+--
+-- Đây là một khiếm khuyết thật, không chỉ chuyện của test: `deployment_events` có HAI writer ở HAI tiến
+-- trình — Service 1 (webhook, duyệt deploy, rollout, hai job; 11 chỗ gọi, cùng một tiến trình vì worker
+-- nằm trong tiến trình API, Plan #28 QĐ-2) và Service 3 (`ROLLBACK` và kết cục session của pd-controller,
+-- 2 chỗ gọi). Thứ tự `occurred_at` vì vậy phụ thuộc đồng hồ riêng của từng tiến trình, trong khi BỐN kết
+-- luận lại đọc đúng thứ tự đó:
+--   1. `latestDeployment` (QĐ-13) quyết lượt vá image nền có được deploy không — lệch đồng hồ ⇒ lượt rebase
+--      đè lên một lần rollback có chủ đích;
+--   2. `currentIssuedAt` (QĐ-16, AC-10) so `issued-at` với bản đang chạy — lệch đồng hồ ⇒ nhận một chữ ký
+--      cũ hơn bản đang chạy;
+--   3. `lastSuccessfulImage` (`jobs/deploy.job.ts`) chọn image để HOÀN TÁC VỀ khi deploy hỏng — chọn sai
+--      hàng ⇒ hoàn tác về một bản khác bản đang chạy;
+--   4. DORA *Failed Deployment Recovery Time* = `occurred_at(ROLLBACK) − occurred_at(DEPLOY_SUCCESS)`, tức
+--      hiệu của hai mốc do HAI tiến trình ghi; `deployment.dora.ts` không kẹp âm, nên một lần khôi phục
+--      nhanh hơn độ lệch đồng hồ cho ra thời gian khôi phục ÂM và lọt ra tới API. Nay hai vế cùng đồng hồ.
+-- Phụ thêm: `jobs/reconcile.ts` so `occurred_at < now() - 60 giây` — trước đây là so đồng hồ MÁY với đồng
+-- hồ DATABASE nên cửa sổ thật là 61,5 giây; nay cùng một thước.
+--
+-- Đây là lần THỨ HAI dự án áp cùng nguyên tắc: Plan #28 QĐ-2 đã đổi `claim()` của lease từ đồng hồ ứng
+-- dụng sang đồng hồ database, vì nhiều replica chỉ có một đồng hồ chung là đồng hồ đó. Lease khai sinh của
+-- `RolloutSession` (§1.2) và nhịp phân tích của Service 3 (§9) là hai ngoại lệ ĐƯỢC BẢO VỆ có lập luận
+-- riêng — migration này KHÔNG đụng tới chúng.
+--
+-- Ba thay đổi, cả ba đều cần:
+--
+-- (1) `TYPE TIMESTAMPTZ(6)`. Cột đang là `(3)`, tức Postgres LÀM TRÒN về mili giây khi lưu, nên hai sự kiện
+--     cách nhau dưới 1 ms BẰNG nhau và thứ tự phải nhờ khoá phụ `id`. Nhưng `id` là `uuid(7)` do Prisma
+--     sinh ở MÁY của writer (`init` không cấp DEFAULT cho `id`), tức đúng cái đồng hồ vừa bị loại: khi hai
+--     sự kiện đến từ hai tiến trình, khoá phụ đó phân định bằng hai đồng hồ máy và thiên vị CÓ HỆ THỐNG về
+--     tiến trình chạy nhanh — tệ hơn cả 50/50. Micro giây làm cửa sổ trùng gần như không xảy ra, nên `id`
+--     chỉ còn là khoá chốt cho tính xác định. `(6)` cũng khớp lại với §2.2, nơi mọi cột thời gian ghi
+--     `TIMESTAMPTZ` trần — mà `TIMESTAMPTZ` của Postgres LÀ micro giây; `(3)` là chỗ mã tự thu hẹp.
+--
+-- (2) `SET DEFAULT clock_timestamp()` chứ KHÔNG `CURRENT_TIMESTAMP`. `CURRENT_TIMESTAMP` là
+--     `transaction_timestamp()`, nên hai sự kiện ghi trong CÙNG một transaction nhận CÙNG một mốc — đã đo
+--     thấy đúng như vậy — và thứ tự lại thành bất định. `clock_timestamp()` đọc đồng hồ thật ở từng câu
+--     lệnh, và Postgres tính DEFAULT cho TỪNG HÀNG nên một `createMany` nhiều hàng cũng tách được ở `(6)`.
+--     Nó cũng là lựa chọn có cửa sổ đảo NHỎ NHẤT trong ba: đồng hồ client (lệch đồng hồ, không chặn trên)
+--     > `transaction_timestamp()` (cả thời gian sống của transaction) > `clock_timestamp()` (từ câu INSERT
+--     tới COMMIT). Một cột do COMMIT cấp thì Postgres không có; `BIGSERIAL` cũng cấp lúc INSERT nên không
+--     thu hẹp cửa sổ đó, chỉ xoá ties — đắt hơn mà không mạnh hơn.
+--
+-- (3) Kẹp các hàng đang nằm ở TƯƠNG LAI so với đồng hồ database. Hàng ghi trước migration mang đồng hồ máy,
+--     nên trên một máy chạy nhanh chúng mang mốc ở tương lai. Để nguyên thì có một nguy cơ MỘT LẦN ở đúng
+--     mốc này, và hướng của nó là hướng NGUY HIỂM, không phải hướng an toàn: `DEPLOY_SUCCESS` cũ (mốc
+--     T+1,567 s) thắng một `ROLLBACK` có chủ đích ghi SAU đó (mốc T+0,9 s) ⇒ `decideRebase` thấy
+--     `DEPLOY_SUCCESS` cùng `repo:commit` khác digest ⇒ `{action:"deploy"}` ⇒ lượt vá image nền ĐÈ LÊN lần
+--     rollback. `id DESC` không cứu, vì uuid(7) của hàng cũ cũng mang đồng hồ máy nhanh hơn. Cửa sổ hẹp
+--     theo thời điểm (hai sự kiện phải cách nhau dưới độ lệch) nhưng phép so sánh có thể xảy ra bất cứ lúc
+--     nào về sau, vì với workload ít deploy thì cặp "sự kiện cuối trước migration / sự kiện đầu sau" sống
+--     tới khi có sự kiện mới hơn.
+--     Câu UPDATE dưới đây chạm ĐÚNG tập hàng gây đảo và không cần biết trước độ lệch là bao nhiêu. Nó là
+--     một lệnh ghi lên bảng append-only, nhưng không phải viết lại lịch sử hợp lệ: không sự kiện nào có
+--     thể đã xảy ra ở tương lai, nên những giá trị đó là SAI theo định nghĩa và đây là sửa dữ liệu hỏng.
+--     Trên một database có đồng hồ writer đúng, nó chạm 0 hàng.
+--
+-- GIÁ PHẢI TRẢ, cho người chạy trên production: `ALTER COLUMN TYPE` từ `(3)` lên `(6)` KHÔNG viết lại bảng
+-- (Postgres thay hàm co giãn bằng `RelabelType` khi độ chính xác mới rộng hơn), nhưng tài liệu ALTER TABLE
+-- nói rõ ở đúng ngoại lệ đó: mọi index trên cột bị ảnh hưởng VẪN phải dựng lại. Bảng này có ba index chứa
+-- `occurred_at`, và Prisma bọc cả tệp migration trong MỘT transaction, nên `ACCESS EXCLUSIVE` giữ tới hết
+-- tệp — trong lúc đó cả ba service INSERT không được. Đây là Event Store của DORA, append-only, không bao
+-- giờ xoá, nên nó chỉ lớn dần. Vì vậy `lock_timeout` ở đầu tệp: thà chết nhanh còn hơn xếp hàng sau một
+-- truy vấn dài rồi chặn mọi writer. Trước khi chạy trên production, đếm `SELECT count(*) FROM
+-- deployment_events`; nếu bảng đã lớn thì chạy trong cửa sổ bảo trì.
+--
+-- QUYỀN: không GRANT gì thêm, I22 không đổi. Ba lý do: (a) quyền trên bảng này được cấp ở CẤP BẢNG
+-- (`20260908083000_service_roles`: `GRANT SELECT, INSERT ON audit_logs, deployment_events TO udp_s1,
+-- udp_s2, udp_s3`), không có GRANT theo cột nào — cái bẫy "khối DO đóng băng danh sách cột" của
+-- `20260930091000` chỉ áp cho `rollout_sessions` và `environments`; (b) bỏ một cột khỏi câu INSERT chỉ làm
+-- yêu cầu quyền LỎNG hơn, vì Postgres chỉ kiểm quyền trên các cột được nêu tên; (c) `clock_timestamp()` là
+-- hàm built-in, `EXECUTE` cấp cho `PUBLIC`. Không có trigger nào trên bảng này.
+--
+-- THỨ TỰ TRIỂN KHAI: áp migration này TRƯỚC khi lên mã mới. Chạy ngược lại thì mã bỏ cột khỏi INSERT trong
+-- khi DEFAULT cũ vẫn là `CURRENT_TIMESTAMP`, nên mọi sự kiện trong một transaction gộp về cùng một mốc —
+-- hỏng IM LẶNG, không log nào. Phép kiểm `mốc giờ của sự kiện deploy` trong
+-- `services/core-backend/tests/cicd-webhook.integration.test.ts` canh cả hai nửa (catalog và hình dạng câu
+-- INSERT) nên một lần chạy bộ test là thấy.
+--
+-- ĐƯỜNG LÙI (dán chạy được):
+--   ALTER TABLE "deployment_events" ALTER COLUMN "occurred_at" SET DEFAULT CURRENT_TIMESTAMP;
+--   ALTER TABLE "deployment_events" ALTER COLUMN "occurred_at" TYPE TIMESTAMPTZ(3);
+-- (lùi độ chính xác làm tròn các mốc về mili giây và cũng dựng lại ba index đó.)
+SET lock_timeout = '10s';
+
+ALTER TABLE "deployment_events" ALTER COLUMN "occurred_at" TYPE TIMESTAMPTZ(6);
+ALTER TABLE "deployment_events" ALTER COLUMN "occurred_at" SET DEFAULT clock_timestamp();
+
+UPDATE "deployment_events" SET "occurred_at" = clock_timestamp() WHERE "occurred_at" > clock_timestamp();

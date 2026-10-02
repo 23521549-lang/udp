@@ -224,24 +224,83 @@ function releaseNewer(current: string, latestTag: string): NewerTags {
   return newerTags(tag(current), [tag(latestTag)]);
 }
 
-/** `pack`: bản phát hành mới nhất và sha256 công bố của bản đang ghim */
-export function packFinding(observed: {
-  latestTag: string;
-  publishedSha256: string | null;
-}): Finding {
-  const pack = BUILD_TOOLCHAIN.pack;
+/**
+ * Công cụ tải bản phát hành rồi kiểm sha256 trong pipeline (`pack`, cosign, oras): repository GitHub, tệp tải và nơi
+ * nhà phát hành công bố sha256 của nó
+ */
+export interface PinnedRelease {
+  key: "pack" | "cosign" | "oras";
+  repo: string;
+  version: string;
+  sha256: string;
+  /** Tên tệp tải của bản ghim */
+  asset: string;
+  /** Tệp công bố sha256: riêng cho tệp tải (`.sha256`) hay danh sách chung (`checksums.txt`) */
+  checksums: string;
+}
+
+export function pinnedReleases(): PinnedRelease[] {
+  const { pack, cosign, oras } = BUILD_TOOLCHAIN;
+  return [
+    {
+      key: "pack",
+      repo: "buildpacks/pack",
+      version: pack.version,
+      sha256: pack.linuxSha256,
+      asset: `pack-v${pack.version}-linux.tgz`,
+      checksums: `pack-v${pack.version}-linux.tgz.sha256`,
+    },
+    {
+      key: "cosign",
+      repo: "sigstore/cosign",
+      version: cosign.version,
+      sha256: cosign.linuxSha256,
+      asset: "cosign-linux-amd64",
+      checksums: "cosign_checksums.txt",
+    },
+    {
+      key: "oras",
+      repo: "oras-project/oras",
+      version: oras.version,
+      sha256: oras.linuxSha256,
+      asset: `oras_${oras.version}_linux_amd64.tar.gz`,
+      checksums: `oras_${oras.version}_checksums.txt`,
+    },
+  ];
+}
+
+/** sha256 của `asset` trong nội dung tệp công bố (`<sha256>  <tên tệp>` mỗi dòng, hay một sha256 trần) */
+export function publishedSha256Of(text: string, asset: string): string | null {
+  const lines = text.trim().split(/\r?\n/);
+  for (const line of lines) {
+    const [sha, name] = line.trim().split(/\s+/);
+    if (sha !== undefined && /^[0-9a-f]{64}$/.test(sha)) {
+      if (name === undefined || name.replace(/^\*/, "") === asset) return sha;
+    }
+  }
+  return null;
+}
+
+/** Công cụ tải bản phát hành: sha256 công bố phải khớp bản ghim; bản vá là việc cần làm, dòng mới chỉ để biết */
+export function releaseFinding(
+  release: PinnedRelease,
+  observed: { latestTag: string; publishedSha256: string | null },
+): Finding {
   const base = {
-    source: "BUILD_TOOLCHAIN.pack",
-    subject: `pack v${pack.version}`,
+    source: `BUILD_TOOLCHAIN.${release.key}`,
+    subject: `${release.key} v${release.version}`,
   };
-  if (observed.publishedSha256 !== pack.linuxSha256) {
+  if (observed.publishedSha256 !== release.sha256) {
     return {
       ...base,
       status: "broken",
       detail: `sha256 công bố khác bản ghim: ${observed.publishedSha256 ?? "không đọc được"}`,
     };
   }
-  return versionFinding(base, releaseNewer(pack.version, observed.latestTag));
+  return versionFinding(
+    base,
+    releaseNewer(release.version, observed.latestTag),
+  );
 }
 
 /** `actions/checkout`: SHA ghim phải đúng commit của tag ghim; báo bản phát hành mới hơn */

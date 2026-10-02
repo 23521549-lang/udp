@@ -29,11 +29,16 @@ import {
   BUILDER_SERVICE_ACCOUNT,
   BUILD_NAMESPACE,
   inClusterBuildContainers,
+  inClusterLoginContainers,
   WORK_DIR,
   type BuildContainer,
 } from "../../adapter-base/packaging/build-script.js";
 import { buildNamespaceCompanion } from "../../adapter-base/packaging/build-namespace.js";
 import { inClusterRebaseContainers } from "../../adapter-base/packaging/rebase-script.js";
+import {
+  inClusterSignContainers,
+  SIGNATURE_FILE,
+} from "../../adapter-base/packaging/sign-script.js";
 import { BUILD_TOOLCHAIN } from "@udp/config";
 
 /** Ảnh có digest trong workspace (tương đối với thư mục làm việc = workspace) — sau khi build xong mới có */
@@ -41,6 +46,8 @@ const IMAGE_REF_DIR = ".udp-out";
 const IMAGE_REF_FILE = `${IMAGE_REF_DIR}/image-ref`;
 /** [Plan #61 QĐ-13] Commit đầu `main` mà task lấy mã của lượt rebase ghi cho task sau */
 const COMMIT_FILE = `${IMAGE_REF_DIR}/commit`;
+/** [Plan #61 QĐ-16] Chữ ký mà task `sign` để lại trong workspace cho task báo UDP */
+const SIGNATURE_WS_FILE = `${IMAGE_REF_DIR}/signature.b64`;
 
 /**
  * Adapter Tekton (§5.5 CI/CD, Plan #36) — họ Helm (chart `tekton-pipeline`) + lớp bọc CI/CD.
@@ -248,7 +255,61 @@ const buildSteps = (containers: readonly BuildContainer[]): string[] =>
           `              mkdir -p ${IMAGE_REF_DIR} && cp ${WORK_DIR}/out/image-ref ${IMAGE_REF_FILE}`,
         ]
       : []),
+    // Chữ ký sang workspace cho task báo UDP (ở `finally`, không thấy volume của task ký)
+    ...(c.name === "udp-sign"
+      ? [`              cp ${SIGNATURE_FILE} ${SIGNATURE_WS_FILE}`]
+      : []),
   ]);
+
+/**
+ * [Plan #61 QĐ-14] Task `sign`: sau build và mọi task sau build (chỉ image đã qua quét mới được ký), trước task báo UDP.
+ * Task riêng nên đăng nhập registry lại (cosign và oras đẩy chữ ký vào registry) và lấy ảnh có digest từ workspace.
+ */
+const signTask = (
+  params: PipelineTemplateParams,
+  after: readonly PipelineStep[],
+): string[] => {
+  const sign = inClusterSignContainers(params.build, {
+    image: "$(params.image)",
+    project: "%PROJECT%",
+    commit: "$(params.revision)",
+    ref: "$(params.branch)",
+    run: "$(context.pipelineRun.name)",
+  });
+  if (sign.length === 0) return [];
+  const imageRef: BuildContainer = {
+    name: "udp-image-ref",
+    image: BUILD_TOOLCHAIN.images.alpine,
+    runAsUser: null,
+    unconfined: false,
+    env: {},
+    secretEnv: [],
+    script: [
+      "set -eu",
+      `mkdir -p ${WORK_DIR}/out && cp ${IMAGE_REF_FILE} ${WORK_DIR}/out/image-ref`,
+    ],
+  };
+  return [
+    "    - name: sign",
+    `      runAfter: [${["build", ...after.map(stepId)].join(", ")}]`,
+    "      workspaces:",
+    "        - name: source",
+    "          workspace: source",
+    "      taskSpec:",
+    "        workspaces: [{ name: source }]",
+    "        volumes:",
+    "          - name: udp",
+    "            emptyDir: {}",
+    "          - name: udp-auth",
+    "            emptyDir: {}",
+    "        steps:",
+    ...buildSteps([
+      imageRef,
+      ...inClusterLoginContainers(params.build, "tekton"),
+      ...sign,
+    ]),
+  ];
+};
 
 /**
  * [Plan #61 QĐ-13] Pipeline thứ hai của tệp: lấy đầu nhánh `main`, rebase image Buildpacks của commit đó, báo UDP
@@ -285,12 +346,20 @@ const rebasePipeline = (params: PipelineTemplateParams): string[] => [
   "          - name: udp-auth",
   "            emptyDir: {}",
   "        steps:",
-  ...buildSteps(
-    inClusterRebaseContainers(params.build, "tekton", {
+  ...buildSteps([
+    ...inClusterRebaseContainers(params.build, "tekton", {
       image: "$(params.image)",
       commit: `$(cat $(workspaces.source.path)/${COMMIT_FILE})`,
     }),
-  ),
+    // Digest mới cũng phải được ký — image chưa ký không qua cổng deploy
+    ...inClusterSignContainers(params.build, {
+      image: "$(params.image)",
+      project: "%PROJECT%",
+      commit: `$(cat $(workspaces.source.path)/${COMMIT_FILE})`,
+      ref: "main",
+      run: "$(context.pipelineRun.name)",
+    }),
+  ]),
   "          - name: notify",
   `            image: ${BUILD_TOOLCHAIN.images.alpine}`,
   "            workingDir: $(workspaces.source.path)",
@@ -309,6 +378,9 @@ const rebasePipeline = (params: PipelineTemplateParams): string[] => [
     "apk add --no-cache jq curl openssl",
     `COMMIT_SHA=$(cat ${COMMIT_FILE}) PIPELINE_ID=$(context.pipelineRun.name) REPO=%PROJECT% ACTOR=tekton`,
     ...rebaseNotifyVars("main", `"$(cat ${WORK_DIR}/out/image-ref)"`),
+    ...(params.build.signing === null
+      ? []
+      : [`UDP_SIGNATURE_B64=$(cat ${SIGNATURE_FILE})`]),
     ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"'),
   ].map((line) => `              ${line}`),
 ];
@@ -368,6 +440,7 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     "        steps:",
     ...buildSteps(containers),
     ...stepTasks(after, ["build"]),
+    ...signTask(params, after),
     "  finally:",
     "    - name: notify-udp",
     // Trạng thái GỘP của mọi task — bước của domain khác hỏng cũng là pipeline hỏng
@@ -397,6 +470,11 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     "              COMMIT_SHA=$(params.revision) COMMIT_TS= PIPELINE_ID=$(context.pipelineRun.name)",
     "              REPO=%PROJECT% REF=$(params.branch) ACTOR=tekton",
     `              IMAGE_REF=$([ "$UDP_STATUS" = success ] && cat ${IMAGE_REF_FILE} || echo "")`,
+    ...(params.build.signing === null
+      ? []
+      : [
+          `              UDP_SIGNATURE_B64=$([ "$UDP_STATUS" = success ] && cat ${SIGNATURE_WS_FILE} || echo "")`,
+        ]),
     `              ${environmentOfBranch("$(params.branch)")}`,
     ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
       (line) => `              ${line}`,

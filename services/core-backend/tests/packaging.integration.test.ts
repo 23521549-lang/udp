@@ -20,9 +20,11 @@ import {
 import {
   inertCloudPlatform,
   inertProvisioning,
+  noEgress,
   noExternalAuth,
   outsidePlatform,
 } from "./helpers/inert-deps.js";
+import { testSigner } from "./helpers/dsse.js";
 
 /**
  * [Plan #61 QĐ-9] Mục Đóng gói qua HTTP thật và database thật: dự đoán, việc cần làm, danh tính build, phân quyền, nhật
@@ -61,6 +63,7 @@ const app = createApp({
   oidcIssuer: null,
   cloud: inertCloudPlatform,
   repoSource: memoryRepos,
+  egressFetch: noEgress,
   platform: outsidePlatform,
   auth: noExternalAuth,
   domainRegistry: () => registry,
@@ -374,5 +377,102 @@ describe("PUT /projects/:id/build", () => {
       reason: "PINNED_BUILDPACKS",
     });
     expect(view.test).toEqual({ kind: "skip" });
+  });
+});
+
+describe("ký image (Plan #61 QĐ-14)", () => {
+  it("project AWS + GitHub Actions + GHCR: script tạo khoá KMS ở region của project (không quyền đẩy ECR); dán khoá ⇒ pipeline ký", async () => {
+    const projectId = await newProject("nodejs");
+    await enable(
+      projectId,
+      { tool: "github-actions", config: { repository: "acme/web" } },
+      {
+        tool: "ghcr",
+        endpoint: "ghcr.io/acme",
+        attributes: { pushAuth: "github-token" },
+      },
+    );
+    await admin.cloudCredential.create({
+      data: {
+        projectId,
+        provider: "AWS",
+        mode: "BYOC",
+        region: "eu-west-1",
+        authKind: "AWS_ROLE",
+        encryptedPayload: "khong-giai-duoc",
+        encryptedDek: "khong-giai-duoc",
+        nonce: "0".repeat(24),
+        authTag: "0".repeat(24),
+        fingerprint: "e".repeat(64),
+        isActive: true,
+        createdById: owner.userId,
+      },
+    });
+    const view = buildViewWire.parse(
+      (await as(viewer, request(app).get(buildUrl(projectId))).expect(200))
+        .body,
+    );
+    expect(view.signing).toEqual({ available: true, reason: null });
+    expect(view.identity).toMatchObject({ required: true, cloud: "aws" });
+    expect(view.todo).toContainEqual({ code: "BUILD_IDENTITY", cloud: "aws" });
+    expect(view.identityScript?.text).toContain("REGION=eu-west-1");
+    expect(view.identityScript?.text).toContain("--key-spec ECC_NIST_P256");
+    expect(view.identityScript?.text).not.toContain("udp-build-push");
+
+    // Danh tính dán từ script cũ (không khoá) ⇒ việc tạo khoá ký
+    const identity = { cloud: "aws", roleArn: ROLE };
+    const noKey = buildViewWire.parse(
+      (
+        await as(
+          owner,
+          request(app).put(buildUrl(projectId)).send({ identity }),
+        ).expect(200)
+      ).body,
+    );
+    expect(noKey.todo).toContainEqual({ code: "SIGNING_KEY", cloud: "aws" });
+
+    const kms =
+      "awskms:///arn:aws:kms:eu-west-1:123456789012:key/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
+    const { publicKey } = testSigner();
+    // Khoá ở cloud khác danh tính, khoá không phải P-256 ⇒ 400
+    await as(
+      owner,
+      request(app)
+        .put(buildUrl(projectId))
+        .send({
+          identity,
+          signing: {
+            keys: [
+              {
+                publicKey,
+                kms: "gcpkms://projects/acme-prod/locations/global/keyRings/udp/cryptoKeys/k/versions/1",
+              },
+            ],
+          },
+        }),
+    ).expect(400);
+    const saved = buildViewWire.parse(
+      (
+        await as(
+          owner,
+          request(app)
+            .put(buildUrl(projectId))
+            .send({ identity, signing: { keys: [{ publicKey, kms }] } }),
+        ).expect(200)
+      ).body,
+    );
+    expect(saved.todo.map((t) => t.code)).not.toContain("SIGNING_KEY");
+    expect(saved.settings.signing.keys[0]).toMatchObject({
+      kms,
+      id: expect.stringMatching(/^[0-9a-f]{16}$/) as unknown,
+    });
+    const pipeline = await as(
+      developer,
+      request(app).get(
+        `${API}/projects/${projectId}/domains/CICD/pipeline-template`,
+      ),
+    ).expect(200);
+    expect(pipeline.body.content).toContain(`--key "${kms}"`);
+    expect(pipeline.body.content).toContain("id-token: write");
   });
 });

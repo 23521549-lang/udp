@@ -284,6 +284,120 @@ jobs:
           docker logs smoke
           exit 1
 
+  signing-e2e:
+    # [Plan #61 QĐ-14, QĐ-16] Ký image THẬT bằng đúng đoạn shell mà pipeline của UDP sinh (cosign và oras ghim sha256)
+    # trên hai registry: zot (có API referrers) và distribution (không có: cosign và oras dùng tag dự phòng). Ba bộ kiểm
+    # độc lập: cosign verify (bundle), skopeo với policy sigstoreSigned (chữ ký tương thích cho podman, CRI-O, bootc) và
+    # cổng deploy của Service 1. Ca hỏng: khoá khác, annotation bị sửa, commit khác, image không chữ ký. Khoá tệp thay
+    # cho KMS (cùng lệnh, khác giá trị --key): ký bằng KMS thật là sổ nợ `signing-kms-real`. Chi phí 0: hai registry là
+    # service container của runner.
+    name: signing e2e — cosign, oras, skopeo, cổng deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      zot:
+        image: ghcr.io/project-zot/zot-linux-amd64:v2.1.21@sha256:8258443838e95989c13c891f78a02bc1c391b5a00591ffef24cb8c17cde28038
+        ports: ["5000:5000"]
+      distribution:
+        image: registry:3.1.2@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8
+        ports: ["5001:5000"]
+    env:
+      BASE: busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+      E2E: pnpm --filter @udp/core-backend exec tsx scripts/signing-e2e.ts
+      # Khoá tệp không mật khẩu — chỉ sống trong lượt chạy này
+      COSIGN_PASSWORD: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: công cụ ký (cosign, oras) như pipeline tải, hai cặp khoá tệp
+        run: |
+          echo "UDP_TMP=$RUNNER_TEMP/udp-sign" >> "$GITHUB_ENV"
+          export UDP_TMP="$RUNNER_TEMP/udp-sign"
+          mkdir -p "$UDP_TMP/other"
+          $E2E tools > "$RUNNER_TEMP/tools.sh"
+          bash -eu "$RUNNER_TEMP/tools.sh"
+          (cd "$UDP_TMP" && ./cosign generate-key-pair)
+          (cd "$UDP_TMP/other" && ../cosign generate-key-pair)
+      - name: image nhỏ ở hai registry — một bản để ký (amd64), một bản không (arm64)
+        # Dạng OCI: zot mặc định không nhận manifest dạng Docker
+        run: |
+          for reg in localhost:5000 localhost:5001; do
+            skopeo copy -q --format oci --override-arch amd64 --dest-tls-verify=false "docker://$BASE" "docker://$reg/e2e/app:signed"
+            skopeo copy -q --format oci --override-arch arm64 --dest-tls-verify=false "docker://$BASE" "docker://$reg/e2e/app:unsigned"
+          done
+      - name: ký bằng đúng đoạn shell của pipeline (bundle và chữ ký tương thích)
+        run: |
+          digest() {
+            curl -fsSI -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+              "http://$1/v2/e2e/app/manifests/$2" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'
+          }
+          $E2E sign > "$RUNNER_TEMP/sign.sh"
+          for reg in localhost:5000 localhost:5001; do
+            port=${reg#localhost:}
+            echo "DIGEST_$port=$(digest "$reg" signed)" >> "$GITHUB_ENV"
+            echo "UNSIGNED_$port=$(digest "$reg" unsigned)" >> "$GITHUB_ENV"
+            UDP_IMAGE="$reg/e2e/app" UDP_DIGEST=$(digest "$reg" signed) UDP_KEY="$UDP_TMP/cosign.key" \
+              UDP_COMMIT="$GITHUB_SHA" UDP_RUN="$GITHUB_RUN_ID" bash -eu "$RUNNER_TEMP/sign.sh"
+            cp "$UDP_TMP/signature.json" "$RUNNER_TEMP/bundle-$port.json"
+            # Đường bundle đi tới UDP: base64 một dòng qua biến của CI, jq của bước báo giải lại ĐÚNG bundle
+            jq -nc --arg sig "$(cat "$UDP_TMP/signature.b64")" '$sig | @base64d | fromjson' > "$RUNNER_TEMP/decoded.json"
+            jq -c . "$RUNNER_TEMP/bundle-$port.json" | cmp - "$RUNNER_TEMP/decoded.json"
+          done
+      - name: cosign verify — đúng khoá qua; khoá khác, image không chữ ký hỏng
+        run: |
+          for port in 5000 5001; do
+            signed=$(printenv "DIGEST_$port"); unsigned=$(printenv "UNSIGNED_$port")
+            "$UDP_TMP/cosign" verify --key "$UDP_TMP/cosign.pub" --insecure-ignore-tlog "localhost:$port/e2e/app@$signed" > /dev/null
+            if "$UDP_TMP/cosign" verify --key "$UDP_TMP/other/cosign.pub" --insecure-ignore-tlog "localhost:$port/e2e/app@$signed" > /dev/null 2>&1; then
+              echo "khoá khác mà vẫn qua ($port)"; exit 1
+            fi
+            if "$UDP_TMP/cosign" verify --key "$UDP_TMP/cosign.pub" --insecure-ignore-tlog "localhost:$port/e2e/app@$unsigned" > /dev/null 2>&1; then
+              echo "image không chữ ký mà vẫn qua ($port)"; exit 1
+            fi
+          done
+      - name: skopeo với policy sigstoreSigned — chữ ký tương thích
+        run: |
+          mkdir -p "$RUNNER_TEMP/registries.d"
+          printf 'default-docker:\n  use-sigstore-attachments: true\n' > "$RUNNER_TEMP/registries.d/default.yaml"
+          policy() {
+            rule="[{\"type\":\"sigstoreSigned\",\"keyPath\":\"$1\",\"signedIdentity\":{\"type\":\"matchRepository\"}}]"
+            printf '{"default":[{"type":"reject"}],"transports":{"docker":{"localhost:5000":%s,"localhost:5001":%s}}}' "$rule" "$rule" > "$2"
+          }
+          policy "$UDP_TMP/cosign.pub" "$RUNNER_TEMP/policy.json"
+          policy "$UDP_TMP/other/cosign.pub" "$RUNNER_TEMP/policy-other.json"
+          pull() {
+            rm -rf "$RUNNER_TEMP/pulled"
+            skopeo --policy "$1" --registries.d "$RUNNER_TEMP/registries.d" copy -q --src-tls-verify=false \
+              "docker://$2" "dir:$RUNNER_TEMP/pulled"
+          }
+          for port in 5000 5001; do
+            signed=$(printenv "DIGEST_$port"); unsigned=$(printenv "UNSIGNED_$port")
+            pull "$RUNNER_TEMP/policy.json" "localhost:$port/e2e/app@$signed"
+            if pull "$RUNNER_TEMP/policy-other.json" "localhost:$port/e2e/app@$signed" 2>/dev/null; then
+              echo "skopeo nhận khoá khác ($port)"; exit 1
+            fi
+            if pull "$RUNNER_TEMP/policy.json" "localhost:$port/e2e/app@$unsigned" 2>/dev/null; then
+              echo "skopeo nhận image không chữ ký ($port)"; exit 1
+            fi
+          done
+      - name: cổng deploy của Service 1 — đúng qua; khoá khác, annotation bị sửa, commit khác bị từ chối
+        run: |
+          for port in 5000 5001; do
+            bundle="$RUNNER_TEMP/bundle-$port.json"
+            ref="localhost:$port/e2e/app:signed@$(printenv "DIGEST_$port")"
+            $E2E verify "$bundle" "$UDP_TMP/cosign.pub" "$ref" "$GITHUB_SHA" ok
+            $E2E verify "$bundle" "$UDP_TMP/other/cosign.pub" "$ref" "$GITHUB_SHA" SIGNATURE_INVALID
+            jq '.dsseEnvelope.payload |= (@base64d | sub("\"dev.udp.ref\":\"main\""; "\"dev.udp.ref\":\"evil\"") | @base64)' \
+              "$bundle" > "$RUNNER_TEMP/tampered.json"
+            $E2E verify "$RUNNER_TEMP/tampered.json" "$UDP_TMP/cosign.pub" "$ref" "$GITHUB_SHA" SIGNATURE_INVALID
+            $E2E verify "$bundle" "$UDP_TMP/cosign.pub" "$ref" 0000000000000000000000000000000000000000 SIGNATURE_MISMATCH
+          done
+
   kind:
     # [Plan #50] §13.5 "build image → dựng kind → E2E rút gọn" và làn đêm "benchmark".
     # Chạy ĐÚNG `pnpm deploy:up` mà README hứa với developer (Plan #49, D-P37): build 6

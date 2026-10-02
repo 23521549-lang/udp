@@ -12,11 +12,14 @@ import {
   dockerfileImages,
   imageFinding,
   isActionable,
-  packFinding,
   parseImageRef,
+  pinnedReleases,
+  publishedSha256Of,
+  releaseFinding,
   pinnedImages,
   renderReport,
   type Finding,
+  type PinnedRelease,
   type PinnedImage,
 } from "../src/toolchain-check.js";
 
@@ -177,20 +180,18 @@ async function github<T>(path: string): Promise<T | null> {
   return res.ok ? ((await res.json()) as T) : null;
 }
 
-async function checkPack(): Promise<Finding> {
-  const { version } = BUILD_TOOLCHAIN.pack;
+async function checkRelease(release: PinnedRelease): Promise<Finding> {
   const latest = await github<{ tag_name: string }>(
-    "/repos/buildpacks/pack/releases/latest",
+    `/repos/${release.repo}/releases/latest`,
   );
   const sums = await fetchRetry(
-    `https://github.com/buildpacks/pack/releases/download/v${version}/pack-v${version}-linux.tgz.sha256`,
+    `https://github.com/${release.repo}/releases/download/v${release.version}/${release.checksums}`,
   );
-  const published = sums.ok
-    ? ((await sums.text()).trim().split(/\s+/)[0] ?? null)
-    : null;
-  return packFinding({
-    latestTag: latest?.tag_name ?? `v${version}`,
-    publishedSha256: published,
+  return releaseFinding(release, {
+    latestTag: latest?.tag_name ?? `v${release.version}`,
+    publishedSha256: sums.ok
+      ? publishedSha256Of(await sums.text(), release.asset)
+      : null,
   });
 }
 
@@ -226,7 +227,7 @@ function goldenPathImages(): PinnedImage[] {
 
 const findings = [
   ...(await Promise.all(pinnedImages(goldenPathImages()).map(checkImage))),
-  await checkPack(),
+  ...(await Promise.all(pinnedReleases().map(checkRelease))),
   await checkCheckout(),
 ];
 const report = renderReport(findings);

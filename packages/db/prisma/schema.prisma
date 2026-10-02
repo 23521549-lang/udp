@@ -628,6 +628,7 @@ model Project {
   idempotencyKeys  IdempotencyKey[]
   teamGrants       ProjectTeamGrant[]
   invitations      Invitation[]
+  webhookTokenUses WebhookTokenUse[]
 
   @@index([ownerId, status])
   @@index([expiresAt])
@@ -776,6 +777,14 @@ model DomainConfig {
   /// trường `configSchema`. `EncryptedCredential` niêm phong như §4.3 (AAD `cicd:webhook |
   /// project`); không bao giờ lên dây ở GET.
   webhookSecret Json? @map("webhook_secret")
+
+  /// [v4.12, Plan #61 61d-2a] Chỉ hàng CICD: Trusted Deploy đã bắt buộc chưa (AC-11). Cùng lý lẽ với
+  /// `webhookSecret` — UDP quyết, không phải trường `configSchema` — và còn một lý do cứng hơn: đường
+  /// ghi duy nhất của `toolConfig` là `replaceDomains`, vốn ghi đè TOÀN PHẦN và chỉ chạy khi project
+  /// còn sửa được, nên một cờ nằm trong đó sẽ bị xoá im lặng mỗi lần lưu cấu hình domain và không bao
+  /// giờ tự bật được cho project đang chạy. Cờ sống trên HÀNG CICD nên đổi `selectedTool` phải đưa nó
+  /// về false: ý nghĩa của nó phụ thuộc nhà cung cấp (issuer, claim, cách xin token).
+  oidcRequired Boolean @default(false) @map("oidc_required")
 
   project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   catalog  DomainCatalog       @relation(fields: [domainType], references: [domainType])
@@ -1318,7 +1327,7 @@ model DeploymentEvent {
 
   triggeredBy DeploymentTrigger @map("triggered_by")
   metadata    Json?
-  occurredAt  DateTime          @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  occurredAt  DateTime          @default(dbgenerated("clock_timestamp()")) @map("occurred_at") @db.Timestamptz(6)
 
   /// Restrict: giữ vĩnh viễn để tính DORA kể cả khi project bị xóa
   project     Project     @relation(fields: [projectId], references: [id], onDelete: Restrict)
@@ -1333,6 +1342,53 @@ model DeploymentEvent {
   @@index([environmentId, occurredAt])
   @@index([deploymentId])
   @@map("deployment_events")
+}
+
+/// [v4.12, Plan #61 61d-2a] Trusted Deploy (AC-11) — một token OIDC của một lượt chạy CI chỉ được dùng
+/// MỘT lần, và điều đó do database cưỡng chế (I41), không do một phép kiểm trong mã.
+///
+/// KHÔNG lưu token. Chỉ lưu MÃ ĐỊNH DANH của nó (`jti`, hay `oidc.circleci.com/job-id` với CircleCI vì
+/// CircleCI không phát `jti`) — I24 cấm token xuống database hay đĩa, và luật "không ghi thân hay header"
+/// của §8.3 phủ cả header `Authorization`.
+///
+/// `bodyDigest` là thứ phân biệt RETRY với REPLAY, và đó là lý do bảng này có nhiều hơn hai cột: nó giữ
+/// chính chuỗi HMAC hex đã được kiểm, tức một digest CÓ KHOÁ của thân. Lần trình lại với thân giống hệt
+/// từng byte là một lượt retry của CI (mạng rớt sau khi server đã commit) và phải trả lại kết quả cũ; lần
+/// trình lại với thân KHÁC là một lượt replay và phải bị từ chối. So theo `pipelineId` là không đủ: phép
+/// chống trùng sẵn có tính cả `environmentId`, nên cùng `pipelineId` mà đổi `environment` sang production
+/// sẽ lọt.
+model WebhookTokenUse {
+  id        String @id @default(uuid(7)) @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+
+  /// Issuer SUY TỪ CẤU HÌNH của project, không bao giờ từ `iss` của token
+  issuer  String @db.VarChar(255)
+  tokenId String @map("token_id") @db.VarChar(255)
+
+  /// Bối cảnh của lần dùng đầu, để một lượt retry nhận lại đúng kết quả cũ
+  pipelineId    String  @map("pipeline_id") @db.VarChar(255)
+  environmentId String  @map("environment_id") @db.Uuid
+  bodyDigest    String  @map("body_digest") @db.VarChar(64)
+  deploymentId  String? @map("deployment_id") @db.Uuid
+
+  /// Đồng hồ của DATABASE: hàng này là bằng chứng cho một lần cho phép deploy và sẽ bị đối chiếu với
+  /// `deployment_events.occurred_at` — cột duy nhất do database cấp. Với độ lệch đã đo 1 567 ms giữa máy
+  /// và database, một `used_at` theo đồng hồ máy có thể nằm SAU chính sự kiện nó cho phép. Giá bằng 0.
+  /// Hàng chỉ sinh đúng lúc dùng nên cột này thay vai `created_at`.
+  usedAt DateTime @default(dbgenerated("clock_timestamp()")) @map("used_at") @db.Timestamptz(6)
+
+  /// DỮ LIỆU, không phải một DEFAULT: `exp` của chính token đã xác minh. Không được NHỎ hơn `exp`, nếu
+  /// không lượt dọn xoá hàng trong lúc token còn sống và cửa sổ replay mở lại.
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Tên index ghim tường minh: hai chỗ trong repo bắt lỗi trùng bằng cách so TÊN index với một hằng số,
+  /// nên để Prisma tự sinh tên là mở đường cho một lần đổi tên im lặng.
+  @@unique([issuer, tokenId], map: "webhook_token_uses_once")
+  @@index([expiresAt])
+  @@index([projectId, usedAt(sort: Desc)])
+  @@map("webhook_token_uses")
 }
 
 model AuditLog {

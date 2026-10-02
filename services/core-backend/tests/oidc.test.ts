@@ -12,12 +12,13 @@ import {
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
 import {
-  noRepoSource,
   inertCloudPlatform,
-  noDomainAdapters,
   inertProvisioning,
-  outsidePlatform,
+  noDomainAdapters,
+  noEgress,
   noExternalAuth,
+  noRepoSource,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -126,6 +127,7 @@ describe("endpoint công khai", () => {
       oidcIssuer,
       cloud: inertCloudPlatform,
       repoSource: noRepoSource,
+      egressFetch: noEgress,
       platform: outsidePlatform,
       auth: noExternalAuth,
       domainRegistry: noDomainAdapters,

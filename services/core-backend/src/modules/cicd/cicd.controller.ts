@@ -97,6 +97,7 @@ cicdWebhookRouter.post(
       request: req,
       registry: await appDepsOf(req).domainRegistry(),
       enqueueDeploy: appDepsOf(req).provisioning.enqueueDeploy,
+      egressFetch: appDepsOf(req).egressFetch,
     });
     const accepted =
       outcome.status === "started" || outcome.status === "pending";

@@ -22,11 +22,12 @@ import {
 } from "./helpers/api.js";
 import { simCloudPlatform } from "./helpers/cloud-platform.js";
 import {
-  noRepoSource,
   inertCloudPlatform,
   inertProvisioning,
-  outsidePlatform,
+  noEgress,
   noExternalAuth,
+  noRepoSource,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -261,6 +262,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
+    egressFetch: noEgress,
     platform: outsidePlatform,
     auth: noExternalAuth,
     domainRegistry: () => product,
@@ -354,6 +356,7 @@ describe("CLOUD_MISMATCH là lý do chặn provisioning (credential đổi cloud
       oidcIssuer: null,
       cloud: simCloudPlatform(),
       repoSource: noRepoSource,
+      egressFetch: noEgress,
       platform: outsidePlatform,
       auth: noExternalAuth,
       domainRegistry: () => product,

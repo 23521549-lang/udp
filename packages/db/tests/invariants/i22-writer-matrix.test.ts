@@ -70,6 +70,12 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     // có quyền nào: `password_reset_tokens` chứa hash token.
     password_reset_tokens: FULL,
     user_identities: FULL,
+    // [v4.12, Plan #61 61d-2a] "Token của một lượt chạy CI dùng một lần" (I41). Append-only: một hàng là
+    // một sự kiện "token này đã tiêu", cho UPDATE nghĩa là sửa được chính bằng chứng đó. Không DELETE —
+    // dọn đi qua `udp_prune_webhook_token_uses` với retention viết cứng trong thân hàm, nên không ai xoá
+    // sạch được cửa sổ chống replay. S2/S3 không có quyền nào, kể cả SELECT: bảng mang mã định danh của
+    // token, cùng lập luận với `refresh_sessions` và `password_reset_tokens`.
+    webhook_token_uses: APPEND_ONLY,
     // config_version/config_hash thuộc S2 (và S3 trong nhánh kill-switch)
     environments: {
       SELECT: "*",
@@ -301,7 +307,11 @@ describe("I22 — ma trận writer §1.2", () => {
 
   it("không ai UPDATE hay DELETE được bảng append-only", () => {
     const violations: string[] = [];
-    for (const table of ["audit_logs", "deployment_events"]) {
+    for (const table of [
+      "audit_logs",
+      "deployment_events",
+      "webhook_token_uses",
+    ]) {
       for (const role of ROLES) {
         for (const priv of ["UPDATE", "DELETE"]) {
           if (actual.has(`${role}|${table}|${priv}`))
@@ -326,6 +336,9 @@ describe("I22 — ma trận writer §1.2", () => {
 const DEFINER_FUNCTIONS: Record<string, readonly string[]> = {
   // Dọn ConfigChangeLog quá 7 ngày (§2.2) — S2 không có DELETE trên bảng
   "udp_prune_config_change_log(integer)": ["udp_s2"],
+  // [Plan #61 61d-2a] Dọn bản ghi "token đã dùng" quá 7 ngày sau khi token hết hạn — S1 không có DELETE
+  // trên bảng, và retention viết cứng trong thân hàm nên bên gọi không xoá sạch được cửa sổ chống replay
+  "udp_prune_webhook_token_uses(integer)": ["udp_s1"],
 };
 
 /** Role của nền tảng — nếu tồn tại thì KHÔNG được gọi hàm definer nào */

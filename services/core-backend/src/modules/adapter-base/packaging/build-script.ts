@@ -162,7 +162,7 @@ function cloudPasswordCommand(
 }
 
 /** Cấu hình `external_account` của Workload Identity Federation — JSON không bí mật */
-function gcpCredential(
+export function gcpCredential(
   id: Extract<BuildIdentity, { cloud: "gcp" }>,
   tokenFile: string,
 ): string {
@@ -555,7 +555,7 @@ function dockerConfigLines(server: string, credential: string): string[] {
  * Xin JWT cho ServiceAccount `udp-builder` với `aud` của cloud (TokenRequest) bằng chính token của pod — Role trong
  * `udp-build` chỉ cho SA đó xin token của CHÍNH nó. Không cần annotation nào trên SA, không cần UDP ghi vào cluster.
  */
-function tokenRequestLines(audience: string, file: string): string[] {
+export function tokenRequestLines(audience: string, file: string): string[] {
   const body = JSON.stringify({
     apiVersion: "authentication.k8s.io/v1",
     kind: "TokenRequest",

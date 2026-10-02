@@ -18,11 +18,12 @@ import {
 } from "./helpers/api.js";
 import { simCloudPlatform } from "./helpers/cloud-platform.js";
 import {
-  noRepoSource,
   inertProvisioning,
   noDomainAdapters,
-  outsidePlatform,
+  noEgress,
   noExternalAuth,
+  noRepoSource,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -60,6 +61,7 @@ const appWith = (runtime: ProvisioningRuntime) =>
     oidcIssuer: null,
     cloud: simCloudPlatform(),
     repoSource: noRepoSource,
+    egressFetch: noEgress,
     platform: outsidePlatform,
     auth: noExternalAuth,
     domainRegistry: noDomainAdapters,

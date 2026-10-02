@@ -225,6 +225,11 @@ export interface WebhookDeployEvent {
    * khi production đang chạy đúng commit đó với digest khác. Vắng = lượt build thường. Mở rộng, không đổi trường cũ.
    */
   kind?: "rebase";
+  /**
+   * [Plan #61 QĐ-16] Bundle Sigstore v0.3 của chữ ký image mà pipeline gửi kèm — Service 1 kiểm bằng khoá công khai
+   * của project trước khi deploy. Vắng khi project chưa ký.
+   */
+  signature?: Record<string, unknown>;
 }
 
 /**

@@ -19,6 +19,7 @@ export const BASE: BuildPlan = {
     command: "npm ci && npm test",
     image: TEST_IMAGES.nodejs,
   },
+  signing: null,
 };
 
 export const PLANS: Record<string, BuildPlan> = {
@@ -85,3 +86,38 @@ export const HOSTS: DockerHostCi[] = [
   "circleci",
 ];
 export const CLUSTER: InClusterCi[] = ["jenkins", "tekton", "drone"];
+
+/** [Plan #61 QĐ-14] Khoá ký KMS mẫu của ba cloud và kế hoạch có ký tương ứng (danh tính ở cloud của khoá) */
+export const SIGNING_KEYS = {
+  aws: "awskms:///arn:aws:kms:eu-west-1:123456789012:key/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+  gcp: "gcpkms://projects/acme-prod/locations/europe-west1/keyRings/udp/cryptoKeys/udp-sign-web/versions/1",
+  azure: "azurekms://udp-web-a1b2c3.vault.azure.net/udp-sign",
+} as const;
+
+export const SIGNED: Record<"aws" | "gcp" | "azure", BuildPlan> = {
+  aws: {
+    ...PLANS.ecr!,
+    signing: {
+      key: SIGNING_KEYS.aws,
+      identity: PLANS.ecr!.identity!,
+      compat: true,
+    },
+  },
+  gcp: {
+    ...PLANS.gcp!,
+    signing: {
+      key: SIGNING_KEYS.gcp,
+      identity: PLANS.gcp!.identity!,
+      compat: true,
+    },
+  },
+  // Registry không thuộc cloud (đẩy bằng mật khẩu) mà vẫn ký bằng KMS ở cloud của project
+  azure: {
+    ...BASE,
+    signing: {
+      key: SIGNING_KEYS.azure,
+      identity: PLANS.acr!.identity!,
+      compat: false,
+    },
+  },
+};

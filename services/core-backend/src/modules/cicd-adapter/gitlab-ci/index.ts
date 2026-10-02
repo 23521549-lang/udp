@@ -25,11 +25,13 @@ import {
 } from "../../adapter-base/pipeline-template.js";
 import {
   dockerHostBuildLines,
+  dockerHostLoginLines,
   needsOidc,
   oidcAudience,
   registrySecretNames,
 } from "../../adapter-base/packaging/build-script.js";
 import { dockerHostRebaseLines } from "../../adapter-base/packaging/rebase-script.js";
+import { dockerHostSignLines } from "../../adapter-base/packaging/sign-script.js";
 import { BUILD_TOOLCHAIN } from "@udp/config";
 
 /**
@@ -110,6 +112,12 @@ const notifyJob = (
   "  script:",
   "    - apk add --no-cache jq curl openssl",
   "    - export COMMIT_SHA=$CI_COMMIT_SHA COMMIT_TS=$CI_COMMIT_TIMESTAMP PIPELINE_ID=$CI_PIPELINE_ID-$CI_JOB_ID",
+  // [Plan #61 QĐ-16] Chữ ký do job `sign` để lại (artifact): cổng deploy của UDP kiểm
+  ...(status === "success"
+    ? [
+        `    - export UDP_SIGNATURE_B64=$(cat ${SIGNATURE_ARTIFACT} 2>/dev/null || true)`,
+      ]
+    : []),
   "    - export REPO=$CI_PROJECT_PATH REF=$CI_COMMIT_REF_NAME ACTOR=$GITLAB_USER_LOGIN",
   ...(status === "success" ? [] : ['    - export IMAGE_REF=""']),
   "    - |",
@@ -154,7 +162,10 @@ const stepJobs = (
 /** Phần chung của job có Docker (build, rebase): Docker CLI cạnh dind (TLS), JWT cho danh tính build, tên secret */
 function dockerJob(params: PipelineTemplateParams): string[] {
   const images = BUILD_TOOLCHAIN.images;
-  const identity = params.build.identity;
+  // JWT cho cloud: ký bằng khoá KMS, hay đẩy bằng danh tính build — cùng danh tính khi cả hai (cloud của project)
+  const identity =
+    params.build.signing?.identity ??
+    (needsOidc(params.build, "gitlab-ci") ? params.build.identity : null);
   const secrets = registrySecretNames(params.build.push, "gitlab-ci");
   return [
     `  image: ${images.dockerCli}`,
@@ -163,7 +174,7 @@ function dockerJob(params: PipelineTemplateParams): string[] {
     "      alias: docker",
     "  variables:",
     '    DOCKER_TLS_CERTDIR: "/certs"',
-    ...(needsOidc(params.build, "gitlab-ci") && identity !== null
+    ...(identity !== null
       ? [
           "  id_tokens:",
           "    UDP_OIDC_TOKEN:",
@@ -203,6 +214,51 @@ const buildJob = (
   ];
 };
 
+/** Tệp chữ ký (base64) mà job `sign` để lại cho job báo UDP — artifact, không dotenv (dotenv giới hạn 5 KB) */
+const SIGNATURE_ARTIFACT = "udp-signature.b64";
+
+/** [Plan #61 QĐ-14] Ký image có digest ở `digest` (biểu thức shell); ra `UDP_SIGNATURE_B64` */
+const signLinesOf = (
+  params: PipelineTemplateParams,
+  vars: { digest: string; commit: string; ref: string; run: string },
+): string[] =>
+  dockerHostSignLines(params.build, "gitlab-ci", {
+    image: "%IMAGE%",
+    project: "%PROJECT%",
+    tmp: "/tmp/udp-sign",
+    ...vars,
+  });
+
+/**
+ * [Plan #61 QĐ-14] Job `sign`: sau mọi job sau build (chỉ image đã qua quét mới được ký), trước job báo UDP. Job riêng
+ * nên đăng nhập registry lại (cosign và oras đẩy chữ ký vào registry).
+ */
+const signJob = (params: PipelineTemplateParams, rebase: boolean): string[] =>
+  params.build.signing === null
+    ? []
+    : [
+        "sign:",
+        "  stage: sign",
+        ...dockerJob(params),
+        ...whenOf("on_success", rebase),
+        "  script:",
+        "    - apk add --no-cache curl jq",
+        "    - |",
+        ...[
+          ...dockerHostLoginLines(params.build, "gitlab-ci"),
+          'UDP_DIGEST="${IMAGE_REF##*@}"',
+          ...signLinesOf(params, {
+            digest: "$UDP_DIGEST",
+            commit: "$CI_COMMIT_SHA",
+            ref: "$CI_COMMIT_REF_NAME",
+            run: "$CI_PIPELINE_ID-$CI_JOB_ID",
+          }),
+          `printf '%s' "$UDP_SIGNATURE_B64" > ${SIGNATURE_ARTIFACT}`,
+        ].map((line) => `      ${line}`),
+        "  artifacts:",
+        `    paths: [${SIGNATURE_ARTIFACT}]`,
+      ];
+
 /**
  * [Plan #61 QĐ-13] Job của lượt theo lịch (Build, Pipeline schedules, nhánh `main`): rebase image Buildpacks của commit
  * đầu `main` rồi báo UDP (`kind: rebase`). Không phải Buildpacks ⇒ đoạn shell dừng xanh trước bước báo.
@@ -224,6 +280,18 @@ const rebaseJob = (params: PipelineTemplateParams): string[] => [
       commit: "$CI_COMMIT_SHA",
       tmp: "/tmp/udp-rebase",
     }),
+    // Digest mới của lượt rebase cũng phải được ký — image chưa ký không qua cổng deploy
+    ...(params.build.signing === null
+      ? []
+      : [
+          'UDP_DIGEST="${UDP_IMAGE_REF##*@}"',
+          ...signLinesOf(params, {
+            digest: "$UDP_DIGEST",
+            commit: "$CI_COMMIT_SHA",
+            ref: "main",
+            run: "$PIPELINE_ID",
+          }),
+        ]),
     ...rebaseNotifyVars("$CI_COMMIT_REF_NAME"),
     ...notifyScript('-H "X-Gitlab-Token: $UDP_WEBHOOK_SECRET"'),
   ].map((line) => `      ${line}`),
@@ -239,6 +307,7 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     ...(before.length === 0 ? [] : ["before-build"]),
     "build",
     ...(after.length === 0 ? [] : ["after-build"]),
+    ...(params.build.signing === null ? [] : ["sign"]),
     "notify",
   ];
   return [
@@ -270,6 +339,7 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
     ...stepJobs(before, "before-build", rebase),
     ...buildJob(params, rebase),
     ...stepJobs(after, "after-build", rebase),
+    ...signJob(params, rebase),
     ...notifyJob("success", "on_success", rebase),
     ...notifyJob("failure", "on_failure", rebase),
     ...(rebase ? rebaseJob(params) : []),

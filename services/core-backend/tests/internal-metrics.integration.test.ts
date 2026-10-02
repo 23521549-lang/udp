@@ -20,11 +20,12 @@ import { sealSecrets } from "../src/modules/domain/tool-secrets.js";
 import { datadogConfigSchema } from "../src/modules/monitoring-adapter/datadog/index.js";
 import { testWorld, type Actor, type TestWorld } from "./helpers/api.js";
 import {
-  noRepoSource,
   inertCloudPlatform,
   inertProvisioning,
-  outsidePlatform,
+  noEgress,
   noExternalAuth,
+  noRepoSource,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -66,6 +67,7 @@ const app = createApp({
   oidcIssuer: null,
   cloud: inertCloudPlatform,
   repoSource: noRepoSource,
+  egressFetch: noEgress,
   platform: outsidePlatform,
   auth: noExternalAuth,
   domainRegistry: () => registry,

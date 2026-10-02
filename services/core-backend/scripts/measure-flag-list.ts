@@ -11,6 +11,7 @@ import {
 } from "@udp/experiments";
 import { FakeMetricsProvider } from "@udp/metrics-provider/testing";
 import { startFlagService } from "@udp/test-support/service";
+import { createEgressFetch } from "../src/core/egress/egress.js";
 import request from "supertest";
 import { createApp } from "../src/app.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
     domainRegistry: noDomainAdapters,
     provisioning: inertProvisioning,
     repoSource: noRepoSource,
+    egressFetch: createEgressFetch(),
     platform: outsidePlatform,
     auth: noExternalAuth,
   });

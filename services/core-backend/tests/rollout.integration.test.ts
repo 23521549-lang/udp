@@ -34,12 +34,13 @@ import {
   type TestWorld,
 } from "./helpers/api.js";
 import {
-  noRepoSource,
   inertCloudPlatform,
-  noDomainAdapters,
   inertProvisioning,
-  outsidePlatform,
+  noDomainAdapters,
+  noEgress,
   noExternalAuth,
+  noRepoSource,
+  outsidePlatform,
 } from "./helpers/inert-deps.js";
 
 /**
@@ -133,6 +134,7 @@ beforeAll(async () => {
     oidcIssuer: null,
     cloud: inertCloudPlatform,
     repoSource: noRepoSource,
+    egressFetch: noEgress,
     platform: outsidePlatform,
     auth: noExternalAuth,
     domainRegistry: noDomainAdapters,
@@ -413,6 +415,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
       oidcIssuer: null,
       cloud: inertCloudPlatform,
       repoSource: noRepoSource,
+      egressFetch: noEgress,
       platform: outsidePlatform,
       auth: noExternalAuth,
       domainRegistry: noDomainAdapters,
@@ -441,6 +444,7 @@ describe("bù trừ khi track hỏng — không bao giờ 201 cho flag không đ
       oidcIssuer: null,
       cloud: inertCloudPlatform,
       repoSource: noRepoSource,
+      egressFetch: noEgress,
       platform: outsidePlatform,
       auth: noExternalAuth,
       domainRegistry: noDomainAdapters,

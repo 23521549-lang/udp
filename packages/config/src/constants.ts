@@ -532,6 +532,24 @@ export const JOB_QUEUE = {
  */
 export const CICD_WEBHOOK = {
   bodyLimitBytes: 1_048_576,
+  /**
+   * [v4.12, Plan #61 61d-2a] Giữ bản ghi "token đã dùng" bao lâu sau khi token HẾT HẠN.
+   *
+   * Chống replay chỉ cần giữ tới `exp` của token, mà token của ba nhà cung cấp sống vài phút — nên con số
+   * này phục vụ việc khác: một dấu vết pháp y trả lời "lượt chạy nào đã cho phép lần deploy này". Nó được
+   * viết CỨNG trong thân `udp_prune_webhook_token_uses` để bên gọi không truyền được "0 ngày", và
+   * `packages/design-lint/tests/retention.test.ts` chốt hai con số không trôi khỏi nhau.
+   */
+  tokenUseRetentionDays: 7,
+  /**
+   * Trần thời gian cho CẢ lượt xác minh Trusted Deploy (discovery + JWKS). Nó nằm NGOÀI transaction của
+   * webhook, nhưng vẫn phải có đáy: một nhà cung cấp chậm không được giữ một request HTTP mãi.
+   */
+  tokenVerifyTimeoutMs: 5_000,
+  /** Tuổi tối đa của một token tính từ `iat` — trần CHÍNH SÁCH, chỉ làm NGẮN hơn `exp`, không bao giờ dài hơn */
+  tokenMaxAgeSeconds: 600,
+  /** Lề cho lệch đồng hồ giữa Service 1 và nhà cung cấp CI */
+  tokenClockToleranceSeconds: 60,
 } as const;
 
 /**

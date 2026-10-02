@@ -49,7 +49,9 @@ export async function recentEvents(
 ): Promise<DeploymentEventRow[]> {
   return prisma.deploymentEvent.findMany({
     where: { projectId, environmentId },
-    orderBy: { occurredAt: "desc" },
+    // Khoá sắp phải là TOÀN PHẦN vì có `take`: hai hàng cùng `occurred_at` làm chỗ cắt N không ổn định, nên lần gọi
+    // sau có thể thấy thiếu hay thấy trùng một hàng. Cùng khuôn với `eventsOfDeployment` ngay dưới.
+    orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
     take,
     select: EVENT_FIELDS,
   });

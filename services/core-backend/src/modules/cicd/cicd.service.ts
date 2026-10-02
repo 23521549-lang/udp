@@ -1,4 +1,4 @@
-import { workloadSlugFor } from "@udp/config";
+import { env, workloadSlugFor } from "@udp/config";
 import type { DomainToolConfig, PipelineStep } from "@udp/adapter-core";
 import type { Prisma } from "@udp/db";
 import { ConflictError, NotFoundError } from "@udp/http";
@@ -10,11 +10,18 @@ import type { Request } from "express";
 import { prisma } from "../../core/db.js";
 import { buildPlanOf } from "../packaging/build-plan.js";
 import { scannedLanguageOf } from "../packaging/scanned-language.js";
+import { providerFromDb } from "../provisioning/provider-codec.js";
 import { API_PREFIX } from "../../core/http/api-prefix.js";
 import { auditEntry } from "../audit/audit.service.js";
 import { bindingsOfProject } from "../capability/capability-binding.repository.js";
+import { activeMeta } from "../cloud/cloud.repository.js";
 import type { DomainAdapterRegistry } from "../domain/domain-adapter.registry.js";
 import { isCicdAdapter } from "./cicd-webhook.service.js";
+import {
+  absoluteWebhookUrlOf,
+  expectationOf,
+  webhookPathOf,
+} from "./trusted-deploy.js";
 import {
   generateWebhookSecret,
   isSealedWebhookSecret,
@@ -26,13 +33,16 @@ import {
  * lần), template pipeline Golden Path của tool đang bật.
  */
 
-const webhookPathOf = (projectId: string, provider: string): string =>
-  `${API_PREFIX}/webhooks/cicd/${projectId}/${provider}`;
-
 const enabledCicd = (projectId: string) =>
   prisma.domainConfig.findFirst({
     where: { projectId, domainType: "CICD", isEnabled: true },
-    select: { id: true, selectedTool: true, webhookSecret: true },
+    select: {
+      id: true,
+      selectedTool: true,
+      webhookSecret: true,
+      toolConfig: true,
+      oidcRequired: true,
+    },
   });
 
 async function cicdRowOf(projectId: string) {
@@ -43,13 +53,52 @@ async function cicdRowOf(projectId: string) {
   return { ...row, provider: row.selectedTool };
 }
 
+/**
+ * Trusted Deploy khả dụng chưa, và nếu chưa thì vì sao — Portal nói lại nguyên văn lý do.
+ *
+ * `available` false nghĩa là UDP KHÔNG kiểm được token của provider đang bật, nên KHÔNG được cho bật chế
+ * độ bắt buộc: bật một cổng mà UDP không kiểm nổi là tự khoá project ra ngoài, và đó là một trạng thái
+ * chỉ sửa được bằng tay trong database.
+ */
+export function trustedDeployStateOf(row: {
+  selectedTool: string | null;
+  toolConfig: unknown;
+  oidcRequired: boolean;
+}): CicdStatusWire["trustedDeploy"] {
+  const provider = row.selectedTool;
+  const expectation =
+    provider === null
+      ? { unavailable: "NO_PROVIDER" as const }
+      : expectationOf({
+          provider,
+          toolConfig: row.toolConfig,
+          // `aud` không ảnh hưởng tới việc provider có kiểm được hay không, nên chỗ này chỉ cần một chuỗi
+          // hợp lệ; chuỗi thật dựng ở đường webhook.
+          audience: "https://unused.invalid",
+        });
+  return "unavailable" in expectation
+    ? {
+        required: row.oidcRequired,
+        available: false,
+        unavailableReason: expectation.unavailable,
+      }
+    : { required: row.oidcRequired, available: true, unavailableReason: null };
+}
+
 export async function status(projectId: string): Promise<CicdStatusWire> {
   const row = await enabledCicd(projectId);
   const provider = row?.selectedTool ?? null;
   return {
     provider,
     webhookPath: provider === null ? null : webhookPathOf(projectId, provider),
+    webhookUrl:
+      provider === null ? null : absoluteWebhookUrlOf(projectId, provider),
     secretSet: isSealedWebhookSecret(row?.webhookSecret),
+    trustedDeploy: trustedDeployStateOf({
+      selectedTool: provider,
+      toolConfig: row?.toolConfig ?? null,
+      oidcRequired: row?.oidcRequired ?? false,
+    }),
   };
 }
 
@@ -106,7 +155,7 @@ export async function pipelineTemplate(
   if (!isCicdAdapter(adapter)) {
     throw new NotFoundError(`Không có adapter CI/CD ${row.provider}`);
   }
-  const [project, bindings, tracked, enabled] = await Promise.all([
+  const [project, bindings, tracked, enabled, credential] = await Promise.all([
     prisma.project.findUniqueOrThrow({
       where: { id: projectId },
       select: {
@@ -130,6 +179,8 @@ export async function pipelineTemplate(
       where: { projectId, isEnabled: true, selectedTool: { not: null } },
       select: { domainType: true, selectedTool: true, toolConfig: true },
     }),
+    // [Plan #61 QĐ-14] Cloud của project: danh tính ký và khoá KMS nằm ở đó
+    activeMeta(projectId),
   ]);
   const registryBinding = bindings.find(
     (b) => b.capabilityId === "registry.oci",
@@ -155,6 +206,9 @@ export async function pipelineTemplate(
         registry: registryBinding,
         settings: project.buildSettings,
         scannedLanguage: scannedLanguageOf(project.repoScan),
+        projectCloud:
+          credential === null ? null : providerFromDb(credential.provider),
+        ci: row.provider,
       }),
       flagKeys: tracked.map((t) => t.flag.key).sort(),
       rolloutStrategy: bindings.some(

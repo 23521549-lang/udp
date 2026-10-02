@@ -30,6 +30,17 @@ dụng viết bằng một ngôn ngữ phổ biến, không khoá dài hạn khi
 bốn điểm yếu): 61d-1 ký và cổng deploy (AC-8, AC-10), 61d-2 Trusted Deploy (AC-11), 61d-3 Kyverno (AC-12). Mỗi đợt
 qua đủ cổng rồi mới commit.
 
+**[02/10/2026] 61d-2 chia hai: 61d-2a và 61d-2b.** Quyết sau vòng QA soát kế hoạch 61d-2, vì một chặn cứng đã kiểm lại
+bằng mã: đường Trusted Deploy cho ba CI chạy TRONG CỤM không làm được mà không chạm phía cụm, bằng cả hai lối hiện
+thực. Lối TokenReview cần `authentication.k8s.io/tokenreviews: create` mà không ServiceAccount nào của §12.2 có (chữ
+`tokenreviews` xuất hiện 0 lần trong thiết kế), cộng bootstrap lại mọi cụm đang chạy và một method mới trên
+`ClusterAccess` (hôm nay `write()` trả `Promise<void>` nên không đọc được `status`). Lối JWKS-của-cụm thì Service 1
+không lưu URL issuer của cụm ở đâu, mà mọi cụm lại có CÙNG một chủ thể `system:serviceaccount:udp-build:udp-builder`
+nên chỉ issuer nhận diện được project — tức phải học và lưu issuer lúc provision, cũng chạm đường provisioning. Vì vậy:
+**61d-2a** làm ba nhà cung cấp SaaS (GitHub Actions, GitLab CI, CircleCI) và không chạm cụm; **61d-2b** làm bộ ký trong
+cụm cho CircleCI + Azure cùng Trusted Deploy cho ba CI trong cụm, và quyết lối nào ở đó. Tới hết 61d-2a, AC-11 đạt cho
+ba CI SaaS; ba CI trong cụm giữ HMAC và Portal nói rõ "chưa khả dụng" kèm lý do.
+
 **QĐ-2 — Ranh giới giao diện (E1).** `PipelineTemplateParams` thêm `build: BuildPlan` — một MỞ RỘNG BỐI CẢNH như
 `environments` của D-P29, không đổi tên hay thêm phương thức của `CicdDomainAdapter`; `languageRuntime` giữ (tương
 thích) nhưng bước test đọc `build.test`. Registry khai cách đẩy bằng THUỘC TÍNH của binding `registry.oci`
@@ -219,8 +230,13 @@ sổ nợ.
   (có người, có nhật ký).
 - **Chế độ bắt buộc** `signing.enforce`: tự bật khi nhận chữ ký hợp lệ đầu tiên (pipeline đã sinh lại có bước ký) — không
   làm gãy project đang chạy pipeline cũ, không phụ thuộc trí nhớ của người bảo trì. Đã bật: thiếu hay sai chữ ký ⇒ ghi
-  `DEPLOY_FAILURE` có mã lý do, không gửi job. Tắt: MAINTAINER, có nhật ký.
-- Lần deploy ghi `signature: { keyId, issuedAt }`; danh sách deployment có trạng thái chữ ký; Portal hiện "Đã kiểm chữ ký".
+  `DEPLOY_FAILURE` có mã lý do, không gửi job, trả 422 cho CI (bước báo đỏ). Bật/tắt tay: `PUT
+/projects/:id/build/signing-enforce` (MAINTAINER, nhật ký) — lưu cài đặt build không đổi được nó; tắt là tạm: chữ ký hợp
+  lệ kế tiếp tự bật lại (muốn thôi ký hẳn thì gỡ khoá).
+- Lần deploy ghi `signature: { keyId, issuedAt }`; danh sách deployment có trạng thái chữ ký (`VERIFIED`, mã từ chối hay
+  không kiểm); Portal hiện "Đã kiểm chữ ký" hay lý do từ chối. Chi phí: UDP 0 đồng; khoá nằm ở KMS của khách (AWS KMS 1
+  USD/khoá/tháng cộng 0,15 USD/10 000 lần ký, không thuộc gói miễn phí — đã đọc trang giá AWS 02/10/2026; GCP, Azure theo
+  bảng giá của họ), Portal nói rõ.
 - Phụ thuộc mới: `@sigstore/verify`, `@sigstore/bundle`, `@sigstore/core` (OpenSSF). Bản 4.x đòi Node `^22.22.2`: nâng
   `engines` của repo từ `>=22.12.0` lên `>=22.22.2` — cùng dòng LTS, bản vá bảo mật; máy ảo production chạy 22.23.3.
 

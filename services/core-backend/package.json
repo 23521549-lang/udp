@@ -12,6 +12,9 @@
     "e8": "tsx scripts/e8-mutation.ts"
   },
   "dependencies": {
+    "@sigstore/bundle": "5.0.0",
+    "@sigstore/core": "4.0.1",
+    "@sigstore/verify": "4.1.2",
     "@udp/adapter-core": "workspace:*",
     "@udp/cloud-adapters": "workspace:*",
     "@udp/cluster-access": "workspace:*",
@@ -27,6 +30,7 @@
     "express": "^4.21.1",
     "express-rate-limit": "^7.4.1",
     "helmet": "^8.0.0",
+    "jose": "6.2.12",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "10.0.10",
     "pg-boss": "12.34.0",

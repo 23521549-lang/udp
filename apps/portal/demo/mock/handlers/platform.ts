@@ -1,4 +1,9 @@
-import { buildSettingsSchema } from "@udp/shared-types/build";
+import {
+  buildSettingsSchema,
+  DEFAULT_BUILD_SETTINGS,
+  kmsCloudOf,
+  signingEnforceSchema,
+} from "@udp/shared-types/build";
 import type {
   CostWire,
   DomainCatalogEntryWire,
@@ -6,7 +11,7 @@ import type {
   ProjectDomainWire,
   RepoScanWire,
 } from "@udp/shared-types/wire";
-import { buildViewOf, repoProfileOf, scanOf } from "../build";
+import { buildViewOf, repoProfileOf, scanOf, storedSettings } from "../build";
 import { elapsedSeconds, nowIso } from "../clock";
 import type { Db, ProjectRecord } from "../db";
 import { golden } from "../goldens";
@@ -525,13 +530,22 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
       const p = projectOf(db, id);
       // Cùng schema với Service 1: đường dẫn có .., khoá giả dạng danh tính, trường lạ ⇒ 400
       const parsed = buildSettingsSchema.safeParse(req.body);
-      if (!parsed.success) {
+      const identity = parsed.success ? parsed.data.identity : null;
+      if (
+        !parsed.success ||
+        (identity !== null &&
+          parsed.data.signing.keys.some(
+            (k) => kmsCloudOf(k.kms) !== identity.cloud,
+          ))
+      ) {
         throw new HttpProblem(
           400,
           "VALIDATION_FAILED",
           "Cài đặt build không hợp lệ",
         );
       }
+      // Như Service 1: dấu vân tay và ngày thêm do máy chủ điền; lưu cài đặt không đổi chế độ bắt buộc
+      const stored = storedSettings(p.build, parsed.data);
       audit(
         db,
         p,
@@ -539,9 +553,41 @@ export function registerPlatformRoutes(router: Router, db: Db): void {
         "Project",
         p.project.id,
         p.build ?? null,
-        parsed.data,
+        stored,
       );
-      p.build = parsed.data;
+      p.build = stored;
+      return ok(buildViewOf(db.projects, p));
+    })
+    // [Plan #61 QĐ-16] Bắt buộc chữ ký: thao tác riêng, có nhật ký; bật cần ít nhất một khoá
+    .on("PUT", "/projects/:id/build/signing-enforce", (req, [id = ""]) => {
+      const p = projectOf(db, id);
+      const parsed = signingEnforceSchema.safeParse(req.body);
+      if (!parsed.success) {
+        throw new HttpProblem(400, "VALIDATION_FAILED", "Thân không hợp lệ");
+      }
+      const settings = p.build ?? DEFAULT_BUILD_SETTINGS;
+      const { enforce } = parsed.data;
+      if (enforce && settings.signing.keys.length === 0) {
+        throw new HttpProblem(
+          409,
+          "CONFLICT",
+          "Chưa có khoá ký: thêm khoá trước khi bắt buộc chữ ký",
+        );
+      }
+      if (settings.signing.enforce !== enforce) {
+        audit(
+          db,
+          p,
+          enforce
+            ? "project.build.signing-enforced"
+            : "project.build.signing-unenforced",
+          "Project",
+          p.project.id,
+          { enforce: !enforce },
+          { enforce },
+        );
+        p.build = { ...settings, signing: { ...settings.signing, enforce } };
+      }
       return ok(buildViewOf(db.projects, p));
     });
 }

@@ -13,8 +13,19 @@ import { renderApp } from "./render";
  * cần làm, danh tính build (dán dòng kết quả của script), cài đặt build — chỉ MAINTAINER đổi được.
  */
 
-const view = (): BuildViewWire =>
-  golden<BuildViewWire>("GET /projects/{id}/build");
+/**
+ * Mẫu thật của Service 1, ghim hai phần phụ thuộc project mà bộ test tích hợp tạo ngẫu nhiên: registry (ECR, đẩy bằng
+ * danh tính) và giờ rebase (theo slug của tên project)
+ */
+const view = (): BuildViewWire => ({
+  ...golden<BuildViewWire>("GET /projects/{id}/build"),
+  registry: {
+    server: "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com",
+    push: "aws-ecr",
+    effectivePush: "aws-ecr",
+  },
+  rebase: { hour: 4, minute: 17, cron: "17 4 * * *", schedule: "pipeline" },
+});
 
 const ROLE = "arn:aws:iam::123456789012:role/udp/udp-build-web";
 
@@ -151,6 +162,32 @@ describe("mục Đóng gói", () => {
     ]);
   });
 
+  it("dòng kết quả mang khoá ký ⇒ khoá lên ĐẦU danh sách (khoá đang ký), khoá cũ vẫn giữ", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    const puts: { signing: { keys: { kms: string }[] } }[] = [];
+    const before = withKeys(view(), false);
+    serve(before, (body) => {
+      puts.push(body as (typeof puts)[number]);
+      return before;
+    });
+    renderApp(`/app/projects/${detail.project.id}/code`);
+    const box = await screen.findByLabelText("Dòng kết quả của script");
+    await userEvent.click(box);
+    await userEvent.paste(
+      `UDP_BUILD_IDENTITY=${JSON.stringify({
+        cloud: "aws",
+        roleArn: ROLE,
+        signing: { key: NEW_KMS, publicKey: NEW_KEY },
+      })}`,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Lưu danh tính" }),
+    );
+    await screen.findByText("Đã có danh tính build.");
+    expect(puts[0]?.signing.keys.map((k) => k.kms)).toEqual([NEW_KMS, KMS]);
+  });
+
   it("cài đặt: đường dẫn có .. bị chặn ở Portal; ghim Buildpacks và tự khai lệnh test ⇒ PUT đúng hình", async () => {
     const detail = projectFixture("MAINTAINER");
     useProjectHandlers(detail);
@@ -245,7 +282,139 @@ describe("mục Đóng gói: vá image nền (Plan #61 QĐ-13)", () => {
   });
 });
 
+const KMS =
+  "awskms:///arn:aws:kms:ap-southeast-1:123456789012:key/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
+const NEW_KMS =
+  "awskms:///arn:aws:kms:ap-southeast-1:123456789012:key/1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d";
+/** Khoá CÔNG KHAI P-256 (khoá bí mật không tồn tại ở đâu) */
+const KEY =
+  "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE92As3/UzUlUytfW39VSLIABMe+N4\nWIlYslUbfoP6nNqQ1xMw/qNyyjMw1XV+qwrxwHPAqozvHYR57HIXLgULfg==\n-----END PUBLIC KEY-----\n";
+const NEW_KEY =
+  "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEqdzw6sbEWzVrQEjvRSRdi70PBHIP\nazmx7HJs8bBnvFiLzmb2crDEQi/zADbyhD6FgyrhCkTMZjfULHDWO+xYlA==\n-----END PUBLIC KEY-----\n";
+
+/** Mục Đóng gói có danh tính và một khoá ký; `enforce` theo đối số */
+function withKeys(base: BuildViewWire, enforce: boolean): BuildViewWire {
+  return {
+    ...base,
+    settings: {
+      ...base.settings,
+      identity: { cloud: "aws", roleArn: ROLE },
+      signing: {
+        keys: [
+          {
+            id: "3f9a1c0b7d2e4a55",
+            publicKey: KEY,
+            kms: KMS,
+            addedAt: "2026-09-20T08:00:00.000Z",
+          },
+        ],
+        compat: true,
+        enforce,
+      },
+    },
+    identity: { required: true, configured: true, cloud: "aws" },
+    signing: { available: true, reason: null },
+    todo: [],
+  };
+}
+
+describe("mục Đóng gói: ký image (Plan #61 QĐ-14, QĐ-16)", () => {
+  const section = async () =>
+    (await screen.findByRole("heading", { name: /Ký image/ })).closest(
+      "div",
+    ) as HTMLElement;
+
+  it("đã bắt buộc: khoá đang ký với dấu vân tay và URI KMS; tắt bắt buộc phải xác nhận ⇒ PUT riêng", async () => {
+    const detail = projectFixture("MAINTAINER");
+    useProjectHandlers(detail);
+    const enforced = withKeys(view(), true);
+    const calls: unknown[] = [];
+    serve(enforced);
+    server.use(
+      http.put(
+        `${API}/projects/:id/build/signing-enforce`,
+        async ({ request }) => {
+          calls.push(await request.json());
+          return HttpResponse.json(withKeys(view(), false));
+        },
+      ),
+    );
+    renderApp(`/app/projects/${detail.project.id}/code`);
+    const box = await section();
+    expect(within(box).getByText("3f9a1c0b7d2e4a55")).toBeInTheDocument();
+    expect(within(box).getByText("Đang ký")).toBeInTheDocument();
+    expect(within(box).getByText(KMS)).toBeInTheDocument();
+    expect(
+      within(box).getByText(
+        "Bắt buộc: image không có chữ ký hợp lệ không được deploy.",
+      ),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      within(box).getByRole("button", { name: "Tắt bắt buộc" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "Tắt bắt buộc chữ ký?",
+    });
+    expect(calls).toHaveLength(0);
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Tắt bắt buộc" }),
+    );
+    expect(
+      await screen.findByText(/Chờ chữ ký hợp lệ đầu tiên/),
+    ).toBeInTheDocument();
+    expect(calls).toEqual([{ enforce: false }]);
+  });
+
+  it("chưa ký được ⇒ nói lý do theo mã; VIEWER không có nút nào", async () => {
+    const detail = projectFixture("VIEWER");
+    useProjectHandlers(detail);
+    serve({
+      ...withKeys(view(), false),
+      signing: { available: false, reason: "CIRCLECI_AZURE" },
+    });
+    renderApp(`/app/projects/${detail.project.id}/code`);
+    const box = await section();
+    expect(
+      within(box).getByText(/CircleCI chưa ký được trên Azure/),
+    ).toBeInTheDocument();
+    for (const name of [/bắt buộc/i, /Gỡ khoá/]) {
+      expect(within(box).queryByRole("button", { name })).toBeNull();
+    }
+    expect(
+      within(box).getByRole("switch", { name: "Chữ ký tương thích" }),
+    ).toBeDisabled();
+  });
+});
+
 describe("parseIdentityLine", () => {
+  it("dòng của script mới mang khoá ký: tách được URI KMS và khoá công khai; khoá bí mật bị từ chối", () => {
+    const line = parseIdentityLine(
+      `UDP_BUILD_IDENTITY=${JSON.stringify({
+        cloud: "aws",
+        roleArn: ROLE,
+        signing: { key: KMS, publicKey: KEY },
+      })}`,
+    );
+    expect(line).toEqual({
+      cloud: "aws",
+      roleArn: ROLE,
+      signing: { key: KMS, publicKey: KEY },
+    });
+    expect(
+      parseIdentityLine(
+        JSON.stringify({
+          cloud: "aws",
+          roleArn: ROLE,
+          signing: {
+            key: KMS,
+            publicKey: KEY.replaceAll("PUBLIC", "PRIVATE"),
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it("nhận dòng có tiền tố, giữa nhiều dòng, hay JSON trần; từ chối khoá và cloud lạ", () => {
     const line = `UDP_BUILD_IDENTITY={"cloud":"aws","roleArn":"${ROLE}"}`;
     expect(parseIdentityLine(line)).toEqual({ cloud: "aws", roleArn: ROLE });

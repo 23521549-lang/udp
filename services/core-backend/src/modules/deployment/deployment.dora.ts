@@ -1,3 +1,8 @@
+import {
+  SIGNATURE_REJECTIONS,
+  type SignatureRejection,
+} from "@udp/shared-types";
+
 /**
  * Năm chỉ số DORA từ Event Store (§2.2 "Định nghĩa DORA dùng trong UDP", §9) — hàm THUẦN.
  *
@@ -216,6 +221,8 @@ export interface DeploymentView {
   triggeredBy: DoraEvent["triggeredBy"];
   /** [Plan #61 QĐ-13] Lần deploy do rebase theo lịch — metadata của sự kiện mở đầu mang `kind: "rebase"` */
   rebase: boolean;
+  /** [Plan #61 QĐ-16] Phán quyết của cổng deploy — `null` khi không kiểm */
+  signature: "VERIFIED" | SignatureRejection | null;
   rolloutSessionId: string | null;
   restoresDeploymentId: string | null;
   startedAt: string;
@@ -227,6 +234,16 @@ const isRebase = (metadata: unknown): boolean =>
   typeof metadata === "object" &&
   metadata !== null &&
   (metadata as { kind?: unknown }).kind === "rebase";
+
+/** Phán quyết của cổng deploy ghi trong metadata: `keyId` ⇒ đã kiểm, `code` ⇒ từ chối */
+function signatureOf(metadata: unknown): DeploymentView["signature"] {
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const signature = (metadata as { signature?: unknown }).signature;
+  if (typeof signature !== "object" || signature === null) return null;
+  const { keyId, code } = signature as { keyId?: unknown; code?: unknown };
+  if (typeof keyId === "string") return "VERIFIED";
+  return SIGNATURE_REJECTIONS.find((c) => c === code) ?? null;
+}
 
 /**
  * Gom sự kiện theo `deploymentId` (§2.2: cột đó tồn tại đúng để gom START/SUCCESS/
@@ -259,6 +276,9 @@ export function groupDeployments(
       commitSha: pick("commitSha"),
       triggeredBy: first.triggeredBy,
       rebase: sorted.some((e) => isRebase(e.metadata)),
+      signature:
+        sorted.map((e) => signatureOf(e.metadata)).find((v) => v !== null) ??
+        null,
       rolloutSessionId:
         sorted.map((e) => e.rolloutSessionId).find((v) => v !== null) ?? null,
       restoresDeploymentId:

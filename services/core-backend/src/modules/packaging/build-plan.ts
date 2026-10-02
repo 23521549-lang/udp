@@ -1,7 +1,9 @@
 import {
   identityCloudOf,
   registryPushOf,
+  type BuildIdentityCloud,
   type BuildPlan,
+  type BuildSigning,
   type BuildTest,
 } from "@udp/adapter-core";
 import { BUILD_PLATFORM, TEST_IMAGES } from "@udp/config";
@@ -10,6 +12,7 @@ import {
   BUILD_LANGUAGES,
   buildSettingsSchema,
   DEFAULT_BUILD_SETTINGS,
+  kmsCloudOf,
   type BuildLanguage,
   type BuildSettings,
 } from "@udp/shared-types";
@@ -93,6 +96,49 @@ export interface BuildPlanInput {
   settings?: unknown;
   /** `projects.repo_scan.language` của lần quét gần nhất */
   scannedLanguage?: unknown;
+  /** [Plan #61 QĐ-14] Cloud của project (credential đang dùng) — danh tính ký và khoá KMS nằm ở đó */
+  projectCloud?: BuildIdentityCloud | null;
+  /** Tool CI/CD đang bật */
+  ci?: string | null;
+}
+
+/** Vì sao project chưa ký được image — `null` khi ký được (dù đã có khoá hay chưa) */
+export type SigningUnavailable = "NO_CLOUD" | "CIRCLECI_AZURE";
+
+/**
+ * Ký được không: cần cloud của project; CircleCI không federation được tới Azure (chủ thể JWT của CircleCI mang id
+ * người chạy, federated credential của Azure đòi khớp đúng) — tổ hợp đó ký bằng bộ ký trong cụm (QĐ-17).
+ */
+export function signingUnavailable(
+  projectCloud: BuildIdentityCloud | null,
+  ci: string | null,
+): SigningUnavailable | null {
+  if (projectCloud === null) return "NO_CLOUD";
+  if (ci === "circleci" && projectCloud === "azure") return "CIRCLECI_AZURE";
+  return null;
+}
+
+/**
+ * [Plan #61 QĐ-14] Ký bằng khoá MỚI NHẤT (đầu danh sách) với danh tính của project ở cloud của nó. `null` khi chưa ký
+ * được, chưa có khoá, chưa có danh tính ở cloud đó, hay khoá thuộc cloud khác (đổi cloud sau khi chạy script).
+ */
+export function buildSigningOf(
+  settings: BuildSettings,
+  projectCloud: BuildIdentityCloud | null,
+  ci: string | null,
+): BuildSigning | null {
+  const key = settings.signing.keys[0];
+  const identity = settings.identity;
+  if (
+    signingUnavailable(projectCloud, ci) !== null ||
+    key === undefined ||
+    identity === null ||
+    identity.cloud !== projectCloud ||
+    kmsCloudOf(key.kms) !== projectCloud
+  ) {
+    return null;
+  }
+  return { key: key.kms, identity, compat: settings.signing.compat };
 }
 
 /**
@@ -133,6 +179,11 @@ export function buildPlanOf(input: BuildPlanInput): BuildPlan {
     push,
     identity,
     test: buildTestOf(settings, language),
+    signing: buildSigningOf(
+      settings,
+      input.projectCloud ?? null,
+      input.ci ?? null,
+    ),
   };
 }
 

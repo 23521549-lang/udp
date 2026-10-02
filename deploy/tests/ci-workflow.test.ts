@@ -157,6 +157,38 @@ describe("CI (§13.5)", () => {
       ).toBe(true);
     }
   });
+
+  it("signing-e2e: registry có và không có API referrers ghim digest; ký bằng đoạn shell của UDP rồi mới kiểm bằng cosign, skopeo và cổng deploy, cả ca hỏng (Plan #61)", () => {
+    const e2e = job("signing-e2e") as Job & {
+      services?: Record<string, { image: string }>;
+    };
+    expect(Object.keys(e2e.services ?? {}).sort()).toEqual([
+      "distribution",
+      "zot",
+    ]);
+    for (const service of Object.values(e2e.services ?? {})) {
+      expect(service.image).toMatch(/@sha256:[0-9a-f]{64}$/);
+    }
+    expect(e2e.env?.BASE).toMatch(/@sha256:[0-9a-f]{64}$/);
+    const order = [
+      "$E2E tools",
+      "skopeo copy",
+      '$E2E sign > "$RUNNER_TEMP/sign.sh"',
+      '"$UDP_TMP/cosign" verify',
+      "use-sigstore-attachments: true",
+      "$E2E verify",
+    ].map((command) => indexOfRun(e2e, command));
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const gate = e2e.steps[indexOfRun(e2e, "$E2E verify")]?.run ?? "";
+    for (const outcome of [
+      " ok",
+      " SIGNATURE_INVALID",
+      " SIGNATURE_MISMATCH",
+    ]) {
+      expect(gate).toContain(outcome);
+    }
+  });
 });
 
 describe("máy ảo công khai (Plan #52)", () => {

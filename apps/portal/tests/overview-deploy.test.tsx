@@ -99,6 +99,40 @@ describe("trang Deploy: nhật ký một lần deploy", () => {
   });
 });
 
+describe("trang Deploy: cổng chữ ký (Plan #61 QĐ-16)", () => {
+  it("đã kiểm chữ ký và lý do bị từ chối hiện theo MÃ; lần không kiểm thì không nhãn", async () => {
+    const detail = projectFixture("VIEWER");
+    useProjectHandlers(detail);
+    const list = golden<{ deployments: DeploymentWire[] }>(
+      "GET /projects/{id}/deployments",
+    );
+    const [a, b, ...rest] = list.deployments;
+    server.use(
+      http.get(`${API}/projects/:id/deployments`, () =>
+        HttpResponse.json({
+          deployments: [
+            { ...a!, signature: "VERIFIED" },
+            { ...b!, status: "DEPLOY_FAILURE", signature: "SIGNATURE_STALE" },
+            ...rest.map((d) => ({ ...d, signature: null })),
+          ],
+        }),
+      ),
+      http.get(`${API}/projects/:id/metrics/dora`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/metrics/dora")),
+      ),
+    );
+    renderApp(`/app/projects/${detail.project.id}/deployments`);
+    const rows = await screen.findAllByRole("listitem");
+    expect(within(rows[0]!).getByText("Đã kiểm chữ ký")).toBeInTheDocument();
+    expect(
+      within(rows[1]!).getByText("Từ chối: chữ ký cũ"),
+    ).toBeInTheDocument();
+    for (const row of rows.slice(2)) {
+      expect(within(row).queryByText(/chữ ký/)).toBeNull();
+    }
+  });
+});
+
 describe("trang Deploy: lượt vá image nền (Plan #61 QĐ-13)", () => {
   it("lần deploy do rebase theo lịch mang nhãn Vá image nền; lần thường thì không", async () => {
     const detail = projectFixture("VIEWER");

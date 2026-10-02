@@ -29,6 +29,14 @@ const vi = {
   viewRollout: "xem rollout",
   /** [Plan #61 QĐ-13] Lần deploy do rebase theo lịch: cùng commit, lớp hệ điều hành mới */
   rebase: "Vá image nền",
+  /** [Plan #61 QĐ-16] Phán quyết của cổng deploy */
+  signature: {
+    VERIFIED: "Đã kiểm chữ ký",
+    SIGNATURE_MISSING: "Từ chối: thiếu chữ ký",
+    SIGNATURE_INVALID: "Từ chối: không phải khoá của project",
+    SIGNATURE_MISMATCH: "Từ chối: chữ ký của image, commit hay nhánh khác",
+    SIGNATURE_STALE: "Từ chối: chữ ký cũ",
+  } satisfies Record<NonNullable<DeploymentWire["signature"]>, string>,
   log: "Nhật ký",
   logLabel: (id: string) => `Nhật ký deploy ${id}`,
   approve: "Duyệt deploy",
@@ -83,6 +91,14 @@ export const deploymentMessages = defineMessages({
     },
     viewRollout: "view rollout",
     rebase: "Base image patch",
+    signature: {
+      VERIFIED: "Signature verified",
+      SIGNATURE_MISSING: "Rejected: no signature",
+      SIGNATURE_INVALID: "Rejected: not the project's key",
+      SIGNATURE_MISMATCH:
+        "Rejected: signed for another image, commit or branch",
+      SIGNATURE_STALE: "Rejected: old signature",
+    },
     log: "Log",
     logLabel: (id: string) => `Deployment log ${id}`,
     approve: "Approve deployment",

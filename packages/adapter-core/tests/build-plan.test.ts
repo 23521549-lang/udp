@@ -26,7 +26,11 @@ const PLAN: BuildPlan = {
     roleArn: "arn:aws:iam::123456789012:role/udp/udp-build-web",
   },
   test: { kind: "run", command: "npm ci && npm test", image: "node:22" },
+  signing: null,
 };
+
+const KMS_AWS =
+  "awskms:///arn:aws:kms:ap-southeast-1:123456789012:key/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
 
 const rejects = (plan: BuildPlan): void => {
   expect(() => {
@@ -118,6 +122,37 @@ describe("assertBuildPlanSafe", () => {
       rejects({ ...PLAN, context: bad });
     }
     rejects({ ...PLAN, dockerfile: "." });
+  });
+
+  it("[Plan #61 QĐ-14] ký: URI khoá đúng dạng, cùng cloud với danh tính ký, danh tính đúng định dạng", () => {
+    const signing = { key: KMS_AWS, identity: PLAN.identity!, compat: true };
+    expect(() => {
+      assertBuildPlanSafe({ ...PLAN, signing });
+    }).not.toThrow();
+    // Registry không thuộc cloud vẫn ký được: danh tính ký là của cloud của project
+    expect(() => {
+      assertBuildPlanSafe({
+        ...PLAN,
+        push: { kind: "basic", server: "ghcr.io" },
+        identity: null,
+        signing,
+      });
+    }).not.toThrow();
+    rejects({ ...PLAN, signing: { ...signing, key: "awskms:///alias/x" } });
+    rejects({
+      ...PLAN,
+      signing: {
+        ...signing,
+        key: "azurekms://udpvault.vault.azure.net/udp-sign",
+      },
+    });
+    rejects({
+      ...PLAN,
+      signing: {
+        ...signing,
+        identity: { cloud: "aws", roleArn: "arn:aws:iam::1:user/x" },
+      },
+    });
   });
 
   it("danh tính phải khớp cloud của registry và đúng định dạng", () => {

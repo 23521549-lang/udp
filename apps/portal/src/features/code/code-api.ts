@@ -27,4 +27,10 @@ export const codeApi = {
       method: "PUT",
       body: settings,
     }),
+  /** [Plan #61 QĐ-16] Bắt buộc chữ ký: thao tác riêng — lưu cài đặt build không đổi được nó */
+  setSigningEnforce: (projectId: string, enforce: boolean) =>
+    api(buildViewWire, `${p(projectId)}/build/signing-enforce`, {
+      method: "PUT",
+      body: { enforce },
+    }),
 };

@@ -33,6 +33,10 @@ import {
 } from "../../adapter-base/packaging/build-script.js";
 import { buildNamespaceCompanion } from "../../adapter-base/packaging/build-namespace.js";
 import { inClusterRebaseContainers } from "../../adapter-base/packaging/rebase-script.js";
+import {
+  inClusterSignContainers,
+  SIGNATURE_FILE,
+} from "../../adapter-base/packaging/sign-script.js";
 import { BUILD_TOOLCHAIN } from "@udp/config";
 
 /** Hai volume tạm của pod: thư mục làm việc của build và thông tin đăng nhập registry */
@@ -135,7 +139,10 @@ const base = createHelmBasedAdapter({
   ],
 });
 
-const notifyStep = (status: "success" | "failure"): string[] => [
+const notifyStep = (
+  status: "success" | "failure",
+  signed: boolean,
+): string[] => [
   `  - name: notify-udp-${status}`,
   `    image: ${BUILD_TOOLCHAIN.images.alpine}`,
   ...VOLUME_MOUNTS,
@@ -150,6 +157,10 @@ const notifyStep = (status: "success" | "failure"): string[] => [
   status === "success"
     ? `      - export IMAGE_REF="$(cat ${WORK_DIR}/out/image-ref)"`
     : '      - export IMAGE_REF=""',
+  // [Plan #61 QĐ-16] Chữ ký do bước ký để lại trên volume chung: cổng deploy của UDP kiểm
+  ...(status === "success" && signed
+    ? [`      - export UDP_SIGNATURE_B64="$(cat ${SIGNATURE_FILE})"`]
+    : []),
   "      - |",
   `        ${environmentOfBranch("$DRONE_BRANCH")}`,
   ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"').map(
@@ -211,6 +222,15 @@ const buildSteps = (containers: readonly BuildContainer[]): string[] =>
     ...c.script.map((line) => `        ${line}`),
   ]);
 
+/**
+ * Runner của Drone thay MỌI `${…}` trong tệp bằng biến của lượt chạy TRƯỚC khi đọc YAML — biến lạ thành chuỗi rỗng
+ * (`envsubst` của runner-go). Script của UDP dùng `${…}` của shell (`${UDP_KIND:-}`…) ⇒ thoát thành `$${…}` như tài liệu
+ * của Drone; `$VAR` không ngoặc không bị đụng.
+ */
+const escapeSubstitution = (text: string): string =>
+  // Hàm thay thế: trong chuỗi thay thế của `replaceAll`, `$$` lại có nghĩa là một `$`
+  text.replaceAll("${", () => "$${");
+
 /** Tên cron Drone kích lượt rebase — người dùng tạo bằng `drone cron add … udp-rebase` (Portal chỉ lệnh) */
 const REBASE_CRON = "udp-rebase";
 
@@ -234,12 +254,14 @@ const rebasePipeline = (params: PipelineTemplateParams): string[] => [
   "  - name: udp-auth",
   "    temp: {}",
   "steps:",
-  ...buildSteps(
-    inClusterRebaseContainers(params.build, "drone", {
+  ...buildSteps([
+    ...inClusterRebaseContainers(params.build, "drone", {
       image: "%IMAGE%",
       commit: "$DRONE_COMMIT_SHA",
     }),
-  ),
+    // Digest mới cũng phải được ký — image chưa ký không qua cổng deploy
+    ...inClusterSignContainers(params.build, signVars),
+  ]),
   "  - name: notify-udp-rebase",
   `    image: ${BUILD_TOOLCHAIN.images.alpine}`,
   ...VOLUME_MOUNTS,
@@ -253,12 +275,25 @@ const rebasePipeline = (params: PipelineTemplateParams): string[] => [
     "apk add --no-cache jq curl openssl",
     "COMMIT_SHA=$DRONE_COMMIT_SHA PIPELINE_ID=$DRONE_BUILD_NUMBER REPO=$DRONE_REPO ACTOR=drone-cron",
     ...rebaseNotifyVars("$DRONE_BRANCH", `"$(cat ${WORK_DIR}/out/image-ref)"`),
+    ...(params.build.signing === null
+      ? []
+      : [`UDP_SIGNATURE_B64=$(cat ${SIGNATURE_FILE})`]),
     ...notifyScript('-H "X-UDP-Signature: sha256=$SIG"'),
   ].map((line) => `        ${line}`),
 ];
 
+/** [Plan #61 QĐ-14] Biến của bước ký — lượt build và lượt rebase (nhánh `main`) như nhau */
+const signVars = {
+  image: "%IMAGE%",
+  project: "%PROJECT%",
+  commit: "$DRONE_COMMIT_SHA",
+  ref: "$DRONE_BRANCH",
+  run: "$DRONE_BUILD_NUMBER",
+};
+
 const pipeline = (params: PipelineTemplateParams): string[] => {
   const schedule = rebaseScheduleOf(params.build, params.projectSlug);
+  const sign = inClusterSignContainers(params.build, signVars);
   return [
     "# .drone.yml — sinh bởi UDP (Golden Path, §11)",
     "# Rollout: %ROLLOUT% — deploy chỉ áp image, flag vẫn tắt; bật dần flag trên Portal",
@@ -293,8 +328,10 @@ const pipeline = (params: PipelineTemplateParams): string[] => {
       }),
     ),
     ...stepSteps(stepsOf(params, "after-build")),
-    ...notifyStep("success"),
-    ...notifyStep("failure"),
+    // Ký sau bước sau build: chỉ image đã qua quét mới được ký
+    ...buildSteps(sign),
+    ...notifyStep("success", sign.length > 0),
+    ...notifyStep("failure", sign.length > 0),
     ...(schedule === null ? [] : rebasePipeline(params)),
   ];
 };
@@ -304,7 +341,7 @@ const adapter: CicdDomainAdapter = createCicdAdapter({
   verifySignature: (headers, rawBody, secret) =>
     verifyHmacHeader(headers, rawBody, secret, "X-UDP-Signature", "sha256="),
   renderPipelineTemplate: (params) =>
-    fillTemplate(pipeline(params), templateValues(params)),
+    escapeSubstitution(fillTemplate(pipeline(params), templateValues(params))),
 });
 
 export default adapter;

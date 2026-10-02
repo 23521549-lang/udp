@@ -136,7 +136,8 @@ export async function homeOf(
           WHERE project_id IN (${idList(ids)})
             AND event_type <> 'FLAG_CHANGE'
             AND occurred_at > ${new Date(now.getTime() - PENDING_WINDOW_DAYS * DAY_MS)}
-          ORDER BY deployment_id, occurred_at DESC
+          -- [Plan #61, sua trong 61d-1] khoa sap toan phan cho DISTINCT ON, xem architecture.service.ts
+          ORDER BY deployment_id, occurred_at DESC, id DESC
         ) latest
         WHERE event_type = 'DEPLOY_PENDING'`),
     prisma.domainConfig.findMany({
