@@ -154,9 +154,15 @@ function sourceFiles(dir: string): string[] {
  *     thay trong `render()`", lúc đó mọi phép so tên vẫn khớp mà cây sinh ra thì không còn được đổi tên.
  */
 function constantOf(source: string, name: string): string {
-  const uses = source.split(name).length - 1;
+  /**
+   * Bỏ khối chú thích TRƯỚC khi đếm: một JSDoc nhắc tên hằng làm phép đếm phồng lên, và điều kiện `uses >= 2`
+   * khi đó **không còn bắt được** thoái cấp "khai hằng rồi dùng một literal trùng lặp ở chỗ thay". Đo ra đúng
+   * thế: vòng R11 đầu tiên của đợt 62d cho ô này XANH với một lượt làm lệch thật.
+   */
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const uses = code.split(name).length - 1;
   const decls = [
-    ...source.matchAll(
+    ...code.matchAll(
       /^export const ([A-Z][A-Z0-9_]*)(?:\s*:\s*[^=\n]+?)?\s*=\s*([\s\S]{1,80}?);$/gm,
     ),
   ].filter((m) => m[1] === name);
