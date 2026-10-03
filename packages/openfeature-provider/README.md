@@ -1,4 +1,4 @@
-# @udp/openfeature-provider
+# udp-openfeature
 
 An [OpenFeature](https://openfeature.dev) provider for **UDP** server keys. It downloads a configuration snapshot,
 keeps it fresh over SSE, and evaluates flags **in your process** — so a flag lookup is a function call, not a
@@ -10,7 +10,7 @@ the same state machine, the same options and the same defaults. Both are release
 ## Install
 
 ```bash
-npm install @udp/openfeature-provider @openfeature/server-sdk
+npm install udp-openfeature @openfeature/server-sdk
 ```
 
 `@openfeature/server-sdk` and `@openfeature/core` are peer dependencies. `prom-client` is an **optional** peer, used
@@ -23,7 +23,7 @@ Node.js 20.11 or newer. The package has **no runtime dependencies**: the evaluat
 
 ```ts
 import { OpenFeature } from "@openfeature/server-sdk";
-import { UDPFeatureFlagProvider } from "@udp/openfeature-provider";
+import { UDPFeatureFlagProvider } from "udp-openfeature";
 
 await OpenFeature.setProviderAndWait(
   new UDPFeatureFlagProvider({
@@ -48,7 +48,7 @@ That is what lets a rollout be rolled back per flag rather than per deployment. 
 yourself.
 
 ```ts
-import { udpMetricsMiddleware } from "@udp/openfeature-provider/metrics";
+import { udpMetricsMiddleware } from "udp-openfeature/metrics";
 
 app.use(udpMetricsMiddleware());
 ```
@@ -60,15 +60,15 @@ Set `OTEL_SERVICE_NAME` to the workload name used by the rollout, and
 
 Only `host` and `sdkKey` are required.
 
-| Option                        | Default | Meaning                                                             |
-| ----------------------------- | ------- | ------------------------------------------------------------------- |
-| `staleAfterSeconds`           | `300`   | How long without a confirmed-fresh config before `PROVIDER_STALE`   |
-| `pollingIntervalMs`           | `30000` | Polling period when SSE is unavailable, and retry period on a 401   |
-| `sseFailuresBeforeFallback`   | `3`     | Consecutive SSE failures before falling back to polling             |
-| `initTimeoutMs`               | `10000` | How long `initialize()` waits for the first snapshot before throwing |
-| `reportStats`                 | `true`  | Report evaluation counts back to the platform every ~60s            |
-| `fetch`                       | global  | Replace `fetch` (proxy, custom agent)                               |
-| `logger`                      | silent  | `{ warn }` for diagnostics (resync, degraded, 401, snapshot mismatch) |
+| Option                      | Default | Meaning                                                               |
+| --------------------------- | ------- | --------------------------------------------------------------------- |
+| `staleAfterSeconds`         | `300`   | How long without a confirmed-fresh config before `PROVIDER_STALE`     |
+| `pollingIntervalMs`         | `30000` | Polling period when SSE is unavailable, and retry period on a 401     |
+| `sseFailuresBeforeFallback` | `3`     | Consecutive SSE failures before falling back to polling               |
+| `initTimeoutMs`             | `10000` | How long `initialize()` waits for the first snapshot before throwing  |
+| `reportStats`               | `true`  | Report evaluation counts back to the platform every ~60s              |
+| `fetch`                     | global  | Replace `fetch` (proxy, custom agent)                                 |
+| `logger`                    | silent  | `{ warn }` for diagnostics (resync, degraded, 401, snapshot mismatch) |
 
 Every numeric option is validated at construction time: a non-positive or `NaN` value throws a `RangeError` rather
 than producing a hot retry loop. `staleAfterSeconds` must be larger than both the heartbeat deadline and
@@ -101,12 +101,16 @@ Design and rationale (in Vietnamese), section 6.8:
 
 ## Development
 
+This package lives in the UDP monorepo under `packages/openfeature-provider`, where it carries a
+workspace-scoped name that is deliberately not installable from any registry. `udp-openfeature` is the name it
+is published under, declared once in `publishConfig.name`.
+
 This package lives in the UDP monorepo.
 
 ```bash
-pnpm --filter @udp/openfeature-provider build      # esbuild + tsc, writes dist/
-pnpm --filter @udp/openfeature-provider test
-pnpm --filter @udp/openfeature-provider typecheck
+pnpm -C packages/openfeature-provider build      # esbuild + tsc, writes dist/
+pnpm -C packages/openfeature-provider test
+pnpm -C packages/openfeature-provider typecheck
 ```
 
 The published tarball is produced by `scripts/pack.ts`, which is also what the consumption test installs — the

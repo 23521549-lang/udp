@@ -3,7 +3,7 @@ import { requestStore, type RequestLabels } from "./labels.js";
 
 /**
  * `udpMetricsMiddleware` — histogram HTTP có nhãn `ff` (§6.6, C1) [v4.7]. Subpath
- * riêng (`@udp/openfeature-provider/metrics`): chỉ ứng dụng dùng nó mới cần
+ * riêng (`udp-openfeature/metrics`): chỉ ứng dụng dùng nó mới cần
  * prom-client, và prom-client là PEER — một bản riêng của provider sẽ đăng ký
  * histogram vào registry KHÁC với `/metrics` của ứng dụng, series biến mất im lặng.
  *
@@ -14,7 +14,7 @@ import { requestStore, type RequestLabels } from "./labels.js";
 
 export const REQUEST_DURATION_METRIC = "http_server_request_duration_seconds";
 
-/** Nhãn phát ra — hợp đồng với truy vấn của `@udp/metrics-provider` (§7.4) */
+/** Nhãn phát ra — hợp đồng với truy vấn metrics của nền tảng (§7.4) */
 export const REQUEST_DURATION_LABELS = [
   "service_name",
   "service_version",

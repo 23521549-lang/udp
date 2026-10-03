@@ -39,6 +39,7 @@
     "node": ">=20.11"
   },
   "publishConfig": {
+    "name": "udp-openfeature",
     "main": "./dist/index.js",
     "types": "./dist/types/index.d.ts",
     "exports": {

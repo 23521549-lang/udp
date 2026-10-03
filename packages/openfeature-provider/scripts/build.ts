@@ -48,7 +48,7 @@ const result = await build({
   legalComments: "none",
   metafile: true,
   banner: {
-    js: "// @udp/openfeature-provider — mã bên thứ ba góp vào: xem THIRD_PARTY_NOTICES",
+    js: "// udp-openfeature — mã bên thứ ba góp vào: xem THIRD_PARTY_NOTICES",
   },
   logLevel: "warning",
 });

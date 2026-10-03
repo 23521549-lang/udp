@@ -47,6 +47,47 @@ const PUBLISHED_EXPORTS = [".", "./metrics"];
 
 const UDP_SCOPE = ["@udp", ""].join("/");
 
+/** Tên công khai hợp lệ: không scope, chữ thường — npm `validate-npm-package-name` nhận */
+const PUBLIC_NAME = /^[a-z][a-z0-9-]*$/;
+
+/** Tệp trong tarball mà khách THẬT SỰ đọc: mã chạy, kiểu IDE hiện khi hover, và trang gói */
+const CUSTOMER_READS = /\.(?:js|d\.ts|md)$/;
+
+/**
+ * [Plan #62 62d-1] Áp tên công khai lên manifest đã đóng gói — **không** dựa vào phiên bản pnpm.
+ *
+ * pnpm 9.12.0 (bản `packageManager` ghim) **KHÔNG** nâng `publishConfig.name`: đo trên chính gói này, tarball ra
+ * `udp-openfeature-provider-0.1.0.tgz` với `name = "@udp/openfeature-provider"` và `publishConfig` còn nguyên.
+ * Việc nâng `name` chỉ xuất hiện giữa pnpm 11.16 và 11.22. Một phép đo trước đó kết luận ngược là vì nó chạy ở
+ * thư mục ngoài repo, nơi `pnpm` là bản toàn cục 11.22.0 — và `pnpm -C <dir>` cũng phân giải `packageManager`
+ * theo thư mục ĐÍCH, nên "sửa" bằng `-C` vẫn đo nhầm bản.
+ *
+ * Nên bước này nhận CẢ HAI thế giới, và ném ở mọi thứ còn lại:
+ *   - pnpm chưa nâng ⇒ `publishConfig` còn, và sau khi pnpm đã tiêu thụ `main`/`types`/`exports` thì khoá còn lại
+ *     phải ĐÚNG `["name"]`. Còn khoá khác nghĩa là pnpm thôi nâng một khoá hình dạng — một thoái cấp im lặng mà
+ *     `main`/`types` trỏ `./dist/` ở hợp đồng sẽ bắt, nhưng bắt ở đây thì thông điệp nói đúng nguyên nhân.
+ *   - pnpm đã nâng ⇒ `publishConfig` mất, và `name` phải ĐÃ bằng tên công khai.
+ */
+function applyPublicName(manifest: Manifest, publicName: string): void {
+  const config = manifest.publishConfig;
+  if (config === undefined) {
+    if (manifest.name !== publicName) {
+      throw new Error(
+        `pnpm đã xoá publishConfig nhưng tên là ${String(manifest.name)}, phải là ${publicName}`,
+      );
+    }
+    return;
+  }
+  const left = Object.keys(config).sort().join("|");
+  if (left !== "name") {
+    throw new Error(
+      `pnpm để lại khoá ngoài \`name\` trong publishConfig: ${left} — nó đã thôi nâng khoá hình dạng`,
+    );
+  }
+  manifest.name = publicName;
+  delete manifest.publishConfig;
+}
+
 interface Manifest {
   name?: string;
   version?: string;
@@ -109,6 +150,11 @@ function entriesOf(tarball: string): string[] {
     .map((line) => line.replace(/\/$/, ""));
 }
 
+/** Nội dung một tệp trong tarball — tên tệp đi tương đối cùng `cwd`, xem `tar()` */
+function textOf(tarball: string, entry: string): string {
+  return tar(["-xzOf", basename(tarball), entry], dirname(tarball));
+}
+
 function manifestIn(tarball: string): Manifest {
   const raw = tar(
     ["-xzOf", basename(tarball), "package/package.json"],
@@ -124,6 +170,8 @@ function manifestIn(tarball: string): Manifest {
 export function assertPublishArtifact(
   entries: string[],
   manifest: Manifest,
+  expectedName: string,
+  tarball: string,
 ): void {
   const bad: string[] = [];
 
@@ -187,6 +235,28 @@ export function assertPublishArtifact(
     );
   }
 
+  /**
+   * Tên công khai, và KHÔNG byte nào còn `@udp/`.
+   *
+   * Phép quét thứ hai là cổng mạnh nhất của đợt này: nó bắt cùng lúc banner của esbuild, JSDoc lọt vào
+   * `dist/types/*.d.ts` (thứ IDE của khách hiện khi hover) và trang gói — mà không phải đoán trước một danh sách
+   * tệp. Đặt trên TARBALL chứ không trên mã nguồn, vì tarball là chỗ duy nhất phát biểu đúng mệnh đề "thứ khách
+   * nhận": `@udp/*` là namespace TRONG KHO, không gói nào của nó cài được từ registry nào.
+   */
+  if (manifest.name !== expectedName) {
+    bad.push(
+      `tên đã đóng gói là ${String(manifest.name)}, phải là ${expectedName}`,
+    );
+  }
+  if (!PUBLIC_NAME.test(manifest.name ?? "")) {
+    bad.push(`tên đã đóng gói phải không scope: ${String(manifest.name)}`);
+  }
+  for (const entry of inner.filter((e) => CUSTOMER_READS.test(e))) {
+    if (textOf(tarball, `package/${entry}`).includes(UDP_SCOPE)) {
+      bad.push(`${entry} còn nhắc ${UDP_SCOPE} — khách không phân giải được`);
+    }
+  }
+
   if (bad.length > 0) {
     throw new Error(
       `artifact phát hành không đạt hợp đồng:\n  - ${bad.join("\n  - ")}`,
@@ -219,19 +289,30 @@ export function packPublishArtifact(options: {
     throw new Error(`giải nén ${staged} không ra thư mục package/`);
   }
 
+  const source = JSON.parse(
+    readFileSync(join(root, "package.json"), "utf8"),
+  ) as Manifest;
+  const publicName = source.publishConfig?.name;
+  if (typeof publicName !== "string" || !PUBLIC_NAME.test(publicName)) {
+    throw new Error(
+      `package.json thiếu \`publishConfig.name\` hợp lệ (tên công khai không scope): ${String(publicName)}`,
+    );
+  }
+
   const manifestPath = join(unpacked, "package.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
   delete manifest.scripts;
   for (const key of Object.keys(manifest.devDependencies ?? {})) {
     if (key.startsWith(UDP_SCOPE)) delete manifest.devDependencies?.[key];
   }
+  applyPublicName(manifest, publicName);
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   npm(["pack", "--pack-destination", out], unpacked);
   const tarball = tarballIn(out);
   const entries = entriesOf(tarball);
   const packed = manifestIn(tarball);
-  assertPublishArtifact(entries, packed);
+  assertPublishArtifact(entries, packed, publicName, tarball);
   rmSync(stage, { recursive: true, force: true });
   return { tarball, entries, manifest: packed };
 }
