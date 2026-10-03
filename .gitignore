@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# [Plan #60] Lượt build SSR tạm của Portal (scripts/prerender.mjs xoá sau khi dựng sẵn)
+dist-ssr/
 build/
 .turbo/
 *.tsbuildinfo
@@ -50,4 +52,22 @@ Thumbs.db
 coverage/
 playwright-report/
 test-results/
+# Ảnh chụp của cổng portal-demo (Plan #53 QĐ-11) — artifact của CI, không phải mã
+apps/portal/demo/screens/
 *.log
+
+# Bản phát hành của máy ảo do `vm-up` sinh (Plan #52) và bản tạm của test
+deploy/k8s/release/
+deploy/k8s/.release-*/
+
+# Cây adapter tạm của test I28 dương tính (domain-catalog.integration.test.ts)
+services/core-backend/tests/.registry-*/
+
+# Python SDK (sdks/python)
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/

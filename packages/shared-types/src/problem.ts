@@ -47,7 +47,20 @@ export interface ErrorCodeSpec {
 }
 
 /**
- * Danh mục 21 mã lỗi (§9).
+ * [v4.11] Slug `type` cho lỗi CSRF — tệp này có **0 import** nên Portal dùng được.
+ *
+ * Vì sao cần một slug riêng: 403 vì thiếu quyền và 403 vì CSRF sai đều là
+ * `ForbiddenError`, và `type` của Problem Details suy từ `kind`, nên cả hai ra
+ * `.../forbidden`. Không có slug này thì client buộc phải đọc câu tiếng Việt để phân
+ * biệt hai ca — một hợp đồng bằng chuỗi hiển thị.
+ *
+ * Nó nằm ở đây chứ không ở `@udp/http` vì `@udp/http` kéo cả `express`, `pino` và
+ * Prisma; một client trình duyệt không được import gói đó.
+ */
+export const CSRF_INVALID_SLUG = "csrf-invalid";
+
+/**
+ * Danh mục 25 mã lỗi (§9).
  *
  * CẢNH BÁO CHO NGƯỜI SỬA FILE NÀY — hai chữ `as const satisfies` là bắt buộc.
  *
@@ -56,7 +69,7 @@ export interface ErrorCodeSpec {
  * trong khi mọi thứ vẫn biên dịch xanh** — một mã bịa ra sẽ lọt qua. Đã kiểm chứng
  * bằng `tsc` trên TypeScript 5.9.
  *
- *   `as const`  giữ literal để `keyof` ra union 21 khoá
+ *   `as const`  giữ literal để `keyof` ra union 24 khoá
  *   `satisfies` kiểm hình dạng mà KHÔNG làm mất literal
  */
 export const ERROR_CATALOG = {
@@ -117,6 +130,14 @@ export const ERROR_CATALOG = {
     title: "Cyclic capability dependency",
     docSection: "§5.3",
   },
+  /** [v4.11, Plan #37] Tool chỉ chạy trên một cloud (ACK, Config Connector, ASO) ≠ cloud của project */
+  CLOUD_MISMATCH: {
+    httpStatus: 422,
+    retryable: false,
+    fixableBy: "user",
+    title: "Tool requires a different cloud",
+    docSection: "§5.5",
+  },
 
   // ---- Feature flag (§6) ----
   /**
@@ -161,6 +182,32 @@ export const ERROR_CATALOG = {
     title: "Too many flags tracked in this environment",
     docSection: "§6.6",
   },
+  /**
+   * [v4.9] Mã thứ 23. ACTIVE → ARCHIVED khi flag còn lượt đánh giá trong
+   * `STALE_FLAG_THRESHOLDS.archiveGuardDays` ngày — code vẫn gọi nó. KHÔNG
+   * retryable: điều kiện chỉ hết sau nhiều ngày không còn lượt nào, nút "Thử lại"
+   * là sai. Problem chỉ mang `title`/`detail`; số liệu có cấu trúc Portal lấy từ
+   * `archive` của `GET /flags/:flagId/stats`.
+   */
+  FLAG_RECENTLY_EVALUATED: {
+    httpStatus: 409,
+    retryable: false,
+    fixableBy: "user",
+    title: "Flag was evaluated recently",
+    docSection: "§6.7",
+  },
+  /**
+   * [v4.9] Mã thứ 24. Xoá segment còn rule SEGMENT trỏ tới — cùng khuôn
+   * `VARIANT_IN_USE`: request đúng, trạng thái xung đột, gỡ rule rồi thử lại là
+   * được. `resourceId` = flag đang giữ nó.
+   */
+  SEGMENT_IN_USE: {
+    httpStatus: 409,
+    retryable: true,
+    fixableBy: "user",
+    title: "Segment is still referenced by a rule",
+    docSection: "§2.2, §6.5",
+  },
 
   // ---- Cloud adapter và quota (§4) ----
   INSUFFICIENT_PERMISSIONS: {
@@ -191,7 +238,7 @@ export const ERROR_CATALOG = {
     retryable: true,
     fixableBy: "user",
     title: "A rollout is already in progress",
-    docSection: "§8.6",
+    docSection: "§8.5, §8.6",
   },
   /**
    * [v4] Mã thứ 21. Vi phạm ràng buộc UNIQUE bất kỳ — tên project trùng, key
@@ -218,6 +265,19 @@ export const ERROR_CATALOG = {
     fixableBy: "user",
     title: "Resource was modified by someone else",
     docSection: "§2.2",
+  },
+  /**
+   * [v4.5] Mã thứ 22. Thao tác trên production cần người dùng XÁC NHẬN tường
+   * minh — gõ lại key của flag (§8.4 "xác nhận hai bước"). Portal nhận mã này thì
+   * mở hộp xác nhận rồi gửi lại kèm `confirmFlagKey`. Tách khỏi 422 chung vì 422
+   * không mã không cho Portal biết nên hiện hộp nào.
+   */
+  CONFIRMATION_REQUIRED: {
+    httpStatus: 428,
+    retryable: false,
+    fixableBy: "user",
+    title: "Explicit confirmation required",
+    docSection: "§8.4",
   },
   /** Fencing đã chặn một worker tỉnh muộn — không phải lỗi người dùng (I23) */
   PRECONDITION_FAILED: {
@@ -254,13 +314,13 @@ export const ERROR_CATALOG = {
 } as const satisfies Record<string, ErrorCodeSpec>;
 
 /**
- * Union 21 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
+ * Union 25 mã. Đây là thứ cưỡng chế I36: gán một chuỗi không có trong catalog vào
  * `ProblemDetails.code` sẽ KHÔNG BIÊN DỊCH ĐƯỢC, không cần test nào.
  */
 export type ErrorCode = keyof typeof ERROR_CATALOG;
 
 /** Kiểm lúc nạp module — thà sập lúc khởi động còn hơn thiếu mã mà không ai biết */
-const EXPECTED_ERROR_CODES = 21;
+const EXPECTED_ERROR_CODES = 25;
 if (Object.keys(ERROR_CATALOG).length !== EXPECTED_ERROR_CODES) {
   throw new Error(
     `ERROR_CATALOG có ${Object.keys(ERROR_CATALOG).length} mã, §9 nói ${EXPECTED_ERROR_CODES}.`,
@@ -305,7 +365,7 @@ export interface ProblemDetails {
   /** URI của chính request gây lỗi */
   instance?: string | undefined;
   /**
-   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong 21 mã
+   * OPTIONAL có chủ ý. 401, 403, 404 và lỗi 500 chung không có mã nào trong catalog
    * phủ được — bắt buộc `code` sẽ làm những trường hợp đó không biểu diễn nổi.
    */
   code?: ErrorCode | undefined;
@@ -316,6 +376,12 @@ export interface ProblemDetails {
    * resource để Portal hiển thị diff (§8.4 "409 Conflict + bản mới nhất").
    */
   current?: unknown;
+  /**
+   * [v4.4] Id của tài nguyên ĐANG GIỮ chỗ gây xung đột — ví dụ rollout đang chạy
+   * trên cùng flag khi tạo rollout thứ hai (`ROLLOUT_IN_PROGRESS`, §8.5). Portal
+   * dẫn thẳng tới nó thay vì bắt người dùng đi tìm. Chỉ là id, không mang nội dung.
+   */
+  resourceId?: string | undefined;
   /** Luôn có, để đối chiếu với log. Đây là thứ người dùng đọc cho support */
   traceId: string;
 }

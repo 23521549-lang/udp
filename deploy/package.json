@@ -1,0 +1,33 @@
+{
+  "name": "@udp/deploy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hạ tầng triển khai UDP chi phí 0: Dockerfile, Kustomize, cụm kind (Plan #49), máy ảo Oracle Always Free (Plan #52)",
+  "exports": {
+    "./cluster": "./src/cluster.ts"
+  },
+  "scripts": {
+    "up": "tsx src/up.ts",
+    "down": "tsx src/down.ts",
+    "diagnose": "tsx src/diagnose.ts",
+    "vm-up": "tsx src/vm-up.ts",
+    "vm-restore": "tsx src/vm-restore.ts",
+    "e2e": "vitest run --config vitest.e2e.config.ts",
+    "e2e:vm": "vitest run --config vitest.e2e-vm.config.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@udp/config": "workspace:*",
+    "@udp/db": "workspace:*",
+    "tsx": "^4.19.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@udp/http": "workspace:*",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8",
+    "yaml": "^2.6.1"
+  }
+}

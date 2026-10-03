@@ -31,6 +31,28 @@ const PROJECT_ID_SUFFIX_LENGTH = 6;
 const DNS_1123_LABEL = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 
 /**
+ * [v4.11, Plan #40] Environment người dùng thêm sau (§9 Environment). Tên là nhãn DNS bắt đầu
+ * bằng chữ, dài tối đa `ENV_SLUG_MAX` — đúng độ dài mà namespace, tiền tố SDK key và tên instance
+ * Helm giữ nguyên không cắt, nên hai tên khác nhau không bao giờ ra cùng một nhãn. Trần mỗi project
+ * giữ số namespace, instance theo environment và cột của ma trận flag trong tầm.
+ */
+export const ENVIRONMENT = {
+  maxPerProject: 8,
+  nameMaxLength: ENV_SLUG_MAX,
+  namePattern: new RegExp(
+    `^[a-z](?:[a-z0-9-]{0,${String(ENV_SLUG_MAX - 2)}}[a-z0-9])?$`,
+  ),
+} as const;
+
+/**
+ * Tên DNS-1123 subdomain (tối đa 253, các nhãn nối bằng dấu chấm) — dạng tên của
+ * Deployment/Service Kubernetes, tức `workload_name` của rollout (cột
+ * `VARCHAR(253)`, §2.2) và nhãn `service_name` mà mọi truy vấn §7.4 lọc theo.
+ */
+export const DNS_1123_SUBDOMAIN =
+  /^(?=.{1,253}$)[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
+
+/**
  * Bỏ dấu tiếng Việt rồi rút về nhãn DNS-1123.
  *
  * `normalize("NFD")` tách nguyên âm khỏi dấu thanh để `\p{M}` xoá được phần
@@ -47,6 +69,23 @@ const toLabel = (value: string, max: number): string =>
     .replace(/^-+|-+$/g, "")
     .slice(0, max)
     .replace(/-+$/g, "");
+
+/**
+ * [v4.11, Plan #38] Nhãn DNS của environment — CÙNG luật với phần env của namespace, nên duy nhất
+ * trong project (namespace đã UNIQUE theo nó). Release Helm dựng theo environment mang nhãn này.
+ */
+export const envLabelFor = (envName: string): string =>
+  toLabel(envName, ENV_SLUG_MAX) || "e";
+
+/**
+ * [v4.11] Tên workload mà template pipeline Golden Path dựng cho project (§11, Plan #36): một
+ * Deployment và container CÙNG tên — thứ webhook deploy đổi image (§8.3). Cùng luật bỏ dấu với
+ * namespace; tên project không còn ký tự nào dùng được ⇒ `app`.
+ */
+const WORKLOAD_SLUG_MAX = 40;
+
+export const workloadSlugFor = (projectName: string): string =>
+  toLabel(projectName, WORKLOAD_SLUG_MAX) || "app";
 
 /**
  * Sinh namespace K8s cho một environment.
@@ -77,7 +116,7 @@ export function k8sNamespaceFor(
   envName: string,
 ): string {
   const project = toLabel(projectName, PROJECT_SLUG_MAX) || "p";
-  const env = toLabel(envName, ENV_SLUG_MAX) || "e";
+  const env = envLabelFor(envName);
   const suffix = projectId
     .replace(/-/g, "")
     .slice(0, PROJECT_ID_SUFFIX_LENGTH)
@@ -129,8 +168,107 @@ export const STALE_FLAG_THRESHOLDS = {
   settledDays: 14,
   /** DRAFT quá N ngày mà chưa từng ACTIVE */
   staleDraftDays: 30,
-  /** Chặn xóa flag còn được đánh giá trong N ngày gần nhất */
-  deleteGuardDays: 7,
+  /**
+   * [v4.9] Chặn ARCHIVE flag còn được đánh giá trong N ngày gần nhất (409
+   * `FLAG_RECENTLY_EVALUATED`). Không còn "chặn xoá": flag không bao giờ bị xoá.
+   */
+  archiveGuardDays: 7,
+  /**
+   * [v4.9] SETTLED cần ít nhất chừng này lượt trong cửa sổ `settledDays`: vài lượt
+   * lẻ cùng rơi vào một variant chưa nói được flag đã "ổn định".
+   */
+  settledMinEvals: 100,
+  /**
+   * [v4.9] Số flag tối đa của một lần archive hàng loạt. Mỗi flag là một lời gọi
+   * S2 tuần tự (fan-out mọi env): 20 × ~2,2 s ≈ 44 s, dưới hạn 60 s của proxy
+   * thường gặp.
+   */
+  bulkArchiveMax: 20,
+  /**
+   * [v4.9] Env có CLIENT key được dùng trong N ngày ⇒ `clientTrafficUnobserved`:
+   * OFREP bulk không đếm, nên flag chỉ đọc qua bulk trông như không ai gọi.
+   */
+  clientTrafficDays: 30,
+  /**
+   * [v4.9] Env có SERVER key được dùng trong N ngày mà không có hàng stats nào ⇒
+   * `telemetryGaps` (app đặt `reportStats: false` hoặc provider cũ).
+   */
+  telemetryGapDays: 7,
+} as const;
+
+/**
+ * [v4.6] Giới hạn của điều kiện targeting (§6.5) — MỘT bộ số cho schema GHI
+ * (S2 từ chối lúc lưu) và lõi ĐÁNH GIÁ (SDK, OFREP). Mỗi số chặn một kiểu tốn
+ * kém: danh sách `in` dài là bộ nhớ của Set dựng sẵn; pattern và chuỗi đem so
+ * regex dài là CPU của một endpoint công khai (OFREP) — JS không có timeout cho
+ * regex, nên trần độ dài chuỗi đầu vào là lớp chặn cuối cùng lúc đánh giá.
+ */
+export const CONDITION_LIMITS = {
+  attributeMaxLength: 100,
+  conditionsPerRule: 20,
+  inValuesMax: 1000,
+  stringValueMax: 256,
+  regexPatternMax: 200,
+  /** Chuỗi ngữ cảnh dài hơn ⇒ `regex` trả false, không chạy */
+  regexInputMax: 256,
+  /**
+   * Số pattern `regex` KHÁC NHAU tối đa trong một lần ghi. Mỗi pattern là tới
+   * `regexCheckTimeoutMs` phân tích ReDoS ở Service 2 (trong worker, không chặn
+   * event loop) — trần này giữ tổng thời gian dưới hạn chờ 30 s của Service 1.
+   */
+  regexPatternsPerWrite: 20,
+  /** Hạn phân tích ReDoS cho MỘT pattern; hết hạn ⇒ từ chối như `vulnerable` */
+  regexCheckTimeoutMs: 1_000,
+  userIdsMax: 10_000,
+  userIdMaxLength: 256,
+} as const;
+
+/**
+ * [v4.9] Segment (§2.2, §6.5). Snapshot và `config_hash` của MỌI environment chứa
+ * mọi segment của project, nên mỗi trần ở đây là trần của bộ nhớ và băng thông
+ * trên mọi replica, không chỉ của một bảng.
+ */
+export const SEGMENT = {
+  /** Trần số segment mỗi project (422 `QUOTA_EXCEEDED`) */
+  maxPerProject: 100,
+  /** Chi tiết segment liệt kê tối đa chừng này flag đang dùng nó */
+  referencesInView: 50,
+  /**
+   * Trần body ghi segment ở Service 1. Mọi body hợp lệ theo schema ở trần userIds
+   * đều lọt:
+   *   - userIds: 10 000 × (256 × 6 + 3) = 15 390 000 B (6 B là một đơn vị UTF-16
+   *     escape `\uXXXX`, trường hợp xấu nhất);
+   *   - `all` ngang rule path: 1 048 576 B;
+   *   - vỏ (tên, mô tả, mốc): 16 384 B;
+   *   - tổng 16 454 960 B, làm tròn lên 16 MiB.
+   */
+  writeBodyLimitBytes: 16 * 1024 * 1024,
+  /**
+   * Parser của `/internal/segments` ở Service 2: S1 serialize lại body và thêm
+   * `projectId`, nên cần một khoảng dư — không thì body sát trần qua S1 nhận 413
+   * từ S2, mã S1 không relay, và người dùng thấy 500.
+   */
+  internalBodyLimitBytes: 16 * 1024 * 1024 + 64 * 1024,
+  /**
+   * Trần TỔNG `conditions` của mọi segment trong một project, kiểm dưới khoá env
+   * lúc tạo và sửa.
+   *
+   * [v4.10] Thước đo là `octet_length(conditions::text)` của jsonb — thứ SQL
+   * cộng được ngay tại chỗ dữ liệu nằm, dưới khoá, không kéo 4 MiB về JS (F6/F7).
+   * Trước đó chú thích này nói "canonical JSON" trong khi cưỡng chế bằng jsonb,
+   * mà jsonb::text dài hơn canonical ÍT NHẤT bằng số dấu `,` và `:` (Postgres in
+   * thêm một khoảng trắng sau mỗi dấu), nên một segment có canonical ĐÚNG bằng
+   * trần vẫn bị từ chối. Một trần thì phải có một thước; `segmentPayloadBytesOf`
+   * ở JS là chặn dưới của thước này, dùng để từ chối sớm.
+   *
+   * 4 MiB = 1,61 × segment ASCII lớn nhất theo trần từng segment (canonical
+   * 10 000 × (256 + 2) + 9 999 + 23 = 2 590 022 B, đo bằng thước trên là
+   * + 10 000 dấu `,` + 2 dấu `:` = 2 600 024 B), nên một segment như vậy luôn
+   * lưu được khi project còn trống. Bộ nhớ S2 cho một env ở trần ≈ 26 MiB mỗi
+   * replica (hai slot SERVER/CLIENT, mỗi slot giữ snapshot, bản prepared, chunk
+   * SSE và body `/sdk/config`); 8 MiB là gấp đôi.
+   */
+  maxProjectBytes: 4 * 1024 * 1024,
 } as const;
 
 // ============================================================
@@ -187,6 +325,70 @@ export const ROLLOUT_TIMING = {
   warmUpRequests: 100,
   /** Rollback FLAG_LEVEL phải PATCH sang Service 2; hết hạn này ⇒ DEPENDENCY_DOWN */
   rollbackRetrySeconds: 120,
+  /**
+   * [v4.3] Nhịp của lưới gỡ nhãn (§6.6): flag còn `is_tracked` mà không còn
+   * rollout nào chạy. Rollout kết thúc đã gọi untrack ngay; lưới này bắt những lần
+   * gọi đó hỏng (S2 chết — chính ca kill-switch) và session bị xoá trước khi gỡ.
+   * Chậm hơn vòng quét nhiều lần vì mỗi lượt là một lời gọi mạng mỗi flag.
+   */
+  untrackSweepMs: 30_000,
+  /** Số flag tối đa mỗi lượt quét — trần 3 flag/environment nên lượt thường rất nhỏ */
+  untrackSweepBatch: 50,
+  /**
+   * [v4.4] Probe pha 2 (§7.4): session PENDING chờ nhãn `ff` của flag xuất hiện
+   * tối đa chừng này kể từ lúc tạo. Quá hạn ⇒ FAILED/EXPIRED kèm lý do "không thấy
+   * nhãn" — không thì một app thiếu hook giữ một chỗ trong trần 3 flag và chỗ của
+   * target suốt `maxDurationSeconds` (24 giờ) mà người dùng không biết vì sao.
+   */
+  labelWaitSeconds: 900,
+} as const;
+
+/**
+ * [v4.4] Tạo rollout ở Service 1 (§8.5). S1 đang giữ request của người dùng nên
+ * chờ `track` ngắn hơn executor của S3.
+ *
+ * `birthLeaseSeconds` — lease khai sinh S1 đặt lúc INSERT: S3 không claim được
+ * session trong cửa sổ `track`, nên bù trừ (xoá session khi `track` thất bại) chắc
+ * chắn không đụng thứ S3 đã chạm. PHẢI lớn hơn `trackTimeoutMs` cộng biên cho hai
+ * round trip database.
+ */
+export const ROLLOUT_CREATE = {
+  trackTimeoutMs: 5_000,
+  birthLeaseSeconds: 20,
+} as const;
+
+/**
+ * Thử lại side effect sang Service 2 (§7.6). Backoff phải nhỏ hơn NHIỀU so với
+ * `rollbackRetrySeconds`, không thì "thử lại tới hạn" chỉ còn một hai lần thử.
+ */
+export const ROLLOUT_RETRY = {
+  /** Hạn chờ một lời gọi PATCH sang S2 — S2 giữ row-lock environment, không được để treo */
+  executorTimeoutMs: 10_000,
+  initialBackoffMs: 1_000,
+  maxBackoffMs: 15_000,
+} as const;
+
+/**
+ * Kiểm định hai tỉ lệ của §7.4: một phía, α = 0.05 ⇒ z tới hạn 1.645. Không phải
+ * ngưỡng theo session: đây là mức ý nghĩa thống kê của phép kiểm, đổi nó là đổi
+ * phương pháp chứ không phải đổi cấu hình.
+ */
+export const ROLLOUT_ANALYSIS = {
+  zCritical: 1.645,
+} as const;
+
+/**
+ * Số session reconciler xử lý ĐỒNG THỜI trong một vòng quét tính theo pool:
+ * mỗi session đang chạy giữ một transaction (một khe) và gia hạn lease trên một
+ * khe khác; `/readyz` cần một khe nữa. Không giữ lại phần này thì lần gia hạn
+ * chờ khe quá `DB_POOL.acquireTimeoutMs`, ném, fence đóng, và session bị bỏ tới
+ * hết lease — đúng lúc nhiều rollout đang sống nhất.
+ */
+export const ROLLOUT_POOL_HEADROOM = 2;
+
+/** `rollout_events.reason` là VARCHAR(255) (§2.2) — cắt ở tầng ghi, không để 22001 */
+export const ROLLOUT_EVENT = {
+  reasonMaxLength: 255,
 } as const;
 
 /**
@@ -211,13 +413,56 @@ export const ROLLOUT_LEASE = {
   durationSeconds: 60,
   /** Chu kỳ gia hạn — phải NHỎ HƠN NHIỀU so với durationSeconds */
   renewIntervalMs: 20_000,
+  /**
+   * Gia hạn NÉM (database chập chờn) thì thử lại sớm thay vì chờ chu kỳ kế: lease
+   * gần như chắc chắn còn (vừa gia hạn ≤ 20 giây trước, sống 60 giây), và bỏ một
+   * rollback đang chạy vì một round trip hỏng là cái giá không đáng. Chỉ khi quá
+   * `durationSeconds` kể từ lần gia hạn thành công cuối thì mới coi là mất.
+   */
+  renewErrorRetryMs: 2_000,
+} as const;
+
+/**
+ * Nguồn metrics (§5.4). `defaultScrapeLagSeconds` là scrape_interval phổ biến
+ * của Prometheus; provider đọc con số thật từ `/api/v1/targets` lúc khởi động và
+ * làm mới theo `scrapeLagRefreshMs`, vì `settleGate` ở §7.5 chờ đúng bằng nó.
+ */
+export const METRICS_PROVIDER = {
+  defaultScrapeLagSeconds: 15,
+  queryTimeoutMs: 5_000,
+  scrapeLagRefreshMs: 300_000,
+  /**
+   * [v4.4] Cửa sổ của `probe()`: series phải TĂNG trong khoảng này, không chỉ tồn
+   * tại. Counter trong process giữ series của rollout trước tới khi pod restart;
+   * "tồn tại" vì thế không chứng minh nhãn đang được sinh. 5 phút để app dev ít
+   * traffic vẫn qua.
+   */
+  probeWindowSeconds: 300,
+  /**
+   * Nguồn SaaS (Datadog, New Relic, Dynatrace — Plan #31): agent của nhà cung cấp scrape
+   * `/metrics` rồi đẩy lô theo chu kỳ 60 giây mặc định, và API không cho đo chu kỳ đó.
+   * Dùng làm độ trễ scrape VÀ scrape interval "assumed" — validator ép cửa sổ ≥ 4 × 60s.
+   */
+  saasExportIntervalSeconds: 60,
+  /**
+   * [v4.11, Plan #39] Hạn một lời đo Service 3 nhờ Service 1: S1 cần tới `queryTimeoutMs` cho
+   * truy vấn, cộng lần dựng truy cập cluster đầu tiên (credential cloud, token quản trị) — ba lần
+   * hạn truy vấn. Quá hạn là `hasData: false` (I7), bản dựng dở vẫn vào bộ nhớ cho lần sau.
+   */
+  serviceOneTimeoutMs: 15_000,
+  /**
+   * [v4.11, Plan #39] Truy cập cluster S1 nhớ để đo Prometheus trong cluster được dựng lại khi
+   * token quản trị còn ít hơn chừng này — không dùng một token hết hạn giữa chừng.
+   */
+  clusterAccessRenewMarginMs: 60_000,
 } as const;
 
 /**
  * Status mà một `RolloutSession` còn "sống" — vị từ DUY NHẤT, dùng ở mọi nơi.
  *
- * Đúng tập của truy vấn giành lease (§7.1) và của hai partial index trên
- * `rollout_sessions` (§2.2). Ba giá trị, không phải hai, vì mỗi giá trị đã từng là một
+ * Đúng tập của truy vấn giành lease (§7.1) và của các partial index trên
+ * `rollout_sessions` (§2.2): `idx_one_active_rollout_per_target`, và [v4.4]
+ * `idx_one_active_rollout_per_flag`. Ba giá trị, không phải hai, vì mỗi giá trị đã từng là một
  * lỗi thật:
  *
  *   - `PENDING`: bước ramp ĐẦU TIÊN gửi PATCH sang Service 2 lúc session còn
@@ -229,7 +474,7 @@ export const ROLLOUT_LEASE = {
  *     đúng lỗi đó ở phía bên kia: rollback một rollout đang tạm dừng bị chặn.
  *
  * Một danh sách, không phải hai: lỗi v3 sinh ra đúng từ hai danh sách trôi khỏi
- * nhau. Ba chỗ SQL kia không import được hằng số TypeScript, nên chú thích này là
+ * nhau. Các chỗ SQL kia không import được hằng số TypeScript, nên chú thích này là
  * nơi trỏ tới chúng.
  */
 /**
@@ -261,7 +506,112 @@ export const ACTIVE_ROLLOUT_STATUSES = [
 export const JOB_LEASE = {
   durationSeconds: 300,
   renewIntervalMs: 30_000,
+  /** Gia hạn ném (DB chập chờn) ⇒ thử lại sớm; chỉ quá `durationSeconds` mới là mất lease */
+  renewErrorRetryMs: 5_000,
 } as const;
+
+/**
+ * [v4.11] Nhịp của hàng đợi job (Plan #28, ADR-02). Polling 5 giây: provisioning dài hàng
+ * chục phút nên vài giây trễ lúc nhận việc không đáng một kết nối LISTEN. Đối soát 5 phút
+ * một lần — nó chữa lệch sau khi tiến trình chết, không phải đường chính.
+ */
+export const JOB_QUEUE = {
+  pollingIntervalSeconds: 5,
+  reconcileCron: "*/5 * * * *",
+  /** Mỗi giờ: mốc cảnh báo nhỏ nhất của TTL là 1 giờ (§4.4 lớp 3) */
+  projectTtlCron: "0 * * * *",
+  /** Mỗi 10 phút (§2.2 quy trình ghi sổ) */
+  orphanScanCron: "*/10 * * * *",
+  /** Mỗi 6 giờ (§8.6 nhánh A) */
+  driftScanCron: "0 */6 * * *",
+} as const;
+
+/**
+ * [v4.11] Webhook CI/CD (§8.3, Plan #36). Thân của UDP chỉ vài trăm byte; trần 1 MiB chặn một CI
+ * bị chiếm làm đầy bộ nhớ bằng thân khổng lồ trước khi chữ ký được kiểm.
+ */
+export const CICD_WEBHOOK = {
+  bodyLimitBytes: 1_048_576,
+  /**
+   * [v4.12, Plan #61 61d-2a] Giữ bản ghi "token đã dùng" bao lâu sau khi token HẾT HẠN.
+   *
+   * Chống replay chỉ cần giữ tới `exp` của token, mà token của ba nhà cung cấp sống vài phút — nên con số
+   * này phục vụ việc khác: một dấu vết pháp y trả lời "lượt chạy nào đã cho phép lần deploy này". Nó được
+   * viết CỨNG trong thân `udp_prune_webhook_token_uses` để bên gọi không truyền được "0 ngày", và
+   * `packages/design-lint/tests/retention.test.ts` chốt hai con số không trôi khỏi nhau.
+   */
+  tokenUseRetentionDays: 7,
+  /**
+   * Trần thời gian cho CẢ lượt xác minh Trusted Deploy (discovery + JWKS). Nó nằm NGOÀI transaction của
+   * webhook, nhưng vẫn phải có đáy: một nhà cung cấp chậm không được giữ một request HTTP mãi.
+   */
+  tokenVerifyTimeoutMs: 5_000,
+  /** Tuổi tối đa của một token tính từ `iat` — trần CHÍNH SÁCH, chỉ làm NGẮN hơn `exp`, không bao giờ dài hơn */
+  tokenMaxAgeSeconds: 600,
+  /** Lề cho lệch đồng hồ giữa Service 1 và nhà cung cấp CI */
+  tokenClockToleranceSeconds: 60,
+} as const;
+
+/**
+ * [v4.11] Quét repo của Import Existing (§11.2, Plan #48 QĐ-5) qua API công khai của GitHub/GitLab.
+ * Trần giữ một lượt quét trong vài giây với repo thường và có đáy với repo khổng lồ: cây 20 000 mục
+ * (GitLab: 200 trang × 100), mỗi tệp 256 KiB, mỗi lời gọi 15 giây. Token chỉ dùng trong lượt quét.
+ */
+export const REPO_SCAN = {
+  maxTreeEntries: 20_000,
+  maxFileBytes: 262_144,
+  requestTimeoutMs: 15_000,
+  gitlabPageSize: 100,
+  tokenMaxLength: 500,
+} as const;
+
+/**
+ * [v4.11] Theo dõi một lần deploy trên hàng đợi `udp-deploy` (Plan #36 QĐ-5). Hạn thật là
+ * `progressDeadlineSeconds` của CHÍNH workload (Kubernetes điền 600 khi vắng); trần một lượt nằm
+ * dưới `expireInSeconds` của hàng đợi, để pg-boss không coi một lượt còn sống là đã chết.
+ */
+export const DEPLOY_WATCH = {
+  pollMs: 10_000,
+  defaultProgressDeadlineSeconds: 600,
+  maxWatchSeconds: 1_800,
+  /** Số lần deploy theo dõi song song mỗi tiến trình — mỗi lần giữ một lượt tới 30 phút */
+  concurrency: 4,
+  /** START chưa kết luận trẻ hơn mốc này có thể đang giữa commit và `send` — chưa phải lệch */
+  resendAfterMs: 60_000,
+} as const;
+
+/**
+ * [v4.10] Vòng thử lại khi `lookup()` trả `indeterminate` (§4.2, điểm crash K2b).
+ *
+ * Tagging API của cloud là nhất quán cuối: một tag vừa gắn có thể chưa thấy trong vài
+ * giây. Runner đọc "chưa thấy" thành "không có" sẽ `create()` lần hai và tạo trùng —
+ * đúng chế độ hỏng mà K3 sinh ra để chặn. Nên `indeterminate` là một lỗi TẠM, và runner
+ * chờ rồi tra lại thay vì quyết định.
+ *
+ * Vì sao có một BẤT BIẾN buộc tổng backoff không vượt nửa lease, và vì sao nó được kiểm
+ * bằng test chứ không chỉ ghi ở đây: vòng chờ này nằm TRONG một lượt job đang giữ lease.
+ * Nếu tổng thời gian chờ vượt `JOB_LEASE.durationSeconds` thì worker thứ hai nhận job và
+ * hai worker cùng `lookup`/`create` — tức chính bản sửa này tạo ra điểm crash K9. Nửa
+ * lease là mức để một lần gia hạn trượt cũng chưa vỡ.
+ *
+ * Hết lượt thì job sang `FAILED` và hàng GIỮ `CREATING`: đó là trạng thái mà K2/K3 đã xử
+ * lý được khi resume. Đặt `ORPHAN_SUSPECTED` là biến một blip mạng thành hỏng vĩnh viễn,
+ * vì trạng thái đó không có cạnh ra (§4.5).
+ */
+export const LOOKUP_INDETERMINATE = {
+  maxAttempts: 5,
+  /** Backoff tuyến tính: lần thử thứ n chờ n × giá trị này */
+  backoffStepMs: 2_000,
+} as const;
+
+/**
+ * Hàng `CREATING` quá mốc này phải NHÌN THẤY ĐƯỢC ở `GET /admin/orphan-resources`.
+ *
+ * Nó KHÔNG đổi `status`: đổi trạng thái chỉ được xảy ra khi `lookup()` ra mismatch, đúng
+ * ngữ nghĩa §4.5. Một hàng treo im lặng là tài nguyên có thể đang tính tiền mà không ai
+ * biết; một hàng bị đổi trạng thái sai là một hàng không còn resume được.
+ */
+export const STALE_CREATING_MINUTES = 15;
 
 // ============================================================
 // Change feed — ba tầng có tự kiểm (Design v4 ADR-05)
@@ -307,19 +657,29 @@ export const CHANGE_FEED = {
    */
   prune: { intervalMs: 60 * 60_000, batchSize: 1_000, maxBatchesPerRun: 50 },
   /**
-   * Kênh LISTEN của tầng 3. Mọi con số dưới đây là HẠN GIỜ, vì đã đo: một kết nối
-   * chết im (TCP còn sống, không byte nào về) làm `SELECT 1` treo vô hạn và
-   * `end()` treo — không có hạn thì tầng 3 điếc mãi mà vẫn trông khoẻ, và tắt máy
-   * mất trọn 10 giây rồi thoát cưỡng bức.
+   * [v4.9] Ngân sách byte của MỘT lô delta ở tầng 2 (tổng `payload` các dòng đọc
+   * sau con trỏ). Vượt ⇒ rơi về snapshot với lý do `too-large`, không đếm vào
+   * breaker. Bằng 2 × `SEGMENT.maxProjectBytes`: một lần sửa segment ở trần luôn
+   * đi bằng delta (text jsonb dài hơn canonical khoảng 1 B mỗi phần tử), còn lô
+   * lớn hơn thế thì snapshot (≤ 4 MiB segment + flag) rẻ hơn.
    */
-  notify: {
-    reconnectInitialMs: 1_000,
-    reconnectMaxMs: 30_000,
-    healthCheckMs: 60_000,
-    healthCheckTimeoutMs: 5_000,
-    identityTimeoutMs: 5_000,
-    stopTimeoutMs: 1_000,
-  },
+  maxDeltaBytes: 8 * 1024 * 1024,
+} as const;
+
+/**
+ * Kênh LISTEN dùng chung (`createListenAccelerator` của `@udp/db`) — tầng 3 của
+ * Service 2 và `rollout_intent` của Service 3 [v4.3]. Mọi con số dưới đây là HẠN
+ * GIỜ, vì đã đo: một kết nối chết im (TCP còn sống, không byte nào về) làm
+ * `SELECT 1` treo vô hạn và `end()` treo — không có hạn thì kênh điếc mãi mà vẫn
+ * trông khoẻ, và tắt máy mất trọn 10 giây rồi thoát cưỡng bức.
+ */
+export const LISTEN_TIMING = {
+  reconnectInitialMs: 1_000,
+  reconnectMaxMs: 30_000,
+  healthCheckMs: 60_000,
+  healthCheckTimeoutMs: 5_000,
+  identityTimeoutMs: 5_000,
+  stopTimeoutMs: 1_000,
 } as const;
 
 // ============================================================
@@ -340,6 +700,23 @@ export const AUTH = {
    * Giữ lại để lần sau không ai thêm lại một token ngẫu nhiên trần.
    */
   csrfTokenBytes: 32,
+  /**
+   * [v4.12, Plan #60 QĐ-7] Token đặt lại mật khẩu: 32 byte ngẫu nhiên (base64url), sống 30 phút, dùng một lần. Đủ để
+   * mở thư và bấm; ngắn để một hộp thư bị lộ về sau không mở được tài khoản bằng thư cũ.
+   */
+  passwordResetTokenBytes: 32,
+  passwordResetTtlMinutes: 30,
+  /** [v4.12, Plan #60 QĐ-8] Cookie `state` của OAuth GitHub sống 10 phút: đủ cho một lần đăng nhập, không hơn */
+  oauthStateTtlSeconds: 600,
+} as const;
+
+/**
+ * [v4.12, Plan #60 QĐ-6] Phiên bản HIỆN HÀNH của Điều khoản sử dụng và Chính sách quyền riêng tư (ngày công bố). Service
+ * 1 ghi giá trị này vào `users.terms_version` khi người đăng ký tích ô đồng ý; Portal hiện cùng ngày ở hai trang
+ * (bản soi có test đối chiếu). Đổi nội dung hai trang thì đổi ngày ở cả hai chỗ.
+ */
+export const LEGAL = {
+  termsVersion: "2026-10-01",
 } as const;
 
 /**
@@ -351,9 +728,59 @@ export const COOKIE_NAMES = {
   refreshToken: "udp_refresh",
   /** Cố ý KHÔNG httpOnly để Portal đọc được và gắn vào header */
   csrfToken: "udp_csrf",
+  /** [v4.12, Plan #60 QĐ-8] `state` đã ký của một lần đăng nhập GitHub — chỉ gửi về `/api/v1/auth/github` */
+  oauthState: "udp_oauth",
 } as const;
 
 export const CSRF_HEADER = "X-CSRF-Token";
+
+/**
+ * Header mang bí mật dùng chung của lời gọi `/internal/*` (§9 "mTLS hoặc shared
+ * secret"). Một tên cho bên nhận (S2) và mọi bên gọi (S1, S3) — gõ lệch một bên
+ * là 401 im lặng.
+ */
+export const INTERNAL_SECRET_HEADER = "X-Internal-Secret";
+
+/**
+ * [v4.5] Ngữ cảnh người dùng mà Service 1 chuyển tiếp cho lời gọi `/internal/*`
+ * ghi cấu hình: ai (id user đã xác thực ở S1) và từ đâu (IP, UA của CHÍNH người
+ * dùng, không phải của S1). Service 2 ghi chúng vào `audit_logs` trong transaction
+ * của nó. Chỉ tin sau khi lời gọi đã qua bí mật nội bộ — bên giữ bí mật giả được
+ * cả ba (§12).
+ */
+export const ACTOR_HEADER = "X-Udp-Actor-Id";
+export const CLIENT_IP_HEADER = "X-Udp-Client-Ip";
+export const CLIENT_UA_HEADER = "X-Udp-User-Agent";
+
+/**
+ * [v4.5] Hạn chờ lời gọi GHI cấu hình từ S1 sang S2: PHẢI dài hơn ngân sách
+ * transaction của `writeWithOutbox` (20 s + 5 s chờ khe) — ngắn hơn thì S1 trả
+ * 503 trong khi S2 vẫn commit, và người dùng thử lại gặp DUPLICATE.
+ */
+export const INTERNAL_CALL = {
+  configWriteTimeoutMs: 30_000,
+  /**
+   * [v4.6] Lời gọi CHỈ ĐỌC (Flag Evaluation Tester): không có transaction nào để
+   * chờ commit, nên hạn chờ ngắn — người dùng đang đứng trước Portal.
+   */
+  readTimeoutMs: 10_000,
+  /**
+   * [v4.11, Plan #51] Service 3 xin token cluster từ Service 1: S1 hỏi cloud (trạng thái cluster, token quản trị)
+   * rồi gọi TokenRequest — dài hơn một lời đọc. Hết hạn ⇒ S3 HOLD session kèm lý do, thử lại ở vòng sau.
+   */
+  clusterTokenTimeoutMs: 30_000,
+} as const;
+
+/**
+ * Khoảng của kiểu INTEGER (int4) trong PostgreSQL.
+ *
+ * Mọi con số đi từ dây xuống một cột int4 — `config_version`, `RolloutSession.version`,
+ * `priority` — phải bị chặn ở ranh giới HTTP: lọt xuống Postgres thì nó ném `22003`
+ * và thành 500 thay vì 400. Một chỗ khai cho mọi nơi kiểm [v4.5: dời từ Service 2
+ * khi schema rule thành hợp đồng dùng chung].
+ */
+export const INT4_MIN = -2_147_483_648;
+export const INT4_MAX = 2_147_483_647;
 
 /** Giới hạn tần suất cho endpoint nhạy cảm — chống dò mật khẩu */
 export const RATE_LIMIT = {
@@ -402,7 +829,48 @@ export const RATE_LIMIT = {
      * polling (§6.3). Đếm theo replica, nên trần thực tế nhân theo số replica (§16).
      */
     maxStreamsPerKey: 1000,
+    /**
+     * [v4.6] OFREP: trần theo IP ĐỨNG TRƯỚC trần (khoá, IP) và trước bước tra khoá.
+     * Trục (khoá, IP) băm nguyên header `Authorization`, nên mỗi token rác là một
+     * bucket mới — mà vẫn tốn một lần tra database. Trục IP chặn đúng ca đó:
+     * 1 200/phút gấp đôi trần của một khoá hợp lệ, đủ cho một NAT văn phòng.
+     */
+    ofrepPerIp: { windowMs: 60_000, max: 1200 },
+    /**
+     * [v4.9] SERVER key: số lần `POST /sdk/stats` mỗi phút mỗi khoá — bucket RIÊNG,
+     * không chung `perKey` của `/sdk/config`. Mỗi tiến trình báo một lần mỗi 60 s,
+     * nên 1 000/phút là 1 000 tiến trình dùng chung một khoá.
+     */
+    statsPerKey: { windowMs: 60_000, max: 1_000 },
   },
+} as const;
+
+/**
+ * [v4.6] OFREP — đánh giá từ xa cho CLIENT key (§6.2, ADR-03). Endpoint công
+ * khai (khoá CLIENT nằm trong trình duyệt), nên mọi trần là trần của CPU/bộ nhớ
+ * mà một người lạ tiêu được.
+ */
+export const OFREP = {
+  /** Parser RIÊNG của `/ofrep`, mount trước parser 1 MB toàn cục */
+  bodyLimit: "16kb",
+  /** Số thuộc tính cấp một của context */
+  maxContextKeys: 50,
+  /** Độ dài tối đa của một giá trị chuỗi trong context */
+  maxContextString: 1024,
+  /**
+   * Kết quả bulk đã đánh giá, theo (env, configVersion, ngữ nghĩa evaluator, hash
+   * context), mỗi replica. Có trần: khoá do người lạ quyết định, không trần là
+   * rò bộ nhớ theo số context khác nhau họ gửi.
+   */
+  resultCacheEntries: 10_000,
+  /**
+   * Trần BYTE của cùng cache đó — số mục thôi không đủ: một mục là kết quả của
+   * MỌI flag trong project, và project không có trần số flag (QA code Plan #20:
+   * 10 000 mục × 200 flag ≈ 250 MB).
+   */
+  resultCacheBytes: 32 * 1024 * 1024,
+  /** Preflight CORS được trình duyệt nhớ bao lâu */
+  corsMaxAgeSeconds: 600,
 } as const;
 
 // ============================================================
@@ -448,6 +916,41 @@ export const SSE = {
   closeGraceMs: 1_000,
 } as const;
 
+/**
+ * [v4.7] `@udp/openfeature-provider` (§6.8) — giá trị mặc định của provider chạy
+ * trong ỨNG DỤNG CỦA KHÁCH. Chu kỳ polling và ngưỡng rơi về polling dùng chung
+ * `SSE` ở trên; đây là phần riêng của provider.
+ */
+export const PROVIDER = {
+  /**
+   * `initialize()` chờ snapshot đầu tới chừng này rồi NÉM (SDK phát ERROR, app vẫn
+   * chạy với default) — provider vẫn thử nền và phát READY khi có. Thiết kế cũ
+   * ghi "N lần thử" mà không cho N; một hạn thời gian mới đo được.
+   */
+  initTimeoutMs: 10_000,
+  /** Không xác nhận được cấu hình còn tươi quá chừng này ⇒ STALE (fail-static) */
+  staleAfterSeconds: 300,
+  /**
+   * Stream rỗi quá `heartbeatMs × hệ số` (không một byte nào, kể cả nhịp tim) ⇒
+   * coi là hỏng: kết nối nửa mở (mạng bị chặn giữa đường) không bao giờ tự báo lỗi.
+   */
+  heartbeatTimeoutFactor: 2.5,
+  /** Backoff nối lại stream: bắt đầu từ đây, nhân đôi, trần là chu kỳ polling */
+  reconnectBackoffMinMs: 1_000,
+  /**
+   * Hạn của MỘT lần `GET /sdk/config` (bootstrap, poll, thử lại khi 401) — nhỏ hơn
+   * `initTimeoutMs`: server nhận kết nối rồi im (event loop bị chặn, proxy nuốt byte)
+   * không được treo cả vòng đồng bộ tới `headersTimeout` 300 giây của undici, và
+   * bootstrap treo phải kịp nhường cho stream không con trỏ trước khi init hết hạn.
+   */
+  configRequestTimeoutMs: 5_000,
+  /**
+   * Trần độ dài MỘT dòng SSE (ký tự). Snapshot là một dòng `data:`; không trần thì
+   * một stream hỏng không bao giờ xuống dòng giữ bộ nhớ của ứng dụng khách vô hạn.
+   */
+  maxSseLineChars: 64 * 1024 * 1024,
+} as const;
+
 // ============================================================
 // SDK key (Design v4 §2.2)
 // ============================================================
@@ -467,6 +970,120 @@ export const SDK_KEY = {
   displaySuffixLength: 6,
   /** Throttle cập nhật last_used_at để không ghi DB mỗi request */
   lastUsedThrottleMs: 60_000,
+  /**
+   * [v4.9] Trần số khoá mà một tiến trình nhớ "vừa chạm" để throttle
+   * `last_used_at`. Map này đứng trước điều kiện `WHERE` của câu UPDATE (thứ
+   * throttle đúng cả giữa các replica); nó chỉ chặn N request đồng thời của CÙNG
+   * một khoá cùng bắn trước khi hàng đầu commit, nên đầy thì dọn được, không cần
+   * chính xác.
+   */
+  lastUsedTrackedKeys: 10_000,
+  /**
+   * [v4.9] Phần tên env trong token (`udp_sk_{envSlug}_…`) cắt ở chừng này ký tự:
+   * đủ cho `production` và các tên có hậu tố. Token không bao giờ được parse, nên
+   * đây chỉ là nhãn cho người đọc.
+   */
+  envSlugMaxLength: 20,
+  /**
+   * [v4.9] Trần khoá CHƯA thu hồi mỗi environment (422 `QUOTA_EXCEEDED`): một
+   * OWNER bấm lặp không tạo khoá vô hạn. Muốn nới thì chỉ đổi số này.
+   */
+  maxActivePerEnvironment: 20,
+  /**
+   * [v4.9] Nhãn người dùng đặt cho khoá — ĐÚNG bề rộng cột `sdk_keys.label`
+   * (`VarChar(100)`, §2.2). Cắt ở zod của CẢ HAI biên chứ không để Postgres ném
+   * `22001`: lỗi đó nổ giữa transaction tạo khoá, sau khi đã khoá environment và
+   * đã đếm quota — tức trả 500 cho một thứ lẽ ra là 400 ở ngoài cùng.
+   */
+  labelMaxLength: 100,
+  /** [v4.9] Danh sách khoá chỉ trả chừng này khoá đã thu hồi mới nhất */
+  revokedListLimit: 50,
+  /**
+   * [v4.9] Transaction tạo khoá ở S2 (khoá env, tra hash, đếm quota, INSERT, audit)
+   * — ghi tường minh thay vì dựa vào mặc định của Prisma, để hạn chờ khe khớp
+   * `DB_POOL.acquireTimeoutMs` và S1 biết khi nào thử lại.
+   */
+  createTransaction: { maxWait: 5_000, timeout: 10_000 },
+} as const;
+
+// ============================================================
+// Telemetry đánh giá flag (Design v4 §2.2 FlagEvaluationStat, §6.7, §6.8)
+// ============================================================
+
+/**
+ * [v4.9] Số đếm lượt đánh giá: provider gom rồi báo `POST /sdk/stats`, Service 2
+ * gộp trong bộ nhớ rồi UPSERT theo lô, rollup hàng giờ cũ thành hàng ngày.
+ */
+export const SDK_STATS = {
+  /** Phía provider (chạy trong ứng dụng của khách) */
+  report: {
+    intervalMs: 60_000,
+    /** ±10% để N tiến trình khởi động cùng lúc không báo cùng một giây */
+    jitterRatio: 0.1,
+    requestTimeoutMs: 5_000,
+    /** `onClose()` gửi nốt báo cáo cuối trong hạn này, không ném */
+    shutdownFlushTimeoutMs: 2_000,
+    maxEntriesPerReport: 2_000,
+    maxCountPerEntry: 1_000_000_000,
+    /** Trần số cặp (flag, variant) đang giữ trong tiến trình khách */
+    maxPendingEntries: 10_000,
+    /**
+     * Parser riêng của `/sdk/stats`: 2 000 × (255 + 100 × 6 + 50) — mọi báo cáo
+     * hợp lệ ở trần, kể cả khi mọi ký tự bị escape `\uXXXX`, đều lọt.
+     */
+    maxBodyBytes: 2 * 1024 * 1024,
+    /** `sdk.name`/`sdk.version` chỉ để ghi log — có trần để không phình log */
+    sdkLabelMaxLength: 100,
+  },
+  /** Phía Service 2 */
+  ingest: {
+    /** Mặc định của `SDK_STATS_FLUSH_INTERVAL_MS` */
+    flushIntervalMs: 15_000,
+    /**
+     * Sàn của `SDK_STATS_FLUSH_INTERVAL_MS`: đủ nhỏ cho test tích hợp chờ flush,
+     * đủ lớn để một cấu hình gõ nhầm không biến flusher thành vòng lặp bận.
+     */
+    minFlushIntervalMs: 250,
+    flushBatchRows: 1_000,
+    shutdownFlushTimeoutMs: 5_000,
+    /**
+     * [v4.9] Lúc tắt, chờ cổng HTTP đóng nhiều nhất chừng này rồi flush lần đầu.
+     * Stream SSE và kết nối keep-alive có thể giữ `server.close()` lâu hơn cả hạn
+     * flush, nên không được chờ nó vô điều kiện; ngược lại, chờ một chút thì lần
+     * flush đầu đã gom được cả những báo cáo tới sau tín hiệu dừng.
+     */
+    shutdownHttpWaitMs: 3_000,
+    maxPendingEntries: 50_000,
+    maxPendingEntriesPerEnvironment: 10_000,
+  },
+  retention: {
+    /**
+     * Hàng giờ cũ hơn chừng này ngày UTC được gộp thành hàng ngày. 92 = `maxDays`
+     * + 2: cửa sổ 90 ngày theo tz dương tới +14 h bắt đầu sớm hơn mốc 90 ngày UTC
+     * tới 14 giờ — giữ đúng 90 thì phần đầu cửa sổ đã bị gộp và đếm thiếu.
+     */
+    hourlyDays: 92,
+    rollupIntervalMs: 6 * 3_600_000,
+    /** Mỗi bước gộp MỘT ngày; một lượt tối đa chừng này bước */
+    rollupMaxDaysPerRun: 7,
+  },
+  query: {
+    maxDays: 90,
+    defaultDays: 7,
+    /** `granularity=hour` chỉ khi cửa sổ ≤ chừng này ngày */
+    maxHourlyDays: 7,
+    /** Độ dài sparkline `daily14` của danh sách flag */
+    sparklineDays: 14,
+    /**
+     * [v4.9] Trần số flag của MỘT lời gọi `GET /internal/flag-stats/summary`:
+     * bằng trần `limit` của danh sách flag ở Service 1, vì đúng một trang danh
+     * sách sinh ra đúng một lời gọi này (V19).
+     */
+    summaryMaxFlags: 100,
+    /** Tên IANA dài nhất chừng 30 ký tự; trần này chặn chuỗi rác trước khi tra tập */
+    tzMaxLength: 64,
+    staleList: { defaultLimit: 50, maxLimit: 100 },
+  },
 } as const;
 
 // ============================================================
@@ -537,6 +1154,12 @@ export const REDACTED_KEY_PATTERNS = [
   /.+key$/i,
   /** Mọi thứ bắt đầu bằng "encrypted" là ciphertext: encryptedPayload, encryptedDek */
   /^encrypted/i,
+  /**
+   * [v4.5] `bucketSalt` của rule: không phải credential, nhưng biết nó là tính
+   * trước được người dùng nào rơi vào nhóm nào. Các view đã bỏ nó; đây là lớp
+   * phòng thủ thứ hai cho `before`/`after` của audit và `current` của 409.
+   */
+  /salt/i,
 ] as const;
 
 /**

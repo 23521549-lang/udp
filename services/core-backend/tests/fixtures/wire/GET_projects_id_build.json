@@ -1,0 +1,66 @@
+{
+  "route": "GET /projects/{id}/build",
+  "status": 200,
+  "body": {
+    "settings": {
+      "strategy": "auto",
+      "context": ".",
+      "dockerfile": "Dockerfile",
+      "language": null,
+      "test": {
+        "mode": "default"
+      },
+      "identity": null,
+      "signing": {
+        "keys": [],
+        "compat": true,
+        "enforce": false
+      }
+    },
+    "platform": "linux/amd64",
+    "ci": "github-actions",
+    "registry": {
+      "server": "ghcr.io",
+      "push": "github-token",
+      "effectivePush": "github-token"
+    },
+    "language": {
+      "value": "nodejs",
+      "source": "runtime"
+    },
+    "prediction": {
+      "strategy": "dockerfile",
+      "reason": "GOLDEN_PATH"
+    },
+    "test": {
+      "kind": "run",
+      "command": "npm ci && npm test",
+      "image": "node:22.23.3-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402"
+    },
+    "identity": {
+      "required": true,
+      "configured": false,
+      "cloud": "aws"
+    },
+    "identityScript": {
+      "cloud": "aws",
+      "text": "#!/usr/bin/env bash\n# UDP — danh tính build của p-0be07262 (Plan #61). Chạy MỘT lần trong AWS CloudShell của tài khoản chạy cụm UDP của project bằng quyền quản trị.\n# Chạy lại an toàn: chỉ tạo thứ chưa có và đưa quyền về đúng mô tả dưới đây.\n# Không có khoá bí mật nào rời cloud: khoá ký nằm trong KMS, dòng kết quả chỉ mang URI và khoá CÔNG KHAI.\nset -euo pipefail\n\nACCOUNT=$(aws sts get-caller-identity --query Account --output text)\nROLE=udp-build-p-0be07262\nREGION=eu-west-1\nKEY_ALIAS=alias/udp-sign-p-0be07262\n\n# Nhà cung cấp OIDC của GitHub Actions (repo acme/web)\nISSUER_HOST=token.actions.githubusercontent.com\nPROVIDER_ARN=\"arn:aws:iam::$ACCOUNT:oidc-provider/$ISSUER_HOST\"\nif ! aws iam get-open-id-connect-provider --open-id-connect-provider-arn \"$PROVIDER_ARN\" >/dev/null 2>&1; then\n  aws iam create-open-id-connect-provider --url \"https://$ISSUER_HOST\" --client-id-list sts.amazonaws.com >/dev/null\nfi\naws iam add-client-id-to-open-id-connect-provider --open-id-connect-provider-arn \"$PROVIDER_ARN\" --client-id sts.amazonaws.com 2>/dev/null || true\n\n# Vai trò chỉ tin đúng chủ thể của CI\ncat > /tmp/udp-trust.json <<JSON\n{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"$PROVIDER_ARN\"},\"Action\":\"sts:AssumeRoleWithWebIdentity\",\"Condition\":{\"StringEquals\":{\"$ISSUER_HOST:aud\":\"sts.amazonaws.com\"},\"StringLike\":{\"$ISSUER_HOST:sub\":[\"repo:acme/web:ref:refs/heads/main\",\"repo:acme/web:ref:refs/heads/dev\",\"repo:acme/web:ref:refs/heads/staging\"]}}}]}\nJSON\nif aws iam get-role --role-name \"$ROLE\" >/dev/null 2>&1; then\n  aws iam update-assume-role-policy --role-name \"$ROLE\" --policy-document file:///tmp/udp-trust.json\nelse\n  aws iam create-role --role-name \"$ROLE\" --path /udp/ --assume-role-policy-document file:///tmp/udp-trust.json >/dev/null\nfi\n\n# Khoá ký (Plan #61): ECDSA P-256 trong KMS; vai trò chỉ được ký và đọc khoá công khai của ĐÚNG khoá này\nKEY_ARN=$(aws kms describe-key --region \"$REGION\" --key-id \"$KEY_ALIAS\" --query KeyMetadata.Arn --output text 2>/dev/null || true)\nif [ -z \"$KEY_ARN\" ] || [ \"$KEY_ARN\" = None ]; then\n  KEY_ARN=$(aws kms create-key --region \"$REGION\" --key-spec ECC_NIST_P256 --key-usage SIGN_VERIFY --description \"UDP: ky image cua p-0be07262\" --tags TagKey=udp.project,TagValue=p-0be07262 --query KeyMetadata.Arn --output text)\n  aws kms create-alias --region \"$REGION\" --alias-name \"$KEY_ALIAS\" --target-key-id \"$KEY_ARN\"\nfi\ncat > /tmp/udp-sign.json <<JSON\n{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"kms:Sign\",\"kms:GetPublicKey\",\"kms:DescribeKey\"],\"Resource\":\"$KEY_ARN\"}]}\nJSON\naws iam put-role-policy --role-name \"$ROLE\" --policy-name udp-sign --policy-document file:///tmp/udp-sign.json\naws kms get-public-key --region \"$REGION\" --key-id \"$KEY_ARN\" --query PublicKey --output text | base64 -d | openssl pkey -pubin -inform DER -outform PEM > /tmp/udp-sign.pem\n\n# Dán dòng dưới vào mục Đóng gói của UDP\nprintf \"UDP_BUILD_IDENTITY=%s\\n\" \"$(jq -nc --arg role \"arn:aws:iam::$ACCOUNT:role/udp/$ROLE\" --arg key \"awskms:///$KEY_ARN\" --rawfile pub /tmp/udp-sign.pem '{cloud:\"aws\",roleArn:$role,signing:{key:$key,publicKey:$pub}}')\"\n"
+    },
+    "signing": {
+      "available": true,
+      "reason": null
+    },
+    "rebase": {
+      "hour": 3,
+      "minute": 15,
+      "cron": "15 3 * * *",
+      "schedule": "pipeline"
+    },
+    "todo": [
+      {
+        "code": "BUILD_IDENTITY",
+        "cloud": "aws"
+      }
+    ]
+  }
+}

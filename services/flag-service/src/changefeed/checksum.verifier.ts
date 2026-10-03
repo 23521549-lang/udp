@@ -1,4 +1,8 @@
-import { configHashOf, type Snapshot } from "@udp/flag-evaluator";
+import {
+  hashVerdict,
+  type HashVerdict,
+  type Snapshot,
+} from "@udp/flag-evaluator";
 import { incrementCounter } from "./metrics.js";
 
 /**
@@ -10,13 +14,8 @@ import { incrementCounter } from "./metrics.js";
  * và là lý do §1.4 tách `config_hash` khỏi `config_version`.
  */
 
-export type VerifyResult =
-  /** Nội dung khớp con số Service 2 đã ghi */
-  | "ok"
-  /** Lệch — đây là BUG, không phải chuyện thường ngày */
-  | "mismatch"
-  /** Chưa có gì để so */
-  | "no-baseline";
+/** Cùng các giá trị với `HashVerdict` của lõi — Service 2 chỉ thêm bộ đếm */
+export type VerifyResult = HashVerdict;
 
 /**
  * `expected` rỗng nghĩa là CHƯA CÓ MỐC, không phải "hash bằng chuỗi rỗng".
@@ -36,10 +35,10 @@ export type VerifyResult =
  * cách và phép kiểm `expected === ""` ở đây lặng lẽ thành `false`.
  */
 export function verifyHash(snapshot: Snapshot, expected: string): VerifyResult {
-  if (expected === "") return "no-baseline";
-
-  if (configHashOf(snapshot) === expected) return "ok";
-
-  incrementCounter("changefeed_hash_mismatch_total");
-  return "mismatch";
+  // Luật `"" = chưa có mốc` sống ở `hashVerdict` (dùng chung với provider [v4.7]);
+  // ở đây chỉ thêm bộ đếm của Service 2
+  const verdict = hashVerdict(snapshot, expected);
+  if (verdict === "mismatch")
+    incrementCounter("changefeed_hash_mismatch_total");
+  return verdict;
 }

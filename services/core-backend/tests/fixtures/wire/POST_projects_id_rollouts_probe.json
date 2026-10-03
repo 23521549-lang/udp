@@ -1,0 +1,13 @@
+{
+  "route": "POST /projects/{id}/rollouts/probe",
+  "status": 200,
+  "body": {
+    "probe": {
+      "reachable": true,
+      "hasSeries": false,
+      "scrapeIntervalSec": 15,
+      "scrapeIntervalSource": "workload",
+      "minMetricWindowSeconds": 60
+    }
+  }
+}

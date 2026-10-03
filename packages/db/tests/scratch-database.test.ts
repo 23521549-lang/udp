@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertScratchName,
@@ -8,6 +9,7 @@ import {
   SCRATCH_NAME_PATTERN,
   scratchEnv,
   scratchNameFromEnv,
+  testEnv,
 } from "../scripts/helpers/scratch-database.js";
 
 /**
@@ -127,7 +129,11 @@ describe("scratchEnv", () => {
 
   it("đổi MỌI chuỗi kết nối, kể cả biến chưa có tên trong danh sách nào", () => {
     const out = scratchEnv(
-      { ...base, DATABASE_URL_S3: "postgresql://udp_s3.abc:x@h:6543/postgres" },
+      {
+        ...base,
+        DATABASE_URL_S3: "postgresql://udp_s3.abc:x@h:6543/postgres",
+        DATABASE_URL_S3_DIRECT: "postgresql://udp_s3.abc:x@h:5432/postgres",
+      },
       "udp_scratch_9",
     );
     for (const key of [
@@ -137,6 +143,7 @@ describe("scratchEnv", () => {
       "DATABASE_URL_S2",
       "DATABASE_URL_S2_DIRECT",
       "DATABASE_URL_S3",
+      "DATABASE_URL_S3_DIRECT",
     ]) {
       expect(new URL(out[key] ?? "").pathname, key).toBe("/udp_scratch_9");
     }
@@ -170,6 +177,38 @@ describe("scratchEnv", () => {
     const snapshot = { ...base };
     scratchEnv(base, "udp_scratch_9");
     expect(base).toEqual(snapshot);
+  });
+});
+
+describe("testEnv", () => {
+  it("ép NODE_ENV về test dù .env đã khai development", () => {
+    const out = testEnv({ NODE_ENV: "development", DATABASE_URL: BASE });
+    expect(out["NODE_ENV"]).toBe("test");
+    expect(out["DATABASE_URL"]).toBe(BASE);
+  });
+
+  it("đặt NODE_ENV cả khi biến chưa có", () => {
+    expect(testEnv({})["NODE_ENV"]).toBe("test");
+  });
+
+  it("không sửa object đầu vào", () => {
+    const base: NodeJS.ProcessEnv = { NODE_ENV: "development" };
+    testEnv(base);
+    expect(base["NODE_ENV"]).toBe("development");
+  });
+
+  /**
+   * Chốt NƠI DÙNG chứ không chỉ chốt hàm: `testEnv` đúng mà bước 3/3 vẫn nhận
+   * `childEnv` thì bộ test lại chạy với `NODE_ENV=development`, và triệu chứng
+   * (400 ở các route có seam `asOf`) không hề nhắc tới biến môi trường nào.
+   */
+  it("bước chạy test của test-scratch dùng testEnv, không dùng childEnv trần", () => {
+    const src = readFileSync(
+      new URL("../scripts/test-scratch.ts", import.meta.url),
+      "utf8",
+    );
+    const step3 = src.slice(src.indexOf('"3/3'));
+    expect(step3).toContain("testEnv(childEnv)");
   });
 });
 

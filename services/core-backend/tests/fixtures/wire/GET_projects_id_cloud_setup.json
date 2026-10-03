@@ -1,0 +1,72 @@
+{
+  "route": "GET /projects/{id}/cloud/setup",
+  "status": 200,
+  "body": {
+    "setup": {
+      "provider": "AZURE",
+      "subject": "project:a242c9ef-540d-4330-b1d4-59bfb0f37c78",
+      "methods": [
+        {
+          "authKind": "AZURE_FEDERATED",
+          "federated": true,
+          "available": true,
+          "unavailableReason": null,
+          "snippets": [
+            {
+              "id": "azure-federated-credential",
+              "language": "shell",
+              "content": "az ad app create --display-name udp-deployer\naz ad sp create --id <APP_ID>\naz ad app federated-credential create --id <APP_ID> --parameters '{\"name\":\"udp-project\",\"issuer\":\"https://udp.example/oidc\",\"subject\":\"project:a242c9ef-540d-4330-b1d4-59bfb0f37c78\",\"audiences\":[\"api://AzureADTokenExchange\"]}'\naz role assignment create --assignee <APP_ID> --role Contributor --scope /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP>\naz role assignment create --assignee <APP_ID> --role \"Azure Kubernetes Service RBAC Cluster Admin\" --scope /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP>\naz role assignment create --assignee <APP_ID> --role \"Role Based Access Control Administrator\" --scope /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP> \\\n  --condition \"((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {4d97b98b-1d4f-4787-a291-c67834d212e7}))\" \\\n  --condition-version 2.0"
+            }
+          ]
+        },
+        {
+          "authKind": "AZURE_SECRET",
+          "federated": false,
+          "available": true,
+          "unavailableReason": null,
+          "snippets": [
+            {
+              "id": "azure-app-secret",
+              "language": "shell",
+              "content": "az ad app create --display-name udp-deployer\naz ad sp create --id <APP_ID>\naz ad app credential reset --id <APP_ID>\naz role assignment create --assignee <APP_ID> --role Contributor --scope /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP>\naz role assignment create --assignee <APP_ID> --role \"Azure Kubernetes Service RBAC Cluster Admin\" --scope /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP>\naz role assignment create --assignee <APP_ID> --role \"Role Based Access Control Administrator\" --scope /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP> \\\n  --condition \"((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {4d97b98b-1d4f-4787-a291-c67834d212e7}))\" \\\n  --condition-version 2.0"
+            }
+          ]
+        }
+      ],
+      "managed": {
+        "available": false,
+        "unavailableReason": "managed-disabled"
+      },
+      "requiredPermissions": [
+        "Microsoft.Resources/subscriptions/resourceGroups/read",
+        "Microsoft.Network/virtualNetworks/write",
+        "Microsoft.Network/virtualNetworks/delete",
+        "Microsoft.Network/virtualNetworks/subnets/write",
+        "Microsoft.Network/virtualNetworks/subnets/delete",
+        "Microsoft.Network/virtualNetworks/subnets/join/action",
+        "Microsoft.Network/networkSecurityGroups/write",
+        "Microsoft.Network/networkSecurityGroups/delete",
+        "Microsoft.Network/networkSecurityGroups/join/action",
+        "Microsoft.Network/publicIPAddresses/write",
+        "Microsoft.Network/publicIPAddresses/delete",
+        "Microsoft.Network/publicIPAddresses/join/action",
+        "Microsoft.Network/natGateways/write",
+        "Microsoft.Network/natGateways/delete",
+        "Microsoft.Network/natGateways/join/action",
+        "Microsoft.ManagedIdentity/userAssignedIdentities/write",
+        "Microsoft.ManagedIdentity/userAssignedIdentities/delete",
+        "Microsoft.ManagedIdentity/userAssignedIdentities/assign/action",
+        "Microsoft.Authorization/roleAssignments/write",
+        "Microsoft.Authorization/roleAssignments/delete",
+        "Microsoft.ContainerService/managedClusters/write",
+        "Microsoft.ContainerService/managedClusters/delete",
+        "Microsoft.ContainerService/managedClusters/listClusterUserCredential/action",
+        "Microsoft.ContainerService/managedClusters/agentPools/write",
+        "Microsoft.ContainerService/managedClusters/agentPools/delete",
+        "Microsoft.ContainerService/managedClusters/namespaces/write",
+        "Microsoft.ContainerService/managedClusters/rbac.authorization.k8s.io/clusterrolebindings/write"
+      ],
+      "docUrl": "https://udp.example/docs/byoc/azure"
+    }
+  }
+}

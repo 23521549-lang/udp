@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { dbAvailabilityError, dbConstraintError } from "../src/errors.js";
+import { randomUUID } from "node:crypto";
+import {
+  dbAvailabilityError,
+  dbConstraintError,
+  uniqueViolationIndexOf,
+} from "../src/errors.js";
 import { createPgAdapter } from "../src/adapter.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { connectionString } from "./helpers/db.js";
@@ -136,6 +141,42 @@ describe("dbErrorCode — SQLSTATE của trigger tới được tầng ứng d�
       message: "VARIANT_IN_USE: y",
     });
     expect(mapped).toEqual({ code: "VARIANT_IN_USE", detail: "y" });
+  });
+});
+
+describe("uniqueViolationIndexOf — P2002 của Prisma 7 mang tên index, không mang meta.target [v4.4]", () => {
+  /** Lùi transaction sau khi bắt được lỗi: không để lại hàng nào */
+  class Rollback extends Error {}
+
+  it("vi phạm UNIQUE thật: tên index đúng; dbConstraintError vẫn là DUPLICATE_RESOURCE", async () => {
+    const email = `p18-dup-${randomUUID()}@udp.test`;
+    const user = { email, passwordHash: "x", name: "p18" };
+    let caught: unknown;
+    await prisma
+      .$transaction(async (tx) => {
+        await tx.user.create({ data: user });
+        caught = await tx.user.create({ data: user }).then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        throw new Rollback();
+      })
+      .catch((err: unknown) => {
+        if (!(err instanceof Rollback)) throw err;
+      });
+
+    expect(uniqueViolationIndexOf(caught)).toBe("users_email_key");
+    expect(dbConstraintError(caught)).toEqual({
+      code: "DUPLICATE_RESOURCE",
+      // Postgres nêu tên constraint ⇒ adapter không bóc cột; tên index mang tên bảng nên không lộ ra
+      detail: "Đã tồn tại",
+    });
+    expect(await prisma.user.count({ where: { email } })).toBe(0);
+  });
+
+  it("lỗi không phải P2002 ⇒ undefined", () => {
+    expect(uniqueViolationIndexOf(new Error("x"))).toBeUndefined();
+    expect(uniqueViolationIndexOf({ code: "P2025" })).toBeUndefined();
   });
 });
 

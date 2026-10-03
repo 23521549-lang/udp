@@ -1,0 +1,8 @@
+{
+  "route": "POST /projects/{id}/rollouts/{id}/actions",
+  "status": 202,
+  "body": {
+    "intentId": "676cdd48-6377-4449-b639-29159de2240a",
+    "status": "accepted"
+  }
+}

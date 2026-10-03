@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { env } from "@udp/config";
+import { ACTOR_HEADER, CONDITION_LIMITS, env } from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import { configHashOf, pickVariant, type Snapshot } from "@udp/flag-evaluator";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { stableOwner } from "./helpers/fixture.js";
+import { createActiveFlag, stableOwner } from "@udp/test-support";
 import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
 
 /**
@@ -73,11 +73,8 @@ const makeProject = async (
   return { id: p.id, envs: p.environments.map((e) => e.id) };
 };
 
-const createFlag = (key: string): request.Test =>
-  request(app)
-    .post("/internal/flags")
-    .set("X-Internal-Secret", SECRET)
-    .send({ projectId, key, flagType: "BOOLEAN" });
+const createFlag = (key: string): Promise<request.Response> =>
+  createActiveFlag(app, ownerId, { projectId, key, flagType: "BOOLEAN" });
 
 beforeAll(async () => {
   ownerId = (await stableOwner(admin)).id;
@@ -91,14 +88,12 @@ beforeAll(async () => {
   prodEnv = mine.envs[1]!;
 
   flagKey = `rules-${randomUUID().slice(0, 8)}`;
-  const flag = await createFlag(flagKey).expect(201);
+  const flag = await createFlag(flagKey);
   const variants = flag.body.flag.variants as { id: string; key: string }[];
   on = variants.find((v) => v.key === "on")!.id;
   off = variants.find((v) => v.key === "off")!.id;
 
-  const other = await createFlag(`foreign-${randomUUID().slice(0, 8)}`).expect(
-    201,
-  );
+  const other = await createFlag(`foreign-${randomUUID().slice(0, 8)}`);
   foreignVariant = (other.body.flag.variants as { id: string }[])[0]!.id;
 
   const configs = await admin.flagEnvConfig.findMany({
@@ -110,13 +105,21 @@ beforeAll(async () => {
 
   ownSegment = (
     await admin.segment.create({
-      data: { projectId, name: "beta", conditions: [] },
+      data: {
+        projectId,
+        name: "beta",
+        conditions: { all: [], userIds: ["u-1"] },
+      },
       select: { id: true },
     })
   ).id;
   foreignSegment = (
     await admin.segment.create({
-      data: { projectId: otherProjectId, name: "beta", conditions: [] },
+      data: {
+        projectId: otherProjectId,
+        name: "beta",
+        conditions: { all: [], userIds: ["u-1"] },
+      },
       select: { id: true },
     })
   ).id;
@@ -127,6 +130,9 @@ afterAll(async () => {
   if (projectId !== undefined) {
     await admin.configChangeLog.deleteMany({
       where: { environmentId: { in: envIds } },
+    });
+    await admin.auditLog.deleteMany({
+      where: { projectId: { in: [projectId, otherProjectId] } },
     });
     await admin.project.deleteMany({
       where: { id: { in: [projectId, otherProjectId] } },
@@ -148,6 +154,7 @@ const put = (id: string, body: object): request.Test =>
   request(app)
     .put(`/internal/flag-envs/${id}/rules`)
     .set("X-Internal-Secret", SECRET)
+    .set(ACTOR_HEADER, ownerId)
     .send(body);
 
 /** Gửi danh sách rule với mốc optimistic lock ĐÚNG */
@@ -335,6 +342,42 @@ describe("I1 qua HTTP — danh tính rule sống sót qua lần lưu", () => {
   });
 });
 
+describe("[v4.5] audit flag.rule.update do S2 ghi (I40)", () => {
+  it("mỗi lần lưu đúng MỘT hàng, before/after là danh sách rule KHÔNG có bucketSalt; lưu bị lùi ⇒ không hàng nào", async () => {
+    const countOf = () =>
+      admin.auditLog.count({
+        where: { action: "flag.rule.update", targetId: devConfig },
+      });
+    const before = await countOf();
+    await save(devConfig, [allRule(15)]);
+    await put(devConfig, {
+      lastKnownUpdatedAt: new Date(0).toISOString(),
+      rules: [],
+    }).expect(409);
+    expect(await countOf()).toBe(before + 1);
+
+    const row = await admin.auditLog.findFirstOrThrow({
+      where: { action: "flag.rule.update", targetId: devConfig },
+      orderBy: { occurredAt: "desc" },
+      select: {
+        targetType: true,
+        environmentId: true,
+        actorUserId: true,
+        after: true,
+      },
+    });
+    expect(row).toMatchObject({
+      targetType: "FlagEnvConfig",
+      environmentId: devEnv,
+      actorUserId: ownerId,
+    });
+    expect(JSON.stringify(row.after)).toContain("ALL");
+    expect(JSON.stringify(row.after)).not.toMatch(/salt/i);
+    // [Plan #60 QĐ-2] Nhật ký gọi tên flag được
+    expect(row.after).toMatchObject({ flagKey: expect.any(String) });
+  });
+});
+
 describe("optimistic lock thật sự có tác dụng", () => {
   it("PUT thành công ĐẨY mốc updated_at — nếu không thì khoá không bảo vệ gì", async () => {
     /**
@@ -459,6 +502,53 @@ describe("những gì phải bị từ chối", () => {
         },
       },
     ]);
+  });
+});
+
+describe("[v4.6] regex — phân tích ReDoS ở đường GHI (§6.5, §12)", () => {
+  const regexRule = (pattern: string) => ({
+    ruleType: "ATTRIBUTE_BASED",
+    condition: {
+      all: [{ attribute: "email", operator: "regex", value: pattern }],
+    },
+    serve: { kind: "variant", variantId: on },
+    priority: 1,
+  });
+  const rulesOf = () =>
+    admin.flagTargetingRule.count({ where: { flagEnvConfigId: prodConfig } });
+
+  it("backtracking hàm mũ ⇒ 422 TRƯỚC khi chạm database; pattern tuyến tính ⇒ 200", async () => {
+    const before = await rulesOf();
+    for (const bad of ["^(a|a)*$", "^(a+)+$"]) {
+      const res = await put(prodConfig, {
+        lastKnownUpdatedAt: await stamp(prodConfig),
+        rules: [regexRule(bad)],
+      }).expect(422);
+      expect(res.body.detail).toMatch(/ReDoS/);
+    }
+    expect(await rulesOf()).toBe(before);
+    await save(prodConfig, [regexRule("^[a-z]+@udp[.]vn$")]);
+    await save(prodConfig, []);
+  });
+
+  it(`quá ${String(CONDITION_LIMITS.regexPatternsPerWrite)} pattern khác nhau trong một lần lưu ⇒ 422, không phân tích`, async () => {
+    const rules = Array.from(
+      { length: CONDITION_LIMITS.regexPatternsPerWrite + 1 },
+      (_, i) => ({ ...regexRule(`^u${String(i)}$`), priority: i }),
+    );
+    const res = await put(prodConfig, {
+      lastKnownUpdatedAt: await stamp(prodConfig),
+      rules,
+    }).expect(422);
+    expect(res.body.detail).toMatch(/tối đa/);
+  });
+
+  it("pattern chưa ở dạng NFC ⇒ 400 ở schema — không lưu thứ sẽ chạy khác đi", async () => {
+    const acute = String.fromCharCode(0x0301);
+    await put(prodConfig, {
+      lastKnownUpdatedAt: await stamp(prodConfig),
+      rules: [regexRule(`^e${acute}$`)],
+    }).expect(400);
   });
 });
 

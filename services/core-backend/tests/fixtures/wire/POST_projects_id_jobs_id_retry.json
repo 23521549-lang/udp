@@ -1,0 +1,17 @@
+{
+  "route": "POST /projects/{id}/jobs/{id}/retry",
+  "status": 202,
+  "body": {
+    "job": {
+      "id": "c9bf93d3-1a69-46e5-ba09-5f163dee1dd2",
+      "jobType": "ENVIRONMENT_APPLY",
+      "state": "QUEUED",
+      "attempt": 0,
+      "confirmedMonthlyUsd": null,
+      "lastError": null,
+      "cancellable": false,
+      "createdAt": "2026-09-26T15:10:29.187Z",
+      "updatedAt": "2026-09-26T15:10:29.187Z"
+    }
+  }
+}

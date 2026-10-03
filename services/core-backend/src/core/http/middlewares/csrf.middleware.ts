@@ -7,6 +7,7 @@ import {
   verifyRefreshToken,
 } from "../../security/tokens.js";
 import { ForbiddenError } from "@udp/http";
+import { CSRF_INVALID_SLUG } from "@udp/shared-types/problem";
 
 /** GET/HEAD/OPTIONS không đổi trạng thái nên không cần bảo vệ CSRF */
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -109,7 +110,19 @@ export function createCsrfProtection(
       safeEquals(cookieToken, csrfTokenFor(familyId));
 
     if (!isValid) {
-      next(new ForbiddenError("CSRF token không hợp lệ"));
+      /**
+       * [v4.11] Slug riêng: 403 vì CSRF và 403 vì thiếu quyền là hai việc khác nhau.
+       *
+       * Cả hai đều là `ForbiddenError`, và `type` của Problem Details suy từ `kind`, nên
+       * không có slug này thì client buộc phải đọc câu tiếng Việt để phân biệt — một hợp
+       * đồng bằng chuỗi hiển thị. Portal cần phân biệt vì hai ca có hai cách xử lý khác
+       * hẳn: CSRF sai thì tải lại trang lấy cookie mới, còn thiếu quyền thì không.
+       */
+      next(
+        new ForbiddenError("CSRF token không hợp lệ").withTypeSlug(
+          CSRF_INVALID_SLUG,
+        ),
+      );
       return;
     }
 

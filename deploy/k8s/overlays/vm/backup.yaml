@@ -1,0 +1,80 @@
+# Sao lưu hằng ngày ra khỏi máy (Plan #52 QĐ-7): pg_dump của owner, rồi PUT lên Object Storage Always Free qua một
+# Pre-Authenticated Request CHỈ-GHI (Secret `udp-backup`). Tên theo thứ trong tuần ⇒ bảy bản xoay vòng. Bản dump
+# không mang KEK (§4.3) — người vận hành giữ `UDP_KEK_V1` riêng. Khôi phục: `pnpm --filter @udp/deploy vm-restore`.
+# 19:30 UTC = 02:30 giờ Việt Nam.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: udp-backup
+  namespace: udp
+spec:
+  schedule: "30 19 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: udp-backup
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            # uid `postgres` của image alpine; curl chạy cùng uid để đọc được bản dump
+            runAsUser: 70
+            runAsGroup: 70
+          volumes:
+            - name: dump
+              emptyDir: {}
+          initContainers:
+            - name: dump
+              image: postgres:16-alpine
+              command:
+                - sh
+                - -c
+                - pg_dump --format=custom --file=/dump/udp.dump "$DATABASE_URL_DIRECT"
+              env:
+                - name: DATABASE_URL_DIRECT
+                  valueFrom:
+                    secretKeyRef:
+                      name: udp-secrets
+                      key: DATABASE_URL_DIRECT
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+              volumeMounts:
+                - name: dump
+                  mountPath: /dump
+          containers:
+            - name: upload
+              image: curlimages/curl:8.22.0
+              command:
+                - sh
+                - -c
+                - curl --fail --silent --show-error --upload-file /dump/udp.dump "${UDP_BACKUP_UPLOAD_URL}udp-$(date -u +%a).dump"
+              env:
+                - name: UDP_BACKUP_UPLOAD_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: udp-backup
+                      key: UDP_BACKUP_UPLOAD_URL
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 16Mi
+                limits:
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+              volumeMounts:
+                - name: dump
+                  mountPath: /dump

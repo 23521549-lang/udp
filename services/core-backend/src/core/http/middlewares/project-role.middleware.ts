@@ -1,10 +1,14 @@
 import type { RequestHandler } from "express";
 import type { ProjectRole } from "@udp/db";
-import { prisma } from "../../db.js";
+import {
+  hasMinProjectRole,
+  projectAccessOf,
+} from "../../access/project-access.js";
 import {
   ForbiddenError,
   NotFoundError,
   UnauthenticatedError,
+  UUID_PATTERN,
   ValidationError,
 } from "@udp/http";
 
@@ -15,28 +19,6 @@ import {
  * với một danh sách miễn trừ tường minh. §12 T4 nói rõ lý do: không có nó, người
  * dùng chỉ cần đổi id trên URL là đọc được project của người khác.
  */
-
-/**
- * Thứ bậc, KHÔNG phải danh sách.
- *
- * `requireMinProjectRole("MAINTAINER")` phải cho OWNER đi qua. Nếu viết theo
- * kiểu khớp tập — `requireProjectRole("MAINTAINER")` rồi kiểm `roles.includes` —
- * thì chủ sở hữu project nhận 403 trên chính project của mình, và lỗi đó chỉ lộ
- * ra ở đúng route hiếm dùng nhất.
- *
- * `Record<ProjectRole, number>` khai đủ bốn khoá chứ không phải object literal
- * tra bằng index: với `noUncheckedIndexedAccess`, kiểu tra index là
- * `number | undefined`, và mọi phép so sánh với `undefined` đều lặng lẽ thành
- * `false` — tức là từ chối tất cả, hoặc cho qua tất cả, tuỳ chiều so sánh.
- */
-const RANK: Record<ProjectRole, number> = {
-  VIEWER: 0,
-  DEVELOPER: 1,
-  MAINTAINER: 2,
-  OWNER: 3,
-};
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Tên tham số route mang id của project.
@@ -60,7 +42,7 @@ function projectIdOf(req: {
 }): string {
   const raw = req.params[PROJECT_ID_PARAM];
 
-  if (raw === undefined || !UUID.test(raw)) {
+  if (raw === undefined || !UUID_PATTERN.test(raw)) {
     throw new ValidationError("Mã project không hợp lệ");
   }
 
@@ -68,7 +50,8 @@ function projectIdOf(req: {
 }
 
 /**
- * Yêu cầu người gọi là thành viên project với vai trò TỪ `minimum` TRỞ LÊN.
+ * Yêu cầu người gọi có vai trò TỪ `minimum` TRỞ LÊN trong project. [v4.11, Plan #55] Vai là vai HIỆU LỰC —
+ * cao nhất giữa thành viên trực tiếp và các nhóm được cấp quyền (`core/access/project-access.ts`).
  *
  * Ba điều đáng nói về những gì middleware này cố tình KHÔNG làm:
  *
@@ -101,30 +84,31 @@ export const requireMinProjectRole =
       const projectId = projectIdOf(req);
 
       /**
-       * `findUnique` theo khoá tổ hợp `(project_id, user_id)` để đi thẳng vào
-       * `project_members_project_id_user_id_key`. `findFirst` sẽ quét, và
-       * middleware này chạy trước MỌI request có project.
+       * Project theo khoá chính, cùng các nguồn vai lọc theo người gọi: hàng `project_members` đi qua
+       * `(project_id, user_id)`, grant của nhóm qua `(project_id, team_id)` rồi `(team_id, user_id)` — không
+       * phép quét nào, dù middleware này chạy trước MỌI request có project.
        */
-      const membership = await prisma.projectMember.findUnique({
-        where: { projectId_userId: { projectId, userId: req.user.sub } },
-        select: { projectRole: true, project: { select: { status: true } } },
-      });
+      const access = await projectAccessOf(projectId, req.user.sub);
 
-      // Không phải thành viên và project không tồn tại phải KHÔNG phân biệt
-      // được từ bên ngoài. Trả 403 cho một bên và 404 cho bên kia là biến
-      // endpoint thành máy dò: kẻ tấn công đoán id và đọc được project nào có
-      // thật. Cả hai đều 404.
-      if (membership === null || membership.project.status === "DELETED") {
+      // Không có vai và project không tồn tại phải KHÔNG phân biệt được từ
+      // bên ngoài. Trả 403 cho một bên và 404 cho bên kia là biến endpoint
+      // thành máy dò: kẻ tấn công đoán id và đọc được project nào có thật.
+      // Cả hai đều 404.
+      if (
+        access === null ||
+        access.role === null ||
+        access.status === "DELETED"
+      ) {
         next(new NotFoundError("Không tìm thấy project"));
         return;
       }
 
-      if (RANK[membership.projectRole] < RANK[minimum]) {
+      if (!hasMinProjectRole(access.role, minimum)) {
         next(new ForbiddenError("Không đủ quyền trong project này"));
         return;
       }
 
-      req.projectRole = membership.projectRole;
+      req.projectRole = access.role;
       next();
     })().catch(next);
   };

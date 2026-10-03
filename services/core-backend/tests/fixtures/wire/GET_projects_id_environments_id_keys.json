@@ -1,0 +1,232 @@
+{
+  "route": "GET /projects/{id}/environments/{id}/keys",
+  "status": 200,
+  "body": {
+    "keys": [
+      {
+        "id": "91c72338-dc5f-44f4-9ed7-aa2417c3b686",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "ad3294",
+        "maskedKey": "udp_sk_…ad3294",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:23.464Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "c437c574-6c14-4f3d-b26d-d0ad8fff9de5",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "169c13",
+        "maskedKey": "udp_sk_…169c13",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:14.015Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "847b9036-6581-41d3-a91d-ac0b9901963b",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "c81c18",
+        "maskedKey": "udp_sk_…c81c18",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:13.187Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "a11a3105-4a12-46bc-a857-7f88786344b5",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "79f119",
+        "maskedKey": "udp_sk_…79f119",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:12.348Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "e7362df6-06b7-4e6c-b469-14c08b78b276",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "CLIENT",
+        "label": null,
+        "keySuffix": "ae644f",
+        "maskedKey": "udp_ck_…ae644f",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:11.524Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "1bb7bc7b-ce01-4920-ac32-911c5a170b03",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": "prod-api",
+        "keySuffix": "53bb02",
+        "maskedKey": "udp_sk_…53bb02",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:10.233Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "af401eea-7391-4436-a7dd-8bece3c14ef3",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "0f1400",
+        "maskedKey": "udp_sk_…0f1400",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:09.316Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "175520d3-4bd6-4c6b-9307-f3320339448c",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "bc02a9",
+        "maskedKey": "udp_sk_…bc02a9",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:08.350Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "4b0b106f-b84e-4438-9703-84b2879e7828",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "fc6980",
+        "maskedKey": "udp_sk_…fc6980",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:07.375Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "adb1db71-5f3a-4f2b-a573-38b7bdaea712",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "43089f",
+        "maskedKey": "udp_sk_…43089f",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:06.403Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "714df728-cfe3-41d7-bbe8-d26184ef4556",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": "owner",
+        "keySuffix": "d94289",
+        "maskedKey": "udp_sk_…d94289",
+        "status": "active",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:02.085Z",
+        "lastUsedAt": null,
+        "revokedAt": null
+      },
+      {
+        "id": "4b694b6f-3c50-4353-9179-81a7c11f8ff8",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": "scanned",
+        "keySuffix": "0cd1ff",
+        "maskedKey": "udp_sk_…0cd1ff",
+        "status": "revoked",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:30.430Z",
+        "lastUsedAt": null,
+        "revokedAt": "2026-09-24T19:36:31.226Z"
+      },
+      {
+        "id": "de368775-3419-4a17-b1a3-3752b4b4aa65",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "44d1c2",
+        "maskedKey": "udp_sk_…44d1c2",
+        "status": "revoked",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:19.761Z",
+        "lastUsedAt": null,
+        "revokedAt": "2026-09-24T19:36:20.554Z"
+      },
+      {
+        "id": "46eea37a-55b3-4dff-b10f-b077c7d476e0",
+        "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+        "keyType": "SERVER",
+        "label": null,
+        "keySuffix": "027140",
+        "maskedKey": "udp_sk_…027140",
+        "status": "revoked",
+        "createdBy": {
+          "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+          "name": "Test User"
+        },
+        "createdAt": "2026-09-24T19:36:03.422Z",
+        "lastUsedAt": null,
+        "revokedAt": "2026-09-24T19:36:04.450Z"
+      }
+    ]
+  }
+}

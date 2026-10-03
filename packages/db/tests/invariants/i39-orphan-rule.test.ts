@@ -296,3 +296,112 @@ describe("I39(e) — không được chặn nhầm thao tác hợp lệ", () => 
     expect(r.error).toBeUndefined();
   });
 });
+
+describe("I39(f) [v4.3] — thứ tự weights do database cưỡng chế (§6.4)", () => {
+  /**
+   * `pickVariant` cộng dồn theo thứ tự mảng: cùng một phân phối, hai thứ tự là
+   * hai cách chia người dùng (I1). Kill-switch của S3 là writer đầu tiên đi vòng
+   * qua `canonicalizeServe` của S2, nên luật nằm ở trigger.
+   */
+  const SERVE_ORDER = "UDP04";
+  let pair: [string, string];
+
+  beforeAll(async () => {
+    const res = await client.query<{ id: string }>(
+      `SELECT id::text AS id FROM flag_variants WHERE flag_id = $1
+        ORDER BY id::text COLLATE "C" LIMIT 2`,
+      [ids.flagId],
+    );
+    const [a, b] = res.rows;
+    if (a === undefined || b === undefined) {
+      throw new Error("flag dark-mode cần ít nhất hai variant — seed thiếu");
+    }
+    pair = [a.id, b.id];
+  });
+
+  const distribution = (first: string, second: string) =>
+    setServe(
+      `jsonb_build_object('kind','distribution','weights', jsonb_build_array(
+         jsonb_build_object('variantId',$2::text,'weight',40000),
+         jsonb_build_object('variantId',$3::text,'weight',60000)))`,
+      [first, second],
+    );
+
+  it("tăng dần theo variantId thì qua", async () => {
+    const r = await distribution(pair[0], pair[1]);
+    expect(r.error).toBeUndefined();
+  });
+
+  it("giảm dần bị chặn với UDP04", async () => {
+    const r = await distribution(pair[1], pair[0]);
+    expect(r.error?.code).toBe(SERVE_ORDER);
+  });
+
+  it("trùng variantId bị chặn — tăng dần NGHIÊM NGẶT", async () => {
+    const r = await distribution(pair[0], pair[0]);
+    expect(r.error?.code).toBe(SERVE_ORDER);
+  });
+
+  it("vừa trỏ variant lạ vừa sai thứ tự ⇒ UDP01, mã có nghĩa với người dùng thắng", async () => {
+    // variant của flag khác có thể đứng trước hoặc sau; đặt nó ở vị trí làm mảng giảm dần
+    const [first, second] =
+      ids.foreignVariantId < pair[0]
+        ? [pair[0], ids.foreignVariantId]
+        : [ids.foreignVariantId, pair[0]];
+    const r = await distribution(first, second);
+    expect(r.error?.code).toBe(ORPHAN);
+  });
+
+  it("đổi flag_env_config_id mà giữ nguyên serve vẫn bị kiểm orphan — chỉ phép kiểm THỨ TỰ được bỏ qua", async () => {
+    // env-config của flag khác (dựng trong chính transaction lùi): variant trong
+    // serve hiện tại không thuộc flag đó
+    const r = await inRollback(client, async () => {
+      const created = await client.query<{ id: string }>(
+        `INSERT INTO flag_env_configs (id, flag_id, environment_id, updated_at)
+         SELECT gen_random_uuid(), v.flag_id, e.id, now()
+           FROM flag_variants v, environments e
+          WHERE v.id = $1
+            AND NOT EXISTS (
+              SELECT 1 FROM flag_env_configs c
+               WHERE c.flag_id = v.flag_id AND c.environment_id = e.id)
+          LIMIT 1
+         RETURNING id::text AS id`,
+        [ids.foreignVariantId],
+      );
+      const otherConfig = created.rows[0]?.id;
+      if (otherConfig === undefined) {
+        throw new Error("không dựng được env-config cho flag thứ hai");
+      }
+      await client.query(
+        `UPDATE flag_targeting_rules SET flag_env_config_id = $2::uuid WHERE id = $1`,
+        [ids.ruleId, otherConfig],
+      );
+    });
+    expect(r.error?.code).toBe(ORPHAN);
+  });
+
+  it("hàng cũ chưa sắp vẫn sửa được cột khác — luật chỉ chạy khi serve đổi", async () => {
+    const r = await inRollback(client, async () => {
+      // Dựng hình dạng "ghi trước khi có canonicalizeServe": tắt trigger trong transaction
+      await client.query(
+        "ALTER TABLE flag_targeting_rules DISABLE TRIGGER trg_rule_serve_variants",
+      );
+      await client.query(
+        `UPDATE flag_targeting_rules SET serve = jsonb_build_object('kind','distribution','weights',
+           jsonb_build_array(
+             jsonb_build_object('variantId',$2::text,'weight',40000),
+             jsonb_build_object('variantId',$3::text,'weight',60000)))
+          WHERE id = $1`,
+        [ids.ruleId, pair[1], pair[0]],
+      );
+      await client.query(
+        "ALTER TABLE flag_targeting_rules ENABLE TRIGGER trg_rule_serve_variants",
+      );
+      await client.query(
+        "UPDATE flag_targeting_rules SET priority = priority WHERE id = $1",
+        [ids.ruleId],
+      );
+    });
+    expect(r.error).toBeUndefined();
+  });
+});

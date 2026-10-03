@@ -1,0 +1,41 @@
+# UDP trong một cluster (Plan #49) — phần dùng chung mọi nơi chạy; overlay đặt image và cách truy cập.
+# Secret `udp-secrets` KHÔNG ở đây: `pnpm deploy:up` sinh nó (deploy/src/cluster.ts), không commit.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: udp
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - prometheus.yaml
+  - migrate-job.yaml
+  - core-backend.yaml
+  # [Plan #53 QĐ-6] ServiceAccount + RBAC CHỈ-ĐỌC của Service 1 cho Bảng điều khiển nền tảng
+  - core-backend-rbac.yaml
+  - flag-service.yaml
+  - pd-controller.yaml
+  - portal.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: udp
+# Cấu hình không bí mật — hậu tố băm theo nội dung: đổi cấu hình là rollout lại service
+configMapGenerator:
+  - name: udp-config
+    literals:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - CORE_BACKEND_URL=http://core-backend:3001
+      - FLAG_SERVICE_URL=http://flag-service:3002
+      - PD_CONTROLLER_URL=http://pd-controller:3003
+      - PROMETHEUS_URL=http://prometheus:9090
+      - CORS_ORIGIN=http://localhost:8080
+      - COOKIE_DOMAIN=localhost
+      - COOKIE_SECURE=true
+      # Portal (nginx) là một hop proxy trước Service 1
+      - TRUST_PROXY_HOPS=1
+      - CHANGEFEED_MODE=delta
+      # PostgreSQL trong cụm có LISTEN/NOTIFY (§15.3) — hai đường tăng tốc bật
+      - CHANGEFEED_NOTIFY_ENABLED=true
+      - ROLLOUT_INTENT_LISTEN_ENABLED=true
+      - MANAGED_CLOUDS=
+      # [Plan #53] Bản đang chạy; bản phát hành máy ảo ghi đè bằng tag commit (deploy/src/vm.ts)
+      - UDP_RELEASE=local

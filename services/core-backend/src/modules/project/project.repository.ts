@@ -1,10 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { DEFAULT_ENVIRONMENTS, k8sNamespaceFor } from "@udp/config";
-import type { CreationMode, Prisma } from "@udp/db";
+import type { CreationMode, Prisma, ProjectRole } from "@udp/db";
+import { NotFoundError } from "@udp/http";
+import {
+  accessibleBy,
+  roleOfAccessible,
+  roleSourcesOf,
+} from "../../core/access/project-access.js";
 import { prisma } from "../../core/db.js";
 import { auditEntry } from "../audit/audit.service.js";
 import type {
+  ListProjectsQuery,
   PublicEnvironment,
   PublicProject,
   ResourceQuota,
@@ -115,17 +122,45 @@ export async function createWithDefaults(
 /**
  * Danh sách project của người gọi.
  *
- * Lọc theo `members.some` chứ không theo `ownerId`: I10 chỉ phủ route có id
+ * Lọc theo quyền vào (`accessibleBy`) chứ không theo `ownerId`: I10 chỉ phủ route có id
  * project, còn `GET /projects` không có id nên middleware phân quyền không chạm
  * tới. §12.2 tầng 1 vì thế áp thẳng vào đây — mọi truy vấn phải tự mang điều
  * kiện thuộc về ai. Bỏ dòng `where` này là rò toàn bộ project của mọi tenant.
  */
-export const listForUser = (userId: string): Promise<PublicProject[]> =>
-  prisma.project.findMany({
-    where: { status: { not: "DELETED" }, members: { some: { userId } } },
-    select: PUBLIC_FIELDS,
-    orderBy: { createdAt: "desc" },
-  });
+export async function listForUser(
+  userId: string,
+  page: ListProjectsQuery,
+): Promise<{
+  projects: (PublicProject & { myRole: ProjectRole })[];
+  total: number;
+}> {
+  /**
+   * [v4.11] Vai của người gọi đọc trong CÙNG truy vấn. [Plan #55] Vai là vai HIỆU LỰC (thành viên trực tiếp
+   * hoặc nhóm được cấp quyền) — `accessibleBy`/`roleSourcesOf`/`effectiveRoleOf`, cùng ba mảnh với
+   * `requireMinProjectRole`. Tách `members`/`teamGrants` ra khỏi hàng trước khi trả: gán object Prisma rộng cho
+   * kiểu hẹp là hợp lệ trong TS, trường thừa biến mất khỏi kiểu mà vẫn còn ở runtime, và `.strict()` của
+   * schema wire đỏ lúc chạy.
+   */
+  const where: Prisma.ProjectWhereInput = {
+    status: { not: "DELETED" },
+    ...accessibleBy(userId),
+  };
+  const [rows, total] = await Promise.all([
+    prisma.project.findMany({
+      where,
+      select: { ...PUBLIC_FIELDS, ...roleSourcesOf(userId) },
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      take: page.limit,
+      skip: page.offset,
+    }),
+    prisma.project.count({ where }),
+  ]);
+  const projects = rows.map(({ members, teamGrants, ...project }) => ({
+    ...project,
+    myRole: roleOfAccessible({ id: project.id, members, teamGrants }),
+  }));
+  return { projects, total };
+}
 
 export const findById = (
   id: string,
@@ -139,6 +174,15 @@ export const findById = (
   });
 
 /** Chỉ để dựng ảnh `before` của audit — không trả ra API */
+/** [v4.11, Plan #45] `cluster_access` thô của project — `clusterOf` ở service lọc lấy địa chỉ */
+export const clusterAccessOf = async (id: string): Promise<unknown> =>
+  (
+    await prisma.project.findUnique({
+      where: { id },
+      select: { clusterAccess: true },
+    })
+  )?.clusterAccess ?? null;
+
 export const findQuotaAndTtl = (
   id: string,
 ): Promise<{
@@ -210,17 +254,35 @@ export const updateTtl = (
   );
 
 /**
- * Xoá mềm.
+ * Xoá mềm, cùng một việc khác trong CÙNG transaction (giao việc dọn hạ tầng).
  *
  * `prisma.project.delete()` sẽ **luôn** thất bại: `AuditLog.project` là
  * `ON DELETE RESTRICT`, và chính hàm này vừa ghi một hàng audit trỏ vào project
  * đó. §2.3 nói rõ đấy là chủ đích — sổ kiểm toán phải sống lâu hơn thứ nó ghi.
+ * Điều kiện `status <> DELETED`: xoá lần hai là 404, không phải một hàng audit thứ hai.
  */
-export const softDelete = (
+export function softDeleteWith<T>(
   id: string,
   request: Request,
-): Promise<PublicProject> =>
-  updateWithAudit(
-    { status: "DELETED" },
-    { id, action: "project.delete", request },
-  );
+  alsoDo: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    const moved = await tx.project.updateMany({
+      where: { id, status: { not: "DELETED" } },
+      data: { status: "DELETED" },
+    });
+    if (moved.count === 0) throw new NotFoundError("Không tìm thấy project");
+    await tx.auditLog.create({
+      data: {
+        ...auditEntry({
+          action: "project.delete",
+          targetType: "Project",
+          targetId: id,
+          request,
+        }),
+        projectId: id,
+      },
+    });
+    return alsoDo(tx);
+  });
+}

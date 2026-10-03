@@ -100,14 +100,39 @@ export { assertConnectedAs } from "./identity.js";
 export { observeQueries } from "./observe.js";
 export type { QueryListener, QueryObservation } from "./observe.js";
 export { writeWithOutbox } from "./outbox.js";
-export type { ConfigChangeType, OutboxWrite } from "./outbox.js";
+export type { ConfigChangeType, OutboxState, OutboxWrite } from "./outbox.js";
 export { createSessionConnector } from "./session.js";
+export { createListenAccelerator } from "./listen-accelerator.js";
+export { keepLease } from "./lease-keeper.js";
+export type { LeaseKeeper, LeaseKeeperOptions } from "./lease-keeper.js";
+export { ACTIVE_ROLLOUT_STATUS_SQL } from "./rollout-status.js";
+export { loadTimezoneNames } from "./timezones.js";
+export type { TimezoneSource } from "./timezones.js";
+export {
+  envSlugOf,
+  issueSdkKeyToken,
+  maskedKeyOf,
+  SDK_KEY_HASH_PATTERN,
+  SDK_KEY_PLAINTEXT_PATTERN,
+  SDK_KEY_SUFFIX_PATTERN,
+  sdkKeyMaterialOf,
+} from "./sdk-key.js";
+export type { SdkKeyMaterial } from "./sdk-key.js";
+export type {
+  IdentityVerdict,
+  ListenAccelerator,
+  ListenAcceleratorDeps,
+  ListenLogger,
+  ListenTiming,
+} from "./listen-accelerator.js";
 export type { SessionClient, SessionConnector } from "./session.js";
 export {
   dbAvailabilityError,
   dbConstraintError,
+  hasSqlState,
   httpStatusOf,
   UDP_SQLSTATE,
+  uniqueViolationIndexOf,
 } from "./errors.js";
 export type { DbAvailabilityError, DbConstraintError } from "./errors.js";
 export * from "./generated/prisma/client.js";

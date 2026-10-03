@@ -1,0 +1,23 @@
+{
+  "route": "GET /projects/{id}/audit",
+  "status": 200,
+  "body": {
+    "entries": [
+      {
+        "id": "01a0ee44-5abe-77e8-b757-030f526865fe",
+        "action": "member.add",
+        "actorType": "USER",
+        "actorUserId": "b35db5c7-19da-4f51-a697-f6fc4677ba3b",
+        "targetType": "ProjectMember",
+        "targetId": "58789d74-5320-4d48-a35c-2ccbbdfb0db8",
+        "environmentId": null,
+        "before": null,
+        "after": {
+          "projectRole": "VIEWER"
+        },
+        "occurredAt": "2026-09-29T17:44:12.222Z"
+      }
+    ],
+    "total": 2
+  }
+}

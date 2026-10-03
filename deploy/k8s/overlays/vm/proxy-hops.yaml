@@ -1,0 +1,16 @@
+# Số proxy tin cậy theo ĐÚNG đường của từng service (Plan #52 QĐ-5): Service 1 đứng sau Traefik rồi nginx của
+# Portal (2), Service 2 chỉ sau Traefik (1 — giá trị của ConfigMap). Tin nhiều hơn thực tế là để khách tự chọn IP
+# qua `X-Forwarded-For` và vượt rate limit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-backend
+  namespace: udp
+spec:
+  template:
+    spec:
+      containers:
+        - name: core-backend
+          env:
+            - name: TRUST_PROXY_HOPS
+              value: "2"

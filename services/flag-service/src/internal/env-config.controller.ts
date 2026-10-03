@@ -1,7 +1,9 @@
 import { Router } from "express";
-import { asyncHandler, validateBody } from "@udp/http";
-import { actorOf, requireInternalCaller } from "../auth/internal-auth.guard.js";
-import { uuidParam } from "../core/uuid.js";
+import { asyncHandler, uuidParam, validateBody } from "@udp/http";
+import {
+  auditContextOf,
+  requireInternalCaller,
+} from "../auth/internal-auth.guard.js";
 import * as envConfigService from "../modules/env-config/env-config.service.js";
 import { updateEnvConfigSchema } from "../modules/env-config/env-config.types.js";
 
@@ -23,7 +25,7 @@ internalEnvConfigRouter.patch(
     const envConfig = await envConfigService.update(
       uuidParam(req, "id", "Mã cấu hình flag theo environment không hợp lệ"),
       req.body,
-      actorOf(req),
+      auditContextOf(req),
     );
     res.json({ envConfig });
   }),

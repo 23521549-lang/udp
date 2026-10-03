@@ -14,15 +14,25 @@ udp/
 │   ├── config/                Hằng số và biến môi trường — nguồn sự thật duy nhất
 │   ├── db/                    Prisma schema, migration, test bất biến tầng DB, script quản trị
 │   ├── design-lint/           Đối chiếu UDP_design.md với schema, route, package
+│   ├── experiments/           Harness phép đo §14 (E3, E4, E5, E14) và I34 — kết quả ở docs/measurements
 │   ├── flag-evaluator/        Consistent hashing và đánh giá flag (dùng chung S2 và SDK)
+│   ├── flag-snapshot/         Snapshot cấu hình flag + config_hash + delta outbox (S2 và kill-switch S3)
 │   ├── http/                  ProblemDetails, error handler, logger cho mọi service
-│   └── shared-types/          ProblemDetails, ERROR_CATALOG, schema của serve
+│   ├── metrics-provider/      MetricsProvider: Prometheus và bản giả cho test (S1 probe pha 1, S3 quyết định)
+│   ├── openfeature-provider/  Provider OpenFeature (SERVER key) chạy trong ứng dụng khách + hook nhãn ff + middleware /metrics
+│   ├── shared-types/          ProblemDetails, ERROR_CATALOG, schema của serve và của rollout
+│   └── test-support/          Chỉ cho test: dựng service thật bằng tiến trình con, fixture flag/SDK key, bộ sinh I26
 ├── services/
 │   ├── core-backend/          Modular monolith — orchestrator, adapter layer, port 3001
 │   ├── flag-service/          Feature Flag Service (OpenFeature), port 3002
 │   └── pd-controller/         Progressive Delivery Controller, port 3003
 ├── apps/
-│   └── portal/                React SPA — /app (developer) và /admin (chủ nền tảng)
+│   ├── portal/                React SPA — /app (developer) và /admin (chủ nền tảng)
+│   └── sample-app/            Ứng dụng khách mẫu: provider + nhãn ff + /metrics + chaos (E5), port 3010
+├── docs/
+│   ├── UDP_design.md          Tài liệu thiết kế
+│   ├── design/                Design system Portal đã duyệt + bản mẫu bấm được (chuẩn cho Plan #25)
+│   └── measurements/          Kết quả đo, đăng ký trước E5, sổ nợ kiểm chứng
 └── docker/                    Cấu hình hạ tầng dev
 ```
 
@@ -57,20 +67,26 @@ pnpm db:seed
 # 6. Cấp LOGIN cho role của từng service rồi chạy service
 pnpm db:service-login
 pnpm db:service-login udp_s2
+pnpm db:service-login udp_s3
 pnpm dev:core
 pnpm dev:flags
+pnpm dev:pd
+pnpm dev:portal
 ```
 
-> `dev:pd` và `dev:portal` chưa có mã nguồn — thư mục mới chỉ được đặt chỗ, chạy
-> các lệnh đó sẽ báo không tìm thấy package.
+> `pnpm dev:portal` chạy Portal ở http://localhost:5173 và proxy `/api` sang Core Backend
+> (cổng 3001) — cùng origin nên cookie httpOnly đi kèm mà không cần CORS. PD Controller
+> cần Flag Service đang chạy (`FLAG_SERVICE_URL`) và Prometheus (`PROMETHEUS_URL`) để đo
+> canary.
 
-| Dịch vụ               | URL                   |
-| --------------------- | --------------------- |
-| Core Backend          | http://localhost:3001 |
-| Flag Service          | http://localhost:3002 |
-| Prometheus            | http://localhost:9090 |
-| Portal, PD Controller | chưa hiện thực        |
-| Prisma Studio         | `pnpm db:studio`      |
+| Dịch vụ       | URL                   |
+| ------------- | --------------------- |
+| Core Backend  | http://localhost:3001 |
+| Flag Service  | http://localhost:3002 |
+| PD Controller | http://localhost:3003 |
+| Prometheus    | http://localhost:9090 |
+| Portal        | http://localhost:5173 |
+| Prisma Studio | `pnpm db:studio`      |
 
 ## Lệnh thường dùng
 
@@ -85,7 +101,7 @@ pnpm dev:flags
 | `pnpm test`                                  | Chạy test trên database dev đang dùng — nhanh, cho vòng lặp phát triển                       |
 | `pnpm test:scratch`                          | Toàn bộ test trên một database dùng-một-lần dựng từ chuỗi migration — đúng lệnh CI chạy      |
 | `pnpm db:verify-chain`                       | Dựng lại chuỗi migration từ database trống rồi chạy test của `db` và `design-lint` (~2 phút) |
-| `pnpm db:service-login [udp_s2]`             | Cấp LOGIN cho role của một service, ghi chuỗi kết nối vào `.env` (chạy lại là xoay mật khẩu) |
+| `pnpm db:service-login [udp_s2\|udp_s3]`     | Cấp LOGIN cho role của một service, ghi chuỗi kết nối vào `.env` (chạy lại là xoay mật khẩu) |
 | `pnpm db:ci-bootstrap -- --env-file=.env.ci` | Chuẩn bị project Supabase riêng cho CI, một lần (xem bên dưới)                               |
 
 ## CI
@@ -99,8 +115,13 @@ trên một **project Supabase riêng cho CI**, đặt cùng vùng với runner 
    `DATABASE_URL_DIRECT` **kèm `?sslmode=require`**. Ghi hai dòng đó vào `.env.ci`
    (đã bị `.gitignore` chặn).
 2. `pnpm db:ci-bootstrap -- --env-file=.env.ci` — áp migration để tạo role `udp_s*`,
-   cấp LOGIN cho `udp_s1` và `udp_s2`, ghi ba chuỗi role vào `.env.ci`.
-3. `gh secret set -f .env.ci` — nạp cả năm chuỗi lên GitHub.
+   cấp LOGIN cho `udp_s1`, `udp_s2` và `udp_s3`, ghi năm chuỗi role vào `.env.ci`
+   (pooled của ba role, cộng chuỗi session của `udp_s2` và `udp_s3` cho kênh LISTEN).
+3. `gh secret set -f .env.ci` — nạp cả bảy chuỗi lên GitHub.
+
+Thêm một chuỗi kết nối mới (như `DATABASE_URL_S3_DIRECT` ở Plan #17) thì chạy lại
+bước 2 và 3 trước khi push, không thì CI thiếu secret và `test:scratch` dừng ngay ở
+bước kiểm biến.
 
 Mỗi lượt CI dựng database `udp_scratch_ci_<run_id>_<run_attempt>` rồi xoá; job bị huỷ giữa
 chừng cũng được dọn bởi bước cuối. Lượt hằng đêm giữ project free của CI không bị tạm dừng.

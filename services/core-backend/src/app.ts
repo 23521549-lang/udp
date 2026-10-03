@@ -3,15 +3,33 @@ import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { CSRF_HEADER, env } from "@udp/config";
-import { errorHandler, notFoundHandler, requestLogger } from "@udp/http";
+import {
+  errorHandler,
+  jsonBodyExcept,
+  notFoundHandler,
+  requestLogger,
+} from "@udp/http";
 import { createCsrfProtection } from "./core/http/middlewares/csrf.middleware.js";
 import { generalRateLimiter } from "./core/http/middlewares/rate-limit.middleware.js";
 import { healthRouter } from "./modules/health/health.controller.js";
 import { metricsRouter } from "./modules/health/metrics.controller.js";
 import { authRouter } from "./modules/auth/auth.controller.js";
+import { homeRouter } from "./modules/home/home.controller.js";
+import { invitationRouter } from "./modules/invitation/invitation.controller.js";
+import { teamRouter } from "./modules/team/team.controller.js";
 import { projectRouter } from "./modules/project/project.controller.js";
-
-const API_PREFIX = "/api/v1";
+import { adminRouter } from "./modules/admin/admin.controller.js";
+import { createOidcRouter } from "./modules/oidc/oidc.controller.js";
+import { domainCatalogRouter } from "./modules/domain/domain.controller.js";
+import { isSegmentWriteRequest } from "./modules/segment/segment.routes.js";
+import {
+  cicdWebhookRouter,
+  isCicdWebhookRequest,
+} from "./modules/cicd/cicd.controller.js";
+import { defaultAppDeps, setAppDeps, type AppDeps } from "./core/app-deps.js";
+import { API_PREFIX } from "./core/http/api-prefix.js";
+import { internalClusterTokenRouter } from "./internal/cluster-token.controller.js";
+import { internalMetricsRouter } from "./internal/metrics.controller.js";
 
 /**
  * Endpoint khởi tạo phiên — miễn kiểm tra CSRF.
@@ -28,17 +46,36 @@ const API_PREFIX = "/api/v1";
  *
  * `/logout` cũng không nằm trong danh sách: phiên đã tồn tại và một trang web
  * khác có thể ép người dùng đăng xuất nếu không kiểm tra.
+ *
+ * [v4.11, Plan #55] `/invitations/lookup`: người mở đường dẫn mời có thể chưa có
+ * tài khoản (chưa có cookie CSRF), và route chỉ ĐỌC một lời mời bằng token trong
+ * thân — không có phiên nào để lạm dụng, không có gì bị ghi. `/invitations/accept`
+ * thì ghi và cần phiên, nên được bảo vệ như mọi route khác.
  */
-const CSRF_EXEMPT_PATHS = ["/auth/register", "/auth/login"] as const;
+const CSRF_EXEMPT_PATHS = [
+  "/auth/register",
+  "/auth/login",
+  "/invitations/lookup",
+  /*
+   * [v4.12, Plan #60 QĐ-7] Người quên mật khẩu chưa có phiên (chưa có cookie CSRF). Xin thư không ghi gì của ai ngoài
+   * một token chỉ chủ hộp thư đọc được; đặt lại cần đúng token trong thư — trang lạ không có nó.
+   */
+  "/auth/password/forgot",
+  "/auth/password/reset",
+] as const;
 
 /**
  * Tạo Express app.
  *
  * Tách khỏi `listen()` để test tích hợp dựng được app trong bộ nhớ mà không
  * chiếm cổng — thiếu điều này thì các test chạy song song sẽ tranh cổng nhau.
+ *
+ * `deps` [v4.4] — phụ thuộc RA NGOÀI tiến trình (nguồn metrics, Service 2), xem
+ * `core/app-deps.ts`. Mặc định là bản thật từ cấu hình; test truyền bản giả.
  */
-export function createApp(): Express {
+export function createApp(deps: AppDeps = defaultAppDeps()): Express {
   const app = express();
+  setAppDeps(app.locals, deps);
 
   app.disable("x-powered-by");
 
@@ -61,7 +98,24 @@ export function createApp(): Express {
       allowedHeaders: ["Content-Type", CSRF_HEADER],
     }),
   );
-  app.use(express.json({ limit: "1mb" }));
+  /**
+   * [v4.9] Parser toàn cục qua `jsonBodyExcept`: đường ghi segment có parser
+   * RIÊNG (trần 16 MiB, parse SAU `requireAuth` + `requireMinProjectRole`) nên
+   * phải được chừa ra ở đây. Parser toàn cục chạy trước thì nó chặn 413 ở 1 MB và
+   * parser riêng không bao giờ tới lượt (V14, V15, INV-23.8).
+   *
+   * Vị từ và router đọc CÙNG chuỗi đường dẫn, khai một lần ở
+   * `modules/segment/segment.routes.ts`.
+   *
+   * [v4.11] Webhook CI/CD cũng được chừa: chữ ký tính trên byte GỐC của thân, parser JSON chạy
+   * trước là mất chúng (Plan #36).
+   */
+  app.use(
+    jsonBodyExcept(
+      (req) => isSegmentWriteRequest(req) || isCicdWebhookRequest(req),
+      "1mb",
+    ),
+  );
   app.use(cookieParser());
   app.use(requestLogger);
 
@@ -69,6 +123,14 @@ export function createApp(): Express {
   // Đặt TRƯỚC rate limiter: Prometheus scrape đều đặn và không được bị chặn.
   app.use(healthRouter);
   app.use(metricsRouter);
+  // [v4.11] Discovery + JWKS của OIDC issuer: cloud của khách đọc, cũng không qua API
+  app.use(createOidcRouter(deps.oidcIssuer));
+  /**
+   * [v4.11, Plan #39] Route máy-tới-máy (§9 Internal): Service 3 nhờ đo metrics. Ngoài
+   * `/api/v1` — không phiên, không CSRF, không rate limiter người dùng; xác thực ở từng route.
+   */
+  app.use("/internal", internalMetricsRouter);
+  app.use("/internal", internalClusterTokenRouter);
 
   /**
    * Hai lớp bảo vệ áp cho TOÀN BỘ API thay vì rải trong từng controller.
@@ -78,10 +140,20 @@ export function createApp(): Express {
    * theo kinh nghiệm thì đó thường là endpoint nguy hiểm nhất.
    */
   app.use(API_PREFIX, generalRateLimiter);
+  /**
+   * [v4.11] Webhook CI/CD TRƯỚC lớp CSRF: bên gọi là CI, không có phiên hay cookie để mà giả
+   * mạo — xác thực là chữ ký trên thân (§8.3). Vẫn sau rate limiter.
+   */
+  app.use(API_PREFIX, cicdWebhookRouter);
   app.use(API_PREFIX, createCsrfProtection(CSRF_EXEMPT_PATHS));
 
   app.use(`${API_PREFIX}/auth`, authRouter);
   app.use(`${API_PREFIX}/projects`, projectRouter);
+  app.use(`${API_PREFIX}/home`, homeRouter);
+  app.use(`${API_PREFIX}/teams`, teamRouter);
+  app.use(`${API_PREFIX}/invitations`, invitationRouter);
+  app.use(`${API_PREFIX}/admin`, adminRouter);
+  app.use(`${API_PREFIX}/domains`, domainCatalogRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler); // PHẢI đăng ký cuối cùng

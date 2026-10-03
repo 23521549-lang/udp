@@ -1,0 +1,12 @@
+{
+  "route": "GET /auth/me",
+  "status": 200,
+  "body": {
+    "user": {
+      "id": "92d1a752-9105-45ce-9667-5623d6a0860c",
+      "email": "wire-owner-b3650518-f8ad-4465-9cc0-f2a6ef5edf85@udp.local",
+      "name": "Test User",
+      "platformRole": "USER"
+    }
+  }
+}

@@ -1,0 +1,388 @@
+import type { DomainType } from "@udp/config/domains";
+import type {
+  AdapterResult,
+  CapabilityBinding,
+  CapabilityDeclaration,
+  CapabilityId,
+} from "@udp/shared-types";
+import type { ZodType } from "zod";
+import type { BuildPlan, RegistryPushKind } from "./build.js";
+import type { ResourceQuota } from "./cloud.js";
+import { readOnlyAccess } from "./cluster.js";
+import type {
+  ClusterAccess,
+  KubernetesClient,
+  ReadOnlyClusterAccess,
+} from "./cluster.js";
+
+/**
+ * [v4.10] Hợp đồng của Domain Adapter (§5.2) — **bảy** phương thức và **sáu** thuộc tính.
+ *
+ * Con số đó được đếm lại từ chính §5.2 (`deploy`, `configure`, `upgrade`, `detectDrift`,
+ * `onDependencyChanged`, `healthcheck`, `teardown`), vì một bản nháp trước của plan này
+ * ghi "tám phương thức" và chính phép kiểm đối chiếu tài liệu sẽ đỏ vì con số đó.
+ */
+
+export interface DomainToolConfig {
+  [key: string]: unknown;
+}
+
+/** Bối cảnh đầy đủ mà adapter cần — thay cho việc chỉ truyền `ClusterInfo` */
+/** Một environment của project như adapter thấy nó */
+export interface AdapterEnvironment {
+  id: string;
+  name: string;
+  k8sNamespace: string;
+  isProduction: boolean;
+}
+
+/**
+ * [v4.12, Plan #61 61d-3b] Image mà pipeline của project đẩy ra, và khoá CÔNG KHAI đã ký chúng.
+ *
+ * Đây là một MỞ RỘNG BỐI CẢNH (cùng loại với `environments` của D-P29): adapter không đọc database, nên dữ kiện mà
+ * một policy admission cần phải tới qua `ctx`. Đúng ba dữ kiện, không hơn:
+ *
+ *  - `repository` để policy chỉ đòi chữ ký ở image CỦA project. Image nền (istio, sidecar của Flagger, exporter của
+ *    Prometheus) không ai ký bằng khoá của khách, nên một policy đòi chữ ký ở MỌI image là một policy chặn chính
+ *    nền tảng.
+ *  - `publicKeys` làm attestor — khoá mới nhất trước, vì xoay khoá phải không gián đoạn.
+ *  - `registryKind` quyết định `credentials.providers` mà policy khai: ECR/GCR/ACR phát thông tin đăng nhập theo
+ *    danh tính của chính Kyverno, không bằng một khoá tĩnh.
+ *
+ * `publicKeys` LUÔN là khoá công khai: `signingKeySchema` neo hai đầu `-----BEGIN PUBLIC KEY-----`, nên một khoá bí
+ * mật không lưu được vào `build_settings`; khoá ký thật là một URI KMS và nó không bao giờ rời cloud của khách.
+ */
+export interface SignedImages {
+  /** `<endpoint của binding registry.oci>/<slug>` — ĐÚNG chuỗi mà cổng deploy 61d-1 so (`assertOwnImage`) */
+  repository: string;
+  /** PEM khoá công khai, mới nhất trước; tối đa 5 (`signingKeySchema`) */
+  publicKeys: readonly string[];
+  /** Loại registry — `"other"` khi thuộc tính binding không khai được cách đẩy */
+  registryKind: RegistryPushKind | "other";
+}
+
+export interface DomainAdapterContext {
+  /** Client K8s đã xác thực bằng bound SA token; adapter KHÔNG tự lấy kubeconfig */
+  k8s: ClusterAccess;
+  /** Với `scope = "namespace"`: environment đích. Với `scope = "cluster"`: vắng */
+  environment?: AdapterEnvironment;
+  /**
+   * [v4.11, D-P29] MỌI environment của project, theo thứ tự hạng — cho adapter cluster-scoped
+   * dựng thứ THEO environment (operator một lần ở `udp-system`, CR mỗi namespace env, §5.2).
+   */
+  environments: readonly AdapterEnvironment[];
+  /** Namespace hệ thống cho tooling cluster-scoped */
+  systemNamespace: string;
+  region: string;
+  quota: ResourceQuota;
+  /** Giá trị mà adapter khác đã cung cấp — đọc từ bảng, không từ bộ nhớ worker */
+  resolved: Readonly<Partial<Record<CapabilityId, CapabilityBinding>>>;
+  tags: Readonly<Record<string, string>>;
+  /**
+   * [v4.12, Plan #61 61d-3b] Image của project và khoá công khai đã ký chúng — `null` khi project chưa có khoá ký
+   * hay chưa có binding `registry.oci`.
+   *
+   * KHÔNG optional mà **nullable**: một trường `?` để bảy chỗ dựng bối cảnh lặng lẽ bỏ qua, còn `null` buộc mỗi chỗ
+   * phải quyết và compiler liệt kê đủ bảy chỗ. Hai đường dựng bối cảnh (áp domain, quét trôi) phải tính ra CÙNG giá
+   * trị, nếu không `values` của companion khác nhau và mọi lượt quét báo trôi giả vĩnh viễn (I32 chiều b) — đó là lý
+   * do nó đến từ một hàm dùng chung (`signedImagesOf`), không từ hai lượt truy vấn.
+   */
+  signedImages: SignedImages | null;
+  /** Ghi log tiến trình để Portal stream về cho người dùng */
+  progress: (message: string) => void;
+  /**
+   * Egress guard chống SSRF (§12 T11).
+   *
+   * MỌI lời gọi HTTP ra ngoài của adapter đi qua đây. Một lint rule chặn `fetch` toàn
+   * cục trong thư mục adapter, và bộ hợp đồng thay `globalThis.fetch` bằng một hàm ném
+   * lỗi — nên lách được thì test đỏ.
+   */
+  fetch: typeof fetch;
+}
+
+/**
+ * [v4.10] Bối cảnh KHÔNG GHI ĐƯỢC - thứ mà `detectDrift` nhận.
+ *
+ * §4.6 nói rõ lý do tách verb đọc khỏi verb ghi: *"cho hàm quét drift nhận
+ * `ReadOnlyKubernetesClient` biến điều đó thành tính chất của KIỂU"*. Nhưng `detectDrift`
+ * lại nhận một `DomainAdapterContext`, mà `ctx.k8s.getClient()` trả về client đầy đủ, nên
+ * cho tới P21 lời khai đó không có hiệu lực - và chính chú thích trong bộ hợp đồng đang
+ * nói "tầng một là kiểu" trong khi tầng đó rỗng.
+ *
+ * Kiểu này cũng là kiểu của mọi hàm SUY DIỄN thuần của hai lớp nền (`values`, `bindings`,
+ * `configureBody`): chúng tính ra cái gì **nên** có, và không có việc gì phải ghi.
+ */
+export interface ReadOnlyAdapterContext extends Omit<
+  DomainAdapterContext,
+  "k8s"
+> {
+  k8s: ReadOnlyClusterAccess;
+}
+
+/**
+ * Hạ một bối cảnh đầy đủ xuống bối cảnh chỉ đọc - đường mà job quét drift dùng.
+ *
+ * Lúc chạy thật, `DRIFT_SCAN` có trong tay một `ClusterAccess` đầy đủ (nó cũng là
+ * process chạy `deploy`). Hàm này là chỗ chuyển đổi DUY NHẤT, nên "quyền ghi dừng ở đây"
+ * là một dòng mã chỉ ra được, không phải một quy ước người ta nhớ hoặc quên.
+ */
+export function readOnlyContext(
+  ctx: DomainAdapterContext | ReadOnlyAdapterContext,
+): ReadOnlyAdapterContext {
+  return { ...ctx, k8s: readOnlyAccess(ctx.k8s) };
+}
+
+export interface DomainAdapter {
+  readonly domainType: DomainType;
+  /** `"github-actions"`, `"prometheus-grafana"` */
+  readonly toolId: string;
+  /** Phiên bản adapter (và chart/operator nó cài) — ghi vào `DomainConfig.adapter_version` */
+  readonly version: string;
+  /**
+   * Istio control plane, operator CNPG/Gatekeeper, Argo Rollouts controller đều
+   * cluster-scoped: cài MỘT lần vào `udp-system`. Chỉ CR mới theo namespace của
+   * environment. Bản v3 bắt mọi adapter deploy vào namespace env — không thực hiện được
+   * cho nửa số domain.
+   */
+  readonly scope: "cluster" | "namespace";
+  readonly capabilities: CapabilityDeclaration;
+  /** Schema của `tool_config`; trường `.describe("secret")` được mã hoá khi lưu */
+  readonly configSchema: ZodType;
+
+  /**
+   * Đường DUY NHẤT mà bộ hợp đồng gọi.
+   *
+   * §5.2 nói `SaaSAdapter` chỉ viết `configure()`, còn §13.2 lại gọi `deploy()`. Chốt:
+   * base `SaaSAdapter` hiện thực `deploy()` bằng cách gọi `configure()`, nên bộ hợp đồng
+   * có đúng một điểm vào cho cả hai họ.
+   */
+  deploy(
+    ctx: DomainAdapterContext,
+    config: DomainToolConfig,
+  ): Promise<AdapterResult<CapabilityBinding[]>>;
+
+  configure(
+    ctx: DomainAdapterContext,
+    config: DomainToolConfig,
+  ): Promise<AdapterResult<CapabilityBinding[]>>;
+
+  /** Day-2: nâng chart/operator lên `version` mới mà không teardown */
+  upgrade(
+    ctx: DomainAdapterContext,
+    config: DomainToolConfig,
+    fromVersion: string,
+  ): Promise<AdapterResult<CapabilityBinding[]>>;
+
+  /**
+   * [v4.12, Plan #61 61d-3a] Áp lại định nghĩa của một version CŨ mà adapter này khai biết đường đi lên từ đó.
+   *
+   * Vì sao nó phải tồn tại: §8.6 nói "nâng cấp thất bại thì hạ về bản cũ, không để trạng thái lửng lơ", nhưng
+   * registry chỉ nạp MỘT bản adapter mỗi tool — không có instance bản cũ để gọi. Nên cổng `rollback` của đường
+   * nâng cấp cắm cứng FAILED, và mọi lần nâng cấp thất bại kết thúc ở `ROLLBACK_FAILED` với cụm **không** được hạ
+   * về. Một adapter khai được đường đi lên từ `1.0.0` thì nó cũng mang định nghĩa của `1.0.0`, nên chính nó là bên
+   * duy nhất áp lại được.
+   *
+   * TUỲ CHỌN vì phần lớn adapter chưa bao giờ đổi version: vắng nó thì hành vi y như trước (rollback thất bại, kêu
+   * to). Có nó thì `ROLLED_BACK` là một kết cục THẬT.
+   */
+  restoreTo?(
+    ctx: DomainAdapterContext,
+    config: DomainToolConfig,
+    version: string,
+  ): Promise<AdapterResult<CapabilityBinding[]>>;
+
+  /**
+   * Day-2: so trạng thái thật trên cluster với cấu hình mong muốn.
+   *
+   * [v4.10] Nhận `ReadOnlyAdapterContext`: chiều (c) của I32 ("không bao giờ tự sửa") là
+   * tính chất của KIỂU trước, rồi mới là một phép đếm. Đây là thay đổi chữ ký DUY NHẤT
+   * sau khi bề mặt interface được đóng băng ở P18 (tag `adapter-interface-v1`), và nó là
+   * một quyết định chứ không phải một lần thêm cho tiện: bề mặt giữ đúng **bảy phương
+   * thức** cùng tên, chỉ quyền của một tham số bị thu hẹp. Mọi adapter đang có vẫn biên
+   * dịch; adapter nào đang ghi trong lúc quét thì không.
+   */
+  detectDrift(
+    ctx: ReadOnlyAdapterContext,
+    config: DomainToolConfig,
+  ): Promise<AdapterResult<{ drifted: boolean; details?: string }>>;
+
+  /**
+   * Được gọi khi provider của một capability mà adapter này `requires` đổi.
+   *
+   * Bản v3 không có hook này nên consumer giữ endpoint cũ vĩnh viễn sau khi swap.
+   */
+  onDependencyChanged(
+    ctx: DomainAdapterContext,
+    config: DomainToolConfig,
+    changed: CapabilityBinding,
+  ): Promise<AdapterResult<void>>;
+
+  healthcheck(
+    ctx: DomainAdapterContext,
+  ): Promise<AdapterResult<{ healthy: boolean; details?: string }>>;
+
+  /** `reason` cho phép giữ lại dữ liệu (PVC) khi chỉ đổi tool, và dọn sạch khi tắt domain */
+  teardown(
+    ctx: DomainAdapterContext,
+    reason: "disable" | "switch" | "project-teardown",
+  ): Promise<AdapterResult<void>>;
+}
+
+/** Bảy tên phương thức, để test đối chiếu với §5.2 */
+export const DOMAIN_ADAPTER_METHODS: readonly string[] = [
+  "deploy",
+  "configure",
+  "upgrade",
+  /** [61d-3a] TUỲ CHỌN — xem chú thích trên interface; bộ đóng băng đếm cả thành viên tuỳ chọn */
+  "restoreTo",
+  "detectDrift",
+  "onDependencyChanged",
+  "healthcheck",
+  "teardown",
+];
+
+/**
+ * [v4.12, Plan #61 61d-3a] Thành viên TUỲ CHỌN của bề mặt — có trong `DOMAIN_ADAPTER_METHODS` (bề mặt là bề mặt,
+ * cổng đóng băng phải đếm nó) nhưng bộ hợp đồng **không** đòi adapter nào hiện thực.
+ *
+ * Vì sao phải tách thành một danh sách riêng chứ không chỉ "biết": phép kiểm "khai đủ phương thức" của bộ hợp đồng
+ * đọc `DOMAIN_ADAPTER_METHODS` để đếm, nên thêm một thành viên tuỳ chọn mà không khai nó ở đây sẽ làm **mọi** adapter
+ * đang có đỏ ở phép đó — một cổng bắt đúng sự thay đổi nhưng bắt sai bên.
+ */
+export const DOMAIN_ADAPTER_OPTIONAL_METHODS: readonly string[] = ["restoreTo"];
+
+/** Sáu thuộc tính read-only */
+export const DOMAIN_ADAPTER_PROPERTIES: readonly string[] = [
+  "domainType",
+  "toolId",
+  "version",
+  "scope",
+  "capabilities",
+  "configSchema",
+];
+
+/**
+ * Sự kiện deploy đã phân tích từ webhook của CI.
+ *
+ * Trước v4.10 kiểu này được dùng ở `CicdDomainAdapter.parsePayload` mà chưa từng được
+ * định nghĩa, nên interface đó không dịch được.
+ */
+export interface WebhookDeployEvent {
+  /** `toolId` của adapter đã phân tích */
+  provider: string;
+  repo: string;
+  ref: string;
+  commitSha: string;
+  /** Tên environment đích, suy từ `ref` theo cấu hình Golden Path */
+  environment: string;
+  /** Image đã build, nếu payload có. Vắng nghĩa là pipeline chưa push */
+  imageRef?: string;
+  actor: string;
+  /** [v4.11, D-P27] Id của LƯỢT chạy — khoá chống trùng; chạy lại phải ra id khác */
+  pipelineId: string;
+  status: "success" | "failure";
+  /** Cho Lead Time của DORA — không suy được từ `commitSha` */
+  commitTimestamp?: string;
+  /** Deployment/Rollout đã có trong namespace của environment; container cùng tên */
+  workloadName: string;
+  /**
+   * [Plan #61 QĐ-13] `rebase`: lượt theo lịch vá lớp hệ điều hành của image commit đầu `main` — Service 1 chỉ deploy
+   * khi production đang chạy đúng commit đó với digest khác. Vắng = lượt build thường. Mở rộng, không đổi trường cũ.
+   */
+  kind?: "rebase";
+  /**
+   * [Plan #61 QĐ-16] Bundle Sigstore v0.3 của chữ ký image mà pipeline gửi kèm — Service 1 kiểm bằng khoá công khai
+   * của project trước khi deploy. Vắng khi project chưa ký.
+   */
+  signature?: Record<string, unknown>;
+}
+
+/**
+ * [v4.11, D-P28] Một bước mà domain KHÁC góp vào pipeline Golden Path — IaC chạy trong CI
+ * (Terraform, Pulumi, Ansible) và máy quét chạy trong CI (Checkov, Grype, ZAP). CI/CD adapter chỉ
+ * biết hình này; nó dựng bước theo cú pháp của mình.
+ */
+export interface PipelineStep {
+  /** `toolId` của adapter góp bước */
+  tool: string;
+  name: string;
+  /** Trước khi dựng image (IaC, quét IaC) hay sau (quét image, DAST) */
+  phase: "before-build" | "after-build";
+  /** Image chạy bước — bước không cài công cụ lên máy chạy của CI */
+  image: string;
+  commands: string[];
+  /** Giá trị CÔNG KHAI */
+  env: Record<string, string>;
+  /** TÊN biến bí mật mà CI phải cung cấp — UDP không bao giờ đặt giá trị bí mật vào template */
+  secretEnv: string[];
+}
+
+export interface PipelineTemplateParams {
+  projectSlug: string;
+  environments: { name: string; isProduction: boolean }[];
+  /** Địa chỉ registry lấy từ `CapabilityBinding` của `registry.oci` */
+  registryRef: string;
+  /** Flag mà template gắn sẵn nhãn `ff` cho (§6.8) */
+  flagKeys: string[];
+  rolloutStrategy: "udp-driven" | "tool-driven";
+  /** [v4.11, D-P28] Bước của mọi tool đang bật khai `pipelineSteps`; rỗng khi không có */
+  steps: PipelineStep[];
+  /**
+   * [v4.11, Plan #48] `Project.languageRuntime` — bước test chạy lệnh và image của runtime đó
+   * (`nodejs`, `python`); runtime khác ⇒ bước test báo thiếu lệnh rồi dừng pipeline.
+   * [Plan #61] Giữ cho tương thích; bước test đọc `build.test`.
+   */
+  languageRuntime: string;
+  /**
+   * [Plan #61 QĐ-2] Kế hoạch build: chiến lược, thư mục, cách đăng nhập registry, danh tính build, bước test. Mở
+   * rộng BỐI CẢNH (như `environments` của D-P29) — không đổi phương thức nào của `CicdDomainAdapter`.
+   */
+  build: BuildPlan;
+  /**
+   * [Plan #61 QĐ-17, 61d-2a] Địa chỉ webhook TUYỆT ĐỐI của project, do máy chủ dựng.
+   *
+   * Một mở rộng bối cảnh nữa, cùng hạng với `build`. Nó cần vì Trusted Deploy đòi `aud` của token BẰNG
+   * đúng chuỗi mà bộ kiểm mong đợi, và chuỗi đó chỉ máy chủ biết: biến `UDP_WEBHOOK_URL` trong CI là giá
+   * trị NGƯỜI DÙNG dán vào, nên lệch một dấu `/`, một cổng, hay `http` vs `https` là 401 vĩnh viễn mà
+   * không có gì chẩn đoán được. In thẳng chuỗi của máy chủ vào template xoá hẳn chế độ hỏng đó.
+   *
+   * E1 KHÔNG đổi: nó đếm số lần phải NỚI LỎNG bộ hợp đồng (§13.2), còn đây không nới lỏng phép kiểm nào —
+   * cùng lý do mà `build` của 61b không làm E1 tăng.
+   */
+  webhookUrl: string;
+}
+
+/** CI/CD adapter mở rộng thêm phần webhook — §8.3 nhắc nhưng v3 không có trong interface */
+export interface CicdDomainAdapter extends DomainAdapter {
+  /** So sánh HẰNG THỜI GIAN; một `===` trên chuỗi chữ ký là một lỗ định thời */
+  verifySignature(
+    headers: Record<string, string>,
+    rawBody: Buffer,
+    secret: Buffer,
+  ): boolean;
+  parsePayload(rawBody: Buffer): WebhookDeployEvent;
+  /** Sinh file pipeline mẫu cho Golden Path (§11) */
+  renderPipelineTemplate(params: PipelineTemplateParams): string;
+}
+
+/**
+ * Bề mặt tác dụng mà một adapter tự khai, dùng cho bộ hợp đồng (§13.2).
+ *
+ * Luật: **khai rỗng thì phép kiểm ĐẢO CHIỀU, không biến mất.** `externalHosts: []` nghĩa
+ * là *mọi* lời gọi ra ngoài là đỏ; `quotaDimensions: []` nghĩa là adapter *phải* chạy
+ * được với quota toàn 0 **và** không được tiêu thụ chiều nào. Không có luật này thì một
+ * fixture rỗng là cách rẻ nhất để làm cả bộ hợp đồng xanh.
+ */
+export interface AdapterFixture {
+  validConfig: DomainToolConfig;
+  invalidConfigs: readonly DomainToolConfig[];
+  externalHosts: readonly string[];
+  quotaDimensions: readonly (keyof ResourceQuota)[];
+  /** Mỗi prefix PHẢI kèm lý do, để danh sách không mọc rêu */
+  ignoredLabelPrefixes: readonly { prefix: string; reason: string }[];
+  /** Cách sửa tay trên cluster để chiều (a) của I32 có đối tượng */
+  driftMutations: readonly {
+    name: string;
+    apply: (c: KubernetesClient) => Promise<void>;
+  }[];
+}

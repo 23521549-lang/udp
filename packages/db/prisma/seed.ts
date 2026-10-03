@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import bcrypt from "bcryptjs";
 import {
   BOOLEAN_VARIANTS,
@@ -8,7 +7,6 @@ import {
   DOMAIN_CATALOG_SEED,
   env,
   k8sNamespaceFor,
-  SDK_KEY,
   TOTAL_BUCKETS,
 } from "@udp/config";
 import {
@@ -18,6 +16,16 @@ import {
 } from "@udp/shared-types/evaluation";
 import { createPgAdapter } from "../src/adapter.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
+import { sdkKeyMaterialOf } from "../src/sdk-key.js";
+import {
+  SEED_ADMIN_EMAIL,
+  SEED_CHECKOUT_FLAG_KEY,
+  SEED_DEV_PASSWORD,
+  SEED_DEV_SERVER_KEY,
+  SEED_IDS,
+  SEED_OWNER_EMAIL,
+  SEED_PROJECT_NAME,
+} from "../src/seed-constants.js";
 
 /**
  * Dữ liệu mẫu cho môi trường dev.
@@ -46,35 +54,12 @@ const prisma = new PrismaClient({
   adapter: createPgAdapter({ connectionString, max: 2 }),
 });
 
-// UUID cố định để seed idempotent — KHÔNG dùng ngoài môi trường dev.
-const ID = {
-  userOwner: "00000000-0000-4000-8000-000000000001",
-  userAdmin: "00000000-0000-4000-8000-000000000002",
-  project: "00000000-0000-4000-8000-000000000010",
-  flagDarkMode: "00000000-0000-4000-8000-000000000020",
-  flagCheckout: "00000000-0000-4000-8000-000000000021",
-  segmentBeta: "00000000-0000-4000-8000-000000000030",
-  // Variant cũng phải cố định. Để database tự sinh thì `serve` JSONB của rule
-  // chứa UUID khác nhau trên mỗi máy, và không ai diff được hai database nữa —
-  // đúng thứ nguyên tắc 1 ở đầu file muốn tránh.
-  variantDarkOn: "00000000-0000-4000-8000-000000000040",
-  variantDarkOff: "00000000-0000-4000-8000-000000000041",
-  variantCheckoutLegacy: "00000000-0000-4000-8000-000000000042",
-  variantCheckoutOptimized: "00000000-0000-4000-8000-000000000043",
-  variantCheckoutExperimental: "00000000-0000-4000-8000-000000000044",
-} as const;
+// UUID và tên cố định để seed idempotent — ở `seed-constants.ts` (thuần) để cấu
+// hình ngoài database (Prometheus, sample-app) đọc CÙNG giá trị mà không chạy seed
+const ID = SEED_IDS;
 
-/** Mật khẩu dev — chỉ dùng ở máy cá nhân */
-const DEV_PASSWORD = "udp12345678";
-
-/**
- * SDK key cố định để test SDK ngay mà không phải vào Portal tạo.
- * Database chỉ lưu HASH — đúng như §2.2, plaintext không nằm trong DB.
- */
-const DEV_SERVER_KEY = `${SDK_KEY.serverPrefix}dev_0000000000000000000000000000`;
-
-const sha256 = (value: string): string =>
-  createHash("sha256").update(value).digest("hex");
+/** Mật khẩu dev — chỉ dùng ở máy cá nhân và cụm demo */
+const DEV_PASSWORD = SEED_DEV_PASSWORD;
 
 // ============================================================
 // Danh mục domain
@@ -119,7 +104,7 @@ async function seedUsersAndProject() {
     update: { passwordHash, platformRole: "USER" },
     create: {
       id: ID.userOwner,
-      email: "dev@udp.local",
+      email: SEED_OWNER_EMAIL,
       name: "Dev User",
       passwordHash,
       platformRole: "USER",
@@ -131,7 +116,7 @@ async function seedUsersAndProject() {
     update: { passwordHash, platformRole: "PLATFORM_ADMIN" },
     create: {
       id: ID.userAdmin,
-      email: "admin@udp.local",
+      email: SEED_ADMIN_EMAIL,
       name: "Platform Admin",
       passwordHash,
       platformRole: "PLATFORM_ADMIN",
@@ -144,7 +129,7 @@ async function seedUsersAndProject() {
     create: {
       id: ID.project,
       ownerId: owner.id,
-      name: "demo-service",
+      name: SEED_PROJECT_NAME,
       creationMode: "CREATE_NEW",
       languageRuntime: "nodejs",
       status: "ACTIVE",
@@ -348,6 +333,89 @@ async function seedDarkModeFlag(projectId: string) {
   return darkMode;
 }
 
+/**
+ * [v4.8] Flag `checkout-v2` — flag canary của sample-app (§13.4, E5): BOOLEAN
+ * on/off, ACTIVE, bật ở dev, với MỘT rule phân phối `ALL` ở dev mang trọng số
+ * on 0% / off 100% (id cố định `SEED_IDS.ruleCheckoutV2`). Rollout FLAG_LEVEL
+ * không tự dựng rule — S1 đòi `targetingRuleId` của một rule phân phối hai variant
+ * CÓ SẴN và ramp đúng rule đó; baseline 0% là điều kiện để mốc T3 của E5 (nhóm dò
+ * rời `on`) tồn tại. Tên lấy từ `seed-constants.ts`, nơi sample-app, cấu hình
+ * Prometheus và harness E5 cùng đọc.
+ */
+async function seedCheckoutV2Flag(projectId: string): Promise<void> {
+  const flag = await prisma.featureFlag.upsert({
+    where: { id: ID.flagCheckoutV2 },
+    update: {},
+    create: {
+      id: ID.flagCheckoutV2,
+      projectId,
+      key: SEED_CHECKOUT_FLAG_KEY,
+      description: "Luồng thanh toán mới — flag canary của sample-app",
+      flagType: "BOOLEAN",
+      lifecycleStatus: "ACTIVE",
+      stickinessAttribute: DEFAULT_STICKINESS_ATTRIBUTE,
+      variants: {
+        create: [
+          { id: ID.variantCheckoutV2On, key: BOOLEAN_VARIANTS.ON, value: true },
+          {
+            id: ID.variantCheckoutV2Off,
+            key: BOOLEAN_VARIANTS.OFF,
+            value: false,
+          },
+        ],
+      },
+    },
+  });
+  await prisma.featureFlag.update({
+    where: { id: flag.id },
+    data: { defaultVariantId: ID.variantCheckoutV2Off },
+  });
+  for (const spec of DEFAULT_ENVIRONMENTS) {
+    const environment = await prisma.environment.findUniqueOrThrow({
+      where: { projectId_name: { projectId, name: spec.name } },
+    });
+    const cfg = await prisma.flagEnvConfig.upsert({
+      where: {
+        flagId_environmentId: {
+          flagId: flag.id,
+          environmentId: environment.id,
+        },
+      },
+      update: { defaultVariantId: ID.variantCheckoutV2Off },
+      create: {
+        flagId: flag.id,
+        environmentId: environment.id,
+        isEnabled: spec.name === "dev",
+        defaultVariantId: ID.variantCheckoutV2Off,
+      },
+    });
+    if (spec.name !== "dev") continue;
+    // `update: {}`: chạy lại seed không xoá trọng số một rollout đã ramp — rollout
+    // kết thúc bằng rollback cũng trả rule về baseline 0%
+    await prisma.flagTargetingRule.upsert({
+      where: { id: ID.ruleCheckoutV2 },
+      update: {},
+      create: {
+        id: ID.ruleCheckoutV2,
+        flagEnvConfigId: cfg.id,
+        ruleType: "ALL",
+        condition: {},
+        serve: checkedServe({
+          kind: "distribution",
+          weights: [
+            { variantId: ID.variantCheckoutV2On, weight: 0 },
+            { variantId: ID.variantCheckoutV2Off, weight: TOTAL_BUCKETS },
+          ],
+        }),
+        bucketSalt: "seed-rule-checkout-v2",
+        description:
+          "Canary của sample-app — rollout FLAG_LEVEL của E5 ramp rule này",
+        priority: 0,
+      },
+    });
+  }
+}
+
 /** Flag nhiều variant, còn DRAFT — SDK chưa nhận flag ở trạng thái này (§6.7) */
 async function seedCheckoutFlag(projectId: string): Promise<void> {
   const checkout = await prisma.featureFlag.upsert({
@@ -392,18 +460,24 @@ async function seedCheckoutFlag(projectId: string): Promise<void> {
 }
 
 async function seedSegment(projectId: string): Promise<void> {
+  // [v4.6] Hình chốt của §2.2 — ghi ở CẢ hai nhánh để chạy lại seed sửa được
+  // hàng cũ (upsert với `update: {}` từng để nguyên hình mảng)
+  const conditions = {
+    all: [
+      { attribute: "plan", operator: "eq", value: "premium" },
+      { attribute: "country", operator: "in", value: ["VN"] },
+    ],
+    userIds: [],
+  };
   await prisma.segment.upsert({
     where: { id: ID.segmentBeta },
-    update: {},
+    update: { conditions },
     create: {
       id: ID.segmentBeta,
       projectId,
       name: "beta-testers",
       description: "Người dùng gói premium ở Việt Nam",
-      conditions: [
-        { attribute: "plan", operator: "eq", value: "premium" },
-        { attribute: "country", operator: "in", value: ["VN"] },
-      ],
+      conditions,
     },
   });
 }
@@ -412,17 +486,18 @@ async function seedSdkKey(
   environmentId: string,
   createdById: string,
 ): Promise<void> {
+  const { keyHash, keySuffix } = sdkKeyMaterialOf(SEED_DEV_SERVER_KEY);
   await prisma.sdkKey.upsert({
-    where: { keyHash: sha256(DEV_SERVER_KEY) },
+    where: { keyHash },
     // keySuffix nằm ở CẢ update lẫn create. Hàng đã tồn tại từ trước lần đổi cột
     // sẽ giữ giá trị cũ (tám ký tự ĐẦU) nếu chỉ đặt ở nhánh create, và seed mất
     // tính idempotent đúng ở chỗ nguyên tắc 1 của file này tuyên bố nó có.
-    update: { keySuffix: DEV_SERVER_KEY.slice(-SDK_KEY.displaySuffixLength) },
+    update: { keySuffix },
     create: {
       environmentId,
       keyType: "SERVER",
-      keyHash: sha256(DEV_SERVER_KEY),
-      keySuffix: DEV_SERVER_KEY.slice(-SDK_KEY.displaySuffixLength),
+      keyHash,
+      keySuffix,
       label: "seed — dev server key",
       createdById,
     },
@@ -443,25 +518,27 @@ async function main(): Promise<void> {
   await seedSdkKey(devEnv.id, owner.id);
   await seedDarkModeFlag(project.id);
   await seedCheckoutFlag(project.id);
+  await seedCheckoutV2Flag(project.id);
   await seedSegment(project.id);
 
   console.log(`
 Seed hoàn tất.
 
-  Đăng nhập     dev@udp.local   / ${DEV_PASSWORD}
-                admin@udp.local / ${DEV_PASSWORD}   (PLATFORM_ADMIN)
+  Đăng nhập     ${SEED_OWNER_EMAIL}   / ${DEV_PASSWORD}
+                ${SEED_ADMIN_EMAIL} / ${DEV_PASSWORD}   (PLATFORM_ADMIN)
 
   Domain        ${DOMAIN_CATALOG_SEED.length} domain trong DomainCatalog
   Project       ${project.name} (${project.id})
   Environment   ${DEFAULT_ENVIRONMENTS.map((e) => e.name).join(", ")}
 
-  SDK key (dev) ${DEV_SERVER_KEY}
+  SDK key (dev) ${SEED_DEV_SERVER_KEY}
                 Database chỉ lưu hash — chuỗi này không đọc lại được từ DB.
 
   Flags         dark-mode           ACTIVE, bật ở dev
                                     rule 1: USER_BASED  → serve variant "on"
                                     rule 2: ALL         → serve distribution 20/80
                 checkout-algorithm  DRAFT, 3 variant
+                ${SEED_CHECKOUT_FLAG_KEY}         ACTIVE, bật ở dev, rule ALL on 0% / off 100% (canary của sample-app)
 `);
 }
 

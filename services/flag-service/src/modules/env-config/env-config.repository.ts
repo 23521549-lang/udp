@@ -20,18 +20,37 @@ export const PUBLIC_FIELDS = {
  * theo) trong khe giữa hai lần. Không đọc lại thì `update` gặp hàng đã mất sẽ ném
  * `P2025`, mã không nằm trong bảng ánh xạ, và người gọi nhận 500 thay vì 404.
  */
+export interface EnvConfigTarget {
+  environmentId: string;
+  projectId: string;
+  flagKey: string;
+  isEnabled: boolean;
+  defaultVariantId: string | null;
+}
+
 export async function targetOf(
   tx: Prisma.TransactionClient,
   id: string,
-): Promise<{ environmentId: string; flagKey: string } | null> {
+): Promise<EnvConfigTarget | null> {
   const row = await tx.flagEnvConfig.findUnique({
     where: { id },
-    select: { environmentId: true, flag: { select: { key: true } } },
+    select: {
+      environmentId: true,
+      isEnabled: true,
+      defaultVariantId: true,
+      flag: { select: { key: true, projectId: true } },
+    },
   });
 
   return row === null
     ? null
-    : { environmentId: row.environmentId, flagKey: row.flag.key };
+    : {
+        environmentId: row.environmentId,
+        projectId: row.flag.projectId,
+        flagKey: row.flag.key,
+        isEnabled: row.isEnabled,
+        defaultVariantId: row.defaultVariantId,
+      };
 }
 
 export const findById = (

@@ -1,0 +1,24 @@
+# Build context của deploy/docker/*.Dockerfile (Plan #49). Bí mật KHÔNG BAO GIỜ vào image:
+# mọi .env* bị loại, cấu hình tới từ ConfigMap/Secret của cluster lúc chạy.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+.git
+**/node_modules
+**/dist
+**/coverage
+**/*.log
+**/.turbo
+**/.vite
+
+docs
+sdks/python/.venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.hypothesis

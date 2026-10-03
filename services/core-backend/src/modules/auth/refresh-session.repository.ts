@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { prisma } from "../../core/db.js";
+import { hashToken } from "../../core/security/token-hash.js";
 
 /**
  * Phiên refresh token: cấp, xoay vòng, thu hồi.
@@ -8,17 +9,6 @@ import { prisma } from "../../core/db.js";
  * đặc biệt là luật phát hiện tái sử dụng, thứ dễ viết sai nếu trộn lẫn với các
  * truy vấn user thông thường.
  */
-
-/**
- * Chỉ lưu SHA-256, không lưu token.
- *
- * Không cần salt như mật khẩu: token là
- * chuỗi ngẫu nhiên entropy cao do chính ta sinh, không phải thứ người dùng chọn,
- * nên không có từ điển để dò và bảng cầu vồng vô nghĩa. Đổi lại, tra cứu phải
- * nhanh — mỗi lần refresh là một lần tra, còn bcrypt thì cố ý chậm.
- */
-export const hashToken = (token: string): string =>
-  createHash("sha256").update(token).digest("hex");
 
 export interface SessionContext {
   userAgent?: string | undefined;
@@ -96,6 +86,17 @@ export const findById = (sessionId: string): Promise<SessionRow | null> =>
 export const revokeFamily = async (familyId: string): Promise<void> => {
   await prisma.refreshSession.updateMany({
     where: { familyId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+};
+
+/**
+ * [v4.12, Plan #60 QĐ-7] Thu hồi MỌI phiên của một người — sau khi đặt lại mật khẩu: ai đang giữ phiên cũ (có thể chính
+ * là lý do người dùng phải đặt lại) bị đăng xuất ở lần refresh kế tiếp.
+ */
+export const revokeAllForUser = async (userId: string): Promise<void> => {
+  await prisma.refreshSession.updateMany({
+    where: { userId, revokedAt: null },
     data: { revokedAt: new Date() },
   });
 };

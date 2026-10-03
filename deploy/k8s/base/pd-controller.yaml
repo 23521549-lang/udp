@@ -1,0 +1,66 @@
+# Service 3 — reconciler rollout, auto-rollback (Plan #49). Chạy mã nguồn bằng tsx (deploy/docker/service.Dockerfile, QĐ-1): startupProbe
+# cho tsx thời gian biên dịch lúc khởi động; /readyz chỉ xanh khi database và danh tính role đã khẳng định.
+apiVersion: v1
+kind: Service
+metadata:
+  name: pd-controller
+spec:
+  selector:
+    app.kubernetes.io/name: pd-controller
+  ports:
+    - name: http
+      port: 3003
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pd-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pd-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pd-controller
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: pd-controller
+          image: udp/pd-controller
+          ports:
+            - name: http
+              containerPort: 3003
+          envFrom:
+            - configMapRef:
+                name: udp-config
+            - secretRef:
+                name: udp-secrets
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false

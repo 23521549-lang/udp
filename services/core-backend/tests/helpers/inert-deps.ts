@@ -1,0 +1,73 @@
+import {
+  capabilitiesOf,
+  type CloudPlatform,
+} from "../../src/modules/cloud/cloud.platform.js";
+import type {
+  AuthRuntime,
+  ProvisioningRuntime,
+} from "../../src/core/app-deps.js";
+import type { DomainAdapterRegistry } from "../../src/modules/domain/domain-adapter.registry.js";
+import type { RepoSourceFactory } from "../../src/modules/golden-path/repo-source.js";
+import { UnprocessableError } from "@udp/http";
+import {
+  outsideClusterProbe,
+  type PlatformProbe,
+} from "../../src/core/platform-probe.js";
+
+/**
+ * Phụ thuộc "trơ" cho test không đụng tới phần đó của `AppDeps` — mọi lời gọi tới chúng
+ * là lỗi của chính test, không phải một giá trị giả trả về im lặng.
+ */
+
+export const inertCloudPlatform: CloudPlatform = {
+  capabilities: capabilitiesOf({ MANAGED_CLOUDS: [] }, null),
+  adapterFor: () => null,
+  exchange: () => Promise.reject(new Error("test này không dùng cloud")),
+};
+
+const EMPTY_REGISTRY: DomainAdapterRegistry = {
+  get: () => undefined,
+  all: () => [],
+};
+
+/** Registry không có adapter nào — catalog vẫn trả đủ hàng của bảng, tool rỗng */
+export const noDomainAdapters = (): Promise<DomainAdapterRegistry> =>
+  Promise.resolve(EMPTY_REGISTRY);
+
+/** Không dải egress, không hàng đợi: `POST /provision` bị chặn với lý do rõ ràng */
+export const inertProvisioning: ProvisioningRuntime = {
+  egressCidrs: [],
+  enqueue: null,
+  enqueueDeploy: null,
+  withCluster: null,
+  scanDrift: null,
+  clusterToken: null,
+  clusterIssuerKeys: null,
+  flaggerGateBaseUrl: null,
+};
+
+/** Không nguồn repo: route quét trả 422 rõ ràng thay vì gọi mạng thật (Plan #48) */
+/** [Plan #53] Chạy ngoài cụm: mọi tín hiệu nền tảng là `NOT_IN_CLUSTER` */
+export const outsidePlatform = (): Promise<PlatformProbe> =>
+  Promise.resolve(outsideClusterProbe);
+
+export const noRepoSource: RepoSourceFactory = () => {
+  throw new UnprocessableError("test: không có nguồn repo");
+};
+
+/** [v4.12, Plan #60] Không thư, không GitHub: hai tính năng tắt như một triển khai chưa cấu hình */
+export const noExternalAuth: AuthRuntime = { mailer: null, github: null };
+
+/**
+ * [v4.12, Plan #61 61d-2a] Không lối ra mạng.
+ *
+ * Đây vừa là một phụ thuộc trơ vừa là một SENTINEL: nếu một đường mã nào đó đi gọi mạng trong một test
+ * không chủ ý gọi mạng, nó ném ở đây thay vì lặng lẽ đi ra Internet trong CI. Test nào THẬT SỰ cần kiểm
+ * đường lấy khoá công khai thì tiêm một bản ghi lại lời gọi của riêng nó, và khẳng định danh sách URL đã
+ * gọi bằng `toEqual` - so tuyệt đối làm một lời gọi THỪA thành đỏ.
+ */
+export const noEgress: typeof fetch = (input) => {
+  throw new Error(
+    `test: mã gọi mạng ra ngoài mà không tiêm egressFetch - ${String(input)}`,
+  );
+};

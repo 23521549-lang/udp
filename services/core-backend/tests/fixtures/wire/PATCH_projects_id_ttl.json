@@ -1,0 +1,25 @@
+{
+  "route": "PATCH /projects/{id}/ttl",
+  "status": 200,
+  "body": {
+    "project": {
+      "id": "df9e6fb4-abb8-4d0b-9bd9-ecbfb0fc23ea",
+      "name": "p-1dfee8c8",
+      "ownerId": "92d1a752-9105-45ce-9667-5623d6a0860c",
+      "creationMode": "CREATE_NEW",
+      "languageRuntime": "nodejs",
+      "repoUrl": null,
+      "status": "DRAFT",
+      "resourceQuota": {
+        "maxNodes": 3,
+        "maxNodeSize": "medium",
+        "maxDatabases": 2,
+        "maxStorageGb": 50,
+        "maxLoadBalancers": 3
+      },
+      "expiresAt": "2026-10-24T19:40:50.147Z",
+      "createdAt": "2026-09-24T19:40:48.020Z",
+      "myRole": "OWNER"
+    }
+  }
+}

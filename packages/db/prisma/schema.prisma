@@ -40,6 +40,13 @@ enum ProjectRole {
   VIEWER
 }
 
+/// [v4.11, Plan #55] Vai trong một nhóm: OWNER quản lý nhóm (thành viên, lời mời, tên), MEMBER chỉ thuộc nhóm.
+/// Vai trên PROJECT của một thành viên nhóm đến từ `ProjectTeamGrant`, không từ vai này.
+enum TeamRole {
+  OWNER
+  MEMBER
+}
+
 enum CreationMode {
   CREATE_NEW
   IMPORT_EXISTING
@@ -117,6 +124,8 @@ enum JobType {
   PROVISION
   TEARDOWN
   DOMAIN_APPLY
+  /// [v4.11, Plan #40] Thêm hay bớt một environment trên cluster đang chạy (D-P31)
+  ENVIRONMENT_APPLY
 }
 
 enum JobState {
@@ -318,14 +327,21 @@ model DomainCatalog {
 // ============================================================
 
 model User {
-  id           String       @id @default(uuid()) @db.Uuid
-  email        String       @unique @db.VarChar(255)
-  passwordHash String       @map("password_hash") @db.VarChar(255)
-  name         String       @db.VarChar(255)
-  platformRole PlatformRole @default(USER) @map("platform_role")
-  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  id              String       @id @default(uuid()) @db.Uuid
+  email           String       @unique @db.VarChar(255)
+  /// [v4.12, Plan #60 QĐ-8] NULL = tài khoản tạo bằng GitHub, chưa đặt mật khẩu (đặt được qua Quên mật khẩu).
+  /// Đăng nhập bằng mật khẩu với hash NULL đi đúng nhánh "sai thông tin", cùng thời gian như email không tồn tại.
+  passwordHash    String?      @map("password_hash") @db.VarChar(255)
+  name            String       @db.VarChar(255)
+  platformRole    PlatformRole @default(USER) @map("platform_role")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// [v4.12, Plan #60 QĐ-6] Phiên bản Điều khoản người dùng đã đồng ý (tích ô khi đăng ký, Nghị định 13/2023:
+  /// im lặng không phải đồng ý) và lúc đồng ý. NULL ở tài khoản tạo trước khi có Điều khoản; CHECK: hai cột cùng
+  /// NULL hoặc cùng có.
+  termsVersion    String?      @map("terms_version") @db.VarChar(20)
+  termsAcceptedAt DateTime?    @map("terms_accepted_at") @db.Timestamptz(3)
 
-  ownedProjects   Project[]         @relation("ProjectOwner")
+  ownedProjects   Project[]            @relation("ProjectOwner")
   memberships     ProjectMember[]
   createdKeys     SdkKey[]
   createdCreds    CloudCredential[]
@@ -335,8 +351,51 @@ model User {
   configChanges   ConfigChangeLog[]
   refreshSessions RefreshSession[]
   idempotencyKeys IdempotencyKey[]
+  teamMemberships TeamMember[]
+  invitationsSent Invitation[]
+  passwordResets  PasswordResetToken[]
+  identities      UserIdentity[]
 
   @@map("users")
+}
+
+/// [v4.12, Plan #60 QĐ-7] Token đặt lại mật khẩu gửi qua email. Chỉ lưu SHA-256 của token (như phiên và lời mời);
+/// token thật nằm ở fragment của đường dẫn (`/reset-password#<token>`) nên không vào log của máy chủ nào. Sống
+/// `AUTH.passwordResetTtlMinutes`, dùng MỘT lần (`used_at`); xin token mới thì token cũ chưa dùng của người đó bị
+/// đánh dấu đã dùng trong cùng transaction.
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// [v4.12, Plan #60 QĐ-8] Nhà cung cấp danh tính bên ngoài
+enum IdentityProvider {
+  GITHUB
+}
+
+/// [v4.12, Plan #60 QĐ-8] Liên kết tài khoản UDP với danh tính bên ngoài. Khoá theo id BẤT BIẾN của nhà cung cấp
+/// (id số của GitHub), không theo login hay email — hai thứ đó đổi được. Một người một liên kết mỗi nhà cung cấp.
+model UserIdentity {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  provider       IdentityProvider
+  providerUserId String           @map("provider_user_id") @db.VarChar(100)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@unique([userId, provider])
+  @@map("user_identities")
 }
 
 /// Phiên refresh token — một hàng cho mỗi lần cấp.
@@ -402,6 +461,88 @@ model ProjectMember {
   @@map("project_members")
 }
 
+/// [v4.11, Plan #55 QĐ-2] Nhóm — đơn vị trao quyền cho nhiều project một lần. Nhóm 10 người làm 5 project là
+/// 5 lần cấp quyền thay cho 50 lần thêm tay, và một người rời nhóm mất quyền ở cả 5 project ngay request kế tiếp.
+/// Ai đăng nhập cũng tạo được nhóm; nhóm luôn còn ít nhất một OWNER (Service 1 giữ, như chủ project).
+model Team {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(80)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  members     TeamMember[]
+  grants      ProjectTeamGrant[]
+  invitations Invitation[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  teamId    String   @map("team_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  teamRole  TeamRole @map("team_role")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  /// Vai hiệu lực đi từ người sang nhóm của họ ở MỌI request vào project
+  @@index([userId])
+  @@map("team_members")
+}
+
+/// [v4.11, Plan #55 QĐ-2] Project cấp cho một nhóm một vai. KHÔNG BAO GIỜ `OWNER` (CHECK trong migration): chủ
+/// sở hữu luôn là một người cụ thể, đổi qua chuyển quyền sở hữu. Vai hiệu lực của một người trên project = vai
+/// CAO NHẤT giữa hàng `project_members` của họ và các grant của những nhóm họ thuộc (`effectiveProjectRole`, S1).
+model ProjectTeamGrant {
+  id          String      @id @default(uuid()) @db.Uuid
+  projectId   String      @map("project_id") @db.Uuid
+  teamId      String      @map("team_id") @db.Uuid
+  projectRole ProjectRole @map("project_role")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, teamId])
+  @@index([teamId])
+  @@map("project_team_grants")
+}
+
+/// [v4.11, Plan #55 QĐ-1] Lời mời bằng đường dẫn — vào MỘT project hoặc MỘT nhóm (CHECK đúng một đích).
+///
+/// Không gửi mail (chi phí 0, không bí mật SMTP): người mời tự chuyển đường dẫn `/invite/<token>` qua kênh họ có.
+/// Chỉ lưu SHA-256 của token (như `refresh_sessions`): một bản dump database không cho ai nhận lời mời thay người
+/// được mời. Nhận chỉ được khi email của tài khoản trùng `email` — đường dẫn lọt sang người khác cũng vô dụng.
+/// Mỗi đích và email chỉ MỘT lời mời đang chờ (unique từng phần trong migration); mời lại là thu hồi lời cũ.
+model Invitation {
+  id          String       @id @default(uuid()) @db.Uuid
+  projectId   String?      @map("project_id") @db.Uuid
+  teamId      String?      @map("team_id") @db.Uuid
+  /// Chữ thường (CHECK) — email của tài khoản cũng lưu chữ thường, so khớp là phép bằng
+  email       String       @db.VarChar(255)
+  /// Đích project: vai cấp khi nhận (không `OWNER`). Đích nhóm: NULL
+  projectRole ProjectRole? @map("project_role")
+  /// Đích nhóm: vai trong nhóm khi nhận. Đích project: NULL
+  teamRole    TeamRole?    @map("team_role")
+  tokenHash   String       @unique @map("token_hash") @db.Char(64)
+  invitedById String       @map("invited_by") @db.Uuid
+  expiresAt   DateTime     @map("expires_at") @db.Timestamptz(3)
+  acceptedAt  DateTime?    @map("accepted_at") @db.Timestamptz(3)
+  revokedAt   DateTime?    @map("revoked_at") @db.Timestamptz(3)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  invitedBy User     @relation(fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([teamId])
+  @@index([invitedById])
+  @@map("invitations")
+}
+
 /// Lop luu cua header `Idempotency-Key` (§9, §2.2).
 ///
 /// Vi sao la mot BANG chu khong phai cache trong bo nho: hai tien trinh core-backend
@@ -461,6 +602,13 @@ model Project {
   /// đều qua validator (mỗi cái hợp lệ so với trạng thái cũ) rồi đánh nhau ở job.
   domainSetVersion Int @default(0) @map("domain_set_version")
 
+  /// [v4.11, Plan #48] Kết quả quét repo mới nhất của Import Existing (§11.2) — không bao giờ chứa token.
+  repoScan Json? @map("repo_scan")
+
+  /// [v4.12, Plan #61 QĐ-9] Cài đặt build (`buildSettingsSchema` của @udp/shared-types): chiến lược, thư mục,
+  /// Dockerfile, ngôn ngữ, bước test, danh tính build. NULL = mặc định. Chỉ MÃ định danh, không bao giờ khoá.
+  buildSettings Json? @map("build_settings")
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -478,6 +626,9 @@ model Project {
   deploymentEvents DeploymentEvent[]
   auditLogs        AuditLog[]
   idempotencyKeys  IdempotencyKey[]
+  teamGrants       ProjectTeamGrant[]
+  invitations      Invitation[]
+  webhookTokenUses WebhookTokenUse[]
 
   @@index([ownerId, status])
   @@index([expiresAt])
@@ -569,6 +720,9 @@ model CloudCredential {
   projectId String         @map("project_id") @db.Uuid
   provider  CloudProvider
   mode      CredentialMode
+  /// [v4.11] Region đích (`ap-southeast-1`, `asia-southeast1`, `southeastasia`) — mỗi
+  /// Cloud Adapter phục vụ MỘT region, nên credential không có nó thì không kiểm được gì.
+  region    String         @db.VarChar(64)
 
   /// §4.3 — Envelope encryption AES-256-GCM có AAD. DEK riêng từng project,
   /// KEK ở ngoài database. Một bản dump database MỘT MÌNH là vô dụng.
@@ -618,6 +772,19 @@ model DomainConfig {
 
   lastError Json?    @map("last_error")
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  /// [v4.11, Plan #36] Chỉ hàng CICD: secret HMAC ký webhook (§8.3) — UDP SINH, không phải
+  /// trường `configSchema`. `EncryptedCredential` niêm phong như §4.3 (AAD `cicd:webhook |
+  /// project`); không bao giờ lên dây ở GET.
+  webhookSecret Json? @map("webhook_secret")
+
+  /// [v4.12, Plan #61 61d-2a] Chỉ hàng CICD: Trusted Deploy đã bắt buộc chưa (AC-11). Cùng lý lẽ với
+  /// `webhookSecret` — UDP quyết, không phải trường `configSchema` — và còn một lý do cứng hơn: đường
+  /// ghi duy nhất của `toolConfig` là `replaceDomains`, vốn ghi đè TOÀN PHẦN và chỉ chạy khi project
+  /// còn sửa được, nên một cờ nằm trong đó sẽ bị xoá im lặng mỗi lần lưu cấu hình domain và không bao
+  /// giờ tự bật được cho project đang chạy. Cờ sống trên HÀNG CICD nên đổi `selectedTool` phải đưa nó
+  /// về false: ý nghĩa của nó phụ thuộc nhà cung cấp (issuer, claim, cách xin token).
+  oidcRequired Boolean @default(false) @map("oidc_required")
 
   project  Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   catalog  DomainCatalog       @relation(fields: [domainType], references: [domainType])
@@ -805,6 +972,11 @@ model FeatureFlag {
   /// Kill-switch dài hạn — miễn cảnh báo stale flag (§6.7)
   permanent Boolean @default(false)
 
+  /// [v4.9] Mốc lần chuyển sang ACTIVE gần nhất — do trigger `trg_flag_activated_at`
+  /// đặt, code không ghi (mọi writer đều có mốc). CHECK
+  /// `feature_flags_active_has_activated_at`: ACTIVE thì khác NULL (§2.2, §6.7).
+  activatedAt DateTime? @map("activated_at") @db.Timestamptz(3)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -845,6 +1017,13 @@ model FlagEnvConfig {
 
   /// Optimistic lock ở mức environment: sửa flag ở dev không chặn người sửa prod
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  /// [v4.3] §6.6 — flag này đang được gắn nhãn `ff` ở environment này (tập
+  /// `trackedFlags` của snapshot). Chỉ `track`/`untrack` của Service 2 ghi, bằng
+  /// SQL thô trong transaction ADR-05: Prisma `update` sẽ đẩy `updatedAt` và cho
+  /// người đang sửa rule một 409 giả. Index partial `flag_env_configs_tracked_idx`
+  /// nằm trong migration (Prisma không diễn đạt được `WHERE`).
+  isTracked Boolean @default(false) @map("is_tracked")
 
   flag           FeatureFlag         @relation(fields: [flagId], references: [id], onDelete: Cascade)
   environment    Environment         @relation(fields: [environmentId], references: [id], onDelete: Cascade)
@@ -899,7 +1078,9 @@ model Segment {
   projectId   String   @map("project_id") @db.Uuid
   name        String   @db.VarChar(100)
   description String?  @db.VarChar(255)
-  /// Mảng điều kiện thuộc tính, nối bằng AND
+  /// [v4.6] `{ all: AttributeCondition[], userIds: string[] }` — khớp ⇔ userIds
+  /// chứa targetingKey HOẶC (all không rỗng VÀ mọi điều kiện đúng). Hình được
+  /// CHECK `segments_conditions_shape` giữ (migration snapshot_format_v46).
   conditions  Json
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -1000,8 +1181,10 @@ model RolloutSession {
   /// @default(0) thì quên set sẽ thành rollback im lặng về 0 — đúng thứ cột này chặn.
   baselinePercentage Decimal? @map("baseline_percentage") @db.Decimal(5, 2)
 
-  versionNew String? @map("version_new") @db.VarChar(255)
-  versionOld String? @map("version_old") @db.VarChar(255)
+  versionNew   String? @map("version_new") @db.VarChar(255)
+  versionOld   String? @map("version_old") @db.VarChar(255)
+  /// [v4.11, Plan #51] ATTRIBUTE_SPLIT ở SERVICE_LEVEL: { header, value } — request khớp đi phiên bản mới
+  trafficMatch Json?   @map("traffic_match")
 
   /// { errorRate, relativeErrorRate, latencyP99Ms, minErrors, maxConsecutiveBreaches }
   thresholds    Json
@@ -1081,6 +1264,9 @@ model RolloutEvent {
   /// quyết định của hệ thống thay vì phải tin
   metricSnapshot    Json?         @map("metric_snapshot")
   reason            String?       @db.VarChar(255)
+  /// [v4.12] Lý do dạng mã + số (`decisionDetailSchema`) để giao diện viết câu theo ngôn ngữ người xem; NULL ở hàng
+  /// cũ và ở sự kiện không đến từ một vòng phân tích
+  reasonDetail      Json?         @map("reason_detail")
   triggeredBy       TriggeredBy   @map("triggered_by")
   actorUserId       String?       @map("actor_user_id") @db.Uuid
   /// Event thực thi này đang thi hành intent nào. NULL = reconciler tự quyết.
@@ -1141,7 +1327,7 @@ model DeploymentEvent {
 
   triggeredBy DeploymentTrigger @map("triggered_by")
   metadata    Json?
-  occurredAt  DateTime          @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  occurredAt  DateTime          @default(dbgenerated("clock_timestamp()")) @map("occurred_at") @db.Timestamptz(6)
 
   /// Restrict: giữ vĩnh viễn để tính DORA kể cả khi project bị xóa
   project     Project     @relation(fields: [projectId], references: [id], onDelete: Restrict)
@@ -1156,6 +1342,53 @@ model DeploymentEvent {
   @@index([environmentId, occurredAt])
   @@index([deploymentId])
   @@map("deployment_events")
+}
+
+/// [v4.12, Plan #61 61d-2a] Trusted Deploy (AC-11) — một token OIDC của một lượt chạy CI chỉ được dùng
+/// MỘT lần, và điều đó do database cưỡng chế (I41), không do một phép kiểm trong mã.
+///
+/// KHÔNG lưu token. Chỉ lưu MÃ ĐỊNH DANH của nó (`jti`, hay `oidc.circleci.com/job-id` với CircleCI vì
+/// CircleCI không phát `jti`) — I24 cấm token xuống database hay đĩa, và luật "không ghi thân hay header"
+/// của §8.3 phủ cả header `Authorization`.
+///
+/// `bodyDigest` là thứ phân biệt RETRY với REPLAY, và đó là lý do bảng này có nhiều hơn hai cột: nó giữ
+/// chính chuỗi HMAC hex đã được kiểm, tức một digest CÓ KHOÁ của thân. Lần trình lại với thân giống hệt
+/// từng byte là một lượt retry của CI (mạng rớt sau khi server đã commit) và phải trả lại kết quả cũ; lần
+/// trình lại với thân KHÁC là một lượt replay và phải bị từ chối. So theo `pipelineId` là không đủ: phép
+/// chống trùng sẵn có tính cả `environmentId`, nên cùng `pipelineId` mà đổi `environment` sang production
+/// sẽ lọt.
+model WebhookTokenUse {
+  id        String @id @default(uuid(7)) @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+
+  /// Issuer SUY TỪ CẤU HÌNH của project, không bao giờ từ `iss` của token
+  issuer  String @db.VarChar(255)
+  tokenId String @map("token_id") @db.VarChar(255)
+
+  /// Bối cảnh của lần dùng đầu, để một lượt retry nhận lại đúng kết quả cũ
+  pipelineId    String  @map("pipeline_id") @db.VarChar(255)
+  environmentId String  @map("environment_id") @db.Uuid
+  bodyDigest    String  @map("body_digest") @db.VarChar(64)
+  deploymentId  String? @map("deployment_id") @db.Uuid
+
+  /// Đồng hồ của DATABASE: hàng này là bằng chứng cho một lần cho phép deploy và sẽ bị đối chiếu với
+  /// `deployment_events.occurred_at` — cột duy nhất do database cấp. Với độ lệch đã đo 1 567 ms giữa máy
+  /// và database, một `used_at` theo đồng hồ máy có thể nằm SAU chính sự kiện nó cho phép. Giá bằng 0.
+  /// Hàng chỉ sinh đúng lúc dùng nên cột này thay vai `created_at`.
+  usedAt DateTime @default(dbgenerated("clock_timestamp()")) @map("used_at") @db.Timestamptz(6)
+
+  /// DỮ LIỆU, không phải một DEFAULT: `exp` của chính token đã xác minh. Không được NHỎ hơn `exp`, nếu
+  /// không lượt dọn xoá hàng trong lúc token còn sống và cửa sổ replay mở lại.
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// Tên index ghim tường minh: hai chỗ trong repo bắt lỗi trùng bằng cách so TÊN index với một hằng số,
+  /// nên để Prisma tự sinh tên là mở đường cho một lần đổi tên im lặng.
+  @@unique([issuer, tokenId], map: "webhook_token_uses_once")
+  @@index([expiresAt])
+  @@index([projectId, usedAt(sort: Desc)])
+  @@map("webhook_token_uses")
 }
 
 model AuditLog {

@@ -59,6 +59,23 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     // phat lai nhan duoc — pha dung tinh chat bang nay sinh ra de bao dam.
     // DELETE thi can, vi don hang qua han lam ngay tren duong ghi (§2.2).
     idempotency_keys: { SELECT: "*", INSERT: "*", DELETE: "*" },
+    // [v4.11, Plan #55] Nhóm, grant của nhóm và lời mời — vòng đời thành viên, như
+    // project_members. S2/S3 không có quyền nào: không nhiệm vụ nào của hai service
+    // đó đọc thành viên, và `invitations` chứa hash token như refresh_sessions.
+    teams: FULL,
+    team_members: FULL,
+    project_team_grants: FULL,
+    invitations: FULL,
+    // [v4.12, Plan #60] Đặt lại mật khẩu và liên kết GitHub — vòng đời tài khoản, như refresh_sessions. S2/S3 không
+    // có quyền nào: `password_reset_tokens` chứa hash token.
+    password_reset_tokens: FULL,
+    user_identities: FULL,
+    // [v4.12, Plan #61 61d-2a] "Token của một lượt chạy CI dùng một lần" (I41). Append-only: một hàng là
+    // một sự kiện "token này đã tiêu", cho UPDATE nghĩa là sửa được chính bằng chứng đó. Không DELETE —
+    // dọn đi qua `udp_prune_webhook_token_uses` với retention viết cứng trong thân hàm, nên không ai xoá
+    // sạch được cửa sổ chống replay. S2/S3 không có quyền nào, kể cả SELECT: bảng mang mã định danh của
+    // token, cùng lập luận với `refresh_sessions` và `password_reset_tokens`.
+    webhook_token_uses: APPEND_ONLY,
     // config_version/config_hash thuộc S2 (và S3 trong nhánh kill-switch)
     environments: {
       SELECT: "*",
@@ -97,8 +114,17 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     config_change_log: APPEND_ONLY,
     environments: { SELECT: "*", UPDATE: ["config_hash", "config_version"] },
     // [v4.1] ĐỌC đúng năm cột: T12 (lease) + I23 (fencing) trong một truy vấn (§1.2)
+    // [v4.3] cột thứ sáu `flag_env_config_id`: track theo session, và untrack
+    // bỏ qua khi config còn session đang chạy
     rollout_sessions: {
-      SELECT: ["claimed_until", "id", "status", "targeting_rule_id", "version"],
+      SELECT: [
+        "claimed_until",
+        "flag_env_config_id",
+        "id",
+        "status",
+        "targeting_rule_id",
+        "version",
+      ],
     },
     projects: READ_ONLY,
     domain_catalog: READ_ONLY,
@@ -107,9 +133,14 @@ const MATRIX: Record<string, Record<string, Grant>> = {
   },
   udp_s3: {
     rollout_sessions: { SELECT: "*", UPDATE: S3_ROLLOUT_COLUMNS },
-    rollout_events: APPEND_ONLY,
-    // Ngoại lệ kill-switch — ĐÚNG ba quyền, không hơn (§7.6, I30)
+    // [v4.2] S3 đánh dấu intent đã xử lý — đúng MỘT cột, một lần (§2.2, migration
+    // rollout_intent_processed); luật "một lần, chỉ hàng intent" nằm ở trigger
+    rollout_events: { SELECT: "*", INSERT: "*", UPDATE: ["processed_at"] },
+    // Ngoại lệ kill-switch — ĐÚNG bốn quyền, không hơn (§7.6, I30). [v4.3] thứ tư
+    // là `flag_env_configs.updated_at`: kill-switch đẩy mốc optimistic lock như
+    // đường ramp của S2, để lần lưu rule bằng dữ liệu cũ nhận 409
     flag_targeting_rules: { SELECT: "*", UPDATE: ["serve"] },
+    flag_env_configs: { SELECT: "*", UPDATE: ["updated_at"] },
     environments: { SELECT: "*", UPDATE: ["config_hash", "config_version"] },
     config_change_log: { INSERT: "*" },
     projects: READ_ONLY,
@@ -117,7 +148,6 @@ const MATRIX: Record<string, Record<string, Grant>> = {
     capability_bindings: READ_ONLY,
     feature_flags: READ_ONLY,
     flag_variants: READ_ONLY,
-    flag_env_configs: READ_ONLY,
     domain_catalog: READ_ONLY,
     // Rule dang rollout co the tham chieu segment (rule_type = SEGMENT); thieu
     // quyen nay thi reconciler chet bang 42501 giua vong lap.
@@ -277,7 +307,11 @@ describe("I22 — ma trận writer §1.2", () => {
 
   it("không ai UPDATE hay DELETE được bảng append-only", () => {
     const violations: string[] = [];
-    for (const table of ["audit_logs", "deployment_events"]) {
+    for (const table of [
+      "audit_logs",
+      "deployment_events",
+      "webhook_token_uses",
+    ]) {
       for (const role of ROLES) {
         for (const priv of ["UPDATE", "DELETE"]) {
           if (actual.has(`${role}|${table}|${priv}`))
@@ -302,6 +336,9 @@ describe("I22 — ma trận writer §1.2", () => {
 const DEFINER_FUNCTIONS: Record<string, readonly string[]> = {
   // Dọn ConfigChangeLog quá 7 ngày (§2.2) — S2 không có DELETE trên bảng
   "udp_prune_config_change_log(integer)": ["udp_s2"],
+  // [Plan #61 61d-2a] Dọn bản ghi "token đã dùng" quá 7 ngày sau khi token hết hạn — S1 không có DELETE
+  // trên bảng, và retention viết cứng trong thân hàm nên bên gọi không xoá sạch được cửa sổ chống replay
+  "udp_prune_webhook_token_uses(integer)": ["udp_s1"],
 };
 
 /** Role của nền tảng — nếu tồn tại thì KHÔNG được gọi hàm definer nào */

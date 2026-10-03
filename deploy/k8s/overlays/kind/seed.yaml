@@ -1,0 +1,14 @@
+# Cụm kind là phòng thí nghiệm: seed dữ liệu demo (người dùng dev@udp.local, project demo-service)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: udp-migrate
+  namespace: udp
+spec:
+  template:
+    spec:
+      containers:
+        - name: migrate
+          env:
+            - name: UDP_SEED
+              value: "true"

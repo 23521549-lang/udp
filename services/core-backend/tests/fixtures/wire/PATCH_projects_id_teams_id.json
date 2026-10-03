@@ -1,0 +1,24 @@
+{
+  "route": "PATCH /projects/{id}/teams/{id}",
+  "status": 200,
+  "body": {
+    "team": {
+      "teamId": "9a545f51-de2c-46f2-ab45-32333b2b6f36",
+      "name": "Nhóm thanh toán",
+      "projectRole": "MAINTAINER",
+      "createdAt": "2026-09-30T03:19:10.747Z",
+      "members": [
+        {
+          "id": "9c0b6a89-b6fb-4399-bc7a-46daaabd1fcf",
+          "email": "grant-lead-e5c2cd1b-7837-4b5d-90e5-5510ff17ecd2@udp.local",
+          "name": "Test User"
+        },
+        {
+          "id": "ac0a2cc8-bb74-4cd9-97ac-adb8ee8a2734",
+          "email": "grant-y-b84cd3f8-74a3-4129-98a3-c7bd1ec1e50d@udp.local",
+          "name": "Test User"
+        }
+      ]
+    }
+  }
+}

@@ -1,7 +1,8 @@
-import { NotFoundError } from "@udp/http";
+import { stateFor } from "@udp/flag-snapshot";
+import { NotFoundError, type AuditContext } from "@udp/http";
+import { recordAudit } from "../../core/audit.js";
 import { prisma } from "../../core/db.js";
 import { writeConfigChange } from "../../core/outbox.js";
-import { stateFor } from "../../evaluation/snapshot-builder.js";
 import * as repository from "./env-config.repository.js";
 import type {
   PublicEnvConfig,
@@ -28,7 +29,7 @@ import type {
 export async function update(
   id: string,
   input: UpdateEnvConfigInput,
-  actorUserId: string | undefined,
+  audit: AuditContext,
 ): Promise<PublicEnvConfig> {
   const target = await repository.targetOf(prisma, id);
   if (target === null) {
@@ -40,16 +41,19 @@ export async function update(
   await writeConfigChange({
     environmentIds: [target.environmentId],
     changeType: "envconfig.toggled",
-    ...(actorUserId === undefined ? {} : { actorUserId }),
+    ...(audit.actorUserId === undefined
+      ? {}
+      : { actorUserId: audit.actorUserId }),
     mutate: async (tx) => {
       // Đọc lại SAU khi bước 1 đã khoá environment — xem `targetOf`
-      if ((await repository.targetOf(tx, id)) === null) {
+      const fresh = await repository.targetOf(tx, id);
+      if (fresh === null) {
         throw new NotFoundError(
           "Không tìm thấy cấu hình flag theo environment",
         );
       }
 
-      updated = await tx.flagEnvConfig.update({
+      const next = await tx.flagEnvConfig.update({
         where: { id },
         data: {
           ...(input.isEnabled === undefined
@@ -61,6 +65,26 @@ export async function update(
         },
         select: repository.PUBLIC_FIELDS,
       });
+      await recordAudit(tx, fresh.projectId, {
+        ...audit,
+        action: "flag.env.update",
+        targetType: "FlagEnvConfig",
+        targetId: id,
+        environmentId: fresh.environmentId,
+        // `defaultVariant`, không `defaultVariantId`: xem `auditView` của flag.service. [Plan #60 QĐ-2] `flagKey`
+        // để nhật ký gọi tên flag — đối tượng của dòng là cấu hình theo environment, mã của nó không ai đọc được
+        before: {
+          flagKey: fresh.flagKey,
+          isEnabled: fresh.isEnabled,
+          defaultVariant: fresh.defaultVariantId,
+        },
+        after: {
+          flagKey: fresh.flagKey,
+          isEnabled: next.isEnabled,
+          defaultVariant: next.defaultVariantId,
+        },
+      });
+      updated = next;
     },
     stateOf: stateFor(target.flagKey),
   });

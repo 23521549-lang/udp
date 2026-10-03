@@ -1,0 +1,62 @@
+# [Plan #53 QĐ-6] Quyền CHỈ-ĐỌC của Service 1 trên CHÍNH cụm chạy UDP, cho Bảng điều khiển nền tảng
+# (src/core/platform-probe.ts). Không verb ghi nào, không `secrets`, không `pods/exec`: lộ token này thì
+# người cầm chỉ đọc được đúng những gì trang đó hiện.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: core-backend
+---
+# Trong namespace của UDP: CronJob sao lưu và các Job của nó, PVC của PostgreSQL, Certificate của Ingress
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: core-backend-platform-read
+rules:
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: core-backend-platform-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: core-backend-platform-read
+subjects:
+  - kind: ServiceAccount
+    name: core-backend
+    namespace: udp
+---
+# Node là tài nguyên cấp cụm: dung lượng (core/v1) và số đo (metrics-server)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: udp-core-backend-node-read
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: udp-core-backend-node-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: udp-core-backend-node-read
+subjects:
+  - kind: ServiceAccount
+    name: core-backend
+    namespace: udp

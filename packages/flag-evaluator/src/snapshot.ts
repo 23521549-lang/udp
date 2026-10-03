@@ -70,10 +70,17 @@ export interface SnapshotTombstone {
 
 export type SnapshotEntry = SnapshotFlag | SnapshotTombstone;
 
-/** Segment gắn theo PROJECT, không theo environment (§2.2) */
+/**
+ * Segment gắn theo PROJECT, không theo environment (§2.2).
+ *
+ * [v4.6] Hình dạng chốt một lần cho §2.2, §6.5 và dây: `all` (điều kiện thuộc
+ * tính, AND) và `userIds` (sắp tăng dần ở builder, để hash tất định). Khớp ⇔
+ * `userIds` chứa `targetingKey` HOẶC (`all` không rỗng VÀ mọi điều kiện đúng).
+ */
 export interface SnapshotSegment {
   id: string;
-  conditions: unknown[];
+  all: unknown[];
+  userIds: string[];
 }
 
 /**
@@ -233,7 +240,13 @@ export function normalizeSnapshot(snapshot: Snapshot): Snapshot {
 }
 
 /** So sánh theo mã đơn vị, cùng lý do với `canonical`: không dùng `localeCompare` */
-const cmp = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/**
+ * So chuỗi theo mã đơn vị UTF-16 — phép so của luật chuẩn hoá (§9), KHÔNG
+ * `localeCompare`. Export để mọi nơi sắp thứ tự cho hash dùng đúng một phép so.
+ */
+export const compareCodeUnits = (a: string, b: string): number =>
+  a < b ? -1 : a > b ? 1 : 0;
+const cmp = compareCodeUnits;
 
 /** SHA-256 hex của snapshot đã chuẩn hoá — vừa đúng 64 ký tự của `VARCHAR(64)` */
 export const configHashOf = (snapshot: Snapshot): string =>

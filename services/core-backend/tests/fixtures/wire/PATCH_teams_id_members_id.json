@@ -1,0 +1,16 @@
+{
+  "route": "PATCH /teams/{id}/members/{id}",
+  "status": 200,
+  "body": {
+    "member": {
+      "userId": "89fafac3-0c66-4ec2-b050-fcb1e02c77cb",
+      "teamRole": "OWNER",
+      "createdAt": "2026-09-30T03:18:43.495Z",
+      "user": {
+        "id": "89fafac3-0c66-4ec2-b050-fcb1e02c77cb",
+        "email": "team-next-7f587c3a-7fd5-4c23-b577-86088ff559e0@udp.local",
+        "name": "Test User"
+      }
+    }
+  }
+}

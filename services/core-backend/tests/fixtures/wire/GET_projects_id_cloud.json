@@ -1,0 +1,20 @@
+{
+  "route": "GET /projects/{id}/cloud",
+  "status": 200,
+  "body": {
+    "cloud": {
+      "provider": "AWS",
+      "mode": "BYOC",
+      "authKind": "AWS_ROLE",
+      "federated": true,
+      "region": "ap-southeast-1",
+      "fingerprint": "5f756c4360c5",
+      "lastValidatedAt": "2026-09-25T05:58:20.612Z",
+      "createdAt": "2026-09-25T05:58:20.182Z",
+      "createdBy": {
+        "id": "1110e469-903f-40f6-ac9b-a40f484435e4",
+        "email": "cloud-owner-cbf5a870-0459-4c7b-bb35-8d83652501ec@udp.local"
+      }
+    }
+  }
+}

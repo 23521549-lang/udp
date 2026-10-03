@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import rateLimit from "express-rate-limit";
 import { RATE_LIMIT } from "@udp/config";
-import { rateLimitProblemHandler } from "@udp/http";
+import { ipKey, rateLimitProblemHandler } from "@udp/http";
 
 /**
  * Giới hạn tần suất cho `/sdk/*` — theo KHOÁ, không theo IP (§3.2, §2.2).
@@ -52,8 +52,9 @@ const keyPrint = (req: Request): string =>
  * không bao giờ chạm tới, vì 600 luôn lớn hơn 100: một limiter chết mang hình
  * dạng một biện pháp an ninh.
  *
- * Nó sẽ được dựng cùng `ofrep/ofrep.controller.ts`, nơi trục IP là bắt buộc chứ
- * không phải bổ sung — khoá CLIENT nằm trong trình duyệt nên ai cũng đọc được.
+ * Nó được dựng cùng OFREP (`ofrepPerKeyIpLimiter` bên dưới) [v4.6], nơi trục IP
+ * là bắt buộc chứ không phải bổ sung — khoá CLIENT nằm trong trình duyệt nên ai
+ * cũng đọc được.
  */
 export const sdkPerKeyLimiter: RequestHandler = rateLimit({
   ...shared,
@@ -76,4 +77,47 @@ export const sdkStreamOpenLimiter: RequestHandler = rateLimit({
   windowMs: RATE_LIMIT.sdk.streamOpensPerKey.windowMs,
   limit: RATE_LIMIT.sdk.streamOpensPerKey.max,
   keyGenerator: keyPrint,
+});
+
+/**
+ * [v4.9] Hạn mức `POST /sdk/stats` của SERVER key — bucket RIÊNG, 1 000/phút/khoá.
+ *
+ * Chung bucket với `/sdk/config` (100/phút) là đếm THIẾU có hệ thống: một dịch vụ
+ * 200 pod dùng chung một khoá, mỗi pod báo một lần mỗi phút, đã vượt trần — và
+ * polling fallback của `/sdk/config` còn ăn chung bucket đó. Phần bị 429 là số
+ * đếm bị mất, mà mất số đếm làm flag bị xếp UNUSED rồi archive lọt chốt 7 ngày
+ * (R18). 1 000 khớp `streamOpensPerKey`: cùng một giả định về số tiến trình dùng
+ * chung một khoá trên mỗi replica.
+ */
+export const sdkStatsLimiter: RequestHandler = rateLimit({
+  ...shared,
+  windowMs: RATE_LIMIT.sdk.statsPerKey.windowMs,
+  limit: RATE_LIMIT.sdk.statsPerKey.max,
+  keyGenerator: keyPrint,
+});
+
+const clientIp = (req: Request): string => ipKey(req.ip ?? "");
+
+/**
+ * [v4.6] OFREP, lớp NGOÀI: theo IP, trước mọi thứ tốn kém. Trục (khoá, IP) bên
+ * dưới băm nguyên header `Authorization`, nên mỗi token rác là một bucket mới —
+ * mà vẫn tốn một lần tra database ở guard. Lớp này chặn đúng ca đó.
+ */
+export const ofrepPerIpLimiter: RequestHandler = rateLimit({
+  ...shared,
+  windowMs: RATE_LIMIT.sdk.ofrepPerIp.windowMs,
+  limit: RATE_LIMIT.sdk.ofrepPerIp.max,
+  keyGenerator: clientIp,
+});
+
+/**
+ * [v4.6] OFREP, lớp TRONG: CLIENT key theo (khoá, IP) — §2.2 `perKeyIp`. Một người
+ * lấy được khoá không khoá được cả tổ chức bằng một máy, và một trang đông người
+ * không dồn mọi người dùng vào một bucket.
+ */
+export const ofrepPerKeyIpLimiter: RequestHandler = rateLimit({
+  ...shared,
+  windowMs: RATE_LIMIT.sdk.perKeyIp.windowMs,
+  limit: RATE_LIMIT.sdk.perKeyIp.max,
+  keyGenerator: (req) => `${keyPrint(req)}:${clientIp(req)}`,
 });

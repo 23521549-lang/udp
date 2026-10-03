@@ -1,0 +1,62 @@
+name: Deploy
+
+# [Plan #52] CD tới máy ảo Oracle Cloud Always Free (QĐ-9): sau khi CI xanh cho một lần PUSH lên main, hay chạy tay
+# (kể cả để quay về một commit cũ). Chi phí 0: runner miễn phí cho repo public; image build NGAY trên máy ảo, không
+# registry. Không có secret của environment `vm` thì mọi bước bỏ qua trong im lặng — fork và bản clone không đỏ vì
+# thiếu thứ chúng không được có.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Một lượt phát hành tại một thời điểm, và lượt đang chạy KHÔNG bị huỷ: nó có thể đang giữa migrate
+concurrency:
+  group: udp-deploy-vm
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  vm:
+    name: phát hành lên máy ảo
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    environment: vm
+    timeout-minutes: 60
+    env:
+      UDP_VM_HOST: ${{ secrets.UDP_VM_HOST }}
+      UDP_VM_USER: ${{ secrets.UDP_VM_USER }}
+      # Đúng commit mà CI vừa kiểm — không phải đỉnh nhánh lúc job này chạy
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      # Hai lượt CI xong đảo thứ tự thì lượt cũ không được đè bản mới: chỉ phát hành đỉnh hiện tại của main.
+      # Chạy tay thì bỏ qua — đó là cách chủ động quay về một commit cũ.
+      - name: chỉ phát hành đỉnh của main
+        id: tip
+        if: github.event_name == 'workflow_run'
+        run: |
+          tip="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$tip" != "$RELEASE_SHA" ]; then
+            echo "main đã tới $tip — commit mới hơn sẽ tự phát hành"
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: khoá SSH và host key đã ghim
+        if: env.UDP_VM_HOST != '' && steps.tip.outputs.stale != 'true'
+        env:
+          SSH_KEY: ${{ secrets.UDP_VM_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.UDP_VM_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          (umask 077 && printf '%s\n' "$SSH_KEY" > ~/.ssh/udp_vm && printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts)
+
+      - name: gửi mã nguồn và phát hành
+        if: env.UDP_VM_HOST != '' && steps.tip.outputs.stale != 'true'
+        run: bash deploy/vm/ship.sh "$RELEASE_SHA"

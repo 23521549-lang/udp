@@ -1,0 +1,38 @@
+{
+  "name": "@udp/pd-controller",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@udp/adapter-core": "workspace:*",
+    "@udp/cluster-access": "workspace:*",
+    "@udp/config": "workspace:*",
+    "@udp/db": "workspace:*",
+    "@udp/flag-snapshot": "workspace:*",
+    "@udp/http": "workspace:*",
+    "@udp/metrics-provider": "workspace:*",
+    "@udp/shared-types": "workspace:*",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "prom-client": "^15.1.3",
+    "tsx": "^4.19.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/supertest": "^6.0.2",
+    "@udp/flag-evaluator": "workspace:*",
+    "@udp/test-support": "workspace:*",
+    "pino-pretty": "^11.3.0",
+    "supertest": "^7.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

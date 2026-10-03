@@ -1,0 +1,22 @@
+{
+  "route": "GET /projects/{id}/rollouts/{id}/events",
+  "status": 200,
+  "body": {
+    "events": [
+      {
+        "id": "01a0f58a-76f6-763a-87fc-13b44adff933",
+        "action": "RESUME",
+        "isIntent": true,
+        "processedAt": "2026-10-01T03:38:07.466Z",
+        "trafficPercentage": 0,
+        "reason": null,
+        "reasonDetail": null,
+        "triggeredBy": "MANUAL",
+        "actorUserId": "7a6cebc3-ca1d-49bc-bf87-8ef727fbf34d",
+        "causedByEventId": null,
+        "metricSnapshot": null,
+        "createdAt": "2026-10-01T03:38:07.480Z"
+      }
+    ]
+  }
+}

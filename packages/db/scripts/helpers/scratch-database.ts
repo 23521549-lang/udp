@@ -119,6 +119,23 @@ export function scratchEnv(
 }
 
 /**
+ * Env của BƯỚC CHẠY TEST: giống `childEnv` nhưng `NODE_ENV` bị ép về `"test"`.
+ *
+ * `test-scratch.ts` nạp `.env` để lấy chuỗi kết nối của ba role, và `.env` khai
+ * `NODE_ENV="development"` cho lượt `pnpm dev`. Sau khi nạp, mọi tiến trình con
+ * thừa hưởng biến đó. Vitest CHỈ đặt `NODE_ENV=test` khi biến còn trống, nên bộ
+ * test chạy với `NODE_ENV=development`: `isTest` của `@udp/config` thành false và
+ * mọi seam chỉ mở trong test (ví dụ `asOf` của ba route đọc stats, §3.2) trả 400.
+ *
+ * Trên CI không có `.env` và workflow tự đặt `NODE_ENV: test`, nên lệch này chỉ
+ * hiện ra ở máy lập trình viên — đúng loại chênh lệch làm câu "đây là đúng lệnh
+ * CI chạy" thành sai. Ép ở đây để một lệnh cho cùng một kết quả ở hai nơi.
+ */
+export function testEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...base, NODE_ENV: "test" };
+}
+
+/**
  * Che chuỗi kết nối DẪN XUẤT trong log của GitHub Actions.
  *
  * GitHub chỉ che đúng giá trị của secret. Chuỗi đã đổi pathname là một chuỗi

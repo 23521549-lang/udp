@@ -1,0 +1,1388 @@
+{
+  "route": "GET /admin/evidence/dora",
+  "status": 200,
+  "body": {
+    "evidence": {
+      "window": {
+        "from": "2026-09-01T00:00:00.000Z",
+        "to": "2026-10-01T00:00:00.000Z",
+        "days": 30
+      },
+      "projects": [
+        {
+          "projectId": "2541d89c-cb4c-4050-af15-fafacfdc01db",
+          "projectName": "p-0bc45f82",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "7acf41bf-4f41-4c05-9a88-c320ff6bb16b"
+          }
+        },
+        {
+          "projectId": "3c2b400d-cfa1-4776-8cc5-451ef7eb6932",
+          "projectName": "p-18705dbf",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "465e8188-9ae4-4aaf-abe1-d7a5a4cdca60"
+          }
+        },
+        {
+          "projectId": "1c54cd42-b83b-4afc-8b56-33dbc10758c9",
+          "projectName": "p-2e2f09bf",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "fc93dd51-a223-4c1f-853d-ddebe5ee7ae5"
+          }
+        },
+        {
+          "projectId": "5eccb41b-264a-4226-a98d-52e12c97bb75",
+          "projectName": "p-2fc3ac49",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "d6c1ef43-4867-4871-b09c-2b27443190e5"
+          }
+        },
+        {
+          "projectId": "2fd81410-07bb-4462-a1ac-82faef3139ab",
+          "projectName": "p-31c2ac64",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "07dda7ff-7c74-4e3a-b4fd-f8d4397befd6"
+          }
+        },
+        {
+          "projectId": "2f1ef685-98f9-490a-9dfb-c4d9534280af",
+          "projectName": "p-3697c5a2",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "cdabc648-506f-48de-ae70-be7f5957cc41"
+          }
+        },
+        {
+          "projectId": "a7f2942e-2dac-4158-a024-8293050b9161",
+          "projectName": "p-4daa8f6d",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "caf05786-fa7e-4185-b048-a9a43db57df4"
+          }
+        },
+        {
+          "projectId": "6a0056b7-31fd-46b2-94a7-73393237f921",
+          "projectName": "p-5a1e3300",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "a2ba9b85-d7bb-472c-8355-fa466632a949"
+          }
+        },
+        {
+          "projectId": "0e6baff8-0cda-4f19-8b42-67a43164285e",
+          "projectName": "p-62672347",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0.5,
+              "failed": 1,
+              "total": 2
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "13085b7a-d76d-4756-9c7a-b60f5f94e28b"
+          }
+        },
+        {
+          "projectId": "0ecf870f-50d1-45de-a265-fa82d571b68f",
+          "projectName": "p-75168751",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": 1800,
+              "samples": 1
+            },
+            "changeFailureRate": {
+              "value": 0.5,
+              "failed": 1,
+              "total": 2
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "565b4e4b-c5b4-44ab-8cd7-240bf9db1ba9"
+          }
+        },
+        {
+          "projectId": "1038f4d9-5eb8-4ec9-a950-d33406f2ed77",
+          "projectName": "p-a5785bb9",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "cf744ef4-22e2-468b-ad67-d0a3932fc44f"
+          }
+        },
+        {
+          "projectId": "2aab347a-998e-4fbf-897f-567cb3cb58f7",
+          "projectName": "p-aaf55e28",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "4a0711fd-a929-485d-80bf-b956af2423dc"
+          }
+        },
+        {
+          "projectId": "45235af8-5d3e-461f-8ca0-66951d69ea95",
+          "projectName": "p-e472ecc5",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "dc357b16-fa51-4b2e-8e71-49877304cea4"
+          }
+        },
+        {
+          "projectId": "0843cf80-4fce-4a36-beb6-e9cde963184e",
+          "projectName": "p-f625fcd7",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "db91e4b5-ede0-4ad0-96c0-26c629362e3d"
+          }
+        },
+        {
+          "projectId": "7bf1951b-2f6c-4723-8ba8-d05fbc4f3e1e",
+          "projectName": "p-ffab8238",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 1,
+            "deploymentFrequencyPerDay": 0.03333333333333333,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 0,
+              "failed": 0,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": 0,
+              "rework": 0,
+              "total": 1
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "d5d54a4a-a67b-4c7b-a923-32a197062133"
+          }
+        },
+        {
+          "projectId": "00000000-0000-4000-8000-000000000010",
+          "projectName": "demo-service",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "cd9f2d93-3eaf-4244-8d32-dc76e0a2797f"
+          }
+        },
+        {
+          "projectId": "e5a46672-f2cd-4fd1-8178-0132426c83ee",
+          "projectName": "p-18efc076",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 1,
+              "failed": 1,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "b627e177-66ce-47f8-9cc7-3460abae9efe"
+          }
+        },
+        {
+          "projectId": "08028469-e231-4105-be49-fab27877e940",
+          "projectName": "p-1e4aca56",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "18c36bcc-e0f4-4bb6-91d4-26fc3598a921"
+          }
+        },
+        {
+          "projectId": "bb771985-5caa-4771-b59b-341edc278e44",
+          "projectName": "p-2050c518",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "2edaa5b6-8cb9-4683-87da-4887030c0476"
+          }
+        },
+        {
+          "projectId": "4f4bfae9-1714-4187-a1eb-ef3c1201247d",
+          "projectName": "p-23bbd12e",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 1,
+              "failed": 1,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "979168ea-8fa6-4dd1-85af-f17cccaa89e1"
+          }
+        },
+        {
+          "projectId": "62c5c773-43c8-4ed7-929d-c852bea3be73",
+          "projectName": "p-28fb36c3",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "94006a6a-877c-430e-8fee-067ec5323962"
+          }
+        },
+        {
+          "projectId": "9f64f989-7995-4016-9a49-f7199c127a25",
+          "projectName": "p-3914a67c",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 1,
+              "failed": 1,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "e1b32fb0-5790-44dd-b028-7dc8e8c24fea"
+          }
+        },
+        {
+          "projectId": "2d9da20e-a9ca-4222-9fcd-0d49eab42603",
+          "projectName": "p-4cd215ca",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "b7417a43-cd6b-457e-9f79-6d8fb82379bb"
+          }
+        },
+        {
+          "projectId": "7c195105-3c60-46d4-a7bf-202b9ce39562",
+          "projectName": "p-53f8881b",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "a912ddc8-4f10-4b59-9626-1bef7b8700e1"
+          }
+        },
+        {
+          "projectId": "d88462f3-92e9-402f-8d72-368b6ace6db5",
+          "projectName": "p-6bd40549",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 1,
+              "failed": 1,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "a613dfd3-9415-4bff-963d-69494f43bf8a"
+          }
+        },
+        {
+          "projectId": "468d52bf-be14-4e53-a337-dbc8f7e3e174",
+          "projectName": "p-7c39c6b7",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "0115aaad-de6b-4058-addc-87548055cd35"
+          }
+        },
+        {
+          "projectId": "106c28c3-cf89-4c3c-93ba-a80a1930900f",
+          "projectName": "p-98406d4e",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "e11cf0f2-a593-466a-a3b6-03f786c4728c"
+          }
+        },
+        {
+          "projectId": "51bb2d6a-d1c8-459d-837e-33c49460b7f7",
+          "projectName": "p-ab4ec928",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "e1477473-83df-4a11-8a89-8972050957b2"
+          }
+        },
+        {
+          "projectId": "be70053a-2a26-4f9b-9782-e3911e1d8f4c",
+          "projectName": "p-b7d81728",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "3e317e6d-c85b-4a86-a7a9-630442101880"
+          }
+        },
+        {
+          "projectId": "7eb537c8-1cd7-4638-88d6-b296da29a41d",
+          "projectName": "p-ba96f5aa",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "62409cec-3cc7-4fd5-b11e-dd4d10498f69"
+          }
+        },
+        {
+          "projectId": "a6ef7d90-aebe-43a8-aed1-9a501edc289a",
+          "projectName": "p-c13f6770",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": 1,
+              "failed": 1,
+              "total": 1
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "4fb62f1c-d895-4e08-b073-77c2d33ac31f"
+          }
+        },
+        {
+          "projectId": "e76b10c8-745d-4b02-adba-357b8b94a779",
+          "projectName": "p-f2aaa937",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "d841ac43-419f-4fcf-9f1e-c3d25d7bc553"
+          }
+        },
+        {
+          "projectId": "1da31038-b255-4601-b8af-059276e4d1fc",
+          "projectName": "proj-cb7cf5f7",
+          "environmentName": "prod",
+          "dora": {
+            "window": {
+              "from": "2026-09-01T00:00:00.000Z",
+              "to": "2026-10-01T00:00:00.000Z",
+              "days": 30
+            },
+            "deployments": 0,
+            "deploymentFrequencyPerDay": 0,
+            "leadTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "changeFailureRate": {
+              "value": null,
+              "failed": 0,
+              "total": 0
+            },
+            "recoveryTimeSeconds": {
+              "median": null,
+              "samples": 0
+            },
+            "reworkRate": {
+              "value": null,
+              "rework": 0,
+              "total": 0
+            },
+            "rollbacks": {
+              "auto": 0,
+              "manual": 0
+            },
+            "environmentId": "68e25698-a368-46bb-89ce-a26f38dea0eb"
+          }
+        }
+      ],
+      "daily": [
+        {
+          "date": "2026-09-01",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-02",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-03",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-04",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-05",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-06",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-07",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-08",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-09",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-10",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-11",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-12",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-13",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-14",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-15",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-16",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-17",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-18",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-19",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-20",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-21",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-22",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-23",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-24",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-25",
+          "success": 14,
+          "failure": 6
+        },
+        {
+          "date": "2026-09-26",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-27",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-28",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-29",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-30",
+          "success": 1,
+          "failure": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+# UDP trên cụm kind ở máy (Plan #49, chi phí 0): image build tại chỗ và `kind load` (tag `local`, không
+# registry — tag khác `latest` nên kubelet không kéo), NodePort ánh xạ ra cổng của máy qua
+# deploy/kind/cluster.yaml, seed dữ liệu demo và sample-app trong namespace env dev của seed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - sample-app.yaml
+images:
+  - name: udp/core-backend
+    newTag: local
+  - name: udp/flag-service
+    newTag: local
+  - name: udp/pd-controller
+    newTag: local
+  - name: udp/portal
+    newTag: local
+  - name: udp/migrate
+    newTag: local
+  - name: udp/sample-app
+    newTag: local
+patches:
+  - path: nodeports.yaml
+  - path: seed.yaml

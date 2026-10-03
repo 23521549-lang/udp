@@ -8,24 +8,33 @@ import {
   requestLogger,
 } from "@udp/http";
 import { prisma } from "./core/db.js";
+import { metricsRegistry } from "./core/metrics.js";
 import { internalEnvConfigRouter } from "./internal/env-config.controller.js";
+import { internalEnvironmentRouter } from "./internal/environment.controller.js";
 import { internalFlagRouter } from "./internal/flag.controller.js";
+import { internalRolloutRouter } from "./internal/rollout.controller.js";
 import { internalRuleRouter } from "./internal/rule.controller.js";
-import { sdkRouter } from "./sdk/sdk.controller.js";
+import { internalSdkKeyRouter } from "./internal/sdk-key.controller.js";
+import { internalSegmentRouter } from "./internal/segment.controller.js";
+import { internalStatsRouter } from "./internal/stats.controller.js";
+import { ofrepRouter } from "./ofrep/ofrep.controller.js";
+import { sdkRouter, sdkStatsRouter } from "./sdk/sdk.controller.js";
 
 /**
  * Ứng dụng của Service 2.
  *
  * Ba thứ core-backend có mà ở đây cố tình KHÔNG có, mỗi thứ một lý do:
  *
- *   - **CORS**: S2 không phục vụ trình duyệt. Portal nói chuyện với S1, còn S1
- *     và S3 gọi `/internal/*` từ máy tới máy. Bật CORS ở đây là mở một mặt tấn
- *     công cho thứ không có người dùng nào.
+ *   - **CORS toàn cục**: Portal nói chuyện với S1, còn S1 và S3 gọi `/internal/*`
+ *     từ máy tới máy. [v4.6] Ngoại lệ DUY NHẤT là `/ofrep/*` — khoá CLIENT gọi
+ *     thẳng từ trình duyệt — và CORS của nó nằm trong chính router đó
+ *     (`ofrep/cors.ts`), không lan ra bề mặt nào khác.
  *   - **cookie-parser và CSRF**: CSRF là biện pháp chống trình duyệt bị lừa gửi
  *     cookie kèm theo. Không có cookie, không có trình duyệt, thì nó chỉ chặn
  *     nhầm S1 và S3.
- *   - **rate limit theo IP**: đã dựng, nhưng đúng trục — theo SDK KEY, và nằm
- *     cạnh chính route `/sdk/*` chứ không phải toàn cục (`auth/rate-limit.ts`).
+ *   - **rate limit theo IP toàn cục**: đã dựng, nhưng đúng trục và cạnh chính
+ *     route — theo SDK KEY cho `/sdk/*`, theo IP rồi (khoá, IP) cho `/ofrep/*`
+ *     (`auth/rate-limit.ts`).
  *     `/internal/*` vẫn KHÔNG có: bên gọi là S1 và S3, và chặn một rollout đang
  *     chạy vì "quá nhiều yêu cầu" là tự gây ra sự cố tồi hơn thứ nó chặn.
  */
@@ -43,8 +52,31 @@ export function createApp(): Express {
   app.set("trust proxy", env.TRUST_PROXY_HOPS);
 
   app.use(helmet());
-  app.use(express.json({ limit: "1mb" }));
   app.use(requestLogger);
+  /**
+   * [v4.6] OFREP mount TRƯỚC parser 1 MB toàn cục: router của nó có parser 16 KB
+   * RIÊNG, đứng sau CORS và hai lớp rate limit. Mount sau dòng dưới thì trần 16 KB
+   * vô nghĩa — body đã bị đọc xong trước khi tới đó.
+   */
+  app.use("/ofrep", ofrepRouter);
+  /**
+   * [v4.9] `POST /sdk/stats` mount TRƯỚC parser toàn cục, cùng lý do và cùng
+   * khuôn với OFREP: router của nó có parser 2 MiB RIÊNG, và parser đó chỉ chạy
+   * SAU rate limit và guard khoá SERVER. Mount sau dòng dưới thì một báo cáo hợp
+   * lệ ở trần nhận 413 từ parser 1 MB, còn body của người lạ vẫn bị đọc trước khi
+   * ai kiểm khoá (V15, INV-23.8).
+   */
+  app.use("/sdk", sdkStatsRouter);
+  /**
+   * [v4.9] `/internal/segments` mount TRƯỚC parser toàn cục, cùng lý do và cùng
+   * khuôn: `conditions` của một segment ở trần schema lớn hơn 1 MB rất nhiều
+   * (§2.1), nên router này có parser RIÊNG `SEGMENT.internalBodyLimitBytes` và
+   * parser đó chỉ chạy SAU `requireInternalCaller`. Mount sau dòng dưới thì một
+   * body hợp lệ sát trần nhận 413 từ parser 1 MB — và Service 1 không relay 413,
+   * nên người dùng thấy 500 (V14, V15, INV-23.8).
+   */
+  app.use("/internal", internalSegmentRouter);
+  app.use(express.json({ limit: "1mb" }));
 
   /**
    * Sống/chết cho hạ tầng. Cố tình KHÔNG chạm database: `/healthz` trả lời câu
@@ -81,11 +113,32 @@ export function createApp(): Express {
     }),
   );
 
+  /**
+   * [v4.8] Số đo vận hành (§9) — cùng khuôn `/metrics` của S1/S3: registry mặc
+   * định, tiền tố `udp_flag_`. Ingress công khai không route tới đây.
+   */
+  app.get(
+    "/metrics",
+    asyncHandler(async (_req, res) => {
+      res.set("Content-Type", metricsRegistry.contentType);
+      res.end(await metricsRegistry.metrics());
+    }),
+  );
+
+  /**
+   * [v4.9] `/internal/sdk-keys` mount SAU parser toàn cục, khác
+   * `/internal/segments` ở trên: thân của nó là năm trường ngắn (dưới 300 byte),
+   * nên trần 1 MB là dư và một parser riêng chỉ là một chỗ nữa để lệch (V15).
+   */
   app.use(
     "/internal",
     internalFlagRouter,
     internalEnvConfigRouter,
+    internalEnvironmentRouter,
     internalRuleRouter,
+    internalRolloutRouter,
+    internalStatsRouter,
+    internalSdkKeyRouter,
   );
 
   /** Bề mặt SDK (§9). Guard và rate limit nằm trong chính router đó */

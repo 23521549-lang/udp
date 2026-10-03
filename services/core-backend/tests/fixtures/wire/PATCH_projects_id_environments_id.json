@@ -1,0 +1,14 @@
+{
+  "route": "PATCH /projects/{id}/environments/{id}",
+  "status": 200,
+  "body": {
+    "environment": {
+      "id": "9e3d2938-3eda-4ddd-9ae3-8fabb2017872",
+      "name": "staging",
+      "k8sNamespace": "udp-p-67b5f86c-1dba2e-staging",
+      "isProduction": true,
+      "rank": 1,
+      "autoDeploy": false
+    }
+  }
+}

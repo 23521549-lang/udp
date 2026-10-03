@@ -1,5 +1,6 @@
 import { ACTIVE_ROLLOUT_STATUSES } from "@udp/config";
 import type { Prisma } from "@udp/db";
+import { stateFor } from "@udp/flag-snapshot";
 import {
   logger,
   NotFoundError,
@@ -9,7 +10,6 @@ import {
 import { canonicalizeServe, flagServeDbSchema } from "@udp/shared-types";
 import { prisma } from "../../core/db.js";
 import { writeConfigChange } from "../../core/outbox.js";
-import { stateFor } from "../../evaluation/snapshot-builder.js";
 import type { FencingToken } from "./fencing.js";
 import * as repository from "./rule.repository.js";
 import type { PublicRule, RampRuleInput } from "./rule.types.js";

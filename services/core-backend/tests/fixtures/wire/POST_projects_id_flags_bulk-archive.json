@@ -1,0 +1,158 @@
+{
+  "route": "POST /projects/{id}/flags/bulk-archive",
+  "status": 200,
+  "body": {
+    "results": [
+      {
+        "flagId": "921ff35b-a554-4a84-8260-35164f6815dd",
+        "ok": true,
+        "flag": {
+          "id": "921ff35b-a554-4a84-8260-35164f6815dd",
+          "key": "f-21837c46",
+          "flagType": "BOOLEAN",
+          "description": null,
+          "lifecycleStatus": "ARCHIVED",
+          "stickinessAttribute": "targetingKey",
+          "defaultVariantId": "68594d69-e9b9-49e0-9fda-0b0f8db6e021",
+          "permanent": false,
+          "activatedAt": "2026-09-24T19:38:23.072Z",
+          "createdAt": "2026-09-24T19:38:21.661Z",
+          "updatedAt": "2026-09-24T19:38:30.895Z",
+          "variants": [
+            {
+              "id": "14bc76e7-3cb7-4dca-903e-539771283da9",
+              "key": "off",
+              "value": false
+            },
+            {
+              "id": "68594d69-e9b9-49e0-9fda-0b0f8db6e021",
+              "key": "on",
+              "value": true
+            }
+          ],
+          "envs": [
+            {
+              "environment": {
+                "id": "e186beff-54ab-4b5c-bc44-0dd2c7462a3c",
+                "name": "dev",
+                "isProduction": false
+              },
+              "configId": "ac469a83-f407-434f-ac6e-9b20f02dc8e2",
+              "isEnabled": false,
+              "defaultVariantId": null,
+              "isTracked": false,
+              "ruleCount": 0,
+              "updatedAt": "2026-09-24T19:38:21.661Z"
+            },
+            {
+              "environment": {
+                "id": "9cc0823e-a0b2-4630-85a0-b012bbe9cec5",
+                "name": "staging",
+                "isProduction": false
+              },
+              "configId": "306146d4-6c74-45fc-b342-fed2058aeab7",
+              "isEnabled": false,
+              "defaultVariantId": null,
+              "isTracked": false,
+              "ruleCount": 0,
+              "updatedAt": "2026-09-24T19:38:21.661Z"
+            },
+            {
+              "environment": {
+                "id": "8ea7820b-b5fb-4047-8d8b-6e8dbe943664",
+                "name": "prod",
+                "isProduction": true
+              },
+              "configId": "705b25e0-f507-4ca0-9ac2-55797d8a320f",
+              "isEnabled": false,
+              "defaultVariantId": null,
+              "isTracked": false,
+              "ruleCount": 0,
+              "updatedAt": "2026-09-24T19:38:21.661Z"
+            }
+          ]
+        }
+      },
+      {
+        "flagId": "1cd9ea4c-c317-48ea-a47b-fb74b00f2937",
+        "ok": false,
+        "problem": {
+          "status": 409,
+          "title": "Flag was evaluated recently",
+          "detail": "Flag còn 12 lượt đánh giá trong 7 ngày gần nhất (lần cuối khoảng 2026-09-23T19:00:00.000Z, archive được từ 2026-09-30T20:00:00.000Z nếu từ giờ không còn lượt nào) — gỡ flag khỏi code của bạn trước khi lưu trữ nó",
+          "code": "FLAG_RECENTLY_EVALUATED"
+        }
+      },
+      {
+        "flagId": "3536738d-6fa3-4408-9971-526e9a8a8523",
+        "ok": true,
+        "flag": {
+          "id": "3536738d-6fa3-4408-9971-526e9a8a8523",
+          "key": "f-e13b528c",
+          "flagType": "BOOLEAN",
+          "description": null,
+          "lifecycleStatus": "ARCHIVED",
+          "stickinessAttribute": "targetingKey",
+          "defaultVariantId": "d5cb0f08-baf2-4164-91a1-dda8035a4afb",
+          "permanent": false,
+          "activatedAt": "2026-09-24T19:38:28.842Z",
+          "createdAt": "2026-09-24T19:38:27.434Z",
+          "updatedAt": "2026-09-24T19:38:32.740Z",
+          "variants": [
+            {
+              "id": "f466fcf1-ab19-4f8e-b6ed-37ae0ca175d9",
+              "key": "off",
+              "value": false
+            },
+            {
+              "id": "d5cb0f08-baf2-4164-91a1-dda8035a4afb",
+              "key": "on",
+              "value": true
+            }
+          ],
+          "envs": [
+            {
+              "environment": {
+                "id": "e186beff-54ab-4b5c-bc44-0dd2c7462a3c",
+                "name": "dev",
+                "isProduction": false
+              },
+              "configId": "9ff07f59-88ff-4c47-9d5a-c57a37d07619",
+              "isEnabled": false,
+              "defaultVariantId": null,
+              "isTracked": false,
+              "ruleCount": 0,
+              "updatedAt": "2026-09-24T19:38:27.434Z"
+            },
+            {
+              "environment": {
+                "id": "9cc0823e-a0b2-4630-85a0-b012bbe9cec5",
+                "name": "staging",
+                "isProduction": false
+              },
+              "configId": "de692c61-7668-4741-ad0f-de3fa329bec9",
+              "isEnabled": false,
+              "defaultVariantId": null,
+              "isTracked": false,
+              "ruleCount": 0,
+              "updatedAt": "2026-09-24T19:38:27.434Z"
+            },
+            {
+              "environment": {
+                "id": "8ea7820b-b5fb-4047-8d8b-6e8dbe943664",
+                "name": "prod",
+                "isProduction": true
+              },
+              "configId": "f9e73a4f-c02a-49ae-a60c-74875694b935",
+              "isEnabled": false,
+              "defaultVariantId": null,
+              "isTracked": false,
+              "ruleCount": 0,
+              "updatedAt": "2026-09-24T19:38:27.434Z"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

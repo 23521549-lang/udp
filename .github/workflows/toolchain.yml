@@ -1,0 +1,68 @@
+name: Toolchain
+
+# [Plan #61 QĐ-13] Kiểm phiên bản công cụ mà pipeline UDP sinh ra ghim (`packages/config/src/build-toolchain.ts`,
+# `FROM` của Dockerfile Golden Path): bản vá cùng dòng, tag bị đẩy lại (bản dựng lại có bản vá), ghim hỏng. Chỉ ĐỌC
+# registry và GitHub, không sửa gì: đỏ khi có việc cần làm, bảng kết quả ở tóm tắt của lượt chạy. Dòng mới hơn (Node 22
+# ⇒ 26) chỉ để biết — nâng dòng là một quyết định riêng. Thứ Hai 02:00 UTC.
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  toolchain-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `packageManager` của package.json là nguồn duy nhất của phiên bản pnpm (xem ci.yml)
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm toolchain:check
+        env:
+          # Giới hạn gọi API của GitHub cao hơn gọi ẩn danh; chỉ đọc bản phát hành công khai
+          GITHUB_TOKEN: ${{ github.token }}
+      # [Plan #61 61d-3c] Ghim chart Helm của 71 chart + ghim đóng băng của `upgradesFrom`. Chỉ đọc `index.yaml`,
+      # không cần token. `if: always()` để một mục cần làm ở bước trên không che mất báo cáo chart — hai bước canh
+      # hai tập ghim khác nhau, và mất tín hiệu của một tập là mất một nửa giá trị của lượt chạy.
+      - run: pnpm --filter @udp/config chart:check
+        if: always()
+
+  # [Plan #61 61d-3c-2] Soạn sẵn bản vá cho ghim DỮ LIỆU THUẦN rồi đính kèm một tệp `.patch`.
+  #
+  # Không mở pull request, và đó là một quyết định có lý do đo được: PR mở bằng `GITHUB_TOKEN` KHÔNG kích hoạt
+  # workflow nào (luật của GitHub), và `build-smoke` của `ci.yml` bỏ qua `pull_request` — nên PR đó sẽ có ZERO phép
+  # kiểm máy, trong khi nội dung nó sửa là ghim chuỗi cung ứng. Thêm nữa một action bên thứ ba có `contents: write`
+  # trong một job chạy không người trực đi ngược chính nguyên tắc đã ghi ở `build-toolchain.ts` ("chỉ dùng MỘT
+  # action bên thứ ba"). Job này giữ `contents: read` và chỉ dùng action của GitHub.
+  toolchain-fix:
+    runs-on: ubuntu-latest
+    needs: toolchain-check
+    if: always()
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: soạn bản vá cho ghim dữ liệu thuần
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pnpm toolchain:fix
+      - name: dựng tệp .patch
+        run: git diff > toolchain.patch
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-patch
+          path: toolchain.patch
+          if-no-files-found: ignore

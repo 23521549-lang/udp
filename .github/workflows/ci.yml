@@ -5,10 +5,10 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Làn hằng đêm của §13.5 (mới chỉ là lượt chạy lại bộ test đầy đủ, chưa có
-  # contract test hay E2E). Nó còn một việc thực dụng: project Supabase của CI
-  # là gói free, bị tạm dừng sau một tuần không hoạt động; lượt chạy hằng đêm
-  # giữ nó sống. 18:00 UTC là 01:00 giờ Việt Nam.
+  # Làn hằng đêm của §13.5: bộ test đầy đủ, cụm kind + E2E rút gọn, và benchmark
+  # E9 (chỉ ở làn này và khi chạy tay — xem job `kind`). Nó còn một việc thực
+  # dụng: project Supabase của CI là gói free, bị tạm dừng sau một tuần không hoạt
+  # động; lượt chạy hằng đêm giữ nó sống. 18:00 UTC là 01:00 giờ Việt Nam.
   schedule:
     - cron: "0 18 * * *"
   workflow_dispatch:
@@ -54,10 +54,43 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
 
+  python:
+    # [Plan #47] Provider Python (§6.8): lint, kiểu, và bộ test đơn vị — gồm phép so với
+    # vector do lõi Node sinh (`packages/flag-evaluator/conformance/vectors.json`) và hợp
+    # đồng nhãn với `packages/openfeature-provider/src/metrics.ts`. Không chạm database.
+    # Ghim bản sàn của `requires-python`: cú pháp hay thư viện chuẩn mới hơn là đỏ ở đây.
+    name: python provider (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: sdks/python/pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: pytest -q
+      # [Plan #48] Template Python của Golden Path là mã developer chép nguyên văn: cùng cổng với SDK.
+      # `udp-openfeature` trong requirements đã thoả bởi bản cài từ sdks/python ở trên.
+      - name: template Python của Golden Path
+        working-directory: packages/golden-path/templates/python
+        run: |
+          python -m pip install -r requirements-dev.txt
+          ruff check --config ../../../../sdks/python/pyproject.toml .
+          ruff format --config ../../../../sdks/python/pyproject.toml --check .
+          mypy --config-file ../../../../sdks/python/pyproject.toml app tests
+          pytest -q -p no:cacheprovider
+
   test:
     name: full test suite on a scratch database
     runs-on: ubuntu-latest
-    # Toàn bộ 7 package, trên một database dùng-một-lần dựng từ chuỗi migration
+    # MỌI package có script `test` (`pnpm -r`), trên một database dùng-một-lần dựng từ chuỗi migration
     # (nên "migration chain replay" là bước đầu của lượt này). Database nằm trên
     # một project Supabase RIÊNG cho CI, đặt cùng vùng với runner: xem
     # `packages/db/scripts/ci-bootstrap.ts` để biết vì sao và cách dựng nó.
@@ -72,9 +105,9 @@ jobs:
     # lặng thay vì đỏ — một fork hay một bản clone không nên hỏng chỉ vì thiếu
     # thứ nó không được phép có.
     env:
-      # Năm chuỗi này do `pnpm db:ci-bootstrap` sinh vào .env.ci rồi
-      # `gh secret set -f .env.ci` nạp lên. Ba chuỗi role là BẮT BUỘC: test của
-      # hai service nối bằng role của chính mình (§1.2) và chốt `current_user`
+      # Sáu chuỗi này do `pnpm db:ci-bootstrap` sinh vào .env.ci rồi
+      # `gh secret set -f .env.ci` nạp lên. Bốn chuỗi role là BẮT BUỘC: test của
+      # ba service nối bằng role của chính mình (§1.2) và chốt `current_user`
       # lúc boot. Job cũ gán chuỗi owner cho S1/S2 — trái ADR-05 ("không đưa
       # owner vào runtime của service"), và cũng làm 249 test service không thể
       # chạy. Role là cấp cluster nên chuỗi role nối thẳng vào database scratch;
@@ -84,9 +117,13 @@ jobs:
       DATABASE_URL_S1: ${{ secrets.DATABASE_URL_S1 }}
       DATABASE_URL_S2: ${{ secrets.DATABASE_URL_S2 }}
       DATABASE_URL_S2_DIRECT: ${{ secrets.DATABASE_URL_S2_DIRECT }}
+      DATABASE_URL_S3: ${{ secrets.DATABASE_URL_S3 }}
+      DATABASE_URL_S3_DIRECT: ${{ secrets.DATABASE_URL_S3_DIRECT }}
       # Tầng 3 của ADR-05 bật: `tier3.integration.test.ts` khẳng định cờ này và
       # đo đường NOTIFY thật trên database scratch.
       CHANGEFEED_NOTIFY_ENABLED: "true"
+      # Kênh rollout_intent của Service 3 bật: test intent-listener đo đường NOTIFY thật
+      ROLLOUT_INTENT_LISTEN_ENABLED: "true"
       # Tên tất định để bước dọn cuối job biết đúng database cần xoá khi lượt bị
       # huỷ giữa chừng. Phải khớp SCRATCH_NAME_PATTERN của scratch-database.ts.
       UDP_SCRATCH_DB_NAME: udp_scratch_ci_${{ github.run_id }}_${{ github.run_attempt }}
@@ -115,6 +152,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
 
+      # `python-parity.test.ts` chạy provider Python ở tiến trình con với Service 2 thật
+      # (I15c, I26 chéo ngôn ngữ); nó tìm `sdks/python/.venv` — không có thì bỏ qua.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: môi trường ảo của provider Python
+        run: python -m venv sdks/python/.venv && sdks/python/.venv/bin/pip install ./sdks/python
+
       - name: pnpm test:scratch
         id: suite
         if: env.DATABASE_URL_DIRECT != ''
@@ -132,3 +177,312 @@ jobs:
         if: always() && env.DATABASE_URL_DIRECT != '' && steps.suite.outcome != 'skipped'
         timeout-minutes: 3
         run: pnpm --filter @udp/db scratch-drop
+
+  i28:
+    # [Plan #50] I28 (§13.3): commit THÊM một adapter (`modules/<x>-adapter/<tool>/index.ts`
+    # mới) không được đổi tệp nào ngoài thư mục tool mới — "0 tệp ngoài adapter" của C2
+    # là một bảo đảm, không phải một lần đo. Nửa dương tính (adapter giả tự hiện trên
+    # catalog) chạy trong job `test`. Commit mà cây chưa có module cổng là commit trước
+    # cổng — được liệt kê, không chặn (E1 đo chúng từ git).
+    name: I28 — thêm adapter không chạm tệp ngoài thư mục của nó
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Cần cả khoảng commit của lượt push/PR, không chỉ commit đầu
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: cổng I28 trên khoảng commit của lượt này
+        # Qua biến môi trường, không nội suy vào lệnh: SHA đến từ sự kiện
+        env:
+          I28_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          I28_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: pnpm --filter @udp/design-lint i28 --base "$I28_BASE" --head "$I28_HEAD"
+      # [Plan #61 61d-3c-2] Cổng F3 (§8.6): đổi ghim chart phải bump version adapter VÀ mang upgradesFrom bản cũ.
+      # Cùng khoảng commit, cùng kỷ luật "commit trước cổng thì miễn". Miễn trừ cho một ghim chưa bao giờ tải
+      # được: dòng `Ghim-hỏng: <chart>` trong thông điệp commit.
+      - name: cổng F3 trên khoảng commit của lượt này
+        if: always()
+        env:
+          I28_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          I28_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: pnpm --filter @udp/design-lint chart-bump --base "$I28_BASE" --head "$I28_HEAD"
+
+  portal-demo:
+    # [Plan #53 QĐ-11, Plan #54 QĐ-4] Cổng chụp màn của bản xem thử: build bản tĩnh (lớp giả lập trong trang, không
+    # backend, không database, không secret), rồi Playwright đi qua mọi màn của hai khung qua năm lượt — máy tính
+    # 1440×900 và điện thoại 375×812 ở giao diện sáng và tối, máy tính bằng tiếng Anh: không lỗi console, không tràn
+    # ngang, đúng một main và một h1, không trang "Không tìm thấy", không "..." trong câu chữ, tương phản chữ WCAG
+    # AA (axe-core), và ở lượt tiếng Anh không còn chữ tiếng Việt trong khung. Không so pixel. Ảnh chụp là artifact
+    # để người review xem. Chi phí 0: repo public, Chromium tải trong runner.
+    name: portal demo — mọi màn, hai cỡ khung, sáng/tối, Việt/Anh
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: build bản xem thử
+        run: pnpm --filter @udp/portal demo:build
+      - name: Chromium cho Playwright
+        run: pnpm --filter @udp/portal exec playwright install --with-deps chromium
+      - name: chụp và kiểm mọi màn
+        run: pnpm --filter @udp/portal demo:screens
+      - name: ảnh chụp
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portal-demo-screens-${{ github.run_id }}
+          path: apps/portal/demo/screens/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build-smoke:
+    # [Plan #61] Đóng gói chạy THẬT: build sáu ứng dụng mẫu (Node.js, Python, Go, Maven, .NET bằng Buildpacks; một
+    # Dockerfile bằng BuildKit) bằng ĐÚNG đoạn shell mà pipeline GitHub Actions của UDP sinh, đẩy GHCR bằng
+    # GITHUB_TOKEN, rồi chạy image và gọi /healthz. Không chạy cho pull request: lượt từ fork không có quyền
+    # `packages: write`. Chi phí 0: repo public, GHCR miễn phí cho package công khai.
+    name: build smoke — Dockerfile và Buildpacks thật, đẩy GHCR, chạy image
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [node, python, go, java-maven, dotnet, dockerfile]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: sinh đoạn build mà pipeline của UDP chạy
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: pnpm --filter @udp/core-backend exec tsx scripts/build-smoke.ts "ghcr.io/${OWNER,,}/udp-build-smoke" > "$RUNNER_TEMP/build.sh"
+      - name: build và đẩy bằng chính đoạn đó
+        working-directory: services/core-backend/tests/fixtures/build-apps/${{ matrix.app }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          UDP_SMOKE_TAG: ${{ matrix.app }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash "$RUNNER_TEMP/build.sh"
+      - name: chạy image, gọi /healthz
+        run: |
+          IMAGE_REF=$(cat "$RUNNER_TEMP/image-ref")
+          echo "$IMAGE_REF" | grep -Eq '@sha256:[0-9a-f]{64}$'
+          docker run -d --name smoke -p 18080:8080 -e PORT=8080 "$IMAGE_REF"
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:18080/healthz; then exit 0; fi
+            sleep 2
+          done
+          docker logs smoke
+          exit 1
+
+  signing-e2e:
+    # [Plan #61 QĐ-14, QĐ-16] Ký image THẬT bằng đúng đoạn shell mà pipeline của UDP sinh (cosign và oras ghim sha256)
+    # trên hai registry: zot (có API referrers) và distribution (không có: cosign và oras dùng tag dự phòng). Ba bộ kiểm
+    # độc lập: cosign verify (bundle), skopeo với policy sigstoreSigned (chữ ký tương thích cho podman, CRI-O, bootc) và
+    # cổng deploy của Service 1. Ca hỏng: khoá khác, annotation bị sửa, commit khác, image không chữ ký. Khoá tệp thay
+    # cho KMS (cùng lệnh, khác giá trị --key): ký bằng KMS thật là sổ nợ `signing-kms-real`. Chi phí 0: hai registry là
+    # service container của runner.
+    name: signing e2e — cosign, oras, skopeo, cổng deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      zot:
+        image: ghcr.io/project-zot/zot-linux-amd64:v2.1.21@sha256:8258443838e95989c13c891f78a02bc1c391b5a00591ffef24cb8c17cde28038
+        ports: ["5000:5000"]
+      distribution:
+        image: registry:3.1.2@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8
+        ports: ["5001:5000"]
+    env:
+      BASE: busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+      E2E: pnpm --filter @udp/core-backend exec tsx scripts/signing-e2e.ts
+      # Khoá tệp không mật khẩu — chỉ sống trong lượt chạy này
+      COSIGN_PASSWORD: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: công cụ ký (cosign, oras) như pipeline tải, hai cặp khoá tệp
+        run: |
+          echo "UDP_TMP=$RUNNER_TEMP/udp-sign" >> "$GITHUB_ENV"
+          export UDP_TMP="$RUNNER_TEMP/udp-sign"
+          mkdir -p "$UDP_TMP/other"
+          $E2E tools > "$RUNNER_TEMP/tools.sh"
+          bash -eu "$RUNNER_TEMP/tools.sh"
+          (cd "$UDP_TMP" && ./cosign generate-key-pair)
+          (cd "$UDP_TMP/other" && ../cosign generate-key-pair)
+      - name: image nhỏ ở hai registry — một bản để ký (amd64), một bản không (arm64)
+        # Dạng OCI: zot mặc định không nhận manifest dạng Docker
+        run: |
+          for reg in localhost:5000 localhost:5001; do
+            skopeo copy -q --format oci --override-arch amd64 --dest-tls-verify=false "docker://$BASE" "docker://$reg/e2e/app:signed"
+            skopeo copy -q --format oci --override-arch arm64 --dest-tls-verify=false "docker://$BASE" "docker://$reg/e2e/app:unsigned"
+          done
+      - name: ký bằng đúng đoạn shell của pipeline (bundle và chữ ký tương thích)
+        run: |
+          digest() {
+            curl -fsSI -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+              "http://$1/v2/e2e/app/manifests/$2" | tr -d '\r' | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'
+          }
+          $E2E sign > "$RUNNER_TEMP/sign.sh"
+          for reg in localhost:5000 localhost:5001; do
+            port=${reg#localhost:}
+            echo "DIGEST_$port=$(digest "$reg" signed)" >> "$GITHUB_ENV"
+            echo "UNSIGNED_$port=$(digest "$reg" unsigned)" >> "$GITHUB_ENV"
+            UDP_IMAGE="$reg/e2e/app" UDP_DIGEST=$(digest "$reg" signed) UDP_KEY="$UDP_TMP/cosign.key" \
+              UDP_COMMIT="$GITHUB_SHA" UDP_RUN="$GITHUB_RUN_ID" bash -eu "$RUNNER_TEMP/sign.sh"
+            cp "$UDP_TMP/signature.json" "$RUNNER_TEMP/bundle-$port.json"
+            # Đường bundle đi tới UDP: base64 một dòng qua biến của CI, jq của bước báo giải lại ĐÚNG bundle
+            jq -nc --arg sig "$(cat "$UDP_TMP/signature.b64")" '$sig | @base64d | fromjson' > "$RUNNER_TEMP/decoded.json"
+            jq -c . "$RUNNER_TEMP/bundle-$port.json" | cmp - "$RUNNER_TEMP/decoded.json"
+          done
+      - name: cosign verify — đúng khoá qua; khoá khác, image không chữ ký hỏng
+        run: |
+          for port in 5000 5001; do
+            signed=$(printenv "DIGEST_$port"); unsigned=$(printenv "UNSIGNED_$port")
+            "$UDP_TMP/cosign" verify --key "$UDP_TMP/cosign.pub" --insecure-ignore-tlog "localhost:$port/e2e/app@$signed" > /dev/null
+            if "$UDP_TMP/cosign" verify --key "$UDP_TMP/other/cosign.pub" --insecure-ignore-tlog "localhost:$port/e2e/app@$signed" > /dev/null 2>&1; then
+              echo "khoá khác mà vẫn qua ($port)"; exit 1
+            fi
+            if "$UDP_TMP/cosign" verify --key "$UDP_TMP/cosign.pub" --insecure-ignore-tlog "localhost:$port/e2e/app@$unsigned" > /dev/null 2>&1; then
+              echo "image không chữ ký mà vẫn qua ($port)"; exit 1
+            fi
+          done
+      - name: skopeo với policy sigstoreSigned — chữ ký tương thích
+        run: |
+          mkdir -p "$RUNNER_TEMP/registries.d"
+          printf 'default-docker:\n  use-sigstore-attachments: true\n' > "$RUNNER_TEMP/registries.d/default.yaml"
+          policy() {
+            rule="[{\"type\":\"sigstoreSigned\",\"keyPath\":\"$1\",\"signedIdentity\":{\"type\":\"matchRepository\"}}]"
+            printf '{"default":[{"type":"reject"}],"transports":{"docker":{"localhost:5000":%s,"localhost:5001":%s}}}' "$rule" "$rule" > "$2"
+          }
+          policy "$UDP_TMP/cosign.pub" "$RUNNER_TEMP/policy.json"
+          policy "$UDP_TMP/other/cosign.pub" "$RUNNER_TEMP/policy-other.json"
+          pull() {
+            rm -rf "$RUNNER_TEMP/pulled"
+            skopeo --policy "$1" --registries.d "$RUNNER_TEMP/registries.d" copy -q --src-tls-verify=false \
+              "docker://$2" "dir:$RUNNER_TEMP/pulled"
+          }
+          for port in 5000 5001; do
+            signed=$(printenv "DIGEST_$port"); unsigned=$(printenv "UNSIGNED_$port")
+            pull "$RUNNER_TEMP/policy.json" "localhost:$port/e2e/app@$signed"
+            if pull "$RUNNER_TEMP/policy-other.json" "localhost:$port/e2e/app@$signed" 2>/dev/null; then
+              echo "skopeo nhận khoá khác ($port)"; exit 1
+            fi
+            if pull "$RUNNER_TEMP/policy.json" "localhost:$port/e2e/app@$unsigned" 2>/dev/null; then
+              echo "skopeo nhận image không chữ ký ($port)"; exit 1
+            fi
+          done
+      - name: cổng deploy của Service 1 — đúng qua; khoá khác, annotation bị sửa, commit khác bị từ chối
+        run: |
+          for port in 5000 5001; do
+            bundle="$RUNNER_TEMP/bundle-$port.json"
+            ref="localhost:$port/e2e/app:signed@$(printenv "DIGEST_$port")"
+            $E2E verify "$bundle" "$UDP_TMP/cosign.pub" "$ref" "$GITHUB_SHA" ok
+            $E2E verify "$bundle" "$UDP_TMP/other/cosign.pub" "$ref" "$GITHUB_SHA" SIGNATURE_INVALID
+            jq '.dsseEnvelope.payload |= (@base64d | sub("\"dev.udp.ref\":\"main\""; "\"dev.udp.ref\":\"evil\"") | @base64)' \
+              "$bundle" > "$RUNNER_TEMP/tampered.json"
+            $E2E verify "$RUNNER_TEMP/tampered.json" "$UDP_TMP/cosign.pub" "$ref" "$GITHUB_SHA" SIGNATURE_INVALID
+            $E2E verify "$bundle" "$UDP_TMP/cosign.pub" "$ref" 0000000000000000000000000000000000000000 SIGNATURE_MISMATCH
+          done
+
+  kind:
+    # [Plan #50] §13.5 "build image → dựng kind → E2E rút gọn" và làn đêm "benchmark".
+    # Chạy ĐÚNG `pnpm deploy:up` mà README hứa với developer (Plan #49, D-P37): build 6
+    # image tại chỗ, `kind load` (không registry), Secret sinh ngay trong runner cho lượt
+    # này, migrate + seed, chờ sẵn sàng. Chi phí 0: không đẩy image, không cloud.
+    name: kind — build image, dựng cụm, E2E rút gọn (E9 ở làn đêm)
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      # 6 image (mỗi image mang cây phụ thuộc của package) + image node của kind + bản nạp
+      # vào node: dọn các SDK cài sẵn không dùng tới để không cạn đĩa giữa chừng
+      - name: dọn đĩa runner
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: helm/kind-action@v1
+        with:
+          # Chỉ cài `kind`: dựng cụm là việc của `pnpm deploy:up`, theo `deploy/kind/cluster.yaml`
+          install_only: true
+      - name: pnpm deploy:up
+        timeout-minutes: 50
+        run: pnpm deploy:up
+      - name: E2E rút gọn
+        timeout-minutes: 10
+        run: pnpm --filter @udp/deploy e2e
+      - name: E9 — tài nguyên khi rỗi và khi 1 000 SDK nối SSE
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        timeout-minutes: 20
+        run: pnpm --filter @udp/experiments e9 --note "CI run ${{ github.run_id }}"
+      # Số chỉ XONG khi tệp này được commit vào `docs/measurements/raw/` (luật của sổ nợ, mục E9)
+      - name: kết quả E9
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: E9-${{ github.run_id }}
+          path: docs/measurements/raw/E9-*.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: chẩn đoán cụm
+        if: failure()
+        run: pnpm --filter @udp/deploy diagnose
+
+  vm:
+    # [Plan #52 QĐ-11] Diễn tập máy ảo công khai (Oracle Always Free) trên runner: CHÍNH `bootstrap.sh` (k3s,
+    # cert-manager, Docker, Node — thứ đã có thì bỏ qua), CHÍNH `release.sh` (build image, nạp vào k3s, bản phát
+    # hành từ vm.env, migrate), rồi E2E qua HTTPS với chứng chỉ cert-manager cấp từ CA tự ký — route công khai,
+    # đường nội bộ không lộ, SSE qua Traefik, sao lưu → khôi phục. Phần runner không thay được (arm64, iptables của
+    # Oracle, Let's Encrypt thật) ở sổ nợ `vm-oracle-real`. Chi phí 0: repo public.
+    name: vm — bootstrap k3s, phát hành, E2E qua HTTPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: dọn đĩa runner
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: dựng máy (bootstrap.sh)
+        timeout-minutes: 20
+        run: bash deploy/vm/bootstrap.sh
+      - name: cấu hình máy diễn tập
+        run: bash deploy/vm/ci-settings.sh
+      - name: phát hành (release.sh)
+        timeout-minutes: 50
+        run: bash deploy/vm/release.sh "$GITHUB_SHA"
+      - name: E2E qua HTTPS
+        timeout-minutes: 15
+        run: pnpm --filter @udp/deploy e2e:vm
+      - name: chẩn đoán máy
+        if: failure()
+        run: pnpm install --frozen-lockfile --filter "@udp/deploy..." && pnpm --filter @udp/deploy diagnose --target vm

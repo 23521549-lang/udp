@@ -14,6 +14,7 @@
  */
 
 export * from "./errors.js";
+export * from "./flagger-gate.js";
 export * from "./ip-key.js";
 export * from "./rate-limit-problem.js";
 export * from "./logger.js";
@@ -21,3 +22,8 @@ export * from "./problem.js";
 export * from "./error-handler.js";
 export * from "./validate.js";
 export * from "./request-logger.js";
+export * from "./uuid.js";
+export * from "./audit.js";
+export * from "./json-body.js";
+export * from "./send-json.js";
+export * from "./internal-caller.js";

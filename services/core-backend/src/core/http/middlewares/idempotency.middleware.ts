@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { RequestHandler, Response } from "express";
 import { prisma } from "../../db.js";
-import { UnprocessableError, ValidationError } from "@udp/http";
+import { UnprocessableError, UUID_PATTERN, ValidationError } from "@udp/http";
 import { logger } from "@udp/http";
 import { requireUser } from "./auth.middleware.js";
 import { projectIdParam } from "./project-role.middleware.js";
@@ -23,7 +23,6 @@ import { projectIdParam } from "./project-role.middleware.js";
  */
 
 const TTL_MS = 24 * 60 * 60 * 1000;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Băm body theo dạng chuẩn hoá, không phải `JSON.stringify` thẳng.
@@ -149,7 +148,7 @@ export const idempotent =
         return;
       }
 
-      if (!UUID.test(raw)) {
+      if (!UUID_PATTERN.test(raw)) {
         next(new ValidationError("Idempotency-Key phải là UUID"));
         return;
       }

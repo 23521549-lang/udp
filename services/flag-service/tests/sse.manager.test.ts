@@ -74,6 +74,12 @@ const record = (configVersion: number, f: SnapshotFlag): ChangeRecord => ({
   payload: JSON.parse(JSON.stringify({ flag: f })) as ChangeRecord["payload"],
 });
 
+/** [v4.9] Một lô delta đủ lớn để vượt trần backlog của MỘT stream (V22) */
+const bigRecords = (configVersion: number): ChangeRecord[] =>
+  Array.from({ length: 30 }, (_, i) =>
+    record(configVersion, flag(`f-${String(i)}`, true)),
+  );
+
 const delta = (
   previous: ConfigEntry,
   next: ConfigEntry,
@@ -102,6 +108,12 @@ class FakeResponse extends EventEmitter implements StreamResponse {
   writableLength = 0;
   writableEnded = false;
   destroyed = false;
+  /**
+   * [v4.9] Như socket thật: mỗi lần ghi cộng vào backlog, và backlog chỉ giảm khi
+   * client đọc. Mặc định TẮT — phần lớn test ở đây đặt `writableLength` bằng tay
+   * để dựng đúng một tình huống, còn V22 cần backlog tự lớn lên theo lượt ghi.
+   */
+  accumulate = false;
 
   setHeader(name: string, value: string): this {
     this.headers.set(name.toLowerCase(), value);
@@ -118,6 +130,7 @@ class FakeResponse extends EventEmitter implements StreamResponse {
       throw new Error("ERR_STREAM_WRITE_AFTER_END");
     }
     this.raw.push(chunk);
+    if (this.accumulate) this.writableLength += chunk.length;
     return true;
   }
 
@@ -191,7 +204,7 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-function rig() {
+function rig(limits: SseLimits = LIMITS) {
   const state = {
     current: entry(5, [flag("a", false)]),
     db: new Map<string, EnvironmentState>(),
@@ -231,7 +244,7 @@ function rig() {
       if (state.keysDown) throw new Error("database chớp");
       return new Set(ids.filter((id) => state.active.has(id)));
     },
-    limits: LIMITS,
+    limits,
     random: () => 0.5,
   });
 
@@ -355,6 +368,57 @@ describe("đẩy thay đổi", () => {
     ]);
   });
 
+  it('tập tracked đổi ⇒ phần tử kind "trackedFlags" mang cả tập [v4.3]', async () => {
+    const r = rig();
+    const { res } = await r.open(5);
+    r.publish(
+      delta(r.state.current, entry(6, []), [
+        {
+          configVersion: 6,
+          changeType: "rollout.tracked",
+          payload: { trackedFlags: ["a", "b-c"] },
+        },
+      ]),
+    );
+    await flush();
+
+    expect(res.events()).toEqual([
+      {
+        event: "flag_changed",
+        id: 6,
+        data: {
+          fromVersion: 5,
+          toVersion: 6,
+          configHash: "h6",
+          changes: [
+            {
+              configVersion: 6,
+              kind: "trackedFlags",
+              trackedFlags: ["a", "b-c"],
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("dòng tracked sai hình dạng ⇒ snapshot, không bao giờ gửi delta thiếu", async () => {
+    const r = rig();
+    const { res } = await r.open(5);
+    r.publish(
+      delta(r.state.current, entry(6, []), [
+        {
+          configVersion: 6,
+          changeType: "rollout.untracked",
+          payload: { trackedFlags: ["b", "a"] },
+        },
+      ]),
+    );
+    await flush();
+
+    expect(res.events().map((e) => e.event)).toEqual(["snapshot"]);
+  });
+
   it("cùng version nhưng KHÁC hash ⇒ snapshot, không phải delta (I15c)", async () => {
     /**
      * SDK giữ `(5, h5)`; delta xuất phát từ `(5, h5-khac)` — cùng SỐ, khác NỘI
@@ -439,7 +503,17 @@ describe("đẩy thay đổi", () => {
 });
 
 describe("thu hồi khoá (§12 T7)", () => {
-  it("khoá bị thu hồi ⇒ không đẩy gì nữa, và stream đóng trong một chu kỳ kiểm", async () => {
+  /**
+   * [v4.9] Đổi KỲ VỌNG của ca này, có chủ đích (L1, B-02).
+   *
+   * Bản trước khẳng định "stream đóng trong một chu kỳ kiểm" và `destroyed` còn
+   * `false` ngay sau lượt đẩy. Đó đúng là hành vi mà L1 cố ý thay: thu hồi khoá
+   * giờ đi qua outbox, nên MỌI replica nhận được tín hiệu và đóng ngay trong lượt
+   * giao, không chờ vòng 5 giây. Không bất biến nào bị nới: khoá đã thu hồi vẫn
+   * KHÔNG nhận byte nào (`seen()` rỗng), chỉ thời điểm đóng sớm hơn. Vòng kiểm
+   * định kỳ vẫn là lưới, và ca ngay dưới đây canh nó.
+   */
+  it("khoá bị thu hồi ⇒ không đẩy gì nữa, và stream đóng NGAY ở lượt đẩy", async () => {
     const r = rig();
     const { res } = await r.open(5);
     r.state.active.delete("key-1");
@@ -451,11 +525,112 @@ describe("thu hồi khoá (§12 T7)", () => {
     );
     await flush();
     expect(res.seen()).toEqual([]);
+    expect(res.destroyed).toBe(true);
+    expect(r.hub.size()).toBe(0);
+  });
+
+  it("[v4.9] vòng kiểm định kỳ vẫn đóng stream RỖI của khoá đã thu hồi", async () => {
+    /**
+     * Lưới của L1: không có lần ghi cấu hình nào sau khi thu hồi (environment
+     * đứng yên), nên không có lượt đẩy nào để đóng ngay. Vòng 5 giây là đường
+     * duy nhất còn lại, và nó phải còn nguyên.
+     */
+    const r = rig();
+    const { res } = await r.open(5);
+    r.state.active.delete("key-1");
+
+    await flush();
     expect(res.destroyed).toBe(false);
 
     await vi.advanceTimersByTimeAsync(LIMITS.revocationCheckMs);
     expect(res.destroyed).toBe(true);
     expect(r.hub.size()).toBe(0);
+  });
+
+  it("[v4.9] stream mở SAU lần hỏi, khoá CHƯA được hỏi ⇒ không đóng, không nhận gì", async () => {
+    /**
+     * Lý do đứng sau chú thích cũ ở `deliver`, giữ nguyên: khoá không có trong
+     * lần hỏi của lượt này thì việc nó vắng khỏi `active` KHÔNG chứng minh gì —
+     * nó có thể hoàn toàn hợp lệ. Đóng nó ở đây là đóng một stream đúng.
+     */
+    const r = rig();
+    const first = await r.open(5);
+    const gate = deferred();
+    r.state.hold = gate.promise;
+
+    r.publish(
+      delta(r.state.current, entry(6, [flag("a", true)]), [
+        record(6, flag("a", true)),
+      ]),
+    );
+
+    // KEY2 mở trong lúc lần hỏi còn treo ⇒ không nằm trong `queried` của lượt này
+    const late = await r.open(6, KEY2);
+    r.state.active.delete("key-2");
+    r.state.hold = undefined;
+    gate.resolve();
+    await flush();
+
+    expect(late.res.destroyed).toBe(false);
+    expect(late.res.seen()).toEqual([]);
+    expect(first.res.seen()).toEqual([["flag_changed", 6]]);
+  });
+
+  it("[v4.9] khoá ĐÃ hỏi và bị thu hồi: stream mở muộn cũng bị đóng (C-11)", async () => {
+    /**
+     * Stream mở sau lần hỏi nhận `seq = received`, nên sự kiện của lượt này "cũ"
+     * với nó và phép kiểm `seq <= s.seq` sẽ bỏ qua nó. Chốt đóng vì thế phải đứng
+     * TRƯỚC phép kiểm đó — nếu không, một stream mở muộn của khoá đã thu hồi sống
+     * tới hết vòng kiểm 5 giây, đúng cái L1 bỏ.
+     */
+    const r = rig();
+    const first = await r.open(5);
+    r.state.active.delete("key-1");
+    const gate = deferred();
+    r.state.hold = gate.promise;
+
+    r.publish(
+      delta(r.state.current, entry(6, [flag("a", true)]), [
+        record(6, flag("a", true)),
+      ]),
+    );
+
+    const late = await r.open(6);
+    r.state.hold = undefined;
+    gate.resolve();
+    await flush();
+
+    expect(first.res.destroyed).toBe(true);
+    expect(late.res.destroyed).toBe(true);
+    expect(late.res.seen()).toEqual([]);
+    expect(r.hub.size()).toBe(0);
+  });
+
+  it("[v4.9] version tiến mà hash không đổi ⇒ flag_changed RỖNG, không snapshot (L1)", async () => {
+    /**
+     * Hình dạng của một lần thu hồi khoá trên stream của khoá KHÁC: hash là
+     * checksum nội dung, nên hash trùng nghĩa là SDK đã có đúng nội dung đích.
+     * `fromVersion` là version của CHÍNH stream (F11), vì ở chế độ snapshot
+     * không có `previous` nào chắc trùng vị trí nó.
+     */
+    const r = rig();
+    const { res } = await r.open(5);
+    const same = entry(6, [flag("a", false)], "h5");
+
+    r.publish(replaced(r.state.current, same));
+    await flush();
+
+    expect(res.seen()).toEqual([["flag_changed", 6]]);
+    expect(res.events().at(-1)?.data).toEqual({
+      fromVersion: 5,
+      toVersion: 6,
+      configHash: "h5",
+      changes: [],
+    });
+
+    // Vị trí đã tiến, nên vòng kiểm định kỳ KHÔNG bù thêm snapshot nào
+    await vi.advanceTimersByTimeAsync(LIMITS.revocationCheckMs);
+    expect(res.seen()).toEqual([["flag_changed", 6]]);
   });
 
   it("không kiểm được khoá ⇒ bỏ lượt đẩy; vòng kiểm sau bù bằng snapshot", async () => {
@@ -557,6 +732,84 @@ describe("hạn mức và vòng đời", () => {
     await flush();
     expect(slow.res.destroyed).toBe(true);
     expect(fast.res.seen()).toEqual([["flag_changed", 6]]);
+  });
+
+  /**
+   * [v4.9] V22 — trần backlog xét MỐC ĐẦU LƯỢT, và mốc đó chỉ sống một lượt.
+   *
+   * Trần mặc định của file này (1 000 B) quá nhỏ để dựng "nhiều khối lớn trong
+   * MỘT lượt" mà không đụng cả hai trần cùng lúc, nên hai ca dưới đây nới trần
+   * theo hình dạng thật của SSE: một khối nhỏ hơn trần mỗi stream, vài khối liên
+   * tiếp thì vượt.
+   */
+  const V22_LIMITS: SseLimits = {
+    ...LIMITS,
+    maxBacklogBytesPerStream: 8_000,
+    maxBacklogBytesTotal: 1_000_000,
+  };
+
+  it("[v4.9] nhiều khối lớn liên tiếp TRONG MỘT lượt: stream đọc kịp không bị cắt (V22)", async () => {
+    /**
+     * Trong một lượt `drain` mọi lần `deliver` chạy đồng bộ, không I/O xen giữa,
+     * nên backlog tăng sau khối đầu là của CHÍNH lượt đó. Đọc `writableLength`
+     * tức thời ở khối thứ hai là tự kết luận "client chậm" vì mình vừa ghi nhanh
+     * — và với vài lần sửa segment liên tiếp thì đó là cắt một stream hoàn toàn
+     * khoẻ. Lần hỏi khoá bị giữ để ba event sau dồn vào ĐÚNG một lô.
+     */
+    const r = rig(V22_LIMITS);
+    const { res } = await r.open(5);
+    // Client đã đọc xong phần mở đầu; từ đây backlog lớn lên theo lượt ghi
+    res.accumulate = true;
+
+    const gate = deferred();
+    r.state.hold = gate.promise;
+
+    let previous = r.state.current;
+    for (let version = 6; version <= 9; version += 1) {
+      const next = entry(version, [flag("a", version % 2 === 0)]);
+      r.publish(delta(previous, next, bigRecords(version)));
+      previous = next;
+    }
+    r.state.hold = undefined;
+    gate.resolve();
+    await flush();
+
+    expect(res.seen()).toEqual([
+      ["flag_changed", 6],
+      ["flag_changed", 7],
+      ["flag_changed", 8],
+      ["flag_changed", 9],
+    ]);
+    expect(res.destroyed).toBe(false);
+    expect(
+      res.writableLength,
+      "lô đã vượt trần mỗi stream mà vẫn không bị cắt",
+    ).toBeGreaterThan(V22_LIMITS.maxBacklogBytesPerStream);
+  });
+
+  it("[v4.9] mốc chỉ sống trong MỘT lượt: lượt sau thấy backlog THẬT và vẫn cắt (V22)", async () => {
+    const r = rig(V22_LIMITS);
+    const { res } = await r.open(5);
+    res.accumulate = true;
+
+    const e6 = entry(6, [flag("a", true)]);
+    r.publish(delta(r.state.current, e6, bigRecords(6)));
+    await flush();
+    expect(res.destroyed).toBe(false);
+
+    // Client chưa đọc gì, nhưng backlog đầu lượt vẫn dưới trần ⇒ còn được ghi
+    const e7 = entry(7, [flag("a", false)]);
+    r.publish(delta(e6, e7, bigRecords(7)));
+    await flush();
+    expect(res.destroyed).toBe(false);
+    expect(res.writableLength).toBeGreaterThan(
+      V22_LIMITS.maxBacklogBytesPerStream,
+    );
+
+    // Lượt thứ ba mở ra với backlog THẬT đã vượt trần ⇒ cắt, như trước [v4.9]
+    r.publish(delta(e7, entry(8, [flag("a", true)]), bigRecords(8)));
+    await flush();
+    expect(res.destroyed).toBe(true);
   });
 
   it("nhịp tim mỗi heartbeatMs; stream đã đóng thì không nhận nữa", async () => {

@@ -1,0 +1,8 @@
+{
+  "route": "GET /auth/options",
+  "status": 200,
+  "body": {
+    "passwordReset": false,
+    "github": false
+  }
+}

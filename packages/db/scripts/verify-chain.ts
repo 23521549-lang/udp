@@ -72,14 +72,20 @@ const childEnv: NodeJS.ProcessEnv = {
   // chính database tạm để không lời gọi nhầm nào chạm tới database thật.
   DATABASE_URL_S1: pointAt(process.env["DATABASE_URL_S1"] ?? adminUrl, scratch),
   DATABASE_URL_S2: pointAt(process.env["DATABASE_URL_S2"] ?? adminUrl, scratch),
+  DATABASE_URL_S3: pointAt(process.env["DATABASE_URL_S3"] ?? adminUrl, scratch),
   DATABASE_URL_S2_DIRECT: pointAt(
     process.env["DATABASE_URL_S2_DIRECT"] ?? adminUrl,
+    scratch,
+  ),
+  DATABASE_URL_S3_DIRECT: pointAt(
+    process.env["DATABASE_URL_S3_DIRECT"] ?? adminUrl,
     scratch,
   ),
   // Lượt kiểm chỉ chạy test của `@udp/db` và `design-lint`, không dựng Service 2 —
   // tắt tầng 3 để `@udp/config` không phụ thuộc kênh LISTEN của `.env` thật. Test
   // NOTIFY của `@udp/db` tự quyết bằng tham số `notify`, không bằng cờ này.
   CHANGEFEED_NOTIFY_ENABLED: "false",
+  ROLLOUT_INTENT_LISTEN_ENABLED: "false",
 };
 
 try {

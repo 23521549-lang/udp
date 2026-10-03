@@ -27,9 +27,22 @@ export const CONFIG_CHANGE_TYPES = [
    */
   "rule.ramped",
   "envconfig.toggled",
+  /**
+   * [v4.3] Tập flag đang gắn nhãn `ff` của environment đổi (§6.6). Payload là
+   * TOÀN BỘ tập sau thay đổi — `{ trackedFlags: string[] }`, đã sắp — nên áp
+   * delta là thay tập, idempotent và không phụ thuộc thứ tự dòng.
+   */
+  "rollout.tracked",
+  "rollout.untracked",
   "variant.updated",
   "segment.updated",
   "sdkkey.revoked",
+  /**
+   * [v4.11, Plan #40] Environment mới nhận một `FlagEnvConfig` TẮT cho mọi flag còn thiếu. MỘT
+   * dòng mang NHIỀU flag — không vừa khuôn `{ flag }` — nên replica áp nó bằng snapshot; payload
+   * `{ addedFlagKeys }` (đã sắp) chỉ để đọc lại được.
+   */
+  "environment.backfilled",
 ] as const;
 
 export type ConfigChangeType = (typeof CONFIG_CHANGE_TYPES)[number];

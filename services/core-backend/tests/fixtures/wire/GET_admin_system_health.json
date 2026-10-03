@@ -1,0 +1,22 @@
+{
+  "route": "GET /admin/system/health",
+  "status": 200,
+  "body": {
+    "services": [
+      {
+        "name": "udp-core-backend",
+        "status": "up"
+      },
+      {
+        "name": "udp-feature-flag-service",
+        "status": "down"
+      },
+      {
+        "name": "udp-pd-controller",
+        "status": "unknown"
+      }
+    ],
+    "database": "up",
+    "checkedAt": "2026-09-25T03:16:31.415Z"
+  }
+}

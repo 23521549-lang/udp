@@ -1,0 +1,1155 @@
+{
+  "experiment": "chart-values",
+  "at": "2026-10-03T09:00:03.575Z",
+  "environment": {
+    "commit": "8da13ed69ea3a238c8a8a3a578d045f0a8010dc5",
+    "sourceDirty": true,
+    "sourceDiffSha256": "eefbc0f91e37ac29fa568ba2b2c3692e5af8d9f0e40ce47edfd3ab7a1113409b",
+    "node": "v22.20.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "memoryGiB": 7.7,
+    "freeMemoryGiB": 0.9,
+    "geometry": "máy dev → repo Helm công khai (tải index + tarball), so khoá in-process",
+    "note": "61d-3c: khoa values cua adapter so voi values.yaml va template that cua chart"
+  },
+  "data": {
+    "charts": 71,
+    "releasesAudited": 24,
+    "skipped": 60,
+    "offenders": [],
+    "rows": [
+      {
+        "adapter": "ARTIFACT_REGISTRY:artifactory",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "ARTIFACT_REGISTRY:github-packages",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "ARTIFACT_REGISTRY:nexus",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CICD:circleci",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CICD:drone",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CICD:github-actions",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CICD:gitlab-ci",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CICD:jenkins",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CICD:tekton",
+        "release": "udp-build-namespace",
+        "chart": "raw",
+        "version": "v0.3.2",
+        "keys": [
+          "resources",
+          "resources"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "CICD:tekton",
+        "release": "udp-tekton",
+        "chart": "tekton-pipeline",
+        "version": "1.1.4",
+        "keys": [
+          "controller",
+          "controller.replicas",
+          "controller.replicas",
+          "controller.podAnnotations",
+          "controller.podAnnotations.udp.dev/registry-ref",
+          "controller.podAnnotations.udp.dev/registry-ref"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: không thấy version 1.1.4 trong index"
+      },
+      {
+        "adapter": "CONTAINER_REGISTRY:acr",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CONTAINER_REGISTRY:docker-hub",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CONTAINER_REGISTRY:ecr",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CONTAINER_REGISTRY:gcp-artifact-registry",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CONTAINER_REGISTRY:ghcr",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "CONTAINER_REGISTRY:harbor",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "COST:kubecost",
+        "release": "udp-kubecost",
+        "chart": "cost-analyzer",
+        "version": "2.4.3",
+        "keys": [
+          "global",
+          "global.prometheus",
+          "global.prometheus.enabled",
+          "global.prometheus.enabled",
+          "global.prometheus.fqdn",
+          "global.prometheus.fqdn",
+          "global.grafana",
+          "global.grafana.enabled",
+          "global.grafana.enabled",
+          "global.grafana.proxy",
+          "global.grafana.proxy",
+          "kubecostProductConfigs",
+          "kubecostProductConfigs.clusterName",
+          "kubecostProductConfigs.clusterName"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "COST:opencost",
+        "release": "udp-opencost",
+        "chart": "opencost",
+        "version": "1.42.3",
+        "keys": [
+          "fullnameOverride",
+          "fullnameOverride",
+          "opencost",
+          "opencost.prometheus",
+          "opencost.prometheus.internal",
+          "opencost.prometheus.internal.enabled",
+          "opencost.prometheus.internal.enabled",
+          "opencost.prometheus.external",
+          "opencost.prometheus.external.enabled",
+          "opencost.prometheus.external.enabled",
+          "opencost.prometheus.external.url",
+          "opencost.prometheus.external.url",
+          "opencost.customPricing",
+          "opencost.customPricing.enabled",
+          "opencost.customPricing.enabled",
+          "opencost.customPricing.costModel",
+          "opencost.customPricing.costModel.CPU",
+          "opencost.customPricing.costModel.CPU",
+          "opencost.customPricing.costModel.RAM",
+          "opencost.customPricing.costModel.RAM",
+          "opencost.ui",
+          "opencost.ui.enabled",
+          "opencost.ui.enabled"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "DATABASE:cloudnative-pg",
+        "release": "udp-cnpg",
+        "chart": "cloudnative-pg",
+        "version": "0.22.1",
+        "keys": [
+          "config",
+          "config.clusterWide",
+          "config.clusterWide"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "DATABASE:cloudnative-pg",
+        "release": "udp-cnpg-db-dev",
+        "chart": "raw",
+        "version": "v0.3.2",
+        "keys": [
+          "resources",
+          "resources"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "DATABASE:cloudnative-pg",
+        "release": "udp-cnpg-db-prod",
+        "chart": "raw",
+        "version": "v0.3.2",
+        "keys": [
+          "resources",
+          "resources"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "DATABASE:k8ssandra",
+        "release": "udp-cert-manager",
+        "chart": "cert-manager",
+        "version": "v1.16.1",
+        "keys": [
+          "crds",
+          "crds.enabled",
+          "crds.enabled"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "DATABASE:k8ssandra",
+        "release": "udp-k8ssandra",
+        "chart": "k8ssandra-operator",
+        "version": "1.20.2",
+        "keys": [
+          "global",
+          "global.clusterScoped",
+          "global.clusterScoped"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "DATABASE:k8ssandra",
+        "release": "udp-cassandra-dev",
+        "chart": "raw",
+        "version": "v0.3.2",
+        "keys": [
+          "resources",
+          "resources"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "DATABASE:k8ssandra",
+        "release": "udp-cassandra-prod",
+        "chart": "raw",
+        "version": "v0.3.2",
+        "keys": [
+          "resources",
+          "resources"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "DATABASE:minio",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "DATABASE:mongodb",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "DATABASE:mysql",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "DATABASE:redis",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "GITOPS:argo-cd",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "GITOPS:flux",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "INFRA:ack",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "INFRA:ansible",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "deploy không SUCCESS: Error"
+      },
+      {
+        "adapter": "INFRA:aso",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "INFRA:config-connector",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "INFRA:crossplane",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "INFRA:pulumi",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "INFRA:terraform",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "INGRESS:nginx",
+        "release": "udp-ingress-nginx",
+        "chart": "ingress-nginx",
+        "version": "4.11.2",
+        "keys": [
+          "controller",
+          "controller.replicaCount",
+          "controller.replicaCount",
+          "controller.ingressClassResource",
+          "controller.ingressClassResource.name",
+          "controller.ingressClassResource.name",
+          "controller.ingressClassResource.controllerValue",
+          "controller.ingressClassResource.controllerValue",
+          "controller.service",
+          "controller.service.type",
+          "controller.service.type",
+          "controller.metrics",
+          "controller.metrics.enabled",
+          "controller.metrics.enabled"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "INGRESS:traefik",
+        "release": "udp-traefik",
+        "chart": "traefik",
+        "version": "32.1.0",
+        "keys": [
+          "deployment",
+          "deployment.replicas",
+          "deployment.replicas",
+          "service",
+          "service.type",
+          "service.type",
+          "ingressRoute",
+          "ingressRoute.dashboard",
+          "ingressRoute.dashboard.enabled",
+          "ingressRoute.dashboard.enabled",
+          "providers",
+          "providers.kubernetesCRD",
+          "providers.kubernetesCRD.enabled",
+          "providers.kubernetesCRD.enabled",
+          "providers.kubernetesIngress",
+          "providers.kubernetesIngress.enabled",
+          "providers.kubernetesIngress.enabled",
+          "metrics",
+          "metrics.prometheus",
+          "metrics.prometheus.entryPoint",
+          "metrics.prometheus.entryPoint"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "LOGGING:datadog-logs",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "LOGGING:elk",
+        "release": "udp-eck-operator",
+        "chart": "eck-operator",
+        "version": "2.14.0",
+        "keys": [
+          "installCRDs",
+          "installCRDs",
+          "managedNamespaces",
+          "managedNamespaces"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "LOGGING:elk",
+        "release": "udp-elk",
+        "chart": "eck-stack",
+        "version": "0.12.1",
+        "keys": [
+          "eck-elasticsearch",
+          "eck-elasticsearch.fullnameOverride",
+          "eck-elasticsearch.fullnameOverride",
+          "eck-elasticsearch.nodeSets",
+          "eck-elasticsearch.nodeSets",
+          "eck-kibana",
+          "eck-kibana.enabled",
+          "eck-kibana.enabled",
+          "eck-kibana.elasticsearchRef",
+          "eck-kibana.elasticsearchRef.name",
+          "eck-kibana.elasticsearchRef.name",
+          "eck-beats",
+          "eck-beats.enabled",
+          "eck-beats.enabled",
+          "eck-beats.spec",
+          "eck-beats.spec.type",
+          "eck-beats.spec.type",
+          "eck-beats.spec.elasticsearchRef",
+          "eck-beats.spec.elasticsearchRef.name",
+          "eck-beats.spec.elasticsearchRef.name",
+          "eck-beats.spec.daemonSet"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: tarball không có eck-stack/values.yaml (có: eck-agent/Chart.yaml, eck-agent/values.yaml, eck-agent/templates/NOTES.txt)"
+      },
+      {
+        "adapter": "LOGGING:fluent-bit",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "deploy không SUCCESS: Error"
+      },
+      {
+        "adapter": "LOGGING:fluentd",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "deploy không SUCCESS: Error"
+      },
+      {
+        "adapter": "LOGGING:loki",
+        "release": "udp-loki",
+        "chart": "loki",
+        "version": "6.16.0",
+        "keys": [
+          "deploymentMode",
+          "deploymentMode",
+          "loki",
+          "loki.auth_enabled",
+          "loki.auth_enabled",
+          "loki.commonConfig",
+          "loki.commonConfig.replication_factor",
+          "loki.commonConfig.replication_factor",
+          "loki.storage",
+          "loki.storage.type",
+          "loki.storage.type",
+          "loki.schemaConfig",
+          "loki.schemaConfig.configs",
+          "loki.schemaConfig.configs",
+          "loki.limits_config",
+          "loki.limits_config.retention_period",
+          "loki.limits_config.retention_period",
+          "loki.compactor",
+          "loki.compactor.retention_enabled",
+          "loki.compactor.retention_enabled",
+          "loki.compactor.delete_request_store",
+          "loki.compactor.delete_request_store",
+          "singleBinary",
+          "singleBinary.replicas",
+          "singleBinary.replicas",
+          "singleBinary.persistence",
+          "singleBinary.persistence.size",
+          "singleBinary.persistence.size",
+          "read",
+          "read.replicas",
+          "read.replicas",
+          "write",
+          "write.replicas",
+          "write.replicas",
+          "backend",
+          "backend.replicas",
+          "backend.replicas",
+          "gateway",
+          "gateway.enabled",
+          "gateway.enabled",
+          "chunksCache",
+          "chunksCache.enabled",
+          "chunksCache.enabled",
+          "resultsCache",
+          "resultsCache.enabled",
+          "resultsCache.enabled"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: tarball không có loki/values.yaml (có: grafana/Chart.yaml, grafana/values.yaml, grafana/templates/NOTES.txt)"
+      },
+      {
+        "adapter": "LOGGING:loki",
+        "release": "udp-loki-promtail",
+        "chart": "promtail",
+        "version": "6.16.6",
+        "keys": [
+          "config",
+          "config.clients",
+          "config.clients"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: tarball không có promtail/values.yaml (có: grafana/Chart.yaml, grafana/values.yaml, grafana/templates/NOTES.txt)"
+      },
+      {
+        "adapter": "LOGGING:loki",
+        "release": "udp-loki-grafana",
+        "chart": "grafana",
+        "version": "8.5.2",
+        "keys": [
+          "datasources",
+          "datasources.datasources.yaml",
+          "datasources.datasources.yaml.apiVersion",
+          "datasources.datasources.yaml.apiVersion",
+          "datasources.datasources.yaml.datasources",
+          "datasources.datasources.yaml.datasources"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "LOGGING:opensearch",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "LOGGING:splunk",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "MONITORING:datadog",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "MONITORING:dynatrace",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "MONITORING:grafana-cloud",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "MONITORING:newrelic",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "MONITORING:prometheus-grafana",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "MONITORING:victoria-metrics",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "POLICY:gatekeeper",
+        "release": "udp-gatekeeper",
+        "chart": "gatekeeper",
+        "version": "3.17.1",
+        "keys": [
+          "replicas",
+          "replicas",
+          "auditInterval",
+          "auditInterval",
+          "validatingWebhookFailurePolicy",
+          "validatingWebhookFailurePolicy",
+          "controllerManager",
+          "controllerManager.exemptNamespaces",
+          "controllerManager.exemptNamespaces"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "POLICY:kyverno",
+        "release": "udp-kyverno",
+        "chart": "kyverno",
+        "version": "3.9.1",
+        "keys": [
+          "admissionController",
+          "admissionController.replicas",
+          "admissionController.replicas",
+          "config",
+          "config.webhooks",
+          "config.webhooks"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "POLICY:kyverno",
+        "release": "udp-kyverno-policies",
+        "chart": "kyverno-policies",
+        "version": "3.9.1",
+        "keys": [
+          "policyType",
+          "policyType",
+          "customPolicies",
+          "customPolicies",
+          "podSecurityStandard",
+          "podSecurityStandard",
+          "validationFailureAction",
+          "validationFailureAction",
+          "failurePolicy",
+          "failurePolicy",
+          "vpolExclude",
+          "vpolExclude.excludeNamespaces",
+          "vpolExclude.excludeNamespaces"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: tarball không có kyverno-policies/values.yaml (có: kyverno/Chart.yaml, kyverno/Chart.lock, kyverno/values.yaml)"
+      },
+      {
+        "adapter": "PROGRESSIVE_DELIVERY:argo-rollouts",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "deploy không SUCCESS: Error"
+      },
+      {
+        "adapter": "PROGRESSIVE_DELIVERY:flagger",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "deploy không SUCCESS: Error"
+      },
+      {
+        "adapter": "PROGRESSIVE_DELIVERY:spinnaker",
+        "release": "udp-spinnaker",
+        "chart": "spinnaker",
+        "version": "2.2.24",
+        "keys": [
+          "minio",
+          "minio.enabled",
+          "minio.enabled",
+          "minio.persistence",
+          "minio.persistence.size",
+          "minio.persistence.size",
+          "redis",
+          "redis.enabled",
+          "redis.enabled",
+          "kayenta",
+          "kayenta.enabled",
+          "kayenta.enabled",
+          "kayenta.metricsStore",
+          "kayenta.metricsStore.type",
+          "kayenta.metricsStore.type",
+          "kayenta.metricsStore.url",
+          "kayenta.metricsStore.url"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: không thấy version 2.2.24 trong index"
+      },
+      {
+        "adapter": "SECRETS:aws-secrets-manager",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "SECRETS:azure-key-vault",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "SECRETS:external-secrets",
+        "release": "udp-external-secrets",
+        "chart": "external-secrets",
+        "version": "0.10.4",
+        "keys": [
+          "installCRDs",
+          "installCRDs",
+          "concurrent",
+          "concurrent",
+          "webhook",
+          "webhook.create",
+          "webhook.create"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "SECRETS:gcp-secret-manager",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "SECRETS:sealed-secrets",
+        "release": "udp-sealed-secrets",
+        "chart": "sealed-secrets",
+        "version": "2.16.1",
+        "keys": [
+          "fullnameOverride",
+          "fullnameOverride",
+          "keyrenewperiod",
+          "keyrenewperiod"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "SECRETS:vault",
+        "release": "udp-vault",
+        "chart": "vault",
+        "version": "0.28.1",
+        "keys": [
+          "server",
+          "server.standalone",
+          "server.standalone.enabled",
+          "server.standalone.enabled",
+          "server.ha",
+          "server.ha.enabled",
+          "server.ha.enabled",
+          "server.ha.replicas",
+          "server.ha.replicas",
+          "server.ha.raft",
+          "server.ha.raft.enabled",
+          "server.ha.raft.enabled",
+          "server.dataStorage",
+          "server.dataStorage.size",
+          "server.dataStorage.size",
+          "injector",
+          "injector.enabled",
+          "injector.enabled",
+          "csi",
+          "csi.enabled",
+          "csi.enabled"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "SECURITY:aqua",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "SECURITY:checkov",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "deploy không SUCCESS: Error"
+      },
+      {
+        "adapter": "SECURITY:falco",
+        "release": "udp-falco",
+        "chart": "falco",
+        "version": "4.8.3",
+        "keys": [
+          "driver",
+          "driver.kind",
+          "driver.kind",
+          "falco",
+          "falco.json_output",
+          "falco.json_output",
+          "falco.priority",
+          "falco.priority",
+          "falco.stdout_output",
+          "falco.stdout_output.enabled",
+          "falco.stdout_output.enabled"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "SECURITY:grype",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "deploy không SUCCESS: Error"
+      },
+      {
+        "adapter": "SECURITY:snyk",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "SECURITY:trivy",
+        "release": "udp-trivy",
+        "chart": "trivy-operator",
+        "version": "0.24.1",
+        "keys": [
+          "excludeNamespaces",
+          "excludeNamespaces",
+          "operator",
+          "operator.scanJobsConcurrentLimit",
+          "operator.scanJobsConcurrentLimit",
+          "trivy",
+          "trivy.severity",
+          "trivy.severity",
+          "trivy.ignoreUnfixed",
+          "trivy.ignoreUnfixed"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: tarball không có trivy-operator/values.yaml (có: tracee/Chart.yaml, tracee/values.yaml, tracee/templates/NOTES.txt)"
+      },
+      {
+        "adapter": "SECURITY:zap",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "SERVICE_MESH:consul-connect",
+        "release": "udp-consul",
+        "chart": "consul",
+        "version": "1.5.3",
+        "keys": [
+          "global",
+          "global.name",
+          "global.name",
+          "server",
+          "server.replicas",
+          "server.replicas",
+          "server.storage",
+          "server.storage",
+          "connectInject",
+          "connectInject.enabled",
+          "connectInject.enabled",
+          "connectInject.default",
+          "connectInject.default",
+          "ui",
+          "ui.enabled",
+          "ui.enabled"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "SERVICE_MESH:istio",
+        "release": "udp-istio-base",
+        "chart": "base",
+        "version": "1.23.2",
+        "keys": [
+          "defaultRevision",
+          "defaultRevision"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: tarball không có base/values.yaml (có: ambient/Chart.yaml, ambient/Chart.lock, ambient/values.yaml)"
+      },
+      {
+        "adapter": "SERVICE_MESH:istio",
+        "release": "udp-istiod",
+        "chart": "istiod",
+        "version": "1.23.2",
+        "keys": [
+          "meshConfig",
+          "meshConfig.accessLogFile",
+          "meshConfig.accessLogFile",
+          "meshConfig.defaultConfig",
+          "meshConfig.defaultConfig.tracing",
+          "meshConfig.defaultConfig.tracing.sampling",
+          "meshConfig.defaultConfig.tracing.sampling"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: tarball không có istiod/values.yaml (có: ambient/Chart.yaml, ambient/Chart.lock, ambient/values.yaml)"
+      },
+      {
+        "adapter": "SERVICE_MESH:istio",
+        "release": "udp-istio-ingress",
+        "chart": "gateway",
+        "version": "1.23.2",
+        "keys": [
+          "service",
+          "service.type",
+          "service.type"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: tarball không có gateway/values.yaml (có: ambient/Chart.yaml, ambient/Chart.lock, ambient/values.yaml)"
+      },
+      {
+        "adapter": "SERVICE_MESH:kuma",
+        "release": "udp-kuma",
+        "chart": "kuma",
+        "version": "2.8.3",
+        "keys": [
+          "controlPlane",
+          "controlPlane.mode",
+          "controlPlane.mode",
+          "controlPlane.replicas",
+          "controlPlane.replicas",
+          "controlPlane.defaults",
+          "controlPlane.defaults.skipMeshCreation",
+          "controlPlane.defaults.skipMeshCreation"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "SERVICE_MESH:linkerd",
+        "release": "",
+        "chart": "",
+        "version": "",
+        "unknownTopKeys": [],
+        "keys": [],
+        "skipped": "configSchema không parse được {} — phép đo không bịa cấu hình"
+      },
+      {
+        "adapter": "TRACING:jaeger",
+        "release": "udp-jaeger",
+        "chart": "jaeger",
+        "version": "3.4.1",
+        "keys": [
+          "provisionDataStore",
+          "provisionDataStore.cassandra",
+          "provisionDataStore.cassandra",
+          "provisionDataStore.elasticsearch",
+          "provisionDataStore.elasticsearch",
+          "allInOne",
+          "allInOne.enabled",
+          "allInOne.enabled",
+          "allInOne.extraEnv",
+          "allInOne.extraEnv",
+          "storage",
+          "storage.type",
+          "storage.type",
+          "storage.badger",
+          "storage.badger.ephemeral",
+          "storage.badger.ephemeral",
+          "storage.badger.persistence",
+          "storage.badger.persistence.size",
+          "storage.badger.persistence.size",
+          "agent",
+          "agent.enabled",
+          "agent.enabled",
+          "collector",
+          "collector.enabled",
+          "collector.enabled",
+          "query",
+          "query.enabled",
+          "query.enabled"
+        ],
+        "unknownTopKeys": []
+      },
+      {
+        "adapter": "TRACING:tempo",
+        "release": "udp-tempo",
+        "chart": "tempo",
+        "version": "1.10.3",
+        "keys": [
+          "tempo",
+          "tempo.retention",
+          "tempo.retention",
+          "tempo.receivers",
+          "tempo.receivers.otlp",
+          "tempo.receivers.otlp.protocols",
+          "tempo.receivers.otlp.protocols.grpc",
+          "tempo.receivers.otlp.protocols.grpc.endpoint",
+          "tempo.receivers.otlp.protocols.grpc.endpoint",
+          "tempo.receivers.otlp.protocols.http",
+          "tempo.receivers.otlp.protocols.http.endpoint",
+          "tempo.receivers.otlp.protocols.http.endpoint",
+          "persistence",
+          "persistence.enabled",
+          "persistence.enabled",
+          "persistence.size",
+          "persistence.size"
+        ],
+        "unknownTopKeys": [],
+        "skipped": "không đọc được chart: tarball không có tempo/values.yaml (có: beyla/Chart.yaml, beyla/values.yaml, beyla/templates/_helpers.tpl)"
+      },
+      {
+        "adapter": "TRACING:zipkin",
+        "release": "udp-zipkin",
+        "chart": "zipkin",
+        "version": "0.7.0",
+        "keys": [
+          "zipkin",
+          "zipkin.storage",
+          "zipkin.storage.type",
+          "zipkin.storage.type",
+          "zipkin.extraEnv",
+          "zipkin.extraEnv.MEM_MAX_SPANS",
+          "zipkin.extraEnv.MEM_MAX_SPANS"
+        ],
+        "unknownTopKeys": []
+      }
+    ]
+  }
+}

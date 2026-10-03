@@ -55,7 +55,7 @@ async function newActor(): Promise<Actor> {
   const email = `test-${randomUUID()}@udp.local`;
   const res = await request(app)
     .post(`${API}/auth/register`)
-    .send({ email, password: PASSWORD, name: "Test User" })
+    .send({ email, password: PASSWORD, name: "Test User", acceptTerms: true })
     .expect(201);
   createdUsers.push(email);
   return {
@@ -218,6 +218,33 @@ describe("cô lập giữa các tenant", () => {
     expect(theirs.body.projects.map((p: { id: string }) => p.id)).not.toContain(
       body.project.id,
     );
+  });
+
+  it("[Plan #41] GET /projects theo trang: limit/offset, total là mọi project của người gọi; trần 100", async () => {
+    const owner = await newActor();
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      ids.push(
+        ((await newProject(owner).expect(201)).body.project as { id: string })
+          .id,
+      );
+    }
+    const page = (query: Record<string, number>) =>
+      as(owner, request(app).get(`${API}/projects`).query(query));
+
+    const first = await page({ limit: 2 }).expect(200);
+    expect(first.body.total).toBe(3);
+    expect(first.body.projects).toHaveLength(2);
+    const rest = await page({ limit: 2, offset: 2 }).expect(200);
+    expect(rest.body.projects).toHaveLength(1);
+    // Mới nhất trước, không trùng giữa hai trang
+    expect(
+      [...first.body.projects, ...rest.body.projects].map(
+        (p: { id: string }) => p.id,
+      ),
+    ).toEqual([...ids].reverse());
+    await page({ limit: 0 }).expect(400);
+    await page({ limit: 101 }).expect(400);
   });
 
   it("id không phải UUID trả 400, không phải 500", async () => {

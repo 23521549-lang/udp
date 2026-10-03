@@ -33,7 +33,7 @@ const SRC = join(ROOT, "services", "core-backend", "src");
 const EXEMPT: Record<string, string> = {
   "POST /": "Tạo project — chưa có project nào để kiểm vai trò",
   "GET /":
-    "Danh sách project của chính người gọi — repository lọc theo ProjectMember",
+    "Danh sách project của chính người gọi — repository lọc theo vai hiệu lực (thành viên trực tiếp hay qua nhóm, `accessibleBy`)",
 };
 
 const GUARD = "requireMinProjectRole";
@@ -124,6 +124,23 @@ describe("I10 — mọi route có id project đều qua requireMinProjectRole", 
     expect(mountedAtProjects.length).toBeGreaterThan(0);
     expect(scopedSubRouters.length).toBeGreaterThan(0);
     expect(projectRoutes.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("router mới của [v4.9] nằm TRONG tập mà lint này nhìn thấy", () => {
+    /**
+     * Chốt chống rỗng theo TÊN, thêm ở #23 — chống đúng hình dạng QA R25 (b): một
+     * router mới gắn bằng cách khác (`use("/:projectId", …)`, hay qua một hằng số
+     * đường dẫn) thì biểu thức ở trên KHÔNG bắt được nó, mọi route của nó rơi khỏi
+     * `projectRoutes`, và bốn test dưới vẫn xanh vì chúng duyệt một danh sách
+     * thiếu. Chốt `length > 0` không bắt được điều đó, vì các router cũ vẫn ở đó.
+     *
+     * Hai router này đáng được gọi tên hơn các router khác: một route segment
+     * thiếu `requireMinProjectRole` cho người của project khác sửa segment — thứ
+     * nằm trong snapshot của MỌI environment — còn một route environment thiếu nó
+     * thì cho họ phát hành SDK key.
+     */
+    expect(scopedSubRouters).toContain("segmentRouter");
+    expect(scopedSubRouters).toContain("environmentRouter");
   });
 
   it("route không được miễn trừ thì phải gắn requireMinProjectRole", () => {
