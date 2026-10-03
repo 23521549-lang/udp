@@ -4,9 +4,14 @@ import {
   APP_TOKEN,
   goldenPathFiles,
   isGoldenPathRuntime,
+  PROVIDER_PUBLIC_NAME,
   PROVIDER_RELEASE,
   REGISTRY_TOKEN,
 } from "../src/index.js";
+
+/** Ghép qua hằng — một literal `@udp/…` ở đây bị luật ranh giới đọc như một phụ thuộc thật */
+const UDP_SCOPE = ["@udp", ""].join("/");
+const IN_REPO_NAME = `${UDP_SCOPE}openfeature-provider`;
 
 /** Cây §11.1 (Node) và bản tương đương Python — Plan #48 AC-3 */
 const NODE_TREE = [
@@ -59,9 +64,53 @@ describe("goldenPathFiles", () => {
       files.find((f) => f.path === "package.json")?.content ?? "{}",
     ) as { name: string; dependencies: Record<string, string> };
     expect(pkg.name).toBe("checkout");
-    expect(pkg.dependencies["@udp/openfeature-provider"]).toBe(
-      PROVIDER_RELEASE,
+    /**
+     * [Plan #62 62d-5] Khoá đổi sang tên PHÁT HÀNH, nhưng phép khẳng định ghim version **giữ nguyên**. Xoá ô này
+     * rồi tin rằng "cây sinh ra không còn `@udp/`" đã thay thế là một thoái cấp: ô phủ định đó không kiểm khoá tên
+     * là gì, cũng không kiểm nó ghim `PROVIDER_RELEASE`.
+     */
+    expect(pkg.dependencies[PROVIDER_PUBLIC_NAME]).toBe(PROVIDER_RELEASE);
+    expect(pkg.dependencies[IN_REPO_NAME]).toBeUndefined();
+  });
+
+  /**
+   * [Plan #62 62d-5] Cây sinh cho khách phải cài được: không một chuỗi `@udp/` nào (namespace CỦA KHO, không gói
+   * nào của nó có trên registry), và mọi specifier provider phải thuộc tập subpath ĐÃ PHÁT HÀNH.
+   *
+   * Nửa phủ định một mình là một cổng yếu — nó xanh cả khi template bỏ hẳn provider. Nên có cả nửa dương, và
+   * `"udp-openfeature": "^0.1.0"` được khẳng định như MỘT chuỗi: nó đỏ nếu thiếu phép thay tên, đỏ nếu thiếu phép
+   * thay version, và đỏ nếu một ngày thứ tự hai phép thay trở nên load-bearing rồi bị đảo.
+   */
+  it("[Plan #62] cây sinh ra dùng tên PHÁT HÀNH, không còn tên trong kho", () => {
+    for (const runtime of ["nodejs", "python"] as const) {
+      const files = goldenPathFiles({ ...input, runtime });
+      const leaked = files.filter((f) => f.content.includes(UDP_SCOPE));
+      expect(
+        leaked.map((f) => f.path),
+        runtime,
+      ).toEqual([]);
+    }
+
+    const node = goldenPathFiles({ ...input, runtime: "nodejs" });
+    expect(node.find((f) => f.path === "package.json")?.content).toContain(
+      `"${PROVIDER_PUBLIC_NAME}": "${PROVIDER_RELEASE}"`,
     );
+    expect(node.find((f) => f.path === "src/telemetry.ts")?.content).toContain(
+      `from "${PROVIDER_PUBLIC_NAME}"`,
+    );
+    expect(node.find((f) => f.path === "src/app.ts")?.content).toContain(
+      `from "${PROVIDER_PUBLIC_NAME}/metrics"`,
+    );
+
+    const subpaths = new Set<string>();
+    for (const f of node) {
+      for (const m of f.content.matchAll(
+        new RegExp(`${PROVIDER_PUBLIC_NAME}((?:\\/[a-z-]+)*)`, "g"),
+      )) {
+        subpaths.add(m[1] ?? "");
+      }
+    }
+    expect([...subpaths].sort()).toEqual(["", "/metrics"]);
   });
 
   it("Python: cây tương đương, manifest chung với Node", () => {

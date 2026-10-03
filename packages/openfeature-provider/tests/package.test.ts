@@ -29,10 +29,13 @@ const run = promisify(execFile);
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PEERS = ["@openfeature/server-sdk", "@openfeature/core", "prom-client"];
 /**
- * Tên gói ghép qua hằng trong mã SINH cho khách: một literal import `@udp/…`
- * trong file này sẽ bị luật ranh giới đọc như provider tự import chính nó.
+ * [Plan #62 62d-3] Tên PHÁT HÀNH, lấy từ chính artifact — không ghim một chuỗi thứ hai ở đây.
+ *
+ * Trước đó ô này cài tarball vào `node_modules/@udp/openfeature-provider` rồi import đúng chuỗi đó. Sau khi
+ * gói đổi tên, nó vẫn XANH — Node phân giải bare specifier theo ĐƯỜNG DẪN, không đối chiếu trường `name`
+ * — nhưng nó thôi kiểm bố cục mà npm thật sự tạo, và specifier khách thật gõ thì không chạy ở đâu cả.
  */
-const PKG = ["@udp", "openfeature-provider"].join("/");
+let PKG: string;
 
 /** `undefined` khi `beforeAll` hỏng trước khi tạo thư mục tạm */
 let work: string | undefined;
@@ -61,13 +64,10 @@ beforeAll(async () => {
 
   consumer = join(work, "consumer");
   const modules = join(consumer, "node_modules");
-  mkdirSync(join(modules, "@udp"), { recursive: true });
   mkdirSync(join(modules, "@openfeature"), { recursive: true });
   mkdirSync(join(modules, "@types"), { recursive: true });
-  renameSync(
-    join(work, "package"),
-    join(modules, "@udp", "openfeature-provider"),
-  );
+  PKG = artifact.manifest.name ?? "";
+  renameSync(join(work, "package"), join(modules, PKG));
   for (const peer of [...PEERS, "@types/node"]) {
     symlinkSync(
       installedDir(peer, pkgRoot),
@@ -113,12 +113,7 @@ describe("gói phát hành", () => {
       tarEntries.some((e) => e.endsWith(".map") || e.endsWith(".tsbuildinfo")),
     ).toBe(false);
 
-    const installed = join(
-      consumer,
-      "node_modules",
-      "@udp",
-      "openfeature-provider",
-    );
+    const installed = join(consumer, "node_modules", PKG);
     const manifest = JSON.parse(
       readFileSync(join(installed, "package.json"), "utf8"),
     ) as {

@@ -5,6 +5,7 @@ import {
 import {
   goldenPathFiles,
   isGoldenPathRuntime,
+  PROVIDER_PUBLIC_NAME,
   type GoldenPathFile,
 } from "./render.js";
 
@@ -353,9 +354,15 @@ export async function scanRepository(
     ev,
     /\b(udpMetricsMiddleware|UDPMetricsMiddleware|UDPMetricsWSGIMiddleware)\b/,
   );
+  /**
+   * [Plan #62 62d-8] HAI tên cho một gói, và cả hai đều phải nhận ra được: khách cài từ npm có
+   * `PROVIDER_PUBLIC_NAME` trong `dependencies`, còn cây sinh trước đợt này (hay một repo nội bộ) còn tên trong kho.
+   * Chỉ nhận một tên là một sai ÂM im lặng: báo "chưa dùng SDK" cho MỌI khách thật, và `flagLevelReady` chặn
+   * họ tạo rollout mức flag.
+   */
   const hasProviderDep = hasDependency(
     ev,
-    ["@udp/openfeature-provider"],
+    [["@udp", "openfeature-provider"].join("/"), PROVIDER_PUBLIC_NAME],
     /udp-openfeature/i,
   );
   const versionPaths = workloads

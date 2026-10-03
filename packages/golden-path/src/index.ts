@@ -8,6 +8,7 @@ export {
   GOLDEN_PATH_RUNTIMES,
   goldenPathFiles,
   isGoldenPathRuntime,
+  PROVIDER_PUBLIC_NAME,
   PROVIDER_RELEASE,
   REGISTRY_TOKEN,
   type GoldenPathFile,
