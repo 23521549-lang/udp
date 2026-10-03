@@ -12,6 +12,7 @@
   "scripts": {
     "i28": "tsx scripts/i28.ts",
     "chart-bump": "tsx scripts/chart-bump.ts",
+    "sdk-version": "tsx scripts/sdk-version.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

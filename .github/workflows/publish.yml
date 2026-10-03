@@ -1,0 +1,193 @@
+name: Publish SDK
+
+# [Plan #62] Phát hành hai gói SDK bằng TRUSTED PUBLISHING (OIDC) — không token dài hạn nào.
+#
+# Tệp này KHÔNG có `workflow_dispatch`: cả npm lẫn PyPI ràng trusted publisher vào TÊN TỆP workflow, nên "không có
+# đường nào để một lượt chạy tay phát hành thật" là tính chất do registry bảo đảm, không phải một `if:` mà ai cũng
+# sửa được. Lượt diễn tập nằm ở `publish-rehearsal.yml`, một tệp khác, nên token OIDC của nó mang `workflow_ref`
+# khác và hai registry từ chối.
+#
+# ĐỔI TÊN TỆP NÀY SẼ PHÁ cả hai trusted publisher (npm: "Existing trusted publisher connections cannot be changed").
+# Tên `publish.yml`, và tên hai environment `release-npm`/`release-pypi`, là giá trị đã chốt — xem mục nợ
+# `sdk-publish-real` trong `docs/measurements/kiem-chung-con-no.md`.
+on:
+  push:
+    tags: ["sdk-v*"]
+
+# Sàn ở cấp workflow (như `deploy.yml` và `toolchain.yml`): một job thêm vào sau mà quên khai `permissions` sẽ
+# nhận mặc định của repo, trong một workflow mà hai job khác cầm quyền publish.
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: cổng phát hành — CI đã xanh, hai manifest khớp tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Job này KHÔNG chạy lại bộ test: hai bộ test của hai gói có ô cần DATABASE THẬT (năm chuỗi role), và ô chéo
+      # ngôn ngữ `python-parity.test.ts` BỎ QUA IM LẶNG khi thiếu `sdks/python/.venv` — cổng sẽ xanh với đúng ô
+      # I15c/I26 ở trạng thái skipped. Khẳng định "ci.yml đã xanh trên commit này" mạnh hơn: `ci.yml` chạy cả
+      # database, cả `.venv`, cả `portal-demo`, cả `kind`.
+      - name: ci.yml đã xanh trên đúng commit được tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion=$(gh run list --workflow=ci.yml --commit="$GITHUB_SHA" --json conclusion --jq '.[0].conclusion')
+          if [ "$conclusion" != "success" ]; then
+            echo "ci.yml chua xanh tren $GITHUB_SHA: '${conclusion:-khong co luot chay nao}'" >&2
+            exit 1
+          fi
+
+      - name: version của tag bằng version của HAI manifest
+        env:
+          TAG: ${{ github.ref_name }}
+        run: pnpm --filter @udp/design-lint exec tsx scripts/sdk-version.ts --expect "${TAG#sdk-v}"
+
+      # Ba cổng đọc tệp của phát hành — không cái nào chạm database
+      - run: pnpm --filter @udp/design-lint exec vitest run tests/package-boundaries.test.ts tests/debt-ledger.test.ts tests/references.test.ts
+      - run: pnpm --filter @udp/deploy test
+
+  build-npm:
+    name: dựng artifact npm
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `scripts/pack.ts` build, pack, dẫn xuất manifest, rồi KHẲNG ĐỊNH hợp đồng artifact — cùng script mà bộ
+      # test tiêu thụ dùng, nên thứ được kiểm là thứ được phát hành.
+      - run: pnpm -C packages/openfeature-provider exec tsx scripts/pack.ts --out "$RUNNER_TEMP/pack"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: ${{ runner.temp }}/pack/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  build-pypi:
+    name: dựng artifact PyPI
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: sdks/python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: sdks/python/pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m build
+      # `--strict`: không cờ này thì `twine check` EXIT 0 dù thiếu `long_description` ("PASSED with warnings")
+      - run: python -m twine check --strict dist/*
+      # `twine check` không biết gì về giấy phép: một wheel TUYÊN BỐ Apache-2.0 mà KHÔNG mang tệp giấy phép vẫn
+      # PASSED và build vẫn exit 0 (đã đo). Bốn phép kiểm dưới đây là chỗ duy nhất bắt được.
+      - name: giấy phép nằm TRONG artifact
+        run: |
+          unzip -p dist/*.whl '*/METADATA' | grep -qx 'License-Expression: Apache-2.0'
+          unzip -p dist/*.whl '*/METADATA' | grep -qx 'License-File: LICENSE'
+          unzip -l dist/*.whl | grep -q 'dist-info/licenses/LICENSE'
+          tar -tzf dist/*.tar.gz | grep -qE '/LICENSE$'
+      - name: biến ẩn của hai phép đo PEP 639
+        run: |
+          pip --version
+          python -m twine --version
+          python -c "import setuptools; print('setuptools', setuptools.__version__)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi-dist
+          path: sdks/python/dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  npm:
+    name: phát hành npm (OIDC + provenance)
+    needs: build-npm
+    runs-on: ubuntu-latest
+    environment: release-npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      # KHÔNG truyền `registry-url`: nó ghi một `.npmrc` cấp user với NODE_AUTH_TOKEN giả, làm npm tin là "đã có
+      # credential" và biến một lỗi OIDC thành một 401 bí ẩn (hàm OIDC của npm cố ý không bao giờ ném).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Ghim tường minh, KHÔNG `@latest`: trusted publishing cần npm ≥ 11.5.1 mà dòng Node 22 chỉ kèm npm 10.9.x
+      # (v22.23.3 → 10.9.9). Và `@latest` là một tarball không ghim tải vào đúng job đang cầm quyền publish.
+      # Đây là chỗ DUY NHẤT trong repo ghim một công cụ ở workflow: `packageManager` ghim pnpm, còn npm đóng kèm
+      # Node thì không nguồn nào trong repo khai — đừng xoá dòng này "cho khớp quy ước".
+      - run: npm install -g npm@11.21.0 --ignore-scripts
+      - run: npm --version
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-tarball
+          path: ${{ runner.temp }}/pack
+      # Provenance được registry đối chiếu với `repository.url`, CASE-SENSITIVE, và hỏng ở đó là hỏng sau khi byte
+      # đã rời runner. So trước thì nó là một dòng đỏ cục bộ.
+      - name: repository.url khớp repo đang build
+        working-directory: packages/openfeature-provider
+        run: node -p "require('./package.json').repository.url" | grep -qx "git+$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+      # Chạy lại cùng một tag phải an toàn: npm từ chối đăng lại một version ("cannot publish over"), nên nếu lượt
+      # trước đã lên thì bỏ qua thay vì đỏ.
+      - name: phát hành (bỏ qua nếu version đã có)
+        run: |
+          version=$(node -p "require('./packages/openfeature-provider/package.json').version")
+          if npm view "@udp/openfeature-provider@$version" version >/dev/null 2>&1; then
+            echo "@udp/openfeature-provider@$version da co tren registry - bo qua"
+            exit 0
+          fi
+          npm publish "$RUNNER_TEMP/pack"/*.tgz --access public --provenance
+
+  pypi:
+    name: phát hành PyPI (OIDC + attestation)
+    # TUẦN TỰ sau npm, không song song: npm có nhiều cửa từ chối PHÍA CLIENT hơn PyPI (EPRIVATE, prerelease thiếu
+    # --tag, "cannot publish over", thiếu id-token ⇒ EUSAGE) và tất cả nổ TRƯỚC khi gửi gì đi. Cho phía khó chạy
+    # trước thì xác suất "một gói lên, một gói chưa" nhỏ nhất.
+    needs: [npm, build-pypi]
+    runs-on: ubuntu-latest
+    environment: release-pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi-dist
+          path: dist
+      # Action bên thứ ba THỨ BA của repo, và cái duy nhất chạy trong một job cầm `id-token: write` — nên nó ghim
+      # SHA 40 ký tự, chặt hơn `pnpm/action-setup@v4` và `helm/kind-action@v1` (hai cái đó chỉ cài công cụ).
+      # Lý lẽ là sự cố `trivy-action` 03/2026: 75/76 tag bị đẩy đè để lấy secret CI.
+      #
+      # Vì sao không tự mint token bằng shell (khớp hơn với "mọi việc khác là lệnh shell" của build-toolchain.ts):
+      # action này sinh ATTESTATION PEP 740 — tương đương provenance ở phía PyPI, thứ AC-3 đòi. Tự mint thì mất nó.
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          # Khai tường minh dù đã là mặc định: một đòi hỏi của AC phải nhìn thấy được trong tệp
+          attestations: true
+          # Để chạy lại cùng tag là idempotent khi npm đã lên mà PyPI còn chưa
+          skip-existing: true

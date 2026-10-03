@@ -282,3 +282,137 @@ describe("Toolchain (toolchain:check)", () => {
     ).toBe(true);
   });
 });
+
+/**
+ * [Plan #62 62b-4] Hai workflow phát hành SDK. AC-3 ("không token dài hạn nào") và AC-4 ("không có đường nào để
+ * một lượt chạy tay phát hành thật") là mệnh đề về CẤU TRÚC của hai tệp, nên chúng được kiểm ở đây chứ không giao
+ * cho `actionlint`: actionlint kiểm cú pháp và biểu thức, và một bản dựng thử đúng hình dạng "dispatch publish
+ * thật" cho nó exit 0.
+ *
+ * Kiểm trên YAML đã `parse()`, không regex trên văn bản thô — bài học `chartPinsOf` của Plan #61.
+ */
+describe("Publish SDK (Plan #62)", () => {
+  type Full = Workflow & {
+    permissions?: Record<string, string>;
+    jobs: Record<
+      string,
+      Job & {
+        needs?: string | string[];
+        permissions?: Record<string, string>;
+      }
+    >;
+  };
+  const read = (file: string): { text: string; parsed: Full } => {
+    const text = readFileSync(resolve(root, ".github/workflows", file), "utf8");
+    return { text, parsed: parse(text) as Full };
+  };
+  const publish = read("publish.yml");
+  const rehearsal = read("publish-rehearsal.yml");
+  const PUBLISHERS = ["npm", "pypi"];
+
+  it("tệp phát hành chỉ chạy theo tag `sdk-v*`, KHÔNG có workflow_dispatch", () => {
+    expect(publish.parsed.on).toEqual({ push: { tags: ["sdk-v*"] } });
+  });
+
+  it("tệp diễn tập chỉ chạy tay, và KHÔNG job nào của nó có id-token hay environment", () => {
+    expect(Object.keys(rehearsal.parsed.on)).toEqual(["workflow_dispatch"]);
+    for (const [name, job] of Object.entries(rehearsal.parsed.jobs)) {
+      expect(job.permissions?.["id-token"], name).toBeUndefined();
+      expect(job.environment, name).toBeUndefined();
+    }
+  });
+
+  it("cả hai tệp có sàn `contents: read` ở cấp workflow, và MỌI job khai permissions", () => {
+    for (const { parsed } of [publish, rehearsal]) {
+      expect(parsed.permissions).toEqual({ contents: "read" });
+      for (const [name, job] of Object.entries(parsed.jobs)) {
+        expect(
+          job.permissions,
+          `job ${name} phải khai permissions`,
+        ).toBeDefined();
+      }
+    }
+  });
+
+  it("đúng HAI job cầm id-token, chúng là npm và pypi, và mỗi cái một environment riêng", () => {
+    const withToken = Object.entries(publish.parsed.jobs)
+      .filter(([, job]) => job.permissions?.["id-token"] === "write")
+      .map(([name]) => name)
+      .sort();
+    expect(withToken).toEqual(PUBLISHERS);
+    const environments = PUBLISHERS.map(
+      (name) => publish.parsed.jobs[name]?.environment,
+    );
+    // Hai environment RỜI NHAU: một environment chung thì một lượt duyệt mở cả hai registry, và hai trusted
+    // publisher không thể ràng vào hai ràng buộc khác nhau
+    expect(environments).toEqual(["release-npm", "release-pypi"]);
+    expect(new Set(environments).size).toBe(2);
+  });
+
+  it("pypi chạy SAU npm: phía có nhiều cửa từ chối phía client hơn đi trước", () => {
+    const needs = publish.parsed.jobs["pypi"]?.needs;
+    expect(Array.isArray(needs) ? needs : [needs]).toContain("npm");
+  });
+
+  it("không tệp nào nhắc `secrets.` — đường phát hành không có token dài hạn", () => {
+    for (const { parsed } of [publish, rehearsal]) {
+      expect(JSON.stringify(parsed)).not.toMatch(/secrets\./);
+    }
+  });
+
+  it("bước publish npm có --provenance và --access public", () => {
+    const step = publish.parsed.jobs["npm"]?.steps.find((s) =>
+      s.run?.includes("npm publish"),
+    );
+    expect(step?.run).toContain("--provenance");
+    expect(step?.run).toContain("--access public");
+  });
+
+  it("npm được ghim một version tường minh, không `latest`", () => {
+    const step = publish.parsed.jobs["npm"]?.steps.find((s) =>
+      s.run?.startsWith("npm install -g npm@"),
+    );
+    // Trusted publishing cần npm ≥ 11.5.1 mà dòng Node 22 chỉ kèm 10.9.x; `@latest` là một tarball không ghim
+    // tải vào đúng job đang cầm quyền publish
+    expect(step?.run).toMatch(/^npm install -g npm@\d+\.\d+\.\d+\b/);
+    expect(step?.run).not.toContain("@latest");
+  });
+
+  it("action bên thứ ba trong job cầm id-token ghim SHA 40 ký tự", () => {
+    const own = /^(actions|pnpm)\//;
+    for (const name of PUBLISHERS) {
+      for (const step of publish.parsed.jobs[name]?.steps ?? []) {
+        const uses = step.uses;
+        if (uses === undefined || own.test(uses)) continue;
+        expect(uses, `${name}: ${uses}`).toMatch(/@[0-9a-f]{40}$/);
+      }
+    }
+  });
+
+  it("bước phát hành PyPI khai attestations và skip-existing tường minh", () => {
+    const step = publish.parsed.jobs["pypi"]?.steps.find((s) =>
+      s.uses?.startsWith("pypa/gh-action-pypi-publish@"),
+    );
+    expect(step?.with).toMatchObject({
+      attestations: true,
+      "skip-existing": true,
+    });
+  });
+
+  it("cổng chạy script version dùng chung, và script đó tồn tại", () => {
+    const gate = publish.parsed.jobs["gate"];
+    expect(
+      gate?.steps.some(
+        (s) => s.run?.includes("scripts/sdk-version.ts") === true,
+      ),
+    ).toBe(true);
+    expect(
+      existsSync(resolve(root, "packages/design-lint/scripts/sdk-version.ts")),
+    ).toBe(true);
+    // Cổng KHÔNG chạy lại bộ test của hai gói (chúng cần database và ô chéo ngôn ngữ bỏ qua im lặng) — nó khẳng
+    // định `ci.yml` đã xanh trên đúng commit được tag
+    expect(
+      gate?.steps.some((s) => s.run?.includes("gh run list") === true),
+    ).toBe(true);
+  });
+});

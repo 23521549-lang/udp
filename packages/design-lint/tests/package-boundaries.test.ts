@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { goldenPathPins, projectVersionOf } from "../src/toml-version.js";
 
 /**
  * Ranh giới package là quyết định hạng nhất, nên nó phải được KIỂM.
@@ -16,38 +17,81 @@ import { describe, expect, it } from "vitest";
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, "../../..");
 
+interface Manifest {
+  name: string;
+  version?: string;
+  private?: boolean;
+  license?: string;
+  files?: string[];
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  repository?: { url?: string; directory?: string };
+}
+
 interface Pkg {
   name: string;
   dir: string;
   deps: string[];
   /** Chỉ `dependencies` — thứ đi vào runtime */
   runtimeDeps: string[];
+  manifest: Manifest;
+}
+
+/**
+ * [Plan #62 62b-2] Danh sách thành viên lấy từ `pnpm-workspace.yaml`, KHÔNG từ một mảng thư mục viết cứng.
+ *
+ * Bản trước quét `["packages", "services", "apps"]`, còn yaml khai thêm `deploy` — nên `@udp/deploy` (package
+ * giữ cổng workflow của cả repo) nằm NGOÀI tầm quét của mọi ô trong tệp này, và mọi mệnh đề "mỗi package…" có
+ * một lỗ fail-open im lặng đúng ở đó. Cùng hình dạng với lỗi `chartPinsOf` của Plan #61 (chỉ thấy 42 trong 71
+ * chart): một phép đếm thiếu mà kết quả vẫn trông hợp lý.
+ *
+ * Bộ đọc fail-closed: dòng đầu phải là `packages:`, mọi dòng sau phải là một mục `- "<glob>"`, và MỖI glob phải
+ * ra ít nhất một package — một glob không khớp gì nghĩa là yaml và đĩa đã lệch.
+ */
+function workspaceGlobs(): string[] {
+  const raw = readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8");
+  const lines = raw
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0 && !l.trimStart().startsWith("#"));
+  const [head, ...rest] = lines;
+  if (head?.trim() !== "packages:") {
+    throw new Error(
+      `pnpm-workspace.yaml: dòng đầu phải là "packages:", đang là ${String(head)}`,
+    );
+  }
+  const globs = rest.map((line) => {
+    const matched = /^\s*-\s*"([^"]+)"\s*$/.exec(line);
+    if (matched === null) {
+      throw new Error(`pnpm-workspace.yaml: dòng không đọc được: ${line}`);
+    }
+    return matched[1] ?? "";
+  });
+  if (globs.length === 0) {
+    throw new Error("pnpm-workspace.yaml không khai thành viên nào");
+  }
+  return globs;
 }
 
 function readWorkspacePackages(): Pkg[] {
   const out: Pkg[] = [];
-  for (const group of ["packages", "services", "apps"]) {
-    const base = join(ROOT, group);
-    let entries: string[];
-    try {
-      entries = readdirSync(base);
-    } catch {
-      continue;
-    }
-    for (const name of entries) {
-      const dir = join(base, name);
-      if (!statSync(dir).isDirectory()) continue;
+  for (const glob of workspaceGlobs()) {
+    const base = glob.endsWith("/*") ? glob.slice(0, -2) : null;
+    const dirs =
+      base === null
+        ? [join(ROOT, glob)]
+        : readdirSync(join(ROOT, base))
+            .map((name) => join(ROOT, base, name))
+            .filter((dir) => statSync(dir).isDirectory());
+    let found = 0;
+    for (const dir of dirs) {
       let raw: string;
       try {
         raw = readFileSync(join(dir, "package.json"), "utf8");
       } catch {
         continue; // thư mục mới đặt chỗ, chưa có package.json
       }
-      const json = JSON.parse(raw) as {
-        name: string;
-        dependencies?: Record<string, string>;
-        devDependencies?: Record<string, string>;
-      };
+      const json = JSON.parse(raw) as Manifest;
+      found += 1;
       out.push({
         name: json.name,
         dir,
@@ -58,7 +102,13 @@ function readWorkspacePackages(): Pkg[] {
         runtimeDeps: Object.keys(json.dependencies ?? {}).filter((d) =>
           d.startsWith("@udp/"),
         ),
+        manifest: json,
       });
+    }
+    if (found === 0) {
+      throw new Error(
+        `pnpm-workspace.yaml khai "${glob}" mà không có package nào — yaml và đĩa đã lệch`,
+      );
     }
   }
   return out;
@@ -364,5 +414,121 @@ describe("ranh giới package", () => {
       }
     }
     expect(problems).toEqual([]);
+  });
+
+  /**
+   * [Plan #62 62b-2] Bỏ `"private": true` của gói SDK là mở một đường trước đây đóng, nên tính chất "chỉ gói đó
+   * được phát hành" phải có một ô. Trước đợt này **không chỗ nào** trong repo đọc `private` của một package
+   * workspace (đã grep), nên nó chưa từng được canh.
+   *
+   * "Đúng MỘT" chứ không "hai": `sdks/python` KHÔNG là thành viên pnpm workspace (không có `package.json`, và
+   * `pnpm-workspace.yaml` không khai `sdks/*`). Viết "hai" thì ô này hoặc đỏ mãi, hoặc tệ hơn: người sau "sửa"
+   * bằng cách bỏ `private` của một package khác — đúng thoái cấp mà ô này tồn tại để chống.
+   */
+  it("[Plan #62] đúng MỘT package của workspace không private, và nó là gói SDK Node", () => {
+    const publishable = packages
+      .filter((p) => p.manifest.private !== true)
+      .map((p) => p.name)
+      .sort();
+    expect(publishable).toEqual(["@udp/openfeature-provider"]);
+  });
+
+  /** `@udp/deploy` là thành viên mà bộ đọc cũ không thấy — ô này giữ nó trong tầm quét */
+  it("[Plan #62] mọi glob của pnpm-workspace.yaml đều có package, và deploy nằm trong tầm quét", () => {
+    expect(packages.map((p) => p.name)).toContain("@udp/deploy");
+    expect(packages.filter((p) => p.name === "").map((p) => p.dir)).toEqual([]);
+  });
+
+  it("[Plan #62] manifest phát hành của gói SDK đủ thứ registry đòi, và `files` không mở rộng", () => {
+    const pv = byName.get("@udp/openfeature-provider") as Pkg;
+    // `files` đúng `["dist"]`: `LICENSE` và `README.md` vào tarball bằng LUẬT của npm/pnpm, không bằng khai báo —
+    // thêm chúng vào đây là một dòng vô tác dụng dạy người đọc rằng `files` là danh sách đầy đủ.
+    expect(pv.manifest.files).toEqual(["dist"]);
+    expect(pv.manifest.license).toBe("Apache-2.0");
+    // Provenance của npm đối chiếu `repository.url` với repo đã build, và phép khớp là CASE-SENSITIVE
+    expect(pv.manifest.repository?.url).toBe(
+      "git+https://github.com/23521549-lang/udp.git",
+    );
+    expect(pv.manifest.repository?.directory).toBe(
+      "packages/openfeature-provider",
+    );
+    for (const file of ["LICENSE", "README.md"]) {
+      expect(existsSync(join(pv.dir, file))).toBe(true);
+    }
+  });
+
+  /**
+   * [Plan #62 62b-3] Hai SDK đi cùng một số version: §6.8 nói hai bản có cùng máy trạng thái, cùng tuỳ chọn, cùng
+   * mặc định, và tương đương được kiểm bằng CÙNG MỘT tệp vector. Hai số version rời nhau cho hai bản được kiểm
+   * bằng cùng một tệp là mời người đọc đoán xem bản Python nào tương đương bản Node nào.
+   *
+   * Và Golden Path phải ghim ĐÚNG dải tính ra từ version đó, chứ không phải "một khoảng nào có chứa version":
+   * `>=0.1,<1` chứa cả `0.2.0` còn `^0.1.0` thì không, nên phép "có chứa" cho phép một khoảng rộng tuỳ ý.
+   */
+  it("[Plan #62] hai SDK cùng một số version, và Golden Path ghim đúng dải của version đó", () => {
+    const node = byName.get("@udp/openfeature-provider") as Pkg;
+    const python = projectVersionOf(
+      readFileSync(join(ROOT, "sdks", "python", "pyproject.toml"), "utf8"),
+    );
+    expect(node.manifest.version).toBe(python);
+
+    const pins = goldenPathPins(python);
+    const render = readFileSync(
+      join(ROOT, "packages", "golden-path", "src", "render.ts"),
+      "utf8",
+    );
+    // Đúng MỘT lần khai: một `PROVIDER_RELEASE_LEGACY` về sau không được lọt
+    const hits = [...render.matchAll(/PROVIDER_RELEASE\s*=\s*"([^"]*)"/g)];
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.[1]).toBe(pins.providerRelease);
+
+    const requirements = readFileSync(
+      join(
+        ROOT,
+        "packages",
+        "golden-path",
+        "templates",
+        "python",
+        "requirements.txt",
+      ),
+      "utf8",
+    );
+    expect(
+      requirements
+        .split(/\r?\n/)
+        .filter((line) => line.includes("udp-openfeature")),
+    ).toEqual([pins.requirement]);
+  });
+
+  /**
+   * Bộ đọc `[project].version` phải FAIL-CLOSED. Mỗi đầu vào dưới đây là một chế độ hỏng mà một mẫu regex hồn
+   * nhiên trả về một giá trị SAI thay vì ném — đo trên tám đầu vào trước khi viết bộ đọc.
+   */
+  it("[Plan #62] projectVersionOf ném ở mọi dạng lạ, không đoán", () => {
+    const ok = ['[project]\nversion = "1.2.3"\n'];
+    for (const good of ok) expect(projectVersionOf(good)).toBe("1.2.3");
+
+    const bad: [string, string][] = [
+      ["chỉ có dòng bị comment", '[project]\n# version = "9.9.9"\n'],
+      ["version động (setuptools-scm)", '[project]\ndynamic = ["version"]\n'],
+      ["nháy đơn", "[project]\nversion = '1.2.3'\n"],
+      ["hai khoá version", '[project]\nversion = "1.2.3"\nversion = "1.2.4"\n'],
+      ["không có bảng [project]", 'version = "1.2.3"\n'],
+      [
+        "chỉ có [tool.poetry].version",
+        '[tool.poetry]\nversion = "9.9.9"\n[project]\nname = "x"\n',
+      ],
+      ["version không phải x.y.z", '[project]\nversion = "1.2"\n'],
+    ];
+    for (const [why, source] of bad) {
+      expect(() => projectVersionOf(source), why).toThrow();
+    }
+
+    // `target-version` của `[tool.ruff]` đứng TRƯỚC `[project]` — mẫu `/version\s*=\s*"…"/` đọc ra "py311"
+    expect(
+      projectVersionOf(
+        '[tool.ruff]\ntarget-version = "py311"\n[project]\nversion = "1.2.3"\n',
+      ),
+    ).toBe("1.2.3");
   });
 });
