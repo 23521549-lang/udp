@@ -204,6 +204,15 @@ jobs:
           I28_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           I28_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: pnpm --filter @udp/design-lint i28 --base "$I28_BASE" --head "$I28_HEAD"
+      # [Plan #61 61d-3c-2] Cổng F3 (§8.6): đổi ghim chart phải bump version adapter VÀ mang upgradesFrom bản cũ.
+      # Cùng khoảng commit, cùng kỷ luật "commit trước cổng thì miễn". Miễn trừ cho một ghim chưa bao giờ tải
+      # được: dòng `Ghim-hỏng: <chart>` trong thông điệp commit.
+      - name: cổng F3 trên khoảng commit của lượt này
+        if: always()
+        env:
+          I28_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          I28_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: pnpm --filter @udp/design-lint chart-bump --base "$I28_BASE" --head "$I28_HEAD"
 
   portal-demo:
     # [Plan #53 QĐ-11, Plan #54 QĐ-4] Cổng chụp màn của bản xem thử: build bản tĩnh (lớp giả lập trong trang, không
