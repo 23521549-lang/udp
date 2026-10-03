@@ -303,114 +303,238 @@ lượt publish thật — nằm ngoài phạm vi, sau chốt duyệt tay.
 ## 62d — Tên công khai `udp-openfeature` (rủi ro tên của QĐ-5 đã xảy ra)
 
 **Dữ kiện khởi phát [04/10/2026]:** form tạo org của npm trả `The organization name 'udp' is not available`. Lý do đo
-được: **đã có package `udp@1.0.0`** trên npm, và npm dùng chung một không gian tên cho org và package. Nên scope
-`@udp` **không bao giờ lấy được**, không phải "đang bị ai chiếm".
+được: **đã có package `udp@1.0.0`** (tạo 2013) và npm dùng chung một không gian tên cho org và package. Scope `@udp`
+**không bao giờ lấy được**, không phải "đang bị ai chiếm".
 
-**Và đó là một dữ kiện tốt, không phải một tai nạn:** nó buộc ta gọi đúng tên hai thứ vốn khác nhau — `@udp/*` là
-namespace **trong kho** (design-lint dùng chính tiền tố đó để nhận diện package nội bộ), còn gói phát hành cần một
-tên **công khai**. Trước đợt này hai thứ đó bị gộp làm một.
+**Và đó là một dữ kiện tốt:** nó buộc gọi đúng tên hai thứ vốn khác nhau — `@udp/*` là namespace **trong kho** (tám ô
+của `package-boundaries.test.ts` dùng chính tiền tố đó để nhận diện package nội bộ), còn gói phát hành cần một tên
+**công khai**. Trước đợt này hai thứ bị gộp làm một, và `@udp/` mang nghĩa "nội bộ, **trừ đúng một ngoại lệ**". Sau
+đợt này nó là một vị từ toàn phần: `@udp/` ⇒ không bao giờ cài được từ registry nào.
 
-**Vì sao KHÔNG đổi tên nội bộ:** chuỗi `@udp/openfeature-provider` nằm ở **42 tệp**, và `@udp/` là quy ước mà bốn ô
-của `package-boundaries.test.ts` dựa vào để nói "package nội bộ". Đổi scope nội bộ là đổi một quy ước kiến trúc để
-giải một vấn đề của registry.
+**Vì sao KHÔNG đổi tên trong kho:** chuỗi `@udp/openfeature-provider` nằm ở **42 tệp**, và đổi nó kéo theo cả
+`pnpm-lock.yaml` (ba khoá `importers`). Đổi scope nội bộ là đổi một quy ước kiến trúc để giải một vấn đề của registry.
 
-**Cơ chế, đo trước khi viết (R7):** pnpm **nâng `publishConfig.name`**.
+**Tên: `udp-openfeature`** — trùng y hệt tên gói Python trên PyPI. Hợp lệ với npm
+(`validate-npm-package-name@7.0.2` → `validForNewPackages: true`), và **không** vướng luật "too similar": sáu biến
+thể chuẩn hoá đều 404, còn `udp-client`/`udp-server`/`udp-proxy` và `udp-stencil-component-library` (tạo 16/07/2025)
+sống song song với gói `udp` — npm chỉ so **tên chuẩn hoá đầy đủ**, không so tiền tố.
+
+### Dữ kiện nền của bản nháp đã SAI, và vì sao (R7)
+
+Bản nháp viết "pnpm **nâng** `publishConfig.name`" kèm một probe. Phép đo đó **bị nhiễu hai lần**, và vòng QA bác nó:
 
 ```
-package.json:  "name": "@udp/probe-ten",  "publishConfig": { "name": "udp-probe-ten", "main": "./dist/i.js" }
-tarball:       name = udp-probe-ten    main = ./dist/i.js    publishConfig = (đã xoá)
-tệp:           udp-probe-ten-0.0.1.tgz
+pnpm --version        (cwd = repo)                 →  9.12.0
+pnpm --version        (cwd = scratchpad)           →  11.22.0   ← probe chạy ở đây
+pnpm -C <scratchpad> --version                     →  11.22.0   ← `-C` phân giải LẠI theo thư mục ĐÍCH
 ```
 
-**Tên đã chọn: `udp-openfeature`** — trùng y hệt tên gói Python trên PyPI (`pyproject.toml` đã khai từ Plan #47).
-Hai registry, một tên, một số version: đó là câu ngắn nhất nói đúng quan hệ giữa hai bản. Cả hai tên còn trống
-(`npm view` → 404; PyPI → 404 ở cả bốn dạng chuẩn hoá PEP 503).
+Và trên **gói thật**, với **đúng bản repo ghim**:
 
-### 62d-1. Khai tên công khai ở `publishConfig`
+```
+$ pnpm -C packages/openfeature-provider --version
+9.12.0
+$ pnpm -C packages/openfeature-provider pack --pack-destination …     # sau khi thêm publishConfig.name
+udp-openfeature-provider-0.1.0.tgz
+  name          = @udp/openfeature-provider        ← KHÔNG được áp
+  publishConfig = {'name': 'udp-openfeature'}      ← KHÔNG bị xoá
+```
 
-- **Làm gì:** thêm `"name": "udp-openfeature"` vào `publishConfig`.
-- **Ở đâu:** `packages/openfeature-provider/package.json`.
-- **Hệ quả:** `pnpm pack` sinh manifest mang tên công khai; tên trong kho không đổi ⇒ 42 chỗ còn lại không chạm.
-- **Lan sang:** `scripts/pack.ts` (62d-2), `package-boundaries.test.ts` (62d-8), README (62d-6), §6.8 và sổ nợ (62d-7).
-- **Ai dùng hôm nay:** `scripts/pack.ts`; `npm publish --dry-run` in tên ra.
+Việc nâng `name` chỉ xuất hiện giữa pnpm 11.16 và 11.22 — một hành vi mới tinh mà repo không có. Thêm nữa, cặp tên
+của probe cũ (`@udp/probe-ten` → `udp-probe-ten`) **không phân biệt được hai giả thuyết**: npm/pnpm làm phẳng scope
+khi đặt tên tarball, nên cả hai giả thuyết cho cùng một tên tệp.
 
-### 62d-2. Hợp đồng artifact khẳng định tên đã được áp
+**Hệ quả nếu ship bản nháp:** `pack.ts` ném `manifest còn publishConfig` ⇒ cổng 62d đỏ ở dòng mã đầu tiên.
 
-- **Làm gì:** `assertPublishArtifact` nhận thêm tên mong đợi — đọc `publishConfig.name` từ manifest NGUỒN — và
-  khẳng định manifest ĐÃ ĐÓNG GÓI mang đúng tên đó, không còn tiền tố `@udp/`.
+**Bài học, cụ thể hơn R7 một bậc:** chạy phép đo bằng **đúng công cụ mà đường thật dùng**, và **in phiên bản ra
+trong cùng lệnh**. Một probe ngoài repo là một môi trường khác.
+
+### 62d-1. Khai tên công khai, và ÁP nó ở bước dẫn xuất
+
+- **Làm gì:** (a) thêm `"name": "udp-openfeature"` vào `publishConfig` của manifest — đó vẫn là **nguồn sự thật duy
+  nhất** của tên phát hành (R8); (b) ở **bước 3** của `scripts/pack.ts` (chỗ đã xoá `scripts` và `@udp/*`), áp tên
+  đó, độc lập phiên bản pnpm:
+  - manifest staged **còn** `publishConfig` (pnpm ≤ 11.16): khoá còn lại phải **đúng** `["name"]` — nếu còn
+    `main`/`types`/`exports` nghĩa là pnpm thôi nâng chúng ⇒ **ném**; rồi gán `name` và xoá `publishConfig`;
+  - manifest staged **không** còn `publishConfig` (pnpm ≥ 11.22): tên phải **đã bằng** `publishConfig.name` của
+    manifest NGUỒN ⇒ nếu không, ném.
+- **Ở đâu:** `packages/openfeature-provider/package.json`, `packages/openfeature-provider/scripts/pack.ts`.
+- **Hệ quả:** phép kiểm `publishConfig !== undefined` cũ ở `assertPublishArtifact` thành **vô nghĩa** (luôn xanh sau
+  bước 3) — thứ nó che (pnpm thôi nâng `main`) chuyển sang điều kiện `["name"]` ở trên cộng hai phép kiểm
+  `main`/`types` trỏ `./dist/` đã có. Phải ghi rõ trong chú thích, không để lại một dòng chết.
+- **Lan sang:** 62d-2 (hợp đồng), `publish.yml` (62d-9), §6.8 (62d-10).
+- **Ai dùng hôm nay:** mọi lượt pack; `npm publish --dry-run`.
+
+### 62d-2. Hợp đồng artifact: tên đúng, và KHÔNG byte nào còn `@udp/`
+
+- **Làm gì:** `assertPublishArtifact(entries, manifest, expectedName)` — `expectedName` đọc từ `publishConfig.name`
+  của manifest **NGUỒN**. Thêm ba khẳng định: (a) `manifest.name === expectedName`; (b) `name` không có scope
+  (`^[a-z][a-z0-9-]*$`); (c) **không tệp `.js`/`.d.ts`/`.md` nào trong tarball chứa chuỗi `@udp/`**.
 - **Ở đâu:** `packages/openfeature-provider/scripts/pack.ts`.
-- **Hệ quả:** nếu `publishConfig.name` bị xoá, hay một bản pnpm sau thôi nâng khoá đó, thì build **ném** thay vì
-  publish dưới `@udp/` — một scope không ai sở hữu được, tức một lỗi ở REGISTRY sau khi chốt duyệt tay đã tiêu.
-- **Lan sang:** không (`package.test.ts` gọi cùng hàm).
-- **Ai dùng hôm nay:** mọi lượt pack, kể cả trong `tests/package.test.ts`.
+- **Hệ quả:** (c) là cổng mạnh nhất của đợt: nó bắt **cùng lúc** banner của `build.ts`, JSDoc lọt vào
+  `dist/types/*.d.ts` (thứ IDE của khách hiện khi hover), và README — mà không cần đoán trước danh sách tệp. Đo
+  hôm nay: `dist/` chứa **6** lần `@udp/openfeature-provider` và 1 lần `@udp/metrics-provider`.
+- **Lan sang:** `scripts/build.ts` (banner), `src/index.ts`, `src/metrics.ts` (JSDoc), `README.md` (62d-6).
+- **Ai dùng hôm nay:** `tests/package.test.ts` gọi `packPublishArtifact`.
 
-### 62d-3. Golden Path sinh mã khách mang tên công khai
+### 62d-3. Bộ test tiêu thụ phải đi đúng đường của khách
 
-- **Làm gì:** thêm hằng `PROVIDER_PUBLIC_NAME` và một phép thay trong `render()`, cạnh phép thay `"workspace:*"`
-  đang có. Template **giữ** `@udp/openfeature-provider` để nó vẫn chạy được trong kho (`template-provider.test.ts`
-  chạy template với provider thật qua workspace); chỉ **cây sinh ra cho khách** mang tên công khai. Phép thay theo
-  tiền tố nên `@udp/openfeature-provider/metrics` cũng thành `udp-openfeature/metrics`.
-- **Ở đâu:** `packages/golden-path/src/render.ts`, xuất thêm ở `src/index.ts`.
-- **Hệ quả:** `npm install` trên cây sinh ra phân giải được — đây là **nửa đầu của AC-6**, thứ mà không có nó thì
-  lượt publish cũng không chữa được đường đứt.
-- **Lan sang:** `tests/render.test.ts` (khẳng định cây sinh ra **không còn** chuỗi `@udp/` nào).
+- **Làm gì:** `tests/package.test.ts` cài tarball vào `node_modules/<artifact.manifest.name>` và import đúng chuỗi
+  đó; bỏ `PKG = ["@udp","openfeature-provider"].join("/")` và thư mục `node_modules/@udp/`.
+- **Ở đâu:** `packages/openfeature-provider/tests/package.test.ts`.
+- **Hệ quả:** không sửa thì ô này **vẫn XANH** mà thôi chứng minh điều nó nói — Node phân giải bare specifier theo
+  **đường dẫn**, không đối chiếu `name` (đã đo). Nó sẽ kiểm một bố cục npm không bao giờ tạo, còn specifier khách
+  thật gõ thì không chạy ở đâu cả. Đúng lúc đó câu §6.8 "thứ được kiểm là thứ được phát hành" thành sai.
+- **Lan sang:** §6.8 (62d-10).
+- **Ai dùng hôm nay:** cổng 62d.
+
+### 62d-4. Golden Path sinh mã khách: phép thay FAIL-CLOSED
+
+- **Làm gì:** `PROVIDER_PUBLIC_NAME` + một phép thay **có callback**, không phải `replaceAll` thô:
+  khớp specifier **trọn** (`(?=["'\`\s;)])`) nên không nuốt `@udp/openfeature-provider-react`; **ném** khi subpath
+không nằm trong tập đã phát hành (`""`, `"/metrics"`), kèm tên tệp; và `goldenPathFiles`đòi tổng số lần thay`> 0`cho runtime`nodejs`.
+- **Ở đâu:** `packages/golden-path/src/render.ts` (hằng, hàm, và **doc comment `:9-15` nói "chỉ ba chỗ được thay"**
+  — nay là bốn), xuất ở `src/index.ts`.
+- **Hệ quả:** ba chế độ fail-open bị đóng, mỗi cái đã dựng được lỗi thật ở phía khách:
+  `udp-openfeature/testing` → `ERR_PACKAGE_PATH_NOT_EXPORTED` (subpath `./testing` cố ý **không** phát hành);
+  `udp-openfeature-react` → `ERR_MODULE_NOT_FOUND`; và "0 lần thay" không còn lẫn với "không có gì cần thay".
+  Template **giữ** tên trong kho (`template-provider.test.ts` nhập thẳng `templates/node/src/app.js` qua workspace,
+  không chạy cây sinh ra — nên nó xanh, **không cần alias**).
+- **Lan sang:** `tests/render.test.ts`; hai wire fixture (62d-8).
 - **Ai dùng hôm nay:** `render.test.ts`.
 
-### 62d-4. Bộ quét repo khách nhận tên công khai
+### 62d-5. `render.test.ts`: trỏ lại, KHÔNG xoá
 
-- **Làm gì:** `hasDependency(ev, ["@udp/openfeature-provider", PROVIDER_PUBLIC_NAME], /udp-openfeature/i)`.
-- **Ở đâu:** `packages/golden-path/src/scan.ts`.
-- **Hệ quả:** khách cài từ npm có `udp-openfeature` trong `dependencies`, **không** có `@udp/...`. Không sửa thì bộ
-  quét báo "chưa dùng SDK" cho **mọi** khách thật — một sai âm im lặng.
-- **Lan sang:** `tests/scan.test.ts` (một ô cho tên công khai).
-- **Ai dùng hôm nay:** `scan.test.ts`.
-
-### 62d-5. Đoạn quickstart của Portal
-
-- **Làm gì:** `npm install @openfeature/server-sdk udp-openfeature` và `import … from "udp-openfeature"`.
-- **Ở đâu:** `apps/portal/src/features/project/settings/sdk-quickstart.ts`.
-- **Hệ quả:** đoạn mã Portal đưa cho người dùng chạy được. Phía Python không đổi (đã đúng từ đầu).
-- **Lan sang:** test Portal nào khẳng định chuỗi đó.
-- **Ai dùng hôm nay:** bộ test Portal.
-
-### 62d-6. README của gói Node
-
-- **Làm gì:** `npm install` và mọi `import` dùng tên công khai; thêm một đoạn ngắn nói tên trong kho khác tên phát
-  hành và **vì sao** (`@udp` không lấy được).
-- **Ở đâu:** `packages/openfeature-provider/README.md`.
-- **Hệ quả:** trang npm không dạy người đọc một specifier không cài được.
-- **Lan sang:** không.
-- **Ai dùng hôm nay:** cổng 62d-8 đọc README và đòi không còn `@udp/openfeature-provider` trong khối mã.
-
-### 62d-7. Thiết kế và sổ nợ
-
-- **Làm gì:** §6.8 — tên phát hành là `udp-openfeature`, khai ở `publishConfig.name`, kèm lý do; và cặp "một tên,
-  hai registry". Sổ nợ `sdk-publish-real` — **bỏ bước tạo org**, mọi `@udp/openfeature-provider` thành
-  `udp-openfeature`, lệnh bootstrap đổi theo. `plan62-spec.md` QĐ-5 — một dòng quyết định có ngày [04/10/2026] ghi
-  rủi ro tên **đã xảy ra** và cách giải, chứ không sửa lặng lẽ câu dự phòng cũ.
-- **Ở đâu:** `docs/UDP_design.md`, `docs/measurements/kiem-chung-con-no.md`, `docs/plans/plan62-spec.md`.
-- **Hệ quả:** tài liệu không còn trỏ người đọc tới một tên không tồn tại.
-- **Lan sang:** cổng `debt-ledger` và `references` của design-lint.
-- **Ai dùng hôm nay:** chủ repo, ở bước bootstrap.
-
-### 62d-8. Cổng giữ tên công khai không trôi
-
-- **Làm gì:** thêm ô: (a) `publishConfig.name` tồn tại, **không** có scope, khớp `^[a-z][a-z0-9-]*$`; (b) nó **bằng**
-  `PROVIDER_PUBLIC_NAME` đọc bằng chữ từ `render.ts` (design-lint **không** phụ thuộc `@udp/golden-path`, cùng kỷ
-  luật với `PROVIDER_RELEASE`); (c) `sdk-quickstart.ts` và README của gói dùng đúng tên đó, và **không** còn
-  `@udp/openfeature-provider` trong khối mã hướng về khách.
-- **Ở đâu:** `packages/design-lint/tests/package-boundaries.test.ts`.
-- **Hệ quả:** ba chỗ nói tên công khai không thể trôi khỏi nhau — đúng hình dạng ba đầu của bất biến digest ở Plan #61.
+- **Làm gì:** `:62` đổi khoá sang `PROVIDER_PUBLIC_NAME` nhưng **giữ** phép khẳng định ghim `PROVIDER_RELEASE`;
+  thêm `expect(manifest).toContain('"udp-openfeature": "^0.1.0"')` — **một chuỗi** bắt cả hai phép thay và thứ tự
+  của chúng; thêm nửa phủ định `không tệp nào chứa "@udp/"` cho **cả hai** runtime; thêm một ô khẳng định mọi
+  specifier provider trong cây thuộc đúng tập `["", "/metrics"]`.
+- **Ở đâu:** `packages/golden-path/tests/render.test.ts`.
+- **Hệ quả:** ô chỉ-phủ-định là một cổng yếu — nó XANH cả khi template bỏ hẳn provider, và XANH cho cây Python.
 - **Lan sang:** không.
 - **Ai dùng hôm nay:** cổng 62d.
 
+### 62d-6. Bốn bề mặt hướng về khách trong mã
+
+- **Làm gì:** (a) `sdk-quickstart.ts` — `npm install @openfeature/server-sdk udp-openfeature`, `from "udp-openfeature"`,
+  và chú thích `:5` bỏ tên có scope (trỏ `packages/openfeature-provider` bằng đường dẫn); (b) `rollout-form.tsx:180`
+  — đoạn mã trong `role="alert"` mà Portal đưa người dùng dán khi họ **đang bị chặn** tạo rollout mức flag;
+  (c) `build.ts:51` banner — dòng đầu của `dist/index.js`; (d) JSDoc `src/index.ts:2,4` và `src/metrics.ts:6` — vào
+  `dist/types/*.d.ts`, thứ IDE của khách hiện khi hover.
+- **Ở đâu:** bốn tệp trên.
+- **Hệ quả:** (c) và (d) do cổng 62d-2(c) bắt tự động; (a) và (b) do cổng 62d-11 bắt.
+- **Lan sang:** `apps/portal/tests/landing.test.tsx:126`, `apps/portal/tests/project-ux58.test.tsx:234` (62d-7).
+- **Ai dùng hôm nay:** bộ test Portal; hợp đồng artifact.
+
+### 62d-7. Hai ô Portal: khẳng định NGUYÊN DÒNG, không một token
+
+- **Làm gì:** `landing.test.tsx:126` và `project-ux58.test.tsx:234` khẳng định **cả dòng cài**
+  (`npm install @openfeature/server-sdk udp-openfeature` / `pip install openfeature-sdk udp-openfeature`).
+- **Ở đâu:** hai tệp test đó.
+- **Hệ quả:** cách sửa hiển nhiên (đổi token mong đợi thành `udp-openfeature`) **phá mục đích** của ô
+  `"mã SDK theo tab: đổi ngôn ngữ là đổi gói cài"`: sau 62d hai tab **dùng chung tên gói**, nên token đó khớp cả
+  hai và ô hết phân biệt được. Từ nay thứ phân biệt hai tab là **trình quản lý gói + SDK**, không phải tên provider
+  — phải ghi ra, vì đó là một thay đổi về ý nghĩa của cổng.
+- **Lan sang:** không.
+- **Ai dùng hôm nay:** cổng Portal.
+
+### 62d-8. Bộ quét repo khách, và hai wire fixture
+
+- **Làm gì:** (a) `scan.ts:358` — `hasDependency(ev, ["@udp/openfeature-provider", PROVIDER_PUBLIC_NAME], /udp-openfeature/i)`;
+  `scan.test.ts` **thêm** một ô cho tên công khai, **giữ** ô cũ (`:123` là ca "khách cài từ cây cũ"). (b) Hai golden
+  `tests/fixtures/wire/{GET,POST}_projects_id_repo-scan.json` mang **nội dung tệp đề xuất** do `goldenPathFiles`
+  sinh ⇒ sau 62d-4 response thật đổi mà golden không; ghi lại chúng, và thêm một ô **không cần database** quét thư
+  mục fixture đòi không còn `@udp/openfeature-provider`.
+- **Ở đâu:** `packages/golden-path/src/scan.ts`, `tests/scan.test.ts`,
+  `services/core-backend/tests/fixtures/wire/*.json`, `packages/design-lint/tests/package-boundaries.test.ts`.
+- **Hệ quả:** không sửa (a) thì bộ quét báo "chưa dùng SDK" cho **mọi** khách cài từ npm, và `flagLevelReady` chặn
+  rollout mức flag — một sai âm im lặng. Không sửa (b) thì Portal dưới mock **và bản demo công khai** tiếp tục hiện
+  import cũ, và `wire-golden.test.ts` **không đỏ** vì nó chỉ parse schema.
+- **Lan sang:** `apps/portal/demo/mock/goldens.ts` đọc chính hai fixture đó (không sửa mã, chỉ đổi dữ liệu).
+- **Ai dùng hôm nay:** `scan.test.ts`; ô quét fixture.
+
+### 62d-9. `publish.yml`: chắn idempotent đọc tên từ manifest
+
+- **Làm gì:** `npm view "$name@$version"` với `name=$(node -p "…publishConfig.name")`, cộng `[ -n "$name" ] || exit 1`.
+  Và một câu cạnh `--access public` nói cờ đó **load-bearing**: `/-/package/<tên mới>/visibility` trả
+  `{"public":false}`, nên `--provenance` trên một tên CHƯA tồn tại **ném EUSAGE** nếu thiếu cờ.
+- **Ở đâu:** `.github/workflows/publish.yml`.
+- **Hệ quả:** không sửa thì `npm view "@udp/openfeature-provider@…"` **luôn** 404 ⇒ chắn vô tác dụng ⇒ chạy lại
+  cùng một tag nhận `EPUBLISHCONFLICT` và job **ĐỎ**, đúng thứ chính tệp đó tuyên bố nó tránh — và chỉ lộ ra sau khi
+  chốt duyệt tay đã tiêu.
+- **Lan sang:** `deploy/tests/ci-workflow.test.ts` (62d-11).
+- **Ai dùng hôm nay:** cổng cấu trúc workflow.
+
+### 62d-10. Thiết kế, §16, và sổ nợ
+
+- **Làm gì:**
+  1. **§6.8** — tiêu đề `:4539` (tên-của-hồ-sơ của gói phát hành); `:4552` subpath; `:4638`/`:4639` (`publishConfig`
+     nay khai **hình dạng VÀ ĐỊNH DANH**; hợp đồng artifact thêm TÊN và "không byte nào còn `@udp/`"); `:4668`
+     ("gói `udp-openfeature` **trên PyPI**" — sau 62d có hai gói cùng tên); và câu "thứ được kiểm là thứ được phát
+     hành" nay đúng theo nghĩa mạnh hơn (62d-3).
+  2. **Mã của khách in trong thiết kế**: §6.1 `:3948`, §6.6 `:4419`, §11.1 `:7849`, `:7879` — thiết kế **tự khai**
+     (`:7838`, D-P36 `:7793`) rằng đó là "mã developer chép thẳng".
+  3. **§11/D-P36 `:7834`** — hợp đồng của `render()` nay là **bốn** phép thay, không ba.
+  4. **§3.1** — một câu ghi quy ước: `@udp/*` là namespace trong kho, không gói nào phát hành; gói duy nhất rời kho
+     khai tên công khai ở `publishConfig.name`.
+  5. **§16 dòng mới**: "tên trong kho khác tên phát hành, và tên phát hành không có scope" — giá phải trả: hai tên
+     cho một thứ; **không có vùng chống nhận lầm** (`udp-openfeature-provider`, `udp_openfeature`, `udpopenfeature`
+     để trống, trong khi `@udp/*` cho miễn nhiễm trong scope); hướng mở rộng: scope của chính tài khoản.
+     Và một mệnh đề phụ cho dòng lockstep `:8676`: hai gói là **hai dự án registry khác nhau trùng tên**, nên một
+     lệch chéo ngôn ngữ từ nay **khó thấy hơn**, không dễ hơn.
+  6. **Sổ nợ** — ngoài việc đổi chuỗi: tiền đề (a) `:1392` ("scope `@udp` còn trống **và lấy được**") đã bị **đo
+     bác**, và nó **không chứa** chuỗi cần đổi nên phép đổi chuỗi bỏ sót nó; ghi lại đúng bài học — **cả bốn phép
+     kiểm hôm 03/10 đều mù** đúng cái đã chặn (một package **không scope** tên `udp`). Bỏ bước tạo org, đánh số lại
+     runbook, và viết lại bước bootstrap theo 62d-12.
+- **Ở đâu:** `docs/UDP_design.md`, `docs/measurements/kiem-chung-con-no.md`, `docs/plans/plan62-spec.md` (một dòng
+  quyết định có ngày ở QĐ-5).
+- **Hệ quả:** tài liệu thôi dạy một specifier không cài được, ở đúng những chỗ nó tự nhận là mã để chép.
+- **Lan sang:** cổng `references`/`debt-ledger`/`design-doc` của design-lint.
+- **Ai dùng hôm nay:** cổng design-lint; chủ repo ở bước bootstrap.
+
+### 62d-11. Cổng: bốn đầu, và mẫu đọc hai tầng
+
+- **Làm gì:** trong `package-boundaries.test.ts`: (a) `publishConfig.name` tồn tại, không scope; (b) nó **bằng**
+  `PROVIDER_PUBLIC_NAME` đọc bằng chữ từ `render.ts`; (c) nó **bằng** `name` của `sdks/python/pyproject.toml` (đầu
+  thứ tư — biến câu "một tên, hai registry" thành bất biến thay vì khẩu hiệu); (d) **không tệp nào dưới
+  `apps/portal/src/` chứa `@udp/openfeature-provider`** (một phép quét, không một danh sách tệp — danh sách sẽ lỗi
+  ở đoạn mã thứ ba); (e) `quickstartCode("node", …)` trả dòng cài bắt đầu bằng `npm install` và chứa tên công khai
+  (nửa dương — nếu chỉ quét văn bản tệp thì **nhánh Python một mình** làm ô xanh). Trong `ci-workflow.test.ts`:
+  bước publish và bước chắn `npm view` **không** chứa chuỗi `@udp/`.
+  Và **sửa một defect của 62b**: mẫu `/PROVIDER_RELEASE\s*=\s*"…"/` có chú thích nói nó chặn
+  `PROVIDER_RELEASE_LEGACY`, nhưng đo ra nó **không** chặn (`so khop = 1`). Thay cả hai hằng bằng một bộ đọc **hai
+  tầng**: mốc đối chiếu là phép **đếm định danh thô** (không vỡ vì prettier hay annotation kiểu), tầng một bắt phần
+  phải của `=` lỏng, tầng hai đọc chặt và **in nguyên văn thứ nó thấy** khi lạ. Cộng `uses >= 2` — mệnh đề một regex
+  thuần không phát biểu được, và nó bắt đúng thoái cấp "bỏ phép thay trong `render()`".
+- **Ở đâu:** `packages/design-lint/tests/package-boundaries.test.ts`, `packages/design-lint/src/toml-version.ts`
+  (thêm `projectNameOf`), `deploy/tests/ci-workflow.test.ts`.
+- **Hệ quả:** mẫu một tầng cho **0 khớp ở 5/10** cách viết thật (annotation kiểu, nháy đơn, template literal, khai
+  trong object, ghép chuỗi) — cùng bẫy `chartPinsOf` (42/71): một mẫu đòi hình dạng cố định, thiếu khớp thì im lặng.
+- **Lan sang:** không.
+- **Ai dùng hôm nay:** cổng 62d.
+
+### 62d-12. Runbook bootstrap: gói giữ chỗ dựng NGOÀI kho
+
+- **Làm gì:** viết lại bước 3 của `sdk-publish-real`. **npm cũng không áp `publishConfig.name`** (đo:
+  `npm notice name: @udp/openfeature-provider`), nên `npm publish` từ thư mục gói sẽ phát hành **sai tên** vào một
+  scope không ai sở hữu. Và `npm version` trong kho ghi vào `package.json` thật, tạo commit + tag, và làm lệch cổng
+  `sdk-version.ts`. Bootstrap chỉ cần **tên tồn tại**: dựng một gói giữ chỗ `0.0.1` ở thư mục ngoài kho, publish
+  `--tag bootstrap --access public`, rồi `npm deprecate`.
+- **Ở đâu:** `docs/measurements/kiem-chung-con-no.md`.
+- **Hệ quả:** `--tag bootstrap` làm `latest` **không được đặt**, nên `npm install udp-openfeature` ETARGET tới khi
+  `0.1.0` lên — mong muốn, nhưng phải là một câu trong runbook chứ không phải một ngạc nhiên.
+- **Lan sang:** không.
+- **Ai dùng hôm nay:** chủ repo.
+
 **Cổng 62d:** `pnpm --filter @udp/design-lint test`; `pnpm --filter @udp/golden-path test`;
 `pnpm --filter @udp/openfeature-provider test` **&&** `… typecheck`; `pnpm --filter @udp/portal exec vitest run`;
-`pnpm --filter @udp/deploy test`; `prettier --check`; `eslint` trên tệp đã đổi.
+`pnpm --filter @udp/deploy test`; ô quét fixture của `@udp/core-backend`; `prettier --check`; `eslint`.
 
-**Kiểm thoái cấp (R11):** mỗi ô mới phải ĐỎ khi làm lệch — xoá `publishConfig.name`; đổi nó thành một tên có scope;
-đổi `PROVIDER_PUBLIC_NAME` lệch khỏi nó; để lại một `@udp/openfeature-provider` trong `sdk-quickstart.ts`; và bỏ
-phép thay trong `render()` (cây sinh ra còn `@udp/` ⇒ `render.test.ts` đỏ).
+**Kiểm thoái cấp (R11) — mỗi ô phải ĐỎ khi làm lệch:** xoá `publishConfig.name`; đặt nó thành một tên **có scope**;
+đổi `PROVIDER_PUBLIC_NAME` lệch khỏi nó; đổi `name` của `pyproject.toml` lệch khỏi nó; để lại một
+`@udp/openfeature-provider` trong `apps/portal/src/`; bỏ phép thay trong `render()` (cây sinh ra còn `@udp/` **và**
+`uses < 2` ⇒ hai cổng cùng đỏ); dùng subpath `/testing` trong template (render **ném**); chép cứng tên cũ lại vào
+`publish.yml`; và thêm một chuỗi `@udp/` vào `src/index.ts` (hợp đồng tarball đỏ).
 
 ## Ba vòng QA đã sửa gì (R2)
 
