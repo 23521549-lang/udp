@@ -345,3 +345,132 @@ hợp lệ, và đổi nó sang `PROVIDER_RELEASE` sẽ ngụ ý sai rằng bộ
 **Một đề xuất nhận một nửa:** khẳng định tarball bằng **đúng tập 11 entry** (mạnh hơn allowlist). Không được:
 `dist/chunk-SRD43SET.js` mang hash nội dung trong tên nên tập chính xác sẽ đỏ ở mọi lần đổi mã. Lấy phương án lùi:
 allowlist ba tệp gốc + tiền tố `dist/`, cộng hai khẳng định dương.
+
+---
+
+## Đã làm — và bằng chứng (R9)
+
+Ba đợt xong trong ngày 03–04/10/2026, ba commit (chỉ ở máy). Không migration.
+
+### Artifact npm — hợp đồng do chính đường đóng gói cưỡng chế
+
+```
+$ pnpm -C packages/openfeature-provider exec tsx scripts/pack.ts --out <dir>
+…\packout\udp-openfeature-provider-0.1.0.tgz
+
+$ tar -tzf …tgz | sort
+package/LICENSE
+package/README.md
+package/dist/THIRD_PARTY_NOTICES
+package/dist/chunk-SRD43SET.js
+package/dist/index.js
+package/dist/metrics.js
+package/dist/types/{index,labels,metrics,provider}.d.ts
+package/package.json
+
+$ tar -xzOf …tgz package/package.json   (đọc bằng json)
+private: None     publishConfig: None     scripts: None     license: Apache-2.0
+main: ./dist/index.js     exports: ['.', './metrics']     deps: None     udp devDeps: []
+
+$ npm publish …tgz --dry-run --access public
+npm notice total files: 11      unpacked size: 291.3 kB
++ @udp/openfeature-provider@0.1.0
+```
+
+### Artifact PyPI — và bốn phép kiểm giấy phép
+
+```
+$ python -m build && twine check --strict dist/*
+…whl: PASSED        …tar.gz: PASSED        exit=0        (trước đợt này: exit 0 với "PASSED with warnings")
+
+$ unzip -p dist/*.whl '*/METADATA' | grep -E '^License-(Expression|File):'
+License-Expression: Apache-2.0
+License-File: LICENSE
+$ unzip -l dist/*.whl | grep -c 'dist-info/licenses/LICENSE'   → 1
+$ tar -tzf dist/*.tar.gz | grep -cE '/LICENSE$'                → 1
+
+$ unzip -p dist/*.whl '*/METADATA' | head -11
+Metadata-Version: 2.4
+Name: udp-openfeature
+Version: 0.1.0
+Summary: OpenFeature provider for UDP server keys in Python: in-process evaluation, SSE sync, and per-request ff labels
+Author: UDP
+License-Expression: Apache-2.0
+Project-URL: Homepage, …/Repository, …/Documentation, …/Issues
+Keywords: openfeature,openfeature-provider,feature-flags,…
+```
+
+Wheel chỉ chứa `udp_openfeature/` + `*.dist-info/` (đã liệt kê: 5 tệp dist-info, không tệp mã nào khác). **sdist
+thì CÓ `tests/`** (9 tệp) cùng `PKG-INFO`, `pyproject.toml`, `setup.cfg`, `README.md`, `LICENSE` — đó là nội dung
+mặc định của sdist setuptools và nó bình thường (một người đóng gói lại chạy được bộ test). AC-1 chỉ nói về **wheel**
+đúng vì vậy.
+
+Biến ẩn của hai phép đo PEP 639, ghi lại theo yêu cầu của 62c-3: `python 3.13.6` (máy dev) / `3.11` (CI, bản sàn),
+`pip 25.2`, `build 1.6.1`, `twine 7.0.0`, `ruff 0.16.9`.
+
+### Cổng
+
+```
+$ pnpm --filter @udp/design-lint test            →  31 tệp, 198 ô xanh   (trước: 193)
+$ pnpm --filter @udp/deploy test                 →   8 tệp,  76 ô xanh   (trước:  65)
+$ pnpm --filter @udp/golden-path test            →   4 tệp,  24 ô xanh
+$ pnpm --filter @udp/openfeature-provider test     →   9 tệp, 89 ô xanh (gồm `python-parity` 2 ô chạy THẬT, 40 s — không bị bỏ qua)
+$ sdks/python: ruff check / ruff format --check / mypy / pytest  →  sạch, 35 tệp, 34 tệp, 906 ô xanh
+$ prettier --check  →  sạch;  eslint trên mọi tệp đã đổi  →  sạch
+$ pnpm --filter @udp/design-lint sdk-version     →  0.1.0
+$ … sdk-version --expect 0.2.0                   →  "version của tag là 0.2.0 nhưng hai manifest ở 0.1.0", exit 1
+```
+
+### Kiểm thoái cấp (R11) — mỗi ô mới ĐỎ khi cố tình làm lệch
+
+Mười một lượt làm lệch, mỗi lượt hoàn nguyên ngay. Output thật:
+
+```
+thêm lại private                   -> ĐỎ   expected [] to deeply equal [ '@udp/openfeature-provider' ]
+nới files sang LICENSE             -> ĐỎ   expected [ 'dist', 'LICENSE' ] to deeply equal [ 'dist' ]
+python lệch version 0.2.0          -> ĐỎ   expected '0.1.0' to be '0.2.0'
+PROVIDER_RELEASE ^0.2.0            -> ĐỎ   expected '^0.2.0' to be '^0.1.0'
+bỏ --provenance                    -> ĐỎ   expected 'version=$(node -p …' to contain '--provenance'
+ghim npm@latest                    -> ĐỎ   expected 'npm install -g npm@latest …' to match /^npm install -g npm@\d+\.\d+\.\d+\b/
+thêm workflow_dispatch vào publish -> ĐỎ   expected { workflow_dispatch: null, …(1) } to deeply equal { push: { tags: [ 'sdk-v*' ] } }
+action PyPI ghim tag thay vì SHA   -> ĐỎ   pypa/gh-action-pypi-publish@release/v1: expected … to match /@[0-9a-f]{40}$/
+bỏ permissions của một job         -> ĐỎ   job build-npm phải khai permissions: expected undefined to be defined
+thêm ./testing vào publishConfig   -> ĐỎ   artifact phát hành không đạt hợp đồng:
+                                            - `exports` phải đúng ., ./metrics, đang là ., ./metrics, ./testing
+xoá LICENSE của gói Python         -> build exit 0, twine --strict exit 0, License-Expression exit 0,
+                                      nhưng License-File / wheel LICENSE / sdist LICENSE  ->  exit 1, 1, 1
+```
+
+Hai chiều của cổng `THIRD_PARTY_NOTICES`:
+
+```
+INLINED = ["murmurhash3js"]                        -> ĐỎ  "vào bundle mà KHÔNG được khai: zod"
+INLINED = ["zod","murmurhash3js","dotenv"]         -> ĐỎ  "khai mà KHÔNG vào bundle: dotenv"
+```
+
+Ba điều đáng ghi về các lượt này:
+
+1. **Lượt `./testing` đỏ ở chỗ TỐT HƠN chỗ dự kiến.** Plan nói ô `package.test.ts:126` sẽ bắt; thực tế hợp đồng
+   trong `scripts/pack.ts` ném **trước**, ở `beforeAll`. Nghĩa là một lượt publish bị chặn ở bước đóng gói, không
+   chỉ bị báo ở bước test — đúng tính chất "hỏng ồn trước khi gói rời khỏi máy".
+2. **Lượt xoá `LICENSE` là lượt duy nhất mà mọi cổng SẴN CÓ đều xanh.** `python -m build` exit 0, `twine check
+--strict` PASSED, METADATA vẫn tuyên bố Apache-2.0. Không có bốn phép kiểm của 62b-5 thì AC-2 là một lời hứa.
+3. **Một lần tôi tự đánh mất mã bằng `git checkout --`.** Sau khi chứng minh hai chiều của cổng notices, tôi hoàn
+   nguyên `build.ts` bằng `git checkout -- <tệp>` — nhưng chính cổng đó **chưa commit**, nên lệnh đó xoá luôn nó.
+   Phát hiện ngay bằng `grep -c metafile` (ra `0`) và phục hồi từ một bản `cp` làm trước đó. Đúng hình dạng sự cố
+   `git reset --hard` của Plan #61. **Luật cho người sau: commit cổng TRƯỚC khi cố tình làm lệch, và hoàn nguyên
+   bằng bản sao ngoài repo, không bằng `git checkout`.** Ba đợt sau đó đều commit trước khi làm lệch.
+
+### Chệch plan (R5)
+
+- **62b-3 sinh thêm một tệp mã**, `packages/design-lint/src/toml-version.ts`, và một script
+  `packages/design-lint/scripts/sdk-version.ts`. Plan nói "một bước `node -p` đọc hai tệp, không script mới" — nhưng
+  đọc `[project].version` fail-closed là ~30 dòng, và viết lại nó trong một `.mjs` của workflow là nguồn sự thật thứ
+  hai cho cùng một phép đọc (R8). Script dùng chung giữ một bản.
+- **62b-1 thành NĂM job thay vì bốn**, vì build tách khỏi publish: quyền publish không nên sống cùng job đã chạy
+  `pnpm install` và lifecycle script của cả cây phụ thuộc. `upload-artifact` đã là tiền lệ trong `ci.yml`.
+- **Tên tệp workflow là `publish.yml`** (không `publish-sdk.yml` như bản nháp): quy ước của repo là một từ, và tên
+  này là **cấu hình của registry** nên đổi về sau sẽ phá cả hai trusted publisher.
+- **`sdks/python/README.md` được sửa thêm một chỗ ngoài phạm vi**: comment căn lề trong một khối Python làm
+  `ruff format --check` đỏ — và nó **đã đỏ từ trước đợt này** (chứng minh trên commit `dca2fdc`). Sửa vì cổng đó
+  nằm trong job CI `python` mà 62a-3 đang chạm.
