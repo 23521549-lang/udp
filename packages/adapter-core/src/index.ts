@@ -81,6 +81,7 @@ export type {
   PipelineStep,
   PipelineTemplateParams,
   ReadOnlyAdapterContext,
+  SignedImages,
   WebhookDeployEvent,
 } from "./domain.js";
 export {

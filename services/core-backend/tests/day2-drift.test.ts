@@ -73,6 +73,8 @@ const VALID_CONFIG = { retentionDays: 15, dashboards: true, storageGb: 20 };
 function contextFor(cluster: FakeClusterAccess): DomainAdapterContext {
   return {
     k8s: cluster,
+    /** [61d-3b] Ô drift này không nói gì về chữ ký image — project chưa bật ký */
+    signedImages: null,
     environments: [],
     systemNamespace: SYSTEM_NS,
     region: "ap-southeast-1",

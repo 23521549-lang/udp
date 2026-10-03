@@ -68,6 +68,37 @@ export async function syncRegistryPull(
   }
 }
 
+/**
+ * [Plan #61 61d-3b] Bản sao `udp-registry-pull` ở namespace HỆ THỐNG — nơi Kyverno đọc thông tin đăng nhập registry.
+ *
+ * Vì sao cần một hàm riêng chứ không thêm `systemNamespace` vào danh sách của `syncRegistryPull`: hai namespace đi
+ * bằng hai verb khác nhau, vì hai quyền khác nhau. Ở namespace environment, `udp-tooling` chỉ `get/update/patch`
+ * đúng Secret tên đó (§12.2 sửa ở D-P26) và bootstrap tạo nó rỗng trước — nên ở đó là `patch`. Ở `udp-system`,
+ * `udp-tooling` có đủ quyền trên `secrets` nhưng bootstrap KHÔNG tạo Secret này, và bootstrap chỉ chạy lúc
+ * PROVISION hay lúc thêm environment — nên thêm nó vào bootstrap thì cụm đang chạy không bao giờ nhận. `apply` với
+ * thân đầy đủ giải quyết cả hai: không cần bootstrap lại, và hội tụ ở mỗi lượt áp.
+ *
+ * [CT-2] Kyverno đọc Secret bằng SecretLister của CHÍNH nó với namespace của nó làm mặc định
+ * (`regcreds.RemoteOptsFromIvpolCredentials(..., config.KyvernoNamespace())`), nên bản ở namespace environment
+ * policy không thấy. Hai release Kyverno được cài vào `ctx.systemNamespace` (`scope: "cluster"`), nên đây đúng là
+ * namespace của Kyverno.
+ *
+ * Không mở rộng phạm vi lộ bí mật: trong `udp-system` chỉ `udp-tooling` đọc được Secret, và nó đã đọc được chính
+ * những khoá này ở mọi namespace environment.
+ */
+export async function syncRegistryPullSystem(
+  access: ClusterAccess,
+  systemNamespace: string,
+  credentials: readonly PullCredential[],
+): Promise<void> {
+  const client = await access.getClient("tooling");
+  await client.write("apply", refOf(systemNamespace), {
+    metadata: { name: REGISTRY_PULL_SECRET, namespace: systemNamespace },
+    type: "kubernetes.io/dockerconfigjson",
+    stringData: { ".dockerconfigjson": dockerConfigOf(credentials) },
+  });
+}
+
 const digest = (text: string): string =>
   createHash("sha256").update(text).digest("hex");
 

@@ -1,5 +1,9 @@
 import type { DomainContractEnv } from "../contract/domain.js";
-import type { AdapterFixture, DomainAdapterContext } from "../domain.js";
+import type {
+  AdapterFixture,
+  DomainAdapterContext,
+  SignedImages,
+} from "../domain.js";
 import { createFakeClusterAccess } from "./fake-cluster.js";
 
 /**
@@ -19,6 +23,13 @@ export interface DomainContractEnvOptions {
   environment?: NonNullable<DomainAdapterContext["environment"]>;
   /** Mọi environment của project — mặc định HAI (dev, prod) để phép kiểm thấy thứ dựng theo env */
   environments?: DomainAdapterContext["environments"];
+  /**
+   * [Plan #61 61d-3b] Image đã ký của project — mặc định `null` (project chưa bật ký image).
+   *
+   * Mặc định là `null` có chủ ý: đó là nhánh mà MỌI adapter phải chịu được, nên 72 bộ hợp đồng của sản phẩm chạy
+   * đúng nhánh đó. Adapter nào dùng dữ kiện này (Kyverno) tự khai một giá trị thật trong test của nó.
+   */
+  signedImages?: SignedImages | null;
   /** Phản hồi của host ĐÃ KHAI; mặc định `200 {}` */
   respond?: (url: string, init: RequestInit | undefined) => Response;
   /** Mọi lời gọi egress kèm `init` — để test soi header và thân request */
@@ -79,6 +90,7 @@ export function domainContractEnv(
     },
     resolved: options.resolved ?? {},
     tags: { "udp.project": "p-hop-dong" },
+    signedImages: options.signedImages ?? null,
     progress: (m) => progressLog.push(m),
     /**
      * Egress guard GIẢ theo lời khai của fixture. Trả `Response` thật: lớp nền đọc `ok` và

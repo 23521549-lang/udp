@@ -4,6 +4,7 @@ import type {
   DomainAdapterContext,
 } from "@udp/adapter-core";
 import { SYSTEM_NAMESPACE } from "../modules/cluster/bootstrap.js";
+import { signedImagesOf } from "../modules/packaging/signed-images.js";
 import { bindingsOfProject } from "../modules/capability/capability-binding.repository.js";
 import {
   activeDomainsOfProject,
@@ -110,6 +111,12 @@ export async function sweepDrift(
             credential,
           );
           const stored = await bindingsOfProject(prisma, projectId);
+          /**
+           * [Plan #61 61d-3b] CÙNG hàm mà đường áp domain gọi (`job-kit.domainInput`). Hai đường tính ra hai giá
+           * trị khác nhau nghĩa là `values` của companion khác nhau, và mọi lượt quét báo trôi giả vĩnh viễn
+           * (I32 chiều b).
+           */
+          const signedImages = await signedImagesOf(prisma, projectId);
           const contextFor = (): Promise<DomainAdapterContext> =>
             access === null
               ? Promise.reject(new ClusterUnreachableError())
@@ -121,6 +128,7 @@ export async function sweepDrift(
                   quota: input.payload.quota,
                   resolved: resolvedFor(stored, {}, null),
                   tags: tagsOf(projectId, input.payload),
+                  signedImages,
                   progress: (m: string) => {
                     kit.log(job.id, m);
                   },

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { DomainAdapter, ReadOnlyAdapterContext } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
 import { BUILD_NAMESPACE } from "../../adapter-base/packaging/build-script.js";
+import { imageValidatingPolicy } from "./image-policy.js";
 
 /**
  * Adapter Kyverno (§5.5 Policy & Governance, Plan #34) — họ Helm, hai release: `kyverno` (engine)
@@ -134,9 +135,17 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
       chart: { name: "kyverno-policies", version: "3.9.1", repo: REPO },
       values: (config, ctx) => {
         const parsed = kyvernoConfigSchema.parse(config);
+        const policy = imageValidatingPolicy(ctx.signedImages);
         return {
           /** Ghim tường minh: mặc định của chart 3.9.x đã LÀ giá trị này, nhưng dựa vào mặc định là một bẫy */
           policyType: "ValidatingPolicy",
+          /**
+           * [61d-3b] Policy chữ ký image của project (AC-12) — danh sách RỖNG khi project chưa có khoá ký hay chưa
+           * có binding `registry.oci`. `customPolicies` là đường mà chart 3.9.1 nhận policy tự viết
+           * (`templates/other/custom-policies.yaml`); `image-policy.ts` nói vì sao policy đi đường này chứ không
+           * bằng một lời ghi CR của `udp-tooling`.
+           */
+          customPolicies: policy === null ? [] : [policy],
           podSecurityStandard: parsed.podSecurityStandard,
           validationFailureAction: parsed.validationFailureAction,
           /**

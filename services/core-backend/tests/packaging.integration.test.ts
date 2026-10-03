@@ -9,6 +9,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
 import { createFlagServiceClient } from "../src/core/clients/flag-service.client.js";
 import { createRegistry } from "../src/modules/domain/domain-adapter.registry.js";
+import { signedImagesOf } from "../src/modules/packaging/signed-images.js";
+import { imageValidatingPolicy } from "../src/modules/policy-adapter/kyverno/image-policy.js";
 import type { RepoSourceFactory } from "../src/modules/golden-path/repo-source.js";
 import {
   API,
@@ -478,5 +480,92 @@ describe("ký image (Plan #61 QĐ-14)", () => {
     ).expect(200);
     expect(pipeline.body.content).toContain(`--key "${kms}"`);
     expect(pipeline.body.content).toContain("id-token: write");
+  });
+});
+
+/**
+ * [Plan #61 61d-3b] `signedImagesOf` — MỘT nguồn cho hai đường dựng bối cảnh adapter.
+ *
+ * Ô này đi qua database thật và HTTP thật vì điều cần chứng minh không phải "hàm trả về object đúng hình" mà
+ * "`repository` nó tính ra **đúng bằng** chuỗi mà pipeline của project đẩy image tới". Hai giá trị đó sinh ở hai chỗ
+ * khác nhau (`signed-images.ts` và `pipeline-template.ts`); nếu chúng lệch nhau thì policy admission đòi chữ ký ở
+ * một repository mà không image nào của project nằm trong, và cả lớp AC-12 lặng lẽ không kiểm gì.
+ */
+describe("signedImagesOf (Plan #61 61d-3b)", () => {
+  it("chưa registry, hay chưa khoá ⇒ null; đủ hai ⇒ repository KHỚP pipeline, khoá công khai, loại registry", async () => {
+    const projectId = await newProject("nodejs");
+
+    // Chưa có cả registry lẫn khoá
+    expect(await signedImagesOf(admin, projectId)).toBeNull();
+
+    await enable(
+      projectId,
+      { tool: "github-actions", config: { repository: "acme/web" } },
+      {
+        tool: "ghcr",
+        endpoint: "ghcr.io/acme",
+        attributes: { pushAuth: "github-token" },
+      },
+    );
+    /** Có registry nhưng CHƯA có khoá ký ⇒ vẫn `null`: một policy không attestor không kiểm được gì */
+    expect(await signedImagesOf(admin, projectId)).toBeNull();
+
+    await admin.cloudCredential.create({
+      data: {
+        projectId,
+        provider: "AWS",
+        mode: "BYOC",
+        region: "ap-southeast-1",
+        authKind: "AWS_ROLE",
+        encryptedPayload: "khong-giai-duoc",
+        encryptedDek: "khong-giai-duoc",
+        nonce: "0".repeat(24),
+        authTag: "0".repeat(24),
+        fingerprint: "f".repeat(64),
+        isActive: true,
+        createdById: owner.userId,
+      },
+    });
+    const { publicKey } = testSigner();
+    const kms =
+      "awskms:///arn:aws:kms:ap-southeast-1:123456789012:key/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
+    await as(
+      owner,
+      request(app)
+        .put(buildUrl(projectId))
+        .send({
+          identity: { cloud: "aws", roleArn: ROLE },
+          signing: { keys: [{ publicKey, kms }] },
+        }),
+    ).expect(200);
+
+    const signed = await signedImagesOf(admin, projectId);
+    expect(signed).toEqual({
+      repository: expect.stringMatching(/^ghcr\.io\/acme\/.+$/) as unknown,
+      publicKeys: [publicKey],
+      registryKind: "github-token",
+    });
+
+    /**
+     * Phép khẳng định quan trọng nhất của ô này: chuỗi mà pipeline dùng để đẩy image PHẢI chứa đúng
+     * `repository` vừa tính. Hai nơi, một giá trị.
+     */
+    const pipeline = await as(
+      developer,
+      request(app).get(
+        `${API}/projects/${projectId}/domains/CICD/pipeline-template`,
+      ),
+    ).expect(200);
+    expect(pipeline.body.content).toContain(signed?.repository);
+
+    /** Và policy sinh từ nó đòi chữ ký ở đúng ba glob của repository ấy */
+    const policy = imageValidatingPolicy(signed) as {
+      spec: { matchImageReferences: { glob: string }[] };
+    };
+    expect(policy.spec.matchImageReferences.map((m) => m.glob)).toEqual([
+      signed?.repository,
+      `${signed?.repository ?? ""}:*`,
+      `${signed?.repository ?? ""}@*`,
+    ]);
   });
 });

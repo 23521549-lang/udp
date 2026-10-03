@@ -138,6 +138,7 @@ function ports(
     ],
     contextFor: () =>
       Promise.resolve({
+        signedImages: null,
         k8s: {
           mode: "direct",
           clusterId: "c-stub",
@@ -434,6 +435,7 @@ describe("nửa THÔNG BÁO của CASE 3 - notifyDependents", () => {
 /** Bối cảnh tối thiểu cho `notifyDependents` - không ô nào ở trên chạm cluster */
 function notifyContext(): Parameters<Dependent["adapter"]["deploy"]>[0] {
   return {
+    signedImages: null,
     k8s: {
       mode: "direct",
       clusterId: "c-notify",

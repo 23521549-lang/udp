@@ -2992,6 +2992,16 @@ interface DomainAdapterContext {
   /** Giá trị mà các adapter khác đã cung cấp — đọc từ bảng CapabilityBinding, không phải bộ nhớ worker */
   resolved: Record<CapabilityId, CapabilityBinding>;
   tags: Record<string, string>;
+  /**
+   * [v4.12, Plan #61 61d-3b] Image mà pipeline của project đẩy ra và khoá CÔNG KHAI đã ký chúng — `null` khi
+   * project chưa có khoá ký hay chưa có binding `registry.oci`. Policy admission của Kyverno đòi chữ ký ở ĐÚNG
+   * repository này; một policy đòi chữ ký ở mọi image sẽ chặn chính nền tảng.
+   *
+   * Nullable chứ không optional: `null` buộc bảy chỗ dựng bối cảnh phải quyết, và compiler liệt kê đủ bảy chỗ.
+   * Hai đường dựng bối cảnh (áp domain, quét trôi) đọc từ CÙNG một hàm (`signedImagesOf`) — hai lượt truy vấn
+   * khác nhau sẽ làm mọi lượt quét báo trôi giả (I32 chiều b).
+   */
+  signedImages: { repository: string; publicKeys: readonly string[]; registryKind: RegistryPushKind | "other" } | null;
   /** Ghi log tiến trình để Portal stream về cho người dùng */
   progress: (message: string) => void;
   /** [v4] Egress guard: mọi HTTP ra ngoài của adapter (SaaS API, webhook) đi qua đây — chống SSRF (§12 T11) */
@@ -3783,6 +3793,43 @@ interface MetricsProvider {
 > **[v4.11, Plan #34]** Webhook của cả hai tool **miễn trừ `udp-system` và `kube-system`** (và **[v4.12, Plan #61]** `udp-build` — nơi pod build của CI trong cụm cần seccomp `Unconfined`): một policy "không chạy root" áp lên controller mà UDP cài là tự khoá đường cài đặt của chính nền tảng. Kyverno mặc định `Audit` — bật `Enforce` trên project đang chạy mà chưa audit là chặn deploy của khách không báo trước.
 >
 > **[v4.12, Plan #61 61d-3a] Miễn trừ đi bằng HAI đường, không còn một.** Câu trên trước đây nói miễn trừ nằm "ở tầng webhook (không phải từng policy)" — từ chart `kyverno-policies` 3.9.x điều đó không còn đúng. Chart ấy mặc định `policyType: ValidatingPolicy` (họ CEL mới, nhóm API `policies.kyverno.io`), và khoá `policyExclude` cũ **chỉ** áp dụng cho họ `ClusterPolicy` đã bị khai tử; họ mới miễn trừ bằng `vpolExclude.excludeNamespaces` ở **từng policy**. Nên UDP giữ cả hai: `namespaceSelector` của webhook engine (tầng webhook) **và** `vpolExclude` của bộ PSS (tầng policy). Và UDP ghim `policyType` **tường minh** thay vì dựa vào mặc định của chart — một lần chart đổi mặc định không được đổi họ policy mà UDP cài. Bẫy đã đóng: nâng chart mà quên đổi khoá thì ba namespace nền tảng mất quyền miễn trừ **trong im lặng**, và với `Enforce` thì pod của chính nền tảng bị chặn (`policy-adapter/kyverno/contract.test.ts` biến đúng lỗi đó thành một test đỏ).
+>
+> **[v4.12, Plan #61 61d-3b] Policy chữ ký image (AC-12) — và đường nó đi vào cụm.** Project đã bật ký image
+> (QĐ-14) nhận thêm **một** `ImageValidatingPolicy` tên `udp-require-signed-images`
+> (`policies.kyverno.io/v1beta1` — version LƯU TRỮ của CRD; `v1alpha1` đã `deprecated`). Nó không đi bằng một lời
+> ghi CR của `udp-tooling`: `cluster/bootstrap.ts` **không** cấp quyền nào trên nhóm `policies.kyverno.io`, và
+> bootstrap chỉ chạy lúc PROVISION hay lúc thêm environment nên một quyền mới cũng không tới được cụm đang chạy.
+> Policy đi đúng đường mà mọi đối tượng khác của họ Helm đi (D-P25: cơ chế cài là `helm upgrade --install`): nó là
+> **giá trị** `customPolicies` của release `kyverno-policies`. Hệ quả: không RBAC mới, không bootstrap lại, và
+> trôi/hạ về/teardown dùng lại nguyên máy móc của lớp nền.
+>
+> Bảy quyết định của hình policy, mỗi cái đóng một chế độ hỏng đã kiểm được ở nguồn:
+>
+> 1. `cosign.ctlog.insecureIgnoreTlog` + `insecureIgnoreSCT`: chữ ký của UDP **không** có bản ghi minh bạch
+>    (`SIGNING_CONFIG_JSON` không khai Fulcio/Rekor/TSA — QĐ-14 giữ tên và digest của image riêng tư ngoài sổ công
+>    khai). Thiếu hai cờ này thì mọi image của mọi project đều "không xác minh được".
+> 2. `credentials.secrets: ["udp-registry-pull"]` ở **namespace của Kyverno**: Kyverno đọc Secret bằng lister của
+>    chính nó với namespace của nó làm mặc định, nên bản ở namespace environment policy không thấy (§12.2).
+> 3. Ba glob `<repo>`, `<repo>:*`, `<repo>@*` thay vì một glob `*`: image **không khớp** bị loại khỏi `images.*` và
+>    policy cho qua, nên thiếu dạng trần (`:latest` ngầm) là một đường lách; còn một glob `*` sẽ đòi chữ ký ở image
+>    nền (istio, Flagger, exporter) và chặn chính nền tảng.
+> 4. `cosign.annotations: { dev.udp.project: <slug> }`: annotation ĐƯỢC KÝ mà pipeline đóng vào payload. Thiếu nó
+>    thì một chữ ký hợp lệ của project **khác** trên cùng registry cũng được nhận.
+> 5. `resources: ["pods", "pods/ephemeralcontainers"]`: engine CEL dựng quy tắc webhook đúng y theo `resourceRules`
+>    và **không** tự nới một match `pods` sang subresource đó (kyverno#16275), nên thiếu nó thì `kubectl debug` là
+>    một đường đưa image chưa ký vào pod.
+> 6. `validationConfigurations.mutateDigest: false` khai tường minh: mặc định của CRD là `true`, tức Kyverno sẽ
+>    **sửa** `image` của pod thành dạng digest — ngay ở chế độ Audit — và với Flux/Argo đối chiếu Git đó là trôi
+>    vĩnh viễn.
+> 7. `autogen.podControllers.controllers: []` (tắt): để mặc định thì Kyverno sinh thêm policy cho
+>    Deployment/StatefulSet/DaemonSet/Job/CronJob/ReplicaSet — **không** có `Rollout` của Argo lẫn `Canary` của
+>    Flagger, đúng những thứ UDP dùng để triển khai. Quy tắc ở tầng `pods` phủ đủ (mọi pod đều qua nó), nên autogen
+>    chỉ thêm một lượt kiểm thứ hai cho cùng một image.
+>
+> **Đợt này ship `validationActions: [Audit]`, KHÔNG `Deny`** — xem §16 và sổ nợ `kyverno-admission-real`. Hình
+> policy được kiểm bằng một phép đo chạy lại được: tải chính file CRD của tag `v1.19.1` rồi kiểm policy sinh từ mã
+> sản phẩm theo `openAPIV3Schema` của nó (`pnpm --filter @udp/core-backend measure:kyverno-crd`, kết quả trong
+> `docs/measurements`). Phép đo đó **không** chứng minh hành vi lúc chạy; phần ấy là món nợ có tên.
 
 ---
 
@@ -5561,6 +5608,36 @@ sequenceDiagram
 > **không** dùng projected ServiceAccount token volume: token của nó do kubelet cấp và dùng lại suốt vòng đời.
 > Công tắc `oidc_required` dùng chung đường của 61d-2a; `CLUSTER_NOT_READY` là lý do "chưa khả dụng" khi
 > project chưa có cụm READY trong sổ tài nguyên.
+
+> **[v4.12, Plan #61 61d-3b] Lớp THỨ TƯ: admission kiểm chữ ký lúc tạo pod (AC-12) — và nó KHÔNG thay cổng
+> deploy.** Ba lớp trên nằm trên đường webhook của Service 1, tức chúng chỉ chặn được **đường deploy của UDP**.
+> Lớp thứ tư là một `ImageValidatingPolicy` của Kyverno trong cụm của project (§5.5): nó chặn trên đường của
+> **API server**, nên nó phủ cả một `kubectl apply` bằng credential bị lộ hay một `kubectl debug` — thứ mà
+> không lớp nào ở trên thấy.
+>
+> Bốn khác biệt phải đọc đúng, vì ba cái trong số đó là chỗ admission **yếu hơn** cổng deploy:
+>
+> | | cổng deploy 61d-1 | admission 61d-3b |
+> | --- | --- | --- |
+> | image không thuộc repository của project | **từ chối** (QĐ-16) | **cho qua** — không khớp glob thì Kyverno loại nó khỏi `images.*` |
+> | nhánh của environment | kiểm | không kiểm |
+> | độ mới / chống phát lại | kiểm (`issued-at` so lần deploy SUCCESS gần nhất) | không kiểm |
+> | đường đi vòng qua Service 1 | không thấy | **chặn được** |
+>
+> Nên hai lớp **bù nhau**, và câu "có Kyverno rồi thì cổng deploy nhẹ đi" là sai. Ô "cho qua" ở hàng đầu là một
+> quyết định thiết kế chứ không phải một thiếu sót bị bỏ quên: muốn admission từ chối cả image lạ thì cần một
+> policy **thứ hai** dạng catch-all, mà một policy như vậy sẽ đòi chữ ký ở image nền của chính nền tảng (istio,
+> Flagger, exporter) — tức chặn cụm. Việc đó cần một danh sách image nền được bảo trì, và nó không thuộc đợt này.
+>
+> **Đợt này chạy ở `Audit`, không `Deny`.** Lý do: nếu Kyverno từ chối chữ ký của UDP vì một nguyên nhân **thứ
+> tám** mà ba vòng QA và phép đo `kyverno-crd` chưa tìm ra, `Deny` sẽ chặn **mọi pod của mọi project** — đúng
+> "điểm chết" mà AC-12 cấm. Ở `Audit` thì chế độ hỏng xấu nhất là một báo cáo sai, và nó **quan sát được**: một
+> project đã bật ký mà `PolicyReport` toàn vi phạm chính là tín hiệu cho biết còn một nguyên nhân chưa biết. Tín
+> hiệu đó đọc bằng `kubectl get policyreport -A`, **không** hiện trên Portal: `udp-tooling` không có quyền nào trên
+> `wgpolicyk8s.io` và cấp thêm thì lại là một lượt bootstrap lại mọi cụm — cùng lý lẽ với nhóm `policies.kyverno.io`
+> ở trên.
+> `Deny` nằm sau món nợ có tên `kyverno-admission-real` (§16). Trong lúc đó **bảo đảm của hệ thống không giảm
+> một chút nào** so với trước đợt này: cổng deploy của 61d-1 vẫn từ chối image chưa ký khi `enforce` bật.
 
 
 **Vì sao `deployment_id` là bắt buộc chứ không phải trang trí [v4]:** cả năm chỉ số DORA đều tính từ `DeploymentEvent`, và bốn trong năm cần biết **những sự kiện nào thuộc cùng một lần deploy**:
@@ -8032,6 +8109,24 @@ ADR-01 dựa hoàn toàn vào bất biến "ba bên ghi vào cluster nhưng khô
 
 Cả ba đều **không** có: `secrets` ngoài namespace của mình (ngoại lệ duy nhất **[v4.11, D-P26]**: `udp-tooling` được `get/update/patch` đúng Secret `udp-registry-pull` ở namespace environment — `resourceNames`, không `create`/`list`/`delete`), `escalate`/`bind` (leo thang RBAC), `pods/exec` (vào shell container của tenant — không luồng nào ở §8 cần), và không dùng wildcard `*` ở bất kỳ verb hay resource nào.
 
+> **[v4.12, Plan #61 61d-3b] Một bản `udp-registry-pull` nữa, ở `udp-system` — và nó KHÔNG nới quyền nào.**
+> `ImageValidatingPolicy` khai `credentials.secrets: ["udp-registry-pull"]`, và Kyverno tìm Secret đó bằng lister
+> của chính nó với **namespace của Kyverno** làm mặc định; hai release Kyverno là cluster-scoped nên namespace đó
+> là `udp-system`. Bản ở namespace environment policy không thấy. Nên `syncRegistryPullSystem` ghi thêm một bản ở
+> `udp-system` — bằng quyền `secrets` mà `udp-tooling` **đã có** ở chính namespace của nó (`TOOLING_SYSTEM_RULES`),
+> không thêm một verb nào vào bảng trên.
+>
+> Hai namespace đi bằng hai verb khác nhau vì hai quyền khác nhau: ở namespace environment là `patch` trên một
+> Secret mà bootstrap đã tạo rỗng; ở `udp-system` là **`apply`** với thân đầy đủ, vì bootstrap không tạo Secret này
+> và bootstrap chỉ chạy lúc PROVISION hay lúc thêm environment — thêm nó vào bootstrap thì cụm đang chạy không bao
+> giờ nhận. Phạm vi lộ bí mật không rộng ra: trong `udp-system` chỉ `udp-tooling` đọc được Secret, và nó đã đọc
+> được chính những khoá ấy ở mọi namespace environment. Thiếu bản này thì bốn registry dùng `pushAuth: basic`
+> (Harbor, Nexus, Artifactory, Docker Hub) kéo chữ ký bằng danh tính vô danh và policy không kiểm được gì.
+>
+> **Quyền mà UDP CỐ Ý không xin:** nhóm `policies.kyverno.io`. Policy đi vào cụm bằng `customPolicies` của chart
+> (§5.5), nên `udp-tooling` không cần ghi CR nào của Kyverno — và không xin thì cũng không phải bootstrap lại cụm
+> đang chạy.
+
 > **Hệ quả với ADR-06:** `POST /internal/clusters/:id/token` nhận thêm tham số `audience` để biết cấp token của SA nào. Service 3 chỉ xin được `udp-traffic`; nếu nó xin `udp-workload` thì Service 1 từ chối, vì danh tính bên gọi đã được xác định bằng `TokenReview` (T12).
 
 ---
@@ -8514,6 +8609,9 @@ Giảm thiểu hiện tại: rate limit của `/auth/*` đếm theo **cả IP l�
 | **[v4.12, Plan #61 61d-2b-1] Chưa chạy với token do một API server THẬT phát** | Lõi xác minh có 12 ô tất định (khoá RSA và EC sinh trong tiến trình, danh sách thuật toán tiêm vào, cổng đọc cụm tiêm vào), `issuerKeys` có 4 ô trên một transport giả, và đường webhook có 5 ô trên database thật; nhưng bốn thứ chỉ một cụm thật chứng minh được: ClusterRoleBinding mặc định của EKS/AKS/GKE có thật sự cho `udp-tooling` đọc hai đường dẫn đó, danh sách thuật toán thật của chúng, `jti` có mặt thật, và chuỗi `iss` thật bằng chuỗi discovery khai. Sổ nợ: `trusted-deploy-cluster` | Chạy cùng lượt `packaging-real`; không tốn thêm tiền |
 | **[v4.12, Plan #61 61d-2b-0] Project đã chạy script danh tính trước 03/10/2026 phải chạy lại** | GitHub đổi hình chủ thể JWT: từ 15/07/2026 mọi repo **mới tạo, đổi tên, hay chuyển chủ** phát `sub` = `repo:<owner>@<ownerId>/<name>@<repoId>:ref:…` thay vì hình theo tên (changelog GitHub 23/04/2026). Script của UDP giờ tin CẢ HAI hình — hình theo tên vẫn an toàn vì chỉ repo có trước mốc đó và chưa đổi tên mới phát được nó — nhưng vai trò IAM và federated credential đã tạo bằng **script cũ** chỉ tin hình theo tên, và UDP không có quyền sửa chúng từ xa. Hệ quả: repo mới tạo, mới đổi tên hay mới chuyển chủ sẽ không đẩy và không ký được cho tới khi chủ tài khoản cloud chạy lại script. Mục Đóng gói nói đúng câu đó dưới script | Một lượt provision lại danh tính do UDP chủ động, khi UDP có quyền IAM trong tài khoản khách (hiện không, và cố ý không — QĐ-6) |
 | **[v4.12, Plan #61 61d-2b-0] GitHub + Azure: tối đa 10 nhánh** | Azure cho **20** federated identity credential mỗi managed identity và FIC cổ điển **không có ký tự đại diện**; bản "flexible" có ký tự đại diện thì chưa nhận CircleCI và chưa dùng được qua `az` (tài liệu Microsoft, 18/09/2026). Mỗi nhánh của GitHub tốn 2 credential (hình tên + hình bất biến) nên trần thật là 10 nhánh, tức `main` cộng 9 environment không phải production. Vượt trần thì script **dừng ở dòng đầu** với câu nói rõ, không tạo nửa vời | Azure mở FIC linh hoạt cho nhiều issuer hơn, hay UDP nhóm nhánh theo tiền tố |
+| **[v4.12, Plan #61 61d-3b] Admission chữ ký image chạy ở `Audit`, chưa `Deny`** | Hình policy đã kiểm theo CRD THẬT của Kyverno v1.19.1 (phép đo `kyverno-crd`: 3/3 hợp lệ, kiểm ngược ĐẠT) và bảy chế độ hỏng đã đóng từng cái ở nguồn, nhưng **hành vi lúc chạy** chưa chạy một lần nào: cụm kind của UDP cố ý không có registry (`kind load`, Plan #49) nên Kyverno không kéo được chữ ký, và máy của dự án (7,7 GiB RAM) không chạy nổi kind + 6 image + Kyverno + một registry cục bộ. `Deny` mà sai vì một nguyên nhân thứ tám sẽ chặn **mọi pod của mọi project** — đúng điểm chết mà AC-12 cấm. Ở `Audit` chế độ hỏng xấu nhất là báo cáo sai, và nó quan sát được qua `PolicyReport`. Bảo đảm hệ thống không giảm: cổng deploy của 61d-1 vẫn từ chối image chưa ký khi `enforce` bật. Sổ nợ: `kyverno-admission-real` | Một lượt `kyverno-admission-real` trên cụm có registry (công thức registry cho kind ghi trong sổ nợ); đạt rồi thì `validationActions` thành cấu hình của project |
+| **[v4.12, Plan #61 61d-3b] Admission CHO QUA image không thuộc repository của project** | `matchImageReferences` của Kyverno loại image không khớp ra khỏi `images.*`, nên image lạ không bị policy đòi chữ ký — ngược với cổng deploy 61d-1 vốn **từ chối** nó (QĐ-16). Chặn được thì cần một policy **thứ hai** dạng catch-all, mà policy như vậy sẽ đòi chữ ký ở image nền của chính nền tảng (istio, Flagger, exporter) và chặn cụm. Hai lớp bù nhau: đường deploy của UDP vẫn từ chối image lạ; admission chỉ phủ đường đi vòng qua Service 1 | Một danh sách image nền được bảo trì (và một chỗ cho khách thêm vào), rồi policy catch-all |
+| **[v4.12, Plan #61 61d-3b] Hạ Kyverno về 1.0.0 là BỎ lớp admission chữ ký** | `upgradesFrom` mang đủ định nghĩa của bản 1.0.0, và bản đó không có policy chữ ký nào — đúng ngữ nghĩa của một lần hạ về. Hệ quả hiện ra trong test (`contract.test.ts`: `customPolicies` rỗng sau `restoreTo`). Bảo đảm còn lại: cổng deploy 61d-1 | Không cần — hạ về là thao tác của người, và họ phải biết nó bỏ gì |
 | **[v4.12, Plan #61] CircleCI trên Azure chưa ký được** | Chủ thể JWT của CircleCI mang id người chạy, federated credential của Azure đòi khớp đúng (bản "flexible" chưa nhận CircleCI); mục Ký image nói lý do, image deploy như trước, không chữ ký | Bộ ký trong cụm (61d-2b-2) |
 | **[v4.11, Plan #48] Quét repo chỉ GitHub và GitLab (gitlab.com)** | API công khai, chi phí 0 và host gọi đi cố định (không SSRF); Bitbucket, GitLab tự host, Gitea cần thêm nguồn. Repo lớn hơn trần một lượt quét cho phát hiện `unknown` thay vì kết luận | Thêm `RepoSource` cho host khác; quét bằng CLI chạy trong CI của khách |
 | Import Existing Repo chỉ phát hiện và đề xuất | Giảm rủi ro tự sửa code của người dùng | Tự tạo PR thêm dependency và hook |

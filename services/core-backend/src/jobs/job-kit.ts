@@ -30,6 +30,7 @@ import type {
 } from "../modules/provisioning/domain-phase.js";
 import { domainApplyPayloadSchema } from "../modules/domain/domain-apply.payload.js";
 import { environmentApplyPayloadSchema } from "../modules/environment/environment-apply.payload.js";
+import { signedImagesOf } from "../modules/packaging/signed-images.js";
 import { createPrismaLedger } from "../modules/provisioning/prisma-ledger.js";
 import {
   provisionPayloadSchema,
@@ -254,6 +255,8 @@ export function createJobKit(deps: JobKitDeps) {
       region: input.payload.region,
       quota: input.payload.quota,
       tags: tagsOf(input.projectId, input.payload),
+      /** [Plan #61 61d-3b] Một lượt đọc cho cả pha — cùng hàm mà đường quét trôi gọi (I32 chiều b) */
+      signedImages: await signedImagesOf(prisma, input.projectId),
       fetch: deps.egressFetch,
       fence: fenceOf(run),
       progress: (m) => {

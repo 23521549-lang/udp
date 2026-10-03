@@ -982,6 +982,122 @@ E2E kind + Kyverno **không hoãn được**: nó là thứ duy nhất bắt đ�
 `Deny`; chưa ký ở **initContainer** cũng bị chặn; image của project khác cùng registry **không** bị chặn oan;
 `Audit` không đổi `spec` của Deployment.
 
+### 61d-3b — đã làm, và những chỗ CHỆCH plan (R5)
+
+Bản plan ở trên sai ở **ba** chỗ về cơ chế, và cả ba chỉ hiện ra khi đọc mã và đọc nguồn của Kyverno. Ghi lại đủ,
+vì hai trong ba là loại sai sẽ ship ra một đường ghi 403 trên mọi cụm đang chạy.
+
+1. **Policy KHÔNG đi bằng một lời ghi CR của `udp-tooling`; nó là giá trị `customPolicies` của chart.** Plan ngầm
+   giả định adapter ghi `ImageValidatingPolicy` vào cụm. Ba dữ kiện bác bỏ:
+   (a) `cluster/bootstrap.ts` chỉ cấp `apiextensions.k8s.io/customresourcedefinitions` cho ClusterRole của
+   `udp-tooling` — **không** quyền nào trên nhóm `policies.kyverno.io`, nên lời ghi ấy 403;
+   (b) thêm quyền vào bootstrap cũng không cứu được, vì bootstrap chỉ chạy ở `provision.job.ts` (pha
+   CLUSTER_ACCESS) và `environment-apply.job.ts` (nhánh `ADD`) — một quyền mới chỉ tới cụm **mới**, đúng cái giá
+   "bootstrap lại mọi cụm" mà QĐ-1 đã từ chối một lần và 61d-2b-1 từ chối lần nữa;
+   (c) D-P25 chốt cơ chế cài của UDP là `helm upgrade --install` và `HelmRelease` mà adapter ghi **là một bản
+   ghi** — nên một CR Kyverno do UDP ghi sẽ là đối tượng duy nhất trong cả hệ thống không đi qua cơ chế ấy.
+   Chart `kyverno-policies` 3.9.1 có khoá `customPolicies` cho đúng việc này (`templates/other/custom-policies.yaml`
+   render từng phần tử qua `tpl (.value | toYaml) .context`). Kết quả: **không RBAC mới, không bootstrap lại**, và
+   trôi / hạ về / teardown dùng lại nguyên máy móc của lớp nền Helm. Đây là chỗ chệch plan lớn nhất của đợt này và
+   nó làm đợt nhẹ đi, không nặng thêm.
+2. **`policies.kyverno.io/v1beta1`, không phải `v1alpha1`.** Bản plan (và ghi chép của vòng QA) nói `v1alpha1`. Đọc
+   chính CRD của tag `v1.19.1`: `v1alpha1` mang `deprecated: true`, `v1` được phục vụ nhưng **không** phải storage,
+   và `v1beta1` là **storage version** — cũng là version mà chart `kyverno-policies` 3.9.1 tự sinh cho các
+   `ValidatingPolicy` của nó. Ship `v1alpha1` là ship một API đã khai tử ngay từ ngày đầu. Phép đo `kyverno-crd`
+   khẳng định đúng điều này bằng một trường `writesStorageVersion`, nên lần Kyverno đổi storage version kế tiếp sẽ
+   là một lượt đo đỏ, không phải một phát hiện muộn.
+3. **`tpl` của chart buộc phải có một cổng chống tiêm.** Chart chạy `tpl` **trên nội dung policy**, nên một chuỗi
+   chứa `{{` trong repository hay trong khoá công khai sẽ được Helm **thực thi** trong cụm của khách. Hôm nay không
+   đường nào mang `{{` tới (`workloadSlugFor` chỉ sinh chữ-số-gạch, `BUILD_TEXT_RULES.PUBLIC_KEY_PEM` neo hai đầu
+   PEM), nhưng endpoint của binding `registry.oci` do người dùng nhập. `assertNoTemplate` chặn tại chỗ sinh và có
+   ô test riêng. Plan không có mục này.
+
+Bốn chỗ chệch nhỏ hơn, mỗi chỗ đóng một lỗ:
+
+4. **Ba glob, không hai.** Plan nói hai glob (`:*` và `@*`). Thiếu dạng **trần**: một pod khai
+   `image: ghcr.io/acme/web` (không tag) không khớp rule nào, và mô tả của CRD nói rõ image không khớp bị **loại
+   khỏi** `images.*` nên policy **cho qua** — tức một đường đưa image chưa ký vào mà policy không thấy. Ba glob
+   không bắt oan repository khác: `<repo>:*` đòi dấu `:` ngay sau tên.
+5. **`credentials.secrets` khai KHÔNG điều kiện, và có một bản `udp-registry-pull` ở `udp-system`.** Plan để mở
+   ("hoặc policy chỉ dùng `credentials.providers` khi registry công khai"). Đọc lại danh sách adapter: **bốn**
+   trong số registry của sản phẩm khai `pushAuth: basic` (Harbor, Nexus, Artifactory, Docker Hub), nên lối "chỉ
+   providers" bỏ nửa số registry ở trạng thái "Kyverno kéo chữ ký bằng danh tính vô danh" — một lớp admission
+   không kiểm được gì. Giá để đóng: `syncRegistryPullSystem`, một lời `apply` bằng quyền `secrets` mà
+   `udp-tooling` **đã có** ở `udp-system`. Không RBAC mới, không bootstrap lại (`apply` chứ không `patch`, vì
+   bootstrap không tạo Secret này). Và đọc nguồn `kyverno/sdk` xác nhận hai điều: Secret là **image pull secret
+   tiêu chuẩn** (`kauth.NewFromPullSecrets`, nên `kubernetes.io/dockerconfigjson` đúng loại), và Secret vắng thì
+   Kyverno **bỏ qua** chứ không lỗi — nên khai sẵn không tạo chế độ hỏng mới.
+6. **Autogen TẮT tường minh.** Plan không nói gì. Mặc định của Kyverno là **bật**, và nó sinh thêm policy cho
+   Deployment/StatefulSet/DaemonSet/Job/CronJob/ReplicaSet — **không** có `Rollout` của Argo lẫn `Canary` của
+   Flagger, đúng hai thứ UDP dùng để triển khai. Nên autogen cho phủ **thiếu** ở tầng controller trong khi quy tắc
+   `pods` đã phủ **đủ** (mọi pod đều qua nó, bất kể ai tạo), và cái nó thêm là một lượt kiểm thứ hai cho cùng một
+   image: gấp đôi lưu lượng tới registry, gấp đôi dòng báo cáo.
+7. **`webhookConfiguration.timeoutSeconds: 20` và `evaluation` khai tường minh.** Hai con số plan không nêu.
+   20 giây vì một lượt kiểm chữ ký là nhiều vòng tới registry và bộ conformance cosign của chính Kyverno đặt
+   20..30; đặt thấp hơn thì một registry chậm làm policy **hết giờ một cách hệ thống**, và với `failurePolicy:
+Ignore` điều đó nghĩa là image coi như chưa kiểm mà không ai thấy — đúng loại hỏng im lặng mà 61d-3a vừa đóng.
+   Cái giá là pod ĐẦU TIÊN của một image mới có thể chờ tới 20 giây (Kyverno cache kết quả nên pod sau không trả
+   giá đó), và đó là cái giá của việc kiểm **lúc admission** như AC-12 đòi.
+
+**Và chỗ chệch về PHẠM VI, nói thẳng:** plan viết "E2E kind + Kyverno **không hoãn được**: nó là thứ duy nhất bắt
+được CT-1 và CT-2". Câu đó đúng về lý và sai về thứ tự làm. Chữ ký cosign sống trong **registry**, còn cụm kind của
+UDP cố ý **không có** registry (`kind load` — Plan #49), nên lượt E2E ấy cần thêm một registry mà **cả kubelet lẫn
+pod Kyverno** gọi được bằng **cùng một chuỗi image**; máy của dự án (7,7 GiB RAM, thường trống dưới 1,5 GiB) không
+chạy nổi kind + 6 image của UDP + Kyverno + registry để tôi chạy thử một lần. Viết mã CI mà không chạy được lần nào
+là đúng cách để có một CI đỏ và một lời khai sai. Nên:
+
+- **Thay vào đó, một phép đo CHẠY ĐƯỢC và đã chạy:** `pnpm --filter @udp/core-backend measure:kyverno-crd` tải
+  **chính file CRD** của tag `v1.19.1` (444 664 B, sha256 `32436252cd83…`), dựng bộ kiểm JSON Schema từ
+  `openAPIV3Schema` của version lưu trữ, rồi kiểm policy sinh từ **mã sản phẩm** trên ba ca (ghcr một khoá; ECR hai
+  khoá; Harbor riêng tư cổng 8443). Kết quả: **3/3 hợp lệ**, `storageVersion = v1beta1`, và một **kiểm ngược**
+  (`validationActions: ["Allow"]`) bị từ chối — nếu không có ô kiểm ngược thì ba ca xanh kia không chứng minh gì.
+  Phép đo này bắt đúng họ lỗi mà ba vòng QA tìm ra (tên trường sai, giá trị ngoài enum, trường bắt buộc vắng,
+  trường đặt sai nhánh); nó **không** chứng minh hành vi lúc chạy.
+- **`Deny` KHÔNG ship.** Policy luôn `validationActions: [Audit]`. Nếu Kyverno từ chối chữ ký của UDP vì một nguyên
+  nhân **thứ tám**, `Deny` chặn **mọi pod của mọi project** — đúng "điểm chết" mà AC-12 cấm. `Audit` thì chế độ
+  hỏng xấu nhất là báo cáo sai, và nó **quan sát được** qua `PolicyReport`.
+- **Nợ có tên:** `kyverno-admission-real` (sáu trường, kèm công thức dựng registry cho kind: container registry
+  trên mạng docker của kind + `containerdConfigPatches` map `kind-registry:5000` về chính nó + dùng **cùng** chuỗi
+  ở lệnh đẩy và ở `image` của pod). §16 thêm ba dòng: Audit-chưa-Deny, admission **cho qua** image lạ (bất đối
+  xứng với cổng 61d-1 — một quyết định thiết kế, và nó cần một danh sách image nền để đóng), và hạ về 1.0.0 bỏ lớp
+  admission.
+- **Vì sao đây là lựa chọn "không thoái cấp":** thoái cấp sẽ là ship `Deny` chưa chứng minh (rủi ro outage của
+  khách) hay bỏ hẳn policy (mất AC-12). Ship `Audit` + một phép đo thật + một món nợ có tên giữ nguyên **mọi** bảo
+  đảm đang có (cổng deploy 61d-1 không đổi một dòng), thêm một lớp phủ được đường đi vòng qua Service 1, và nói
+  thật phần chưa chứng minh được.
+
+**Mở rộng bối cảnh — nullable, không optional, và đọc MỘT lần.** `DomainAdapterContext.signedImages` là
+`SignedImages | null`, không phải `?`: một trường tuỳ chọn để bảy chỗ dựng bối cảnh lặng lẽ bỏ qua, còn `null` buộc
+mỗi chỗ phải quyết và compiler liệt kê đủ bảy chỗ (2 ở sản phẩm, 1 ở lớp dựng bối cảnh hợp đồng, 4 ở test). Nó được
+đọc ở `job-kit.domainInput` (một lần cho cả pha) chứ không trong `adapterContext` — `adapterContext` là **hàm
+thuần** và bộ hợp đồng gọi nó, mà nó chạy một lần cho mỗi đích của mỗi adapter. Và hai đường dựng bối cảnh (áp
+domain, quét trôi) gọi **cùng** hàm `signedImagesOf`: hai lượt truy vấn khác nhau sẽ làm `values` của companion
+khác nhau và mọi lượt quét báo **trôi giả** vĩnh viễn (I32 chiều b). `signedImagesOf` chọn binding bằng
+`bindingsOfProject(...).find(...)` — **đúng** cách `assertOwnImage` của cổng 61d-1 và `cicd.service.ts` chọn, nên
+ba chỗ không lệch nhau được.
+
+**Cổng đã qua:** `pnpm typecheck` (core-backend, adapter-core) 0 lỗi; `prettier --check` sạch; Kyverno **60/60**
+(51 hợp đồng + 9 ô hình policy); `registries` **7/7** (thêm ô bản Secret ở `udp-system`); `packaging` tích hợp
+**9/9** (thêm ô `signedImagesOf` trên database thật, khẳng định `repository` **khớp** chuỗi pipeline in ra);
+design-lint **172/172** (gồm cổng đếm mục sổ nợ và cổng đối chiếu mã nợ ở §16); phép đo `kyverno-crd` **3/3 + kiểm
+ngược ĐẠT**. **Không migration.**
+
+**Test-the-test:** đổi `mutateDigest` thành `true` và bỏ glob trần ⇒ **2 ô đỏ** (ô `toEqual` toàn object và ô ba
+glob), khôi phục ⇒ 9/9 xanh lại. Hai cổng này không xanh rỗng.
+
+**Đường lùi (R10):** `git revert`. Không migration, không cột nào đổi. Project đã áp domain POLICY sau đợt này có
+một `ImageValidatingPolicy` trong ConfigMap giá trị của release `udp-kyverno-policies`; revert mã rồi áp lại domain
+POLICY một lượt là `customPolicies` về `[]` — không cần SQL, vì giá trị nằm trong cụm chứ không trong sổ.
+
+**Kiểm thoái cấp (R11) — trả bằng ô test:** (a) project **chưa** ký ⇒ `customPolicies: []`, **không** phải vắng
+khoá (vắng khoá thì Helm giữ policy của lượt áp trước, nên một project **xoá** khoá ký vẫn bị đòi chữ ký bằng khoá
+không còn tồn tại); (b) `signedImages === null` ⇒ `imageValidatingPolicy` trả `null`, không sinh policy rỗng
+attestor; (c) ba namespace nền tảng vẫn ngoài tầm policy — `namespaceSelector` theo nhãn **dương** `udp.environment`
+mà chỉ namespace environment có; (d) `failurePolicy: Ignore` nên webhook hỏng không chặn pod nào; (e) 72 adapter còn
+lại không phải sửa gì (bối cảnh mặc định `null` ở lớp dựng hợp đồng, 3108 ô hợp đồng xanh); (f) cổng deploy 61d-1
+không đổi một dòng — bảo đảm chặn image chưa ký không hề giảm; (g) hạ Kyverno về 1.0.0 bỏ lớp admission, và ô test
+khẳng định đúng điều đó thay vì để nó là một điều người đọc plan phải tự nhớ.
+
 ### 61d-3c — "tự áp bản vá" của AC-12, trong ranh giới của §8.6
 
 AC-12 (`plan61-spec.md:24`) đòi "luồng cập nhật có E2E và **tự áp bản vá**". Mục 3 của bản nháp chỉ có

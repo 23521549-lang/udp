@@ -1,5 +1,5 @@
 import { runDomainAdapterContract } from "@udp/adapter-core/contract";
-import type { AdapterFixture } from "@udp/adapter-core";
+import type { AdapterFixture, SignedImages } from "@udp/adapter-core";
 import {
   CONTRACT_SYSTEM_NAMESPACE,
   domainContractEnv,
@@ -175,5 +175,99 @@ describe("kyverno 2.0.0: chart, miễn trừ, và đường hạ về", () => {
     });
     expect(values.vpolExclude).toBeUndefined();
     expect(values.policyType).toBeUndefined();
+  });
+});
+
+/**
+ * [Plan #61 61d-3b] Policy chữ ký image đi vào cụm bằng `customPolicies` của release `kyverno-policies`.
+ *
+ * Ô ở đây kiểm ĐƯỜNG ĐI (policy nằm đúng ConfigMap giá trị của đúng release, và vắng khi project chưa ký); hình
+ * dạng từng trường của policy thì `image-policy.test.ts` kiểm bằng một phép `toEqual` trên cả object.
+ */
+describe("kyverno 2.0.0: policy chữ ký image (AC-12)", () => {
+  const configOf = () => ({
+    podSecurityStandard: "baseline",
+    validationFailureAction: "Audit",
+    replicas: 1,
+  });
+
+  const SIGNED: SignedImages = {
+    repository: "ghcr.io/acme/web",
+    publicKeys: [
+      [
+        "-----BEGIN PUBLIC KEY-----",
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEa",
+        "-----END PUBLIC KEY-----",
+        "",
+      ].join("\n"),
+    ],
+    registryKind: "github-token",
+  };
+
+  async function policiesOf(
+    env: ReturnType<typeof domainContractEnv>,
+  ): Promise<Record<string, unknown>[]> {
+    const client = await env.cluster.getClient("tooling");
+    const cm = await client.read<{ values?: Record<string, unknown> }>("get", {
+      apiVersion: "v1",
+      kind: "ConfigMap",
+      namespace: CONTRACT_SYSTEM_NAMESPACE,
+      name: "udp-kyverno-policies-values",
+    });
+    return (cm?.values?.customPolicies ?? []) as Record<string, unknown>[];
+  }
+
+  it("project đã ký ⇒ đúng MỘT ImageValidatingPolicy trong customPolicies", async () => {
+    const env = domainContractEnv(fixture(), { signedImages: SIGNED });
+    expect((await adapter.deploy(env.context(), configOf())).status).toBe(
+      "SUCCESS",
+    );
+    const policies = await policiesOf(env);
+    expect(policies).toHaveLength(1);
+    expect(policies[0]).toMatchObject({
+      apiVersion: "policies.kyverno.io/v1beta1",
+      kind: "ImageValidatingPolicy",
+      metadata: { name: "udp-require-signed-images" },
+    });
+  });
+
+  it("project chưa ký ⇒ customPolicies RỖNG, không phải vắng khoá", async () => {
+    const env = domainContractEnv(fixture());
+    await adapter.deploy(env.context(), configOf());
+    /**
+     * Rỗng chứ không vắng: Helm hợp nhất giá trị, nên bỏ hẳn khoá sẽ để lại policy của lượt áp TRƯỚC khi một
+     * project **xoá** khoá ký của nó — cụm vẫn đòi chữ ký bằng một khoá không còn tồn tại.
+     */
+    expect(await policiesOf(env)).toEqual([]);
+  });
+
+  it("policy KHÔNG rơi vào release engine — nó là giá trị của release kyverno-policies", async () => {
+    const env = domainContractEnv(fixture(), { signedImages: SIGNED });
+    await adapter.deploy(env.context(), configOf());
+    const client = await env.cluster.getClient("tooling");
+    const engine = await client.read<{ values?: Record<string, unknown> }>(
+      "get",
+      {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        namespace: CONTRACT_SYSTEM_NAMESPACE,
+        name: "udp-kyverno-values",
+      },
+    );
+    expect(engine?.values?.customPolicies).toBeUndefined();
+  });
+
+  it("hạ về 1.0.0 BỎ lớp admission chữ ký — cổng deploy của 61d-1 vẫn còn", async () => {
+    const env = domainContractEnv(fixture(), { signedImages: SIGNED });
+    await adapter.upgrade(env.context(), configOf(), "1.0.0");
+    env.cluster.reset();
+
+    await adapter.restoreTo?.(env.context(), configOf(), "1.0.0");
+    /**
+     * `upgradesFrom` mang ĐỦ định nghĩa của 1.0.0, và bản 1.0.0 không có policy chữ ký nào. Nên hạ về là mất lớp
+     * admission — một hệ quả phải HIỆN RA trong test chứ không nằm trong đầu người đọc plan. Bảo đảm không mất:
+     * cổng deploy của 61d-1 vẫn từ chối image chưa ký khi `enforce` bật.
+     */
+    expect(await policiesOf(env)).toEqual([]);
   });
 });

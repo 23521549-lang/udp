@@ -775,6 +775,9 @@ importers:
       '@udp/test-support':
         specifier: workspace:*
         version: link:../../packages/test-support
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
       pino-pretty:
         specifier: ^11.3.0
         version: 11.3.0

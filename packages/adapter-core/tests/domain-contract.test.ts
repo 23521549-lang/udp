@@ -35,6 +35,7 @@ function envFor(): DomainContractEnv {
     over: Partial<DomainAdapterContext> = {},
   ): DomainAdapterContext => ({
     k8s: cluster,
+    signedImages: null,
     environments: [],
     systemNamespace: "udp-system",
     region: "ap-southeast-1",

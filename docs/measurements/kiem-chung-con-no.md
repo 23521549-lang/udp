@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 50.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 51.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1314,3 +1314,49 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   nhà cung cấp thật phát. Riêng `aud` của CircleCI còn một giới hạn đã công bố ở §16: nó là
   `organizationId` nên không buộc token vào đúng project, và việc buộc đó dựa hoàn toàn vào claim
   `oidc.circleci.com/project-id`.
+
+## kyverno-admission-real — chữ ký image kiểm lúc tạo pod, trên một cụm có registry thật
+
+- **Vì sao nợ:** Plan #61 61d-3b đo được mọi thứ đo được **không cần cụm**: hình policy kiểm theo **chính CRD**
+  của Kyverno v1.19.1 (`pnpm --filter @udp/core-backend measure:kyverno-crd` — tải file CRD của tag, dựng bộ kiểm
+  từ `openAPIV3Schema` của version lưu trữ `v1beta1`, 3/3 ca hợp lệ, và một **kiểm ngược** chứng minh bộ kiểm từ
+  chối được policy sai), cộng 9 ô tất định khẳng định từng trường của policy và 4 ô khẳng định đường đi của nó
+  (`customPolicies` của release `kyverno-policies`, rỗng khi project chưa ký, không rơi vào release engine, và mất
+  đi khi hạ về 1.0.0). Chưa đo: **hành vi lúc chạy**. Bốn thứ chỉ một cụm có registry chứng minh được: (a) Kyverno
+  xác minh được chữ ký cosign do khoá KMS của UDP tạo khi `ctlog.insecureIgnoreTlog` và `insecureIgnoreSCT` bật —
+  đây là CT-1, và nó chỉ được suy ra từ việc `SIGNING_CONFIG_JSON` không khai Rekor; (b) `credentials.secrets`
+  đọc được `udp-registry-pull` ở namespace của Kyverno và kéo được chữ ký từ một registry riêng tư — CT-2; (c)
+  pod mang image **chưa ký** sinh đúng một vi phạm trong `PolicyReport` còn pod mang image **đã ký** thì không,
+  kể cả khi image chưa ký nằm ở `initContainers` hay vào bằng `kubectl debug`; (d) `mutateDigest: false` thật sự
+  giữ `spec` của Deployment không đổi (ô này là lý do `Audit` cũng có thể gây trôi nếu khai sai).
+- **Tiền đề:** một cụm Kubernetes có **registry mà cả kubelet lẫn pod Kyverno gọi được bằng CÙNG một chuỗi
+  image** — đây là phần hạ tầng còn thiếu. Cụm kind của UDP cố ý không có registry (`kind load`, "chi phí 0, không
+  registry" — Plan #49), và chỗ friction đã biết của kind là `localhost:5001` chỉ đúng với node còn pod Kyverno
+  phân giải `localhost` trong netns của chính nó. Công thức: tạo một container registry trên mạng docker của kind
+  (`docker run -d --name kind-registry --net kind registry:2`), khai `containerdConfigPatches` trong
+  `deploy/kind/cluster.yaml` map `kind-registry:5000` về chính nó, và dùng **cùng** chuỗi `kind-registry:5000/...`
+  ở cả lệnh đẩy lẫn `image` của pod — như vậy kubelet và Kyverno phân giải cùng một tên. Cộng: một khoá ký (khoá
+  tệp là đủ, như job `signing-e2e`) và Kyverno 1.19.1 cài bằng Helm thật.
+- **Lệnh:** `pnpm --filter @udp/deploy e2e -- kyverno-admission` (tệp CHƯA CÓ; nó cài Kyverno + policy sinh từ
+  `imageValidatingPolicy`, đẩy hai image — một đã ký một chưa — rồi đọc `PolicyReport`).
+- **Đạt:** pod image đã ký ⇒ không vi phạm; pod image chưa ký ⇒ đúng một vi phạm mang tên
+  `udp-require-signed-images`; image chưa ký ở `initContainers` ⇒ vi phạm; `kubectl debug` thêm ephemeral
+  container chưa ký ⇒ vi phạm; image của **project khác** trên cùng registry ⇒ **không** vi phạm (không bắt oan);
+  `spec` của Deployment không đổi sau khi pod được nhận. Đạt đủ sáu ô ⇒ `validationActions` thành cấu hình của
+  project (mặc định vẫn `Audit`), và dòng §16 tương ứng được đóng. **Không đạt:** Kyverno báo không xác minh được
+  chữ ký ⇒ **đọc thông báo rồi sửa policy**, tuyệt đối không nới `validationConfigurations.required`; Kyverno
+  không kéo được chữ ký ⇒ kiểm bản `udp-registry-pull` ở namespace của Kyverno trước khi nghi ngờ phần còn lại;
+  `spec` của Deployment đổi ⇒ `mutateDigest` chưa có hiệu lực, đó là một lỗi chặn đường, phải sửa trước mọi thứ.
+- **Tài nguyên:** máy có đủ RAM cho kind + 6 image của UDP + Kyverno + một registry — **máy đo hiện tại
+  (7,7 GiB, thường trống 0,4–1,5 GiB) không chạy nổi**, nên món nợ này là nợ về **máy**, không về tiền. Trên CI
+  (runner 7 GiB nhưng không chạy IDE) thì vừa, và đó là chỗ nên chạy.
+- **Ai đọc tín hiệu, và UDP CHƯA đọc nó:** vi phạm của chế độ `Audit` nằm trong `PolicyReport` của cụm, và UDP
+  **không** đọc đối tượng đó — `udp-tooling` không có quyền nào trên `wgpolicyk8s.io`, và cấp thêm thì lại là một
+  lượt bootstrap lại mọi cụm (cùng lý lẽ với nhóm `policies.kyverno.io`). Nên trong đợt này tín hiệu đọc bằng
+  `kubectl get policyreport -A` chứ không hiện trên Portal. Nói rõ ở đây để câu "chế độ hỏng xấu nhất là báo cáo
+  sai, và nó quan sát được" không bị đọc thành "Portal hiện báo cáo đó".
+- **Ảnh hưởng tới kết luận:** AC-12 hiện đạt **một nửa**: policy sinh ra đúng hình theo CRD thật và đi vào cụm
+  bằng một đường đã kiểm, nhưng việc nó **thật sự xác minh được chữ ký** chưa chạy một lần nào. Vì vậy câu "UDP
+  kiểm chữ ký lúc tạo pod" phải đọc là: lớp admission đã có và ở chế độ **quan sát**, và bảo đảm chặn image chưa
+  ký vẫn do cổng deploy của 61d-1 giữ. `Deny` nằm sau món nợ này — ship `Deny` trước khi đo là đặt một điểm chết
+  vào cụm của khách, đúng cái AC-12 cấm.

@@ -1,8 +1,14 @@
 import { resolve } from "node:path";
-import { domainContractEnv } from "@udp/adapter-core/testing";
+import {
+  createFakeClusterAccess,
+  domainContractEnv,
+} from "@udp/adapter-core/testing";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { describe, expect, it } from "vitest";
-import { dockerConfigOf } from "../src/modules/adapter-base/registry-pull.js";
+import {
+  dockerConfigOf,
+  syncRegistryPullSystem,
+} from "../src/modules/adapter-base/registry-pull.js";
 import { validateAndOrder } from "../src/modules/capability/capability.resolver.js";
 import { createRegistry } from "../src/modules/domain/domain-adapter.registry.js";
 import artifactory from "../src/modules/artifact-registry-adapter/artifactory/index.js";
@@ -100,6 +106,38 @@ describe("khoá kéo theo từng registry (AC-3)", () => {
     expect(merged.auths["ghcr.io"]?.auth).toBe(
       Buffer.from("b:p2").toString("base64"),
     );
+  });
+
+  /**
+   * [Plan #61 61d-3b] Bản `udp-registry-pull` ở namespace hệ thống — nơi Kyverno tìm thông tin đăng nhập registry.
+   *
+   * Hai namespace đi bằng hai verb vì hai quyền khác nhau: ở namespace environment `udp-tooling` chỉ
+   * `get/update/patch` (§12.2, D-P26) nên là `patch` trên một Secret mà bootstrap đã tạo rỗng; ở `udp-system`
+   * bootstrap KHÔNG tạo Secret này, và bootstrap chỉ chạy lúc PROVISION hay lúc thêm environment — nên phải là
+   * `apply` với thân đầy đủ, nếu không cụm đang chạy sẽ không bao giờ có nó.
+   */
+  it("bản ở namespace hệ thống ghi bằng apply, có type dockerconfigjson", async () => {
+    const credentials = [
+      { server: "nexus.acme.vn", username: "u", password: "p" },
+    ];
+    const cluster = createFakeClusterAccess({ clusterId: "c-pull" });
+    await syncRegistryPullSystem(cluster, "udp-system", credentials);
+
+    const write = cluster.writes[0];
+    expect(cluster.writes).toHaveLength(1);
+    expect(write?.verb).toBe("apply");
+    expect(write?.identity).toBe("tooling");
+    expect(write?.ref).toMatchObject({
+      apiVersion: "v1",
+      kind: "Secret",
+      namespace: "udp-system",
+      name: "udp-registry-pull",
+    });
+    const client = await cluster.getClient("tooling");
+    expect(await client.read("get", cluster.writes[0]!.ref)).toMatchObject({
+      type: "kubernetes.io/dockerconfigjson",
+      stringData: { ".dockerconfigjson": dockerConfigOf(credentials) },
+    });
   });
 });
 

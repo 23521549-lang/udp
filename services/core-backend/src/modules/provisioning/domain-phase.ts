@@ -5,6 +5,7 @@ import {
   type DomainAdapterContext,
   type DomainToolConfig,
   type ResourceQuota,
+  type SignedImages,
 } from "@udp/adapter-core";
 import type { Fence } from "@udp/adapter-core/runner";
 import { Prisma, type DomainStatus, type PrismaClient } from "@udp/db";
@@ -27,6 +28,7 @@ import {
 import {
   pullCredentialsOf,
   syncRegistryPull,
+  syncRegistryPullSystem,
 } from "../adapter-base/registry-pull.js";
 import { SYSTEM_NAMESPACE } from "../cluster/bootstrap.js";
 import { openSecrets } from "../domain/tool-secrets.js";
@@ -62,6 +64,14 @@ export interface DomainPhaseInput {
   region: string;
   quota: ResourceQuota;
   tags: Readonly<Record<string, string>>;
+  /**
+   * [Plan #61 61d-3b] Image đã ký của project, đọc MỘT lần cho cả pha.
+   *
+   * Đọc ở đây chứ không trong `adapterContext`: `adapterContext` là hàm thuần và nó được gọi một lần cho MỖI đích
+   * (mỗi environment) của MỖI adapter — hàng chục lần một pha. Dữ kiện này không đổi trong một pha, nên một lượt
+   * đọc ở đầu pha là đủ, và nó làm `adapterContext` vẫn là hàm thuần (bộ hợp đồng gọi nó).
+   */
+  signedImages: SignedImages | null;
   /** Egress guard (§12 T11) — `ctx.fetch` của mọi adapter */
   fetch: typeof fetch;
   fence: Fence;
@@ -266,6 +276,7 @@ export function adapterContext(
     quota: input.quota,
     resolved,
     tags: input.tags,
+    signedImages: input.signedImages,
     progress: (m) => {
       input.progress(`${adapter.domainType}: ${m}`);
     },
@@ -573,18 +584,26 @@ export async function distributeRegistryPull(
   const first = registries[0];
   if (first === undefined && options.reset !== true) return null;
   try {
+    const credentials = pullCredentialsOf(
+      registries.map((d) => ({
+        pullCredential: input.registry
+          .all()
+          .find((l) => l.adapter === d.adapter)?.pullCredential,
+        config: d.config,
+      })),
+    );
     await syncRegistryPull(
       input.access,
       input.environments.map((e) => e.k8sNamespace),
-      pullCredentialsOf(
-        registries.map((d) => ({
-          pullCredential: input.registry
-            .all()
-            .find((l) => l.adapter === d.adapter)?.pullCredential,
-          config: d.config,
-        })),
-      ),
+      credentials,
     );
+    /**
+     * [Plan #61 61d-3b] Và một bản ở namespace hệ thống: `ImageValidatingPolicy` của Kyverno khai
+     * `credentials.secrets: ["udp-registry-pull"]`, và Kyverno chỉ tìm Secret đó ở namespace của CHÍNH nó. Thiếu
+     * bản này thì bốn registry dùng `pushAuth: basic` (Harbor, Nexus, Artifactory, Docker Hub) kéo chữ ký bằng danh
+     * tính vô danh, và policy không kiểm được gì.
+     */
+    await syncRegistryPullSystem(input.access, SYSTEM_NAMESPACE, credentials);
     return null;
   } catch (e) {
     return {

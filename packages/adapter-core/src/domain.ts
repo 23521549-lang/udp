@@ -6,7 +6,7 @@ import type {
   CapabilityId,
 } from "@udp/shared-types";
 import type { ZodType } from "zod";
-import type { BuildPlan } from "./build.js";
+import type { BuildPlan, RegistryPushKind } from "./build.js";
 import type { ResourceQuota } from "./cloud.js";
 import { readOnlyAccess } from "./cluster.js";
 import type {
@@ -36,6 +36,31 @@ export interface AdapterEnvironment {
   isProduction: boolean;
 }
 
+/**
+ * [v4.12, Plan #61 61d-3b] Image mà pipeline của project đẩy ra, và khoá CÔNG KHAI đã ký chúng.
+ *
+ * Đây là một MỞ RỘNG BỐI CẢNH (cùng loại với `environments` của D-P29): adapter không đọc database, nên dữ kiện mà
+ * một policy admission cần phải tới qua `ctx`. Đúng ba dữ kiện, không hơn:
+ *
+ *  - `repository` để policy chỉ đòi chữ ký ở image CỦA project. Image nền (istio, sidecar của Flagger, exporter của
+ *    Prometheus) không ai ký bằng khoá của khách, nên một policy đòi chữ ký ở MỌI image là một policy chặn chính
+ *    nền tảng.
+ *  - `publicKeys` làm attestor — khoá mới nhất trước, vì xoay khoá phải không gián đoạn.
+ *  - `registryKind` quyết định `credentials.providers` mà policy khai: ECR/GCR/ACR phát thông tin đăng nhập theo
+ *    danh tính của chính Kyverno, không bằng một khoá tĩnh.
+ *
+ * `publicKeys` LUÔN là khoá công khai: `signingKeySchema` neo hai đầu `-----BEGIN PUBLIC KEY-----`, nên một khoá bí
+ * mật không lưu được vào `build_settings`; khoá ký thật là một URI KMS và nó không bao giờ rời cloud của khách.
+ */
+export interface SignedImages {
+  /** `<endpoint của binding registry.oci>/<slug>` — ĐÚNG chuỗi mà cổng deploy 61d-1 so (`assertOwnImage`) */
+  repository: string;
+  /** PEM khoá công khai, mới nhất trước; tối đa 5 (`signingKeySchema`) */
+  publicKeys: readonly string[];
+  /** Loại registry — `"other"` khi thuộc tính binding không khai được cách đẩy */
+  registryKind: RegistryPushKind | "other";
+}
+
 export interface DomainAdapterContext {
   /** Client K8s đã xác thực bằng bound SA token; adapter KHÔNG tự lấy kubeconfig */
   k8s: ClusterAccess;
@@ -53,6 +78,16 @@ export interface DomainAdapterContext {
   /** Giá trị mà adapter khác đã cung cấp — đọc từ bảng, không từ bộ nhớ worker */
   resolved: Readonly<Partial<Record<CapabilityId, CapabilityBinding>>>;
   tags: Readonly<Record<string, string>>;
+  /**
+   * [v4.12, Plan #61 61d-3b] Image của project và khoá công khai đã ký chúng — `null` khi project chưa có khoá ký
+   * hay chưa có binding `registry.oci`.
+   *
+   * KHÔNG optional mà **nullable**: một trường `?` để bảy chỗ dựng bối cảnh lặng lẽ bỏ qua, còn `null` buộc mỗi chỗ
+   * phải quyết và compiler liệt kê đủ bảy chỗ. Hai đường dựng bối cảnh (áp domain, quét trôi) phải tính ra CÙNG giá
+   * trị, nếu không `values` của companion khác nhau và mọi lượt quét báo trôi giả vĩnh viễn (I32 chiều b) — đó là lý
+   * do nó đến từ một hàm dùng chung (`signedImagesOf`), không từ hai lượt truy vấn.
+   */
+  signedImages: SignedImages | null;
   /** Ghi log tiến trình để Portal stream về cho người dùng */
   progress: (message: string) => void;
   /**
