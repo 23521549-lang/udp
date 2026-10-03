@@ -109,11 +109,22 @@ nối tiếp sau trang; số ở hình học chính thức (cùng vùng với da
 
 | Chỉ số                                                                                          | Số                                                                                          |
 | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Phá vỡ bề mặt (tên phương thức/thuộc tính `CloudAdapter`, `DomainAdapter`, `CicdDomainAdapter`) | **0**                                                                                       |
+| Phá vỡ bề mặt (tên phương thức/thuộc tính `CloudAdapter`, `DomainAdapter`, `CicdDomainAdapter`) | **0** — không tên nào bị đổi hay bỏ                                                         |
+| Thành viên THÊM vào bề mặt sau tag                                                              | 1: `DomainAdapter.restoreTo?` (Plan #61 61d-3a) — tuỳ chọn, không chỗ gọi nào vỡ            |
 | Nới lỏng bộ contract test (`E1-relaxations.json`)                                               | **0**                                                                                       |
 | Mở rộng bối cảnh `DomainAdapterContext`                                                         | 1 trường: `environments` (D-P29)                                                            |
 | Commit sau tag sửa tệp interface (kiểu, không tên)                                              | 4 — chỉ P37 (D-P28, `PipelineTemplateParams.steps`) buộc sửa adapter ĐÃ có: 6 adapter CI/CD |
 | Tệp danh mục domain (`domains.ts`) phải sửa khi thêm tool                                       | **0** trên cả 11 lô                                                                         |
+
+> **[v4.12, Plan #61 61d-3a] Vì sao thêm `restoreTo?` và vì sao nó được ĐẾM.** §8.6 quy tắc 3 nói "nâng cấp thất
+> bại thì hạ về bản cũ, không để trạng thái lửng lơ". Nhưng registry nạp MỘT bản adapter mỗi tool, nên cổng
+> `rollback` của đường nâng cấp cắm cứng `FAILED` và mọi lần thất bại kết thúc ở `ROLLBACK_FAILED` với cụm **không**
+> được hạ về — tức quy tắc 3 chưa bao giờ có hiệu lực. Một adapter khai được đường đi lên từ bản cũ thì nó mang theo
+> định nghĩa bản cũ, nên chính nó là bên duy nhất áp lại được. Thành viên này **tuỳ chọn**, nên không một chỗ gọi
+> hay adapter nào đang có phải sửa; nhưng nó vẫn là một lần bề mặt đóng băng rộng ra, và E1 đếm nó. Nhân đợt này
+> cũng đóng một lỗ của chính cổng đóng băng: hai bộ đọc của `adapter-interface-freeze.test.ts` dùng
+> `/^ {2}(\w+)\(/` nên **không đếm** thành viên tuỳ chọn (`foo?()`) — ai cũng thêm được mà cổng không thấy. Đã kiểm:
+> trước đợt này không interface nào dùng lỗ đó.
 
 Tệp ngoài thư mục adapter theo lô (không tính test, tài liệu):
 

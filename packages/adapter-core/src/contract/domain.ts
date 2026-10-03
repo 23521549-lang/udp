@@ -3,6 +3,7 @@ import type { ResourceQuota } from "../cloud.js";
 import type { KubernetesClient } from "../cluster.js";
 import {
   DOMAIN_ADAPTER_METHODS,
+  DOMAIN_ADAPTER_OPTIONAL_METHODS,
   DOMAIN_ADAPTER_PROPERTIES,
   readOnlyContext,
   type AdapterFixture,
@@ -936,10 +937,20 @@ export const DOMAIN_CONTRACT_CHECKS: readonly DomainCheck[] = [
     },
   },
   {
-    name: "khai đủ bảy phương thức của DomainAdapter",
+    /**
+     * [v4.12, Plan #61 61d-3a] "Đủ" nghĩa là đủ thành viên BẮT BUỘC.
+     *
+     * Bề mặt có một thành viên tuỳ chọn (`restoreTo?`, xem `DOMAIN_ADAPTER_OPTIONAL_METHODS`): adapter chưa bao giờ
+     * đổi version không phải hiện thực nó, nên đòi nó ở đây sẽ làm mọi adapter đang có đỏ vì một thứ chúng không
+     * cần. Cổng đóng băng bề mặt vẫn đếm nó — hai câu hỏi khác nhau, hai chỗ khác nhau.
+     */
+    name: "khai đủ phương thức BẮT BUỘC của DomainAdapter",
     designCheckId: null,
     async run(adapter) {
-      for (const m of DOMAIN_ADAPTER_METHODS) {
+      const required = DOMAIN_ADAPTER_METHODS.filter(
+        (m) => !DOMAIN_ADAPTER_OPTIONAL_METHODS.includes(m),
+      );
+      for (const m of required) {
         assert(
           typeof (adapter as unknown as Record<string, unknown>)[m] ===
             "function",

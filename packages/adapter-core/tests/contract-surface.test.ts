@@ -9,6 +9,7 @@ import {
 } from "../src/cloud.js";
 import {
   DOMAIN_ADAPTER_METHODS,
+  DOMAIN_ADAPTER_OPTIONAL_METHODS,
   DOMAIN_ADAPTER_PROPERTIES,
 } from "../src/domain.js";
 import {
@@ -82,18 +83,30 @@ describe("CloudAdapter — mười phương thức", () => {
   });
 });
 
-describe("DomainAdapter — bảy phương thức và sáu thuộc tính", () => {
-  it("hằng số có đúng bảy và sáu", () => {
-    expect(DOMAIN_ADAPTER_METHODS).toHaveLength(7);
+describe("DomainAdapter — tám phương thức (một tuỳ chọn) và sáu thuộc tính", () => {
+  it("hằng số có đúng tám và sáu, và đúng một thành viên tuỳ chọn", () => {
+    /**
+     * [v4.12, Plan #61 61d-3a] Bảy ⇒ tám: `restoreTo?` vào bề mặt vì §8.6 quy tắc 3 ("nâng cấp thất bại thì hạ
+     * về bản cũ") trước đó **không có hiệu lực** — registry nạp một bản adapter mỗi tool nên không ai áp lại được
+     * định nghĩa cũ. Con số đổi là một quyết định được ghi ở E1 (`docs/measurements/README.md`), không phải một
+     * lần thêm phương thức cho tiện.
+     */
+    expect(DOMAIN_ADAPTER_METHODS).toHaveLength(8);
     expect(DOMAIN_ADAPTER_PROPERTIES).toHaveLength(6);
+    expect(DOMAIN_ADAPTER_OPTIONAL_METHODS).toEqual(["restoreTo"]);
+    // Thành viên tuỳ chọn phải LÀ một thành viên của bề mặt — nếu không, hai danh sách nói hai chuyện
+    for (const m of DOMAIN_ADAPTER_OPTIONAL_METHODS) {
+      expect(DOMAIN_ADAPTER_METHODS).toContain(m);
+    }
   });
 
-  it("bảy tên khớp khối interface của §5.2, cả hai chiều", () => {
+  it("tám tên khớp khối interface của §5.2, cả hai chiều", () => {
     const block = sectionBetween(
       "interface DomainAdapter {",
       "interface WebhookDeployEvent {",
     );
-    const declared = [...block.matchAll(/^ {2}([a-z][A-Za-z]*)\(/gm)].map(
+    /** `\??` để đếm cả thành viên tuỳ chọn — thiếu nó thì một `foo?()` thêm vào là vô hình với cổng này */
+    const declared = [...block.matchAll(/^ {2}([a-z][A-Za-z]*)\??\(/gm)].map(
       (m) => m[1],
     );
     expect([...new Set(declared)].sort()).toEqual(

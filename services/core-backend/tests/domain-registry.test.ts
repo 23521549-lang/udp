@@ -3,6 +3,7 @@ import { readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   DOMAIN_ADAPTER_METHODS,
+  DOMAIN_ADAPTER_OPTIONAL_METHODS,
   DOMAIN_ADAPTER_PROPERTIES,
 } from "@udp/adapter-core";
 import { env } from "@udp/config";
@@ -215,9 +216,10 @@ describe("pipelineSteps và cloud (Plan #37 QĐ-2, QĐ-5)", () => {
   });
 });
 
-describe("type guard 7 + 6 — hai danh sách là DỮ LIỆU, không viết lại", () => {
-  it("đúng bảy phương thức và sáu thuộc tính", () => {
-    expect(DOMAIN_ADAPTER_METHODS).toHaveLength(7);
+describe("type guard 8 + 6 — hai danh sách là DỮ LIỆU, không viết lại", () => {
+  it("đúng tám phương thức (một tuỳ chọn) và sáu thuộc tính", () => {
+    /** [Plan #61 61d-3a] Bảy ⇒ tám: `restoreTo?` — xem E1 ở `docs/measurements/README.md` */
+    expect(DOMAIN_ADAPTER_METHODS).toHaveLength(8);
     expect(DOMAIN_ADAPTER_PROPERTIES).toHaveLength(6);
   });
 
@@ -238,7 +240,16 @@ describe("type guard 7 + 6 — hai danh sách là DỮ LIỆU, không viết l�
       ["configSchema", {}],
     ]);
 
-    for (const missing of DOMAIN_ADAPTER_METHODS) {
+    /**
+     * [Plan #61 61d-3a] Chỉ thành viên BẮT BUỘC mới phải bị bắt khi thiếu.
+     *
+     * `restoreTo?` là tuỳ chọn: một adapter chưa bao giờ đổi version không hiện thực nó, và registry vẫn phải
+     * nạp được adapter đó. Đòi nó ở đây biến một cổng kiểm hình dạng thành một cổng chặn.
+     */
+    const required = DOMAIN_ADAPTER_METHODS.filter(
+      (m) => !DOMAIN_ADAPTER_OPTIONAL_METHODS.includes(m),
+    );
+    for (const missing of required) {
       const broken: Record<string, unknown> = { ...full };
       delete broken[missing];
       let message = "KHONG NEM";
@@ -248,6 +259,32 @@ describe("type guard 7 + 6 — hai danh sách là DỮ LIỆU, không viết l�
         message = err instanceof Error ? err.message : String(err);
       }
       expect(message, `thiếu ${missing} phải bị bắt`).toContain(missing);
+    }
+  });
+
+  it("thiếu thành viên TUỲ CHỌN thì nạp được; khai sai KIỂU thì bị bắt", () => {
+    const base = Object.fromEntries([
+      ...DOMAIN_ADAPTER_METHODS.filter(
+        (m) => !DOMAIN_ADAPTER_OPTIONAL_METHODS.includes(m),
+      ).map((m) => [m, () => undefined]),
+      ["domainType", "MONITORING"],
+      ["toolId", "t"],
+      ["version", "1.0.0"],
+      ["scope", "cluster"],
+      ["capabilities", { provides: [], requires: [] }],
+      ["configSchema", {}],
+    ]);
+
+    // Vắng hẳn ⇒ hợp lệ: 72 adapter của sản phẩm trước đợt này không khai gì cả
+    expect(() => {
+      assertIsDomainAdapter({ ...base }, "o-day");
+    }).not.toThrow();
+
+    // Khai mà không phải hàm ⇒ bắt: khai sai kiểu còn tệ hơn không khai, vì chỗ gọi sẽ tin là có
+    for (const m of DOMAIN_ADAPTER_OPTIONAL_METHODS) {
+      expect(() => {
+        assertIsDomainAdapter({ ...base, [m]: "khong-phai-ham" }, "o-day");
+      }).toThrow(m);
     }
   });
 

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   DOMAIN_ADAPTER_METHODS,
+  DOMAIN_ADAPTER_OPTIONAL_METHODS,
   DOMAIN_ADAPTER_PROPERTIES,
 } from "@udp/adapter-core";
 import type { DomainAdapter } from "@udp/adapter-core";
@@ -89,9 +90,23 @@ export function assertIsDomainAdapter(
   }
   const obj = value as Record<string, unknown>;
 
+  /**
+   * [v4.12, Plan #61 61d-3a] Chỉ đòi thành viên BẮT BUỘC.
+   *
+   * `restoreTo?` là thành viên tuỳ chọn (xem `DOMAIN_ADAPTER_OPTIONAL_METHODS`): adapter chưa bao giờ đổi version
+   * không phải hiện thực nó. Đòi nó ở đây là từ chối NẠP những adapter đó — một cổng kiểm hình dạng biến thành
+   * một cổng chặn, và cả registry chỉ còn nạp adapter sinh từ ba lớp nền.
+   */
   for (const m of DOMAIN_ADAPTER_METHODS) {
+    if (DOMAIN_ADAPTER_OPTIONAL_METHODS.includes(m)) continue;
     if (typeof obj[m] !== "function") {
       throw new InvalidAdapterError(at, `thiếu phương thức ${m}`);
+    }
+  }
+  /** Khai thành viên tuỳ chọn thì nó phải là một hàm — khai sai kiểu còn tệ hơn không khai */
+  for (const m of DOMAIN_ADAPTER_OPTIONAL_METHODS) {
+    if (m in obj && typeof obj[m] !== "function") {
+      throw new InvalidAdapterError(at, `${m} phải là một hàm`);
     }
   }
   for (const p of DOMAIN_ADAPTER_PROPERTIES) {

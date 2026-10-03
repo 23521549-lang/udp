@@ -903,6 +903,61 @@ policy.admission@1.0.0` — bump version capability sẽ làm mọi consumer `^1
    chặn deploy trong lúc nâng không? Ba namespace nền tảng có còn miễn trừ không (ô `vpolExclude`)? `Audit` có còn
    là mặc định không? Một lượt nâng hỏng có để cụm ở trạng thái xác định không (và test chứng minh)?
 
+### 61d-3a — đã làm, và những chỗ CHỆCH plan (R5)
+
+1. **Lớp nền KHÔNG tự áp lại bản cũ; việc đó đi qua một cổng có tên.** Plan viết "áp bản mới hỏng ⇒ tự áp lại toạ
+   độ cũ rồi trả FAILED". Làm xong thấy nó sai về cơ chế: `upgradeDomain` vẫn gọi `ports.rollback()` ở mọi nhánh
+   thất bại, nên lớp nền tự hạ về sẽ khiến việc hạ về chạy **hai lần** và kết cục người dùng thấy vẫn là
+   `ROLLBACK_FAILED` (cổng kia vẫn trả FAILED). Nên: lớp nền chỉ khai `restoreTo`, và cổng `rollback` của job dựng
+   TỪ chính adapter. Một cơ chế, một chỗ, và `ROLLED_BACK` thành một kết cục THẬT.
+2. **`UpgradePorts.rollback` KHÔNG thành tuỳ chọn.** Plan định làm vậy rồi cho `upgradeDomain` trả `UPGRADE_FAILED`
+   khi vắng cổng. Không cần: `UpgradeStatus` đã có `ROLLED_BACK` ("cụm đã về bản cũ, sổ khớp thực tế") và
+   `ROLLBACK_FAILED` ("phải kêu to") — đúng hai kết cục cần phân biệt. Giữ cổng bắt buộc nghĩa là không nới một
+   interface nào, và `restorePort` (hàm mới ở `day2/domain-upgrade.ts`) là chỗ duy nhất biết luật "adapter không
+   mang định nghĩa bản cũ ⇒ FAILED". Nhờ tách thành hàm có tên, phần nối ấy **kiểm được** — trước đó nó là 6 dòng
+   nằm chìm trong job.
+3. **`restoreTo?` là một thành viên THÊM vào bề mặt đã đóng băng, và nó được ĐẾM.** Plan không nói gì về E1. Đã ghi
+   một dòng vào `docs/measurements/README.md`: 0 lần phá vỡ tên, **1** thành viên thêm vào. Không chỗ gọi nào vỡ
+   (tuỳ chọn), nhưng bề mặt rộng ra thì E1 phải thấy.
+4. **Nhân đó đóng một LỖ của chính cổng đóng băng.** Hai bộ đọc (`design-lint/adapter-interface-freeze.test.ts` và
+   `adapter-core/tests/contract-surface.test.ts`) dùng `/^ {2}(\w+)\(/`, nên một thành viên `foo?()` **không được
+   đếm** — ai cũng thêm được phương thức tuỳ chọn mà cổng không thấy. Cả hai giờ nhận `?`. Đã kiểm: trước đợt này
+   không interface nào dùng lỗ đó, nên đây là lần đầu và nó được đếm đúng.
+5. **Bộ hợp đồng phải phân biệt "đủ" với "đủ BẮT BUỘC".** Phép kiểm "khai đủ bảy phương thức" đọc
+   `DOMAIN_ADAPTER_METHODS` để đếm, nên thêm một thành viên tuỳ chọn làm **72 adapter** đỏ ở phép đó — một cổng bắt
+   đúng thay đổi nhưng bắt sai bên. Thêm `DOMAIN_ADAPTER_OPTIONAL_METHODS` và phép kiểm trừ nó ra; cổng đóng băng
+   vẫn đếm đủ tám. Hai câu hỏi khác nhau, hai chỗ khác nhau.
+6. **`requestReapply` KHÔNG phải sửa.** Plan nói nó "chết đúng ở đó" sau khi bump version. Đọc lại
+   `domain-apply.service.ts:309`: nó trả 409 kèm câu _"chạy bản X, máy chủ nạp bản Y — nâng cấp (có kiểm validator)
+   thay vì áp lại"_, tức đã trỏ đúng đường. Không phải bế tắc. (Chỗ thật sự cần một đường áp lại là 61d-3b, khi đổi
+   khoá ký phải làm policy đổi theo — ghi lại để đợt đó không quên.)
+7. **`upgradesFrom` mang cả `values` của bản cũ, không chỉ toạ độ chart.** Plan nói "toạ độ cũ". Chưa đủ: Helm bỏ
+   qua khoá nó không biết **trong im lặng**, nên hạ về bằng giá trị của bản mới trên chart cũ sẽ để cụm trông như đã
+   về bản cũ mà cấu hình thì không — với Kyverno đó là mất quyền miễn trừ của ba namespace nền tảng. Cái giá hiện
+   ra đúng chỗ: muốn giữ đường lên từ `1.0.0` thì phải giữ **định nghĩa** của `1.0.0` trong mã (ô test khẳng định
+   đúng điều đó: hạ về phải thấy `policyExclude`, và **không** thấy `vpolExclude`).
+
+**Cổng đã qua:** `pnpm typecheck` (core-backend, adapter-core, Portal) 0 lỗi; `prettier --check` toàn repo sạch;
+`adapter-base-upgrade` **7/7** (mới); Kyverno **47/47** (42 hợp đồng + 5 ô của 2.0.0); `day2-upgrade` **16/16**
+(thêm 2 ô cho `restorePort`); **72 tệp hợp đồng adapter / 3108 ô** của toàn bộ sản phẩm xanh với bề mặt mới;
+`@udp/adapter-core` 422; design-lint 172/172. **Không migration.**
+
+**Đường lùi (R10):** `git revert`. Project nào đã nâng lên `adapter_version = 2.0.0` thì cột đó ở lại, nên revert
+phải kèm:
+
+```sql
+-- Hạ cột version của đúng hàng POLICY/kyverno về bản 1.0.0 (chạy SAU khi revert mã)
+UPDATE domain_configs SET adapter_version = '1.0.0'
+ WHERE domain_type = 'POLICY' AND selected_tool = 'kyverno' AND adapter_version = '2.0.0';
+```
+
+**Kiểm thoái cấp (R11) — trả bằng ô test:** (a) ba lớp nền vẫn từ chối `fromVersion` lạ (d11 của bộ hợp đồng, cộng
+một ô riêng khẳng định **không áp gì** khi từ chối); (b) ba namespace nền tảng vẫn được miễn trừ, và ô test khẳng
+định khoá MỚI có đủ ba cái **và** khoá cũ không còn; (c) `Audit` vẫn là mặc định, và `failurePolicy` của nó là
+`Ignore` — một policy chỉ ghi báo cáo không được làm đứng cụm; (d) `Enforce` với một bản sao bị từ chối **lúc parse
+cấu hình**, không phải lúc áp; (e) capability vẫn `policy.admission@1.0.0` nên không consumer nào vỡ 422; (f) 72
+adapter còn lại không phải hiện thực gì (ô "khai đủ phương thức BẮT BUỘC" và 3108 ô hợp đồng xanh chứng minh).
+
 ### 61d-3b — `ImageValidatingPolicy` + E2E kind có Kyverno (đi CÙNG nhau)
 
 Hình policy sau khi sửa theo QA: `validationActions` theo `enforce`; `spec.failurePolicy` **của chính policy** theo

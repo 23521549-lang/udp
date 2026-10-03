@@ -85,6 +85,7 @@ export type {
 } from "./domain.js";
 export {
   DOMAIN_ADAPTER_METHODS,
+  DOMAIN_ADAPTER_OPTIONAL_METHODS,
   DOMAIN_ADAPTER_PROPERTIES,
   readOnlyContext,
 } from "./domain.js";

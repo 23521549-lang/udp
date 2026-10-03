@@ -139,6 +139,24 @@ export interface DomainAdapter {
   ): Promise<AdapterResult<CapabilityBinding[]>>;
 
   /**
+   * [v4.12, Plan #61 61d-3a] Áp lại định nghĩa của một version CŨ mà adapter này khai biết đường đi lên từ đó.
+   *
+   * Vì sao nó phải tồn tại: §8.6 nói "nâng cấp thất bại thì hạ về bản cũ, không để trạng thái lửng lơ", nhưng
+   * registry chỉ nạp MỘT bản adapter mỗi tool — không có instance bản cũ để gọi. Nên cổng `rollback` của đường
+   * nâng cấp cắm cứng FAILED, và mọi lần nâng cấp thất bại kết thúc ở `ROLLBACK_FAILED` với cụm **không** được hạ
+   * về. Một adapter khai được đường đi lên từ `1.0.0` thì nó cũng mang định nghĩa của `1.0.0`, nên chính nó là bên
+   * duy nhất áp lại được.
+   *
+   * TUỲ CHỌN vì phần lớn adapter chưa bao giờ đổi version: vắng nó thì hành vi y như trước (rollback thất bại, kêu
+   * to). Có nó thì `ROLLED_BACK` là một kết cục THẬT.
+   */
+  restoreTo?(
+    ctx: DomainAdapterContext,
+    config: DomainToolConfig,
+    version: string,
+  ): Promise<AdapterResult<CapabilityBinding[]>>;
+
+  /**
    * Day-2: so trạng thái thật trên cluster với cấu hình mong muốn.
    *
    * [v4.10] Nhận `ReadOnlyAdapterContext`: chiều (c) của I32 ("không bao giờ tự sửa") là
@@ -180,11 +198,23 @@ export const DOMAIN_ADAPTER_METHODS: readonly string[] = [
   "deploy",
   "configure",
   "upgrade",
+  /** [61d-3a] TUỲ CHỌN — xem chú thích trên interface; bộ đóng băng đếm cả thành viên tuỳ chọn */
+  "restoreTo",
   "detectDrift",
   "onDependencyChanged",
   "healthcheck",
   "teardown",
 ];
+
+/**
+ * [v4.12, Plan #61 61d-3a] Thành viên TUỲ CHỌN của bề mặt — có trong `DOMAIN_ADAPTER_METHODS` (bề mặt là bề mặt,
+ * cổng đóng băng phải đếm nó) nhưng bộ hợp đồng **không** đòi adapter nào hiện thực.
+ *
+ * Vì sao phải tách thành một danh sách riêng chứ không chỉ "biết": phép kiểm "khai đủ phương thức" của bộ hợp đồng
+ * đọc `DOMAIN_ADAPTER_METHODS` để đếm, nên thêm một thành viên tuỳ chọn mà không khai nó ở đây sẽ làm **mọi** adapter
+ * đang có đỏ ở phép đó — một cổng bắt đúng sự thay đổi nhưng bắt sai bên.
+ */
+export const DOMAIN_ADAPTER_OPTIONAL_METHODS: readonly string[] = ["restoreTo"];
 
 /** Sáu thuộc tính read-only */
 export const DOMAIN_ADAPTER_PROPERTIES: readonly string[] = [

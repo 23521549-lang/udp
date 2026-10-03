@@ -3040,12 +3040,26 @@ interface DomainAdapter {
   upgrade(ctx: DomainAdapterContext, config: DomainToolConfig, fromVersion: string): Promise<AdapterResult<CapabilityBinding[]>>;
 
   /**
+   * [v4.12, Plan #61 61d-3a] Áp lại định nghĩa của một version CŨ mà adapter này khai biết đường đi lên từ đó —
+   * thành viên TUỲ CHỌN, và là thành viên thứ tám.
+   *
+   * Vì sao phải có: §8.6 nói "nâng cấp thất bại thì hạ về bản cũ, không để trạng thái lửng lơ", nhưng registry nạp
+   * MỘT bản adapter mỗi tool nên không có instance bản cũ để gọi — cổng `rollback` của đường nâng cấp vì vậy cắm
+   * cứng FAILED, và mọi lần nâng cấp thất bại kết thúc ở `ROLLBACK_FAILED` với cụm KHÔNG được hạ về. Một adapter
+   * khai được đường đi lên từ `1.0.0` thì nó cũng mang định nghĩa của `1.0.0`, nên chính nó là bên duy nhất áp lại
+   * được. Vắng nó: hành vi y như trước (rollback thất bại, kêu to) — nên adapter chưa bao giờ đổi version không
+   * phải hiện thực gì.
+   */
+  restoreTo?(ctx: DomainAdapterContext, config: DomainToolConfig, version: string): Promise<AdapterResult<CapabilityBinding[]>>;
+
+  /**
    * [v4] Day-2: so trạng thái thật trên cluster với cấu hình mong muốn (helm diff, CR spec).
    *
    * [v4.10] Nhận `ReadOnlyAdapterContext`, không phải `DomainAdapterContext`: I32 chiều
    * (c) là tính chất của KIỂU trước, rồi mới là một phép đếm. Đây là thay đổi chữ ký duy
-   * nhất sau khi bề mặt interface được đóng băng (tag `adapter-interface-v1`), và nó giữ
-   * đúng bảy phương thức cùng tên — chỉ quyền của một tham số bị thu hẹp.
+   * nhất sau khi bề mặt interface được đóng băng (tag `adapter-interface-v1`) — chỉ quyền của một tham số bị thu
+   * hẹp, không đổi tên nào. **[v4.12, 61d-3a]** Thay đổi thứ hai là một thành viên TUỲ CHỌN thêm vào
+   * (`restoreTo?`), nên bề mặt giờ là **8 + 6**; cả hai thay đổi đều được ghi ở E1 (§14.1).
    */
   detectDrift(ctx: ReadOnlyAdapterContext, config: DomainToolConfig): Promise<AdapterResult<{ drifted: boolean; details?: string }>>;
 
@@ -3766,7 +3780,9 @@ interface MetricsProvider {
 
 > **Mục đích trong UDP:** Enforce policy tự động khi provision — ví dụ: "không deploy container chạy root", "tất cả image phải scan Trivy trước". Bổ sung cho Security Scanning domain.
 >
-> **[v4.11, Plan #34]** Webhook của cả hai tool **miễn trừ `udp-system` và `kube-system`** ở tầng webhook (không phải từng policy): một policy "không chạy root" áp lên controller mà UDP cài là tự khoá đường cài đặt của chính nền tảng. Kyverno mặc định `Audit` — bật `Enforce` trên project đang chạy mà chưa audit là chặn deploy của khách không báo trước.
+> **[v4.11, Plan #34]** Webhook của cả hai tool **miễn trừ `udp-system` và `kube-system`** (và **[v4.12, Plan #61]** `udp-build` — nơi pod build của CI trong cụm cần seccomp `Unconfined`): một policy "không chạy root" áp lên controller mà UDP cài là tự khoá đường cài đặt của chính nền tảng. Kyverno mặc định `Audit` — bật `Enforce` trên project đang chạy mà chưa audit là chặn deploy của khách không báo trước.
+>
+> **[v4.12, Plan #61 61d-3a] Miễn trừ đi bằng HAI đường, không còn một.** Câu trên trước đây nói miễn trừ nằm "ở tầng webhook (không phải từng policy)" — từ chart `kyverno-policies` 3.9.x điều đó không còn đúng. Chart ấy mặc định `policyType: ValidatingPolicy` (họ CEL mới, nhóm API `policies.kyverno.io`), và khoá `policyExclude` cũ **chỉ** áp dụng cho họ `ClusterPolicy` đã bị khai tử; họ mới miễn trừ bằng `vpolExclude.excludeNamespaces` ở **từng policy**. Nên UDP giữ cả hai: `namespaceSelector` của webhook engine (tầng webhook) **và** `vpolExclude` của bộ PSS (tầng policy). Và UDP ghim `policyType` **tường minh** thay vì dựa vào mặc định của chart — một lần chart đổi mặc định không được đổi họ policy mà UDP cài. Bẫy đã đóng: nâng chart mà quên đổi khoá thì ba namespace nền tảng mất quyền miễn trừ **trong im lặng**, và với `Enforce` thì pod của chính nền tảng bị chặn (`policy-adapter/kyverno/contract.test.ts` biến đúng lỗi đó thành một test đỏ).
 
 ---
 
@@ -5803,7 +5819,7 @@ sequenceDiagram
 | ------- | ----- |
 | **Phát hiện trôi không bao giờ tự sửa** | Trôi thường là người vận hành cố ý vá nóng lúc sự cố. Tự ghi đè lúc 3 giờ sáng là biến một sự cố thành hai. Portal hiển thị diff và để người quyết định |
 | **Nâng cấp chạy lại validator trước khi chạm cluster** | Adapter phiên bản mới có thể đổi `provides`/`requires`. Ví dụ thật: nâng Prometheus lên bản đổi `metrics.query` từ `2.0.0` lên `3.0.0` sẽ phá `constraint: "^2"` của Flagger. Bắt ở validator thì người dùng thấy thông báo; không bắt thì canary analysis hỏng sau khi đã nâng xong |
-| **Nâng cấp thất bại thì hạ về bản cũ, không để trạng thái lửng lơ** | `adapter_version` chỉ đổi **sau khi** healthcheck xanh. Cột này là thứ `detectDrift()` so sánh, sai nó thì mọi lần quét sau đều báo trôi giả |
+| **Nâng cấp thất bại thì hạ về bản cũ, không để trạng thái lửng lơ** | `adapter_version` chỉ đổi **sau khi** healthcheck xanh. Cột này là thứ `detectDrift()` so sánh, sai nó thì mọi lần quét sau đều báo trôi giả. **[v4.12, Plan #61 61d-3a]** Nửa "hạ về" trước đây **không có hiệu lực**: registry nạp một bản adapter mỗi tool nên cổng `rollback` cắm cứng `FAILED`, và mọi lần thất bại ra `ROLLBACK_FAILED` với cụm không được hạ về. Giờ một adapter khai `upgradesFrom` cũng mang **định nghĩa** của bản cũ (toạ độ chart **và** `values` của nó — chart cũ bỏ qua khoá nó không biết trong im lặng, nên hạ về bằng giá trị của bản mới là hạ về sai), và `DomainAdapter.restoreTo?` là đường áp lại. Adapter không khai gì ⇒ `ROLLBACK_FAILED` y như trước, và đó là kết cục đúng cho ca đó |
 | **Rebind sau nâng cấp dùng lại đúng cơ chế của CASE 3 (§8.2)** | Không viết đường thứ hai cho cùng một việc. Nâng cấp và đổi tool đều dẫn tới "binding đổi ⇒ consumer phải biết", nên chung một hàm |
 
 **[v4.10] Ba tầng cưỡng chế "không bao giờ tự sửa", và mỗi tầng bắt một loại lỗi khác:**

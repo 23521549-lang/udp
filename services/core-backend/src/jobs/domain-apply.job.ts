@@ -21,6 +21,7 @@ import {
 } from "../modules/day2/dependent-notify.js";
 import {
   changedBindings,
+  restorePort,
   upgradeDomain,
 } from "../modules/day2/domain-upgrade.js";
 import {
@@ -612,13 +613,21 @@ export function createDomainApplyJob(kit: JobKit): DomainApplyJob {
               resolvedFor(stored, {}, null),
             ),
           ),
-        // Registry nạp MỘT bản mỗi tool: không có instance bản cũ để hạ về — kêu to
-        rollback: () =>
-          Promise.resolve({
-            status: "FAILED",
-            message:
-              "registry chỉ nạp một bản adapter, không có bản cũ để hạ về",
-          }),
+        /** [Plan #61 61d-3a] Hạ về THẬT khi adapter mang được định nghĩa bản cũ — xem `restorePort` */
+        rollback: restorePort({
+          adapter,
+          contextFor: () =>
+            Promise.resolve(
+              adapterContext(
+                phase,
+                adapter,
+                undefined,
+                resolvedFor(stored, {}, null),
+              ),
+            ),
+          config,
+          fromVersion: row.adapterVersion ?? "",
+        }),
         persist: async ({
           adapterVersion,
           bindings,

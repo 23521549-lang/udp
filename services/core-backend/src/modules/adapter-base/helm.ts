@@ -49,11 +49,40 @@ export interface HelmChartRef {
   installer?: "manifest-bundle";
 }
 
+/**
+ * [Plan #61 61d-3a] Một version CŨ mà bản này biết đường đi lên từ đó — kèm ĐỦ định nghĩa để áp lại được.
+ *
+ * Vì sao phải mang cả `chart` và `values` chứ không chỉ số version: hạ về mà dùng `values` của bản MỚI trên chart
+ * CŨ là một lần hạ về sai. Chart cũ lặng lẽ bỏ qua khoá nó không biết (Helm không báo lỗi giá trị lạ), nên ví dụ
+ * `vpolExclude` của Kyverno 3.9.x rơi vào hư không trên chart 3.2.x và `policyExclude` thì không được đặt — cụm "đã
+ * hạ về" nhưng mất quyền miễn trừ namespace. Mang định nghĩa cũ làm cái giá của một đường di trú HIỆN RA: muốn giữ
+ * đường lên từ `1.0.0` thì phải giữ định nghĩa của `1.0.0`.
+ */
+export interface HelmUpgradeOrigin {
+  /** `DomainConfig.adapter_version` đang lưu */
+  version: string;
+  chart: HelmChartRef;
+  values: (
+    config: DomainToolConfig,
+    ctx: ReadOnlyAdapterContext,
+  ) => Record<string, unknown>;
+  /** Release đi kèm của BẢN CŨ — vắng nghĩa là bản cũ không có release đi kèm nào */
+  companions?: readonly HelmCompanion[];
+}
+
 export interface HelmAdapterSpec {
   domainType: DomainAdapter["domainType"];
   toolId: string;
   /** Version của ADAPTER, ghi vào `DomainConfig.adapter_version` */
   version: string;
+  /**
+   * [Plan #61 61d-3a] Các version cũ mà bản này nâng lên được, kèm định nghĩa của chúng.
+   *
+   * Vắng (mặc định) ⇒ hành vi y như trước: `upgrade` chỉ nhận đúng version của chính nó, nên một adapter chưa bao
+   * giờ đổi version không phải khai gì. Khai rồi ⇒ `upgrade` nhận các version đó, và `restoreTo` áp lại được chúng
+   * (đường mà §8.6 đòi và cổng `rollback` hôm nay không làm được).
+   */
+  upgradesFrom?: readonly HelmUpgradeOrigin[];
   scope: DomainAdapter["scope"];
   capabilities: CapabilityDeclaration;
   configSchema: ZodType;
@@ -249,31 +278,60 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
    * ĐÚNG thứ tự áp — release đi kèm `before`, release chính, rồi các release đi kèm còn lại; gỡ
    * theo thứ tự ngược
    */
-  const companions = spec.companions ?? [];
-  const units: readonly HelmUnit[] = [
-    ...companions
-      .filter((c) => c.before === true)
-      .map((c) => ({ ...c, primary: false })),
-    {
-      releaseName: spec.releaseName,
-      chart: spec.chart,
-      values: spec.values,
-      primary: true,
-    },
-    ...companions
-      .filter((c) => c.before !== true)
-      .map((c) => ({ ...c, primary: false })),
-  ];
-  if (new Set(units.map((u) => u.releaseName)).size !== units.length) {
-    throw new HelmAdapterError(`${spec.toolId}: hai release trùng tên`);
-  }
+  /**
+   * Dựng danh sách unit từ MỘT định nghĩa (bản mới, hay một bản cũ của `upgradesFrom`).
+   *
+   * Tách thành hàm vì `restoreTo` cần đúng phép dựng này trên toạ độ cũ: một bản chép thứ hai của thứ tự áp
+   * (`before` → chính → còn lại) sẽ trôi khỏi bản gốc đúng vào lúc ai đó thêm một release đi kèm.
+   */
+  const unitsOf = (definition: {
+    chart: HelmChartRef;
+    values: HelmAdapterSpec["values"];
+    companions?: readonly HelmCompanion[];
+  }): readonly HelmUnit[] => {
+    const companions = definition.companions ?? [];
+    const built: readonly HelmUnit[] = [
+      ...companions
+        .filter((c) => c.before === true)
+        .map((c) => ({ ...c, primary: false })),
+      {
+        releaseName: spec.releaseName,
+        chart: definition.chart,
+        values: definition.values,
+        primary: true,
+      },
+      ...companions
+        .filter((c) => c.before !== true)
+        .map((c) => ({ ...c, primary: false })),
+    ];
+    if (new Set(built.map((u) => u.releaseName)).size !== built.length) {
+      throw new HelmAdapterError(`${spec.toolId}: hai release trùng tên`);
+    }
+    return built;
+  };
+
+  const units = unitsOf(spec);
+  /** Dựng NGAY lúc nạp registry: một `upgradesFrom` sai hình là lỗi của mã adapter, không phải của khách */
+  const origins = new Map<string, readonly HelmUnit[]>(
+    (spec.upgradesFrom ?? []).map((origin) => {
+      if (origin.version === spec.version) {
+        throw new HelmAdapterError(
+          `${spec.toolId}: upgradesFrom chứa chính version của nó (${origin.version})`,
+        );
+      }
+      return [origin.version, unitsOf(origin)];
+    }),
+  );
 
   /** Release tĩnh rồi instance của mọi environment hiện có — thứ tự áp; gỡ theo thứ tự ngược */
-  const unitsFor = (ctx: ReadOnlyAdapterContext): readonly HelmUnit[] => {
+  const unitsFor = (
+    ctx: ReadOnlyAdapterContext,
+    base: readonly HelmUnit[] = units,
+  ): readonly HelmUnit[] => {
     const instance = spec.perEnvironment;
-    if (instance === undefined) return units;
+    if (instance === undefined) return base;
     return [
-      ...units,
+      ...base,
       ...ctx.environments.map((environment): HelmUnit => ({
         releaseName: instanceReleaseName(instance.releasePrefix, environment),
         chart: instance.chart,
@@ -448,6 +506,7 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
   async function applyRelease(
     ctx: DomainAdapterContext,
     config: DomainToolConfig,
+    base: readonly HelmUnit[] = units,
   ): Promise<CapabilityBinding[]> {
     const parsed = spec.configSchema.safeParse(config);
     if (!parsed.success) {
@@ -462,7 +521,7 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
     const secret = secretOf(config, ctx);
     // Secret trước: release không bao giờ trỏ tới một Secret chưa có
     if (secret !== null) await client.write("apply", secret.ref, secret.body);
-    for (const unit of unitsFor(ctx)) {
+    for (const unit of unitsFor(ctx, base)) {
       ctx.progress(`áp ${unit.chart.name} ${unit.chart.version}`);
       await client.write(
         "apply",
@@ -579,13 +638,35 @@ export function createHelmBasedAdapter(spec: HelmAdapterSpec): DomainAdapter {
          * bước nào. Và §8.6 nói `detectDrift()` so với `adapter_version`, nên một lần
          * upgrade "thành công" từ một version không biết sẽ làm mọi lần quét sau báo trôi
          * giả.
+         *
+         * [Plan #61 61d-3a] "Lạ" giờ nghĩa là: không phải version của chính nó, VÀ không có trong
+         * `upgradesFrom`. Trước đợt này phép so chỉ có nửa đầu, nên **mọi** lần đổi version của một adapter
+         * họ Helm đều thất bại — mà đường nâng cấp của §8.6 chỉ chạy KHI hai version khác nhau. Tức cả đường
+         * đó chưa adapter nào đi qua được.
          */
-        if (fromVersion !== spec.version) {
+        if (fromVersion !== spec.version && !origins.has(fromVersion)) {
           throw new HelmAdapterError(
             `không biết đường nâng cấp ${spec.toolId} từ ${fromVersion}`,
           );
         }
         return await applyRelease(ctx, config);
+      }),
+
+    /**
+     * [Plan #61 61d-3a] Áp lại định nghĩa của một version cũ — nửa còn thiếu của §8.6.
+     *
+     * Chỉ nhận version có trong `upgradesFrom`: hạ về một chỗ không có định nghĩa là vờ hạ về.
+     */
+    restoreTo: (ctx, config, version) =>
+      guarded(async () => {
+        const base = origins.get(version);
+        if (base === undefined) {
+          throw new HelmAdapterError(
+            `${spec.toolId} không mang định nghĩa của bản ${version} để hạ về`,
+          );
+        }
+        ctx.progress(`hạ ${spec.toolId} về bản ${version}`);
+        return await applyRelease(ctx, config, base);
       }),
 
     detectDrift: (ctx, config) =>

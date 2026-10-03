@@ -212,6 +212,44 @@ export async function upgradeDomain(
  *    vì `detectDrift` từ giờ so với một `adapter_version` có thể không còn đúng - và một
  *    badge "đã trôi" ở ca này là badge NÓI THẬT, không phải báo động giả.
  */
+/**
+ * [Plan #61 61d-3a] Cổng hạ về dựng TỪ CHÍNH adapter — nửa còn thiếu của quy tắc 3 ở §8.6.
+ *
+ * Vì sao nó ở đây mà không inline trong job: registry nạp MỘT bản adapter mỗi tool, nên trước đợt này cổng
+ * `rollback` của job cắm cứng `FAILED` và **mọi** lần nâng cấp thất bại kết thúc ở `ROLLBACK_FAILED` với cụm
+ * không được hạ về — trái đúng câu "không để trạng thái lửng lơ" của quy tắc 3. Một adapter khai được đường đi
+ * lên từ bản cũ thì nó mang theo định nghĩa của bản cũ, nên chính nó là bên duy nhất áp lại được (`restoreTo`).
+ *
+ * Adapter không hiện thực `restoreTo` ⇒ giữ nguyên hành vi cũ: `FAILED`, và luồng kêu to bằng `ROLLBACK_FAILED`.
+ * Đó là kết cục ĐÚNG cho ca đó, không phải một chỗ cần làm cho đẹp.
+ */
+export function restorePort(args: {
+  adapter: DomainAdapter;
+  contextFor: () => Promise<DomainAdapterContext>;
+  config: DomainToolConfig;
+  fromVersion: string;
+}): DomainUpgradePorts["rollback"] {
+  const { adapter, contextFor, config, fromVersion } = args;
+  return async () => {
+    if (adapter.restoreTo === undefined) {
+      return {
+        status: "FAILED",
+        message:
+          "registry chỉ nạp một bản adapter, và adapter này không mang định nghĩa bản cũ để hạ về",
+      };
+    }
+    const back = await adapter.restoreTo(
+      await contextFor(),
+      config,
+      fromVersion,
+    );
+    return {
+      status: back.status,
+      ...(back.message === undefined ? {} : { message: back.message }),
+    };
+  };
+}
+
 async function rollbackAfter(
   reason: string,
   request: UpgradeRequest,

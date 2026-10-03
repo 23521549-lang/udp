@@ -3,6 +3,7 @@ import {
   type ClusterAccess,
   type DomainAdapter,
   type DomainAdapterContext,
+  type DomainToolConfig,
   type ResourceQuota,
 } from "@udp/adapter-core";
 import type { Fence } from "@udp/adapter-core/runner";
@@ -426,6 +427,51 @@ export function perEnvironment(
       }
       return { status: "SUCCESS", data: bindings };
     },
+    /**
+     * [Plan #61 61d-3a] Hạ về cũng phải chạy trên MỌI environment, đúng như `upgrade`.
+     *
+     * `...adapter` ở trên đã sao chép `restoreTo` của adapter gốc, nhưng bản sao đó chỉ chạy trên MỘT environment
+     * (cái nằm trong `ctx`) — tức một lần hạ về chỉ nửa cụm. Giữ `undefined` khi adapter gốc không có, để
+     * `rollback` của job vẫn phân biệt được "adapter không hạ về được" với "hạ về thất bại".
+     */
+    ...(adapter.restoreTo === undefined
+      ? {}
+      : {
+          restoreTo: async (
+            ctx: DomainAdapterContext,
+            config: DomainToolConfig,
+            version: string,
+          ) => {
+            const bindings: CapabilityBinding[] = [];
+            for (const environment of environments) {
+              const res = await adapter.restoreTo?.(
+                { ...ctx, environment },
+                config,
+                version,
+              );
+              if (
+                res === undefined ||
+                res.status !== "SUCCESS" ||
+                res.data === undefined
+              ) {
+                return (
+                  res ?? {
+                    status: "FAILED" as const,
+                    message: "adapter không hiện thực restoreTo",
+                  }
+                );
+              }
+              bindings.push(
+                ...res.data.map((b) =>
+                  b.environmentId === undefined
+                    ? { ...b, environmentId: environment.id }
+                    : b,
+                ),
+              );
+            }
+            return { status: "SUCCESS" as const, data: bindings };
+          },
+        }),
     healthcheck: async (ctx) => {
       for (const environment of environments) {
         const res = await adapter.healthcheck({ ...ctx, environment });

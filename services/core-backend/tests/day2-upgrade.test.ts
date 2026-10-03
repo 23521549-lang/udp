@@ -16,6 +16,7 @@ import {
 import { upsertBinding } from "../src/modules/capability/capability-binding.repository.js";
 import {
   changedBindings,
+  restorePort,
   upgradeDomain,
   type DomainUpgradePorts,
   type UpgradeRequest,
@@ -588,5 +589,65 @@ describe("quy tắc 4 trên database thật", () => {
      * `detectDrift` so với một version của một tool khác - và nó báo trôi mãi mãi.
      */
     expect(row.adapterVersion).toBe("1.0.0");
+  });
+});
+
+/**
+ * [Plan #61 61d-3a] Cổng hạ về dựng từ chính adapter — quy tắc 3 của §8.6 lần đầu có hiệu lực thật.
+ *
+ * Trước đợt này job cắm cứng `rollback: () => FAILED` kèm chú thích thật thà "registry chỉ nạp một bản adapter,
+ * không có bản cũ để hạ về". Hệ quả: MỌI lần nâng cấp thất bại ra `ROLLBACK_FAILED` với cụm không được hạ về —
+ * trái đúng câu "không để trạng thái lửng lơ". Hai ô dưới đây chốt cả hai chiều của bản sửa.
+ */
+describe("restorePort - cổng hạ về dựng từ adapter (61d-3a)", () => {
+  const failing = (): AdapterResult<CapabilityBinding[]> => ({
+    status: "FAILED",
+    message: "chart mới không lên",
+  });
+
+  it("adapter CÓ restoreTo ⇒ hạ về thật, luồng ra ROLLED_BACK chứ không ROLLBACK_FAILED", async () => {
+    const restored: string[] = [];
+    const { adapter } = stubAdapter({ upgradeResult: failing() });
+    const withRestore: DomainAdapter = {
+      ...adapter,
+      restoreTo: (_ctx, _config, version) => {
+        restored.push(version);
+        return Promise.resolve({ status: "SUCCESS", data: [BINDING] });
+      },
+    };
+
+    const base = ports(withRestore);
+    const out = await upgradeDomain(request(withRestore), {
+      ...base.ports,
+      rollback: restorePort({
+        adapter: withRestore,
+        contextFor: base.ports.contextFor,
+        config: CONFIG,
+        fromVersion: "1.0.0",
+      }),
+    });
+
+    expect(out.status).toBe("ROLLED_BACK");
+    expect(restored).toEqual(["1.0.0"]);
+    // Và KHÔNG ghi version mới: sổ phải khớp thực tế trên cụm
+    expect(base.log.persisted).toEqual([]);
+  });
+
+  it("adapter KHÔNG có restoreTo ⇒ ROLLBACK_FAILED (kêu to, đúng như trước đợt này)", async () => {
+    const { adapter } = stubAdapter({ upgradeResult: failing() });
+    const base = ports(adapter);
+    const out = await upgradeDomain(request(adapter), {
+      ...base.ports,
+      rollback: restorePort({
+        adapter,
+        contextFor: base.ports.contextFor,
+        config: CONFIG,
+        fromVersion: "1.0.0",
+      }),
+    });
+
+    expect(out.status).toBe("ROLLBACK_FAILED");
+    expect(base.log.persisted).toEqual([]);
+    expect(base.log.errors.join(" ")).toContain("không mang định nghĩa bản cũ");
   });
 });

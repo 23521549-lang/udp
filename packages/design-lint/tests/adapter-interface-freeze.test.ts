@@ -51,7 +51,7 @@ function docInterface(name: string): { methods: string[]; props: string[] } {
   const props: string[] = [];
   for (const line of lines.slice(start + 1)) {
     if (line === "}") break;
-    const m = /^ {2}(\w+)\(/.exec(line);
+    const m = /^ {2}(\w+)\??\(/.exec(line);
     if (m?.[1] !== undefined) methods.push(m[1]);
     const p = /^ {2}readonly (\w+)/.exec(line);
     if (p?.[1] !== undefined) props.push(p[1]);
@@ -78,7 +78,7 @@ function codeInterface(
   const end = source.indexOf("\n}", start);
   const body = source.slice(start, end);
 
-  const methods = [...body.matchAll(/^ {2}(\w+)\(/gm)].map(
+  const methods = [...body.matchAll(/^ {2}(\w+)\??\(/gm)].map(
     (m) => m[1] as string,
   );
   const props = [...body.matchAll(/^ {2}readonly (\w+)/gm)].map(
@@ -114,10 +114,20 @@ describe("CloudAdapter — 10 + 1", () => {
   });
 });
 
-describe("DomainAdapter — 7 + 6", () => {
+/**
+ * [v4.12, Plan #61 61d-3a] 8 phương thức, không còn 7 — và con số đổi là một QUYẾT ĐỊNH được ghi.
+ *
+ * `restoreTo?` là thành viên TUỲ CHỌN đầu tiên của bề mặt này. Nó vào đây vì §8.6 đòi "nâng cấp thất bại thì hạ về
+ * bản cũ" mà registry chỉ nạp một bản adapter mỗi tool, nên chỉ chính adapter mới áp lại được định nghĩa cũ.
+ *
+ * Nhân đợt này đóng một LỖ của chính bộ đóng băng: hai bộ đọc trước đây dùng `/^ {2}(\w+)\(/`, nên một thành viên
+ * `foo?()` **không được đếm** — tức ai cũng thêm được phương thức tuỳ chọn mà cổng này không thấy. Giờ regex nhận
+ * `?` ở cả hai phía (tài liệu và mã). Đã kiểm: trước đợt này không interface nào dùng lỗ đó.
+ */
+describe("DomainAdapter — 8 + 6", () => {
   it("tài liệu khai đúng 7 phương thức và 6 thuộc tính", () => {
     const doc = docInterface("DomainAdapter");
-    expect(doc.methods).toHaveLength(7);
+    expect(doc.methods).toHaveLength(8);
     expect(doc.props).toHaveLength(6);
   });
 

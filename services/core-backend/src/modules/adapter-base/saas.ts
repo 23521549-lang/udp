@@ -38,6 +38,13 @@ export interface SaaSAdapterSpec {
   domainType: DomainAdapter["domainType"];
   toolId: string;
   version: string;
+  /**
+   * [Plan #61 61d-3a] Các version cũ mà bản này nâng lên được.
+   *
+   * Vắng (mặc định) ⇒ hành vi y như trước: `upgrade` chỉ nhận đúng version của chính nó. Khác họ Helm, ở đây chỉ
+   * cần SỐ version: nó là một lượt gọi API của nhà cung cấp theo `tool_config` hiện tại, nên không có toạ độ cũ nào phải mang theo.
+   */
+  upgradesFrom?: readonly string[];
   capabilities: CapabilityDeclaration;
   configSchema: ZodType;
   /**
@@ -264,9 +271,34 @@ export function createSaaSAdapter(spec: SaaSAdapterSpec): DomainAdapter {
 
     upgrade: (ctx, config, fromVersion) =>
       guarded(async () => {
-        if (fromVersion !== spec.version) {
+        /**
+         * [Plan #61 61d-3a] "Lạ" nghĩa là: không phải version của chính nó, VÀ không có trong `upgradesFrom`.
+         * Trước đợt này phép so chỉ có nửa đầu — mà đường nâng cấp của §8.6 chỉ chạy KHI hai version khác nhau,
+         * nên không adapter nào của họ này đổi được version. Cùng một guard chép ba lần ở ba lớp nền, nên sửa
+         * một chỗ là mở đúng một phần ba cửa.
+         */
+        if (
+          fromVersion !== spec.version &&
+          !(spec.upgradesFrom ?? []).includes(fromVersion)
+        ) {
           throw new SaaSAdapterError(
             `không biết đường nâng cấp ${spec.toolId} từ ${fromVersion}`,
+          );
+        }
+        return await configureProvider(ctx, config);
+      }),
+
+    /**
+     * [Plan #61 61d-3a] Áp lại định nghĩa của một version cũ — nửa còn thiếu của §8.6.
+     *
+     * Với họ này "định nghĩa" không mang version: nó là một lượt gọi API của nhà cung cấp theo `tool_config` hiện tại. Nên hạ về = áp lại chính nó, và điều đó ĐÚNG — khác họ
+     * Helm, nơi toạ độ chart là một phần của định nghĩa nên bản cũ phải được mang theo.
+     */
+    restoreTo: (ctx, config, version) =>
+      guarded(async () => {
+        if (!(spec.upgradesFrom ?? []).includes(version)) {
+          throw new SaaSAdapterError(
+            `${spec.toolId} không khai đường nâng cấp từ bản ${version}, nên không hạ về được`,
           );
         }
         return await configureProvider(ctx, config);
