@@ -875,6 +875,14 @@ owned` còn có tài nguyên mang `shared`.
 - **Ảnh hưởng tới kết luận:** AC-3 và AC-4 của Plan #36 ở hạ tầng thật, và **E10** (DORA tính từ
   dữ liệu vận hành của chính UDP): đến khi mục này đo xong, lead time và tần suất deploy chỉ được
   chứng minh trên sự kiện do test ghi.
+- **[03/10/2026, Plan #61] Mở rộng — ba thứ của Plan #61 cũng chờ đúng lượt chạy này.** (a) **Bước ký thật trong
+  pipeline của sáu CI**: lệnh ký qua `bash -n` và bộ hợp đồng, job `signing-e2e` ký bằng khoá tệp, nhưng chưa lượt
+  nào gọi KMS của ba cloud bằng thông tin đăng nhập liên kết từ JWT của CI (nợ riêng: `signing-kms-real`). (b)
+  **Trusted Deploy với token do nhà cung cấp THẬT phát** — `trusted-deploy-real` cho ba CI SaaS và
+  `trusted-deploy-cluster` cho ba CI trong cụm, hai nợ riêng, nhưng cùng một lượt chạy hạ tầng với mục này. (c) Và
+  một thứ **chỉ** mục này chứng minh được: `--retry` của bước báo (thêm ở 61d-2b-1) thật sự làm một **503**
+  `TOKEN_KEYS_UNAVAILABLE` tự lành thay vì làm job của khách đỏ. Ba nhánh 503 retryable của §8.3 hiện chỉ được kiểm
+  bằng mã trả về, không bằng hành vi của `curl` trên runner thật.
 
 ## iac-security-real — IaC và máy quét trên cloud và CI thật
 
