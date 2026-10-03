@@ -1389,7 +1389,7 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   `exports` đúng `.` và `./metrics`), `npm publish --dry-run` trên chính tarball đó nhận (`total files: 11`),
   artifact PyPI qua `twine check --strict` và bốn phép kiểm giấy phép, `THIRD_PARTY_NOTICES` khớp `metafile` của
   bundle, và cấu trúc hai workflow được `deploy/tests/ci-workflow.test.ts` canh. Chưa đo: **một lượt publish thật**.
-  Năm thứ chỉ tài khoản chủ repo chứng minh được: (a) scope `@udp` trên npm còn trống và lấy được; (b) provenance
+  Năm thứ chỉ tài khoản chủ repo chứng minh được: (a) tên `udp-openfeature` trên npm còn trống và lấy được — **bản trước của dòng này nói "scope `@udp`", và phép đo ngày 04/10 đã **bác** nó: npm trả `The organization name 'udp' is not available` vì đã có package `udp@1.0.0`, và org với package dùng chung một không gian tên. Bài học: **cả bốn phép kiểm hôm 03/10 đều mù** đúng thứ đã chặn — chúng hỏi "scope này có gói nào chưa", không hỏi "có package KHÔNG SCOPE nào tên `udp` chưa";** (b) provenance
   của npm **được registry nhận** — phép khớp `repository.url` với repo đã build là ở registry và **case-sensitive**,
   client không kiểm được; (c) attestation PEP 740 của PyPI sinh ra thật; (d) `pip install udp-openfeature` và
   `npm install` trên cây Golden Path sinh ra **chạy được** từ registry; (e) chốt duyệt tay của hai environment hoạt
@@ -1398,39 +1398,51 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   registry phải nhớ:** npm **không** cho đăng ký trusted publisher cho một gói **chưa tồn tại**, nên lượt đầu phải
   là một `npm publish` **bằng tay**; PyPI thì có "pending publisher" nên không cần bước tay nào — nhưng pending
   publisher **không giữ chỗ tên**, nó bị vô hiệu nếu người khác lấy tên trước, nên khai rồi phải phát hành ngay.
-  Bốn phép kiểm ngày 03/10/2026 nói cả hai tên còn trống (`npm view @udp/openfeature-provider` → 404,
+  Bốn phép kiểm ngày 03/10/2026 nói cả hai tên còn trống (`npm view udp-openfeature` → 404,
   `search?text=scope:udp` → `total: 0`, `pypi.org/pypi/udp-openfeature/json` → 404, và cả bốn dạng chuẩn hoá
   PEP 503 → 404), nhưng không phép nào kết luận chắc được vì endpoint tổ chức của npm đòi đăng nhập.
-- **Runbook:** sáu bước, mỗi bước một cách kiểm.
+- **Runbook:** năm bước, mỗi bước một cách kiểm. **Không bước nào tạo tổ chức npm** — tên phát hành
+  `udp-openfeature` không có scope, và scope `@udp` thì **không lấy được** (xem Tiền đề).
   1. `pnpm --filter @udp/design-lint sdk-version` → in `0.1.0`. Mọi bước sau dùng đúng số này.
-  2. Tạo tổ chức `udp` trên npm (gói công khai: miễn phí). Kiểm: `npm org ls udp` chạy được.
-  3. Lượt bootstrap bằng tay để **chiếm tên**, và nó phải mang version `0.0.1`, KHÔNG phải `0.1.0`:
+  2. Lượt bootstrap bằng tay để **chiếm tên**, mang version `0.0.1`, và dựng **NGOÀI kho**:
 
      ```bash
-     pnpm -C packages/openfeature-provider exec tsx scripts/pack.ts --out /tmp/pack
-     cd /tmp/pack && tar -xzf *.tgz && cd package
-     npm version 0.0.1 --no-git-tag-version
-     npm publish --access public --tag bootstrap
-     npm deprecate "@udp/openfeature-provider@0.0.1" "chỉ để chiếm tên; dùng 0.1.0 trở lên"
+     mkdir -p /tmp/udp-openfeature-bootstrap/package && cd /tmp/udp-openfeature-bootstrap
+     cat > package/package.json <<'JSON'
+     { "name": "udp-openfeature", "version": "0.0.1", "license": "Apache-2.0",
+       "description": "Placeholder - ten danh cho SDK Node cua UDP. Ban that: 0.1.0+",
+       "repository": { "type": "git", "url": "git+https://github.com/23521549-lang/udp.git",
+                       "directory": "packages/openfeature-provider" } }
+     JSON
+     cp /d/code/udp/packages/openfeature-provider/LICENSE package/LICENSE
+     printf '# udp-openfeature\n\nPlaceholder; xem 0.1.0 tro len.\n' > package/README.md
+     npm publish ./package --tag bootstrap --access public --dry-run   # đọc kỹ dòng `name:` rồi mới bỏ --dry-run
+     npm publish ./package --tag bootstrap --access public
+     npm deprecate udp-openfeature@0.0.1 "Placeholder giu ten; dung udp-openfeature@^0.1.0"
      ```
 
-     **Vì sao không bootstrap bằng `0.1.0`:** lượt bằng tay không chạy trong Actions nên nó **không có
-     provenance**; mà bước chắn `npm view` của job `npm` sẽ **bỏ qua** một version đã có. Ghép hai thứ đó lại thì
-     tag `sdk-v0.1.0` không đăng gì lên npm cả, và `0.1.0` — đúng version mà Golden Path phân giải tới — vĩnh viễn
-     không có provenance. Bootstrap bằng `0.0.1` thì tên được chiếm, `latest` không bị kéo về nó (`--tag
-bootstrap`), và `0.1.0` lên bằng OIDC **có** provenance. Kiểm: `npm view @udp/openfeature-provider versions`
-     → `[ '0.0.1' ]`, và `npm view @udp/openfeature-provider version` → báo không có `latest` hoặc `0.0.1` đã
-     deprecated.
+     **Vì sao NGOÀI kho, và vì sao không `npm publish` thư mục gói:** npm **không** áp `publishConfig.name` (đo:
+     `npm notice name: udp-openfeature`), nên publish từ `packages/openfeature-provider` sẽ đẩy vào một
+     scope không ai sở hữu được. Và `npm version` trong kho ghi vào `package.json` thật, tạo commit + tag, rồi làm
+     lệch cổng `sdk-version.ts`. Bootstrap chỉ cần **tên tồn tại** để đăng ký được trusted publisher.
+     **Vì sao `0.0.1` chứ không `0.1.0`:** lượt bằng tay không chạy trong Actions nên **không có provenance**, mà
+     bước chắn `npm view` của job `npm` sẽ **bỏ qua** một version đã có — ghép lại thì tag `sdk-v0.1.0` không đăng
+     gì lên npm, và `0.1.0` (đúng version Golden Path phân giải tới) vĩnh viễn không có provenance.
+     **`--tag bootstrap`** để `latest` **không** được đặt: `npm install udp-openfeature` sẽ ETARGET tới khi `0.1.0`
+     lên — mong muốn, nhưng phải biết trước. **`--access public`** ở đây là cần cho lượt provenance **sau đó**:
+     `/-/package/udp-openfeature/visibility` trả `{"public":false}` cho một tên mới, và `--provenance` khi đó ném
+     EUSAGE nếu thiếu cờ.
+     Kiểm: `npm view udp-openfeature versions` → `[ '0.0.1' ]`.
 
-  4. Trên trang gói npm → Settings → Trusted publishers: `Organization or user` = `23521549-lang`,
-     `Repository` = `udp`, **`Workflow filename` = `publish.yml`** (đúng tên tệp, kèm `.yml`),
+  3. Trên trang gói npm (`npmjs.com/package/udp-openfeature`) → Settings → Trusted publishers:
+     `Organization or user` = `23521549-lang`, `Repository` = `udp`, **`Workflow filename` = `publish.yml`**,
      `Environment name` = `release-npm`, và **Allowed actions: tích thêm `npm publish`** — cấu hình tạo từ
      03/09/2026 mặc định **chỉ** cho `npm stage publish`, nên bỏ bước này thì lượt phát hành đầu đỏ ở registry sau
      khi đã qua chốt duyệt tay. Kiểm: trang gói hiện đúng bốn giá trị đó.
-  5. Trên PyPI → Account → Publishing → "Add a new pending publisher": `PyPI Project Name` = `udp-openfeature`,
+  4. Trên PyPI → Account → Publishing → "Add a new pending publisher": `PyPI Project Name` = `udp-openfeature`,
      owner/repo như trên, **`Workflow name` = `publish.yml`**, `Environment` = `release-pypi`. Kiểm: trang
      Publishing liệt kê một pending publisher.
-  6. Settings → Environments: tạo `release-npm` và `release-pypi`, **bật "Required reviewers"** cho cả hai —
+  5. Settings → Environments: tạo `release-npm` và `release-pypi`, **bật "Required reviewers"** cho cả hai —
      `environment:` trong YAML **tự nó không là chốt duyệt nào**, nó chỉ chặn khi luật này được bật. Kiểm:
      `gh api repos/23521549-lang/udp/environments/release-npm --jq '.protection_rules'` phải thấy
      `required_reviewers` (và tương tự cho `release-pypi`).
@@ -1438,7 +1450,7 @@ bootstrap`), và `0.1.0` lên bằng OIDC **có** provenance. Kiểm: `npm view 
   Rồi `git tag sdk-v0.1.0 && git push origin sdk-v0.1.0`. Workflow `publish.yml` chạy: `gate` → `build-npm`,
   `build-pypi` → `npm` → `pypi`, với hai lượt duyệt tay.
 
-- **Đạt:** `npm view @udp/openfeature-provider version` → `0.1.0` và trang gói hiện nhãn provenance;
+- **Đạt:** `npm view udp-openfeature version` → `0.1.0` và trang gói hiện nhãn provenance;
   `npm audit signatures` trong một project cài gói đó → xác minh được; `pip download udp-openfeature==0.1.0` trong
   một venv TRẮNG → tải được, và `pip install` chạy; `GET /projects/:id/golden-path` sinh cây Node rồi `npm install`
   trong cây đó → **không 404** (đây là nửa đầu của AC-6, thứ đợt này không đạt được); cây Python rồi

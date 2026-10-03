@@ -284,7 +284,9 @@ Bất đối xứng này là của hai registry, không phải chỗ hở của 
 `sdk-publish-real` (AC-8), vì nó đòi tài khoản của chủ repo. **Rủi ro tên áp cho CẢ HAI registry** — bốn phép kiểm
 (`npm view`, `registry.npmjs.org/@udp%2f…`, `/-/org/udp`, `search?text=scope:udp` trả `total: 0`) nói `@udp` chưa có
 gói nào, và cả bốn dạng chuẩn hoá PEP 503 của `udp-openfeature` trả 404; nhưng không phép nào kết luận chắc được vì
-endpoint tổ chức đòi đăng nhập. Nếu scope đã có chủ: đổi sang scope của chính tài khoản
+endpoint tổ chức đòi đăng nhập. **[04/10/2026] Rủi ro này ĐÃ XẢY RA, và cách giải khác với dự phòng viết ở trên.** npm trả `The organization name 'udp' is not available`: đã có package `udp@1.0.0`, và org với package dùng chung một không gian tên — scope `@udp` **không bao giờ** lấy được. Không đổi scope nội bộ (42 tệp, và `@udp/` là quy ước tám ô ranh giới dựa vào): giữ tên trong kho, khai tên công khai `udp-openfeature` ở `publishConfig.name`, và **ÁP nó ở bước dẫn xuất của `scripts/pack.ts`** — pnpm 9.12.0 (bản repo ghim) **không** nâng khoá đó, một phép đo ban đầu kết luận ngược vì nó chạy ngoài repo nơi `pnpm` là bản toàn cục 11.22.0. Chi tiết ở đợt 62d của `plan62-plan.md`.
+
+Nếu scope đã có chủ: đổi sang scope của chính tài khoản
 (`@<github-user>/openfeature-provider`) — một lượt đổi tên ở manifest, các chỗ import trong monorepo,
 `PROVIDER_RELEASE`, template Golden Path và §6.8.
 
