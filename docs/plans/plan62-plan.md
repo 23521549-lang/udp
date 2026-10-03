@@ -536,6 +536,69 @@ không nằm trong tập đã phát hành (`""`, `"/metrics"`), kèm tên tệp;
 `uses < 2` ⇒ hai cổng cùng đỏ); dùng subpath `/testing` trong template (render **ném**); chép cứng tên cũ lại vào
 `publish.yml`; và thêm một chuỗi `@udp/` vào `src/index.ts` (hợp đồng tarball đỏ).
 
+### 62d — đã làm, và bằng chứng (R9)
+
+```
+$ pnpm -C packages/openfeature-provider exec tsx scripts/pack.ts --out <dir>
+…\packout5\udp-openfeature-0.1.0.tgz
+  name = udp-openfeature | publishConfig = None | main = ./dist/index.js | exports = ['.', './metrics']
+
+$ npm publish udp-openfeature-0.1.0.tgz --dry-run --access public
+npm notice name: udp-openfeature      version: 0.1.0      total files: 11
++ udp-openfeature@0.1.0
+```
+
+Cổng: design-lint **200** ô (trước 198), golden-path **25**, deploy **77** (trước 76),
+openfeature-provider **89**, Portal **365**, `sdks/python` ruff + `ruff format` + mypy + 906 ô, prettier sạch.
+
+**Hợp đồng artifact bắt đúng bốn bề mặt ngay lượt chạy đầu** — không phải suy đoán mà là output thật:
+
+```
+Error: artifact phát hành không đạt hợp đồng:
+  - dist/index.js còn nhắc @udp/            ← banner của esbuild
+  - dist/metrics.js còn nhắc @udp/          ← cùng banner
+  - README.md còn nhắc @udp/                ← trang gói npm
+  - dist/types/index.d.ts còn nhắc @udp/    ← JSDoc, thứ IDE của khách hiện khi hover
+  - dist/types/metrics.d.ts còn nhắc @udp/
+```
+
+Và cổng `scan.ts` bắt đúng hệ quả mà Agent C gọi tên: ngay khi cây sinh ra đổi sang tên công khai, ô
+"cây Golden Path của chính UDP: mọi điều kiện ok" đỏ với `expected [ 'udp-provider' ] to deeply equal []` — tức
+bộ quét báo "chưa dùng SDK". Không sửa thì mọi khách cài từ npm bị chặn rollout mức flag.
+
+**Kiểm thoái cấp (R11) — tám lượt làm lệch, tất cả ĐỎ:**
+
+```
+xoá publishConfig.name              -> ĐỎ  expected undefined to be defined
+đặt tên CÓ scope                    -> ĐỎ  expected '@udp/openfeature' to match /^[a-z][a-z0-9-]*$/
+PROVIDER_PUBLIC_NAME lệch           -> ĐỎ  expected 'udp-openfeatures' to be 'udp-openfeature'
+tên pyproject lệch                  -> ĐỎ  expected 'udp-of' to be 'udp-openfeature'
+để lại @udp/ trong apps/portal/src  -> ĐỎ  expected [ Array(1) ] to deeply equal []
+dùng literal thay vì hằng ở render  -> ĐỎ  PROVIDER_PUBLIC_NAME được khai mà KHÔNG được dùng (xuất hiện 1 lần)
+bỏ hẳn phép thay trong render()     -> ĐỎ  expected undefined to be '^0.1.0'
+template dùng subpath /testing      -> ĐỎ  template dùng subpath "/testing" … sẽ ERR_PACKAGE_PATH_NOT_EXPORTED
+thêm @udp/ vào src/index.ts         -> ĐỎ  dist/types/index.d.ts còn nhắc @udp/
+chép cứng tên cũ vào publish.yml    -> ĐỎ  (ci-workflow.test.ts)
+```
+
+**Vòng R11 bắt được một ô của chính đợt này đang XANH SAI.** Lượt "dùng literal thay vì hằng" lần đầu cho XANH:
+phép đếm `uses >= 2` của bộ đọc hằng bị **chú thích làm phồng** (JSDoc có nhắc tên hằng ⇒ đếm 3, bỏ một chỗ dùng
+vẫn còn 2). Đã sửa: bỏ khối chú thích TRƯỚC khi đếm. Đây đúng là thứ R11 tồn tại để tìm — một cổng mới, xanh, mà
+không canh được điều nó nói.
+
+**Chệch plan (R5):**
+
+- **62d-11 thêm một ô ở `ci-workflow.test.ts`** mà bản plan chỉ nhắc thoáng: bước publish npm không được chứa chuỗi
+  `@udp/`, và chắn `npm view` phải đọc `publishConfig.name`. Không có ô này thì việc chép cứng tên cũ trở lại không
+  ai bắt — mà đó là một lỗi chỉ lộ ra ở lượt chạy lại một tag thật.
+- **Hai wire fixture được sửa bằng tay** thay vì ghi lại bằng `UDP_CAPTURE_WIRE=1`: thứ đổi là đúng một chuỗi
+  specifier bên trong nội dung tệp đề xuất, và ghi lại cả bộ sẽ viết đè nhiều trường biến động không liên quan.
+  Đã kiểm lại bằng `wire-golden.test.ts`: **124 ô** vẫn xanh.
+- **README của gói đổi `pnpm --filter` sang `pnpm -C packages/openfeature-provider`** ở mục Development. Lý do: hợp
+  đồng artifact cấm **mọi** chuỗi `@udp/` trong byte khách nhận, và `pnpm --filter @udp/…` là một ngoại lệ đúng
+  nhưng nó buộc cổng phải mang một danh sách miễn trừ. Dạng `-C` chạy y hệt, nên luật giữ được là **tuyệt đối** —
+  một cổng không có ngoại lệ là một cổng không ai phải nhớ ngoại lệ.
+
 ## Ba vòng QA đã sửa gì (R2)
 
 Ba agent chạy song song trên bản nháp của spec và plan; mỗi cáo buộc quyết định đã được tự kiểm lại trên mã và trên
