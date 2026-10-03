@@ -1402,6 +1402,112 @@ revert phải là một lượt revert **trọn** commit, không revert từng t
 | Tín hiệu của ghim image không bị chart che                | báo cáo có mục riêng cho chart; ô test: 64 dòng chart không đẩy mục image ra khỏi tóm tắt                                                   |
 | `pnpm toolchain:check` giữ nguyên hành vi                 | bộ test hiện có của `@udp/config` vẫn xanh                                                                                                  |
 
+### 61d-3c-1 — đã làm, và những chỗ CHỆCH plan (R5)
+
+Plan 61d-3c (bản sau ba vòng QA) chia việc thành bảy mục. Đợt này làm **sáu**, và mục thứ bảy chuyển sang 61d-3c-2
+kèm lý do. Ba chỗ chệch, trong đó một chỗ là một phát hiện mà cả ba vòng QA không thấy.
+
+1. **Cổng tìm thêm một ghim chết thứ TÁM mà ba vòng QA không thấy: `snyk-monitor 2.13.1`.** Repo chỉ có dòng
+   `2.23.x`. Đây là lý lẽ mạnh nhất cho cả đợt: ba vòng QA đọc mã rất kỹ và vẫn bỏ sót, còn cổng tìm ra trong lượt
+   chạy đầu tiên. Nó sửa được sạch vì ba khoá adapter đặt (`clusterName`, `integrationApi`, `monitorSecrets`) đều
+   còn trong `values.yaml` của `2.23.26` — nên **năm** ghim được sửa trong đợt này, không phải bốn như plan viết.
+
+2. **Phạm vi bảng: `HelmChartRef` chuyển hẳn sang `@udp/config`, không chỉ `HELM_CHART_PINS`.** Plan nói "chuyển
+   ghim"; làm xong thấy để lại định nghĩa kiểu ở `adapter-base/helm.ts` là giữ **hai** khai báo cho cùng một hình
+   dạng. `helm.ts` giờ `export type { HelmChartRef }` lấy từ `@udp/config/helm-charts`, nên mọi chỗ gọi cũ không
+   phải đổi import và vẫn chỉ có một định nghĩa. `RAW_CHART` của `adapter-base/database.ts` cũng biến mất: nó là
+   ghim thứ 71 và nay nằm trong bảng, nên 7 chỗ dùng đổi sang `helmChart("raw")`.
+
+   Số đo thật của lượt refactor: **72 khối chart literal + 7 tham chiếu `RAW_CHART` trên 58 tệp**, giữ nguyên 2 khối
+   trong `upgradesFrom`. Và con số "170 ghim chart" của bản nháp đầu sai gấp hơn hai lần — thật là **71 chart** (70
+   từ khối literal + `raw`) và **73 mục cần canh** (71 + 2 ghim đóng băng).
+
+3. **Một cổng nữa mà plan không có: đường cơ sở `KNOWN_BROKEN_CHARTS`.** Sau khi sửa năm ghim, cổng vẫn đỏ vì
+   **ba** mục còn lại, và cả ba cần đổi `values` của adapter hay đổi nguồn chart — không sửa được bằng một phép đổi
+   version:
+   - `spinnaker`: chart 2.2.7 **không có khoá `kayenta` nào** (values.yaml chỉ có `halyard`, `dockerRegistries`,
+     `kubeConfig`, `ingress`, `redis`, `minio`, `gcs`, `s3`, `azs`, `rbac`…), và template cũng **không** tham chiếu
+     `.Values.kayenta` ở đâu cả. Adapter đặt `kayenta.metricsStore` ⇒ Kayenta sẽ không được cấu hình dù chart cài
+     xong.
+   - `tekton-pipeline`: chart 1.15.3 **không có** `controller.replicas` (không có khoá `replicas` nào), và
+     annotation của nó là `controller.pod.annotations`, không phải `controller.podAnnotations`. Sửa đúng phải đổi
+     `tektonConfigSchema` — tức đổi một knob cấu hình **đã lưu** của project.
+   - `secrets-store-csi-driver-provider-gcp`: chart **chưa bao giờ** được phát hành lên một repo Helm nào. Tài liệu
+     của Google cài từ thư mục `charts/` trong git (`helm upgrade --install … charts/…`).
+
+   Vì sao không sửa version cho đủ xanh: **Helm bỏ qua khoá nó không biết trong im lặng.** Sửa `spinnaker` lên
+   2.2.7 mà giữ `values` sai biến một lỗi ỒN (chart không tải được, job đỏ, domain không deploy) thành một lỗi IM
+   LẶNG (chart cài xong, Kayenta không được cấu hình, Portal báo ACTIVE). Đó là thoái cấp, nên ba cái đó là **nợ có
+   tên** với một dòng §16 mỗi cái.
+
+   Đường cơ sở có **hai** chiều, và chiều thứ hai là thứ giữ nó không mục: một mục trong danh sách mà đã **hết**
+   hỏng cũng làm job đỏ, kèm câu "xoá nó khỏi `KNOWN_BROKEN_CHARTS`". Nên danh sách không thể âm thầm giữ một lời
+   miễn trừ đã hết lý do.
+
+4. **`chartVersionsOf` đọc `index.yaml` bằng regex, và nó được đối chiếu với một phép parse YAML THẬT.** Plan không
+   nói cách đọc. Chọn regex vì `@udp/config` là package cả ba service nạp (thêm một dependency YAML vào đó cho một
+   phép kiểm hằng tuần là sai chỗ) và vì index lớn nhất là 6,17 MB. Nhưng regex có hai cái bẫy, và cả hai **đã cắn**
+   trong lúc viết:
+   - mục đầu của mỗi bản trong index của Kyverno là `  - annotations:`, khớp `^ {2}\S[^\n]*:$` ⇒ không có `(?!-)`
+     thì khối bị cắt ngay dòng đầu và hàm trả **rỗng**, tức mọi ghim thành `shape` oan;
+   - version của **dependency** nằm ở cấp 6 (`      version: 10.5.3` trong index của opsmx/spinnaker) ⇒ một
+     `^\s+version:` lỏng trộn nó vào danh sách, và cổng coi một ghim **không tồn tại** là tồn tại.
+
+   Phép đối chiếu (03/10/2026, `js-yaml` trên chính 5 tệp index đã tải): `kyverno` 268/268, `kyverno-policies`
+   204/204, `spinnaker` 5/5, `sealed-secrets` 88/88, `tekton-pipeline` 55/55, `zipkin` 2/2 — khớp **từng phần tử,
+   đúng thứ tự**. Hai cái bẫy trên có ô test riêng.
+
+5. **Một phép đo mới mà plan không có, và nó tìm ra tầng lỗi thứ hai: `measure:chart-values`.** Trong lúc dò bảy
+   ghim chết tôi đối chiếu `values.yaml` thật của hai adapter và **cả hai đều lệch khoá**. Câu hỏi "còn bao nhiêu
+   adapter như vậy" phải trả lời bằng một phép đếm, nên có phép đo này: gọi `deploy` đúng như bộ hợp đồng gọi, đọc
+   lại ConfigMap `<release>-values` từ cụm giả, rồi so khoá cấp 1 với `values.yaml` **và template** của chart thật.
+
+   Kết quả (03/10/2026): **24/84 cặp release-chart kiểm được, 0 lệch**; 60 bỏ qua — 42 vì `configSchema` không parse
+   được `{}` (phép đo không bịa cấu hình hợp lệ), 11 vì không đọc được chart (ghim hỏng), 7 vì `deploy` không
+   SUCCESS. Độ phủ 29% và phải đọc đúng như vậy: nó nói "trong 24 cặp kiểm được thì không cặp nào lệch", **không**
+   nói "mọi adapter đều đúng khoá".
+
+   Một bản sửa giữa đường, vì bản đầu cho **dương tính giả**: luật "khoá phải có trong `values.yaml` đã parse" tố
+   oan `kubecost`, vì chart `cost-analyzer` 2.4.3 ghi `kubecostProductConfigs` dưới dạng **chú thích** (dòng 3325)
+   mà template thì đọc nó. Luật đúng là "template có tham chiếu `.Values.<khoá>` không" — và nó vẫn bắt đúng ca
+   thật: template của spinnaker 2.2.7 không tham chiếu `.Values.kayenta` ở đâu cả.
+
+6. **Và một lỗi lint đã có TRƯỚC đợt này, phát hiện khi chạy `eslint` trên cây đã refactor:**
+   `cicd-webhook.service.ts:544` dùng `!` (`@typescript-eslint/no-non-null-assertion`), mà `pnpm lint` là một bước
+   của CI (`ci.yml:54`) và luật đó chỉ tắt trong `tests/`. Đã sửa bằng cách tách `clusterKeyPortOf` — nhận tham số
+   **đã hẹp kiểu** thì không cần lời hứa nào. (`eslint .` trên toàn repo hết heap trên máy 7,7 GB, nên phải lint
+   theo thư mục; đó là lý do lỗi này sống sót qua 61d-2b-1.)
+
+**Mục chuyển sang 61d-3c-2, kèm lý do:** cổng cưỡng chế F3 (đổi ghim chart ⇒ bump `adapter_version` **và** thêm
+`upgradesFrom`). Nó cần một lớp đọc **nội dung** theo khoảng commit, mà máy móc hiện có (`i28-gate.ts`) đọc **danh
+sách tệp** chứ không đọc nội dung — nên đây là một module mới, không phải một ô test. Rủi ro nó chặn là tiềm ẩn
+(cần có người bump một ghim) chứ không đang xảy ra, và đợt này đã xanh trọn. Một dòng §16 giữ nó không bị quên.
+
+**Cổng đã qua:** `pnpm typecheck` (config, adapter-core, core-backend, design-lint, shared-types) 0 lỗi;
+`prettier --check` sạch; `eslint` sạch trên mọi thư mục đã đổi; bộ unit của core-backend **126 tệp / 4103 ô** xanh
+(gồm **3108 ô hợp đồng** của 72 adapter — bằng chứng mạnh nhất rằng lượt refactor 79 chỗ không đổi hành vi);
+`@udp/config` **65 ô** (thêm 19 ô mới); design-lint **179 ô** (thêm 7 ô mới); `chart:check` thật trên 52 repo
+upstream ⇒ **exit 0**, 73 mục: 29 `chart có bản vá`, 24 `có dòng mới`, 13 `ổn`, 4 `không canh được`, 3
+`hỏng (đã biết)`. **Không migration.**
+
+**Test-the-test:** đưa lại một khối `chart: { … }` literal vào adapter jaeger ⇒ **2 ô đỏ** (cổng "nguồn duy nhất"
+và cổng "ghim mồ côi"), khôi phục ⇒ xanh lại. Hai cổng này không xanh rỗng.
+
+**Đường lùi (R10):** `git revert` **trọn** commit — `HELM_CHART_PINS` có 79 chỗ đọc nên revert từng tệp sẽ để lại
+chỗ gọi mồ côi. Không migration, không cột nào đổi, không đối tượng nào ghi vào cụm. Hai thứ revert không hoàn lại:
+năm ghim đã sửa (nhưng **không nên** hoàn — bản cũ không tải về được), và `pnpm-lock.yaml` nếu đã cài lại.
+
+**Kiểm thoái cấp (R11) — trả bằng ô test:** (a) không tệp adapter nào còn khối `chart: { … }` ngoài `upgradesFrom`
+(cổng grep); (b) mọi `helmChart("…")` trỏ tới một khoá CÓ trong bảng, và không ghim nào trong bảng mồ côi; (c) bảng
+phủ cả adapter bị **bọc** (`createCicdAdapter` của Jenkins/Tekton/Drone — đúng chỗ mà lối `WeakMap` của bản nháp
+mất 5 ghim một cách fail-open); (d) một chart = một version, và version không có hậu tố (`assertChartPins`, hai
+chiều); (e) ghim không tồn tại ⇒ `broken`, lệch tiền tố ⇒ `shape`, repo 404 ⇒ `repo-gone`, cả ba **ĐỎ**; (f) bản vá
+chart ⇒ `chart-update`, **KHÔNG đỏ** — và có ô test khẳng định `isActionable` là `false`, vì đây là chỗ dễ "tiện
+tay" sửa thành đỏ nhất; (g) ghim đóng băng chỉ kiểm tồn tại, không bao giờ ra `chart-update`, và mất khỏi index ⇒
+ĐỎ (đó là đường hạ về của §8.6); (h) `oci://`/`gs://`/`manifest-bundle` ⇒ `unwatched` kèm lý do, không `broken`
+giả; (i) `FROZEN_PINS` viết tay của script phải KHỚP `upgradesFrom` trong mã (cổng design-lint — danh sách tay là
+danh sách mục được); (j) bề mặt adapter không rộng ra: cổng đóng băng vẫn đếm 8 + 6.
+
 ### Thứ tự, và vì sao chia ba
 
 61d-3a đứng một mình được và trả luôn một món nợ của chính dự án (đường §8.6 chưa adapter nào đi qua). 61d-3b phải đi

@@ -10,7 +10,8 @@
     "test": "vitest run",
     "measure:flag-list": "tsx scripts/measure-flag-list.ts",
     "e8": "tsx scripts/e8-mutation.ts",
-    "measure:kyverno-crd": "tsx scripts/kyverno-crd.ts"
+    "measure:kyverno-crd": "tsx scripts/kyverno-crd.ts",
+    "measure:chart-values": "tsx scripts/chart-values-audit.ts"
   },
   "dependencies": {
     "@sigstore/bundle": "5.0.0",
