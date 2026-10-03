@@ -177,7 +177,7 @@ export function MetricsSetupGuide({
   const python = runtime.toLowerCase().startsWith("python");
   const code = python
     ? "from udp_openfeature.metrics import UDPMetricsMiddleware\n\napp.add_middleware(UDPMetricsMiddleware)"
-    : 'import { udpMetricsMiddleware } from "@udp/openfeature-provider/metrics";\n\napp.use(udpMetricsMiddleware());';
+    : 'import { udpMetricsMiddleware } from "udp-openfeature/metrics";\n\napp.use(udpMetricsMiddleware());';
   return (
     <div className="alert amber" role="alert">
       <Icon of={CircleAlert} />

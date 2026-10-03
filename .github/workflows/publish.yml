@@ -156,11 +156,18 @@ jobs:
       # trước đã lên thì bỏ qua thay vì đỏ.
       - name: phát hành (bỏ qua nếu version đã có)
         run: |
-          version=$(node -p "require('./packages/openfeature-provider/package.json').version")
-          if npm view "@udp/openfeature-provider@$version" version >/dev/null 2>&1; then
-            echo "@udp/openfeature-provider@$version da co tren registry - bo qua"
+          manifest=./packages/openfeature-provider/package.json
+          version=$(node -p "require('$manifest').version")
+          # Tên PHÁT HÀNH đọc từ manifest, không chép cứng: chép cứng tên trong kho thì `npm view` luôn 404,
+          # chắn này thành vô tác dụng, và lượt chạy lại cùng tag nhận EPUBLISHCONFLICT sau khi đã duyệt tay.
+          name=$(node -p "require('$manifest').publishConfig.name")
+          [ -n "$name" ] && [ "$name" != "undefined" ] || { echo "publishConfig.name trong" >&2; exit 1; }
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version da co tren registry - bo qua"
             exit 0
           fi
+          # `--access public` là LOAD-BEARING, không phải thừa: `/-/package/<tên>/visibility` trả
+          # `{"public":false}` cho một tên CHƯA tồn tại, và `--provenance` khi đó ném EUSAGE nếu thiếu cờ.
           npm publish "$RUNNER_TEMP/pack"/*.tgz --access public --provenance
 
   pypi:

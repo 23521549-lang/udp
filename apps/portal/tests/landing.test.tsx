@@ -123,7 +123,7 @@ describe("trang giới thiệu", () => {
     });
     expect(
       screen.getByRole("region", { name: "Lệnh cài cho Node.js" }),
-    ).toHaveTextContent("@udp/openfeature-provider");
+    ).toHaveTextContent("npm install @openfeature/server-sdk udp-openfeature");
     await user.click(within(tabs).getByRole("tab", { name: "Python" }));
     expect(
       screen.getByRole("region", { name: "Lệnh cài cho Python" }),

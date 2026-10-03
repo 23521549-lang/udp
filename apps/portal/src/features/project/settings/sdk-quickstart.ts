@@ -2,8 +2,8 @@ import type { SdkKeyWire } from "@udp/shared-types/wire";
 
 /**
  * [Plan #58 UX-13] Mã của ba bước cài SDK (cài gói, khởi tạo với key và địa chỉ, hỏi một flag) — THUẦN, test được.
- * Tên gói và API là của thật: `@udp/openfeature-provider` (packages/openfeature-provider), `udp-openfeature`
- * (sdks/python), và provider OFREP chuẩn của OpenFeature cho key client (ADR-03, §6.1: UDP không viết SDK trình
+ * Tên gói và API là của thật: `udp-openfeature` trên npm (nguồn ở `packages/openfeature-provider`) và trên
+ * PyPI (nguồn ở `sdks/python`) — MỘT tên cho hai registry, và provider OFREP chuẩn của OpenFeature cho key client (ADR-03, §6.1: UDP không viết SDK trình
  * duyệt riêng). Key đọc từ biến môi trường `UDP_SDK_KEY`, cùng tên với Golden Path: bí mật không nằm trong mã.
  */
 export type SdkLang = "node" | "python" | "browser";
@@ -30,10 +30,10 @@ export function quickstartCode(
   switch (lang) {
     case "node":
       return [
-        "npm install @openfeature/server-sdk @udp/openfeature-provider",
+        "npm install @openfeature/server-sdk udp-openfeature",
         [
           'import { OpenFeature } from "@openfeature/server-sdk";',
-          'import { UDPFeatureFlagProvider } from "@udp/openfeature-provider";',
+          'import { UDPFeatureFlagProvider } from "udp-openfeature";',
           "",
           "await OpenFeature.setProviderAndWait(",
           "  new UDPFeatureFlagProvider({",

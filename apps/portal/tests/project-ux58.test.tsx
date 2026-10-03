@@ -231,7 +231,9 @@ describe("đăng ký: luật nói trước, lỗi nói cách sửa (UX-24)", () 
 describe("cài SDK (UX-13)", () => {
   it("tên gói thật của UDP và địa chỉ đã điền sẵn", () => {
     const [nodeInstall, nodeInit] = quickstartCode("node", "https://udp.vn");
-    expect(nodeInstall).toContain("@udp/openfeature-provider");
+    expect(nodeInstall).toBe(
+      "npm install @openfeature/server-sdk udp-openfeature",
+    );
     expect(nodeInit).toContain('host: "https://udp.vn"');
     expect(nodeInit).toContain("process.env.UDP_SDK_KEY");
     expect(quickstartCode("python", "https://udp.vn")[0]).toContain(
