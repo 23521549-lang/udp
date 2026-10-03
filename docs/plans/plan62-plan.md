@@ -1,0 +1,347 @@
+# Plan #62 — Kế hoạch: phát hành hai SDK
+
+Spec: `docs/plans/plan62-spec.md`. Mỗi đợt: mã + test + cổng, rồi một commit (chỉ ở máy — không push).
+
+Mỗi mục nêu đủ bốn thứ theo R1 (**làm gì / ở đâu / hệ quả / lan sang đâu**) cộng một dòng **ai dùng nó hôm nay**
+(R6). Đợt này chạm 16 tệp, hai manifest phát hành và hai tệp workflow mới ⇒ **trên ngưỡng R2**: ba agent QA đã chạy
+trước dòng mã đầu, và phần "Ba vòng QA đã sửa gì" ở cuối ghi lại từng chỗ plan bị bẻ.
+
+---
+
+## 62a — Thứ phải có trước khi một gói rời khỏi máy (AC-1, AC-2, AC-5)
+
+### 62a-1. Hai tệp `LICENSE`
+
+- **Làm gì:** thêm mới hai tệp, cùng **nguyên văn** Apache License 2.0 **tải từ nguồn gốc**
+  (`curl -fsSL https://www.apache.org/licenses/LICENSE-2.0.txt`, 202 dòng,
+  `sha256 cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30`), không gõ lại một ký tự nào. Phần
+  `[yyyy] [name of copyright owner]` của appendix **giữ nguyên** — đó là một khuôn mẫu trong văn bản giấy phép, không
+  phải một chỗ trống phải điền; chủ bản quyền được khai ở `author` của manifest.
+- **Ở đâu:** `packages/openfeature-provider/LICENSE`, `sdks/python/LICENSE`.
+- **Hệ quả:** tarball npm có `package/LICENSE` (pnpm/npm tự đưa vào — đã đo, QĐ-1); wheel có
+  `*.dist-info/licenses/LICENSE` (glob mặc định của setuptools — đã đo).
+- **Lan sang:** **không** lan sang `files` của manifest và **không** lan sang `license-files` của pyproject (cả hai
+  là dòng vô tác dụng, QĐ-1); lan sang hợp đồng artifact của 62a-5 và cổng 62b-2.
+- **Ai dùng hôm nay:** `scripts/pack.ts` (62a-5) khẳng định `package/LICENSE` có trong tarball; bốn phép kiểm giấy
+  phép của 62b-5 đọc nó trong wheel và sdist.
+
+### 62a-2. Manifest npm phát hành được
+
+- **Làm gì:** bỏ `"private": true`; thêm `license: "Apache-2.0"`, `repository`
+  (`{type: "git", url: "git+https://github.com/23521549-lang/udp.git", directory: "packages/openfeature-provider"}`),
+  `homepage`, `bugs`, `keywords`, `author`; đổi `description` sang tiếng Anh (nó là dòng mô tả trên trang npm).
+  **Không** chạm `files`, **không** chạm `publishConfig` (`./testing` vẫn không có ở đó), **không** chạm `engines`
+  (`>=20.11` là tuyên bố về ứng dụng của KHÁCH, không phải về máy build của UDP).
+- **Ở đâu:** `packages/openfeature-provider/package.json`.
+- **Hệ quả:** `npm publish` không còn bị chặn bởi `private`; provenance có `repository.url` để registry đối chiếu.
+  Và vì bỏ `private` là mở một đường trước đây đóng, mọi tính chất nó từng che phải có cổng riêng (62b-2).
+- **Lan sang:** `packages/design-lint/tests/package-boundaries.test.ts` (62b-2); `scripts/pack.ts` và
+  `tests/package.test.ts` (62a-5); §6.8 và §16 (62c-1).
+- **Ai dùng hôm nay:** `scripts/pack.ts`; cổng 62b-2 đọc đúng tệp này; job `npm` so `repository.url` với
+  `$GITHUB_SERVER_URL/$GITHUB_REPOSITORY`.
+
+> **Vì sao dám bỏ `private` mà không giữ nó làm "dây bảo hiểm":** trusted publishing ràng quyền publish vào **một
+> tên tệp workflow** của **một** repo, nên một lượt `npm publish` ở máy không có cách nào xác thực. Giữ
+> `private: true` để chặn một rủi ro đã bị chặn, với cái giá là một manifest nói sai về chính nó (gói đang ở trên
+> npm mà package.json bảo nó private), là đổi một tính chất thật lấy một tính chất giả. Và `--dry-run` **không**
+> bắt `private` (đã đo), nên dây bảo hiểm đó còn làm mọi lượt diễn tập nói sai.
+
+### 62a-3. `pyproject.toml` phát hành được
+
+- **Làm gì:** thêm `license = "Apache-2.0"` (biểu thức SPDX của PEP 639), `readme = "README.md"`, `authors`,
+  `keywords`, `classifiers` (**không** có classifier `License ::` — dùng cùng biểu thức SPDX thì setuptools **ném**,
+  đã đo), `[project.urls]` (Homepage, Repository, Documentation, Issues); đổi `description` sang tiếng Anh và bỏ ký
+  hiệu `§` của tài liệu nội bộ; nâng `requires = ["setuptools>=77,<85"]`; thêm `build>=1.2,<2` và `twine>=6.1,<7`
+  vào extra `dev`. **Không** khai `license-files` (QĐ-1).
+- **Ở đâu:** `sdks/python/pyproject.toml`.
+- **Hệ quả:** METADATA có `License-Expression`, `License-File` và `Description`; `twine check --strict` xanh;
+  `python -m build` và `twine` có sẵn ở CI và ở máy dev qua đúng một lệnh (`pip install -e ".[dev]"`).
+- **Lan sang:** job `python` của `ci.yml` (khoá cache là `sdks/python/pyproject.toml` — tự đổi theo, không sửa tay);
+  job `build-pypi` của `publish.yml`; cổng lockstep 62b-3 đọc `version` của tệp này.
+- **Ai dùng hôm nay:** bốn phép kiểm giấy phép của 62b-5; `twine check --strict` ở cổng 62a.
+
+> **Hai sàn/trần, mỗi cái một chế độ hỏng thật.** `setuptools>=77` vì PEP 639: bản 76.1.0 ném
+> `ValueError: invalid pyproject.toml config: 'project.license'`, bản 69.5.1 (sàn hiện tại) ném
+> `'project.license' must be valid exactly by one definition (2 matches found)`, bản 77.0.3 thì build sạch — đo trên
+> Python 3.11.16 thật. Trần `<85` vì `[build-system] requires` được phân giải từ PyPI **mỗi lần build**, không qua
+> lockfile nào: để `>=77` trần trụi là để backend build trôi tự do trong một repo mà Plan #61 vừa ghim mọi thứ theo
+> digest. `twine>=6.1` vì bản dưới 6.1 ném `InvalidDistribution` trên `Metadata-Version: 2.4` — chính bản metadata
+> mà PEP 639 sinh ra. (`setuptools` **không có** bản `77.0.0`; bản đầu của dòng là `77.0.1`, nên đừng viết `==77.0.0`
+> ở đâu cả.)
+
+### 62a-4. Hai README tiếng Anh
+
+- **Làm gì:** thêm mới `packages/openfeature-provider/README.md`; viết lại `sdks/python/README.md` (bản tiếng Việt 40
+  dòng hiện có → tiếng Anh). Mỗi README: cài gì (kèm peer/extra), ví dụ chạy được, bảng tuỳ chọn và mặc định,
+  middleware đo lường, **giới hạn đã biết** (không có fail-closed; `./testing` không có trong bản phát hành; regex
+  chỉ nhận ngữ pháp khả chuyển D-P35), giấy phép, và link **URL tuyệt đối** về `docs/UDP_design.md` §6.8.
+- **Ở đâu:** hai đường dẫn trên.
+- **Hệ quả:** trang gói đọc được một mình; `long_description` của PyPI có nội dung ⇒ `twine check --strict` xanh.
+- **Lan sang:** `sdks/python/pyproject.toml` (`readme`); phần "Phát triển" tiếng Việt của README Python cũ **không
+  bị bỏ** — nó thành một mục "Development" ngắn trong README mới, vì nó là cách chạy test của gói.
+- **Ai dùng hôm nay:** `twine check --strict` đọc `long_description`; hợp đồng artifact của 62a-5 đòi
+  `package/README.md`.
+
+### 62a-5. `scripts/pack.ts` — một đường đóng gói, dùng bởi cả test và workflow
+
+- **Làm gì:** thêm mới một script xuất `packPublishArtifact({ out })`: (1) chạy build; (2) `pnpm pack`; (3) giải
+  nén, xoá mọi khoá `@udp/*` khỏi `devDependencies` và xoá `scripts`; (4) `npm pack` thư mục đó; (5) **khẳng định
+  hợp đồng artifact** và **ném** nếu lệch — entry gốc đúng tập `{package.json, LICENSE, README.md}`, mọi entry khác
+  dưới `package/dist/`, có `dist/THIRD_PARTY_NOTICES`, không `.map`/`.tsbuildinfo`, manifest không `private`, không
+  khoá `@udp/*`, không `scripts`, `main`/`types` trỏ `dist/`, `exports` đúng `.` và `./metrics`. Trả đường dẫn
+  tarball. Và sửa `tests/package.test.ts` để nó **gọi script này** thay cho hai bước build+pack riêng của nó.
+- **Ở đâu:** `packages/openfeature-provider/scripts/pack.ts` (mới), `packages/openfeature-provider/tests/package.test.ts`.
+- **Hệ quả:** thứ bộ test tiêu thụ **là đúng bytes** được phát hành. Và ô
+  `package.test.ts:102` ("tarball chỉ có dist + manifest") hết đúng sau 62a-1/62a-4 — nó được **đổi tên** và đổi nội
+  dung, chứ không chỉ nới luật: một cổng nói sai về chính nó là một cổng người sau sẽ tin sai (đúng bài học cuối
+  Plan #61 với job `portal-demo`).
+- **Lan sang:** job `build-npm` và tệp diễn tập (62b-1) gọi cùng script; bảng §4 của spec.
+- **Ai dùng hôm nay:** `pnpm --filter @udp/openfeature-provider test`; cổng 62a; job `build-npm`.
+
+> **Vì sao allowlist ba tệp + tiền tố, chứ không khẳng định đúng tập 11 entry.** `dist/chunk-SRD43SET.js` mang
+> **hash nội dung** trong tên, nên một tập chính xác sẽ đỏ ở mọi lần đổi mã — một cổng đỏ vì lý do sai sẽ bị người
+> ta tắt. Allowlist ở gốc + tiền tố `package/dist/` giữ nguyên lời hứa "không có `src/`", và hai khẳng định dương
+> (`toContain("package/LICENSE")`, `toContain("package/README.md")`) giữ lời hứa "có giấy phép và có trang gói".
+
+**Cổng 62a:** `pnpm --filter @udp/openfeature-provider test` **&&** `pnpm --filter @udp/openfeature-provider typecheck`
+(hai lệnh rời: `pnpm --filter X test typecheck` chỉ chạy `test` rồi truyền `typecheck` làm **tham số** cho vitest ⇒
+0 tệp khớp và script `typecheck` không bao giờ chạy); `sdks/python`: `ruff check`, `ruff format --check`, `mypy`,
+`pytest -q`, `twine check --strict`; `prettier --check`.
+
+---
+
+## 62b — Đường phát hành OIDC và các cổng (AC-3, AC-4, AC-6, AC-7)
+
+### 62b-1. Hai tệp workflow
+
+- **Làm gì:** thêm mới `publish.yml` (chỉ `on: push: tags: ["sdk-v*"]`) và `publish-rehearsal.yml` (chỉ
+  `workflow_dispatch`). Cả hai: `name:` tường minh, `permissions: { contents: read }` ở **cấp workflow**, và mọi job
+  khai `permissions` tường minh. `publish.yml` có năm job theo bảng của QĐ-6: `gate` → `build-npm`/`build-pypi` →
+  `npm` → `pypi`, hai job cuối `environment: release-npm` / `release-pypi` và `id-token: write`. `publish-rehearsal.yml`
+  **không** có `id-token`, **không** có `environment`, và dừng ở `npm publish --dry-run`. Input `version` của tệp
+  diễn tập đi qua `env:` chứ không nội suy thẳng vào `run:` (đúng khuôn `I28_BASE`/`I28_HEAD` của `ci.yml`), và chỉ
+  dùng để **đối chiếu**, không bao giờ để **ghi** version vào tệp nào.
+- **Ở đâu:** `.github/workflows/publish.yml`, `.github/workflows/publish-rehearsal.yml` (cả hai mới).
+- **Hệ quả:** phát hành chỉ xảy ra từ một tag, sau khi `ci.yml` đã xanh trên đúng commit đó, sau một chốt duyệt tay;
+  không secret nào tham gia. `--provenance`, ghim `npm@11.21.0`, và action PyPI ghim SHA đều nằm ở đây.
+- **Lan sang:** **không** chạm `ci.yml` (bốn workflow rời nhau, trigger khác nhau); `deploy/tests/ci-workflow.test.ts`
+  (62b-4); `docs/UDP_design.md` §6.8 và §13.5 (62c-1); mục nợ `sdk-publish-real` (62c-2) — tên tệp `publish.yml` và
+  tên hai environment là **giá trị đã chốt** mà chủ repo phải khai y nguyên ở hai registry.
+- **Ai dùng hôm nay:** cổng cấu trúc 62b-4; và chủ repo chạy `publish-rehearsal.yml` sau khi merge vào `main`.
+
+### 62b-2. Cổng hình dạng manifest phát hành
+
+- **Làm gì:** trong bộ cổng ranh giới package: (a) lấy danh sách thành viên workspace từ `pnpm-workspace.yaml` thay
+  cho mảng ba thư mục viết cứng, và khẳng định **số** thành viên tìm thấy khớp số pnpm báo; (b) **đúng một** thành
+  viên không `private`, và nó là `@udp/openfeature-provider`; (c) `files` của gói đó **đúng** `["dist"]`; (d) nó có
+  `license`, `repository.url`, `repository.directory`, và hai tệp `LICENSE` + `README.md` tồn tại trên đĩa.
+  **Không** thêm ô cho `dependencies` rỗng và cho `./testing`: hai mệnh đề đó đã có cổng, và cổng đang có **mạnh
+  hơn** vì nó đọc manifest **đã pack** (xem QĐ-11).
+- **Ở đâu:** `packages/design-lint/tests/package-boundaries.test.ts`.
+- **Hệ quả:** lỗ fail-open im lặng ở `deploy` (thành viên workspace thứ 21, nằm ngoài ba thư mục được quét) đóng
+  lại; mọi tính chất mà `private: true` từng che có một ô riêng.
+- **Lan sang:** không (bộ cổng này chỉ đọc tệp).
+- **Ai dùng hôm nay:** cổng 62b; job `gate`.
+
+### 62b-3. Cổng hai SDK cùng version, và Golden Path khớp version
+
+- **Làm gì:** thêm `projectVersionOf(src)` — bộ đọc `[project].version` của TOML **fail-closed** theo QĐ-9 — và hai
+  ô: (a) `version` của `packages/openfeature-provider/package.json` **bằng** `projectVersionOf(sdks/python/pyproject.toml)`;
+  (b) `PROVIDER_RELEASE` của `render.ts` và dòng `udp-openfeature[metrics]…` của `templates/python/requirements.txt`
+  **đúng bằng chuỗi tính ra** từ version (`^<maj>.<min>.0` và `>=<maj>.<min>,<<maj+1>`), không phải "khoảng có chứa
+  version". Cả hai đọc **tệp thật**, và mỗi đầu vào xấu của bảng QĐ-9 có một ô `toThrow()`.
+- **Ở đâu:** `packages/design-lint/src/toml-version.ts` (mới), `packages/design-lint/tests/package-boundaries.test.ts`.
+- **Hệ quả:** không bump được một gói mà quên gói kia, và không phát hành được một version mà Golden Path không
+  nhận. Không thêm dependency nào ⇒ `pnpm-lock.yaml` không đổi.
+- **Lan sang:** `packages/golden-path/src/render.ts` **không đổi** ở đợt này (`^0.1.0` đã đúng) — ô (b) là thứ giữ
+  nó đúng từ nay.
+- **Ai dùng hôm nay:** cổng 62b; job `gate`.
+
+### 62b-4. Cổng cấu trúc hai workflow
+
+- **Làm gì:** thêm một `describe("Publish SDK (Plan #62)")` khẳng định, trên YAML đã `parse()` (không regex trên văn
+  bản thô — đúng bài học `chartPinsOf` của Plan #61): `on` của `publish.yml` chỉ có `push.tags === ["sdk-v*"]` và
+  **không** có `workflow_dispatch`; `on` của tệp diễn tập chỉ có `workflow_dispatch`; `permissions` cấp workflow của
+  cả hai là `{contents: read}`; **mọi** job khai `permissions`; đúng hai job có `id-token: write` và chúng là
+  `npm`/`pypi`; tệp diễn tập **không** job nào có `id-token`; `npm`/`pypi` có `environment` khác nhau; thứ tự
+  `needs` đúng (`pypi` chờ `npm`); `JSON.stringify(workflow)` **không** khớp `/secrets\./` ở cả hai tệp; bước publish
+  npm có `--provenance` và `--access public`; bước ghim npm có version tường minh **không** phải `latest`; mọi
+  `uses:` ngoài họ `actions/*` và `pnpm/*` ghim **40 ký tự hex**.
+- **Ở đâu:** `deploy/tests/ci-workflow.test.ts`.
+- **Hệ quả:** AC-3 và AC-4 thành máy cưỡng chế thay vì nghiệm thu bằng mắt. `actionlint` bị bỏ khỏi plan: nó không
+  tồn tại trong repo, và một bản dựng thử đúng hình dạng "dispatch publish thật" cho nó exit 0.
+- **Lan sang:** không.
+- **Ai dùng hôm nay:** `pnpm --filter @udp/deploy test` ở cổng 62b.
+
+### 62b-5. Bốn phép kiểm giấy phép của artifact Python
+
+- **Làm gì:** thêm một bước cổng sau `python -m build`, đỏ khi thiếu: METADATA của wheel có
+  `License-Expression: Apache-2.0` **và** `License-File: LICENSE`; wheel có `*.dist-info/licenses/LICENSE`; sdist có
+  một entry `/LICENSE`. Dùng ở **cả** cổng 62a (lệnh tay) và job `build-pypi`.
+- **Ở đâu:** `.github/workflows/publish.yml` (job `build-pypi`) và bảng §4 của spec.
+- **Hệ quả:** AC-2 có phép kiểm. Hôm nay nó không có: đo trên probe xoá tệp `LICENSE` mà vẫn khai
+  `license = "Apache-2.0"` ⇒ build **exit 0**, METADATA vẫn tuyên bố Apache-2.0, wheel **không mang** giấy phép, và
+  `twine check` **PASSED**. Một wheel tuyên bố giấy phép mà không mang giấy phép là đúng thứ AC-2 nói phải chặn.
+- **Lan sang:** không.
+- **Ai dùng hôm nay:** job `build-pypi`; lượt kiểm chứng 62c-3.
+
+### 62b-6. `THIRD_PARTY_NOTICES` phải khớp bundle thật
+
+- **Làm gì:** `scripts/build.ts` truyền `metafile: true` cho esbuild, suy tập package bên thứ ba thật sự vào bundle
+  từ `result.metafile.inputs` (đoạn sau `node_modules/`), và **ném** nếu tập đó khác hằng `INLINED` đã khai — kèm
+  tên gói lạ trong thông báo. `INLINED` **giữ nguyên** là một hằng khai tường minh.
+- **Ở đâu:** `packages/openfeature-provider/scripts/build.ts`.
+- **Hệ quả:** AC-2 hết là một lượt suy luận tay. Đo hôm nay: metafile cho đúng `zod` và `murmurhash3js`, khớp hai
+  khối của `THIRD_PARTY_NOTICES` — nhưng một `import` mới ở `flag-evaluator` hay `shared-types` sẽ góp một thư viện
+  thứ ba vào bundle **mà notices vẫn hai mục**, và artifact phát hành vi phạm điều khoản attribution của chính giấy
+  phép QĐ-1 chọn.
+- **Lan sang:** không đổi hành vi build khi tập khớp; `esbuild` đã là devDependency.
+- **Ai dùng hôm nay:** mọi lượt `build`, tức cả cổng 62a và job `build-npm`.
+
+> **Vì sao giữ `INLINED` khai tường minh chứ không SUY ra từ metafile.** Suy ra thì notices không bao giờ lệch —
+> nhưng cũng không bao giờ ai thấy một thư viện mới đã vào bundle. `INLINED` được viết thành một danh sách là một
+> **quyết định nhìn thấy được** ("mỗi cái PHẢI có giấy phép đi kèm", chú thích gốc của nó); biến nó thành dẫn xuất
+> là bỏ chính tính chất đó (R11). Khai + khẳng định giữ cả hai.
+
+**Cổng 62b:** `pnpm --filter @udp/design-lint test`; `pnpm --filter @udp/deploy test`;
+`pnpm --filter @udp/golden-path test`; `prettier --check`; `eslint` trên tệp đã đổi.
+
+### 62b-7. Mỗi ô mới phải ĐỎ được
+
+- **Làm gì:** với từng ô của 62b-2…62b-6, chạy một lượt cố tình làm lệch và ghi **output đỏ thật** vào báo cáo cuối,
+  rồi hoàn nguyên: thêm `private` lại; thêm một tệp vào `files`; thêm `./testing` vào `publishConfig.exports` (ô
+  **đang có** ở `package.test.ts:126` phải đỏ); đổi version Python thành `0.2.0`; đổi `PROVIDER_RELEASE` thành
+  `^0.2.0`; xoá `LICENSE` của `sdks/python`; thêm một `import` kéo một thư viện thứ ba vào bundle; bỏ `--provenance`;
+  đổi ghim npm thành `latest`; thêm `workflow_dispatch` vào `publish.yml`.
+- **Ở đâu:** thao tác tạm trên tệp thật, hoàn nguyên bằng `git checkout --` (không commit nào ở giữa).
+- **Hệ quả:** không có ô nào "xanh vì không bao giờ chạy tới" — đúng lỗi `chartPinsOf` của Plan #61 (ô xanh với 42
+  trong 71 chart).
+- **Lan sang:** không.
+- **Ai dùng hôm nay:** báo cáo cuối của đợt.
+
+---
+
+## 62c — Tài liệu, sổ nợ, kiểm chứng (AC-8)
+
+### 62c-1. Thiết kế — sáu chỗ, không một chỗ
+
+- **Làm gì:**
+  1. §6.8 gạch "**[v4.8] Đóng gói**" (`:4638`): tarball nay là `dist/` + manifest + `LICENSE` + `README.md`; hai tệp
+     sau vào bằng **luật của công cụ**, không bằng `files`; manifest phát hành là dẫn xuất của `publishConfig` cộng
+     một bước xoá `@udp/*` và `scripts`.
+  2. §6.8 gạch "**Chưa làm (lộ trình)**" (`:4639`): viết lại thành mô tả đường phát hành thật, và nói rõ phần **còn**
+     chưa làm là một lượt publish bootstrap — `Sổ nợ: \`sdk-publish-real\``.
+  3. §6.8 gạch "**Cổng:**" của mục con Bản Python (`:4672`): thêm job `gate` của `publish.yml` và `twine check --strict`.
+  4. §6.8 `:4661`: sửa chỗ **tự trích sai** — câu "Golden Path phủ Node.js và Python" viện dẫn §16, nhưng §16
+     (`:8620`) viết "**chỉ** Node.js và Python".
+  5. §16 **hai** dòng: `:8668` ("Provider Python") và `:8670` ("Provider chưa phát hành npm" — mệnh đề "gói còn
+     `private`" thành sai ngay sau 62a-2). Cả hai đổi theo cùng công thức: kênh phát hành đã có, còn nợ một lượt
+     publish bootstrap, `Sổ nợ: \`sdk-publish-real\``. Thêm **hai dòng mới**: "không có tuỳ chọn fail-closed" (§6.8
+`:4629` nói lý do "ghi ở §16" mà §16 không có dòng đó), và "lockstep version chỉ cưỡng chế được trong kho".
+  6. §13.5 (CI của chính UDP): thêm một đoạn theo khuôn `:8435`/`:8437` cho workflow thứ tư và thứ năm — trigger,
+     năm job, quyền, hai environment, và việc chúng **không** chạy trên push/PR. Cộng một câu vào §11 `:7831`:
+     template Node nhận version phát hành lúc render, template Python ghim một **khoảng** phải chứa version đang
+     phát hành, và cổng design-lint canh cả hai.
+- **Ở đâu:** `docs/UDP_design.md`.
+- **Hệ quả:** tài liệu không còn nói một việc đã làm là chưa làm, và không nói một việc chưa làm là đã làm.
+- **Lan sang:** `docs/ban-giao/` (bàn giao đợt). **Không** thêm dòng D-P nào: bảng D-P (§10.15) có cột "§10 viết |
+  Portal làm", và hai quyết định của đợt này (giấy phép đặt trên hai gói; lockstep) **không** khác chữ của mục nào —
+  thiết kế im lặng hoàn toàn về giấy phép. Chúng được ghi thành **văn bản thiết kế** trong §6.8 và §16, nơi chúng
+  thuộc về. (`references.test.ts` không đếm `D-P`, nên đây là quyết định về chỗ đặt, không phải về cổng.)
+- **Ai dùng hôm nay:** cổng `design-doc`/`references` của design-lint; bàn giao.
+
+### 62c-2. Sổ nợ `sdk-publish-real`
+
+- **Làm gì:** thêm một mục với **đúng sáu trường** mà cổng đòi (`**Vì sao`, `**Tiền đề`, `**Đạt:**`,
+  `**Tài nguyên:**`, `**Ảnh hưởng tới kết luận:**`, và đúng một trong `**Lệnh:**`/`**Runbook`/`**Đo:**` — ở đây
+  `**Runbook` vì việc trả nợ là nhiều bước), tiêu đề `## sdk-publish-real — …`, và **bump `Số mục hiện tại: 51` →
+  `52`**. Runbook phải có, từng bước kèm cách kiểm: chiếm scope `@udp`; một lượt `npm publish` bootstrap; đăng ký
+  trusted publisher npm với **Workflow filename `publish.yml`**, **Environment `release-npm`**, và **tích thêm
+  "Allowed actions: `npm publish`"** (mặc định của cấu hình tạo từ 03/09/2026 chỉ cho `npm stage publish`); khai
+  pending publisher PyPI (`publish.yml`, `release-pypi`) **rồi phát hành ngay** vì pending publisher không giữ chỗ
+  tên; bật Required reviewers cho hai environment và kiểm bằng
+  `gh api repos/:owner/:repo/environments/release-npm --jq '.protection_rules'`. Trường `**Đạt:**` mang nửa đầu của
+  AC-6: Golden Path hết trỏ tới gói không tồn tại, kiểm bằng `pip install udp-openfeature` trong venv trắng và
+  `npm install` trên cây Golden Path sinh ra.
+- **Ở đâu:** `docs/measurements/kiem-chung-con-no.md`.
+- **Hệ quả:** AC-8 có chỗ trả, và §16 trích được bằng dạng chính tắc `Sổ nợ: \`sdk-publish-real\`` (cổng khớp đúng
+  dạng đó; viết "xem sổ nợ ..." thì **không** được tính, và vì chiều kiểm là "mã ⊆ sổ" nên nó im lặng chứ không đỏ).
+- **Lan sang:** `docs/UDP_design.md` §16 (62c-1).
+- **Ai dùng hôm nay:** chủ repo, ngay sau khi đợt này xong.
+
+**Cổng 62c:** `pnpm --filter @udp/design-lint test` (nó đọc cả `UDP_design.md` và `kiem-chung-con-no.md`);
+`prettier --check`.
+
+### 62c-3. Kiểm chứng và kiểm thoái cấp (R9, R11)
+
+- **Làm gì:** chạy đủ bảng §4 của spec và dán output thật; dán cả `pip --version`, `twine --version`,
+  `setuptools.__version__` của lượt chạy (hai biến ẩn của hai phép đo PEP 639). Rồi soi ngược năm chỗ: (1) bỏ
+  `private` có mở đường nào ngoài ý muốn; (2) README/`description` sang tiếng Anh có làm mất thông tin nào mà bản
+  tiếng Việt đang mang (so từng mục trước khi xoá); (3) `setuptools>=77,<85` có làm job `python` trên **Python 3.11**
+  đỏ (bản sàn — chạy thật, không suy luận); (4) bước xoá `@udp/*`/`scripts` có xoá mất thứ gì khác; (5) `gate` không
+  chạy lại bộ test — nó có bỏ mất phép kiểm nào mà `ci.yml` không phủ.
+- **Ở đâu:** báo cáo cuối + `docs/ban-giao/`.
+- **Hệ quả:** không món nào "xong" mà không có bằng chứng.
+- **Lan sang:** không.
+- **Ai dùng hôm nay:** báo cáo cuối.
+
+---
+
+## Thứ tự, và vì sao
+
+62a trước vì hai manifest là đầu vào của mọi thứ sau: workflow đọc version từ chúng, cổng đọc hình dạng của chúng,
+và `scripts/pack.ts` chỉ khẳng định được hợp đồng khi hai tệp `LICENSE`/`README.md` đã có. 62b sau vì cổng phải kiểm
+**trạng thái đã đúng**, không kiểm trạng thái đang sửa. 62c cuối vì tài liệu chỉ nên nói về thứ đã chạy.
+
+**Đường lùi (R10):** mọi mục là tệp mới hoặc trường thêm vào; `git revert` một commit đủ. Thứ không lùi được — một
+lượt publish thật — nằm ngoài phạm vi, sau chốt duyệt tay.
+
+---
+
+## Ba vòng QA đã sửa gì (R2)
+
+Ba agent chạy song song trên bản nháp của spec và plan; mỗi cáo buộc quyết định đã được tự kiểm lại trên mã và trên
+lệnh thật trước khi nhận. Những chỗ plan bị bẻ:
+
+1. **Ô test tarball sẽ đỏ, và plan gắn lan toả vào sai mục.** `package.test.ts:103` đòi mọi entry là
+   `package/package.json` hay dưới `package/dist/`; thêm `LICENSE` + `README.md` là đỏ. Bản nháp treo điều kiện vào
+   "nếu nó khẳng định trường nào của **manifest**" — mà cái vỡ là khẳng định về **danh sách tệp**. ⇒ 62a-5.
+2. **Node 22 không bao giờ có npm ≥ 11.5.1.** Đo: `npm đóng kèm node v22.20.0 => 10.9.3`, và bản mới nhất của dòng
+   22 kèm 10.9.9. Bản nháp viết "Node 22 + npm `>=11.5.1`" như thể có sẵn. ⇒ QĐ-4.
+3. **`pnpm pack` KHÔNG xoá `@udp/*`** — nó đổi `workspace:*` thành `0.1.0`, nên manifest phát hành trỏ tới 6 gói
+   không tồn tại. Đây là một dữ kiện bản nháp **nói sai**, và nó bị bác bằng phép đo. Vá bằng
+   `publishConfig.devDependencies: {}` cũng **không chạy** — pnpm 9.12.0 chỉ nâng một tập khoá biết trước (đo trên
+   probe riêng). ⇒ bước dẫn xuất của QĐ-3 và 62a-5.
+4. **`actionlint` không tồn tại trong repo** (grep ra đúng hai tệp, cả hai là plan #62) và nó không kiểm được AC-3
+   lẫn AC-4; repo đã có cổng cấu trúc workflow với đúng mệnh đề "không `secrets.`"
+   (`ci-workflow.test.ts:122`). ⇒ 62b-4.
+5. **Job `gate` của bản nháp không chạy nổi hai bộ test nó khai** (cần năm chuỗi role ⇒ phá AC-3), và ô chéo ngôn
+   ngữ `python-parity.test.ts` **bỏ qua im lặng** khi thiếu `.venv`. ⇒ `gate` khẳng định `ci.yml` đã xanh trên commit
+   được tag.
+6. **Hai ô của bản nháp nhân bản cổng đã có, và cổng đang có mạnh hơn** (`package.test.ts:125-126` đọc manifest **đã
+   pack**). ⇒ QĐ-11.
+7. **`workflow_dispatch` của bản nháp SẼ publish thật** — mô tả "chạy thử tới trước bước publish" không có cơ chế
+   nào. Và `--dry-run` **không** diễn tập provenance, cũng **không** bắt `private`. ⇒ hai tệp workflow, QĐ-6.
+8. **So khoảng là fail-open:** `>=0.1,<1` chứa `0.2.0` còn `^0.1.0` thì không. ⇒ so chuỗi tính ra, QĐ-9.
+9. **`environment:` tự nó không là chốt duyệt**, và **publish nửa vời** (npm lên, PyPI chưa) là trạng thái có thật
+   mà bản nháp không nói gì. ⇒ tuần tự, hai đường chạy lại được, luật bump `0.1.1`. Và npm **mặc định chỉ cho
+   `npm stage publish`** với cấu hình tạo từ 03/09/2026. ⇒ QĐ-5, QĐ-6, 62c-2.
+10. **AC-2 không có cổng nào**: probe xoá tệp `LICENSE` mà vẫn khai `license` ⇒ build exit 0, `twine check` PASSED,
+    wheel không mang giấy phép. Và `twine check` **không --strict** exit 0 dù thiếu `long_description`. ⇒ 62b-5,
+    62b-6.
+11. **`license-files` của PEP 639 là dòng vô tác dụng** — glob mặc định của setuptools đã phủ (đo với/không có
+    dòng đó: METADATA giống từng dòng). Giữ nó là một tiêu chuẩn kép với chính lập luận QĐ-1 về `files`. ⇒ bỏ.
+12. **`sdks/python` không là thành viên pnpm workspace**, nên ô "đúng hai package không `private`" là điều không thể
+    đạt; và bộ đọc hiện tại **không quét `deploy`**. ⇒ 62b-2.
+13. **`pnpm --filter … pack` không chạy** (`Unknown option: 'recursive'`), **`pnpm --filter X test typecheck` chỉ
+    chạy `test`**, và **`pnpm pack` thành công khi `dist/` thiếu**. ⇒ `pnpm -C`, hai lệnh cổng rời, bước (5) của
+    `scripts/pack.ts`.
+
+**Một cáo buộc không nhận:** đổi `packages/golden-path/tests/scan.test.ts:123`
+(`"@udp/openfeature-provider": "^0.1.0"`) vì "chép cứng không cổng nào canh". Đó là fixture của manifest **của
+khách**, và bộ quét khớp theo **tên gói** (`scan.ts:358`), không đọc version — một khách ghim `^0.1.0` là dữ liệu
+hợp lệ, và đổi nó sang `PROVIDER_RELEASE` sẽ ngụ ý sai rằng bộ quét quan tâm version.
+
+**Một đề xuất nhận một nửa:** khẳng định tarball bằng **đúng tập 11 entry** (mạnh hơn allowlist). Không được:
+`dist/chunk-SRD43SET.js` mang hash nội dung trong tên nên tập chính xác sẽ đỏ ở mọi lần đổi mã. Lấy phương án lùi:
+allowlist ba tệp gốc + tiền tố `dist/`, cộng hai khẳng định dương.
