@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -27,11 +28,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: tempoConfigSchema,
-  chart: {
-    name: "tempo",
-    version: "1.10.3",
-    repo: "https://grafana.github.io/helm-charts",
-  },
+  chart: helmChart("tempo"),
   releaseName: "udp-tempo",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

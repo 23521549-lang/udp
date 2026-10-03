@@ -153,17 +153,66 @@ export function newerTags(current: string, tags: readonly string[]): NewerTags {
  * `update`, `moved`, `broken` là việc cần làm (workflow tuần đỏ); `newer-line` chỉ để biết — báo dòng mới mỗi tuần
  * như một lỗi thì job đỏ vĩnh viễn và không ai nhìn nữa.
  */
-export type FindingStatus = "ok" | "newer-line" | "update" | "moved" | "broken";
+export type FindingStatus =
+  | "ok"
+  | "newer-line"
+  | "update"
+  | "moved"
+  | "broken"
+  /**
+   * [Plan #61 61d-3c] Ba trạng thái của ghim CHART, và chúng tồn tại vì `newerTags` không trả lời được câu hỏi của
+   * chúng.
+   *
+   *  - `shape`: không bản nào trong `index.yaml` cùng **hình dạng** với ghim (tiền tố `v`, hậu tố, số thành phần).
+   *    `newerTags` trả `{null, null}` ở HAI ca khác nhau — "đã là bản mới nhất" và "không có bản nào cùng hình
+   *    dạng" — và `versionFinding` gộp cả hai thành `ok`. Đó là cách ghim `raw 0.3.2` im lặng xanh trong khi repo
+   *    phát hành `v0.3.2` và `helm` không tải được gì.
+   *  - `repo-gone`: địa chỉ repo không trả về một `index.yaml` đọc được. Hai repo của sản phẩm đã 404 toàn site.
+   *  - `unwatched`: `oci://`, `gs://`, hay `installer: "manifest-bundle"` — không có `index.yaml` để canh. Có tên
+   *    riêng để nó KHÔNG rơi vào `broken` giả.
+   */
+  | "shape"
+  | "repo-gone"
+  | "unwatched"
+  /**
+   * Ghim hỏng NẰM TRONG `KNOWN_BROKEN_CHARTS` — hiện trong bảng kèm lý do, nhưng không làm job đỏ. Một đường cơ sở
+   * có tên để cổng mới không đỏ ngay ngày đầu vì những lỗi có TRƯỚC nó; mục mới hỏng thì vẫn đỏ.
+   */
+  | "known-broken"
+  /**
+   * Bản vá của một chart. KHÔNG actionable, và đó là một quyết định đo được: toàn bộ ghim chart của sản phẩm cho
+   * 27–29 mục `update` ngay lượt chạy đầu, mỗi mục đòi một lượt nâng cấp §8.6 đầy đủ (bump `adapter_version` +
+   * `upgradesFrom` mang định nghĩa cũ), và 52 repo upstream tái sinh hàng đợi liên tục. Để nó làm job đỏ là dựng
+   * đúng cái mà chú thích của `versionFinding` dưới đây đã cấm — một cổng đỏ vĩnh viễn không ai nhìn, và nó chôn
+   * luôn tín hiệu của ghim image.
+   */
+  | "chart-update";
+
+/** Loại ghim — `patchEdits` của 61d-3c-2 lọc theo đây, không theo hình dạng chuỗi `source` */
+export type FindingKind = "image" | "release" | "action" | "chart";
 
 export interface Finding {
+  kind: FindingKind;
   source: string;
   subject: string;
   status: FindingStatus;
   detail: string;
 }
 
+/**
+ * Việc cần làm trong TUẦN này — thứ làm job đỏ.
+ *
+ * `chart-update` và `newer-line` không nằm đây: cả hai là "có bản mới hơn", một việc cần một quyết định nâng cấp
+ * riêng chứ không phải một việc dọn trong tuần. `shape`, `repo-gone` và `broken` thì khác hẳn: chúng nghĩa là ghim
+ * **không cài được**, tức một domain không deploy nổi — và chúng xuất hiện không báo trước khi upstream xoá một bản
+ * hay chuyển repo.
+ */
 export const isActionable = (f: Finding): boolean =>
-  f.status === "update" || f.status === "moved" || f.status === "broken";
+  f.status === "update" ||
+  f.status === "moved" ||
+  f.status === "broken" ||
+  f.status === "shape" ||
+  f.status === "repo-gone";
 
 /** Bản vá ⇒ `update`; chỉ có dòng mới ⇒ `newer-line`; không có gì ⇒ `ok` */
 function versionFinding(
@@ -194,6 +243,7 @@ export function imageFinding(
 ): Finding {
   const ref = parseImageRef(pin.image);
   const base = {
+    kind: "image" as const,
     source: pin.source,
     subject: pin.image.slice(0, pin.image.indexOf("@")),
   };
@@ -287,6 +337,7 @@ export function releaseFinding(
   observed: { latestTag: string; publishedSha256: string | null },
 ): Finding {
   const base = {
+    kind: "release" as const,
     source: `BUILD_TOOLCHAIN.${release.key}`,
     subject: `${release.key} v${release.version}`,
   };
@@ -310,6 +361,7 @@ export function checkoutFinding(observed: {
 }): Finding {
   const checkout = BUILD_TOOLCHAIN.actions.checkout;
   const base = {
+    kind: "action" as const,
     source: "BUILD_TOOLCHAIN.actions.checkout",
     subject: `${checkout.repo}@${checkout.version}`,
   };
@@ -328,22 +380,40 @@ export function checkoutFinding(observed: {
 
 const STATUS_TEXT: Record<FindingStatus, string> = {
   broken: "HỎNG",
+  "repo-gone": "REPO CHẾT",
+  shape: "GHIM SAI HÌNH",
+  "known-broken": "hỏng (đã biết)",
   moved: "tag đẩy lại",
   update: "có bản vá",
+  "chart-update": "chart có bản vá",
   "newer-line": "có dòng mới",
+  unwatched: "không canh được",
   ok: "ổn",
 };
 
 const ORDER: FindingStatus[] = [
   "broken",
+  "repo-gone",
+  "shape",
+  "known-broken",
   "moved",
   "update",
+  "chart-update",
   "newer-line",
+  "unwatched",
   "ok",
 ];
 
-/** Bảng Markdown — việc cần làm lên trước; cũng là nội dung tóm tắt của lượt chạy CI */
-export function renderReport(findings: readonly Finding[]): string {
+/**
+ * Bảng Markdown — việc cần làm lên trước; cũng là nội dung tóm tắt của lượt chạy CI.
+ *
+ * `opts` để `chart:check` dùng lại ĐÚNG bộ dựng bảng này: hai báo cáo khác nhau mà hai hàm render là hai chỗ để
+ * lệch nhau, và cái lệch đầu tiên sẽ là thứ tự ưu tiên trạng thái.
+ */
+export function renderReport(
+  findings: readonly Finding[],
+  opts: { title?: string; hint?: string } = {},
+): string {
   const sorted = [...findings].sort(
     (a, b) =>
       ORDER.indexOf(a.status) - ORDER.indexOf(b.status) ||
@@ -351,12 +421,15 @@ export function renderReport(findings: readonly Finding[]): string {
   );
   const pending = sorted.filter(isActionable).length;
   const cell = (text: string) => text.replace(/\|/g, "/");
+  const hint =
+    opts.hint ??
+    "Sửa ở `packages/config/src/build-toolchain.ts` (đủ tag và digest) hay `FROM` của Dockerfile Golden Path, rồi chạy lại test.";
   return [
-    "## Kiểm phiên bản công cụ build (toolchain:check)",
+    `## ${opts.title ?? "Kiểm phiên bản công cụ build (toolchain:check)"}`,
     "",
     pending === 0
       ? `Không có việc cần làm trong ${String(findings.length)} mục (dòng mới hơn, nếu có, là quyết định nâng cấp riêng).`
-      : `${String(pending)}/${String(findings.length)} mục cần làm: bản vá, tag bị đẩy lại hay ghim hỏng. Sửa ở \`packages/config/src/build-toolchain.ts\` (đủ tag và digest) hay \`FROM\` của Dockerfile Golden Path, rồi chạy lại test.`,
+      : `${String(pending)}/${String(findings.length)} mục cần làm. ${hint}`,
     "",
     "| Trạng thái | Mục | Ở đâu | Chi tiết |",
     "| --- | --- | --- | --- |",
@@ -366,6 +439,220 @@ export function renderReport(findings: readonly Finding[]): string {
     ),
     "",
   ].join("\n");
+}
+
+// --------------------------------------------------------------------- ghim chart Helm (Plan #61 61d-3c)
+
+/** Một ghim chart cần canh, gồm nơi nó được dùng và nó có phải ghim ĐÓNG BĂNG của `upgradesFrom` hay không */
+export interface ChartPin {
+  name: string;
+  version: string;
+  repo: string;
+  installer?: "manifest-bundle";
+  /**
+   * Ghim lịch sử trong `upgradesFrom` của một adapter. Với nó chỉ chạy luật **TỒN TẠI**: `restoreTo` của §8.6 là
+   * đường duy nhất áp lại chart cũ, và nó chỉ chạy được nếu chart đó còn tải về được — mà repo **có** xoá bản (đo
+   * 03/10/2026: `mysql-operator` giữ đúng một bản, `zipkin` đã bỏ `0.3.6`, `tekton-pipeline` đã bỏ `1.1.4`). Nhưng
+   * KHÔNG gọi `newerTags` cho nó: báo "3.2.7 có bản vá" mỗi tuần cho một ghim cố ý đóng băng là nhiễu thuần.
+   */
+  frozen?: boolean;
+  /** Adapter dùng ghim này — một chart dùng chung ra MỘT dòng báo cáo, cột này liệt kê nguồn */
+  usedBy: readonly string[];
+}
+
+/**
+ * `index.yaml` của một repo Helm ⇒ danh sách version của MỘT chart; chart không có trong index ⇒ `null`.
+ *
+ * Parse bằng regex thay vì một YAML parser vì `@udp/config` là package mà cả ba service nạp, và thêm một
+ * dependency YAML vào đó cho một phép kiểm chỉ chạy hằng tuần là sai chỗ; thêm nữa một index thật nặng tới 6,17 MB
+ * (`prometheus-community`, đo 03/10/2026) nên nạp thành object tốn ~26 MB heap mỗi repo. Hình dạng cần đọc thì cố
+ * định: `entries:` ⇒ `  <tên chart>:` ⇒ các mục `    version: <x>` của chart đó, cho tới khoá chart kế tiếp.
+ * `null` phân biệt "repo không có chart tên đó" với "chart có nhưng chưa có bản nào".
+ *
+ * **Đối chiếu với một phép parse YAML thật** (03/10/2026, `js-yaml` trên chính 5 tệp index đã tải): `kyverno`
+ * 268/268, `kyverno-policies` 204/204, `spinnaker` 5/5 (index này có version của dependency ở cấp 6 và mục đầu là
+ * `  - annotations:` — hai cái bẫy), `sealed-secrets` 88/88, `tekton-pipeline` 55/55, `zipkin` 2/2. Khớp từng phần
+ * tử, đúng thứ tự.
+ */
+export function chartVersionsOf(index: string, chart: string): string[] | null {
+  const head = new RegExp(
+    `^  ${chart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*$`,
+    "m",
+  );
+  const at = head.exec(index);
+  if (at === null) return null;
+  const rest = index.slice(at.index + at[0].length);
+  /**
+   * Khối của chart này đóng ở khoá CHART kế tiếp (`^  <tên>:`) hay ở một khoá cấp 0 (`generated:`).
+   *
+   * `(?!-)` là bắt buộc, không phải phòng xa: mục đầu của mỗi bản trong index thật của Kyverno là
+   * `  - annotations:`, và dòng đó khớp `^ {2}\S[^\n]*:$` — thiếu `(?!-)` thì khối bị cắt ngay dòng đầu và hàm
+   * trả về danh sách RỖNG, tức mọi ghim thành `shape` oan.
+   */
+  const nextKey = /^(?: {2}(?!-)\S[^\n]*|\S[^\n]*):\s*$/m.exec(rest);
+  const body = nextKey === null ? rest : rest.slice(0, nextKey.index);
+  /**
+   * ĐÚNG bốn khoảng trắng: trường của một bản nằm ở cấp 4 (`    version: 3.9.1`), còn version của **dependency**
+   * nằm ở cấp 6 (`      version: 10.5.3` — xem index của opsmx/spinnaker). Một `^\s+version:` lỏng sẽ trộn version
+   * của chart phụ thuộc vào danh sách, và cổng sẽ coi một ghim không tồn tại là tồn tại.
+   */
+  return [...body.matchAll(/^ {4}version:\s*(\S+)\s*$/gm)].map((m) =>
+    (m[1] ?? "").replace(/^["']|["']$/g, ""),
+  );
+}
+
+/** Repo mà không có `index.yaml` để canh: registry OCI, bucket, hay bundle manifest */
+export const unwatchableReason = (pin: ChartPin): string | null => {
+  if (pin.installer === "manifest-bundle") {
+    return "nguồn là bundle manifest, không phải chart Helm";
+  }
+  if (pin.repo.startsWith("oci://")) {
+    return "registry OCI không có index.yaml (cần `helm show chart oci://…`)";
+  }
+  if (!pin.repo.startsWith("https://") && !pin.repo.startsWith("http://")) {
+    return `scheme ${pin.repo.split(":")[0] ?? pin.repo} không phải repo Helm HTTP`;
+  }
+  return null;
+};
+
+/** Có bản nào CÙNG HÌNH DẠNG với ghim: cùng tiền tố `v`, cùng hậu tố, cùng số thành phần */
+function sameShape(pin: string, versions: readonly string[]): string[] {
+  const base = parseVersionTag(pin);
+  if (base === null) return [];
+  return versions.filter((v) => {
+    const t = parseVersionTag(v);
+    return (
+      t !== null &&
+      t.prefix === base.prefix &&
+      t.suffix === base.suffix &&
+      t.numbers.length === base.numbers.length
+    );
+  });
+}
+
+/**
+ * Phán quyết cho một ghim chart — BA luật, theo thứ tự, rồi mới tới `newerTags`.
+ *
+ * `newerTags` trả lời "có bản nào mới hơn cùng hình dạng không". Nó **không** trả lời "ghim này có tồn tại không",
+ * và nó gộp hai ca khác nhau vào cùng một `{null, null}`. Nên ba luật trước nó không phải trang trí: cả ba đều có
+ * một ca THẬT trong sản phẩm trước đợt 61d-3c.
+ *
+ * `versions === null` nghĩa là repo đọc được nhưng **không có chart tên đó** — cũng là `repo-gone` về hệ quả (không
+ * cài được), nhưng `detail` nói đúng nguyên nhân.
+ */
+export function chartFinding(
+  pin: ChartPin,
+  observed: { versions: string[] | null; error?: string },
+): Finding {
+  const base = {
+    kind: "chart" as const,
+    source: pin.usedBy.join(", "),
+    subject: `${pin.name}@${pin.version}${pin.frozen === true ? " (đóng băng)" : ""}`,
+  };
+
+  const unwatchable = unwatchableReason(pin);
+  if (unwatchable !== null) {
+    return { ...base, status: "unwatched", detail: unwatchable };
+  }
+  if (observed.error !== undefined) {
+    return {
+      ...base,
+      status: "repo-gone",
+      detail: `${pin.repo}: ${observed.error}`,
+    };
+  }
+  if (observed.versions === null) {
+    return {
+      ...base,
+      status: "repo-gone",
+      detail: `${pin.repo} không có chart tên "${pin.name}"`,
+    };
+  }
+  const shaped = sameShape(pin.version, observed.versions);
+  if (shaped.length === 0) {
+    return {
+      ...base,
+      status: "shape",
+      detail: `không bản nào cùng hình dạng với "${pin.version}"; repo có: ${observed.versions.slice(0, 4).join(", ")}`,
+    };
+  }
+  if (!observed.versions.includes(pin.version)) {
+    return {
+      ...base,
+      status: "broken",
+      detail: `ghim không còn trong index.yaml; cùng dòng: ${shaped.slice(0, 4).join(", ")}`,
+    };
+  }
+  if (pin.frozen === true) {
+    return { ...base, status: "ok", detail: "ghim đóng băng còn tải về được" };
+  }
+  const newer = newerTags(pin.version, observed.versions);
+  if (newer.patch === null && newer.newerLine === null) {
+    return { ...base, status: "ok", detail: "" };
+  }
+  return {
+    ...base,
+    status: newer.patch !== null ? "chart-update" : "newer-line",
+    detail: [
+      ...(newer.patch === null ? [] : [`bản vá: ${newer.patch}`]),
+      ...(newer.newerLine === null ? [] : [`dòng mới hơn: ${newer.newerLine}`]),
+    ].join("; "),
+  };
+}
+
+/**
+ * [Plan #61 61d-3c] Ghim ĐÃ hỏng trước khi cổng này tồn tại — một đường cơ sở có tên, không phải một chỗ để quên.
+ *
+ * Vì sao cần nó: cổng chart tìm ra **tám** ghim không cài được ngay lượt chạy đầu. Năm cái sửa được bằng một phép
+ * đổi version (xem `helm-charts.ts`); ba cái còn lại cần đổi `values` của adapter hay đổi nguồn chart, vì chart
+ * tồn tại nhưng **khoá mà adapter đặt không tồn tại trong chart** — và Helm bỏ qua khoá nó không biết trong im
+ * lặng, nên sửa version mà giữ `values` sai là biến một lỗi ỒN (chart không tải được, job đỏ) thành một lỗi IM
+ * LẶNG (chart cài xong, cấu hình không có tác dụng). Đó là thoái cấp, nên ba cái đó là **nợ có tên**, không phải
+ * một bản sửa vội.
+ *
+ * Để một đường cơ sở không mục: hàm này cũng báo **actionable** khi một mục trong danh sách đã HẾT hỏng. Nghĩa là
+ * danh sách không thể âm thầm giữ một lời miễn trừ đã hết lý do.
+ */
+export const KNOWN_BROKEN_CHARTS: Readonly<Record<string, string>> = {
+  spinnaker:
+    "chart 2.2.7 KHÔNG có khoá `kayenta` nào (values.yaml chỉ có halyard/minio/redis/gcs/s3/azs); " +
+    "adapter đặt `kayenta.metricsStore` nên Kayenta sẽ KHÔNG được cấu hình dù chart cài xong — §16",
+  "tekton-pipeline":
+    "chart 1.15.3 không có `controller.replicas`, và annotation của nó là `controller.pod.annotations`; " +
+    "sửa cần đổi `tektonConfigSchema` (một knob cấu hình đã lưu của project) — §16",
+  "secrets-store-csi-driver-provider-gcp":
+    "chart chưa bao giờ được phát hành lên một repo Helm nào: tài liệu của Google cài từ thư mục `charts/` " +
+    "trong git. Cần một nguồn khác (bundle manifest) hay bỏ companion — §16",
+};
+
+/**
+ * Áp đường cơ sở: mục đã biết hỏng thì KHÔNG làm job đỏ nữa (nhưng vẫn hiện, kèm lý do), còn mục đã hết hỏng thì
+ * làm job đỏ để ai đó xoá nó khỏi danh sách.
+ *
+ * Nhận `known` qua tham số để test được cả hai chiều mà không phụ thuộc trạng thái thật của sản phẩm.
+ */
+export function applyKnownBroken(
+  findings: readonly Finding[],
+  known: Readonly<Record<string, string>> = KNOWN_BROKEN_CHARTS,
+): Finding[] {
+  const nameOf = (f: Finding): string => f.subject.split("@")[0] ?? "";
+  return findings.map((f) => {
+    if (f.kind !== "chart") return f;
+    const reason = known[nameOf(f)];
+    if (reason === undefined) return f;
+    if (isActionable(f)) {
+      return {
+        ...f,
+        status: "known-broken",
+        detail: `${f.detail} — ĐÃ BIẾT: ${reason}`,
+      };
+    }
+    return {
+      ...f,
+      status: "broken",
+      detail: `ghim này đã hết hỏng (${f.status}) — xoá nó khỏi KNOWN_BROKEN_CHARTS`,
+    };
+  });
 }
 
 /** `FROM <image>` của một Dockerfile ⇒ các image (bỏ tham chiếu tới tầng trước như `FROM build`) */

@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter, ReadOnlyAdapterContext } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -44,7 +45,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: ackConfigSchema,
-  chart: { name: "s3-chart", version: "1.0.14", repo: REPO },
+  chart: helmChart("s3-chart"),
   releaseName: "udp-ack-s3",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -52,12 +53,12 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   companions: [
     {
       releaseName: "udp-ack-rds",
-      chart: { name: "rds-chart", version: "1.4.7", repo: REPO },
+      chart: helmChart("rds-chart"),
       values: controllerValues,
     },
     {
       releaseName: "udp-ack-dynamodb",
-      chart: { name: "dynamodb-chart", version: "1.2.15", repo: REPO },
+      chart: helmChart("dynamodb-chart"),
       values: controllerValues,
     },
   ],

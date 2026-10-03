@@ -3,6 +3,7 @@ import type {
   CapabilityBinding,
 } from "@udp/shared-types";
 import { envLabelFor } from "@udp/config";
+import type { HelmChartRef } from "@udp/config/helm-charts";
 import type {
   AdapterEnvironment,
   DomainAdapter,
@@ -36,18 +37,12 @@ import { secretRef, toolSecret, type ToolSecret } from "./cluster-secret.js";
  *     `ctx.fetch` và khai host trong `AdapterFixture`.
  */
 
-export interface HelmChartRef {
-  name: string;
-  /** Version của chart, semver đầy đủ — `detectDrift` so với giá trị thật */
-  version: string;
-  repo: string;
-  /**
-   * [v4.11, Plan #37 QĐ-6] Nguồn KHÔNG phải Helm chart: nhà phát hành chỉ có bundle manifest
-   * (Config Connector). Bản ghi release nói thẳng bộ cài áp bundle bằng `kubectl apply` thay vì
-   * giả làm một chart. Vắng = Helm chart.
-   */
-  installer?: "manifest-bundle";
-}
+/**
+ * [v4.12, Plan #61 61d-3c] Toạ độ chart sống trong `@udp/config/helm-charts` (`HELM_CHART_PINS`), không trong tệp
+ * adapter: cổng `chart:check` phải đọc được danh sách ghim trên runner CI mà **không** nạp registry — nạp registry
+ * kéo theo `env.ts` và nó ném khi thiếu `.env`. Kiểu được re-export ở đây để mọi chỗ gọi cũ không phải đổi import.
+ */
+export type { HelmChartRef };
 
 /**
  * [Plan #61 61d-3a] Một version CŨ mà bản này biết đường đi lên từ đó — kèm ĐỦ định nghĩa để áp lại được.

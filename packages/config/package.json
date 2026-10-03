@@ -10,9 +10,11 @@
     "./constants": "./src/constants.ts",
     "./domains": "./src/domains.ts",
     "./env-schema": "./src/env-schema.ts",
-    "./build-toolchain": "./src/build-toolchain.ts"
+    "./build-toolchain": "./src/build-toolchain.ts",
+    "./helm-charts": "./src/helm-charts.ts"
   },
   "scripts": {
+    "chart:check": "tsx scripts/chart-check.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

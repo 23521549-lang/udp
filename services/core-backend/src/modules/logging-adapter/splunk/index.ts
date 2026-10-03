@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { agentClusterName } from "../../adapter-base/agent-cluster.js";
@@ -43,11 +44,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: splunkConfigSchema,
-  chart: {
-    name: "splunk-otel-collector",
-    version: "0.110.0",
-    repo: "https://signalfx.github.io/splunk-otel-collector-chart",
-  },
+  chart: helmChart("splunk-otel-collector"),
   releaseName: "udp-splunk",
   /** Log nằm ở Splunk của khách — không PVC nào trong cluster */
   quotaDimensions: [],

@@ -22,13 +22,6 @@ import type { HelmChartRef } from "./helm.js";
  * giả), và tới chart bằng `secretValuesFrom`, không bao giờ qua ConfigMap.
  */
 
-/** Chart áp danh sách manifest tuỳ ý — `templates` được render với giá trị của release */
-export const RAW_CHART: HelmChartRef = {
-  name: "raw",
-  version: "0.3.2",
-  repo: "https://dysnix.github.io/charts",
-};
-
 /** Cấu hình chung của mọi instance: dung lượng mỗi bản sao, số bản sao ở production */
 export const instanceFields = {
   storageGb: z.number().int().min(1).max(500).default(10),

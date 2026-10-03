@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter, ReadOnlyAdapterContext } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -123,7 +124,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: kyvernoConfigSchema,
-  chart: { name: "kyverno", version: "3.9.1", repo: REPO },
+  chart: helmChart("kyverno"),
   releaseName: "udp-kyverno",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -132,7 +133,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   companions: [
     {
       releaseName: POLICIES_RELEASE,
-      chart: { name: "kyverno-policies", version: "3.9.1", repo: REPO },
+      chart: helmChart("kyverno-policies"),
       values: (config, ctx) => {
         const parsed = kyvernoConfigSchema.parse(config);
         const policy = imageValidatingPolicy(ctx.signedImages);

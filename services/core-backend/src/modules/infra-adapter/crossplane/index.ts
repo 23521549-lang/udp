@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -35,11 +36,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: crossplaneConfigSchema,
-  chart: {
-    name: "crossplane",
-    version: "1.17.1",
-    repo: "https://charts.crossplane.io/stable",
-  },
+  chart: helmChart("crossplane"),
   releaseName: "udp-crossplane",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

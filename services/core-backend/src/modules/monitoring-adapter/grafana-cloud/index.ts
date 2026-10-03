@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import type { MetricsSourceDeclaration } from "@udp/metrics-provider";
@@ -44,11 +45,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["logs.sink", "traces.sink"],
   },
   configSchema: grafanaCloudConfigSchema,
-  chart: {
-    name: "k8s-monitoring",
-    version: "1.6.14",
-    repo: "https://grafana.github.io/helm-charts",
-  },
+  chart: helmChart("k8s-monitoring"),
   releaseName: "udp-grafana-cloud",
   /** Dữ liệu nằm ở Grafana Cloud — không PVC nào trong cluster */
   quotaDimensions: [],

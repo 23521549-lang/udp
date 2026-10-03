@@ -26,6 +26,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
+    "chart:check": "pnpm --filter @udp/config chart:check",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",

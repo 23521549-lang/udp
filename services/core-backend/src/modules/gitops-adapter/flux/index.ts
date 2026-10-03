@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { gitRepoShape } from "../../adapter-base/git-repo.js";
@@ -33,7 +34,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: fluxConfigSchema,
-  chart: { name: "flux2", version: "2.14.0", repo: REPO },
+  chart: helmChart("flux2"),
   releaseName: "udp-flux",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -57,7 +58,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   companions: [
     {
       releaseName: SYNC_RELEASE,
-      chart: { name: "flux2-sync", version: "1.10.0", repo: REPO },
+      chart: helmChart("flux2-sync"),
       readsSecretValues: true,
       values: (config) => {
         const parsed = fluxConfigSchema.parse(config);

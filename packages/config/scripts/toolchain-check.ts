@@ -159,6 +159,7 @@ async function checkImage(pin: PinnedImage): Promise<Finding> {
     });
   } catch (e) {
     return {
+      kind: "image",
       source: pin.source,
       subject: pin.image.slice(0, pin.image.indexOf("@")),
       status: "broken",

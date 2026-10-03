@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -27,11 +28,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["metrics.query"],
   },
   configSchema: traefikConfigSchema,
-  chart: {
-    name: "traefik",
-    version: "32.1.0",
-    repo: "https://traefik.github.io/charts",
-  },
+  chart: helmChart("traefik"),
   releaseName: "udp-traefik",
   quotaDimensions: ["maxLoadBalancers"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

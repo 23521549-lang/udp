@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { agentClusterName } from "../../adapter-base/agent-cluster.js";
@@ -35,11 +36,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
   },
   configSchema: kubecostConfigSchema,
-  chart: {
-    name: "cost-analyzer",
-    version: "2.4.3",
-    repo: "https://kubecost.github.io/cost-analyzer/",
-  },
+  chart: helmChart("cost-analyzer"),
   releaseName: "udp-kubecost",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

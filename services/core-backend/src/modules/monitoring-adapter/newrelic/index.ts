@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import {
@@ -61,11 +62,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["traces.sink"],
   },
   configSchema: newRelicConfigSchema,
-  chart: {
-    name: "nri-bundle",
-    version: "5.0.94",
-    repo: "https://helm-charts.newrelic.com",
-  },
+  chart: helmChart("nri-bundle"),
   releaseName: "udp-newrelic",
   /** Agent không giữ dữ liệu trong cluster — không chiều quota nào */
   quotaDimensions: [],

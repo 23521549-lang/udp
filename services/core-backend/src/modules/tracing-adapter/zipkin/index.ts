@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -29,11 +30,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: zipkinConfigSchema,
-  chart: {
-    name: "zipkin",
-    version: "0.3.6",
-    repo: "https://openzipkin.github.io/zipkin",
-  },
+  chart: helmChart("zipkin"),
   releaseName: "udp-zipkin",
   /** Lưu trong bộ nhớ — không PVC, không chiều quota nào */
   quotaDimensions: [],

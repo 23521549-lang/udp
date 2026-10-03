@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -35,11 +36,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
   },
   configSchema: opencostConfigSchema,
-  chart: {
-    name: "opencost",
-    version: "1.42.3",
-    repo: "https://opencost.github.io/opencost-helm-chart",
-  },
+  chart: helmChart("opencost"),
   releaseName: "udp-opencost",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

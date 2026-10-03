@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { agentClusterName } from "../../adapter-base/agent-cluster.js";
@@ -28,11 +29,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: aquaConfigSchema,
-  chart: {
-    name: "kube-enforcer",
-    version: "2022.4.46",
-    repo: "https://helm.aquasec.com",
-  },
+  chart: helmChart("kube-enforcer"),
   releaseName: "udp-aqua",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

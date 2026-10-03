@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { agentClusterName } from "../../adapter-base/agent-cluster.js";
@@ -34,11 +35,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: snykConfigSchema,
-  chart: {
-    name: "snyk-monitor",
-    version: "2.13.1",
-    repo: "https://snyk.github.io/kubernetes-monitor/",
-  },
+  chart: helmChart("snyk-monitor"),
   releaseName: "udp-snyk",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

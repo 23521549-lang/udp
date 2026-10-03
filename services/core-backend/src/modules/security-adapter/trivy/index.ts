@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter, ReadOnlyAdapterContext } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -37,11 +38,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: trivyConfigSchema,
-  chart: {
-    name: "trivy-operator",
-    version: "0.24.1",
-    repo: "https://aquasecurity.github.io/helm-charts/",
-  },
+  chart: helmChart("trivy-operator"),
   releaseName: "udp-trivy",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

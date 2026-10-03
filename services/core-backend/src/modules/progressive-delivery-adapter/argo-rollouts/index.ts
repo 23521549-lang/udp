@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -52,11 +53,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
   },
   configSchema: argoRolloutsConfigSchema,
-  chart: {
-    name: "argo-rollouts",
-    version: "2.37.7",
-    repo: "https://argoproj.github.io/argo-helm",
-  },
+  chart: helmChart("argo-rollouts"),
   releaseName: "udp-argo-rollouts",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

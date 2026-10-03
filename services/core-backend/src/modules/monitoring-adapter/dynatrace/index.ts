@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import type { MetricsSourceDeclaration } from "@udp/metrics-provider";
@@ -49,11 +50,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: dynatraceConfigSchema,
-  chart: {
-    name: "dynatrace-operator",
-    version: "1.3.2",
-    repo: "https://raw.githubusercontent.com/Dynatrace/dynatrace-operator/main/config/helm/repos/stable",
-  },
+  chart: helmChart("dynatrace-operator"),
   releaseName: "udp-dynatrace",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

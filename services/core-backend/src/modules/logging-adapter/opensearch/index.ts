@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -48,7 +49,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: openSearchConfigSchema,
-  chart: { name: "opensearch", version: "2.26.0", repo: REPO },
+  chart: helmChart("opensearch"),
   releaseName: "udp-opensearch",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -69,7 +70,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   companions: [
     {
       releaseName: "udp-opensearch-dashboards",
-      chart: { name: "opensearch-dashboards", version: "2.24.0", repo: REPO },
+      chart: helmChart("opensearch-dashboards"),
       values: (_config, ctx) => ({
         opensearchHosts: `https://${hostOf(ctx.systemNamespace)}:9200`,
         extraEnvs: [
@@ -80,11 +81,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
     {
       releaseName: "udp-opensearch-fluent-bit",
-      chart: {
-        name: "fluent-bit",
-        version: "0.47.10",
-        repo: "https://fluent.github.io/helm-charts",
-      },
+      chart: helmChart("fluent-bit"),
       values: (_config, ctx) => ({
         env: [{ name: "OPENSEARCH_PASSWORD", ...passwordFromSecret }],
         config: {

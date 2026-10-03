@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import {
@@ -7,7 +8,6 @@ import {
   instanceFields,
   passwordSecretTemplate,
   passwordsByEnvironment,
-  RAW_CHART,
   replicasOf,
   volumeClaim,
 } from "../../adapter-base/database.js";
@@ -39,11 +39,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: mysqlConfigSchema,
-  chart: {
-    name: "mysql-operator",
-    version: "2.2.2",
-    repo: "https://mysql.github.io/mysql-operator/",
-  },
+  chart: helmChart("mysql-operator"),
   releaseName: "udp-mysql-operator",
   quotaDimensions: ["maxDatabases", "maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -55,7 +51,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
 
   perEnvironment: {
     releasePrefix: "udp-mysql",
-    chart: RAW_CHART,
+    chart: helmChart("raw"),
     readsSecretValues: true,
     values: (config, _ctx, environment) => {
       const parsed = mysqlConfigSchema.parse(config);

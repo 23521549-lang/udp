@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import {
   rebaseScheduleOf,
@@ -85,7 +86,7 @@ const base = createHelmBasedAdapter({
     },
   },
   configSchema: droneConfigSchema,
-  chart: { name: "drone", version: "0.6.5", repo: REPO },
+  chart: helmChart("drone"),
   releaseName: "udp-drone",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -115,7 +116,7 @@ const base = createHelmBasedAdapter({
     buildNamespaceCompanion,
     {
       releaseName: "udp-drone-runner",
-      chart: { name: "drone-runner-kube", version: "0.1.10", repo: REPO },
+      chart: helmChart("drone-runner-kube"),
       values: (_config, ctx) => ({
         env: {
           DRONE_RPC_HOST: `udp-drone.${ctx.systemNamespace}`,

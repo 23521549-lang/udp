@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import type { CapabilityBinding } from "@udp/shared-types";
@@ -52,11 +53,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
   },
   configSchema: spinnakerConfigSchema,
-  chart: {
-    name: "spinnaker",
-    version: "2.2.24",
-    repo: "https://helmcharts.opsmx.com",
-  },
+  chart: helmChart("spinnaker"),
   releaseName: "udp-spinnaker",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

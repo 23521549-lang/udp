@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -34,12 +35,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: configConnectorConfigSchema,
-  chart: {
-    name: "configconnector-operator",
-    version: "1.125.0",
-    repo: "gs://configconnector-operator",
-    installer: "manifest-bundle",
-  },
+  chart: helmChart("configconnector-operator"),
   releaseName: "udp-config-connector",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "cnrm.cloud.google.com/"],

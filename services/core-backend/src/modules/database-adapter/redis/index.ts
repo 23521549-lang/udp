@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import {
@@ -7,7 +8,6 @@ import {
   instanceFields,
   passwordSecretTemplate,
   passwordsByEnvironment,
-  RAW_CHART,
   replicasOf,
   volumeClaim,
 } from "../../adapter-base/database.js";
@@ -39,11 +39,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: redisConfigSchema,
-  chart: {
-    name: "redis-operator",
-    version: "0.18.3",
-    repo: "https://ot-container-kit.github.io/helm-charts/",
-  },
+  chart: helmChart("redis-operator"),
   releaseName: "udp-redis-operator",
   quotaDimensions: ["maxDatabases", "maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -55,7 +51,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
 
   perEnvironment: {
     releasePrefix: "udp-redis",
-    chart: RAW_CHART,
+    chart: helmChart("raw"),
     readsSecretValues: true,
     values: (config, _ctx, environment) => {
       const parsed = redisConfigSchema.parse(config);

@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { certManagerCompanion } from "../../adapter-base/cert-manager.js";
@@ -5,7 +6,6 @@ import {
   instanceBindings,
   instanceDemand,
   instanceFields,
-  RAW_CHART,
   replicasOf,
   volumeClaim,
 } from "../../adapter-base/database.js";
@@ -36,11 +36,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: k8ssandraConfigSchema,
-  chart: {
-    name: "k8ssandra-operator",
-    version: "1.20.2",
-    repo: "https://helm.k8ssandra.io/stable",
-  },
+  chart: helmChart("k8ssandra-operator"),
   releaseName: "udp-k8ssandra",
   quotaDimensions: ["maxDatabases", "maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -51,7 +47,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
 
   perEnvironment: {
     releasePrefix: "udp-cassandra",
-    chart: RAW_CHART,
+    chart: helmChart("raw"),
     values: (config, _ctx, environment) => {
       const parsed = k8ssandraConfigSchema.parse(config);
       return {

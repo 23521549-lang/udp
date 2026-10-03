@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { certManagerCompanion } from "../../adapter-base/cert-manager.js";
@@ -49,11 +50,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: asoConfigSchema,
-  chart: {
-    name: "azure-service-operator",
-    version: "2.11.0",
-    repo: "https://raw.githubusercontent.com/Azure/azure-service-operator/main/v2/charts",
-  },
+  chart: helmChart("azure-service-operator"),
   releaseName: "udp-aso",
   quotaDimensions: [],
   ignoredKeyPrefixes: [

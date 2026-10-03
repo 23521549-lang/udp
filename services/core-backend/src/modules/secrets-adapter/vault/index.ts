@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -31,11 +32,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: vaultConfigSchema,
-  chart: {
-    name: "vault",
-    version: "0.28.1",
-    repo: "https://helm.releases.hashicorp.com",
-  },
+  chart: helmChart("vault"),
   releaseName: "udp-vault",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

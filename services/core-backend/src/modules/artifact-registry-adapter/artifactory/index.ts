@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -39,11 +40,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: artifactoryConfigSchema,
-  chart: {
-    name: "artifactory-oss",
-    version: "107.90.10",
-    repo: "https://charts.jfrog.io",
-  },
+  chart: helmChart("artifactory-oss"),
   releaseName: "udp-artifactory",
   quotaDimensions: ["maxStorageGb", "maxLoadBalancers"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -32,7 +33,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["metrics.query", "traces.sink"],
   },
   configSchema: istioConfigSchema,
-  chart: { name: "base", version: VERSION, repo: REPO },
+  chart: helmChart("base"),
   releaseName: "udp-istio-base",
   quotaDimensions: ["maxLoadBalancers"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -41,7 +42,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   companions: [
     {
       releaseName: "udp-istiod",
-      chart: { name: "istiod", version: VERSION, repo: REPO },
+      chart: helmChart("istiod"),
       values: (config) => {
         const parsed = istioConfigSchema.parse(config);
         return {
@@ -56,7 +57,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
     {
       releaseName: "udp-istio-ingress",
-      chart: { name: "gateway", version: VERSION, repo: REPO },
+      chart: helmChart("gateway"),
       values: () => ({ service: { type: "LoadBalancer" } }),
     },
   ],

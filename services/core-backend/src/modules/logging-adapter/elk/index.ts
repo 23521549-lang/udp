@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -35,7 +36,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: elkConfigSchema,
-  chart: { name: "eck-operator", version: "2.14.0", repo: ELASTIC_REPO },
+  chart: helmChart("eck-operator"),
   releaseName: "udp-eck-operator",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -44,7 +45,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   companions: [
     {
       releaseName: "udp-elk",
-      chart: { name: "eck-stack", version: "0.12.1", repo: ELASTIC_REPO },
+      chart: helmChart("eck-stack"),
       values: (config) => {
         const parsed = elkConfigSchema.parse(config);
         return {

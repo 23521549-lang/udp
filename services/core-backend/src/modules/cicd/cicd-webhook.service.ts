@@ -40,6 +40,7 @@ import {
   expectationOf,
   isRetryableRejection,
   verifyTrustedDeploy,
+  type ClusterKeyPort,
 } from "./trusted-deploy.js";
 import { isSealedWebhookSecret, openWebhookSecret } from "./webhook-secret.js";
 
@@ -472,6 +473,23 @@ async function onReplay(args: {
  * vào trong 61d-2b-1 cùng lúc với nhánh CI-trong-cụm, nơi 503 thành lối ra thường gặp. Và tuyệt đối KHÔNG rơi về HMAC khi JWKS hỏng: rơi về HMAC chính là thoái
  * cấp mà chế độ bắt buộc sinh ra để chặn, và nó biến một sự cố của nhà cung cấp thành đường tắt.
  */
+/**
+ * Cổng đọc khoá của cụm, dựng từ dữ kiện của tiến trình.
+ *
+ * Tách thành hàm vì ở dạng biểu thức ba ngôi nội tuyến, closure `read` không giữ được bằng chứng rằng
+ * `clusterIssuerKeys` khác `null` (TypeScript hẹp kiểu ở nhánh ngoài nhưng không giữ phép hẹp đó vào trong một hàm
+ * trả về sau) — và lối tắt `!` ở đó là đúng loại "tin tôi đi" mà eslint cấm trong mã sản phẩm. Nhận tham số đã hẹp
+ * kiểu thì không cần lời hứa nào.
+ *
+ * `null` (tiến trình không có đường ra cụm) đi vào `TOKEN_KEYS_UNAVAILABLE` ⇒ 503 retryable, chứ **không** thành
+ * "không kiểm gì": một tiến trình thiếu credential cloud không được phép nới cổng bảo mật.
+ */
+const clusterKeyPortOf = (
+  keys: ClusterIssuerKeys | null,
+  projectId: string,
+): ClusterKeyPort | null =>
+  keys === null ? null : { cacheKey: projectId, read: () => keys(projectId) };
+
 async function verifyDeployToken(args: {
   projectId: string;
   provider: string;
@@ -530,19 +548,8 @@ async function verifyDeployToken(args: {
     expected,
     authorization: args.authorization,
     egressFetch: args.egressFetch,
-    /**
-     * Cổng đọc khoá của cụm — `cacheKey` là `projectId` vì mỗi project một cụm.
-     *
-     * `null` (tiến trình không có đường ra cụm) đi vào `TOKEN_KEYS_UNAVAILABLE` ⇒ 503 retryable, chứ không
-     * thành "không kiểm gì": một tiến trình thiếu credential cloud không được phép nới cổng bảo mật.
-     */
-    clusterKeys:
-      args.clusterIssuerKeys === null
-        ? null
-        : {
-            cacheKey: projectId,
-            read: () => args.clusterIssuerKeys!(projectId),
-          },
+    /** Cổng đọc khoá của cụm — `cacheKey` là `projectId` vì mỗi project một cụm */
+    clusterKeys: clusterKeyPortOf(args.clusterIssuerKeys, projectId),
     now: new Date(),
   });
   if (verdict.kind === "rejected") {

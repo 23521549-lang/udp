@@ -28,3 +28,8 @@ jobs:
         env:
           # Giới hạn gọi API của GitHub cao hơn gọi ẩn danh; chỉ đọc bản phát hành công khai
           GITHUB_TOKEN: ${{ github.token }}
+      # [Plan #61 61d-3c] Ghim chart Helm của 71 chart + ghim đóng băng của `upgradesFrom`. Chỉ đọc `index.yaml`,
+      # không cần token. `if: always()` để một mục cần làm ở bước trên không che mất báo cáo chart — hai bước canh
+      # hai tập ghim khác nhau, và mất tín hiệu của một tập là mất một nửa giá trị của lượt chạy.
+      - run: pnpm --filter @udp/config chart:check
+        if: always()

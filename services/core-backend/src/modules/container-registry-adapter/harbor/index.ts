@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -55,11 +56,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["policy.admission"],
   },
   configSchema: harborConfigSchema,
-  chart: {
-    name: "harbor",
-    version: "1.15.1",
-    repo: "https://helm.goharbor.io",
-  },
+  chart: helmChart("harbor"),
   releaseName: "udp-harbor",
   quotaDimensions: ["maxStorageGb", "maxLoadBalancers"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

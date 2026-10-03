@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import {
   rebaseScheduleOf,
@@ -80,11 +81,7 @@ const base = createHelmBasedAdapter({
     },
   },
   configSchema: tektonConfigSchema,
-  chart: {
-    name: "tekton-pipeline",
-    version: "1.1.4",
-    repo: "https://cdfoundation.github.io/tekton-helm-chart",
-  },
+  chart: helmChart("tekton-pipeline"),
   releaseName: "udp-tekton",
   companions: [buildNamespaceCompanion],
   quotaDimensions: [],

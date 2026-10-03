@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import {
@@ -7,7 +8,6 @@ import {
   instanceFields,
   passwordSecretTemplate,
   passwordsByEnvironment,
-  RAW_CHART,
   replicasOf,
   volumeClaim,
 } from "../../adapter-base/database.js";
@@ -40,11 +40,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: mongodbConfigSchema,
-  chart: {
-    name: "community-operator",
-    version: "0.11.0",
-    repo: "https://mongodb.github.io/helm-charts",
-  },
+  chart: helmChart("community-operator"),
   releaseName: "udp-mongodb-operator",
   quotaDimensions: ["maxDatabases", "maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -59,7 +55,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
 
   perEnvironment: {
     releasePrefix: "udp-mongodb",
-    chart: RAW_CHART,
+    chart: helmChart("raw"),
     readsSecretValues: true,
     values: (config, _ctx, environment) => {
       const parsed = mongodbConfigSchema.parse(config);

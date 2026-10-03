@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { fluentBitOutput } from "../../adapter-base/forwarder-output.js";
@@ -35,11 +36,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
   },
   configSchema: fluentBitConfigSchema,
-  chart: {
-    name: "fluent-bit",
-    version: "0.47.10",
-    repo: "https://fluent.github.io/helm-charts",
-  },
+  chart: helmChart("fluent-bit"),
   releaseName: "udp-fluent-bit",
   /** DaemonSet không giữ dữ liệu — không chiều quota nào */
   quotaDimensions: [],

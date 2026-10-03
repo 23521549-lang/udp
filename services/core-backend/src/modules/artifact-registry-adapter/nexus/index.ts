@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -41,11 +42,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: nexusConfigSchema,
-  chart: {
-    name: "nexus-repository-manager",
-    version: "64.2.0",
-    repo: "https://sonatype.github.io/helm3-charts/",
-  },
+  chart: helmChart("nexus-repository-manager"),
   releaseName: "udp-nexus",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

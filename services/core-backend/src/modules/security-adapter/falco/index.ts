@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -39,11 +40,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: falcoConfigSchema,
-  chart: {
-    name: "falco",
-    version: "4.8.3",
-    repo: "https://falcosecurity.github.io/charts",
-  },
+  chart: helmChart("falco"),
   releaseName: "udp-falco",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

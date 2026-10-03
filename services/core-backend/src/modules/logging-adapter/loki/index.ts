@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -34,7 +35,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: lokiConfigSchema,
-  chart: { name: "loki", version: "6.16.0", repo: GRAFANA_REPO },
+  chart: helmChart("loki"),
   releaseName: "udp-loki",
   /** Chunk và index nằm trên PVC — quota lưu trữ bằng 0 thì phải từ chối */
   quotaDimensions: ["maxStorageGb"],
@@ -82,7 +83,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   companions: [
     {
       releaseName: "udp-loki-promtail",
-      chart: { name: "promtail", version: "6.16.6", repo: GRAFANA_REPO },
+      chart: helmChart("promtail"),
       values: (_config, ctx) => ({
         config: {
           clients: [
@@ -93,7 +94,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
     {
       releaseName: "udp-loki-grafana",
-      chart: { name: "grafana", version: "8.5.2", repo: GRAFANA_REPO },
+      chart: helmChart("grafana"),
       values: (_config, ctx) => ({
         datasources: {
           "datasources.yaml": {

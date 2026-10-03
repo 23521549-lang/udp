@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import type { HelmCompanion } from "./helm.js";
 
 /**
@@ -8,11 +9,7 @@ import type { HelmCompanion } from "./helm.js";
  */
 export const certManagerCompanion: HelmCompanion = {
   releaseName: "udp-cert-manager",
-  chart: {
-    name: "cert-manager",
-    version: "v1.16.1",
-    repo: "https://charts.jetstack.io",
-  },
+  chart: helmChart("cert-manager"),
   values: () => ({ crds: { enabled: true } }),
   before: true,
   shared: true,

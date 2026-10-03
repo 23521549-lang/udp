@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -40,7 +41,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["metrics.query"],
   },
   configSchema: linkerdConfigSchema,
-  chart: { name: "linkerd-crds", version: "1.8.0", repo: REPO },
+  chart: helmChart("linkerd-crds"),
   releaseName: "udp-linkerd-crds",
   /** Không gateway mặc định — không LoadBalancer nào */
   quotaDimensions: [],
@@ -57,7 +58,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   companions: [
     {
       releaseName: "udp-linkerd-control-plane",
-      chart: { name: "linkerd-control-plane", version: "1.16.11", repo: REPO },
+      chart: helmChart("linkerd-control-plane"),
       readsSecretValues: true,
       values: (config) => {
         const parsed = linkerdConfigSchema.parse(config);

@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { fluentdOutput } from "../../adapter-base/forwarder-output.js";
@@ -31,11 +32,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
   },
   configSchema: fluentdConfigSchema,
-  chart: {
-    name: "fluentd",
-    version: "0.5.2",
-    repo: "https://fluent.github.io/helm-charts",
-  },
+  chart: helmChart("fluentd"),
   releaseName: "udp-fluentd",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

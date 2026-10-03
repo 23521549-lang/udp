@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { DATADOG_SITES } from "@udp/metrics-provider";
@@ -32,11 +33,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: datadogLogsConfigSchema,
-  chart: {
-    name: "datadog",
-    version: "3.69.3",
-    repo: "https://helm.datadoghq.com",
-  },
+  chart: helmChart("datadog"),
   releaseName: "udp-datadog-logs",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -32,11 +33,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: azureKeyVaultConfigSchema,
-  chart: {
-    name: "csi-secrets-store-provider-azure",
-    version: "1.6.0",
-    repo: "https://azure.github.io/secrets-store-csi-driver-provider-azure/charts",
-  },
+  chart: helmChart("csi-secrets-store-provider-azure"),
   releaseName: "udp-csi-provider-azure",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

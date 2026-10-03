@@ -1,4 +1,4 @@
-import { RAW_CHART } from "../database.js";
+import { helmChart } from "@udp/config/helm-charts";
 import type { HelmCompanion } from "../helm.js";
 import { BUILD_NAMESPACE, BUILDER_SERVICE_ACCOUNT } from "./build-script.js";
 
@@ -111,7 +111,7 @@ export function buildNamespaceManifests(): Record<string, unknown>[] {
  */
 export const buildNamespaceCompanion: HelmCompanion = {
   releaseName: BUILD_NAMESPACE_RELEASE,
-  chart: RAW_CHART,
+  chart: helmChart("raw"),
   before: true,
   shared: true,
   values: () => ({ resources: buildNamespaceManifests() }),

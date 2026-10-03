@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import type { MetricsSourceDeclaration } from "@udp/metrics-provider";
@@ -36,11 +37,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["logs.sink"],
   },
   configSchema: victoriaMetricsConfigSchema,
-  chart: {
-    name: "victoria-metrics-k8s-stack",
-    version: "0.25.17",
-    repo: "https://victoriametrics.github.io/helm-charts",
-  },
+  chart: helmChart("victoria-metrics-k8s-stack"),
   releaseName: "udp-vm",
   /** vmsingle giữ dữ liệu trên PVC — phải từ chối khi quota lưu trữ bằng 0 */
   quotaDimensions: ["maxStorageGb"],

@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { gitRepoShape } from "../../adapter-base/git-repo.js";
@@ -33,11 +34,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: argoCdConfigSchema,
-  chart: {
-    name: "argo-cd",
-    version: "7.6.12",
-    repo: "https://argoproj.github.io/argo-helm",
-  },
+  chart: helmChart("argo-cd"),
   releaseName: "udp-argocd",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

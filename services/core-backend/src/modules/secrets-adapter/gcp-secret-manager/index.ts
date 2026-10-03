@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -32,11 +33,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: gcpSecretManagerConfigSchema,
-  chart: {
-    name: "secrets-store-csi-driver",
-    version: "1.4.5",
-    repo: "https://kubernetes-sigs.github.io/secrets-store-csi-driver/charts",
-  },
+  chart: helmChart("secrets-store-csi-driver"),
   releaseName: "udp-csi-secrets-store",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -49,11 +46,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
   companions: [
     {
       releaseName: "udp-csi-provider-gcp",
-      chart: {
-        name: "secrets-store-csi-driver-provider-gcp",
-        version: "1.6.0",
-        repo: "https://googlecloudplatform.github.io/secrets-store-csi-driver-provider-gcp",
-      },
+      chart: helmChart("secrets-store-csi-driver-provider-gcp"),
       values: () => ({}),
     },
   ],

@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import { envLabelFor } from "@udp/config";
 import type { AdapterEnvironment, DomainAdapter } from "@udp/adapter-core";
@@ -7,7 +8,6 @@ import {
   instanceDemand,
   instanceFields,
   passwordsByEnvironment,
-  RAW_CHART,
   replicasOf,
   volumeClaim,
 } from "../../adapter-base/database.js";
@@ -57,11 +57,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: minioConfigSchema,
-  chart: {
-    name: "operator",
-    version: "6.0.4",
-    repo: "https://operator.min.io",
-  },
+  chart: helmChart("operator"),
   releaseName: "udp-minio-operator",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
@@ -73,7 +69,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
 
   perEnvironment: {
     releasePrefix: "udp-minio",
-    chart: RAW_CHART,
+    chart: helmChart("raw"),
     readsSecretValues: true,
     values: (config, _ctx, environment) => {
       const parsed = minioConfigSchema.parse(config);

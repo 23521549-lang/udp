@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -27,11 +28,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["metrics.query"],
   },
   configSchema: kumaConfigSchema,
-  chart: {
-    name: "kuma",
-    version: "2.8.3",
-    repo: "https://kumahq.github.io/charts",
-  },
+  chart: helmChart("kuma"),
   releaseName: "udp-kuma",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

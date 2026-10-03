@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -28,11 +29,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: jaegerConfigSchema,
-  chart: {
-    name: "jaeger",
-    version: "3.4.1",
-    repo: "https://jaegertracing.github.io/helm-charts",
-  },
+  chart: helmChart("jaeger"),
   releaseName: "udp-jaeger",
   /** Badger giữ trace trên PVC — quota lưu trữ bằng 0 thì phải từ chối */
   quotaDimensions: ["maxStorageGb"],

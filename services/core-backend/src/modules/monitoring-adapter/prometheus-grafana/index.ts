@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import type { MetricsSourceDeclaration } from "@udp/metrics-provider";
@@ -54,11 +55,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
   },
   configSchema: prometheusGrafanaConfigSchema,
-  chart: {
-    name: "kube-prometheus-stack",
-    version: "65.1.1",
-    repo: "https://prometheus-community.github.io/helm-charts",
-  },
+  chart: helmChart("kube-prometheus-stack"),
   releaseName: "udp-prometheus",
   quotaDimensions: ["maxStorageGb"],
   /**

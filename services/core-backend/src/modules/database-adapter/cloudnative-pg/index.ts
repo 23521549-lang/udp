@@ -1,10 +1,10 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import {
   instanceBindings,
   instanceDemand,
   instanceFields,
-  RAW_CHART,
   replicasOf,
 } from "../../adapter-base/database.js";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -34,11 +34,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     requires: [],
   },
   configSchema: cloudnativePgConfigSchema,
-  chart: {
-    name: "cloudnative-pg",
-    version: "0.22.1",
-    repo: "https://cloudnative-pg.github.io/charts",
-  },
+  chart: helmChart("cloudnative-pg"),
   releaseName: "udp-cnpg",
   quotaDimensions: ["maxDatabases", "maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/", "cnpg.io/"],
@@ -48,7 +44,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
 
   perEnvironment: {
     releasePrefix: "udp-cnpg-db",
-    chart: RAW_CHART,
+    chart: helmChart("raw"),
     values: (config, _ctx, environment) => {
       const parsed = cloudnativePgConfigSchema.parse(config);
       return {

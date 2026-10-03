@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -55,11 +56,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     },
   },
   configSchema: flaggerConfigSchema,
-  chart: {
-    name: "flagger",
-    version: "1.38.0",
-    repo: "https://flagger.app",
-  },
+  chart: helmChart("flagger"),
   releaseName: "udp-flagger",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

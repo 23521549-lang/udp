@@ -248,14 +248,21 @@ describe("toolchain:check — phân loại", () => {
 
   it("báo cáo: việc cần làm lên đầu, đếm đúng, ô không vỡ bảng", () => {
     const report = renderReport([
-      { source: "a", subject: "x:1", status: "ok", detail: "" },
+      { kind: "image", source: "a", subject: "x:1", status: "ok", detail: "" },
       {
+        kind: "image",
         source: "b",
         subject: "y:1",
         status: "newer-line",
         detail: "dòng mới hơn: 2",
       },
-      { source: "c", subject: "z:1", status: "broken", detail: "a|b" },
+      {
+        kind: "image",
+        source: "c",
+        subject: "z:1",
+        status: "broken",
+        detail: "a|b",
+      },
     ]);
     expect(report).toContain("1/3 mục cần làm");
     const rows = report

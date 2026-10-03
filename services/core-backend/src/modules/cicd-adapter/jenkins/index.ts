@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import {
   rebaseScheduleOf,
@@ -71,11 +72,7 @@ const base = createHelmBasedAdapter({
     },
   },
   configSchema: jenkinsConfigSchema,
-  chart: {
-    name: "jenkins",
-    version: "5.7.2",
-    repo: "https://charts.jenkins.io",
-  },
+  chart: helmChart("jenkins"),
   releaseName: "udp-jenkins",
   quotaDimensions: ["maxStorageGb"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

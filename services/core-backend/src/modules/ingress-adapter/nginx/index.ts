@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -31,11 +32,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["metrics.query"],
   },
   configSchema: nginxIngressConfigSchema,
-  chart: {
-    name: "ingress-nginx",
-    version: "4.11.2",
-    repo: "https://kubernetes.github.io/ingress-nginx",
-  },
+  chart: helmChart("ingress-nginx"),
   releaseName: "udp-ingress-nginx",
   quotaDimensions: ["maxLoadBalancers"],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],

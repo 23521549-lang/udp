@@ -1,3 +1,4 @@
+import { helmChart } from "@udp/config/helm-charts";
 import { z } from "zod";
 import type { DomainAdapter } from "@udp/adapter-core";
 import { createHelmBasedAdapter } from "../../adapter-base/helm.js";
@@ -28,11 +29,7 @@ const adapter: DomainAdapter = createHelmBasedAdapter({
     recommends: ["gitops.sync"],
   },
   configSchema: sealedSecretsConfigSchema,
-  chart: {
-    name: "sealed-secrets",
-    version: "2.16.1",
-    repo: "https://bitnami-labs.github.io/sealed-secrets",
-  },
+  chart: helmChart("sealed-secrets"),
   releaseName: "udp-sealed-secrets",
   quotaDimensions: [],
   ignoredKeyPrefixes: ["kubectl.kubernetes.io/", "helm.sh/"],
