@@ -30,6 +30,28 @@ dụng viết bằng một ngôn ngữ phổ biến, không khoá dài hạn khi
 bốn điểm yếu): 61d-1 ký và cổng deploy (AC-8, AC-10), 61d-2 Trusted Deploy (AC-11), 61d-3 Kyverno (AC-12). Mỗi đợt
 qua đủ cổng rồi mới commit.
 
+**[03/10/2026] 61d-2b-2 (bộ ký trong cụm) KHÔNG thuộc Plan #61.** Quyết sau khi 61d-3 xong, vì chính 61d-3 làm
+cái giá và cái lợi của nó đo được. Ba thiết kế đã phân tích đủ ở `plan61-plan.md`, và cả ba đều đòi một thứ mà Plan
+#61 đã từ chối một lần: **(A)** Job ký trong cụm cần `batch/jobs: create` cho `udp-tooling` (hôm nay không có) cộng
+một lượt **bootstrap lại mọi cụm đang chạy** — đúng cái giá mà QĐ-1 đã từ chối cho lối TokenReview, và lần này nó
+chỉ mua được **một** tổ hợp CI × cloud; **(B)** Service 1 tự ký qua REST của Key Vault cần một bản hiện thực thứ hai
+của định dạng cosign bằng TypeScript — nợ kỹ thuật dài hạn và là chỗ sai âm thầm; **(C)** UDP phát credential cloud
+ngắn hạn cho lượt chạy CircleCI biến UDP thành một bộ phát credential, tức đổi QĐ-6 (UDP chỉ lưu mã định danh không
+bí mật) — một hướng tin cậy mới, và bán kính thiệt hại của một lỗi xác minh lúc đó là "ký được bằng khoá KMS của
+khách".
+
+Hệ quả đã công bố ở §16 và nó LỚN HƠN trước 61d-3: tổ hợp CircleCI + Azure mất **cả hai** lớp chữ ký (cổng deploy
+61d-1 không có chữ ký để kiểm, và không có policy admission). Nhưng nó là một thoái cấp **có kiểm soát**: project
+thấy đúng lý do ở mục Ký image, image vẫn deploy, chế độ bắt buộc không bật được. Và 61d-3c-2 đã đóng một lỗ mà
+chính phân tích này tìm ra — xem dưới.
+
+**[03/10/2026] Một lỗ của 61d-3b, tìm ra khi phân tích lại 61d-2b-2.** `signedImagesOf` chỉ xét "project có khoá ký
+hay chưa", nhưng một project CircleCI + Azure **lưu được** khoá (phép kiểm lúc lưu chỉ đòi khoá P-256 cùng cloud với
+danh tính) trong khi `buildSigningOf` trả `null` nên pipeline không có bước ký. Hệ quả nếu không sửa: policy đòi chữ
+ký cho một project không bao giờ ký ⇒ ở `Audit` là mọi pod vi phạm vĩnh viễn. Đã sửa: `signedImagesOf` dùng **cùng**
+phép kiểm `signingUnavailable` mà `buildSigningOf` dùng, nên "pipeline không có bước ký" và "không sinh policy" là
+một quyết định ở một chỗ.
+
 **[03/10/2026] QĐ-18 sửa: "tự áp bản vá" dừng ở PHÁT HIỆN, không áp vào cụm tenant.** Quyết sau ba vòng QA soát
 plan 61d-3c, vì một chặn cứng đã kiểm lại bằng mã: **cụm là dùng chung giữa mọi environment**, nên không có đường tự
 áp nào không đi qua chốt xác nhận production của §8.6 quy tắc B. Ba dữ kiện: `grep 'scope: "namespace"'` trên mã sản

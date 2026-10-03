@@ -750,7 +750,7 @@ và một ô design-lint khẳng định `readOnlyAccess()` phơi đúng ba thà
 (g) `--retry` không làm một lượt 401 bị gửi lại: `curl --retry` chỉ thử lại lỗi tạm (5xx, lỗi mạng), và lượt gửi
 lại mang CÙNG thân nên rơi đúng nhánh `duplicate` của I41 — ô "gửi lại cùng token thân y nguyên" đã chốt điều đó.
 
-## 61d-2b-2 — bộ ký trong cụm: phân tích, và quyết định HOÃN lại sau 61d-3
+## 61d-2b-2 — bộ ký trong cụm: phân tích, và quyết định KHÔNG làm trong Plan #61
 
 Vòng lập kế hoạch chi tiết (R1) của mục này lật một dữ kiện làm đổi cái giá của nó, nên phần này ghi lại phân tích
 đầy đủ thay vì một plan thi công. Quyết định: **làm 61d-3 (Kyverno, AC-12) trước**, và 61d-2b-2 giữ nguyên dòng
@@ -803,6 +803,29 @@ KHÔNG chứng minh nguồn gốc build — nó chỉ chứng minh "UDP đã cho
 cho mọi project; (ii) `udp-tooling` chờ Job bằng `get` trên `batch/jobs` hay đọc một ConfigMap do Job ghi (chênh nhau
 một verb); (iii) cụm chưa bootstrap lại thì bước ký trả mã gì — phải là một mã **nói rõ cần bootstrap lại**, không
 phải một 403 chung.
+
+### [03/10/2026] Chốt sau khi 61d-3 xong: KHÔNG làm trong Plan #61
+
+Điểm 3 của phần "vì sao hoãn" nói làm 61d-3 trước sẽ làm giá trị của (A) **đo được**. Giờ đo được, và nó đo ra hai
+thứ — một cái lớn hơn dự đoán, một cái là lỗ của chính 61d-3b:
+
+1. **Hệ quả lớn hơn:** tổ hợp CircleCI + Azure giờ mất **cả hai** lớp chữ ký, không chỉ một. Không có chữ ký để
+   cổng deploy 61d-1 kiểm (đã biết), và **không có policy admission** (mới) — vì `signedImagesOf` trả `null` khi
+   project không ký được.
+2. **Và một lỗ phải sửa ngay:** `signedImagesOf` của bản 61d-3b chỉ xét "có khoá hay chưa". Một project CircleCI +
+   Azure **lưu được** khoá ký (`canonicalSigning` chỉ đòi khoá P-256 cùng cloud với danh tính) trong khi
+   `buildSigningOf` trả `null` nên pipeline **không có bước ký**. Xét theo "có khoá" thì project đó nhận một policy
+   đòi chữ ký mà mãi mãi không có chữ ký: ở `Audit` là **mọi pod vi phạm vĩnh viễn**, và nếu có ngày bật `Deny` thì
+   là chặn sạch. Đã sửa trong 61d-3c-2 bằng cách dùng **cùng** phép kiểm `signingUnavailable` mà `buildSigningOf`
+   dùng — "pipeline không có bước ký" và "không sinh policy" trở thành một quyết định ở một chỗ. Ô tích hợp trên
+   database thật khẳng định cả tiền đề (khoá LƯU được, `signing.available === false`) lẫn kết quả
+   (`signedImagesOf` trả `null`); bỏ phép kiểm ra thì ô đó đỏ (`expected { …(3) } to be null`).
+
+**Vì sao chốt KHÔNG làm, chứ không hoãn tiếp:** cả ba thiết kế đều đòi một thứ mà Plan #61 đã từ chối một lần —
+(A) bootstrap lại mọi cụm đang chạy cho **một** tổ hợp CI × cloud; (B) một bản hiện thực cosign thứ hai bằng
+TypeScript; (C) đổi QĐ-6, tức biến UDP thành bộ phát credential cloud. (C) là việc của **spec** và nó đổi một
+nguyên tắc khai sinh, nên nó không được quyết trong một mục của plan. Dòng §16 đã cập nhật để nói đúng hệ quả sau
+61d-3, và một dòng quyết định có ngày nằm ở `plan61-spec.md` §2.
 
 ## 61d-3 — Kyverno kiểm chữ ký lúc admission (AC-12): chia ba, và vì sao
 

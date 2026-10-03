@@ -569,3 +569,78 @@ describe("signedImagesOf (Plan #61 61d-3b)", () => {
     ]);
   });
 });
+
+/**
+ * [Plan #61 61d-3c-2] Project KHÔNG ký được thì KHÔNG được nhận policy đòi chữ ký.
+ *
+ * Lỗ này của bản 61d-3b tìm ra khi phân tích lại 61d-2b-2 sau khi Kyverno đã ship, và nó là loại hỏng tệ nhất của
+ * một lớp quan sát: CircleCI + Azure **lưu được** khoá ký (phép kiểm lúc lưu chỉ đòi khoá P-256 cùng cloud với danh
+ * tính), nhưng `buildSigningOf` trả `null` nên pipeline không có bước ký và không image nào được ký bao giờ. Xét
+ * theo "có khoá hay chưa" thì project đó nhận một `ImageValidatingPolicy` đòi chữ ký mà mãi mãi không có chữ ký —
+ * ở `Audit` là mọi pod vi phạm vĩnh viễn, và nó dạy người đọc bỏ qua báo cáo.
+ */
+describe("signedImagesOf từ chối project không ký được (Plan #61 61d-3c-2)", () => {
+  it("CircleCI + Azure: có khoá, có registry, nhưng KHÔNG sinh policy", async () => {
+    const projectId = await newProject("nodejs");
+    await enable(
+      projectId,
+      {
+        tool: "circleci",
+        config: {
+          organizationId: "11111111-1111-4111-8111-111111111111",
+          projectId: "22222222-2222-4222-8222-222222222222",
+          projectSlug: "gh/acme/web",
+        },
+      },
+      {
+        tool: "ghcr",
+        endpoint: "ghcr.io/acme",
+        attributes: { pushAuth: "github-token" },
+      },
+    );
+    await admin.cloudCredential.create({
+      data: {
+        projectId,
+        provider: "AZURE",
+        mode: "BYOC",
+        region: "southeastasia",
+        authKind: "AZURE_FEDERATED",
+        encryptedPayload: "khong-giai-duoc",
+        encryptedDek: "khong-giai-duoc",
+        nonce: "0".repeat(24),
+        authTag: "0".repeat(24),
+        fingerprint: "a".repeat(64),
+        isActive: true,
+        createdById: owner.userId,
+      },
+    });
+
+    const { publicKey } = testSigner();
+    const kms = "azurekms://udp-vault.vault.azure.net/udp-sign";
+    await as(
+      owner,
+      request(app)
+        .put(buildUrl(projectId))
+        .send({
+          identity: {
+            cloud: "azure",
+            clientId: "33333333-3333-4333-8333-333333333333",
+            tenantId: "44444444-4444-4444-8444-444444444444",
+          },
+          signing: { keys: [{ publicKey, kms }] },
+        }),
+    ).expect(200);
+
+    /** Khoá ĐÃ lưu — tiền đề của lỗ: nếu không lưu được thì kịch bản này không tồn tại */
+    const saved = buildViewWire.parse(
+      (await as(viewer, request(app).get(buildUrl(projectId))).expect(200))
+        .body,
+    );
+    expect(saved.settings.signing.keys).toHaveLength(1);
+    expect(saved.signing).toMatchObject({ available: false });
+
+    // …nhưng không có policy nào được sinh, vì không image nào sẽ được ký
+    expect(await signedImagesOf(admin, projectId)).toBeNull();
+    expect(imageValidatingPolicy(null)).toBeNull();
+  });
+});
