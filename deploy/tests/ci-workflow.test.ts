@@ -399,6 +399,22 @@ describe("Publish SDK (Plan #62)", () => {
     });
   });
 
+  /**
+   * [Plan #62 62d] `publish.yml` không được chép cứng tên TRONG KHO. Chắn idempotent `npm view` dùng tên sai thì
+   * **luôn 404** ⇒ chắn vô tác dụng ⇒ lượt chạy lại cùng một tag nhận EPUBLISHCONFLICT và job Đỏ — sau khi chốt
+   * duyệt tay đã tiêu. Tên phải đến từ `publishConfig.name`, một nguồn sự thật.
+   */
+  it("[Plan #62] bước phát hành npm không chép cứng tên trong kho", () => {
+    const scope = ["@udp", ""].join("/");
+    for (const step of publish.parsed.jobs["npm"]?.steps ?? []) {
+      expect(step.run ?? "", step.name ?? step.uses ?? "").not.toContain(scope);
+    }
+    const guard = publish.parsed.jobs["npm"]?.steps.find((s) =>
+      s.run?.includes("npm view"),
+    );
+    expect(guard?.run).toContain("publishConfig.name");
+  });
+
   it("cổng chạy script version dùng chung, và script đó tồn tại", () => {
     const gate = publish.parsed.jobs["gate"];
     expect(
