@@ -41,8 +41,11 @@ back per flag rather than per deployment. You do not install a hook yourself.
 ```python
 from udp_openfeature.metrics import UDPMetricsMiddleware, UDPMetricsWSGIMiddleware
 
-app.add_middleware(UDPMetricsMiddleware)               # ASGI: FastAPI, Starlette
-app.wsgi_app = UDPMetricsWSGIMiddleware(app.wsgi_app)  # WSGI: Flask
+# ASGI: FastAPI, Starlette
+app.add_middleware(UDPMetricsMiddleware)
+
+# WSGI: Flask
+app.wsgi_app = UDPMetricsWSGIMiddleware(app.wsgi_app)
 ```
 
 Set `OTEL_SERVICE_NAME` to the workload name used by the rollout, and
@@ -52,15 +55,15 @@ Set `OTEL_SERVICE_NAME` to the workload name used by the rollout, and
 
 Only `host` and `sdk_key` are positional; everything else is keyword-only.
 
-| Option                         | Default | Meaning                                                               |
-| ------------------------------ | ------- | --------------------------------------------------------------------- |
-| `stale_after_seconds`          | `300`   | How long without a confirmed-fresh config before `PROVIDER_STALE`     |
-| `polling_interval_ms`          | `30000` | Polling period when SSE is unavailable, and retry period on a 401     |
-| `sse_failures_before_fallback` | `3`     | Consecutive SSE failures before falling back to polling               |
-| `init_timeout_ms`              | `10000` | How long initialization waits for the first snapshot before raising   |
-| `report_stats`                 | `True`  | Report evaluation counts back to the platform every ~60s              |
-| `connection_factory`           | default | Replace the HTTP connection factory (proxy, custom transport)         |
-| `logger`                       | silent  | A `logging.Logger`; the default has a `NullHandler`                   |
+| Option                         | Default | Meaning                                                             |
+| ------------------------------ | ------- | ------------------------------------------------------------------- |
+| `stale_after_seconds`          | `300`   | How long without a confirmed-fresh config before `PROVIDER_STALE`   |
+| `polling_interval_ms`          | `30000` | Polling period when SSE is unavailable, and retry period on a 401   |
+| `sse_failures_before_fallback` | `3`     | Consecutive SSE failures before falling back to polling             |
+| `init_timeout_ms`              | `10000` | How long initialization waits for the first snapshot before raising |
+| `report_stats`                 | `True`  | Report evaluation counts back to the platform every ~60s            |
+| `connection_factory`           | default | Replace the HTTP connection factory (proxy, custom transport)       |
+| `logger`                       | silent  | A `logging.Logger`; the default has a `NullHandler`                 |
 
 Every numeric option is validated at construction time: a non-positive value raises `ValueError` rather than
 producing a hot retry loop. `stale_after_seconds` must be larger than both the heartbeat deadline and

@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 51.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 52.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1368,3 +1368,62 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   kiểm chữ ký lúc tạo pod" phải đọc là: lớp admission đã có và ở chế độ **quan sát**, và bảo đảm chặn image chưa
   ký vẫn do cổng deploy của 61d-1 giữ. `Deny` nằm sau món nợ này — ship `Deny` trước khi đo là đặt một điểm chết
   vào cụm của khách, đúng cái AC-12 cấm.
+
+## sdk-publish-real — hai gói SDK thật sự nằm trên npm và PyPI, và Golden Path cài được từ registry
+
+- **Vì sao nợ:** Plan #62 đo được mọi thứ đo được **không cần tài khoản registry**: artifact npm dựng bằng
+  `scripts/pack.ts` và **khẳng định hợp đồng** (11 tệp, manifest không `private`, không `@udp/*`, không `scripts`,
+  `exports` đúng `.` và `./metrics`), `npm publish --dry-run` trên chính tarball đó nhận (`total files: 11`),
+  artifact PyPI qua `twine check --strict` và bốn phép kiểm giấy phép, `THIRD_PARTY_NOTICES` khớp `metafile` của
+  bundle, và cấu trúc hai workflow được `deploy/tests/ci-workflow.test.ts` canh. Chưa đo: **một lượt publish thật**.
+  Năm thứ chỉ tài khoản chủ repo chứng minh được: (a) scope `@udp` trên npm còn trống và lấy được; (b) provenance
+  của npm **được registry nhận** — phép khớp `repository.url` với repo đã build là ở registry và **case-sensitive**,
+  client không kiểm được; (c) attestation PEP 740 của PyPI sinh ra thật; (d) `pip install udp-openfeature` và
+  `npm install` trên cây Golden Path sinh ra **chạy được** từ registry; (e) chốt duyệt tay của hai environment hoạt
+  động.
+- **Tiền đề:** một tài khoản npm (bật 2FA) và một tài khoản PyPI của chủ repo. **Và một bất đối xứng của hai
+  registry phải nhớ:** npm **không** cho đăng ký trusted publisher cho một gói **chưa tồn tại**, nên lượt đầu phải
+  là một `npm publish` **bằng tay**; PyPI thì có "pending publisher" nên không cần bước tay nào — nhưng pending
+  publisher **không giữ chỗ tên**, nó bị vô hiệu nếu người khác lấy tên trước, nên khai rồi phải phát hành ngay.
+  Bốn phép kiểm ngày 03/10/2026 nói cả hai tên còn trống (`npm view @udp/openfeature-provider` → 404,
+  `search?text=scope:udp` → `total: 0`, `pypi.org/pypi/udp-openfeature/json` → 404, và cả bốn dạng chuẩn hoá
+  PEP 503 → 404), nhưng không phép nào kết luận chắc được vì endpoint tổ chức của npm đòi đăng nhập.
+- **Runbook:** sáu bước, mỗi bước một cách kiểm.
+  1. `pnpm --filter @udp/design-lint sdk-version` → in `0.1.0`. Mọi bước sau dùng đúng số này.
+  2. Tạo tổ chức `udp` trên npm (gói công khai: miễn phí). Kiểm: `npm org ls udp` chạy được.
+  3. `pnpm -C packages/openfeature-provider exec tsx scripts/pack.ts --out /tmp/pack` rồi
+     `npm publish /tmp/pack/*.tgz --access public` **bằng tay** (lượt bootstrap, chiếm tên; lượt này **không** có
+     provenance vì nó không chạy trong Actions — đó là chấp nhận được cho đúng một version). Kiểm:
+     `npm view @udp/openfeature-provider version` → `0.1.0`.
+  4. Trên trang gói npm → Settings → Trusted publishers: `Organization or user` = `23521549-lang`,
+     `Repository` = `udp`, **`Workflow filename` = `publish.yml`** (đúng tên tệp, kèm `.yml`),
+     `Environment name` = `release-npm`, và **Allowed actions: tích thêm `npm publish`** — cấu hình tạo từ
+     03/09/2026 mặc định **chỉ** cho `npm stage publish`, nên bỏ bước này thì lượt phát hành đầu đỏ ở registry sau
+     khi đã qua chốt duyệt tay. Kiểm: trang gói hiện đúng bốn giá trị đó.
+  5. Trên PyPI → Account → Publishing → "Add a new pending publisher": `PyPI Project Name` = `udp-openfeature`,
+     owner/repo như trên, **`Workflow name` = `publish.yml`**, `Environment` = `release-pypi`. Kiểm: trang
+     Publishing liệt kê một pending publisher.
+  6. Settings → Environments: tạo `release-npm` và `release-pypi`, **bật "Required reviewers"** cho cả hai —
+     `environment:` trong YAML **tự nó không là chốt duyệt nào**, nó chỉ chặn khi luật này được bật. Kiểm:
+     `gh api repos/23521549-lang/udp/environments/release-npm --jq '.protection_rules'` phải thấy
+     `required_reviewers` (và tương tự cho `release-pypi`).
+
+  Rồi `git tag sdk-v0.1.0 && git push origin sdk-v0.1.0`. Workflow `publish.yml` chạy: `gate` → `build-npm`,
+  `build-pypi` → `npm` → `pypi`, với hai lượt duyệt tay.
+
+- **Đạt:** `npm view @udp/openfeature-provider version` → `0.1.0` và trang gói hiện nhãn provenance;
+  `npm audit signatures` trong một project cài gói đó → xác minh được; `pip download udp-openfeature==0.1.0` trong
+  một venv TRẮNG → tải được, và `pip install` chạy; `GET /projects/:id/golden-path` sinh cây Node rồi `npm install`
+  trong cây đó → **không 404** (đây là nửa đầu của AC-6, thứ đợt này không đạt được); cây Python rồi
+  `pip install -r requirements.txt` → không 404. **Không đạt:** `npm publish` bị registry từ chối ⇒ kiểm **Allowed
+  actions** trước khi nghi ngờ phần còn lại (bước 4); provenance không hiện ⇒ so `repository.url` với
+  `https://github.com/23521549-lang/udp` **đúng từng chữ hoa chữ thường**; `npm` xanh mà `pypi` đỏ ⇒ chạy lại cùng
+  tag (hai bên đều idempotent: bước chắn `npm view` ở phía npm, `skip-existing: true` ở phía PyPI), và nếu vẫn
+  không được thì **bump cả hai lên `0.1.1`** — không bao giờ dùng lại một số version đã bị đốt ở một registry.
+- **Tài nguyên:** hai tài khoản miễn phí, không máy nào. Chi phí thật là **không thu hồi được**: một version đã
+  đăng thì không xoá sạch được ở cả hai registry, nên bước 3 và lượt tag chỉ làm sau khi `publish-rehearsal.yml`
+  (chạy tay, cùng số version) đã xanh.
+- **Ảnh hưởng tới kết luận:** câu "Golden Path phủ Node.js và Python" (§6.8) hiện đúng về **mã**, chưa đúng về
+  **cài đặt**: `PROVIDER_RELEASE = "^0.1.0"` và `udp-openfeature[metrics]>=0.1,<1` trỏ tới hai gói chưa tồn tại,
+  nên một người dùng đi hết Golden Path hôm nay nhận 404 ở `npm install`. Đó là một đường đi của sản phẩm đang
+  đứt, và nó chỉ liền sau món nợ này. Mọi mệnh đề khác của §6.8 về đóng gói thì đã đo xong.
