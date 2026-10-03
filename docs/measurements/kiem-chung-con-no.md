@@ -81,7 +81,20 @@ có địa chỉ.
   chuỗi variant).
 - **Tài nguyên:** 1 tiến trình Node (`--skip-remote` nên không cần Service 2 và
   không truy vấn database), ~2 phút mỗi nhánh với `--rounds 5`.
-- **Ảnh hưởng tới kết luận:** ngưỡng hồi quy **R21** và quyết định có bật `reportStats` mặc định. Chưa đo thì mặc định phải là TẮT.
+- **Ảnh hưởng tới kết luận:** ngưỡng hồi quy **R21**. Nó KHÔNG treo quyết định "có bật `reportStats` mặc định":
+  sản phẩm đã bật mặc định từ v4.9 (`provider.ts`: chỉ `reportStats === false` mới tắt; §6.8 "mặc định bật"), và
+  **[04/10/2026] quyết định đó được giữ**, với ba lý do và một điều kiện đảo lại.
+  Lý do: (1) đường nóng được canh bằng **cấu trúc**, và phép canh đó đã kiểm lại trên mã — `record` chỉ `Map.get`/
+  `Map.set` trên hai tầng `Map<flagKey, Map<variant, number>>`, không nối chuỗi khoá, và nó chạy SAU khi
+  `ResolutionDetails` đã dựng xong trong `try/catch` riêng (`stats.ts`); (2) trần là trần CỨNG — 10 000 cặp
+  (flag, variant) rồi NGỪNG đếm, at-most-once, và không gửi request nào khi bộ đếm rỗng; (3) tắt mặc định làm màn
+  "Dọn flag" của Portal (`flags/cleanup`, một phần vòng đời flag của C1) **rỗng với mọi người không tự bật** — đó
+  là một thoái cấp của một đóng góp đã ship, không phải một phép an toàn.
+  Điều kiện đảo lại: ô nào của lưới vượt 10% ⇒ đổi bộ đếm sang **mảng theo CHỈ SỐ variant** dựng sẵn trong
+  `prepared` (bỏ hẳn tra cứu theo chuỗi variant) TRƯỚC, rồi đo lại; nếu vẫn vượt thì mới tắt mặc định.
+  Câu trước ở chỗ này — _"chưa đo thì mặc định phải là TẮT"_ — được viết ở `ce96a9f` (24/09), **sau** commit
+  `b8a40ed` đã ship mặc định BẬT cùng ngày, nên nó là một điều kiện mà sản phẩm chưa bao giờ thoả. Giữ nguyên nó là
+  để sổ nợ nói sai về sản phẩm — đúng thứ sổ này tồn tại để chống.
 
 ## E4-ci — lan truyền cấu hình ở hình học CI
 
@@ -596,7 +609,7 @@ adapter.
   vi mặc định. **Không đạt:** không có ngưỡng — E16 là phép đo, và điều nó phải cho
   thấy là **một lựa chọn có vị trí**: Argo CD tự sync, Helm chỉ biết khi có người chạy
   `diff`, UDP phát hiện mà không tự sửa.
-- **Tài nguyên:** cluster + Argo CD + Prometheus không cần.
+- **Tài nguyên:** cluster (~3 GiB) + Argo CD (~1,5 GiB) + Helm — **cần**; Prometheus thì **không** (E16 đo cơ chế phát hiện trôi, không đo metrics). Bản trước của dòng này đọc được thành "cluster + Argo CD + Prometheus đều không cần", tức ngược hẳn `Tiền đề` ngay trên nó.
 - **Ảnh hưởng tới kết luận:** nửa Domain Adapter của **C3** và chiều (a) của **I32**
   ở dạng mạnh nhất. Chiều (c) ("không bao giờ tự sửa") KHÔNG nợ: nó được cưỡng chế ba
   tầng và có phép kiểm ba chu kỳ trên database thật.

@@ -129,7 +129,45 @@ cổng của repo này nằm ở **bảy** chỗ: `@udp/config`, `@udp/design-li
 
 ---
 
-## 5. Việc tiếp
+## 5. Rà sổ nợ sau Plan #62 — hai chỗ sổ nợ nói sai, đã sửa
+
+Sau khi Plan #62 hết việc máy làm được, tôi rà có hệ thống xem còn gì **plan được** không, và việc rà tự tìm ra
+lỗi. Bốn phép quét:
+
+1. **`Chưa làm` / `lộ trình` trong thiết kế:** còn đúng **một** chỗ, và nó là `sdk-publish-real` (đòi tài khoản của
+   chủ repo). §17 là 16 hướng mở rộng, tất cả đã khai ngoài phạm vi khoá luận.
+2. **`TODO`/`FIXME` trong mã sản phẩm:** **0**, và có cổng giữ (`type-debt.test.ts`: "0 `as any` và 0 TODO/FIXME").
+3. **Mọi lệnh trong sổ nợ có script thật không:** 20/23 có; ba cái còn lại (`e15`, `e16`, `portal e2e`) **tự khai**
+   "script chưa có" — trung thực.
+4. **Mục nợ nào trả được trên máy này:** **không mục nào.** `E3-stats` là mục duy nhất không cần cụm lẫn tài khoản,
+   nhưng tiền đề của nó là **≥ 4 GiB RAM trống** và đo thật lúc rà: `7,71 GiB tổng / 0,16 GiB trống (98% đã dùng)`.
+   Đo trong trạng thái đó thì cả hai chiều kết luận đều không đứng được — đúng điều mục nợ đã viết.
+
+Nhưng phép quét (4) lộ ra **hai chỗ sai trong chính sổ nợ** — tệp mà việc của nó là nói trung thực điều gì đang
+được tuyên bố mà chưa được đo:
+
+- **`E3-stats` nói ngược sản phẩm.** Dòng cuối của nó viết _"chưa đo thì mặc định phải là TẮT"_, trong khi provider
+  **bật `reportStats` mặc định** từ v4.9 (`provider.ts`: chỉ `reportStats === false` mới tắt) và §6.8 cũng ghi "mặc
+  định bật". `git log -S` cho thứ tự: `b8a40ed` ship mặc định BẬT, rồi `ce96a9f` (cùng ngày 24/09) viết câu đó vào
+  sổ — nên nó là một điều kiện sản phẩm **chưa bao giờ thoả**, không phải một dòng cũ còn sót trước khi quyết định.
+  Đã sửa thành một **quyết định có ngày [04/10/2026]**, giữ mặc định BẬT, với ba lý do và **một điều kiện đảo lại**:
+  (a) đường nóng canh bằng cấu trúc — kiểm lại trên mã: `record` chỉ hai phép `Map`, không nối chuỗi khoá, và chạy
+  sau khi `ResolutionDetails` dựng xong trong `try/catch` riêng; (b) trần cứng 10 000 cặp rồi NGỪNG đếm,
+  at-most-once, không gửi request khi rỗng; (c) tắt mặc định làm màn "Dọn flag" của Portal **rỗng với mọi người
+  không tự bật** — một thoái cấp của đóng góp đã ship, không phải một phép an toàn. Điều kiện đảo lại: ô nào vượt
+  10% ⇒ đổi bộ đếm sang mảng theo **chỉ số** variant trong `prepared` trước, đo lại, rồi mới tắt mặc định.
+  **R21 vẫn là nợ** — đợt này không đo gì, chỉ thôi nói sai.
+- **`E16` có dòng `Tài nguyên` đọc ngược chính `Tiền đề` của nó:** `Tiền đề` đòi cluster + Argo CD + Helm, còn
+  `Tài nguyên` viết "cluster + Argo CD + Prometheus không cần". Đã sửa: cluster + Argo CD + Helm **cần**,
+  Prometheus **không**.
+
+Việc này **dưới ngưỡng R2** (2 tệp, không schema, không interface công khai, không bất biến) nên **bỏ ba agent QA**
+— nói rõ chứ không lặng lẽ bỏ.
+
+**Kết luận về trạng thái dự án:** không còn việc nào **plan được** mà máy làm được. Mọi thứ còn lại là 52 mục nợ đòi
+cụm/cloud/tài khoản/RAM thật, §16 (giới hạn đã chấp nhận), và §17 (hướng mở rộng, ngoài phạm vi).
+
+## 6. Việc tiếp
 
 1. **Trả nợ `sdk-publish-real`** — runbook sáu bước trong `docs/measurements/kiem-chung-con-no.md`. Thứ tự quan
    trọng: chạy `publish-rehearsal.yml` (cùng số version) cho xanh **trước** khi publish bootstrap, vì một version đã
