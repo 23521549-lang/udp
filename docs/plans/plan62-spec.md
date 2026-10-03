@@ -6,7 +6,7 @@
 > subpath `./testing` CHỈ trong monorepo, `publishConfig` là nguồn sự thật của manifest phát hành, peer để ngoài
 > bundle, `files: ["dist"]`.
 >
-> **Mục thiết kế (R4):** §6.8 "`@udp/openfeature-provider` — package chạy trong ứng dụng của khách" — mục con
+> **Mục thiết kế (R4):** §6.8 "`udp-openfeature` (trong kho: `@udp/openfeature-provider`) — package chạy trong ứng dụng của khách" — mục con
 > "Đóng gói, phụ thuộc, và cách kiểm" (gạch cuối của nó ghi đúng việc của đợt này: _"**Chưa làm (lộ trình):** phát
 > hành npm (gói còn `private`) và PyPI (gói Python chưa phát hành)"_), mục con "Bản Python"; §11 (Golden Path);
 > §13.5 (CI của chính UDP); §16 hai dòng "Provider Python" và "Provider chưa phát hành npm".
@@ -214,7 +214,7 @@ kết quả được khẳng định ở bước (5). Một bản manifest viế
 **(e) Vì sao `npm publish <tarball>` chứ không `npm publish <thư mục>`.** Đường thư mục chạy lifecycle script
 (`prepublishOnly`, `publish`, `postpublish`); đường tarball thì không. Và `--provenance` làm việc như nhau: npm tính
 subject từ bytes của tarball, không từ dạng đối số. Dry-run thật trên tarball: `total files: 11`,
-`+ @udp/openfeature-provider@0.1.0`.
+`+ @udp/openfeature-provider@0.1.0`. (Đó là biên bản **trước** đợt 62d; tên phát hành nay là `udp-openfeature`.)
 
 **(f) Lệnh pack phải là `pnpm -C <dir> pack`, KHÔNG `pnpm --filter … pack`:**
 
@@ -472,7 +472,7 @@ thêm dependency nào**, nên `pnpm-lock.yaml` không đổi.
 | Việc                                  | Lệnh                                                                                                                                            | Thứ phải thấy                                                                         |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | Artifact npm đúng hợp đồng            | `pnpm -C packages/openfeature-provider exec tsx scripts/pack.ts --out <dir>`                                                                    | 11 tệp; manifest không `private`, không `@udp/*`, không `scripts`, `main` trỏ `dist/` |
-| Và nó publish được                    | `npm publish <tgz> --dry-run --access public`                                                                                                   | `total files: 11`, `+ @udp/openfeature-provider@0.1.0`                                |
+| Và nó publish được                    | `npm publish <tgz> --dry-run --access public`                                                                                                   | `total files: 11`, `+ udp-openfeature@0.1.0`                                          |
 | Artifact PyPI                         | `python -m build` ở `sdks/python`                                                                                                               | sdist + wheel; wheel không có mã nào ngoài `udp_openfeature/`                         |
 | Metadata PyPI đọc được                | `twine check --strict dist/*`                                                                                                                   | `PASSED` (không "with warnings"), exit 0                                              |
 | Giấy phép NẰM TRONG artifact PyPI     | bốn lệnh: `METADATA` có `License-Expression: Apache-2.0` và `License-File: LICENSE`; wheel có `dist-info/licenses/LICENSE`; sdist có `/LICENSE` | cả bốn exit 0                                                                         |

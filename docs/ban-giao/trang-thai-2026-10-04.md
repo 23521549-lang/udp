@@ -6,8 +6,8 @@ người tiếp theo"; tệp đó giữ nguyên phần 61d-3 và bài học về
 `docs/plans/`.
 
 **Trạng thái một câu:** **Plan #61 đã ĐÓNG** (cổng Playwright năm lượt `15 passed`), và **Plan #62 đã xong phần máy
-làm được**: hai gói SDK có giấy phép Apache-2.0, metadata đầy đủ, README tiếng Anh, một đường đóng gói **có hợp
-đồng** (`scripts/pack.ts`), và hai workflow phát hành bằng **trusted publishing (OIDC)** — npm có provenance, PyPI
+làm được**: hai gói SDK phát hành dưới **cùng một tên `udp-openfeature`** trên hai registry, có giấy phép Apache-2.0,
+metadata đầy đủ, README tiếng Anh, một đường đóng gói **có hợp đồng** (`scripts/pack.ts`), và hai workflow phát hành bằng **trusted publishing (OIDC)** — npm có provenance, PyPI
 có attestation PEP 740, không token dài hạn nào. Còn đúng **một lượt publish thật**, và nó đòi tài khoản của chủ
 repo: sổ nợ `sdk-publish-real`. **52 mục nợ kiểm chứng.** Hạ tầng của dự án tốn đúng 0 đồng.
 
@@ -167,13 +167,71 @@ Việc này **dưới ngưỡng R2** (2 tệp, không schema, không interface c
 **Kết luận về trạng thái dự án:** không còn việc nào **plan được** mà máy làm được. Mọi thứ còn lại là 52 mục nợ đòi
 cụm/cloud/tài khoản/RAM thật, §16 (giới hạn đã chấp nhận), và §17 (hướng mở rộng, ngoài phạm vi).
 
-## 6. Việc tiếp
+## 6. Đợt 62d — tên phát hành là `udp-openfeature`, không phải tên trong kho
 
-1. **Trả nợ `sdk-publish-real`** — runbook sáu bước trong `docs/measurements/kiem-chung-con-no.md`. Thứ tự quan
+**Khởi phát [04/10/2026]:** npm trả `The organization name 'udp' is not available`. Lý do đo được: đã có package
+`udp@1.0.0` (2013), và npm dùng chung một không gian tên cho org và package — scope `@udp` **không bao giờ lấy
+được**. Rủi ro tên mà QĐ-5 ghi sẵn đã xảy ra.
+
+**Cách giải:** giữ tên trong kho (`@udp/openfeature-provider` nằm ở 42 tệp, và `@udp/` là quy ước tám ô ranh giới
+dựa vào), khai tên công khai `udp-openfeature` ở **`publishConfig.name`**, và **áp nó ở bước dẫn xuất của
+`scripts/pack.ts`**. Tên trùng y hệt gói Python trên PyPI: một tên, hai registry, một số version.
+
+Sau đợt này `@udp/` là một vị từ **toàn phần**: không gói `@udp/*` nào cài được từ registry nào, không ngoại lệ.
+Trước đó nó nghĩa là "nội bộ, **trừ đúng một**".
+
+### Dữ kiện nền của bản nháp đã SAI — và R7 không đủ để chống
+
+Bản nháp viết "pnpm nâng `publishConfig.name`" kèm một probe. Vòng QA bác nó, và tôi kiểm lại trên gói thật:
+
+```
+pnpm --version        (cwd = repo)        →  9.12.0
+pnpm --version        (cwd = scratchpad)  →  11.22.0     ← probe chạy ở đây
+pnpm -C <scratchpad> --version            →  11.22.0     ← `-C` phân giải LẠI theo thư mục ĐÍCH
+
+$ pnpm -C packages/openfeature-provider pack        # 9.12.0, gói thật
+udp-openfeature-provider-0.1.0.tgz
+  name          = @udp/openfeature-provider     ← KHÔNG được áp
+  publishConfig = {'name': 'udp-openfeature'}   ← KHÔNG bị xoá
+```
+
+Việc nâng `name` chỉ xuất hiện giữa pnpm 11.16 và 11.22. Và cặp tên của probe cũ (`@udp/probe-ten` →
+`udp-probe-ten`) **không phân biệt được hai giả thuyết**, vì npm/pnpm làm phẳng scope khi đặt tên tarball.
+
+**Bài học, cụ thể hơn R7 một bậc:** chạy phép đo bằng **đúng công cụ mà đường thật dùng**, và **in phiên bản ra
+trong cùng lệnh**. Một probe ngoài repo là một môi trường khác. Nếu ship bản nháp, `pack.ts` ném ngay ở dòng mã
+đầu tiên.
+
+### Hai cổng mới bắt đúng chuyện thật, không phải suy đoán
+
+- **Hợp đồng artifact cấm MỌI chuỗi `@udp/` trong byte khách nhận** (`.js`, `.d.ts`, `.md` trong tarball). Lượt
+  chạy đầu đỏ ở **năm** chỗ: banner esbuild trong `dist/index.js` và `dist/metrics.js`, README, và JSDoc lọt vào
+  `dist/types/*.d.ts` — thứ IDE của khách hiện khi hover, hướng về khách hơn cả README. Đặt cổng trên **tarball**
+  chứ không trên mã nguồn là lý do nó bao được cả thứ chưa tồn tại.
+- **`scan.ts` phải nhận cả hai tên.** Ngay khi cây Golden Path đổi sang tên công khai, ô "cây Golden Path của chính
+  UDP" đỏ: `expected [ 'udp-provider' ] to deeply equal []`. Không sửa thì bộ quét báo "chưa dùng SDK" cho **mọi**
+  khách cài từ npm, và `flagLevelReady` chặn họ tạo rollout mức flag — một sai âm im lặng.
+
+### Vòng R11 bắt một ô của chính đợt này đang XANH SAI
+
+Lượt "dùng literal trùng lặp thay vì hằng" lần đầu cho **xanh**: phép đếm `uses >= 2` của bộ đọc hằng bị **chú
+thích làm phồng** (JSDoc nhắc tên hằng ⇒ đếm 3; bỏ một chỗ dùng vẫn còn 2). Đã sửa: bỏ khối chú thích TRƯỚC khi
+đếm. Tám lượt làm lệch còn lại đều đỏ đúng chỗ.
+
+### Ba chỗ chệch plan
+
+Thêm một ô ở `ci-workflow.test.ts` (bước publish không được chép cứng tên trong kho — không có nó thì lỗi chỉ lộ ở
+lượt chạy lại một tag thật); sửa tay hai wire fixture thay vì ghi lại cả bộ (`wire-golden.test.ts` 124 ô vẫn
+xanh); và đổi mục Development của README sang `pnpm -C packages/openfeature-provider` để luật "không `@udp/` trong
+artifact" giữ được **tuyệt đối** — một cổng không có ngoại lệ là một cổng không ai phải nhớ ngoại lệ.
+
+## 7. Việc tiếp
+
+1. **Trả nợ `sdk-publish-real`** — runbook **năm** bước trong `docs/measurements/kiem-chung-con-no.md` (không còn bước tạo org: tên phát hành `udp-openfeature` không có scope). Thứ tự quan
    trọng: chạy `publish-rehearsal.yml` (cùng số version) cho xanh **trước** khi publish bootstrap, vì một version đã
    đăng thì không thu hồi được. Và khai đúng ba giá trị đã chốt ở cả hai registry: tên tệp `publish.yml`, environment
    `release-npm`/`release-pypi`, và **Allowed actions: `npm publish`** ở phía npm.
 2. **Bật Required reviewers** cho hai environment — `environment:` trong YAML **tự nó không là chốt duyệt nào**.
-3. **Hai nhánh chưa merge:** mọi việc của Plan #61 và #62 đang ở nhánh `p61-dong-goi`, chưa push. `workflow_dispatch`
+3. **Chưa merge:** mọi việc của Plan #61 và #62 đang ở nhánh `p61-dong-goi` (đã push; `main` còn ở sau 196 commit). `workflow_dispatch`
    của tệp diễn tập chỉ xuất hiện sau khi tệp nằm trên nhánh mặc định, nên lượt diễn tập đầu chỉ chạy được sau merge.
 4. Còn lại của dự án: các mục nợ cần cloud/cụm/người thật (52 mục), §16 giới hạn đã chấp nhận, §17 hướng mở rộng.
