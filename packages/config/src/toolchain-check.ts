@@ -188,7 +188,7 @@ export type FindingStatus =
    */
   | "chart-update";
 
-/** Loại ghim — `patchEdits` của 61d-3c-2 lọc theo đây, không theo hình dạng chuỗi `source` */
+/** Loại ghim — `isFixable` lọc theo đây và theo `source`, không theo hình dạng chuỗi */
 export type FindingKind = "image" | "release" | "action" | "chart";
 
 export interface Finding {
@@ -653,6 +653,187 @@ export function applyKnownBroken(
       detail: `ghim này đã hết hỏng (${f.status}) — xoá nó khỏi KNOWN_BROKEN_CHARTS`,
     };
   });
+}
+
+// --------------------------------------------------------------------- `--fix` (Plan #61 61d-3c-2)
+
+/**
+ * Ghim mà `--fix` được sửa — allowlist **DƯƠNG** theo `source`, không theo hình dạng chuỗi.
+ *
+ * Năm nhóm bị loại, mỗi nhóm một lý do đã kiểm ở nguồn:
+ *
+ *  - `STEP_IMAGES.*`: **không** là chuỗi `name:tag@sha256:…` (0/16 chuỗi ghim đầy đủ thuộc nó — `stepImage()` lắp
+ *    lúc chạy từ `repo`/`tagSuffix`/`version`/`pins`). Sửa nó là một phép **chèn** vào `pins` cộng quyết định đổi
+ *    `latest`, mà đổi `latest` là đổi **mặc định cấu hình domain** — chú thích của `STEP_IMAGES` viết ra để chống
+ *    đúng điều đó ("project đã lưu nó không bị nâng âm thầm").
+ *  - `BUILD_TOOLCHAIN.actions.checkout`: ghim theo **SHA commit**, một loại khác hẳn; bump `version` mà giữ `sha`
+ *    làm chú thích nói sai và `checkoutFinding` báo `broken` mãi.
+ *  - `BUILD_TOOLCHAIN.cosign`: có một điều kiện **con người phải kiểm** — bản mới phải kéo `sigstore/sigstore`
+ *    ≥ v1.10.10 (lỗi Azure KMS sigstore#2409). Nâng tự động có thể KÝ SAI, một lỗi chỉ lộ ở cổng deploy.
+ *  - `images.builder`, `images.buildkit`: mỗi cái có ba hằng **vệ tinh** đi thẳng vào pod build (`builderUser`,
+ *    `cnbPlatformApi`, `buildkitUser`) mà không cổng nào canh quan hệ ấy. Một bản builder mới đổi lifecycle là
+ *    build của mọi khách hỏng, và không test nào đỏ trước khi gộp.
+ *  - ghim chart: một bản vá chart là bump `adapter_version` + `upgradesFrom` (§8.6, cổng F3) — có ngữ nghĩa.
+ *
+ * Và **chỉ** `status === "update"`: `moved` nghĩa là *tag giữ nguyên, digest đổi*, tức có thể là một lần đẩy đè
+ * thù địch (sự cố Trivy 03/2026, CVE-2026-33634 — đúng lý do `build-toolchain.ts` ghim theo digest). Một `--fix`
+ * theo `isActionable` sẽ **tự động hoá việc chấp nhận** một lần đẩy đè, kèm một PR trông như PR làm mới checksum.
+ */
+export function isFixable(f: Finding): boolean {
+  if (f.status !== "update") return false;
+  const excluded = [
+    "BUILD_TOOLCHAIN.images.builder",
+    "BUILD_TOOLCHAIN.images.buildkit",
+    "BUILD_TOOLCHAIN.cosign",
+  ];
+  if (excluded.includes(f.source)) return false;
+  return (
+    f.source.startsWith("BUILD_TOOLCHAIN.images.") ||
+    f.source.startsWith("TEST_IMAGES.") ||
+    f.source === "BUILD_TOOLCHAIN.pack" ||
+    f.source === "BUILD_TOOLCHAIN.oras"
+  );
+}
+
+/**
+ * Một phép thay chuỗi, kèm **số lần khớp dự kiến**.
+ *
+ * Vì sao không phải "đúng một lần": `TEST_IMAGES.nodejs` và `.python` có một bất biến hai đầu —
+ * `golden-path-pins.test.ts` khẳng định **mọi** dòng `FROM` của Dockerfile Golden Path bằng đúng
+ * `TEST_IMAGES.<runtime>`, và mỗi Dockerfile có **hai** dòng `FROM`. Luật "đúng một lần" sẽ ném ở chính ghim được
+ * vá dày nhất; còn sửa một đầu thì cổng kia đỏ. Nên mỗi phép thay tự khai số lần, và `applyEdits` ném khi số thật
+ * khác số khai.
+ */
+export interface PatchEdit {
+  file: string;
+  from: string;
+  to: string;
+  expect: number;
+  /** Ghim nào sinh phép thay này — hiện trong báo cáo */
+  source: string;
+}
+
+export const TOOLCHAIN_FILE = "packages/config/src/build-toolchain.ts";
+
+/** Dockerfile Golden Path dùng CÙNG chuỗi ghim với `TEST_IMAGES` — hai đầu của một bất biến, sửa cùng lúc */
+export const GOLDEN_PATH_FROMS: Readonly<Record<string, string>> = {
+  "TEST_IMAGES.nodejs": "packages/golden-path/templates/node/Dockerfile",
+  "TEST_IMAGES.python": "packages/golden-path/templates/python/Dockerfile",
+};
+
+/**
+ * Đầu thứ BA của cùng bất biến: bản xem thử Portal chép cứng bảng `TEST_IMAGES`.
+ *
+ * Nó không import được `@udp/config` (gốc package re-export `env`, và kéo một package server-side vào app trình
+ * duyệt là đi ngược ranh giới package), nên bản chép là có chủ ý và `pinned-digest-copies.test.ts` canh nó. Hệ quả
+ * cho `--fix`: không sửa chỗ này thì chính cổng đó đỏ — đã xảy ra thật ở lượt `--fix` đầu tiên.
+ *
+ * Mọi ghim của `TEST_IMAGES` đều có mặt ở đó, nên đây là một tệp cho CẢ bảng, không phải một tệp cho mỗi ngôn ngữ.
+ */
+export const PORTAL_MOCK_FILE = "apps/portal/demo/mock/build.ts";
+
+/**
+ * Phép thay cho một ghim image. Hàm THUẦN: nhận chuỗi ghim CŨ đầy đủ và chuỗi MỚI đầy đủ.
+ *
+ * Nhận chuỗi đầy đủ chứ không suy lại từ `Finding`: `Finding.detail` là văn xuôi cho người đọc, và suy ngược
+ * digest cũ từ đó là đúng loại khảo cổ chuỗi đã sinh ra mọi lỗi mà vòng QA tìm thấy. Bên gọi đã có `PinnedImage`
+ * trong tay — nó là nguồn.
+ *
+ * `fromCount` là số dòng `FROM` của Dockerfile tương ứng, do phần mạng ĐẾM từ tệp thật; 0 ⇒ không sinh phép thay
+ * cho Dockerfile. Truyền vào thay vì đoán 2, để một Dockerfile ba tầng không làm `applyEdits` ném.
+ */
+export function imageEdits(args: {
+  source: string;
+  oldImage: string;
+  newImage: string;
+  fromCount?: number;
+  /** Chuỗi ghim này có mặt trong bản xem thử Portal (phần mạng ĐỌC tệp để biết, không đoán) */
+  inPortalMock?: boolean;
+}): PatchEdit[] {
+  const edits: PatchEdit[] = [
+    {
+      file: TOOLCHAIN_FILE,
+      from: args.oldImage,
+      to: args.newImage,
+      expect: 1,
+      source: args.source,
+    },
+  ];
+  const dockerfile = GOLDEN_PATH_FROMS[args.source];
+  const count = args.fromCount ?? 0;
+  if (dockerfile !== undefined && count > 0) {
+    edits.push({
+      file: dockerfile,
+      from: args.oldImage,
+      to: args.newImage,
+      expect: count,
+      source: `${args.source} → ${dockerfile}`,
+    });
+  }
+  if (args.source.startsWith("TEST_IMAGES.") && args.inPortalMock === true) {
+    edits.push({
+      file: PORTAL_MOCK_FILE,
+      from: args.oldImage,
+      to: args.newImage,
+      expect: 1,
+      source: `${args.source} → ${PORTAL_MOCK_FILE}`,
+    });
+  }
+  return edits;
+}
+
+/** Phép thay cho một bản phát hành (`pack`, `oras`): version và sha256, mỗi cái một chuỗi literal trong bảng */
+export function releaseEdits(args: {
+  source: string;
+  oldVersion: string;
+  newVersion: string;
+  oldSha256: string;
+  newSha256: string;
+}): PatchEdit[] {
+  return [
+    {
+      file: TOOLCHAIN_FILE,
+      from: `version: "${args.oldVersion}"`,
+      to: `version: "${args.newVersion}"`,
+      expect: 1,
+      source: args.source,
+    },
+    {
+      file: TOOLCHAIN_FILE,
+      from: args.oldSha256,
+      to: args.newSha256,
+      expect: 1,
+      source: `${args.source} (sha256)`,
+    },
+  ];
+}
+
+/**
+ * Áp một tập phép thay lên nội dung tệp. Ném khi số lần khớp KHÁC số khai — và ném thì **không tệp nào** được ghi,
+ * vì hàm trả về một object MỚI và bên gọi chỉ ghi sau khi nó trả về.
+ *
+ * "Ném chứ không sửa một nửa" là điều kiện để `--fix` an toàn: khớp 0 lần nghĩa là giả định về hình dạng tệp đã
+ * sai, và khớp nhiều hơn số khai nghĩa là phép thay đang chạm một ghim khác.
+ */
+export function applyEdits(
+  files: Readonly<Record<string, string>>,
+  edits: readonly PatchEdit[],
+): Record<string, string> {
+  const out: Record<string, string> = { ...files };
+  for (const e of edits) {
+    const text = out[e.file];
+    if (text === undefined) {
+      throw new Error(`${e.file}: không có nội dung để sửa (${e.source})`);
+    }
+    const count = text.split(e.from).length - 1;
+    if (count !== e.expect) {
+      throw new Error(
+        `${e.file}: "${e.from.slice(0, 60)}" khớp ${String(count)} lần, khai ${String(e.expect)} (${e.source})`,
+      );
+    }
+    out[e.file] = text.split(e.from).join(e.to);
+  }
+  return out;
 }
 
 /** `FROM <image>` của một Dockerfile ⇒ các image (bỏ tham chiếu tới tầng trước như `FROM build`) */

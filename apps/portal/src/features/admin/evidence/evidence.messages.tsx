@@ -160,6 +160,16 @@ export const evidenceMessages = defineMessages({
         proves:
           "Một trang danh sách (200 flag × 3 env) trả trong 500 ms. Số hiện tại CHƯA ĐẠT, ghi đúng như đo.",
       },
+      "kyverno-crd": {
+        title: "Policy admission hợp lệ theo CRD thật",
+        proves:
+          "Policy chữ ký image mà UDP sinh ra qua được bộ kiểm dựng từ chính CRD của Kyverno 1.19.1, kèm một phép kiểm ngược: một policy sai bị từ chối.",
+      },
+      "chart-values": {
+        title: "Khoá values của adapter so với chart thật",
+        proves:
+          "Khoá mà adapter đặt vào values của chart có tồn tại trong chart đó không. Helm bỏ qua khoá lạ trong im lặng, nên lệch khoá là một cấu hình không có tác dụng.",
+      },
     } satisfies Record<ExperimentId, ExperimentText>,
     charts: {
       e1: {
@@ -415,6 +425,16 @@ export const evidenceMessages = defineMessages({
         title: "Portal flag list",
         proves:
           "One list page (200 flags × 3 environments) answers within 500 ms. The current figure does NOT meet it, and is shown as measured.",
+      },
+      "kyverno-crd": {
+        title: "Admission policy valid against the real CRD",
+        proves:
+          "The image-signature policy UDP generates passes a validator built from Kyverno 1.19.1's own CRD, plus a reverse check: a wrong policy is rejected.",
+      },
+      "chart-values": {
+        title: "Adapter values keys against the real chart",
+        proves:
+          "Whether the keys an adapter sets in a chart's values exist in that chart. Helm ignores unknown keys silently, so a mismatched key is configuration with no effect.",
       },
     },
     charts: {

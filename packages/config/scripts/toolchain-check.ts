@@ -3,27 +3,45 @@
  * đẩy lại hay ghim đã hỏng. Chỉ ĐỌC registry và GitHub (ẩn danh; trong GitHub Actions dùng `GITHUB_TOKEN` cho giới hạn
  * gọi cao hơn), không sửa gì. Thoát 1 khi có việc cần làm — workflow theo lịch tuần đỏ để có người nhìn.
  */
-import { appendFileSync, readdirSync, readFileSync } from "node:fs";
+import {
+  appendFileSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { parseArgs } from "node:util";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUILD_TOOLCHAIN } from "../src/build-toolchain.js";
 import {
+  applyEdits,
   checkoutFinding,
   dockerfileImages,
+  GOLDEN_PATH_FROMS,
+  imageEdits,
   imageFinding,
   isActionable,
+  isFixable,
+  newerTags,
   parseImageRef,
   pinnedReleases,
   publishedSha256Of,
+  releaseEdits,
   releaseFinding,
   pinnedImages,
   renderReport,
+  PORTAL_MOCK_FILE,
+  TOOLCHAIN_FILE,
   type Finding,
+  type PatchEdit,
   type PinnedRelease,
   type PinnedImage,
 } from "../src/toolchain-check.js";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+
+/** `--fix`: soạn phép thay và GHI tệp; vắng cờ ⇒ chỉ đọc, y như trước */
+const { values } = parseArgs({ options: { fix: { type: "boolean" } } });
 
 const MANIFEST_TYPES = [
   "application/vnd.oci.image.index.v1+json",
@@ -208,6 +226,21 @@ async function checkCheckout(): Promise<Finding> {
   });
 }
 
+/** Số dòng `FROM` ghim digest của mỗi Dockerfile Golden Path — `applyEdits` cần số thật, không đoán */
+function goldenPathFromCounts(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const file of Object.values(GOLDEN_PATH_FROMS)) {
+    try {
+      out[file] = dockerfileImages(
+        readFileSync(resolve(REPO_ROOT, file), "utf8"),
+      ).length;
+    } catch {
+      out[file] = 0;
+    }
+  }
+  return out;
+}
+
 /** `FROM` ghim của Dockerfile Golden Path */
 function goldenPathImages(): PinnedImage[] {
   const templates = resolve(REPO_ROOT, "packages/golden-path/templates");
@@ -226,6 +259,97 @@ function goldenPathImages(): PinnedImage[] {
   });
 }
 
+/**
+ * [Plan #61 61d-3c-2] Giá trị MỚI của một ghim — phần MẠNG lấy, vì phần kiểm không bao giờ hỏi nó.
+ *
+ * `checkImage` chỉ hỏi digest của tag ĐANG ghim và `checkRelease` chỉ tải tệp checksums của bản ĐANG ghim (cả hai
+ * để phát hiện ghim hỏng). Nên `--fix` phải gọi thêm: digest của tag ĐÍCH, và tệp checksums của bản ĐÍCH. Thiếu hai
+ * lượt gọi đó thì `--fix` chỉ ghi được *version mới + sha256 cũ* ⇒ `sha256sum -c -` đỏ ⇒ pipeline đóng gói của MỌI
+ * project khách hỏng.
+ */
+async function imageFixEdits(
+  pin: PinnedImage,
+  finding: Finding,
+  fromCounts: Readonly<Record<string, number>>,
+): Promise<PatchEdit[]> {
+  const ref = parseImageRef(pin.image);
+  const tags = await tagsOf(ref.host, ref.repository);
+  const patch = newerTags(ref.tag, tags).patch;
+  if (patch === null) return [];
+  const digest = await digestOf(ref.host, ref.repository, patch);
+  if (digest === null) {
+    throw new Error(`${pin.source}: không đọc được digest của tag ${patch}`);
+  }
+  const name = pin.image.slice(0, pin.image.indexOf(":"));
+  const dockerfile = GOLDEN_PATH_FROMS[finding.source];
+  return imageEdits({
+    source: finding.source,
+    oldImage: pin.image,
+    newImage: `${name}:${patch}@${digest}`,
+    /**
+     * Đầu thứ BA của cùng bất biến: bản xem thử Portal chép cứng bảng `TEST_IMAGES`, và
+     * `pinned-digest-copies.test.ts` canh nó. ĐỌC tệp để biết chuỗi có ở đó, không đoán — lượt `--fix` đầu tiên
+     * làm đúng cổng đó đỏ vì thiếu phép thay này.
+     */
+    inPortalMock: portalMock().includes(pin.image),
+    ...(dockerfile === undefined
+      ? {}
+      : { fromCount: fromCounts[dockerfile] ?? 0 }),
+  });
+}
+
+/** Nội dung bản xem thử Portal, đọc một lần — nó chép cứng bảng `TEST_IMAGES` (xem `PORTAL_MOCK_FILE`) */
+let portalMockCache: string | null = null;
+function portalMock(): string {
+  portalMockCache ??= (() => {
+    try {
+      return readFileSync(resolve(REPO_ROOT, PORTAL_MOCK_FILE), "utf8");
+    } catch {
+      return "";
+    }
+  })();
+  return portalMockCache;
+}
+
+async function releaseFixEdits(
+  release: PinnedRelease,
+  finding: Finding,
+): Promise<PatchEdit[]> {
+  const latest = await github<{ tag_name: string }>(
+    `/repos/${release.repo}/releases/latest`,
+  );
+  const next = (latest?.tag_name ?? "").replace(/^v/, "");
+  if (next === "" || next === release.version) return [];
+  /** Tên tệp tải và tệp checksums SUY từ version, nên bản đích có tên khác bản ghim — phải dựng lại cả hai */
+  const target: PinnedRelease = {
+    ...release,
+    version: next,
+    asset: release.asset.replaceAll(release.version, next),
+    checksums: release.checksums.replaceAll(release.version, next),
+  };
+  const sums = await fetchRetry(
+    `https://github.com/${release.repo}/releases/download/v${next}/${target.checksums}`,
+  );
+  if (!sums.ok) {
+    throw new Error(
+      `${release.key}: không tải được checksums của v${next} (HTTP ${String(sums.status)})`,
+    );
+  }
+  const sha256 = publishedSha256Of(await sums.text(), target.asset);
+  if (sha256 === null) {
+    throw new Error(
+      `${release.key}: tệp checksums của v${next} không có dòng cho ${target.asset}`,
+    );
+  }
+  return releaseEdits({
+    source: finding.source,
+    oldVersion: release.version,
+    newVersion: next,
+    oldSha256: release.sha256,
+    newSha256: sha256,
+  });
+}
+
 const findings = [
   ...(await Promise.all(pinnedImages(goldenPathImages()).map(checkImage))),
   ...(await Promise.all(pinnedReleases().map(checkRelease))),
@@ -235,4 +359,77 @@ const report = renderReport(findings);
 process.stdout.write(report);
 const summary = process.env.GITHUB_STEP_SUMMARY;
 if (summary !== undefined && summary !== "") appendFileSync(summary, report);
-process.exitCode = findings.some(isActionable) ? 1 : 0;
+
+if (!values.fix) {
+  process.exitCode = findings.some(isActionable) ? 1 : 0;
+} else {
+  /**
+   * Chế độ `--fix`: soạn phép thay cho những ghim **dữ liệu thuần** rồi ghi tệp. Không commit, không push, không mở
+   * PR — xem `docs/plans/plan61-plan.md` (61d-3c-2) để biết vì sao đường PR bị bỏ: PR mở bằng `GITHUB_TOKEN` không
+   * kích hoạt workflow nào, và `build-smoke` của `ci.yml` bỏ qua `pull_request`, nên PR đó có ZERO phép kiểm máy.
+   *
+   * Mã thoát ở chế độ này nói về **việc soạn**, không về "còn việc cần làm": thoát 1 lúc có việc sửa sẽ làm bước
+   * sau của workflow không chạy, và bước sau chính là bước đính kèm bản `.patch`.
+   */
+  const images = new Map(
+    pinnedImages(goldenPathImages()).map((pin) => [pin.source, pin]),
+  );
+  const releases = new Map(
+    pinnedReleases().map((r) => [`BUILD_TOOLCHAIN.${r.key}`, r]),
+  );
+  const fromCounts = goldenPathFromCounts();
+
+  const edits: PatchEdit[] = [];
+  const refused: string[] = [];
+  for (const f of findings) {
+    if (!isFixable(f)) {
+      /**
+       * Finding của Dockerfile Golden Path KHÔNG vào danh sách từ chối: ghim của nó là CÙNG chuỗi với
+       * `TEST_IMAGES.<runtime>` và đã được sửa theo cặp. Để nó ở đó thì báo cáo nói sai — "không tự sửa" cho một
+       * thứ vừa được sửa.
+       */
+      const paired = Object.values(GOLDEN_PATH_FROMS).some((d) =>
+        d.endsWith(f.source),
+      );
+      if (isActionable(f) && !paired) {
+        refused.push(`${f.source}: ${f.status} — ${f.detail}`);
+      }
+      continue;
+    }
+    const image = images.get(f.source);
+    const release = releases.get(f.source);
+    if (image !== undefined) {
+      edits.push(...(await imageFixEdits(image, f, fromCounts)));
+    } else if (release !== undefined) {
+      edits.push(...(await releaseFixEdits(release, f)));
+    }
+  }
+
+  const files: Record<string, string> = {};
+  for (const e of edits) {
+    files[e.file] ??= readFileSync(resolve(REPO_ROOT, e.file), "utf8");
+  }
+  const patched = applyEdits(files, edits);
+  for (const [file, text] of Object.entries(patched)) {
+    if (text !== files[file]) writeFileSync(resolve(REPO_ROOT, file), text);
+  }
+
+  const lines = [
+    "",
+    `## \`--fix\`: ${String(edits.length)} phép thay trên ${String(Object.keys(patched).length)} tệp`,
+    "",
+    ...edits.map((e) => `- \`${e.file}\` × ${String(e.expect)} — ${e.source}`),
+    ...(refused.length === 0
+      ? []
+      : [
+          "",
+          "**KHÔNG tự sửa** (xem `isFixable` để biết lý do từng nhóm):",
+          "",
+          ...refused.map((r) => `- ${r}`),
+        ]),
+    "",
+  ].join("\n");
+  process.stdout.write(lines);
+  if (summary !== undefined && summary !== "") appendFileSync(summary, lines);
+  process.exitCode = 0;
+}

@@ -1508,6 +1508,119 @@ tay" sửa thành đỏ nhất; (g) ghim đóng băng chỉ kiểm tồn tại, 
 giả; (i) `FROZEN_PINS` viết tay của script phải KHỚP `upgradesFrom` trong mã (cổng design-lint — danh sách tay là
 danh sách mục được); (j) bề mặt adapter không rộng ra: cổng đóng băng vẫn đếm 8 + 6.
 
+### 61d-3c-2 — đã làm, và những chỗ CHỆCH plan (R5)
+
+Đợt này trả ba mục mà 61d-3c-1 hoãn: cổng cưỡng chế F3, cổng cho hai bản chép digest, và `--fix`. Ba vòng QA của
+61d-3c đã viết sẵn phần khó của `--fix`, nên đợt này hiện thực theo đúng năm ràng buộc đó; hai chỗ chệch là hai chỗ
+chính tôi tìm thêm trong lúc làm.
+
+#### 1. Cổng F3 — và nó tự bắt một lỗ FAIL OPEN của chính nó
+
+`pnpm --filter @udp/design-lint chart-bump --base <sha> --head <sha>` cưỡng chế điều mà §8.6 (sửa ở 61d-3a) chỉ nói
+bằng chữ: đổi `version` của một chart trong `HELM_CHART_PINS` thì **cùng commit** phải bump `version` của adapter
+dùng chart đó **và** để `upgradesFrom` mang **đúng** version chart cũ. Luật thứ hai là nửa dễ quên nhất và cũng là
+nửa duy nhất làm `restoreTo` chạy đúng: thiếu nó, cụm "đã hạ về" sẽ chạy chart cũ với `values` của bản MỚI.
+
+Vì sao cần cưỡng chế, bằng mã chứ không bằng chữ: `upgradesFrom` là trường **tuỳ chọn** của `HelmAdapterSpec`, và
+`requestReapply` chỉ chặn khi `row.adapterVersion !== adapter.version` (`domain-apply.service.ts:306-312`) — nên sửa
+ghim tại chỗ mà giữ version adapter thì `reapply` áp bình thường: không validator capability, không đường hạ về.
+Lối sai dễ hơn lối đúng, và 61d-3c-1 vừa dựng một vòi báo 29 bản vá chart mỗi tuần.
+
+**Miễn trừ là một dòng trong THÔNG ĐIỆP COMMIT, không một danh sách trong mã:** `Ghim-hỏng: <tên chart>`. Sửa một
+ghim **chưa bao giờ tải về được** (`broken`/`shape`/`repo-gone`) không phải một lần nâng cấp §8.6 — không cụm nào
+từng chạy bản cũ, nên không có định nghĩa nào để `upgradesFrom` mang. Lời miễn trừ là lời khai về MỘT commit, nên nó
+phải sống cùng commit đó và hiện ra trong mọi lần review; một danh sách trong mã thì mục được.
+
+**Test-the-test trên lịch sử git THẬT, không trên khuôn:** tạo một commit đổi `gatekeeper 3.17.1→3.17.2` mà không
+bump adapter ⇒ cổng báo `VI PHẠM` kèm lý do đúng; thêm dòng `Ghim-hỏng: gatekeeper` ⇒ `đạt (miễn: gatekeeper)`; rồi
+bỏ commit tạm. Cộng một ô đi qua 8 commit cuối của repo và khẳng định không commit nào vi phạm — ô đó cũng là phép
+kiểm "cổng không tố oan", vì commit dựng bảng (61d-3c-1) đổi năm ghim mà không bump adapter nào.
+
+**Và chỗ chệch thứ nhất: mẫu đọc ghim của tôi FAIL OPEN, chỉ thấy 42 trong 71 chart.** `chartPinsOf` đòi khoá có dấu
+nháy (`"argo-cd":`), nhưng prettier **bỏ nháy** ở mọi khoá là định danh hợp lệ (`gatekeeper:`) — nên cổng im lặng bỏ
+qua 29 chart. Mười một ô test dùng khuôn viết tay đều xanh suốt, vì khuôn viết tay thì khoá nào cũng có nháy. Ô duy
+nhất bắt được là ô đọc **chính tệp sản phẩm** (`expected 42 to be 71`), và tôi đã dựng lại bản fail-open một lần nữa
+để chứng minh nó bắt. Bài học ghi vào chú thích của hàm: một cổng đọc mã nguồn phải có ít nhất một ô đọc tệp THẬT,
+không chỉ khuôn.
+
+#### 2. Cổng cho hai bản chép digest — và `--fix` của chính đợt này làm nó đỏ
+
+`build-toolchain.ts` là nguồn duy nhất của ghim image, nhưng hai chỗ chép lại chính những digest đó mà **không**
+import từ đó, và trước đợt này không cổng nào canh: `apps/portal/demo/mock/build.ts` (bảng `TEST_IMAGE` của bản xem
+thử — không import được `@udp/config` vì gốc package re-export `env`, và kéo một package server-side vào app trình
+duyệt là đi ngược ranh giới package, nên bản chép là **có chủ ý**) và
+`services/core-backend/tests/fixtures/build-apps/dockerfile/Dockerfile` (một Dockerfile không import được gì, và
+fixture này được **build thật** trong job `build-smoke` của CI).
+
+**Chỗ chệch thứ hai, và nó tự chứng minh cổng:** lượt `--fix` đầu tiên nâng `TEST_IMAGES.python` và hai dòng `FROM`
+của Dockerfile Golden Path, rồi **làm đỏ đúng cổng vừa dựng một giờ trước** — vì bản xem thử vẫn giữ digest cũ. Nên
+`--fix` phải sửa **ba** đầu của cùng một bất biến, không hai: bảng, Dockerfile, và bản xem thử. Plan chỉ nói hai.
+
+#### 3. `--fix` — phạm vi, và năm lời TỪ CHỐI có lý do ở nguồn
+
+Hình: `pnpm toolchain:fix` soạn phép thay rồi **ghi tệp**; không commit, không push, không mở PR.
+
+- **`Finding` KHÔNG mang giá trị mới, và `patchEdits` không được đoán.** Phần kiểm không bao giờ hỏi giá trị đích:
+  `checkImage` chỉ hỏi digest của tag ĐANG ghim, `checkRelease` chỉ tải checksums của bản ĐANG ghim. Nên phần mạng
+  có **hai lượt gọi mới** (`digestOf(tag đích)`, checksums của version đích) và phần thuần nhận **chuỗi ghim cũ đầy
+  đủ + chuỗi mới đầy đủ** (`imageEdits`, `releaseEdits`). Suy ngược digest cũ từ `detail` là đúng loại khảo cổ chuỗi
+  đã sinh ra mọi lỗi mà vòng QA tìm thấy, nên không có chỗ nào làm việc đó.
+- **Mỗi phép thay mang SỐ LẦN KHỚP DỰ KIẾN**, không phải "đúng một lần": `golden-path-pins.test.ts` khẳng định
+  **mọi** dòng `FROM` bằng đúng `TEST_IMAGES.<runtime>` và mỗi Dockerfile có **hai** dòng `FROM`. `applyEdits` ném
+  khi số thật khác số khai, và ném thì **không tệp nào** được ghi (hàm trả về object mới; bên gọi chỉ ghi sau khi nó
+  trả về).
+- **Allowlist DƯƠNG theo `source`**, và chỉ `status === "update"`. Năm nhóm bị loại, mỗi nhóm một lý do đã kiểm:
+  `moved`/`broken` (tag giữ nguyên digest đổi = có thể là một lần đẩy đè — sự cố Trivy 03/2026, đúng lý do
+  `build-toolchain.ts` ghim theo digest); `STEP_IMAGES` (không là chuỗi literal; sửa là CHÈN vào `pins` cộng đổi
+  `latest`, tức đổi mặc định cấu hình domain); `actions.checkout` (ghim theo SHA commit); `cosign` (bản mới phải kéo
+  `sigstore/sigstore` ≥ v1.10.10 — một điều kiện con người phải kiểm, nâng tự động có thể KÝ SAI); `images.builder`
+  và `images.buildkit` (ba hằng vệ tinh `builderUser`/`cnbPlatformApi`/`buildkitUser` đi thẳng vào pod build, không
+  cổng nào canh quan hệ ấy); và ghim chart (bump adapter + `upgradesFrom`, cổng F3).
+- **Mã thoát ở chế độ `--fix` là 0 khi soạn xong**, không 1. Plan không nói, và đây là chỗ tính năng sẽ chết im
+  lặng: script đặt `exitCode = 1` đúng lúc có việc làm, nên nếu giữ nguyên thì bước **đính kèm bản `.patch`** không
+  bao giờ chạy.
+- **Không PR.** PR mở bằng `GITHUB_TOKEN` **không kích hoạt workflow nào** (luật của GitHub), và `ci.yml:247`
+  `build-smoke` có `if: github.event_name != 'pull_request'` — nên PR đó có **zero** phép kiểm máy, trong khi nội
+  dung nó sửa là ghim chuỗi cung ứng. Thay vào đó: job `toolchain-fix` giữ `permissions: contents: read`, chạy
+  `--fix`, `git diff > toolchain.patch`, rồi `actions/upload-artifact@v4` (đã là tiền lệ trong `ci.yml`). Không
+  action bên thứ ba mới, và xoá luôn giả định "repo cho Actions mở PR" mà bản nháp tự nhận chưa kiểm được.
+
+**Lượt chạy thật (03/10/2026):** 4 phép thay trên 3 tệp — `images.awsCli` 2.37.8⇒2.37.9 và `TEST_IMAGES.python`
+3.12.14⇒3.12.15 (cả tag và digest, digest lấy từ registry), kèm hai dòng `FROM` của Dockerfile Golden Path và bản
+xem thử Portal. Và **5 mục bị từ chối đúng**: `images.builder` (vệ tinh), ba finding `moved`
+(`TEST_IMAGES.java-gradle`, `TEST_IMAGES.dotnet`, `STEP_IMAGES.ansible` — tag bị đẩy lại), `STEP_IMAGES.terraform`
+(ghim có cấu trúc). Chạy lần hai ⇒ 0 phép thay (hội tụ).
+
+#### 4. Hai món của plan KHÔNG làm trong đợt này
+
+- **Dòng báo cáo đếm `adapter_version` đang CHẠY** so với bản máy chủ nạp (QA C L5). Nó cần một truy vấn ở mức hệ
+  thống trên `DomainConfig`, tức một bề mặt mới của Service 1 — không thuộc một cổng CI chỉ đọc mã. Để lại cho
+  Plan #62 hay một đợt Day-2 riêng; §16 có một dòng.
+- **Bộ ký trong cụm (61d-2b-2)** vẫn theo thứ tự đã quyết ở 02/10.
+
+**Cổng đã qua:** `pnpm typecheck` (config, core-backend, design-lint, portal) 0 lỗi; `prettier --check` sạch;
+`eslint` sạch trên mọi thư mục đã đổi; `@udp/config` **81 ô** (thêm 16 ô của `--fix`); design-lint **193 ô** (thêm
+12 ô F3 + 2 ô bản chép digest); Portal **365 ô** (gồm cổng em-dash và cổng sổ thí nghiệm); `golden-path-pins`
+**2/2**; `toolchain:fix` thật trên mạng ⇒ 4 phép thay, 5 lời từ chối đúng, hội tụ ở lượt hai. **Không migration.**
+
+**Một cổng mà tôi đã để đỏ hai đợt mà không biết, và nó bắt đúng chuyện của tôi:**
+`apps/portal/tests/evidence.test.tsx` đòi **mọi** tiền tố tệp thô trong `docs/measurements/raw/` phải có một thẻ
+trong sổ thí nghiệm của Portal. Hai phép đo mới (`kyverno-crd` của 61d-3b, `chart-values` của 61d-3c-1) không có
+thẻ, nên cổng đó đã đỏ từ 61d-3b — tôi chạy core-backend, config, design-lint, shared-types, adapter-core nhưng
+**không chạy Portal**. Đã thêm hai thẻ (hai ngôn ngữ, nhóm C2) và cổng em-dash cũng bắt hai dấu `—` tôi vừa viết.
+Bài học cho người tiếp: bộ cổng của repo này nằm ở **sáu** package, và một phép đo mới chạm ít nhất ba trong số đó.
+
+**Đường lùi (R10):** `git revert`. Hai ghim đã nâng (`awsCli`, `python`) là một thay đổi sản phẩm thật — revert phải
+mang cả ba đầu (bảng, Dockerfile, bản xem thử) hay hai cổng sẽ đỏ.
+
+**Kiểm thoái cấp (R11) — trả bằng ô test:** (a) `--fix` **từ chối** `moved` và `broken` (ô test, cộng một ô ngược:
+đổi `moved` thành `update` thì ô đỏ); (b) từ chối `STEP_IMAGES`, `actions.checkout`, `cosign`, `builder`,
+`buildkit`, và ghim chart; (c) `applyEdits` ném khi khớp 0 lần hay khớp nhiều hơn số khai, và ném thì không tệp nào
+bị ghi; (d) `fromCount = 0` ⇒ không sinh phép thay cho Dockerfile (tệp không đọc được thì không đoán); (e) cổng F3
+bắt đúng ba ca vi phạm và nhận đúng ca miễn trừ, **trên lịch sử git thật**; (f) `chartPinsOf` đọc đủ mọi chart của
+bảng thật, gồm cả khoá không có nháy; (g) ba bản chép digest khớp nhau, và một digest lệch ⇒ đỏ; (h) `toolchain:check`
+**không** cờ vẫn giữ nguyên hành vi cũ (bộ test hiện có của `@udp/config` xanh).
+
 ### Thứ tự, và vì sao chia ba
 
 61d-3a đứng một mình được và trả luôn một món nợ của chính dự án (đường §8.6 chưa adapter nào đi qua). 61d-3b phải đi

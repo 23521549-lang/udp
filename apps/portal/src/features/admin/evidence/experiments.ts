@@ -37,7 +37,9 @@ export type ExperimentId =
   | "E15"
   | "E16"
   | "I34"
-  | "portal-pagination";
+  | "portal-pagination"
+  | "kyverno-crd"
+  | "chart-values";
 
 export interface Experiment {
   id: ExperimentId;
@@ -129,6 +131,29 @@ export const EXPERIMENTS: readonly Experiment[] = [
     supports: [],
     source: "raw",
     debts: ["portal-pagination"],
+  },
+  /**
+   * [Plan #61 61d-3b] Policy admission sinh ra có hợp lệ theo CRD THẬT của Kyverno không — bằng chứng của C2 (lớp
+   * nền adapter sinh ra đối tượng đúng hình), và nửa "hành vi lúc chạy" là một món nợ có tên.
+   */
+  {
+    id: "kyverno-crd",
+    group: "C2",
+    supports: ["C2"],
+    source: "raw",
+    debts: ["kyverno-admission-real"],
+  },
+  /**
+   * [Plan #61 61d-3c] Khoá `values` mà adapter đặt có tồn tại trong chart không. Không có mục sổ nợ: phép đo ĐÃ
+   * chạy, chỉ phủ 29% vì cấu hình hợp lệ của từng adapter nằm trong `contract.test.ts` và không export — giới hạn
+   * đó ghi ở §16, không phải một món nợ hạ tầng.
+   */
+  {
+    id: "chart-values",
+    group: "C2",
+    supports: ["C2"],
+    source: "raw",
+    debts: [],
   },
 ];
 

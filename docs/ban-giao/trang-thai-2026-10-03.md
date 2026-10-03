@@ -6,12 +6,11 @@ người tiếp theo"; tệp đó giữ nguyên phần 61d-1 và phần phát hi
 `docs/plans/`.
 
 **Trạng thái một câu:** Plan #61 đã xong 61a, 61b, 61c, 61d-1, 61d-2a, 61d-2b-0, 61d-2b-1, và trong ngày hôm nay
-thêm **61d-3a**, **61d-3b**, **61d-3c-1** — lời báo của pipeline mang token OIDC của chính lượt chạy CI ở cả sáu CI;
+thêm **61d-3a**, **61d-3b**, **61d-3c-1**, **61d-3c-2** — lời báo của pipeline mang token OIDC của chính lượt chạy CI ở cả sáu CI;
 Kyverno lên chart 3.9.1 kèm đường hạ về thật (`restoreTo`); mỗi project đã bật ký image nhận một
 `ImageValidatingPolicy` kiểm chữ ký lúc tạo pod ở chế độ **Audit**; và toạ độ chart Helm của 71 chart thành một bảng
 dữ liệu được canh hằng tuần — lượt canh đầu tiên tìm ra **tám** ghim không cài được, năm đã sửa. Còn 61d-2b-2 (bộ ký
-trong cụm cho CircleCI + Azure), 61d-3c-2 (`--fix` + cổng cưỡng chế F3), tài liệu và Playwright cuối Plan #61, rồi
-Plan #62 (phát hành SDK). **51 mục nợ kiểm chứng.** Hạ tầng của dự án tốn đúng 0 đồng.
+trong cụm cho CircleCI + Azure), tài liệu và Playwright cuối Plan #61, rồi Plan #62 (phát hành SDK). **51 mục nợ kiểm chứng.** Hạ tầng của dự án tốn đúng 0 đồng.
 
 **Một điều phải đọc trước khi tin bảng AC:** AC-12 **đạt MỘT PHẦN**, và spec đã được sửa để nói đúng điều đó kèm một
 dòng quyết định có ngày (`plan61-spec.md` §2, [03/10/2026]). Lớp admission đã có và ở chế độ quan sát; nửa "E2E trên
@@ -239,7 +238,40 @@ environment production chứ không phải khi thao tác **chạm** production, 
 đã được sửa kèm một dòng quyết định có ngày, và lời hứa "trả nợ 'lịch nâng cấp'" bị xoá — `grep` cho thấy món nợ đó
 chưa bao giờ được ghi.
 
-## 10. Việc tiếp
+## 10. 61d-3c-2 — hai cổng, một `--fix`, và ba lần cổng bắt đúng chuyện của chính tôi
+
+**Cổng F3** (`pnpm --filter @udp/design-lint chart-bump`) cưỡng chế: đổi `version` của một chart trong
+`HELM_CHART_PINS` thì cùng commit phải bump `version` của adapter dùng nó **và** để `upgradesFrom` mang đúng version
+chart cũ. Miễn trừ bằng một dòng `Ghim-hỏng: <chart>` trong **thông điệp commit** (lời khai về một commit thì phải
+sống cùng commit đó; một danh sách trong mã sẽ mục). Kiểm bằng lịch sử git thật: commit đổi `gatekeeper` mà không
+bump adapter ⇒ VI PHẠM; thêm dòng miễn trừ ⇒ đạt.
+
+**Cổng thứ hai** canh hai bản chép cứng digest mà trước giờ không gì canh: bảng `TEST_IMAGE` của bản xem thử Portal
+và `FROM` của fixture Dockerfile (fixture này được **build thật** trong `build-smoke`).
+
+**`--fix`** (`pnpm toolchain:fix`) soạn bản vá cho ghim dữ liệu thuần rồi ghi tệp; job CI đính kèm một `.patch` với
+`contents: read`, **không** mở PR — PR mở bằng `GITHUB_TOKEN` không kích hoạt workflow nào và `build-smoke` bỏ qua
+`pull_request`, nên PR đó sẽ có zero phép kiểm máy. Lượt chạy thật: 4 phép thay (`images.awsCli` 2.37.8⇒2.37.9,
+`TEST_IMAGES.python` 3.12.14⇒3.12.15 cùng hai dòng `FROM` và bản xem thử), và **5 mục bị từ chối đúng** (ba finding
+`moved` = tag bị đẩy lại, `images.builder` có ba hằng vệ tinh, `STEP_IMAGES.terraform` là ghim có cấu trúc).
+
+**Ba lần cổng bắt đúng chuyện của chính tôi — đọc phần này nếu bạn sắp thêm một cổng:**
+
+1. Mẫu đọc ghim của cổng F3 **fail open**: nó đòi khoá có dấu nháy, mà prettier bỏ nháy ở khoá là định danh hợp lệ
+   (`gatekeeper:`) — nên cổng chỉ thấy **42 trong 71** chart và im lặng bỏ qua 29 cái. Mười một ô test dùng khuôn
+   viết tay đều xanh; ô đọc **chính tệp sản phẩm** là ô duy nhất bắt (`expected 42 to be 71`).
+2. Lượt `--fix` đầu tiên **làm đỏ đúng cổng tôi vừa dựng một giờ trước**, vì nó sửa bảng và Dockerfile nhưng không
+   sửa bản xem thử. Bất biến có **ba** đầu, không hai.
+3. `apps/portal/tests/evidence.test.tsx` đã **đỏ từ 61d-3b** mà tôi không biết: nó đòi mọi tiền tố tệp thô trong
+   `docs/measurements/raw/` phải có một thẻ trong sổ thí nghiệm của Portal, và hai phép đo mới không có thẻ. Tôi
+   chạy core-backend, config, design-lint, shared-types, adapter-core — **không chạy Portal**. Cổng em-dash của
+   Portal cũng bắt hai dấu `—` tôi vừa viết vào thẻ.
+
+   **Bài học: bộ cổng của repo này nằm ở sáu package, và một phép đo mới chạm ít nhất ba trong số đó.** Trước khi
+   commit một đợt có phép đo mới: `@udp/config`, `@udp/design-lint`, `@udp/shared-types`, `@udp/adapter-core`,
+   `@udp/core-backend`, **và `@udp/portal`**.
+
+## 11. Việc tiếp
 
 **61d-3 (Kyverno, AC-12) đi TRƯỚC 61d-2b-2 — một lần đổi thứ tự, có lý do đo được.** Vòng lập kế hoạch chi tiết của
 61d-2b-2 lật một dữ kiện: `cluster/bootstrap.ts` **không** cho `udp-tooling` quyền `batch/jobs` nào, và namespace
@@ -249,8 +281,8 @@ chỉ mua được **một** tổ hợp CI × cloud. AC-12 thì là một tiêu 
 của từng lối, và ba việc phải quyết trước dòng mã đầu) nằm ở `docs/plans/plan61-plan.md`; dòng §16 vẫn đúng và vẫn
 trỏ `(61d-2b-2)`, nên không có nợ nào bị bỏ lửng.
 
-Vậy thứ tự còn lại: **61d-3c-2** (`--fix` cho ghim dữ liệu thuần + cổng cưỡng chế F3), **61d-2b-2** (bộ ký trong
-cụm), rồi tài liệu và Playwright cuối Plan #61, rồi Plan #62.
+Vậy thứ tự còn lại: **61d-2b-2** (bộ ký trong cụm cho CircleCI + Azure), rồi tài liệu và Playwright cuối Plan #61,
+rồi Plan #62.
 
 **Về 61d-3c-2, ba vòng QA đã làm sẵn phần khó — đọc trước khi gõ dòng đầu.** `--fix` như bản nháp viết **không
 chạy được**: `checkRelease` dựng URL checksums bằng bản ĐANG ghim và `publishedSha256` chỉ dùng để _so_, còn
