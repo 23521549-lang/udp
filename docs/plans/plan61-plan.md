@@ -804,14 +804,143 @@ cho mọi project; (ii) `udp-tooling` chờ Job bằng `get` trên `batch/jobs` 
 một verb); (iii) cụm chưa bootstrap lại thì bước ký trả mã gì — phải là một mã **nói rõ cần bootstrap lại**, không
 phải một 403 chung.
 
-## 61d-3 — Kyverno (AC-12)
+## 61d-3 — Kyverno kiểm chữ ký lúc admission (AC-12): chia ba, và vì sao
 
-1. Adapter Kyverno 2.0.0: chart 3.9.x / `kyverno-policies` 3.9.x; nâng qua §8.6; replicas ≥ 2 khi Deny; `failurePolicy`
-   theo chế độ.
-2. `ctx.project.signing` (E1) ⇒ companion `ImageValidatingPolicy` mỗi project (khoá công khai tĩnh, quyền đọc registry
-   theo loại); đổi khoá ⇒ áp lại domain POLICY.
-3. Luồng cập nhật: `toolchain:check` theo dõi chart Helm ghim; `--fix` mở pull request; E2E kind + Kyverno (Audit/Deny,
-   đã ký/chưa ký); lịch tự áp bản vá qua §8.6 (trả nợ §8.6).
+Vòng QA ba agent trên bản nháp tìm ra **hai lỗi chí tử** làm policy không bao giờ xác minh được một image thật, cộng
+bảy lỗ phạm vi và sáu khẳng định sai về mã của chính dự án. Bản nháp **không thi công được**. Dưới đây là bản đã sửa,
+chia ba đợt để mỗi đợt kiểm chứng được độc lập.
+
+### Hai lỗi chí tử của bản nháp (xác nhận tại nguồn, 03/10/2026)
+
+**CT-1. Thiếu `cosign.ctlog.insecureIgnoreTlog` ⇒ MỌI image UDP ký đều verify THẤT BẠI.** CRD
+`policies.kyverno.io_imagevalidatingpolicies.yaml` dòng 166-169: `insecureIgnoreTlog` là `boolean` **không có
+`default`**, nên nó là `false` và Kyverno đi xác minh sổ minh bạch (Rekor) cùng SCT. Mà UDP ký với signing config
+**rỗng có chủ đích** — `packages/config/src/build-toolchain.ts:107-108`:
+`{"mediaType":…,"rekorTlogConfig":{},"tsaConfig":{}}`, kèm chú thích "KHÔNG khai dịch vụ nào: không Fulcio, không
+Rekor, không TSA — ký bằng khoá KMS, image riêng tư không lộ tên hay digest ra sổ minh bạch công khai" (QĐ-14). Cổng
+deploy của 61d-1 cũng cố ý bỏ tlog. Nên bundle của UDP **không có** tlog entry và **không có** RFC3161 timestamp.
+Hệ quả: `verifyImageSignatures` trả 0 ⇒ `[Deny]` chặn **mọi pod của mọi project**; `[Audit]` thì 100% vi phạm giả.
+Và Kyverno sẽ gọi TUF ra Internet, nên cụm không có đường ra còn lỗi cứng. ⇒ Phải khai
+`cosign.ctlog: { insecureIgnoreTlog: true, insecureIgnoreSCT: true }`.
+
+**CT-2. `credentials.secrets` phải nằm ở namespace của KYVERNO, không phải namespace environment.** CRD dòng
+479-482 nguyên văn: _"Secrets specifies a list of secrets that are provided for credentials. **Secrets must live in
+the Kyverno namespace.**"_ Mà `cluster/bootstrap.ts` tạo `udp-registry-pull` **chỉ trong vòng lặp environment** và
+tạo **RỖNG** (`EMPTY_DOCKER_CONFIG`). Kyverno cài ở `udp-system`. Nên trỏ vào tên đó là sai cả chỗ lẫn nội dung:
+registry riêng tư ⇒ Kyverno không đọc được image ⇒ RuleError ⇒ với `[Deny]` + `failurePolicy: Fail` là chặn.
+
+**Bài học chung của hai lỗi:** một ô test "Deny chặn image CHƯA ký" **không** bắt được cả hai — nó xanh vì chặn
+đúng, chỉ là chặn vì lý do khác. Thứ bắt được chúng là ô "image ĐÃ KÝ phải ĐƯỢC NHẬN **trên cụm thật có Kyverno**".
+Vì vậy đợt nào sinh `ImageValidatingPolicy` thì đợt đó **phải mang theo E2E kind + Kyverno**, không được hoãn.
+
+### Sáu khẳng định SAI về mã trong bản nháp (QA B, đã kiểm lại)
+
+| Bản nháp nói                                                 | Mã thật                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "`toolchain:check` `--fix` mở pull request như các mục khác" | **Không có cờ `--fix` nào**, và `.github/workflows/toolchain.yml` khai `permissions: contents: read` kèm chú thích "Chỉ ĐỌC registry và GitHub, không sửa gì". Không mục nào "như thế".                                                  |
+| "`toolchain:check` đã có khuôn cho chart Helm"               | Nó theo **image ghim digest** và **bản phát hành GitHub**. Không có đường đọc `index.yaml` của repo Helm.                                                                                                                                |
+| "dùng lại `buildSigningOf`/`signingOf`"                      | `signingOf` **không tồn tại** trong mã sản phẩm. `buildSigningOf` trả `{ key: key.kms, identity, compat }` — chỉ khoá ĐẦU danh sách và **không có PEM công khai**. Khoá công khai ở `settings.signing.keys[].publicKey` (tối đa 5 khoá). |
+| "7 tệp dựng bối cảnh"                                        | **6 tệp / 7 điểm** (`day2-upgrade.test.ts` có hai điểm). Và `ReadOnlyAdapterContext = Omit<…,"k8s">` nên trường mới chảy sang mọi hàm suy diễn.                                                                                          |
+| "ném rồi hạ về bản cũ"                                       | `domain-apply.job.ts:615-621` cắm cứng `rollback: () => ({ status: "FAILED" })` ⇒ luôn `ROLLBACK_FAILED`, **không hạ gì**.                                                                                                               |
+| "`deploy/e2e` có khuôn cài adapter / áp pod"                 | `deploy/e2e` chỉ có `smoke.e2e.test.ts` (Portal, SDK, PromQL). Grep `domain                                                                                                                                                              | adapter | pod | kubectl | helm`: **0**. Khuôn gần nhất là job `signing-e2e` — không Kyverno, không kind. |
+
+Và bốn tệp phải sửa mà bản nháp không nhắc: `domain/domain-apply.service.ts:309` (`requestReapply` **từ chối** khi
+`adapterVersion !== adapter.version` ⇒ bước "áp lại domain POLICY" chết đúng ở đó sau khi bump version);
+`cicd/cicd-webhook.service.ts:395-403` (đường ghi `build_settings` **thứ ba**, SQL thô tự bật `enforce`);
+`adapter-base/saas.ts:263-272` **và** `descriptor.ts:146-155` (CÙNG một guard nâng cấp, hai lớp nền khác — sửa riêng
+`helm.ts` làm lời khai "mở đường nâng cấp" chỉ đúng 1/3); `packages/experiments/scripts/e1.ts:54` (đo bề mặt
+`DomainAdapterContext`, nên thêm trường **làm số E1 đổi** — phải ghi một dòng mở rộng bối cảnh, đúng tiền lệ QĐ-2).
+
+### 61d-3a — nâng Kyverno lên 3.9.1 và MỞ đường nâng cấp của §8.6
+
+Đợt này **không** sinh policy mới, nên nó kiểm chứng được hết bằng test đơn vị + hợp đồng, không cần cụm.
+
+1. **Mở đường nâng cấp ở CẢ BA lớp nền.**
+   - _Làm gì:_ `createHelmBasedAdapter`, `createSaasAdapter`, `createDescriptorAdapter` nhận
+     `upgradesFrom?: readonly UpgradeOrigin[]` với `UpgradeOrigin = { version: string; chart?: ChartRef; companions?: … }`
+     — tức **toạ độ cũ**, không chỉ số version. `upgrade` nhận `fromVersion` khi nó thuộc
+     `upgradesFrom ∪ {spec.version}`; ngoài ra **vẫn ném** như hôm nay (giữ d11 của bộ hợp đồng:
+     `upgrade(…, "0.0.0-khong-ton-tai")` phải thất bại).
+   - _Vì sao ba lớp nền chứ không một:_ `helm.ts:583`, `saas.ts:265`, `descriptor.ts:146` là **cùng một guard chép
+     ba lần**. Sửa một chỗ làm câu "lớp nền mở đường nâng cấp" đúng 1/3, và adapter thứ hai cần nâng sẽ lại tắc.
+   - _Áp bản mới hỏng ⇒ TỰ áp lại toạ độ cũ,_ rồi trả `FAILED` kèm thông điệp nói rõ đã hạ về. Đây là nửa mà §8.6
+     đòi ("không để trạng thái lửng lơ") và là nửa mà cổng `rollback` cắm cứng `FAILED` hôm nay **không** làm.
+   - _Cổng `rollback` của `UpgradePorts` thành TUỲ CHỌN:_ vắng nó nghĩa là "đích tự bảo đảm trạng thái", và
+     `upgradeDomain` trả `UPGRADE_FAILED` thay vì `ROLLBACK_FAILED`. Bỏ cái stub nói dối ở `domain-apply.job.ts`.
+     `AdapterOperationStatus` chỉ có bốn giá trị nên không thêm trạng thái mới — đây là cách không chạm kiểu dùng
+     khắp nơi.
+   - _Ở đâu:_ `adapter-base/{helm,saas,descriptor}.ts`, `day2/domain-upgrade.ts`, `jobs/domain-apply.job.ts`,
+     `docs/UDP_design.md` §8.6.
+2. **Kyverno 2.0.0 + chart 3.9.1, và cái bẫy `policyType`.**
+   - _Làm gì:_ chart `kyverno` và `kyverno-policies` lên **3.9.1** (app v1.19.1), `version: "2.0.0"`,
+     `upgradesFrom: [{ version: "1.0.0", chart 3.2.7, companion 3.2.6 }]`. **Giữ** `provides:
+policy.admission@1.0.0` — bump version capability sẽ làm mọi consumer `^1` vỡ 422 ngay trong
+     `validateAndOrder` trước khi chạm cụm.
+   - _Bẫy phải đóng:_ `kyverno-policies` 3.9.1 mặc định `policyType: ValidatingPolicy`, và khoá `policyExclude` mà
+     adapter đang truyền **chỉ áp dụng cho `ClusterPolicy`**. Nâng chart mà không đổi gì khác thì `udp-system`,
+     `kube-system`, `udp-build` **mất quyền miễn trừ trong im lặng** — với `Enforce` thì pod nền tảng và pod build
+     BuildKit (cần seccomp `Unconfined`) bị chặn. Sửa: ghim `policyType: "ValidatingPolicy"` **tường minh** (không
+     dựa vào mặc định của chart) và đổi sang `vpolExclude: { excludeNamespaces: exempt(ctx) }`.
+   - _`Enforce` ⇒ `replicas >= 2`:_ ràng trong `configSchema` bằng `superRefine` — từ chối lúc LƯU, không phải lúc áp.
+   - _`requestReapply` phải cho áp lại sau khi bump:_ `domain-apply.service.ts:309` từ chối khi version lệch. Sau khi
+     Kyverno lên 2.0.0, mọi project còn 1.0.0 **không áp lại được** — đó là một bế tắc do chính đợt này tạo ra. Sửa:
+     khi version lệch mà adapter khai `upgradesFrom` chứa version đang lưu thì **đổi lời đề nghị thành NÂNG CẤP**
+     (đường §8.6 nhánh B đã có), chứ không trả 409 mù.
+   - _Ở đâu:_ `policy-adapter/kyverno/index.ts`, `domain/domain-apply.service.ts`, §5.5 dòng 3769 (câu "miễn trừ ở
+     tầng webhook (không phải từng policy)" **thành sai** — phải viết lại), §8.6.
+   - _KHÔNG ghi version chart vào §5.5:_ `grep "3.2.7" docs/UDP_design.md` ⇒ **0**; §5.5 chưa bao giờ ghi version
+     chart của tool nào. Thêm một bản khai thứ hai không có chốt nào giữ là đúng hình dạng nợ mà `references.test.ts`
+     sinh ra để chống.
+3. **Kiểm chứng (R9):** hợp đồng Kyverno (version, hai chart, `upgradesFrom`); `upgrade` từ `1.0.0` đi qua và từ
+   `0.9.0` vẫn ném (hai chiều một ô); áp bản mới hỏng ⇒ có lời gọi áp lại toạ độ cũ (transport giả đếm);
+   `configSchema` từ chối `Enforce` + `replicas: 1`; values sinh ra có `vpolExclude.excludeNamespaces` đủ ba
+   namespace và **không** còn `policyExclude`; `policyType` ghim tường minh; `provides` vẫn `policy.admission@1.0.0`;
+   `requestReapply` của project 1.0.0 trả về lời đề nghị NÂNG CẤP. Cộng typecheck, format, bộ hợp đồng domain,
+   design-lint, Portal, bộ test core-backend.
+4. **Đường lùi (R10):** `git revert`. Project đã lên `adapter_version = 2.0.0` thì cột đó ở lại — kèm câu SQL hạ về
+   `1.0.0` cho đúng hàng POLICY/kyverno, viết sẵn trong plan như khối "Đường lùi" của mọi migration.
+5. **Kiểm thoái cấp (R11):** ba lớp nền có còn từ chối `fromVersion` lạ không (d11)? Project đang chạy 1.0.0 có bị
+   chặn deploy trong lúc nâng không? Ba namespace nền tảng có còn miễn trừ không (ô `vpolExclude`)? `Audit` có còn
+   là mặc định không? Một lượt nâng hỏng có để cụm ở trạng thái xác định không (và test chứng minh)?
+
+### 61d-3b — `ImageValidatingPolicy` + E2E kind có Kyverno (đi CÙNG nhau)
+
+Hình policy sau khi sửa theo QA: `validationActions` theo `enforce`; `spec.failurePolicy` **của chính policy** theo
+chế độ (`Audit` ⇒ `Ignore`) — trường riêng của policy, không phải giá trị của chart;
+`cosign.ctlog.insecureIgnoreTlog: true` + `insecureIgnoreSCT: true` (CT-1); `cosign.annotations` đòi tối thiểu
+`dev.udp.project` để admission không lỏng hơn cổng 61d-1 (cổng đó còn kiểm nhánh, độ mới và replay — phải ghi vào
+§8.3 rằng admission **không thay** nó); hai glob chặt `"<ref>/<slug>:*"` và `"<ref>/<slug>@*"` thay vì một glob
+`*` (gobwas/glob ăn cả `/` và `:`); biểu thức CEL phủ **cả ba** danh sách `containers + initContainers +
+ephemeralContainers`; `validationConfigurations: { required: true, verifyDigest: true, mutateDigest: false }` khai
+tường minh (mặc định `mutateDigest: true` sẽ SỬA image thành digest ngay ở chế độ Audit ⇒ trôi vĩnh viễn với
+Flux/Argo); `resourceRules` thêm `pods/ephemeralcontainers` (UPDATE) để `kubectl debug` không là đường lách;
+`namespaceSelector` theo nhãn dương `udp.environment`; và **secret pull của Kyverno** phải ở namespace của Kyverno,
+điền thật (CT-2) — hoặc policy chỉ dùng `credentials.providers` khi registry công khai.
+
+Và một quyết định phải ghi: image **không khớp** glob bị loại khỏi `images.*` nên policy **cho qua** — ngược với cổng
+61d-1 vốn **từ chối** image lạ. Muốn AC-12 chặn image lạ thì cần một policy thứ hai (catch-all). Đó là một quyết định
+thiết kế, không phải một chi tiết.
+
+E2E kind + Kyverno **không hoãn được**: nó là thứ duy nhất bắt được CT-1 và CT-2. Khuôn gần nhất là job
+`signing-e2e` (có image đã ký / chưa ký) nhưng không chạy trên kind và không có Kyverno; `deploy/e2e` thì không có
+đường cài adapter. Nên 61d-3b gồm cả việc dựng khuôn đó. Ô bắt buộc: image **đã ký** được NHẬN; chưa ký bị chặn ở
+`Deny`; chưa ký ở **initContainer** cũng bị chặn; image của project khác cùng registry **không** bị chặn oan;
+`Audit` không đổi `spec` của Deployment.
+
+### 61d-3c — "tự áp bản vá" của AC-12, trong ranh giới của §8.6
+
+AC-12 (`plan61-spec.md:24`) đòi "luồng cập nhật có E2E và **tự áp bản vá**". Mục 3 của bản nháp chỉ có
+`toolchain:check` mở PR — mà PR là việc của người, và `toolchain:check` **chưa có** `--fix` lẫn khuôn chart Helm.
+Ranh giới phải ghi rõ: "tự áp" = **tự áp bản vá PATCH cùng dòng minor** (3.9.1 ⇒ 3.9.2), vì nó **không** đổi
+`adapter_version` nên không đi qua nhánh B của §8.6 (nâng cấp do MAINTAINER bấm, production xác nhận hai bước); nâng
+minor hay major vẫn do người bấm. Đợt này: `toolchain:check` thêm đường đọc `index.yaml` của repo Helm, và một lịch
+áp bản vá patch qua đúng hàng đợi DOMAIN_APPLY.
+
+### Thứ tự, và vì sao chia ba
+
+61d-3a đứng một mình được và trả luôn một món nợ của chính dự án (đường §8.6 chưa adapter nào đi qua). 61d-3b phải đi
+cùng E2E nên nó là đợt nặng nhất và nó **phụ thuộc** 61d-3a (CRD của họ policy mới do chart 3.9.1 cài). 61d-3c là
+chính sách cập nhật, nhẹ nhất, và nó cần 61d-3a đã chốt số version chart.
 
 ## Cuối
 
