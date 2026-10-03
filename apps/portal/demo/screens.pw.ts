@@ -9,7 +9,7 @@ import { PERSONA_KEY, type PersonaId } from "./mock/persona";
  * [Plan #53 QĐ-11, Plan #54 QĐ-4] Mọi màn của hai khung qua NĂM lượt: máy tính (1440×900) và điện thoại
  * (375×812 — tiêu chí của mục nợ `portal-responsive`) ở giao diện sáng, cả hai ở giao diện TỐI, và máy tính bằng
  * TIẾNG ANH. Mỗi màn phải: không lỗi console, không tràn ngang, có đúng một `main` và một `h1`, không rơi vào
- * trang "Không tìm thấy", không gặp route mà lớp giả lập chưa có, không hiện lỗi tải, không có "...", có phần
+ * trang "Không tìm thấy", không gặp route mà lớp giả lập chưa có, không hiện lỗi tải, không có "..." trong câu chữ, có phần
  * chính của nó, và **đủ tương phản chữ WCAG AA** (axe-core `color-contrast`) — thứ quyết định một giao diện tối
  * "dùng được". Lượt tiếng Anh thêm: `<html lang="en">` và khung (thanh bên, tiêu đề, đầu bảng, nhãn) không còn
  * chữ tiếng Việt. Ảnh chụp cả trang nằm ở `demo/screens/<lượt>/` để người xem; không so pixel.
@@ -171,6 +171,31 @@ const VI =
 const CHROME = "nav, h1, thead, label";
 
 /**
+ * Chỗ NGUYÊN VĂN của trang: chữ ở đây là thứ UDP TRÍCH từ nơi khác và phải in lại đúng từng ký tự — lệnh shell,
+ * tên tệp, đoạn script người dùng dán vào cloud.
+ */
+const VERBATIM = "code, pre, kbd, samp, textarea, input";
+
+/**
+ * Chữ CÂU CHỮ của trang: mọi chữ TRỪ phần nguyên văn.
+ *
+ * [Plan #61] Luật "không có `...`" là luật về CÂU CHỮ: quy ước của Portal là dấu `…`, nên ba dấu chấm trong một câu
+ * là chữ bị cắt giữa đường hay một bản nháp còn sót. Trong phần nguyên văn thì ba dấu chấm là DỮ LIỆU: lệnh test mặc
+ * định của một repo Go là `go test ./...` (`build-plan.ts`), và đổi nó thành `go test ./…` là đưa cho người dùng một
+ * lệnh chạy không được. Cổng này đã đỏ ở màn Đóng gói của Plan #61 đúng vì chỗ đó — luật sai, không phải dữ liệu sai.
+ *
+ * Dùng `textContent` của một bản sao đã bỏ các nút nguyên văn, chứ không `innerText`: `textContent` thấy cả chữ đang
+ * ẩn (thẻ chưa mở, nhãn cho trình đọc màn hình), và chữ của Portal thì vẫn là chữ của Portal dù mắt chưa thấy.
+ */
+async function proseText(page: Page): Promise<string> {
+  return page.evaluate((selector) => {
+    const copy = document.body.cloneNode(true) as HTMLElement;
+    for (const node of copy.querySelectorAll(selector)) node.remove();
+    return copy.textContent;
+  }, VERBATIM);
+}
+
+/**
  * Chữ của khung, BỎ phần đánh dấu `translate="no"` — quy ước của Portal cho dữ liệu người dùng không bao giờ dịch
  * (tên project, tên nhóm, khoá flag). [Plan #55] Trang chi tiết nhóm có `h1` là tên nhóm "Nhóm thanh toán": chữ
  * đó đúng là tiếng Việt ở mọi ngôn ngữ, và không phải lỗi dịch.
@@ -245,7 +270,7 @@ async function checkScreen(
   if (text.includes(TEXT[pass.locale].notFound))
     problems.push("trang Không tìm thấy");
   if (text.includes("Bản xem thử chưa có")) problems.push("route giả chưa có");
-  if (text.includes("...")) problems.push('chữ có "..."');
+  if ((await proseText(page)).includes("...")) problems.push('chữ có "..."');
   if (must !== undefined && (await page.locator(must).count()) === 0)
     problems.push(`thiếu ${must}`);
 

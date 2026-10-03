@@ -218,9 +218,9 @@ jobs:
     # [Plan #53 QĐ-11, Plan #54 QĐ-4] Cổng chụp màn của bản xem thử: build bản tĩnh (lớp giả lập trong trang, không
     # backend, không database, không secret), rồi Playwright đi qua mọi màn của hai khung qua năm lượt — máy tính
     # 1440×900 và điện thoại 375×812 ở giao diện sáng và tối, máy tính bằng tiếng Anh: không lỗi console, không tràn
-    # ngang, đúng một main và một h1, không trang "Không tìm thấy", không "...", tương phản chữ WCAG AA (axe-core),
-    # và ở lượt tiếng Anh không còn chữ tiếng Việt trong khung. Không so pixel. Ảnh chụp là artifact để người review
-    # xem. Chi phí 0: repo public, Chromium tải trong runner.
+    # ngang, đúng một main và một h1, không trang "Không tìm thấy", không "..." trong câu chữ, tương phản chữ WCAG
+    # AA (axe-core), và ở lượt tiếng Anh không còn chữ tiếng Việt trong khung. Không so pixel. Ảnh chụp là artifact
+    # để người review xem. Chi phí 0: repo public, Chromium tải trong runner.
     name: portal demo — mọi màn, hai cỡ khung, sáng/tối, Việt/Anh
     runs-on: ubuntu-latest
     timeout-minutes: 20

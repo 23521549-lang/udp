@@ -1654,3 +1654,58 @@ chính sách cập nhật, nhẹ nhất, và nó cần 61d-3a đã chốt số v
 
 `UDP_design.md` (§5.5, §8.3, §11, §12.2, §16, D-P54), `DESIGN.md` nếu có thành phần mới, sổ nợ (`cicd-webhook-real` mở
 rộng), bàn giao; Playwright năm lượt.
+
+## Chốt đợt — cổng Playwright năm lượt, và một luật sai mà nó bắt được
+
+`pnpm --filter @udp/portal demo:build` xanh, rồi `demo:screens` lượt đầu **đỏ 5/15**: cả năm lượt cùng một ô
+"mọi màn đạt", và cùng đúng một dòng lý do.
+
+```
+  5 failed
+    demo\screens.pw.ts:343:5 › desktop 1440×900 › mọi màn đạt ───────
+    … (mobile, desktop-dark, mobile-dark, desktop-en)
+  10 passed (11.0m)
+
+    + Array [
+    +   "code-packaging: chữ có \"...\"",
+    + ]
+```
+
+Đo đúng chỗ trước khi sửa, bằng một script dựng riêng (ngoài repo) mở màn Đóng gói và liệt kê từng NÚT văn bản
+chứa `...`:
+
+```
+project: 821172e8-f05d-4289-be85-68f5e1343639
+"out": [ { "tag": "CODE", "cls": "mono",
+           "path": "div.scroll > div.page > section.cardc.packaging > div.packaging-row > span > code.mono",
+           "text": "go test ./..." } ]
+"bodyHasDots": true
+```
+
+Đúng một nguồn, và nó là **dữ liệu đúng**: `go test ./...` là lệnh test mặc định của một repo Go — không phải của
+lớp giả lập mà của sản phẩm thật (`services/core-backend/src/modules/packaging/build-plan.ts:35`), và màn Đóng gói
+in nó trong `<code class="mono">`.
+
+**Hai cách sửa, và vì sao chọn cách thứ hai.** (a) Đổi dữ liệu mẫu để không còn repo Go — rẻ, nhưng là bỏ project Go
+duy nhất của bản xem thử để che một luật sai, và cổng vẫn sẽ đỏ với mọi project Go thật. (b) Sửa **luật**: luật
+"không có `...`" là luật về CÂU CHỮ (quy ước của Portal là dấu `…`, nên ba dấu chấm trong câu là chữ bị cắt hay
+bản nháp còn sót); trong phần NGUYÊN VĂN thì ba dấu chấm là dữ liệu, và viết lại `go test ./…` là đưa cho người
+dùng một lệnh chạy không được.
+
+Đã làm (b): `proseText(page)` lấy `textContent` của một bản sao `body` đã bỏ `code, pre, kbd, samp, textarea, input`.
+Dùng `textContent` chứ không `innerText` nên luật này **mạnh hơn trước** ở một chiều: nó thấy cả chữ đang ẩn (thẻ
+chưa mở, nhãn cho trình đọc màn hình). Trước khi đổi đã kiểm rằng chiều mạnh hơn đó không làm đỏ giả: trong
+`apps/portal/src` chỉ có **3** chỗ chứa `...` và cả ba đều nằm trong chú thích mã, không chỗ nào là chữ của giao diện.
+
+**Không** thêm một luật thứ hai cho phần nguyên văn (kiểu "`...` sau ≥8 ký tự là digest bị cắt"): Portal cắt id và
+digest bằng `slice(…)` **không** kèm dấu nào (`commitSha.slice(0, 7)`), và dùng `…` cho trạng thái đang tải. Luật
+đó sẽ canh một rủi ro không tồn tại trong mã này — đúng loại nợ "trừu tượng chưa có người dùng" mà R6 cấm.
+
+```
+$ pnpm --filter @udp/portal demo:screens
+  15 passed (8.9m)
+```
+
+**Cổng cuối của Plan #61: xanh.** Cùng với nó, chú thích của job `portal-demo` trong `ci.yml` được sửa cho khớp
+luật mới ("không `...` **trong câu chữ**") — một cổng mà tài liệu nói sai về chính nó là một cổng người sau sẽ
+tin sai.

@@ -310,3 +310,28 @@ Hai món nhỏ của 61d-3c-2: cổng cho hai chỗ **chép cứng digest mà kh
 chép 6 digest của `TEST_IMAGES`; `tests/fixtures/build-apps/dockerfile/Dockerfile` chép `images.alpine`, và fixture
 này được **build thật** trong job `build-smoke`), và một dòng báo cáo đếm `DomainConfig.adapter_version` **đang
 chạy** so với bản máy chủ nạp — thứ gần nhất với "luồng cập nhật" mà dữ liệu đã có sẵn.
+
+## 12. Plan #61 đóng — và cổng Playwright bắt được một luật sai của chính nó
+
+Cổng cuối (`demo:screens`, năm lượt) đỏ **5/15** ở lượt đầu, cả năm lượt cùng đúng một dòng:
+`code-packaging: chữ có "..."`. Nguồn duy nhất, đo bằng script liệt kê từng nút văn bản: `<code class="mono">go test
+./...</code>` — **lệnh test mặc định của một repo Go**, và là mặc định của sản phẩm thật
+(`services/core-backend/src/modules/packaging/build-plan.ts:35`), không phải của lớp giả lập.
+
+Luật sai, không phải dữ liệu sai: luật "không có `...`" nói về CÂU CHỮ (Portal dùng dấu `…`), còn trong phần nguyên
+văn thì ba dấu chấm là dữ liệu — `go test ./…` là một lệnh chạy không được. `screens.pw.ts` nay kiểm luật đó trên
+`proseText(page)`: `textContent` của bản sao `body` đã bỏ `code, pre, kbd, samp, textarea, input`. Dùng `textContent`
+nên luật **mạnh hơn** trước ở một chiều (thấy cả chữ đang ẩn); đã kiểm trước rằng chiều đó không làm đỏ giả
+(`apps/portal/src` chỉ có 3 chỗ chứa `...`, cả ba trong chú thích mã). `15 passed (8.9m)`.
+
+Bài học cùng hình dạng với ba lần ở mục 10: cổng bắt đúng chuyện của chính nó. Khi một cổng đỏ, câu hỏi đầu là
+**luật này có đúng là luật mình muốn không**, chứ không phải "sửa dữ liệu kiểu gì cho nó xanh" — cách thứ hai ở đây
+sẽ bỏ project Go duy nhất của bản xem thử và vẫn đỏ với mọi project Go thật.
+
+**Việc tiếp: Plan #62 — phát hành hai SDK.** `docs/plans/plan62-spec.md` đã có, và nó bắt đầu từ một chỗ đứt đang
+sống trong sản phẩm: Golden Path sinh `"@udp/openfeature-provider": "^0.1.0"` và `udp-openfeature[metrics]>=0.1,<1`,
+mà cả hai gói **chưa tồn tại** (`npm view` 404, PyPI 404) — nên hôm nay `npm install` của cây mã mà UDP đưa cho
+người dùng là 404. Hai dữ kiện đã đo sẵn để không phải đo lại: `npm pack` **không** áp `publishConfig` (manifest còn
+trỏ `src/`, còn `private`, còn `@udp/* workspace:*`), còn `pnpm` 9.12.0 **không** có OIDC — nên đường phát hành là
+`pnpm pack` dựng manifest rồi `npm publish` đẩy bằng OIDC. Và npm **không** cho đăng ký trusted publisher cho gói
+chưa tồn tại (PyPI thì cho, bằng "pending publisher"), nên còn đúng một bước tay của chủ repo.
