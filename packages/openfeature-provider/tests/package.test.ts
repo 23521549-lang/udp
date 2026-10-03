@@ -11,10 +11,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { packPublishArtifact } from "../scripts/pack.js";
 
 /**
  * Gói PHÁT HÀNH của provider (§6.8) [v4.8] cài và chạy được NGOÀI monorepo: build
@@ -47,29 +48,16 @@ function installedDir(name: string, from: string): string {
   throw new Error(`không thấy ${name} đã cài`);
 }
 
-async function pnpm(args: string[], cwd: string): Promise<void> {
-  // `pnpm` trên Windows là `.cmd` — gọi thẳng (không shell) là ENOENT/EINVAL;
-  // khi test chạy qua pnpm thì `npm_execpath` trỏ tới bản JS của nó
-  const execPath = process.env["npm_execpath"];
-  if (execPath !== undefined && execPath.endsWith(".cjs")) {
-    await run(process.execPath, [execPath, ...args], { cwd });
-    return;
-  }
-  await run("pnpm", args, { cwd, shell: true });
-}
-
 beforeAll(async () => {
-  await run(process.execPath, ["--import", "tsx", "scripts/build.ts"], {
-    cwd: pkgRoot,
-  });
   work = mkdtempSync(join(tmpdir(), "udp-provider-pack-"));
-  await pnpm(["pack", "--pack-destination", work], pkgRoot);
-  const tarball = readdirSync(work).find((f) => f.endsWith(".tgz"));
-  if (tarball === undefined) throw new Error("pnpm pack không tạo tarball");
-  tarEntries = (await run("tar", ["-tzf", tarball], { cwd: work })).stdout
-    .split(/\r?\n/)
-    .filter((l) => l.length > 0);
-  await run("tar", ["-xzf", tarball], { cwd: work });
+  /**
+   * [Plan #62 62a-5] Dùng ĐÚNG đường đóng gói mà `publish.yml` dùng (`scripts/pack.ts`: build → `pnpm pack` →
+   * xoá `@udp/*` và `scripts` khỏi manifest → `npm pack` → khẳng định hợp đồng), nên thứ test này tiêu thụ là đúng
+   * bytes được phát hành. Trước đây test tự build rồi tự `pnpm pack`, tức nó kiểm một tarball KHÁC.
+   */
+  const artifact = packPublishArtifact({ out: work });
+  tarEntries = artifact.entries;
+  await run("tar", ["-xzf", basename(artifact.tarball)], { cwd: work });
 
   consumer = join(work, "consumer");
   const modules = join(consumer, "node_modules");
@@ -99,12 +87,27 @@ afterAll(() => {
 });
 
 describe("gói phát hành", () => {
-  it("tarball chỉ có dist + manifest; manifest không kéo gì của UDP; kiểu công khai không import @udp/*", () => {
+  it("tarball chỉ có dist, manifest, giấy phép và trang gói; manifest không kéo gì của UDP; kiểu công khai không import @udp/*", () => {
+    /**
+     * [Plan #62] Ba tệp được phép ở GỐC tarball, không một tệp nữa. `LICENSE` và `README.md` vào bằng LUẬT của
+     * npm/pnpm (chúng luôn được đưa vào, bất kể `files`), không bằng khai báo — nên tên ô cũ ("chỉ có dist +
+     * manifest") đã hết đúng và được đổi, chứ không chỉ nới luật.
+     *
+     * Và vì sao KHÔNG khẳng định đúng tập 11 entry: `dist/chunk-*.js` mang hash nội dung trong tên, nên một tập
+     * chính xác sẽ đỏ ở mọi lần đổi mã — một cổng đỏ vì lý do sai là một cổng sẽ bị tắt.
+     */
+    const ROOT = [
+      "package/package.json",
+      "package/LICENSE",
+      "package/README.md",
+    ];
     for (const entry of tarEntries) {
-      expect(
-        entry === "package/package.json" || entry.startsWith("package/dist/"),
-      ).toBe(true);
+      expect(ROOT.includes(entry) || entry.startsWith("package/dist/")).toBe(
+        true,
+      );
     }
+    expect(tarEntries).toContain("package/LICENSE");
+    expect(tarEntries).toContain("package/README.md");
     expect(tarEntries).toContain("package/dist/THIRD_PARTY_NOTICES");
     expect(
       tarEntries.some((e) => e.endsWith(".map") || e.endsWith(".tsbuildinfo")),

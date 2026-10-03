@@ -1,13 +1,53 @@
 [build-system]
-requires = ["setuptools>=69"]
+# [Plan #62 62a-3] Sàn 77 là bản ĐẦU hỗ trợ PEP 639 (`license` là biểu thức SPDX): 76.1.0 ném
+# `ValueError: invalid pyproject.toml config: 'project.license'`, 69.5.1 ném `must be valid exactly by one
+# definition (2 matches found)` — đo trên Python 3.11 thật. Trần 85 vì `requires` được phân giải từ PyPI MỖI LẦN
+# build, không qua lockfile nào: không trần thì backend build trôi tự do trong một repo đã ghim mọi thứ khác theo
+# digest. (Không có bản `77.0.0`; bản đầu của dòng là `77.0.1`.)
+requires = ["setuptools>=77,<85"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "udp-openfeature"
 version = "0.1.0"
-description = "OpenFeature provider của UDP cho Python — đánh giá tại chỗ, stream SSE, nhãn ff (§6.8)"
+description = "OpenFeature provider for UDP server keys in Python: in-process evaluation, SSE sync, and per-request ff labels"
+readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.11"
+authors = [{ name = "UDP" }]
+keywords = [
+    "openfeature",
+    "openfeature-provider",
+    "feature-flags",
+    "feature-toggles",
+    "progressive-delivery",
+    "canary",
+    "prometheus",
+    "opentelemetry",
+]
+# KHÔNG có classifier `License :: ...`: dùng cùng biểu thức SPDX thì setuptools ném
+# `License classifiers have been superseded by license expressions (PEP 639)`.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 dependencies = ["openfeature-sdk>=0.10,<1"]
+
+# `license-files` KHÔNG được khai: glob mặc định của setuptools (`LICEN[CS]E*`, `COPYING*`, `NOTICE*`, `AUTHORS*`)
+# đã đưa `LICENSE` vào `*.dist-info/licenses/` — đo với và không có dòng đó, METADATA giống nhau từng dòng. Một
+# dòng vô tác dụng dạy người đọc rằng danh sách đó là đầy đủ, nên lần sau ai đó thêm một tệp "cho chắc".
+
+[project.urls]
+Homepage = "https://github.com/23521549-lang/udp"
+Repository = "https://github.com/23521549-lang/udp.git"
+Documentation = "https://github.com/23521549-lang/udp/blob/main/docs/UDP_design.md"
+Issues = "https://github.com/23521549-lang/udp/issues"
 
 [project.optional-dependencies]
 # Middleware đo lường (`udp_openfeature.metrics`) — như prom-client là peer TUỲ CHỌN của bản Node
@@ -18,6 +58,10 @@ dev = [
     "hypothesis>=6.100,<7",
     "ruff>=0.6,<1",
     "mypy>=1.11,<2",
+    # [Plan #62] Đóng gói và kiểm metadata. `twine` phải ≥ 6.1: bản dưới nó ném `InvalidDistribution` trên
+    # `Metadata-Version: 2.4` — chính bản metadata mà PEP 639 sinh ra.
+    "build>=1.2,<2",
+    "twine>=6.1,<7",
 ]
 
 [tool.setuptools.packages.find]

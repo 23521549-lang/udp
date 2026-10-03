@@ -35,7 +35,7 @@ const INLINED = ["zod", "murmurhash3js"];
 
 rmSync(dist, { recursive: true, force: true });
 
-await build({
+const result = await build({
   absWorkingDir: root,
   entryPoints: { index: "src/index.ts", metrics: "src/metrics.ts" },
   outdir: dist,
@@ -46,11 +46,61 @@ await build({
   target: "node20",
   external: [...PEERS, "node:*"],
   legalComments: "none",
+  metafile: true,
   banner: {
     js: "// @udp/openfeature-provider — mã bên thứ ba góp vào: xem THIRD_PARTY_NOTICES",
   },
   logLevel: "warning",
 });
+
+/**
+ * [Plan #62 62b-6] `INLINED` là một danh sách VIẾT TAY, và `THIRD_PARTY_NOTICES` được sinh từ nó. Một `import` mới
+ * ở `@udp/flag-evaluator` hay `@udp/shared-types` góp một thư viện thứ ba vào bundle mà notices vẫn hai mục — và
+ * artifact phát hành vi phạm điều khoản attribution của chính giấy phép Apache-2.0 mà gói khai. Không test nào bắt
+ * được: nó là một mệnh đề về bundle, không về mã nguồn.
+ *
+ * Nên đo bundle THẬT bằng `metafile` và khẳng định nó khớp danh sách đã khai. `INLINED` **vẫn** là một hằng viết
+ * tay chứ không suy ra từ metafile: viết thành danh sách là cách để việc "thêm một thư viện vào bundle" là một
+ * quyết định NHÌN THẤY ĐƯỢC; suy ra thì notices không bao giờ lệch, nhưng cũng không bao giờ ai thấy.
+ *
+ * Tên lấy sau lần `node_modules/` CUỐI: layout của pnpm là `.pnpm/zod@3.25.76/node_modules/zod/lib/index.mjs`.
+ * Package của workspace (`@udp/*`) vào bundle bằng đường mã nguồn thật (esbuild phân giải symlink) nên không có
+ * `node_modules/` trong đường dẫn và không bị đếm — đúng ý: chúng là mã của UDP, nằm dưới giấy phép của gói.
+ */
+const MODULES = "node_modules/";
+const bundled = new Set<string>();
+for (const input of Object.keys(result.metafile.inputs)) {
+  const path = input.replaceAll("\\", "/");
+  const at = path.lastIndexOf(MODULES);
+  if (at === -1) continue;
+  const rest = path.slice(at + MODULES.length);
+  const parts = rest.split("/");
+  const name = rest.startsWith("@")
+    ? parts.slice(0, 2).join("/")
+    : (parts[0] ?? "");
+  if (name !== "") bundled.add(name);
+}
+const declared = [...INLINED].sort();
+const measured = [...bundled].sort();
+if (declared.join("|") !== measured.join("|")) {
+  const extra = measured.filter((n) => !declared.includes(n));
+  const missing = declared.filter((n) => !measured.includes(n));
+  throw new Error(
+    [
+      "THIRD_PARTY_NOTICES sẽ không khớp bundle:",
+      `  khai (INLINED): ${declared.join(", ")}`,
+      `  đo (metafile):  ${measured.join(", ")}`,
+      extra.length > 0
+        ? `  vào bundle mà KHÔNG được khai: ${extra.join(", ")} — thêm vào INLINED (và kiểm giấy phép của nó tương thích Apache-2.0) hay bỏ import kéo nó vào`
+        : "",
+      missing.length > 0
+        ? `  khai mà KHÔNG vào bundle: ${missing.join(", ")} — bỏ khỏi INLINED`
+        : "",
+    ]
+      .filter((line) => line.length > 0)
+      .join("\n"),
+  );
+}
 
 const requireFromEvaluator = createRequire(
   join(root, "..", "flag-evaluator", "package.json"),

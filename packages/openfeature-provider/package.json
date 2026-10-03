@@ -1,9 +1,29 @@
 {
   "name": "@udp/openfeature-provider",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "description": "OpenFeature provider cho SERVER key của UDP: đánh giá tại chỗ, đồng bộ SSE, nhãn ff cho auto-rollback mức flag",
+  "description": "OpenFeature provider for UDP server keys: in-process evaluation, SSE sync, and per-request ff labels for flag-level auto-rollback",
+  "keywords": [
+    "openfeature",
+    "openfeature-provider",
+    "feature-flags",
+    "feature-toggles",
+    "progressive-delivery",
+    "canary",
+    "prometheus",
+    "opentelemetry"
+  ],
+  "license": "Apache-2.0",
+  "author": "UDP (https://github.com/23521549-lang/udp)",
+  "homepage": "https://github.com/23521549-lang/udp/tree/main/packages/openfeature-provider#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/23521549-lang/udp.git",
+    "directory": "packages/openfeature-provider"
+  },
+  "bugs": {
+    "url": "https://github.com/23521549-lang/udp/issues"
+  },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
