@@ -104,7 +104,7 @@ async function githubToken(
   };
   if (over.jti !== null) claims.jti = over.jti ?? "jti-1";
   const header: Record<string, unknown> = { alg: over.alg ?? "RS256" };
-  if (over.kid !== null) header.kid = over.kid ?? (signer.jwk.kid as string);
+  if (over.kid !== null) header.kid = over.kid ?? signer.jwk.kid;
   return await new SignJWT(claims)
     .setProtectedHeader(header as never)
     .setIssuer(over.iss ?? GITHUB_ISS)

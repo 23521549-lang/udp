@@ -975,7 +975,7 @@ describe("Trusted Deploy qua HTTP thật (Plan #61 QĐ-17, I41)", () => {
       kid: "k-test",
     };
     calls = [];
-    tdApp = appWith(((input: string | URL | Request) => {
+    tdApp = appWith((input: string | URL | Request) => {
       const url = String(input);
       calls.push(url);
       if (url !== JWKS_URI) {
@@ -987,7 +987,7 @@ describe("Trusted Deploy qua HTTP thật (Plan #61 QĐ-17, I41)", () => {
           headers: { "content-type": "application/json" },
         }),
       );
-    }) as typeof fetch);
+    });
   });
 
   beforeEach(async () => {
