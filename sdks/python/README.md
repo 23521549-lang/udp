@@ -4,7 +4,7 @@ An [OpenFeature](https://openfeature.dev) provider for **UDP** server keys. It d
 keeps it fresh over SSE, and evaluates flags **in your process** — so a flag lookup is a function call, not a
 network round trip.
 
-It is one half of a pair: [`@udp/openfeature-provider`](https://www.npmjs.com/package/@udp/openfeature-provider) is
+It is one half of a pair: [`udp-openfeature` on npm](https://www.npmjs.com/package/udp-openfeature) is
 the Node.js provider with the same state machine, the same options and the same defaults. Both are released under
 the same version number, and their agreement is tested against one shared vector file.
 

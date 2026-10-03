@@ -21,6 +21,23 @@
  * này dùng nháy kép, và một dạng lạ phải là ĐỎ chứ không phải một phép đoán.
  */
 export function projectVersionOf(source: string): string {
+  return projectKeyOf(source, "version", /^\d+\.\d+\.\d+$/, "x.y.z");
+}
+
+/**
+ * [Plan #62 62d-11] `[project].name` — đầu thứ tư của bất biến tên công khai. Không có ô này thì câu "một tên,
+ * hai registry" là một khẩu hiệu: không gì buộc tên npm bằng tên PyPI, và hai registry không liên thông.
+ */
+export function projectNameOf(source: string): string {
+  return projectKeyOf(source, "name", /^[a-z][a-z0-9-]*$/, "tên không scope");
+}
+
+function projectKeyOf(
+  source: string,
+  key: string,
+  shape: RegExp,
+  shapeName: string,
+): string {
   let table: string | null = null;
   const hits: string[] = [];
   for (const raw of source.split(/\r?\n/)) {
@@ -31,26 +48,34 @@ export function projectVersionOf(source: string): string {
       table = header[1] ?? null;
       continue;
     }
-    const kv = /^\s*(?:version|"version"|'version')\s*=\s*(.*)$/.exec(line);
-    if (kv === null || table !== "project") continue;
-    const value = /^"([^"]*)"\s*(#.*)?$/.exec((kv[1] ?? "").trim());
+    /**
+     * Mẫu TĨNH rồi so khoá, chứ không dựng regex từ `key`: một regex động phải qua thêm một tầng thoát ký tự, và
+     * một `\s` hụt một gạch chéo cho ra một mẫu **vẫn chạy** mà khớp sai — đúng loại hỏng im lặng mà cả hàm này
+     * tồn tại để chống.
+     */
+    const kv = /^\s*(?:([A-Za-z0-9_-]+)|"([^"]+)"|'([^']+)')\s*=\s*(.*)$/.exec(
+      line,
+    );
+    const found = kv?.[1] ?? kv?.[2] ?? kv?.[3];
+    if (kv === null || found !== key || table !== "project") continue;
+    const value = /^"([^"]*)"\s*(#.*)?$/.exec((kv[4] ?? "").trim());
     if (value === null) {
       throw new Error(
-        `[project].version không phải chuỗi nháy kép một dòng: ${kv[1] ?? ""}`,
+        `[project].${key} không phải chuỗi nháy kép một dòng: ${kv[4] ?? ""}`,
       );
     }
     hits.push(value[1] ?? "");
   }
   if (hits.length !== 1) {
     throw new Error(
-      `đợi ĐÚNG một [project].version, thấy ${String(hits.length)}`,
+      `đợi ĐÚNG một [project].${key}, thấy ${String(hits.length)}`,
     );
   }
-  const version = hits[0] ?? "";
-  if (!/^\d+\.\d+\.\d+$/.test(version)) {
-    throw new Error(`version không phải x.y.z: ${version}`);
+  const value = hits[0] ?? "";
+  if (!shape.test(value)) {
+    throw new Error(`[project].${key} không phải ${shapeName}: ${value}`);
   }
-  return version;
+  return value;
 }
 
 /**

@@ -2,7 +2,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { goldenPathPins, projectVersionOf } from "../src/toml-version.js";
+import {
+  goldenPathPins,
+  projectNameOf,
+  projectVersionOf,
+} from "../src/toml-version.js";
 
 /**
  * Ranh giới package là quyết định hạng nhất, nên nó phải được KIỂM.
@@ -133,6 +137,48 @@ function sourceFiles(dir: string): string[] {
   };
   walk(dir);
   return out;
+}
+
+/**
+ * [Plan #62 62d-11] Đọc một hằng chuỗi BẰNG CHỮ từ `render.ts` — design-lint không phụ thuộc `@udp/golden-path`.
+ *
+ * Fail-closed theo bài học `chartPinsOf` (chỉ thấy 42 trong 71 chart): một mẫu regex đòi một hình dạng cố định sẽ
+ * **thiếu khớp im lặng** khi prettier xuống dòng, khi ai đó thêm annotation kiểu, hay khi đổi sang nháy đơn. Mẫu
+ * một tầng mà đợt 62b dùng (`/PROVIDER_RELEASE\s*=\s*"…"/`) có chú thích nói nó chặn `PROVIDER_RELEASE_LEGACY` —
+ * đo ra nó **không** chặn, vì sau định danh là `_LEGACY` chứ không phải `\s*=`. Nên ở đây:
+ *
+ *   - mốc đối chiếu là phép **đếm định danh thô** (`split`, không regex) — thứ không vỡ vì hình dạng khai báo;
+ *   - phép đọc đi **hai tầng**: tầng một bắt phần phải của `=` lỏng, tầng hai đọc chặt và **in nguyên văn** thứ nó
+ *     thấy khi lạ — một mẫu một tầng ở đúng chỗ đó cho 0 khớp và không lời giải thích nào;
+ *   - `uses >= 2` là mệnh đề một regex thuần không phát biểu được: nó bắt đúng thoái cấp "khai hằng rồi bỏ phép
+ *     thay trong `render()`", lúc đó mọi phép so tên vẫn khớp mà cây sinh ra thì không còn được đổi tên.
+ */
+function constantOf(source: string, name: string): string {
+  const uses = source.split(name).length - 1;
+  const decls = [
+    ...source.matchAll(
+      /^export const ([A-Z][A-Z0-9_]*)(?:\s*:\s*[^=\n]+?)?\s*=\s*([\s\S]{1,80}?);$/gm,
+    ),
+  ].filter((m) => m[1] === name);
+  if (decls.length !== 1) {
+    throw new Error(
+      `render.ts phải có ĐÚNG MỘT khai báo ${name}, thấy ${String(decls.length)} ` +
+        `(định danh xuất hiện ${String(uses)} lần)`,
+    );
+  }
+  if (uses < 2) {
+    throw new Error(
+      `${name} được khai mà KHÔNG được dùng trong render() (xuất hiện ${String(uses)} lần)`,
+    );
+  }
+  const rhs = (decls[0]?.[2] ?? "").trim();
+  const literal = /^"([^"]*)"(?:\s+as const)?$/.exec(rhs);
+  if (literal === null) {
+    throw new Error(
+      `${name} phải là literal nháy kép một dòng, đang là: ${rhs}`,
+    );
+  }
+  return literal[1] ?? "";
 }
 
 const packages = readWorkspacePackages();
@@ -477,10 +523,7 @@ describe("ranh giới package", () => {
       join(ROOT, "packages", "golden-path", "src", "render.ts"),
       "utf8",
     );
-    // Đúng MỘT lần khai: một `PROVIDER_RELEASE_LEGACY` về sau không được lọt
-    const hits = [...render.matchAll(/PROVIDER_RELEASE\s*=\s*"([^"]*)"/g)];
-    expect(hits).toHaveLength(1);
-    expect(hits[0]?.[1]).toBe(pins.providerRelease);
+    expect(constantOf(render, "PROVIDER_RELEASE")).toBe(pins.providerRelease);
 
     const requirements = readFileSync(
       join(
@@ -530,5 +573,64 @@ describe("ranh giới package", () => {
         '[tool.ruff]\ntarget-version = "py311"\n[project]\nversion = "1.2.3"\n',
       ),
     ).toBe("1.2.3");
+  });
+
+  /**
+   * [Plan #62 62d-11] Tên PHÁT HÀNH nói ở **bốn** chỗ, và không chỗ nào được trôi khỏi ba chỗ kia:
+   * `publishConfig.name` (nguồn sự thật), `PROVIDER_PUBLIC_NAME` của Golden Path (cây sinh cho khách),
+   * `[project].name` của `pyproject.toml` (câu "một tên, hai registry" thành bất biến thay vì khẩu hiệu), và —
+   * ở ô kế tiếp — mọi bề mặt Portal.
+   *
+   * Scope `@udp` **không bao giờ lấy được**: npm đã có package `udp@1.0.0`, và org với package dùng chung một
+   * không gian tên. Nên `@udp/*` là namespace CỦA KHO, và một tên có scope ở `publishConfig.name` là một lượt
+   * publish chắc chắn hỏng ở registry — sau khi chốt duyệt tay đã tiêu.
+   */
+  it("[Plan #62] tên phát hành khớp ở bốn chỗ, và không có scope", () => {
+    const pv = byName.get("@udp/openfeature-provider") as Pkg;
+    const published = (pv.manifest as { publishConfig?: { name?: string } })
+      .publishConfig?.name;
+    expect(published).toBeDefined();
+    expect(published).toMatch(/^[a-z][a-z0-9-]*$/);
+
+    const render = readFileSync(
+      join(ROOT, "packages", "golden-path", "src", "render.ts"),
+      "utf8",
+    );
+    expect(constantOf(render, "PROVIDER_PUBLIC_NAME")).toBe(published);
+
+    const pyproject = readFileSync(
+      join(ROOT, "sdks", "python", "pyproject.toml"),
+      "utf8",
+    );
+    expect(projectNameOf(pyproject)).toBe(published);
+  });
+
+  /**
+   * Mã mà Portal ĐƯA CHO NGƯỜI DÙNG dán phải mang tên phát hành. Một phép QUÉT, không một danh sách tệp: danh
+   * sách sẽ lỗi ở đoạn mã thứ ba, và đợt này đã có đúng hai (`sdk-quickstart.ts` và `rollout-form.tsx`) mà bản
+   * nháp chỉ kể một.
+   *
+   * Hai wire fixture cũng vào đây: nội dung tệp đề xuất của `repo-scan` do `goldenPathFiles` sinh, và chúng là
+   * nguồn của mock Portal lẫn bản xem thử công khai — `wire-golden.test.ts` chỉ parse schema nên nó không đỏ.
+   */
+  it("[Plan #62] không bề mặt nào của khách còn mang tên trong kho", () => {
+    const inRepo = `${["@udp", ""].join("/")}openfeature-provider`;
+    const offenders: string[] = [];
+    for (const dir of [
+      join(ROOT, "apps", "portal", "src"),
+      join(ROOT, "services", "core-backend", "tests", "fixtures", "wire"),
+    ]) {
+      for (const file of readdirSync(dir, {
+        recursive: true,
+        withFileTypes: true,
+      })) {
+        if (!file.isFile()) continue;
+        const full = join(file.parentPath, file.name);
+        if (readFileSync(full, "utf8").includes(inRepo)) {
+          offenders.push(full.slice(ROOT.length + 1).replaceAll("\\", "/"));
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
