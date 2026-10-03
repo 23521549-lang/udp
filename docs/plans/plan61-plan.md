@@ -1098,7 +1098,7 @@ lại không phải sửa gì (bối cảnh mặc định `null` ở lớp dựn
 không đổi một dòng — bảo đảm chặn image chưa ký không hề giảm; (g) hạ Kyverno về 1.0.0 bỏ lớp admission, và ô test
 khẳng định đúng điều đó thay vì để nó là một điều người đọc plan phải tự nhớ.
 
-### 61d-3c — "tự áp bản vá" của AC-12, trong ranh giới của §8.6
+### 61d-3c — bản NHÁP: "tự áp bản vá" của AC-12 (giữ lại để đối chiếu; plan thi công ở mục dưới)
 
 AC-12 (`plan61-spec.md:24`) đòi "luồng cập nhật có E2E và **tự áp bản vá**". Mục 3 của bản nháp chỉ có
 `toolchain:check` mở PR — mà PR là việc của người, và `toolchain:check` **chưa có** `--fix` lẫn khuôn chart Helm.
@@ -1106,6 +1106,301 @@ Ranh giới phải ghi rõ: "tự áp" = **tự áp bản vá PATCH cùng dòng 
 `adapter_version` nên không đi qua nhánh B của §8.6 (nâng cấp do MAINTAINER bấm, production xác nhận hai bước); nâng
 minor hay major vẫn do người bấm. Đợt này: `toolchain:check` thêm đường đọc `index.yaml` của repo Helm, và một lịch
 áp bản vá patch qua đúng hàng đợi DOMAIN_APPLY.
+
+### 61d-3c — plan thi công sau BA vòng QA: canh ghim chart, và ranh giới thật của "tự áp bản vá"
+
+Bản nháp đầu của mục này sai ở **năm** chỗ, và ba vòng QA đục đúng năm chỗ đó. Ghi lại đủ, vì ba trong năm là
+loại sai sẽ ship ra một cổng chết hoặc một đường tự động làm chuỗi cung ứng **yếu hơn** trước đợt.
+
+#### 0. BẢY GHIM CHẾT trong sản phẩm hôm nay — phát hiện của vòng QA, và là lý do đợt này đáng làm
+
+Đo thật 03/10/2026 bằng `curl -sS -L --compressed <repo>/index.yaml` rồi đối chiếu với ghim trong mã:
+
+| #   | ghim                                                  | file                                                 | sự thật từ `index.yaml`                                                       |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| 1   | `spinnaker 2.2.24`                                    | `progressive-delivery-adapter/spinnaker/index.ts:57` | repo chỉ có `2.2.7, 2.2.6, 2.2.5, 2.2.4, 2.2.3`                               |
+| 2   | `zipkin 0.3.6`                                        | `tracing-adapter/zipkin/index.ts:34`                 | repo chỉ có `0.7.0, 0.3.0`                                                    |
+| 3   | `mysql-operator 2.2.2`                                | `database-adapter/mysql/index.ts:44`                 | repo giữ đúng MỘT bản: `2.3.0`                                                |
+| 4   | `tekton-pipeline 1.1.4`                               | `cicd-adapter/tekton/index.ts:85`                    | repo có `1.15.3, 1.14.0, 1.12.2, 1.12.0, 1.9.2…`                              |
+| 5   | `raw 0.3.2`                                           | `adapter-base/database.ts:26`                        | repo phát hành `v0.3.2` — CÓ tiền tố `v`; chart này dùng ở **7 chỗ**          |
+| 6   | repo `bitnami-labs.github.io/sealed-secrets`          | `secrets-adapter/sealed-secrets/index.ts:34`         | `index.yaml` **HTTP 404** (đã chuyển sang `bitnami.github.io/sealed-secrets`) |
+| 7   | repo `googlecloudplatform.github.io/...-provider-gcp` | `secrets-adapter/gcp-secret-manager/index.ts:55`     | `index.yaml` **HTTP 404**                                                     |
+
+Bảy adapter **không cài được chart của mình**: `helm upgrade --install --version <ghim>` không tải về được. Đây là
+món đầu tiên cổng này trả tiền cho chính nó, và nó nói đúng thứ tự ưu tiên của cổng: câu hỏi quan trọng nhất
+**không** phải "có bản vá mới chưa", mà **"ghim này có tải về được không"**.
+
+**Sửa một ghim ma KHÔNG phải một lần nâng cấp §8.6.** Không cụm nào từng chạy `2.2.24`, nên không có bản cũ nào để
+`upgradesFrom` mang và `adapter_version` **không** đổi. Đây là sửa một ghim chưa bao giờ đúng.
+
+#### 1. Lập luận F1 viết lại cho đúng, và lý do THẬT khiến không tự áp vào cụm
+
+Bản nháp viết: _"mọi `chart.version` là chuỗi hằng trong mã, **nhờ đó trạng thái mong muốn** của một cụm tenant tái
+tạo được từ một commit"_. Nửa đầu đúng; **nửa sau sai, và sai từ trước 61d-3b**: `desiredOf`
+(`adapter-base/helm.ts:468-480`) gói `values: unit.values(config, ctx)` vào đúng cấu trúc mà `detectDrift` so, mà
+`config` là `DomainConfig.config` trong database và `ctx` mang project, environment, binding, quota. `signedImages`
+chỉ là mục mới nhất của một hàng dài. Nên dữ kiện dùng được là hẹp hơn:
+
+> **F1 (đã hẹp).** _Toạ độ chart_ là hằng trong mã, nên version chart là **tất định theo commit** và `detectDrift`
+> so chính chuỗi đó. Trạng thái mong muốn thì **không** tất định theo commit — nó gói cả `values` suy từ database.
+
+Với F1 hẹp, bảng "hai lối" của bản nháp phải sửa, vì nó dùng F1 để bác một lối mà F1 không bác được:
+
+| lối tự áp vào cụm                                                                                                                        | bị cái gì bác                                                                                                                                                                                                      |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| adapter khai version dạng **khoảng**, giải lúc áp                                                                                        | **F1 (hẹp) bác thật**: kết quả phụ thuộc upstream ở thời điểm quét, nên `desiredOf` đổi mà không ai chạm vào ⇒ mọi project báo trôi giả                                                                            |
+| một **bảng ghi đè** theo project, job theo lịch ghi rồi enqueue DOMAIN_APPLY                                                             | **F1 KHÔNG bác được** — bảng đọc tất định nên không có bão trôi giả. Bị **F2** bác (một `helm upgrade` không người trực), và bị "một bản vá chart đổi được mặc định mà UDP không ghim"                             |
+| **lối thứ ba, bản nháp bỏ sót:** gộp PR → deploy UDP (registry nạp adapter 2.0.1, chart 3.9.2) → job theo lịch gọi đúng `requestUpgrade` | **F1 nguyên vẹn 100%**: `requestUpgrade` **không** nhận version từ bên gọi, nó từ chối `toVersion` khác bản máy chủ đang nạp (`domain-apply.service.ts:244-252`). Bị bác bởi **dữ kiện cụm dùng chung** — xem dưới |
+
+**Lý do thật, và nó mạnh hơn lập luận của bản nháp:** cụm là **dùng chung giữa mọi environment**.
+
+- `grep 'scope: "namespace"'` trên mã sản phẩm ⇒ **0** kết quả; **56** tệp adapter khai `scope: "cluster"`. Không có
+  "Kyverno của dev" để nâng riêng — một bản cài cho cả cụm, policy phủ mọi namespace environment.
+- `DomainConfig` là **một hàng** theo (project, domainType) và `adapter_version` là **một cột** — không có version
+  theo environment.
+- Mã nói thẳng: `domain-apply.service.ts:203` — _"Chạm cluster dùng chung MỌI environment: có production thì gõ lại
+  tên domain"_, và điều kiện là `environments.some(e => e.isProduction)` — tức project **CÓ** production, không phải
+  thao tác **chạm** production. `DEFAULT_ENVIRONMENTS` (`packages/config/src/constants.ts:17-21`) cho mọi project mới
+  một env `prod`, nên "chỉ tự áp ở non-production" loại gần 100% project.
+
+Nên tự áp bản vá vào cụm tenant = **bỏ chốt xác nhận production của §8.6 quy tắc B**. Đó là lý do, và nó không bác
+được bằng tiền lệ `signedImages`.
+
+**Quyết định giữ nguyên, lập luận thay mới: phần tự động dừng ở PHÁT HIỆN.** Áp vào cụm vẫn là
+`POST /projects/:id/domains/:type/upgrade` với đủ hai chốt của §8.6.
+
+#### 2. AC-12 đạt MỘT PHẦN, và spec phải sửa — không được đọc lại cho vừa
+
+`plan61-spec.md:300-302` (QĐ-18, **đã duyệt**) viết: _"`toolchain:check` theo dõi cả chart Helm UDP ghim (Kyverno
+trước tiên); `--fix` mở pull request nâng ghim (người dùng gộp); pull request chạy E2E kiểm chữ ký trên kind. **Bản vá
+tự áp theo lịch qua §8.6** (trả nợ "lịch nâng cấp" của §8.6)"_. Đối chiếu với thực tế:
+
+- "theo dõi cả chart Helm" — **đợt này trả**.
+- "`--fix` mở pull request nâng ghim" — **không trả trong đợt này**, xem mục 4.
+- "pull request chạy E2E kiểm chữ ký trên kind" — **không trả**; đó là cùng một lượt E2E với nợ
+  `kyverno-admission-real` của 61d-3b.
+- "Bản vá tự áp theo lịch qua §8.6" — **đảo quyết định**, vì dữ kiện cụm dùng chung ở mục 1.
+- Và món nợ _"lịch nâng cấp"_ mà QĐ-18 nói là đang trả **không tồn tại**: `grep "lịch nâng cấp" docs/` ⇒ 0 kết quả.
+  QĐ-18 hứa trả một món nợ chưa bao giờ được ghi.
+
+Đọc lại một tiêu chí là quyền của plan; **đảo một quyết định đã duyệt mà không sửa spec thì không**. Nên đợt này sửa
+spec, ba chỗ:
+
+1. `plan61-spec.md` §2 thêm một dòng quyết định **có ngày**: _"[03/10/2026] QĐ-18 sửa: phần tự động dừng ở phát hiện
+   và soạn thay đổi ở mức mã nguồn nền tảng; UDP **không** tự áp bản vá vào cụm tenant. Lý do: §8.6 quy tắc A/B, và
+   cụm dùng chung mọi environment (56 adapter `scope: cluster`, `DomainConfig` một hàng, `requireProductionConfirm`
+   nổ khi project CÓ production)."_
+2. `plan61-spec.md:300-302` — xoá "Bản vá tự áp theo lịch qua §8.6" và cụm "(trả nợ 'lịch nâng cấp' của §8.6)".
+3. `plan61-spec.md:24` (AC-12) — viết lại thành: _"Kyverno dòng 1.19 kiểm chữ ký lúc tạo pod ở chế độ **Audit**
+   (`Deny` sau nợ `kyverno-admission-real`), không thành điểm chết; ghim của nền tảng (image **và** chart Helm) được
+   canh tự động hằng tuần. **Chưa** có E2E admission trên cụm, và UDP **không** tự áp bản vá vào cụm của khách."_
+
+Và một đính chính nhỏ của 61d-3b: QĐ-18 gọi mở rộng bối cảnh là `ctx.project.signing`; thứ đã ship là
+`ctx.signedImages` (`packages/adapter-core/src/domain.ts`). Sửa tên trong spec cho khớp mã.
+
+**Phán quyết ghi vào luận văn: AC-12 ĐẠT MỘT PHẦN**, với hai món nợ có tên. Câu "UDP tự vá tooling của khách" phải
+thành: _"UDP tự phát hiện bản vá của tooling; việc áp vào cụm của khách là một thao tác có người, vì §8.6 cấm tự sửa
+và vì một cụm dùng chung mọi environment nên không có đường áp nào không đi qua chốt xác nhận production."_
+
+#### 3. Làm gì (bảy mục, mỗi mục có consumer trong CÙNG đợt — R6)
+
+**(a) Sửa bảy ghim chết của mục 0.** Consumer: cổng ở mục (d) chuyển từ đỏ sang xanh cho đúng bảy mục đó.
+
+**(b) Ghim chart thành DỮ LIỆU THUẦN: `HELM_CHART_PINS` trong `@udp/config`.** `HelmChartRef` chuyển xuống
+`@udp/config` (`./helm-charts`, thêm một dòng `exports`); `helm.ts` import kiểu từ đó; mỗi adapter lấy toạ độ chart
+**từ bảng** thay vì viết literal.
+
+Vì sao không phải `WeakMap` như bản nháp định — hai dữ kiện giết nó:
+
+- **Script không nạp nổi registry.** `adapter-base/helm.ts:5` import `envLabelFor` từ **gốc** `@udp/config`;
+  `packages/config/src/index.ts:1-8` re-export `env` từ `./env.js`; `env.ts:26-38` chạy
+  `envSchema.safeParse(process.env)` **ở mức module** và **ném** khi thiếu biến; runner CI không có `.env`. Và không
+  có bản sửa rẻ: **54** tệp dưới `modules/` import từ gốc `@udp/config`, trong đó **9** tệp dùng chính `env`. Script
+  hiện có cố ý tránh đúng chuyện này (`packages/config/scripts/toolchain-check.ts:9-23` import `../src/*.js` trực
+  tiếp).
+- **`WeakMap` theo identity VỠ hôm nay.** `adapter-base/cicd.ts:42-50` — `createCicdAdapter` trả
+  `{ ...spec.base, … }`, một object **MỚI**. `cicd-adapter/jenkins/index.ts:60` dựng `base =
+createHelmBasedAdapter(…)`, `:487` bọc lại, `:495 export default`. Tekton và Drone y vậy. ⇒ 5 ghim vô hình
+  (`jenkins 5.7.2` — có bản vá thật `5.7.27` —, `tekton-pipeline`, `drone`, `drone-runner-kube`, `raw`), và
+  `WeakMap.get` **fail OPEN**: `undefined` ⇒ `[]` ⇒ "ok". Chế độ hỏng tệ nhất cho một cổng. Ô test mà bản nháp chọn
+  (một adapter SaaS + một descriptor) sẽ **xanh trong khi bug sống**.
+
+Khoá của bảng là **tên chart**, và "một chart = một version ghim" thành một bất biến có cổng: hai bản cert-manager
+trong một cụm tranh CRD và webhook — đúng lý lẽ mà `adapter-base/cert-manager.ts:3-8` đã viết. Ghim lịch sử của
+`upgradesFrom` **ở lại trong adapter** (nó thuộc lịch sử version của adapter đó), và được gom riêng ở mục (e).
+
+Cái giá phải nói thẳng: lời khai của một adapter chia hai chỗ — bảng giữ ghim hiện tại, adapter giữ lịch sử.
+
+**(c) Cổng FAIL-CLOSED cho bảng.** Một ô design-lint: không `*-adapter/*/index.ts` nào còn một literal `version:`
+trong khối `chart: {`. Nghĩa là không ghim nào lọt khỏi bảng, và điều đó **kiểm được bằng grep** thay vì bằng kỷ
+luật. Consumer: chính cổng (d) — nó chỉ canh được thứ nằm trong bảng.
+
+**(d) Cổng canh chart, với BA luật và một ngưỡng đỏ hẹp.**
+
+`packages/config/src/toolchain-check.ts` (phần thuần): `chartVersionsOf(index, chartName)`, và `chartFinding` chạy
+**ba** luật theo thứ tự — bản nháp viết "dùng lại **nguyên** `newerTags`, không luật thứ hai", và đó là sai:
+`newerTags` trả lời "có bản nào mới hơn **cùng hình dạng**", nó **không** trả lời "ghim này có thật không".
+
+1. `repo-gone` — HTTP ≠ 200, hay nội dung không phải `index.yaml`. **ĐỎ.**
+2. `shape` — không bản nào cùng tiền tố + cùng hậu tố + cùng số thành phần (`newerTags` trả `{null, null}` ở **hai**
+   ca khác nhau và `versionFinding` gộp cả hai thành `ok` — đó là cách `raw 0.3.2` im lặng xanh). **ĐỎ.**
+3. `broken` — có bản cùng hình dạng nhưng `versions` **không chứa** ghim. **ĐỎ.**
+4. rồi mới `newerTags`: `chart-update` / `newer-line`. **KHÔNG đỏ** — chỉ vào bảng báo cáo.
+
+Vì sao `chart-update` không đỏ: đo thật toàn bộ ghim hiện tại ⇒ **27–29 mục `update`** ngay lượt chạy đầu
+(`cert-manager v1.16.1→v1.16.5`, `jenkins 5.7.2→5.7.27`, `grafana 8.5.2→8.5.12`, `ingress-nginx→4.11.8`,
+`crossplane→1.17.6`, `external-secrets→0.10.7`, `consul→1.5.9`, `kuma→2.8.8`, `harbor→1.15.2`, `flux2→2.14.1`,
+`gatekeeper→3.17.2`, `istio→1.23.6`, …). Mỗi mục đòi một lượt nâng cấp §8.6 đầy đủ, nên 27 mục không ai dọn trong
+một tuần, và 52 repo upstream tái sinh hàng đợi liên tục. Đó đúng là cơ chế mà chính tệp này đã nhận diện và chọn
+tránh: `packages/config/src/toolchain-check.ts:153-154` — _"báo dòng mới mỗi tuần như một lỗi thì job đỏ vĩnh viễn và
+không ai nhìn nữa"_. Bản nháp vừa dẫn lập luận đó vừa dựng đúng cái nó cấm, chỉ vì phân loại sai một ca (bản nháp
+đoán cert-manager là `newer-line` vì chỉ xem ba dòng đầu index). Và cái giá của việc đỏ sai là mất **tín hiệu đang
+có**: 20 image + 3 bản phát hành + checkout chìm dưới 64 dòng chart.
+
+**(e) Ghim ĐÓNG BĂNG của `upgradesFrom` được gom, và chỉ chạy luật TỒN TẠI.** Bản nháp loại hẳn chúng với lý do
+"canh thì mỗi tuần báo 3.2.7 có bản vá mãi mãi" — nửa đầu đúng (`kyverno 3.2.x` thật có `3.2.8`), nửa sau sai:
+`upgradesFrom` là **đường duy nhất** mà `restoreTo` của §8.6 áp lại được chart cũ, và nó chỉ chạy được nếu chart đó
+**còn tải về được**. Mà repo **có** xoá bản: `mysql-operator` giữ đúng 1 bản, `zipkin` đã bỏ `0.3.6`,
+`tekton-pipeline` đã bỏ `1.1.4`. Nên: gom, gắn nhãn `frozen`, chạy **chỉ** luật tồn tại ⇒ `ok` | `broken`, **không**
+gọi `newerTags`. Mất đường hạ về mà không ai biết là đúng loại "xanh rỗng" tệ nhất: cổng xanh vì nó **cố ý** không
+nhìn.
+
+**(f) Repo không phải repo Helm HTTP được khai tường minh.** `oci://public.ecr.aws/aws-controllers-k8s` (3 chart của
+ACK) không có `index.yaml`; `gs://configconnector-operator` khai `installer: "manifest-bundle"` nên không phải chart.
+Hai ca này nhận một trạng thái có tên (`unwatched`, kèm lý do in ra báo cáo) — **không** để chúng rơi vào `broken`
+giả. Và `!res.ok` ⇒ `Finding` cho **riêng repo đó**, `yaml.load` bọc try/catch: một repo chết không được giết báo cáo
+của 51 repo kia.
+
+**(g) Cổng cho F3 — đổi ghim chart phải đi kèm bump version adapter và `upgradesFrom`.** Bản nháp gọi F3 là "61d-3a
+**chốt**", hàm ý có cưỡng chế. Không có: `upgradesFrom` là optional (`helm.ts:85`), và đường áp một chart mới **mà
+không** bump version adapter đang mở sẵn — `requestReapply` chỉ chặn khi `row.adapterVersion !== adapter.version`
+(`domain-apply.service.ts:306-312`), nên sửa chart tại chỗ thì `reapply` áp bình thường: không validator, không đường
+hạ về. Đợt này dựng một vòi báo 27 món chart mỗi tuần, nên **phải** dựng cùng cái cổng giữ cho mỗi lần nâng đi đúng
+F3, nếu không lối đi sai vừa dễ hơn vừa làm mất đường hạ về mà 61d-3a vừa mua. Hiện thực: một cổng kiểu I28
+(`packages/design-lint/src/i28-gate.ts` đã có máy móc so khoảng commit) — diff đổi một `version` trong
+`HELM_CHART_PINS` thì cùng diff phải đổi `version` của adapter dùng chart đó **và** thêm một phần tử `upgradesFrom`.
+Ngoại lệ duy nhất, khai tường minh: sửa một ghim `broken`/`shape` (mục 0) — không cụm nào từng chạy nó.
+
+Điểm vào: `packages/config/scripts/chart-check.ts` + script `chart:check`, cùng `renderReport` với phần image; một
+bước mới trong `.github/workflows/toolchain.yml`. Báo cáo in **URL đã cấu hình**, không in URL hiệu dụng:
+`charts.jfrog.io` redirect sang S3 mang `X-Amz-Security-Token`, in vào `GITHUB_STEP_SUMMARY` là rò token vào log công
+khai của lượt chạy. Khử trùng finding theo `(repo, chart, version)`, cột `source` liệt kê adapter dùng nó.
+
+#### 4. Cái KHÔNG ship trong đợt này, và vì sao (61d-3c-2)
+
+**`--fix` và job mở PR bị hoãn**, không phải vì khó mà vì ship ở trạng thái này làm chuỗi cung ứng **yếu hơn** trước
+đợt. Năm dữ kiện, mỗi cái một chế độ hỏng:
+
+1. **Không có nguồn nào cho giá trị MỚI.** `checkRelease` dựng URL checksums bằng `v${release.version}` — bản **đang
+   ghim** — và `publishedSha256` chỉ dùng để _so_ (`packages/config/scripts/toolchain-check.ts:183-196`);
+   `checkImage` chỉ lấy digest của **tag đang ghim**; `Finding` chỉ có `detail: string` văn xuôi. Nên
+   `patchEdits(findings)` như bản nháp viết **không thể** sinh giá trị đúng, và hậu quả là `--fix` ghi _version mới +
+   sha256 cũ_ ⇒ `sha256sum -c -` đỏ ⇒ **pipeline đóng gói của mọi project khách hỏng**. Cần: `Finding.target` do
+   phần MẠNG điền, cộng hai lượt fetch mới (digest của tag đích; checksums của version đích).
+2. **`isActionable` gồm cả `moved` và `broken`** (`src/toolchain-check.ts:165-167`), mà `moved` nghĩa là _tag giữ
+   nguyên, digest đổi_ — đúng sự cố Trivy 03/2026 (CVE-2026-33634) mà `build-toolchain.ts:3-6` sinh ra để chống. Một
+   `--fix` theo `isActionable` là **tự động hoá việc chấp nhận một lần đẩy đè**, kèm lời mời tường minh cho người gộp
+   là "đọc diff, đừng tra".
+3. **`STEP_IMAGES` không phải chuỗi `name:tag@sha256:…`** — 0/16 chuỗi ghim đầy đủ thuộc nó; `stepImage()` lắp lúc
+   chạy từ `repo`/`tagSuffix`/`version`/`pins`. Sửa nó là một phép **chèn** vào `pins` cộng quyết định đổi `latest`,
+   mà đổi `latest` là đổi mặc định cấu hình domain — `build-toolchain.ts:131` viết ra để chống đúng điều đó. Và
+   `"3.267.0"` xuất hiện 6 lần (ba tool pulumi), nên luật "khớp đúng một lần" **ném** cho 8/24 ghim.
+4. **`TEST_IMAGES` ↔ Dockerfile Golden Path là bất biến hai đầu.**
+   `services/core-backend/tests/golden-path-pins.test.ts:11-26` khẳng định **mọi** dòng `FROM` bằng đúng
+   `TEST_IMAGES.<runtime>`, và mỗi Dockerfile có **hai** dòng `FROM`. Nên luật "khớp đúng một lần" sai ngay ở ghim
+   được vá dày nhất, và một `--fix` nửa vời làm PR của bot **chắc chắn đỏ**.
+5. **Job sẽ không bao giờ tới bước mở PR**: script đặt `process.exitCode = 1` khi có finding actionable — đúng lúc
+   `--fix` có việc làm — nên step đỏ và các step sau không chạy.
+
+Cộng hai dữ kiện về đường PR: PR mở bằng `GITHUB_TOKEN` **không kích hoạt workflow nào** (luật của GitHub; chính
+`peter-evans/create-pull-request` ghi điều đó), và `ci.yml:247` `build-smoke` có
+`if: github.event_name != 'pull_request'` — nên PR đó có **zero** phép kiểm máy. Và nâng `permissions` tại chỗ hiện
+tại là ở **cấp workflow** (`toolchain.yml:12-13`) nên job báo cáo cũng nhận `contents: write`, trong một job đã chạy
+`pnpm install` tức chạy postinstall của mọi dependency. Thêm `peter-evans/create-pull-request` còn đi ngược chính
+nguyên tắc UDP tự viết ở `build-toolchain.ts:6-7`: _"Chỉ dùng MỘT action bên thứ ba"_.
+
+Hướng đã chọn cho 61d-3c-2, để không phải tranh luận lại: `--fix` ghi một tệp `.patch`, in diff vào
+`$GITHUB_STEP_SUMMARY` (script đã biết ghi vào đó) và đính kèm bằng `actions/upload-artifact@v4` (đã là tiền lệ ở
+`ci.yml` hai lần) — `contents: read`, **không** action mới, và xoá luôn giả định "repo cho Actions mở PR" mà bản nháp
+tự nhận chưa kiểm được. Phạm vi `--fix`: allowlist **dương** theo `source` (`BUILD_TOOLCHAIN.images.*` trừ `builder`
+và `buildkit`, `TEST_IMAGES.*` kèm cả hai dòng `FROM`, `BUILD_TOOLCHAIN.pack`, `BUILD_TOOLCHAIN.oras`), chỉ
+`status === "update"`, mỗi phép thay mang **số lần khớp dự kiến**. Loại trừ có lý do viết vào mã: `STEP_IMAGES` (3),
+`actions.checkout` (ghim theo SHA, một loại khác), `cosign` (`build-toolchain.ts:45-48` — bản mới phải kéo
+`sigstore/sigstore ≥ v1.10.10`, một điều kiện con người phải kiểm), `images.builder`/`images.buildkit` (ba hằng vệ
+tinh `builderUser`, `cnbPlatformApi`, `buildkitUser` đi thẳng vào pod build, không cổng nào canh quan hệ đó).
+
+61d-3c-2 cũng trả hai món mà vòng QA tìm ra và đợt này không chạm: hai chỗ **chép cứng digest mà không cổng nào
+canh** (`apps/portal/demo/mock/build.ts` chép 6 digest của `TEST_IMAGES`;
+`services/core-backend/tests/fixtures/build-apps/dockerfile/Dockerfile` chép `images.alpine`, và fixture này được
+**build thật** trong job `build-smoke`), và một dòng báo cáo đếm `DomainConfig.adapter_version` **đang chạy** so với
+bản máy chủ nạp — thứ gần nhất với "luồng cập nhật" mà dữ liệu đã có sẵn (`GET /domains/:type/versions` đã tính đúng
+việc đó cho một project, `project-domain.controller.ts:166-181`).
+
+#### 5. Giả định ngoài hệ thống, đã kiểm bằng lệnh thật (R7)
+
+```
+$ curl -sS -o /dev/null -w "HTTP %{http_code}  %{size_download} B\n" https://kyverno.github.io/kyverno/index.yaml
+HTTP 200  622082 B
+$ node idx.cjs                       # js-yaml 4, chính tệp vừa tải
+parse ms: 30 | charts: kyverno, kyverno-policies
+kyverno: 268 ban; moi nhat 3.9.1, 3.9.0, 3.9.0-rc.4
+$ curl -sS -L --compressed https://charts.jetstack.io/index.yaml | grep -o "^    version: .*" | head -3
+    version: v1.21.2 / v1.21.1 / v1.21.0
+$ curl -sS -L --compressed https://dysnix.github.io/charts/index.yaml | grep -A60 "^  raw:" | grep version
+    version: v0.3.2 / v0.3.1 / v0.3.0
+$ curl -sS -L -o /dev/null -w "HTTP %{http_code}\n" https://bitnami-labs.github.io/sealed-secrets/index.yaml
+HTTP 404
+```
+
+Sáu điều rút ra, và cả sáu đổi thiết kế:
+
+1. `index.yaml` có **mọi** bản đã phát hành (268 bản cho một chart) ⇒ lấy `entries[<chart>]` rồi lọc, không tin thứ
+   tự. Và phép đo của bản nháp **dưới mẫu 10 lần**: thật là **52 repo / 33,1 MB** sau giải nén, lớn nhất
+   `prometheus-community` 6,17 MB (parse 192 ms, +25,9 MB heap) ⇒ tuần tự hoặc giới hạn song song, giải phóng từng
+   index sau khi lấy version. Đáng ghi vì đây là lệnh người dùng chạy tay trên máy 7,7 GB.
+2. **Tiền tố `v` khác nhau giữa các repo** (Kyverno `3.9.1`, cert-manager `v1.21.2`, dysnix `v0.3.2`) ⇒ luật `shape`
+   ở mục (d) là bắt buộc, không phải trang trí: `raw 0.3.2` là ca thật đang im lặng xanh.
+3. **Hai repo đã 404** ⇒ luật `repo-gone`, và nó là phép kiểm đáng tiền nhất của cổng.
+4. **"Pre-release tự bị loại" chỉ đúng một chiều.** Tính chất thật của `newerTags` là "**suffix phải trùng**":
+   `newerTags("v1.11.0-beta.0", …)` ⇒ `patch: v1.11.1-beta.0` (`update`), và quét 52 index tìm thấy **138 cặp** như
+   vậy. Nên: sửa lời khẳng định, và thêm một `assert` lúc dựng bảng — ghim chart **không được** có hậu tố.
+5. 5 repo cần theo **redirect** (`charts.external-secrets.io`, `cloudnative-pg.github.io`, `helm-charts.newrelic.com`,
+   `openzipkin.github.io`, `charts.jfrog.io`) ⇒ phải dùng `fetch` (theo redirect mặc định) hay `curl -L`; và
+   `charts.jfrog.io` redirect sang S3 mang `X-Amz-Security-Token` ⇒ báo cáo in URL đã cấu hình.
+6. Dấu `/` cuối repo **không** gây lỗi: `https://sonatype.github.io/helm3-charts//index.yaml` ⇒ HTTP 200 (GitHub
+   Pages chuẩn hoá `//`). Một giả định của bản nháp đã bị loại.
+
+Và một con số của bản nháp **sai ×2,4**: không phải "170 ghim chart". Thật: **80** chỗ khai chart hiện tại, **71**
+cặp `(repo, chart, version)`, **64–69** sau khử trùng (Istio dùng chung một `VERSION` cho 3 chart), cộng 4 ghim của
+`upgradesFrom`. Plan ghi số đếm thật kèm **cách đếm**, vì một con số sai trong plan là con số sẽ chảy vào luận văn.
+
+#### 6. Đường lùi (R10)
+
+`git revert`. Không migration, không cột nào đổi, không đối tượng nào ghi vào cụm. Hai thứ revert **không** hoàn lại
+và phải làm tay: (a) bảy ghim đã sửa ở mục 0 — nhưng không nên hoàn, vì bản cũ **không cài được**; (b) nếu `pnpm
+install` đã chạy lại thì `pnpm-lock.yaml` có thể đổi. `HELM_CHART_PINS` có nhiều chỗ đọc (mọi adapter họ Helm), nên
+revert phải là một lượt revert **trọn** commit, không revert từng tệp.
+
+#### 7. Kiểm thoái cấp (R11) — trả bằng ô test, không bằng lời
+
+| phải còn đúng sau đợt này                                 | ô test                                                                                                                                      |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mọi ghim chart đến từ bảng — không ghim nào lọt           | cổng grep của mục (c): 0 literal `version:` trong khối `chart: {` dưới `*-adapter/*/index.ts`                                               |
+| Bảng phủ cả adapter bị **bọc** (`createCicdAdapter`)      | `jenkins`, `tekton`, `drone` đều có ghim trong bảng; ô test lấy đúng ba cái đó, **không** lấy SaaS/descriptor                               |
+| Một chart = một version ghim                              | ô test: `HELM_CHART_PINS` không có hai khoá cùng `name` khác `version`                                                                      |
+| Ghim không tồn tại ⇒ ĐỎ, không phải `ok`                  | `chartFinding("2.2.24", ["2.2.7","2.2.4"])` ⇒ `broken`                                                                                      |
+| Lệch tiền tố ⇒ ĐỎ, không im lặng                          | `chartFinding("0.3.2", ["v0.3.2","v0.3.1"])` ⇒ `shape`                                                                                      |
+| Bản vá upstream bình thường **KHÔNG** làm cổng tuần đỏ    | `chartFinding("v1.16.1", [... "v1.16.5"])` ⇒ `chart-update`, và `isActionable` ⇒ `false`                                                    |
+| Ghim `frozen` không bao giờ ra `chart-update`             | `upgradesFrom` của Kyverno (3.2.7/3.2.6) ⇒ `ok`, dù index có `3.2.8`                                                                        |
+| Ghim `frozen` bị xoá khỏi index ⇒ ĐỎ                      | `frozen "1.1.4"` với index không có nó ⇒ `broken`                                                                                           |
+| Một repo 404 không giết báo cáo của repo khác             | 3 repo giả, một 404 ⇒ 3 finding, 1 `repo-gone`                                                                                              |
+| `oci://` và `manifest-bundle` không ra `broken` giả       | ⇒ `unwatched` kèm lý do                                                                                                                     |
+| Chart dùng chung ra MỘT dòng                              | `raw` ở 7 chỗ ⇒ 1 finding, `source` liệt kê 7                                                                                               |
+| Ghim chart không có hậu tố                                | `assert` lúc dựng bảng; ô test với một ghim `-rc` ⇒ ném                                                                                     |
+| Đổi ghim chart mà quên bump adapter + `upgradesFrom` ⇒ ĐỎ | cổng (g): một diff giả đổi `version` của `kyverno` mà không chạm adapter ⇒ cổng đỏ; đổi kèm đủ hai thứ ⇒ xanh; sửa một ghim `broken` ⇒ miễn |
+| Bề mặt adapter không rộng ra                              | cổng đóng băng vẫn đếm 8 + 6; E1 `contextExtension.added` không thêm gì                                                                     |
+| Tín hiệu của ghim image không bị chart che                | báo cáo có mục riêng cho chart; ô test: 64 dòng chart không đẩy mục image ra khỏi tóm tắt                                                   |
+| `pnpm toolchain:check` giữ nguyên hành vi                 | bộ test hiện có của `@udp/config` vẫn xanh                                                                                                  |
 
 ### Thứ tự, và vì sao chia ba
 

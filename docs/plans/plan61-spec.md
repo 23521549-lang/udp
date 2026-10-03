@@ -8,20 +8,20 @@ phát hành SDK — Plan #62). Người dùng: "duyệt hướng này, chọn b,
 Một project trên UDP, ở BẤT KỲ CI nào trong sáu CI và BẤT KỲ registry nào trong chín registry, đẩy được image của ứng
 dụng viết bằng một ngôn ngữ phổ biến, không khoá dài hạn khi tránh được, rồi deploy đúng byte đã build.
 
-| Mã    | Tiêu chí                                                                                                                                                          |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AC-1  | Mọi ô (sáu CI × năm kiểu đăng nhập registry) sinh pipeline có bước đăng nhập trước bước đẩy; không ô nào để bí mật trong tệp pipeline                             |
-| AC-2  | Repo có Dockerfile ⇒ BuildKit; không có ⇒ Buildpacks Paketo; ghim chiến lược được; quyết định lúc pipeline chạy                                                   |
-| AC-3  | Jenkins, Tekton, Drone build trong namespace `udp-build`, không cần Docker daemon, không chạy trong `udp-system`; kaniko không còn                                |
-| AC-4  | Pipeline báo UDP `repo:<commit>@sha256:<digest>`; Service 1 áp đúng chuỗi đó; dạng cũ vẫn nhận                                                                    |
-| AC-5  | Mọi image và action UDP chọn ghim theo digest/SHA; test chặn ghim theo tag                                                                                        |
-| AC-6  | Bước test: mặc định theo ngôn ngữ khi lệnh không mơ hồ, khai được, tắt được tường minh; không có lệnh thì dừng như hôm nay                                        |
-| AC-7  | SBOM ở cả hai chiến lược; provenance ở đường Dockerfile; image Buildpacks được rebase theo lịch                                                                   |
-| AC-8  | Mọi project deploy được đều ký image bằng khoá KMS ở cloud của CHÍNH project (bất kể registry); hai định dạng: bundle Sigstore và chữ ký tương thích podman/CRI-O |
-| AC-9  | Portal: mục "Đóng gói" nói UDP build thế nào và vì sao, đổi được cài đặt, hiện việc cần làm (secret, script danh tính) — hai ngôn ngữ                             |
-| AC-10 | Cổng deploy của UDP: image phải thuộc repo của project; chữ ký kiểm bằng khoá công khai, đúng digest, đúng commit/nhánh, không cũ hơn bản đang chạy               |
-| AC-11 | Trusted Deploy: webhook mang token OIDC của chính lượt chạy, kiểm chữ ký nơi phát, gắn claim với cấu hình project, dùng MỘT lần                                   |
-| AC-12 | Kyverno dòng 1.19 kiểm chữ ký lúc tạo pod (Audit/Deny), không thành điểm chết; luồng cập nhật có E2E và tự áp bản vá                                              |
+| Mã    | Tiêu chí                                                                                                                                                                                                                                                                                                                 |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| AC-1  | Mọi ô (sáu CI × năm kiểu đăng nhập registry) sinh pipeline có bước đăng nhập trước bước đẩy; không ô nào để bí mật trong tệp pipeline                                                                                                                                                                                    |
+| AC-2  | Repo có Dockerfile ⇒ BuildKit; không có ⇒ Buildpacks Paketo; ghim chiến lược được; quyết định lúc pipeline chạy                                                                                                                                                                                                          |
+| AC-3  | Jenkins, Tekton, Drone build trong namespace `udp-build`, không cần Docker daemon, không chạy trong `udp-system`; kaniko không còn                                                                                                                                                                                       |
+| AC-4  | Pipeline báo UDP `repo:<commit>@sha256:<digest>`; Service 1 áp đúng chuỗi đó; dạng cũ vẫn nhận                                                                                                                                                                                                                           |
+| AC-5  | Mọi image và action UDP chọn ghim theo digest/SHA; test chặn ghim theo tag                                                                                                                                                                                                                                               |
+| AC-6  | Bước test: mặc định theo ngôn ngữ khi lệnh không mơ hồ, khai được, tắt được tường minh; không có lệnh thì dừng như hôm nay                                                                                                                                                                                               |
+| AC-7  | SBOM ở cả hai chiến lược; provenance ở đường Dockerfile; image Buildpacks được rebase theo lịch                                                                                                                                                                                                                          |
+| AC-8  | Mọi project deploy được đều ký image bằng khoá KMS ở cloud của CHÍNH project (bất kể registry); hai định dạng: bundle Sigstore và chữ ký tương thích podman/CRI-O                                                                                                                                                        |
+| AC-9  | Portal: mục "Đóng gói" nói UDP build thế nào và vì sao, đổi được cài đặt, hiện việc cần làm (secret, script danh tính) — hai ngôn ngữ                                                                                                                                                                                    |
+| AC-10 | Cổng deploy của UDP: image phải thuộc repo của project; chữ ký kiểm bằng khoá công khai, đúng digest, đúng commit/nhánh, không cũ hơn bản đang chạy                                                                                                                                                                      |
+| AC-11 | Trusted Deploy: webhook mang token OIDC của chính lượt chạy, kiểm chữ ký nơi phát, gắn claim với cấu hình project, dùng MỘT lần                                                                                                                                                                                          |
+| AC-12 | Kyverno dòng 1.19 kiểm chữ ký lúc tạo pod ở chế độ **Audit** (`Deny` sau nợ `kyverno-admission-real`), không thành điểm chết; ghim của nền tảng (image **và** chart Helm) được canh tự động hằng tuần. **Chưa** có E2E admission trên cụm, và UDP **không** tự áp bản vá vào cụm của khách — xem quyết định [03/10/2026] |
 
 ## 2. Quyết định
 
@@ -29,6 +29,23 @@ dụng viết bằng một ngôn ngữ phổ biến, không khoá dài hạn khi
 (AC-2, AC-6, AC-9). 61c: SBOM, provenance, rebase, job báo phiên bản (AC-7). 61d chia ba (duyệt 01/10/2026: phương án C, đã khắc phục
 bốn điểm yếu): 61d-1 ký và cổng deploy (AC-8, AC-10), 61d-2 Trusted Deploy (AC-11), 61d-3 Kyverno (AC-12). Mỗi đợt
 qua đủ cổng rồi mới commit.
+
+**[03/10/2026] QĐ-18 sửa: "tự áp bản vá" dừng ở PHÁT HIỆN, không áp vào cụm tenant.** Quyết sau ba vòng QA soát
+plan 61d-3c, vì một chặn cứng đã kiểm lại bằng mã: **cụm là dùng chung giữa mọi environment**, nên không có đường tự
+áp nào không đi qua chốt xác nhận production của §8.6 quy tắc B. Ba dữ kiện: `grep 'scope: "namespace"'` trên mã sản
+phẩm cho **0** kết quả (56 tệp adapter khai `scope: "cluster"`, một bản cài cho cả cụm — không có "Kyverno của dev" để
+nâng riêng); `DomainConfig` là **một hàng** theo (project, domainType) với `adapter_version` là **một cột**, không có
+version theo environment; và `requireProductionConfirm` (`domain-apply.service.ts:203-215`) nổ khi project **CÓ**
+environment production chứ không phải khi thao tác **chạm** production, mà `DEFAULT_ENVIRONMENTS` cho mọi project mới
+một env `prod`. Nên "tự áp chỉ ở non-production" không diễn đạt được, và "tự áp" nói chung = bỏ chốt đó.
+
+Quyết định: phần tự động dừng ở phát hiện và soạn thay đổi ở mức **mã nguồn nền tảng**; áp vào cụm của khách vẫn là
+một thao tác có người. Hệ quả phải công bố: **AC-12 đạt MỘT PHẦN** — lớp admission đã có và ở chế độ Audit, ghim chart
+được canh, nhưng nửa "E2E" nằm ở nợ `kyverno-admission-real` và nửa "tự áp" không còn trong phạm vi. Câu "UDP tự vá
+tooling của khách" phải viết là: _"UDP tự phát hiện bản vá của tooling; việc áp vào cụm của khách là một thao tác có
+người, vì §8.6 cấm tự sửa và vì một cụm dùng chung mọi environment nên không có đường áp nào không đi qua chốt xác
+nhận production."_ Lời hứa "trả nợ 'lịch nâng cấp' của §8.6" trong bản QĐ-18 cũ cũng được xoá: `grep "lịch nâng cấp"
+docs/` cho **0** kết quả — món nợ đó chưa bao giờ được ghi.
 
 **[02/10/2026] 61d-2 chia hai: 61d-2a và 61d-2b.** Quyết sau vòng QA soát kế hoạch 61d-2, vì một chặn cứng đã kiểm lại
 bằng mã: đường Trusted Deploy cho ba CI chạy TRONG CỤM không làm được mà không chạm phía cụm, bằng cả hai lối hiện
@@ -294,12 +311,13 @@ gắn claim với repo/workflow). UDP chặt hơn: token dùng MỘT lần.
   project; attestor cosign **khoá công khai tĩnh** (mọi khoá được chấp nhận) — Kyverno không cần quyền KMS, tránh
   sigstore#2409; `insecureIgnoreTlog`/`insecureIgnoreSCT` vì không dùng Rekor; quyền đọc registry theo loại (amazon/
   google/azure qua danh tính workload của Kyverno, Secret cho registry khác). Thông tin ký vào adapter bằng mở rộng bối
-  cảnh `ctx.project.signing` (E1); đổi khoá ⇒ áp lại domain POLICY.
+  cảnh `ctx.signedImages` (E1 — tên đã ship ở 61d-3b; QĐ-18 viết `ctx.project.signing`, sửa 03/10/2026); đổi khoá ⇒ áp lại domain POLICY.
 - **Không thành điểm chết** (bài học kyverno#16435: bộ kiểm sập ⇒ mọi pod bị chặn): Audit ⇒ `failurePolicy: Ignore`; Deny
   ⇒ `Fail` + miễn trừ namespace hệ thống + giới hạn thời gian chờ, và schema đòi ít nhất 2 bản sao.
-- **Luồng cập nhật:** `toolchain:check` theo dõi cả chart Helm UDP ghim (Kyverno trước tiên); `--fix` mở pull request
-  nâng ghim (người dùng gộp); pull request chạy E2E kiểm chữ ký trên kind. Bản vá tự áp theo lịch qua §8.6 (trả nợ "lịch
-  nâng cấp" của §8.6); bản minor: Portal báo "có bản đã qua kiểm thử", MAINTAINER bấm nâng.
+- **Luồng cập nhật:** `toolchain:check` theo dõi cả chart Helm UDP ghim (Kyverno trước tiên). **[Sửa 03/10/2026]**
+  Phần tự động dừng ở **phát hiện**: bản vá áp vào cụm bằng `POST /projects/:id/domains/:type/upgrade` (MAINTAINER bấm,
+  production xác nhận hai bước), cả bản vá lẫn bản minor. `--fix` soạn sẵn thay đổi cho ghim **dữ liệu thuần** của
+  `@udp/config` (không chạm ghim chart) và nằm ở 61d-3c-2; E2E kiểm chữ ký trên kind nằm ở nợ `kyverno-admission-real`.
 - Lớp 1 (QĐ-16) đứng độc lập: Kyverno trễ một bản không làm mất bảo đảm của đường deploy qua UDP.
 
 ## 3. Ngoài phạm vi (nêu rõ)
