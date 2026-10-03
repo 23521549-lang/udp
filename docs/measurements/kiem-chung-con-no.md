@@ -1404,10 +1404,24 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
 - **Runbook:** sáu bước, mỗi bước một cách kiểm.
   1. `pnpm --filter @udp/design-lint sdk-version` → in `0.1.0`. Mọi bước sau dùng đúng số này.
   2. Tạo tổ chức `udp` trên npm (gói công khai: miễn phí). Kiểm: `npm org ls udp` chạy được.
-  3. `pnpm -C packages/openfeature-provider exec tsx scripts/pack.ts --out /tmp/pack` rồi
-     `npm publish /tmp/pack/*.tgz --access public` **bằng tay** (lượt bootstrap, chiếm tên; lượt này **không** có
-     provenance vì nó không chạy trong Actions — đó là chấp nhận được cho đúng một version). Kiểm:
-     `npm view @udp/openfeature-provider version` → `0.1.0`.
+  3. Lượt bootstrap bằng tay để **chiếm tên**, và nó phải mang version `0.0.1`, KHÔNG phải `0.1.0`:
+
+     ```bash
+     pnpm -C packages/openfeature-provider exec tsx scripts/pack.ts --out /tmp/pack
+     cd /tmp/pack && tar -xzf *.tgz && cd package
+     npm version 0.0.1 --no-git-tag-version
+     npm publish --access public --tag bootstrap
+     npm deprecate "@udp/openfeature-provider@0.0.1" "chỉ để chiếm tên; dùng 0.1.0 trở lên"
+     ```
+
+     **Vì sao không bootstrap bằng `0.1.0`:** lượt bằng tay không chạy trong Actions nên nó **không có
+     provenance**; mà bước chắn `npm view` của job `npm` sẽ **bỏ qua** một version đã có. Ghép hai thứ đó lại thì
+     tag `sdk-v0.1.0` không đăng gì lên npm cả, và `0.1.0` — đúng version mà Golden Path phân giải tới — vĩnh viễn
+     không có provenance. Bootstrap bằng `0.0.1` thì tên được chiếm, `latest` không bị kéo về nó (`--tag
+bootstrap`), và `0.1.0` lên bằng OIDC **có** provenance. Kiểm: `npm view @udp/openfeature-provider versions`
+     → `[ '0.0.1' ]`, và `npm view @udp/openfeature-provider version` → báo không có `latest` hoặc `0.0.1` đã
+     deprecated.
+
   4. Trên trang gói npm → Settings → Trusted publishers: `Organization or user` = `23521549-lang`,
      `Repository` = `udp`, **`Workflow filename` = `publish.yml`** (đúng tên tệp, kèm `.yml`),
      `Environment name` = `release-npm`, và **Allowed actions: tích thêm `npm publish`** — cấu hình tạo từ
