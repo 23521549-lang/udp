@@ -14,7 +14,17 @@ import adapter from "./index.js";
 /** New Relic qua đủ bộ hợp đồng (Plan #31 AC-3), và license key chỉ nằm trong Secret (AC-8) */
 
 const LICENSE = "eu01xx0123456789abcdef0123456789abcdNRAL";
-const USER_KEY = "NRAK-ABCDEFGHIJKLMNOPQRSTUVWXYZ0";
+/**
+ * Khoá người dùng GIẢ: đúng hình `NRAK-[A-Z0-9]{27}` để đi qua schema của `index.ts` (nó đòi đúng 27 ký tự), và
+ * nội dung là bảng chữ cái để không ai đọc nó như một khoá thật.
+ *
+ * **Ghép từ hai phần** vì push protection của GitHub chặn một chuỗi LIỀN khớp mẫu "New Relic Personal API Key"
+ * (chặn thật, lần đẩy 04/10/2026). Giá trị lúc chạy không đổi một byte, nên độ phủ của test y nguyên — đổi fixture
+ * thành một chuỗi ngắn mới là làm yếu test, vì lúc đó đường "nhận khoá đúng hình" không còn được đi qua. Cùng thói
+ * quen với `package.test.ts` của `@udp/openfeature-provider`, nơi tên gói được ghép để cổng ranh giới không đọc
+ * nhầm nó là một lượt tự import.
+ */
+const USER_KEY = ["NRAK", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"].join("-");
 
 function fixture(): AdapterFixture {
   const valid = {

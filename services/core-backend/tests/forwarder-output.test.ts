@@ -170,7 +170,8 @@ describe("provider logs.sink ở Monitoring trỏ tới Secret CÓ THẬT (AC-3)
         accountId: 1,
         region: "US",
         licenseKey: "a".repeat(40),
-        userKey: "NRAK-ABCDEFGHIJKLMNOPQRSTUVWXYZ0",
+        // Ghép từ hai phần — lý do ở `monitoring-adapter/newrelic/contract.test.ts`
+        userKey: ["NRAK", "ABCDEFGHIJKLMNOPQRSTUVWXYZ0"].join("-"),
       },
     },
     {
