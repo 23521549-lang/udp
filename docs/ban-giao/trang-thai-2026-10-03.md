@@ -5,11 +5,18 @@ người tiếp theo"; tệp đó giữ nguyên phần 61d-1 và phần phát hi
 `docs/UDP_design.md`; của phép đo là `docs/measurements/` (nợ trong `kiem-chung-con-no.md`); của từng plan là
 `docs/plans/`.
 
-**Trạng thái một câu:** Plan #61 đã xong 61a, 61b, 61c, 61d-1, **61d-2a**, **61d-2b-0** và **61d-2b-1** — lời báo
-của pipeline giờ mang token OIDC của chính lượt chạy CI ở **cả sáu CI**, token đó dùng đúng một lần do database cưỡng
-chế, script danh tính build chỉ còn tin những chủ thể KHÔNG lấy lại được, và ba CI chạy trong cụm được kiểm bằng khoá
-công khai đọc từ chính cụm của project. Còn 61d-2b-2 (bộ ký trong cụm cho CircleCI + Azure), 61d-3 (Kyverno), rồi
-Plan #62 (phát hành SDK). 50 mục nợ kiểm chứng. Hạ tầng của dự án tốn đúng 0 đồng.
+**Trạng thái một câu:** Plan #61 đã xong 61a, 61b, 61c, 61d-1, 61d-2a, 61d-2b-0, 61d-2b-1, và trong ngày hôm nay
+thêm **61d-3a**, **61d-3b**, **61d-3c-1** — lời báo của pipeline mang token OIDC của chính lượt chạy CI ở cả sáu CI;
+Kyverno lên chart 3.9.1 kèm đường hạ về thật (`restoreTo`); mỗi project đã bật ký image nhận một
+`ImageValidatingPolicy` kiểm chữ ký lúc tạo pod ở chế độ **Audit**; và toạ độ chart Helm của 71 chart thành một bảng
+dữ liệu được canh hằng tuần — lượt canh đầu tiên tìm ra **tám** ghim không cài được, năm đã sửa. Còn 61d-2b-2 (bộ ký
+trong cụm cho CircleCI + Azure), 61d-3c-2 (`--fix` + cổng cưỡng chế F3), tài liệu và Playwright cuối Plan #61, rồi
+Plan #62 (phát hành SDK). **51 mục nợ kiểm chứng.** Hạ tầng của dự án tốn đúng 0 đồng.
+
+**Một điều phải đọc trước khi tin bảng AC:** AC-12 **đạt MỘT PHẦN**, và spec đã được sửa để nói đúng điều đó kèm một
+dòng quyết định có ngày (`plan61-spec.md` §2, [03/10/2026]). Lớp admission đã có và ở chế độ quan sát; nửa "E2E trên
+cụm" nằm ở nợ `kyverno-admission-real`; và nửa "tự áp bản vá" **đã bị rút khỏi phạm vi** vì một dữ kiện đo được —
+xem phần 9.
 
 ## 1. 61d-2a — đã làm
 
@@ -153,7 +160,86 @@ cùng sai (§12.2 nói sai sự thật, mọi cụm cần bootstrap lại, lý l
 xuống `ReadOnlyClusterAccess`: đặt ở nửa đầy đủ là lý do đường quét drift không gọi được nó, và một ô design-lint
 khẳng định `readOnlyAccess()` phơi đúng ba thành viên.
 
-## 7. Việc tiếp
+## 7. 61d-3a — Kyverno 2.0.0, và đường hạ về của §8.6 lần đầu có hiệu lực
+
+Chart `kyverno-policies` từ 3.9.x mặc định `policyType: ValidatingPolicy` (họ CEL mới), và khoá `policyExclude` mà
+bản 1.0.0 truyền **chỉ** áp dụng cho họ `ClusterPolicy` cũ. Nâng chart mà không đổi gì khác thì ba namespace nền
+tảng (`udp-system`, `kube-system`, `udp-build`) **mất quyền miễn trừ trong im lặng** — với `Audit` chỉ bẩn báo cáo,
+với `Enforce` thì pod của chính nền tảng và pod build BuildKit bị chặn. Nên: `policyType` ghim **tường minh**, miễn
+trừ đi bằng `vpolExclude.excludeNamespaces`, và `upgradesFrom` mang **đủ định nghĩa** của 1.0.0.
+
+Và nửa "hạ về" của §8.6 trước đây **không có hiệu lực**: registry nạp một bản adapter mỗi tool nên cổng `rollback`
+cắm cứng `FAILED`, mọi lần nâng thất bại ra `ROLLBACK_FAILED` với cụm không được hạ về. Giờ `DomainAdapter.restoreTo?`
+là đường áp lại, và `restorePort` (ở `day2/domain-upgrade.ts`) là chỗ duy nhất biết luật "adapter không mang định
+nghĩa bản cũ ⇒ FAILED". Thêm `restoreTo?` vào bề mặt đã đóng băng cũng đóng một **lỗ của chính cổng đóng băng**: hai
+bộ đọc dùng `/^ {2}(\w+)\(/` nên một thành viên `foo?()` không được đếm — ai cũng thêm được phương thức tuỳ chọn mà
+cổng không thấy.
+
+## 8. 61d-3b — `ImageValidatingPolicy`, và nó đi vào cụm bằng đường nào
+
+Policy **không** đi bằng một lời ghi CR của `udp-tooling`. Ba dữ kiện bác bỏ lối đó: `cluster/bootstrap.ts` không
+cấp quyền nào trên nhóm `policies.kyverno.io`; bootstrap chỉ chạy lúc PROVISION và lúc THÊM environment nên một
+quyền mới chỉ tới cụm MỚI; và D-P25 chốt cơ chế cài của UDP là `helm upgrade --install`. Nên policy là **giá trị**
+`customPolicies` của release `kyverno-policies` (chart 3.9.1 có khoá đó cho đúng việc này). Hệ quả: không RBAC mới,
+không bootstrap lại, và trôi/hạ về/teardown dùng lại nguyên máy móc của lớp nền.
+
+Một đính chính của chính tôi: nhóm/phiên bản là **`policies.kyverno.io/v1beta1`**, không phải `v1alpha1` như ghi
+chép trước đó — CRD của 1.19.1 đánh `v1alpha1` là `deprecated: true`, và `v1beta1` là version LƯU TRỮ.
+
+Bảy quyết định của hình policy, mỗi cái đóng một chế độ hỏng đã kiểm ở nguồn: hai cờ `ctlog` (chữ ký của UDP không
+có bản ghi minh bạch — `SIGNING_CONFIG_JSON` không khai Fulcio/Rekor/TSA, nên thiếu chúng thì MỌI image "không xác
+minh được"); `credentials.secrets` ở namespace của Kyverno; **ba** glob (`<repo>`, `<repo>:*`, `<repo>@*` — image
+không khớp bị Kyverno BỎ QUA, nên thiếu dạng trần là một đường lách; còn một glob `*` sẽ đòi chữ ký ở image nền và
+chặn cụm); annotation `dev.udp.project`; `pods/ephemeralcontainers` khai riêng (kyverno#16275 — `kubectl debug` là
+đường lách nếu thiếu); `mutateDigest: false` tường minh (mặc định của CRD là `true`, tức Kyverno SỬA image thành
+digest ngay ở chế độ Audit ⇒ trôi vĩnh viễn với Flux/Argo); và autogen TẮT (nó phủ Deployment/StatefulSet/… nhưng
+**không** phủ `Rollout` của Argo lẫn `Canary` của Flagger, trong khi quy tắc ở tầng `pods` phủ đủ).
+
+**Ship `[Audit]`, không `Deny`.** E2E kind + Kyverno cần một registry mà cả kubelet lẫn pod Kyverno gọi được bằng
+CÙNG một chuỗi image, mà cụm kind của UDP cố ý không có registry và máy 7,7 GB không chạy nổi lượt đó. Thay vào đó
+là một phép đo **chạy được và đã chạy**: `measure:kyverno-crd` tải chính file CRD của tag `v1.19.1` (444 664 B,
+sha256 `32436252cd83…`), dựng bộ kiểm JSON Schema từ `openAPIV3Schema` của version lưu trữ, rồi kiểm policy sinh từ
+mã sản phẩm — **3/3 hợp lệ**, cộng một **kiểm ngược** (`validationActions: ["Allow"]`) bị từ chối. Không có ô kiểm
+ngược thì ba ca xanh kia không chứng minh gì.
+
+## 9. 61d-3c-1 — ghim chart thành dữ liệu, và tám ghim không cài được
+
+**Phát hiện lớn nhất của cả ngày:** cổng `pnpm chart:check` (mới) tìm ra **tám** ghim chart mà `helm upgrade
+--install --version <ghim>` không tải về được — tức tám adapter không cài được chart của mình. Một trong tám
+(`snyk-monitor 2.13.1`, repo chỉ còn dòng 2.23.x) **ba vòng QA đọc mã rất kỹ vẫn bỏ sót**, còn cổng tìm ra ở lượt
+chạy đầu tiên.
+
+Năm đã sửa, mỗi cái đối chiếu `index.yaml` **và** `values.yaml` thật: `mysql-operator` 2.2.2⇒2.3.0, `zipkin`
+0.3.6⇒0.7.0, `snyk-monitor` 2.13.1⇒2.23.26, `raw` 0.3.2⇒**v0.3.2** (lệch một ký tự tiền tố, và chart này dùng ở 7
+chỗ), và **repo** của `sealed-secrets` (địa chỉ cũ 404 toàn site). Sửa một ghim ma **không phải** một lần nâng cấp
+§8.6: không cụm nào từng chạy chúng, nên `adapter_version` không đổi.
+
+**Ba cái còn lại cố ý KHÔNG sửa**, vì Helm bỏ qua khoá nó không biết **trong im lặng**: sửa version mà giữ `values`
+sai biến một lỗi ỒN (job đỏ, domain không deploy) thành một lỗi IM LẶNG (chart cài xong, cấu hình vô tác dụng,
+Portal báo ACTIVE). `spinnaker` — chart 2.2.7 không có khoá `kayenta` nào và template không tham chiếu
+`.Values.kayenta`; `tekton-pipeline` — chart 1.15.3 không có `controller.replicas`, annotation thật là
+`controller.pod.annotations`, nên sửa đúng phải đổi `tektonConfigSchema`, tức một knob cấu hình ĐÃ LƯU của project;
+provider GCP — chart chưa bao giờ phát hành lên repo Helm nào. Ba cái nằm trong `KNOWN_BROKEN_CHARTS`, một đường cơ
+sở **hai chiều**: mục đã biết hỏng không làm job đỏ, còn mục đã HẾT hỏng thì làm job đỏ kèm câu "xoá nó khỏi danh
+sách" — nên lời miễn trừ không mục được.
+
+**Vì sao ghim rời khỏi tệp adapter.** Cổng phải đọc danh sách ghim trên runner CI, nơi không có `.env`, mà nạp
+registry adapter kéo theo `adapter-base/helm.ts` → gốc `@udp/config` → `env.ts`, và `env.ts` **ném** khi thiếu biến
+(54 tệp dưới `modules/` import từ gốc đó, 9 tệp dùng chính `env` — không có bản sửa rẻ). Lối thứ hai, gắn toạ độ
+vào object adapter rồi tra lại lúc chạy, cũng vỡ: `createCicdAdapter` trả `{ ...spec.base }`, một object MỚI, nên
+phép tra theo danh tính mất Jenkins, Tekton và Drone — và mất theo kiểu **fail open** (`undefined` ⇒ `[]` ⇒ "ok").
+Nên 72 khối chart literal + 7 tham chiếu `RAW_CHART` trên 58 tệp thành `helmChart("…")`, và một cổng grep khẳng
+định không tệp adapter nào còn khối literal ngoài vùng `upgradesFrom`.
+
+**Và nửa "tự áp bản vá" của AC-12 bị rút khỏi phạm vi, với lý do đo được.** Không có đường tự áp nào không đi qua
+chốt xác nhận production của §8.6: `grep 'scope: "namespace"'` trên mã sản phẩm cho **0** kết quả (56 tệp adapter
+khai `scope: "cluster"` — một bản cài cho cả cụm, không có "Kyverno của dev" để nâng riêng); `DomainConfig` là một
+hàng theo (project, domainType) với `adapter_version` là một cột; và `requireProductionConfirm` nổ khi project **CÓ**
+environment production chứ không phải khi thao tác **chạm** production, mà mọi project đều có `prod`. QĐ-18 của spec
+đã được sửa kèm một dòng quyết định có ngày, và lời hứa "trả nợ 'lịch nâng cấp'" bị xoá — `grep` cho thấy món nợ đó
+chưa bao giờ được ghi.
+
+## 10. Việc tiếp
 
 **61d-3 (Kyverno, AC-12) đi TRƯỚC 61d-2b-2 — một lần đổi thứ tự, có lý do đo được.** Vòng lập kế hoạch chi tiết của
 61d-2b-2 lật một dữ kiện: `cluster/bootstrap.ts` **không** cho `udp-tooling` quyền `batch/jobs` nào, và namespace
@@ -163,5 +249,32 @@ chỉ mua được **một** tổ hợp CI × cloud. AC-12 thì là một tiêu 
 của từng lối, và ba việc phải quyết trước dòng mã đầu) nằm ở `docs/plans/plan61-plan.md`; dòng §16 vẫn đúng và vẫn
 trỏ `(61d-2b-2)`, nên không có nợ nào bị bỏ lửng.
 
-Vậy thứ tự còn lại: **61d-3** (Kyverno), rồi **61d-2b-2** (bộ ký trong cụm), rồi tài liệu và Playwright cuối Plan
-#61, rồi Plan #62.
+Vậy thứ tự còn lại: **61d-3c-2** (`--fix` cho ghim dữ liệu thuần + cổng cưỡng chế F3), **61d-2b-2** (bộ ký trong
+cụm), rồi tài liệu và Playwright cuối Plan #61, rồi Plan #62.
+
+**Về 61d-3c-2, ba vòng QA đã làm sẵn phần khó — đọc trước khi gõ dòng đầu.** `--fix` như bản nháp viết **không
+chạy được**: `checkRelease` dựng URL checksums bằng bản ĐANG ghim và `publishedSha256` chỉ dùng để _so_, còn
+`checkImage` chỉ lấy digest của tag đang ghim — nên `Finding` **không mang** giá trị mới nào và `patchEdits` không
+thể sinh `to` đúng. Ship nguyên vậy thì `--fix` ghi _version mới + sha256 cũ_ ⇒ `sha256sum -c -` đỏ ⇒ pipeline đóng
+gói của **mọi project khách** hỏng. Cần: `Finding.target` do phần MẠNG điền, cộng hai lượt fetch mới.
+
+Bốn ràng buộc nữa, mỗi cái một chế độ hỏng thật: (a) `isActionable` gồm cả `moved` và `broken`, mà `moved` nghĩa là
+_tag giữ nguyên, digest đổi_ — một `--fix` theo `isActionable` là **tự động hoá việc chấp nhận một lần đẩy đè tag**,
+đúng sự cố Trivy 03/2026 mà `build-toolchain.ts` sinh ra để chống; (b) `STEP_IMAGES` **không** là chuỗi
+`name:tag@sha256:…` (0/16 chuỗi ghim thuộc nó — `stepImage()` lắp lúc chạy), sửa nó là một phép **chèn** vào `pins`
+cộng quyết định đổi `latest`, và `"3.267.0"` xuất hiện 6 lần; (c) `golden-path-pins.test.ts` khẳng định **mọi** dòng
+`FROM` bằng đúng `TEST_IMAGES.<runtime>` và mỗi Dockerfile có **hai** dòng `FROM`, nên luật "khớp đúng một lần" sai
+ngay ở ghim được vá dày nhất; (d) job sẽ **không bao giờ** tới bước mở PR, vì script đặt `exitCode = 1` đúng lúc
+`--fix` có việc làm.
+
+Và đường PR: PR mở bằng `GITHUB_TOKEN` **không kích hoạt workflow nào**, còn `ci.yml` có `build-smoke` với
+`if: github.event_name != 'pull_request'` — nên PR đó có **zero** phép kiểm máy. Thêm `peter-evans/create-pull-request`
+còn đi ngược chính nguyên tắc UDP tự viết ở `build-toolchain.ts` (_"chỉ dùng MỘT action bên thứ ba"_), và nâng
+`permissions` tại chỗ hiện tại là ở **cấp workflow** nên job báo cáo cũng nhận `contents: write` trong một job đã
+chạy `pnpm install`. Hướng đã chọn: `--fix` ghi một tệp `.patch`, in diff vào `$GITHUB_STEP_SUMMARY` và đính kèm
+bằng `actions/upload-artifact@v4` (đã là tiền lệ trong `ci.yml`) — `contents: read`, không action mới.
+
+Hai món nhỏ của 61d-3c-2: cổng cho hai chỗ **chép cứng digest mà không cổng nào canh** (`apps/portal/demo/mock/build.ts`
+chép 6 digest của `TEST_IMAGES`; `tests/fixtures/build-apps/dockerfile/Dockerfile` chép `images.alpine`, và fixture
+này được **build thật** trong job `build-smoke`), và một dòng báo cáo đếm `DomainConfig.adapter_version` **đang
+chạy** so với bản máy chủ nạp — thứ gần nhất với "luồng cập nhật" mà dữ liệu đã có sẵn.
