@@ -416,6 +416,7 @@ $ pnpm --filter @udp/deploy test                 →   8 tệp,  76 ô xanh   (t
 $ pnpm --filter @udp/golden-path test            →   4 tệp,  24 ô xanh
 $ pnpm --filter @udp/openfeature-provider test     →   9 tệp, 89 ô xanh (gồm `python-parity` 2 ô chạy THẬT, 40 s — không bị bỏ qua)
 $ sdks/python: ruff check / ruff format --check / mypy / pytest  →  sạch, 35 tệp, 34 tệp, 906 ô xanh
+$ pnpm --filter @udp/portal exec vitest run       →  41 tệp, 365 ô xanh (cổng thứ bảy: sổ nợ thêm mục không làm `evidence.test.tsx` đỏ)
 $ prettier --check  →  sạch;  eslint trên mọi tệp đã đổi  →  sạch
 $ pnpm --filter @udp/design-lint sdk-version     →  0.1.0
 $ … sdk-version --expect 0.2.0                   →  "version của tag là 0.2.0 nhưng hai manifest ở 0.1.0", exit 1
