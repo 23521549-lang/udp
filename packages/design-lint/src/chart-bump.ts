@@ -14,13 +14,23 @@
 
 export const PINS_FILE = "packages/config/src/helm-charts.ts";
 
-/** `"<chart>": { name: …, version: "x", repo: … }` ⇒ map tên chart ⇒ version */
+/**
+ * `<chart>: { name: …, version: "x", repo: … }` ⇒ map tên chart ⇒ version.
+ *
+ * Khoá đọc **không** cần dấu nháy, và đó là một bẫy đã cắn thật khi dựng cổng này: prettier bỏ nháy ở mọi khoá là
+ * định danh hợp lệ (`gatekeeper:`) và chỉ giữ nháy ở khoá có dấu gạch (`"argo-cd":`). Mẫu đòi khoá có nháy **chỉ
+ * thấy 42 trong 71** chart của bảng — fail open, đúng chiều hỏng tệ nhất cho một cổng. Mọi khuôn viết tay trong bộ
+ * test đều dùng khoá có nháy nên không ô nào bắt được; ô đọc chính tệp sản phẩm mới bắt (`expected 42 to be 71`).
+ *
+ * Danh tính lấy từ trường `name`, không từ khoá — `assertChartPins` của `@udp/config` đã khẳng định hai cái bằng
+ * nhau, nên ở đây không cần đọc cả hai.
+ */
 export function chartPinsOf(source: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const m of source.matchAll(
-    /"([^"]+)":\s*\{\s*name:\s*"([^"]+)",\s*version:\s*"([^"]+)"/g,
+    /(?:"[^"]+"|[A-Za-z_$][\w$]*):\s*\{\s*name:\s*"([^"]+)",\s*version:\s*"([^"]+)"/g,
   )) {
-    out.set(m[2] ?? "", m[3] ?? "");
+    out.set(m[1] ?? "", m[2] ?? "");
   }
   return out;
 }

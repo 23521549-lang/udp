@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { HELM_CHART_PINS } from "@udp/config/helm-charts";
 import { describe, expect, it } from "vitest";
 import {
   adapterVersionOf,
@@ -201,5 +203,28 @@ describe("cổng F3 trên lịch sử git THẬT của repo", () => {
       reasons: v.verdict.violations.map((x) => `${x.chart}: ${x.reason}`),
     }));
     expect(offenders).toEqual([]);
+  });
+});
+
+describe("chartPinsOf trên TỆP THẬT, không trên khuôn", () => {
+  it("đọc đủ mọi chart của bảng, gồm cả khoá KHÔNG có dấu nháy", () => {
+    /**
+     * Bẫy đã cắn thật khi dựng cổng này: prettier bỏ nháy ở mọi khoá là định danh hợp lệ (`gatekeeper:`) và chỉ
+     * giữ nháy ở khoá có dấu gạch (`"argo-cd":`). Mẫu đòi khoá có nháy **chỉ thấy** chart tên gạch ngang — fail
+     * open. Mọi khuôn viết tay ở các ô trên đều dùng khoá có nháy nên không ô nào bắt được; ô này đọc chính tệp
+     * sản phẩm, và đó là lý do nó tồn tại.
+     */
+    const source = readFileSync(
+      resolve(import.meta.dirname, "../../config/src/helm-charts.ts"),
+      "utf8",
+    );
+    const pins = chartPinsOf(source);
+    expect(pins.size).toBe(Object.keys(HELM_CHART_PINS).length);
+    for (const [name, pin] of Object.entries(HELM_CHART_PINS)) {
+      expect(pins.get(name), name).toBe(pin.version);
+    }
+    // Hai mẫu khoá phải CÙNG đọc được
+    expect(pins.get("gatekeeper")).toBeDefined();
+    expect(pins.get("argo-cd")).toBeDefined();
   });
 });
