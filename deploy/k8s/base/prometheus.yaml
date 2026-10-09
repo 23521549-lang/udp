@@ -86,6 +86,7 @@ spec:
       labels:
         app.kubernetes.io/name: prometheus
     spec:
+      enableServiceLinks: false # [Plan #63 QĐ-5] lý do ở base/core-backend.yaml
       serviceAccountName: prometheus
       securityContext:
         runAsNonRoot: true

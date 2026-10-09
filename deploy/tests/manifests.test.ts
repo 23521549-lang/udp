@@ -17,6 +17,9 @@ import {
 import {
   byKind as byKindIn,
   containersOf,
+  effectiveEnv,
+  podWorkloads,
+  POD_KINDS,
   render,
   templateOf,
   workloads as workloadsIn,
@@ -43,20 +46,62 @@ const workloads = (): Resource[] => workloadsIn(docs);
 const UDP_SERVICES = ["core-backend", "flag-service", "pd-controller"];
 
 describe("overlay kind (Plan #49)", () => {
-  it("cấu hình trong cụm (ConfigMap + secret sinh ra) qua CHÍNH schema env của mọi service", () => {
-    const config = byKind("ConfigMap").find((c) =>
-      c.metadata.name.startsWith("udp-config-"),
-    );
-    expect(config?.data).toBeDefined();
-    const parsed = envSchema.safeParse({
-      ...config?.data,
-      ...generateSecrets(),
+  /**
+   * [Plan #63] Env THẬT của từng pod (`effectiveEnv` — ConfigMap, Secret, `env`, rồi biến service link của kubelet),
+   * không phải ConfigMap + Secret ghép tay: bản ghép tay xanh trong khi pod thật nhận `CORE_BACKEND_PORT=tcp://…`.
+   */
+  it("env thật của từng service (ConfigMap, Secret sinh ra, biến của kubelet) qua CHÍNH schema env", () => {
+    const secrets = { [SECRET_NAME]: generateSecrets() };
+    for (const name of UDP_SERVICES) {
+      const parsed = envSchema.safeParse(effectiveEnv(docs, name, secrets));
+      expect(
+        parsed.success
+          ? []
+          : parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
+        name,
+      ).toEqual([]);
+    }
+  });
+
+  it("mọi pod tắt biến service link; đủ tám workload, không kind nào khác mang pod template", () => {
+    const pods = podWorkloads(docs);
+    expect(pods.map((w) => `${w.kind}/${w.metadata.name}`).sort()).toEqual([
+      "Deployment/core-backend",
+      "Deployment/flag-service",
+      "Deployment/pd-controller",
+      "Deployment/portal",
+      "Deployment/prometheus",
+      "Deployment/sample-app",
+      "Job/udp-migrate",
+      "StatefulSet/postgres",
+    ]);
+    for (const w of pods) {
+      expect(templateOf(w).spec.enableServiceLinks, w.metadata.name).toBe(
+        false,
+      );
+    }
+    const templated = docs.filter((d) => {
+      const spec = d.spec as
+        { template?: unknown; jobTemplate?: unknown } | undefined;
+      return spec?.template !== undefined || spec?.jobTemplate !== undefined;
     });
+    expect(templated.filter((d) => !POD_KINDS.includes(d.kind))).toEqual([]);
+  });
+
+  /**
+   * Mô hình đúng hai chiều của kubelet: cờ tắt thì Service CÙNG namespace không sinh biến nào, nhưng Service
+   * `kubernetes` vẫn được tiêm — `platform-probe.ts` của Service 1 đọc `KUBERNETES_SERVICE_HOST` để biết nó đang
+   * chạy trong pod.
+   */
+  it("cờ tắt chỉ tắt biến của Service trong namespace; biến của Service kubernetes vẫn có", () => {
+    const env = effectiveEnv(docs, "core-backend", {
+      [SECRET_NAME]: generateSecrets(),
+    });
+    // `<SERVICE>_SERVICE_HOST` chỉ do kubelet sinh — ConfigMap của UDP dùng `*_URL`, không khoá nào như thế
     expect(
-      parsed.success
-        ? []
-        : parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
-    ).toEqual([]);
+      Object.keys(env).filter((key) => key.endsWith("_SERVICE_HOST")),
+    ).toEqual(["KUBERNETES_SERVICE_HOST"]);
+    expect(env["KUBERNETES_SERVICE_PORT"]).toBe("443");
   });
 
   it("image của UDP đúng tập build với tag local — không image nào phải kéo từ registry", () => {

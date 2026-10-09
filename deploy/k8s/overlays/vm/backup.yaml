@@ -21,6 +21,7 @@ spec:
           labels:
             app.kubernetes.io/name: udp-backup
         spec:
+          enableServiceLinks: false # [Plan #63 QĐ-5] lý do ở base/core-backend.yaml
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true

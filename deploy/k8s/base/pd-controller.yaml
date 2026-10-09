@@ -26,6 +26,7 @@ spec:
       labels:
         app.kubernetes.io/name: pd-controller
     spec:
+      enableServiceLinks: false # [Plan #63 QĐ-5] lý do ở base/core-backend.yaml
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

@@ -26,6 +26,7 @@ spec:
       labels:
         app.kubernetes.io/name: postgres
     spec:
+      enableServiceLinks: false # [Plan #63 QĐ-5] lý do ở base/core-backend.yaml
       containers:
         - name: postgres
           image: postgres:16-alpine

@@ -26,6 +26,11 @@ spec:
       labels:
         app.kubernetes.io/name: core-backend
     spec:
+      # [Plan #63 QĐ-5] Không nhận biến "service link" của kubelet: Service `core-backend` sinh `CORE_BACKEND_PORT=tcp://<ip>:3001`
+      # trong mọi pod cùng namespace, trùng khoá cổng của `@udp/config`, và cả ba service chết ở lượt CI đầu tiên. Địa chỉ
+      # của service khác đi qua DNS (`*_URL` của ConfigMap); biến của Service `kubernetes` vẫn được tiêm (platform-probe.ts
+      # cần nó). `deploy/tests` canh cờ này ở MỌI pod của hai overlay.
+      enableServiceLinks: false
       # [Plan #53] Token của ServiceAccount chỉ-đọc (core-backend-rbac.yaml) — đọc node, PVC PostgreSQL,
       # CronJob sao lưu, Certificate cho Bảng điều khiển nền tảng. Không quyền ghi, không secret.
       serviceAccountName: core-backend

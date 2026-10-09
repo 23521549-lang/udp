@@ -32,7 +32,10 @@ import {
 import {
   allContainersOf,
   byKind,
+  effectiveEnv,
   named,
+  podWorkloads,
+  POD_KINDS,
   render,
   templateOf,
   workloads,
@@ -77,28 +80,6 @@ function renderRelease(s: VmSettings): { docs: Resource[]; text: string } {
     JSON.stringify(kustomization, null, 2),
   );
   return render(dir);
-}
-
-/** Env thật của container đầu: `envFrom` theo thứ tự, rồi `env` đè lên (luật của Kubernetes) */
-function effectiveEnv(
-  docs: readonly Resource[],
-  deployment: string,
-  secrets: Readonly<Record<string, Readonly<Record<string, string>>>>,
-): Record<string, string> {
-  const [container] = allContainersOf(named(docs, "Deployment", deployment));
-  const env: Record<string, string> = {};
-  for (const ref of container?.envFrom ?? []) {
-    if (ref.configMapRef !== undefined) {
-      Object.assign(env, named(docs, "ConfigMap", ref.configMapRef.name).data);
-    }
-    if (ref.secretRef !== undefined) {
-      Object.assign(env, secrets[ref.secretRef.name]);
-    }
-  }
-  for (const e of container?.env ?? []) {
-    if (e.value !== undefined) env[e.name] = e.value;
-  }
-  return env;
 }
 
 interface IngressSpec {
@@ -423,6 +404,37 @@ describe("bản phát hành vm — Let's Encrypt (Plan #52 AC-1)", () => {
         ).toContain(ref.key);
       }
     }
+  });
+
+  /**
+   * [Plan #63 QĐ-5] Kubelet tiêm `<SERVICE>_PORT=tcp://…` của mọi Service cùng namespace vào mọi pod, và Service
+   * `core-backend` trùng tiền tố với khoá cổng `CORE_BACKEND_PORT` của `@udp/config` — ba service chết ở lượt CI đầu.
+   * Ô env schema ở trên mô hình hoá lớp đó (`effectiveEnv`); ô này giữ cờ ở MỌI pod và đếm, để một workload thêm sau
+   * mà quên cờ (hay một kind mới mang pod template) thì đỏ.
+   */
+  it("mọi pod tắt biến service link; đủ tám workload, không kind nào khác mang pod template", () => {
+    const pods = podWorkloads(docs);
+    expect(pods.map((w) => `${w.kind}/${w.metadata.name}`).sort()).toEqual([
+      "CronJob/udp-backup",
+      "Deployment/core-backend",
+      "Deployment/flag-service",
+      "Deployment/pd-controller",
+      "Deployment/portal",
+      "Deployment/prometheus",
+      "Job/udp-migrate",
+      "StatefulSet/postgres",
+    ]);
+    for (const w of pods) {
+      expect(templateOf(w).spec.enableServiceLinks, w.metadata.name).toBe(
+        false,
+      );
+    }
+    const templated = docs.filter((d) => {
+      const spec = d.spec as
+        { template?: unknown; jobTemplate?: unknown } | undefined;
+      return spec?.template !== undefined || spec?.jobTemplate !== undefined;
+    });
+    expect(templated.filter((d) => !POD_KINDS.includes(d.kind))).toEqual([]);
   });
 
   it("mọi container kể cả init có request/limit; pod của UDP và của sao lưu không chạy root", () => {
