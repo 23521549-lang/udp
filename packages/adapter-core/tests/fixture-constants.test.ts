@@ -166,6 +166,24 @@ describe("CRASH_POINTS — tier là DỮ LIỆU", () => {
 
 describe("cổng thứ tự — hằng số kỳ vọng commit TRƯỚC steps của adapter", () => {
   /**
+   * [Plan #63 QĐ-2] Mọi phép kiểm dưới đây đọc lịch sử git, nên chúng chỉ có nghĩa trên một bản clone ĐỦ. Trên clone
+   * nông (mặc định `fetch-depth: 1` của `actions/checkout`) cả hai tệp trông như được thêm ở CÙNG một commit, và ô
+   * thứ tự đỏ với một thông điệp sai hướng — đúng điều lượt CI đầu tiên (run 37154337078) in ra. Ô này nói ra
+   * nguyên nhân thật trước.
+   */
+  it("lịch sử git đầy đủ — không phải clone nông", () => {
+    const shallow = execFileSync(
+      "git",
+      ["rev-parse", "--is-shallow-repository"],
+      { cwd: REPO, encoding: "utf8" },
+    ).trim();
+    expect(
+      shallow,
+      "clone nông: mọi tệp trông như được thêm ở cùng một commit — CI phải checkout với fetch-depth: 0",
+    ).toBe("false");
+  });
+
+  /**
    * Phép kiểm này KHÔNG được rỗng nghĩa.
    *
    * Một test "quét lịch sử" mà xanh vì không tìm thấy gì để kiểm là xanh giả kinh điển. Phép

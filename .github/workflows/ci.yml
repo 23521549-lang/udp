@@ -13,9 +13,13 @@ on:
     - cron: "0 18 * * *"
   workflow_dispatch:
 
+# [Plan #63 QĐ-8] Lượt PR bị lượt mới hơn của chính PR đó thay (tiết kiệm runner). Lượt của `main` thì KHÔNG bị huỷ:
+# `Deploy` chỉ chạy khi lượt push-main kết thúc `success`, và cổng phát hành SDK đòi `ci.yml` xanh trên đúng commit được
+# tag. Trước đây lượt đêm (cùng ref `main`) huỷ lượt push-main đang chạy — vô hại khi cả lượt chạy 5 phút, không còn vô
+# hại khi bộ test cần ~64 phút. `event_name` trong group để lượt đêm và lượt push không chung một hàng.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # Ba cổng dưới đây không chạm database, nhưng `prisma generate` vẫn nạp
@@ -24,10 +28,14 @@ env:
   DATABASE_URL_DIRECT: "postgresql://ci:ci@127.0.0.1:5432/ci"
   NODE_ENV: test
 
+# [Plan #63 QĐ-6] Nhãn runner ghim `ubuntu-24.04`, cùng kỷ luật với mọi ghim khác của repo: `ubuntu-latest` chuyển sang
+# Ubuntu 26 từ 19/10/2026 (chú thích của GitHub trên chính lượt CI đầu), và job `vm` diễn tập một máy thật chạy 24.04.
+# Ngoại lệ có chủ đích: `build-smoke`, `signing-e2e` diễn tập pipeline SINH CHO KHÁCH nên chạy đúng nhãn của pipeline đó
+# (`GITHUB_ACTIONS_RUNNER` của `@udp/config/build-toolchain`); `deploy/tests/ci-workflow.test.ts` canh cả hai chiều.
 jobs:
   check:
     name: typecheck, lint, format
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +68,7 @@ jobs:
     # đồng nhãn với `packages/openfeature-provider/src/metrics.ts`. Không chạm database.
     # Ghim bản sàn của `requires-python`: cú pháp hay thư viện chuẩn mới hơn là đỏ ở đây.
     name: python provider (ruff, mypy, pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: sdks/python
@@ -89,7 +97,7 @@ jobs:
 
   test:
     name: full test suite on a scratch database
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # MỌI package có script `test` (`pnpm -r`), trên một database dùng-một-lần dựng từ chuỗi migration
     # (nên "migration chain replay" là bước đầu của lượt này). Database nằm trên
     # một project Supabase RIÊNG cho CI, đặt cùng vùng với runner: xem
@@ -141,6 +149,10 @@ jobs:
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
+        with:
+          # [Plan #63 QĐ-2] Cổng thứ tự của `adapter-core` và I35 (`oracle-independence`) đọc lịch sử git. Clone một
+          # commit làm mọi tệp trông như được thêm ở CÙNG commit: cái thứ nhất đỏ sai hướng, cái thứ hai xanh giả.
+          fetch-depth: 0
       # KHONG ghim version o day: package.json da khai `packageManager: pnpm@9.12.0`,
       # va action tu choi khi co hai nguon cung noi mot thu. `packageManager` la
       # nguon dung, vi no rang buoc ca may ca nhan lan CI.
@@ -163,8 +175,11 @@ jobs:
       - name: pnpm test:scratch
         id: suite
         if: env.DATABASE_URL_DIRECT != ''
-        # Một `DROP` hay một kết nối treo không được đốt 6 giờ runner.
-        timeout-minutes: 40
+        # Một `DROP` hay một kết nối treo không được đốt 6 giờ runner. [Plan #63 QĐ-3] Trần đặt theo số đo, không
+        # đoán: các gói trước `core-backend` mất 21,5 phút ở run 37154337078; `core-backend` cả 157 tệp mất 2283 giây
+        # ở máy dev (04/10/2026); tệp nặng nhất chạy trên CI chậm hơn ở máy 1,10 lần ⇒ ~64 phút. 90 = ×1,4. Bộ test
+        # chạy tuần tự vì ngân sách 60 kết nối của project CI (xem `concurrency` ở trên). Số thật: sổ nợ `ci-github-green`.
+        timeout-minutes: 90
         run: pnpm test:scratch
 
       # Lưới cho ca huỷ giữa chừng: khi job bị huỷ (`cancel-in-progress` ở trên,
@@ -186,7 +201,7 @@ jobs:
     # cổng — được liệt kê, không chặn (E1 đo chúng từ git).
     name: I28 — thêm adapter không chạm tệp ngoài thư mục của nó
     if: github.event_name == 'push' || github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -222,7 +237,7 @@ jobs:
     # AA (axe-core), và ở lượt tiếng Anh không còn chữ tiếng Việt trong khung. Không so pixel. Ảnh chụp là artifact
     # để người review xem. Chi phí 0: repo public, Chromium tải trong runner.
     name: portal demo — mọi màn, hai cỡ khung, sáng/tối, Việt/Anh
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -413,7 +428,7 @@ jobs:
     # image tại chỗ, `kind load` (không registry), Secret sinh ngay trong runner cho lượt
     # này, migrate + seed, chờ sẵn sàng. Chi phí 0: không đẩy image, không cloud.
     name: kind — build image, dựng cụm, E2E rút gọn (E9 ở làn đêm)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 80
     steps:
       # 6 image (mỗi image mang cây phụ thuộc của package) + image node của kind + bản nạp
@@ -461,7 +476,7 @@ jobs:
     # đường nội bộ không lộ, SSE qua Traefik, sao lưu → khôi phục. Phần runner không thay được (arm64, iptables của
     # Oracle, Let's Encrypt thật) ở sổ nợ `vm-oracle-real`. Chi phí 0: repo public.
     name: vm — bootstrap k3s, phát hành, E2E qua HTTPS
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - name: dọn đĩa runner

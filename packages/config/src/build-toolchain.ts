@@ -100,6 +100,17 @@ export const NODE_ARCH = "amd64";
 export const BUILD_PLATFORM = `linux/${NODE_ARCH}` as const;
 
 /**
+ * [Plan #63 QĐ-6] Nhãn runner của pipeline GitHub Actions mà UDP SINH CHO KHÁCH (`cicd-adapter/github-actions`).
+ *
+ * Để trôi theo GitHub chứ không ghim như image và action ở trên: bytes của image do công cụ trong pipeline quyết định
+ * (ghim digest, sha256), còn ghim nhãn cho mọi project khách là nhận nghĩa vụ theo ngày GitHub bỏ nhãn — một quyết
+ * định sản phẩm riêng (spec Plan #63 §4). Hai job `build-smoke` và `signing-e2e` của CI chính UDP diễn tập đúng
+ * pipeline này nên chạy đúng nhãn này, trong khi mọi job khác của UDP ghim `ubuntu-24.04`
+ * (`deploy/tests/ci-workflow.test.ts` canh cả hai chiều).
+ */
+export const GITHUB_ACTIONS_RUNNER = "ubuntu-latest";
+
+/**
  * [Plan #61 QĐ-14] Signing config của cosign KHÔNG khai dịch vụ nào: không Fulcio, không Rekor, không TSA — ký bằng
  * khoá KMS, image riêng tư không lộ tên hay digest ra sổ minh bạch công khai. Đúng nội dung `cosign signing-config
  * create` sinh ra; đây là cách cosign v3 khuyên dùng thay cờ `--tlog-upload=false` (sắp bỏ).

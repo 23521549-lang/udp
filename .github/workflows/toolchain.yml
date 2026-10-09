@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   toolchain-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       # `packageManager` của package.json là nguồn duy nhất của phiên bản pnpm (xem ci.yml)
@@ -42,7 +42,7 @@ jobs:
   # trong một job chạy không người trực đi ngược chính nguyên tắc đã ghi ở `build-toolchain.ts` ("chỉ dùng MỘT
   # action bên thứ ba"). Job này giữ `contents: read` và chỉ dùng action của GitHub.
   toolchain-fix:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: toolchain-check
     if: always()
     permissions:

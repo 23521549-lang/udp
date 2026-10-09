@@ -118,6 +118,24 @@ function firstCommitOf(pathspec: string): { hash: string; at: number } | null {
 }
 
 describe("oracle độc lập ở tầng thời gian", () => {
+  /**
+   * [Plan #63 QĐ-2] Hai ô dưới so mốc thời gian của hai commit đầu tiên. Trên clone nông (mặc định `fetch-depth: 1`
+   * của `actions/checkout`) cả oracle lẫn resolver trông như được thêm ở CÙNG một commit, nên `at <= at` XANH mà không
+   * kiểm gì — và nó đã xanh như thế ở lượt CI đầu tiên (run 37154337078). Một bất biến xanh vì không có gì để so là
+   * xanh giả; ô này đỏ trước.
+   */
+  it("lịch sử git đầy đủ — không phải clone nông", () => {
+    const shallow = execFileSync(
+      "git",
+      ["rev-parse", "--is-shallow-repository"],
+      { cwd: REPO, encoding: "utf8" },
+    ).trim();
+    expect(
+      shallow,
+      "clone nông: mọi tệp trông như được thêm ở cùng một commit — CI phải checkout với fetch-depth: 0",
+    ).toBe("false");
+  });
+
   it("oracle ĐÃ được commit — một oracle chưa commit không chứng minh thứ tự nào", () => {
     const oracle = firstCommitOf("services/core-backend/tests/oracle");
     expect(oracle, "chưa có commit nào đưa tests/oracle vào").not.toBeNull();

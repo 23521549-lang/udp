@@ -22,7 +22,7 @@ permissions:
 jobs:
   gate:
     name: cổng phát hành — CI đã xanh, hai manifest khớp tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
@@ -61,7 +61,7 @@ jobs:
   build-npm:
     name: dựng artifact npm
     needs: gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -85,7 +85,7 @@ jobs:
   build-pypi:
     name: dựng artifact PyPI
     needs: gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     defaults:
@@ -125,7 +125,7 @@ jobs:
   npm:
     name: phát hành npm (OIDC + provenance)
     needs: build-npm
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: release-npm
     permissions:
       contents: read
@@ -176,7 +176,7 @@ jobs:
     # --tag, "cannot publish over", thiếu id-token ⇒ EUSAGE) và tất cả nổ TRƯỚC khi gửi gì đi. Cho phía khó chạy
     # trước thì xác suất "một gói lên, một gói chưa" nhỏ nhất.
     needs: [npm, build-pypi]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: release-pypi
     permissions:
       contents: read

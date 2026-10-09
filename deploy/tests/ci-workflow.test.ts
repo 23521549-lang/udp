@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { GITHUB_ACTIONS_RUNNER } from "@udp/config/build-toolchain";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -17,18 +18,21 @@ interface Step {
   run?: string;
   if?: string;
   with?: Record<string, unknown>;
+  "timeout-minutes"?: number;
 }
 interface Job {
   if?: string;
   environment?: string;
   env?: Record<string, string>;
+  "runs-on"?: string;
   steps: Step[];
 }
 
 interface Workflow {
   name: string;
   on: Record<string, unknown>;
-  concurrency?: { group: string; "cancel-in-progress": boolean };
+  /** `cancel-in-progress` là một biểu thức khi nó phụ thuộc sự kiện (Plan #63 QĐ-8) */
+  concurrency?: { group: string; "cancel-in-progress": boolean | string };
   jobs: Record<string, Job>;
 }
 
@@ -430,5 +434,69 @@ describe("Publish SDK (Plan #62)", () => {
     expect(
       gate?.steps.some((s) => s.run?.includes("gh run list") === true),
     ).toBe(true);
+  });
+});
+
+/**
+ * [Plan #63] Những điều lượt CI đầu tiên trên GitHub (run 37154337078, PR #1) cho thấy là chưa được canh.
+ */
+describe("Lượt CI đầu tiên (Plan #63)", () => {
+  /** Hai job diễn tập ĐÚNG pipeline mà UDP sinh cho khách, nên chạy đúng nhãn runner của pipeline đó */
+  const REHEARSALS = ["build-smoke", "signing-e2e"];
+  const files = readdirSync(resolve(root, ".github/workflows")).filter((f) =>
+    f.endsWith(".yml"),
+  );
+
+  it("job test: clone đủ lịch sử, và trần của bước test:scratch đủ cho cả bộ test", () => {
+    const test = job("test");
+    const checkout = test.steps.find((s) =>
+      s.uses?.startsWith("actions/checkout"),
+    );
+    // Cổng thứ tự của adapter-core và I35 đọc lịch sử git — clone nông làm một cái đỏ sai, một cái xanh giả
+    expect(checkout?.with?.["fetch-depth"]).toBe(0);
+    const suite = test.steps.find((s) => s.run === "pnpm test:scratch");
+    // ~64 phút đo/ước ở chú thích của chính bước đó; 40 phút cũ cắt bộ test giữa core-backend
+    expect(suite?.["timeout-minutes"]).toBeGreaterThanOrEqual(90);
+  });
+
+  it("mọi job của mọi workflow khai nhãn runner; job của UDP ghim, hai job diễn tập theo nhãn của pipeline khách", () => {
+    expect(files.length).toBeGreaterThanOrEqual(5);
+    const floating: string[] = [];
+    for (const file of files) {
+      const wf = parse(
+        readFileSync(resolve(root, ".github/workflows", file), "utf8"),
+      ) as Workflow;
+      for (const [name, j] of Object.entries(wf.jobs)) {
+        const label = j["runs-on"];
+        expect(label, `${file}/${name}`).toBeDefined();
+        if (file === "ci.yml" && REHEARSALS.includes(name)) {
+          expect(label, `${file}/${name}`).toBe(GITHUB_ACTIONS_RUNNER);
+        } else if (label?.endsWith("-latest") === true) {
+          floating.push(`${file}/${name}: ${label}`);
+        }
+      }
+    }
+    expect(floating).toEqual([]);
+  });
+
+  it("lượt của main (push, đêm) không bị huỷ — chỉ lượt PR bị lượt mới hơn thay", () => {
+    expect(workflow.concurrency?.group).toContain("github.event_name");
+    expect(workflow.concurrency?.["cancel-in-progress"]).toBe(
+      "${{ github.event_name == 'pull_request' }}",
+    );
+  });
+
+  it("kind dựng cụm bằng script kind-up — `up` là bí danh của pnpm update", () => {
+    const rootPackage = JSON.parse(
+      readFileSync(resolve(root, "package.json"), "utf8"),
+    ) as { scripts: Record<string, string> };
+    const deployPackage = JSON.parse(
+      readFileSync(resolve(root, "deploy/package.json"), "utf8"),
+    ) as { scripts: Record<string, string> };
+    expect(rootPackage.scripts["deploy:up"]).toBe(
+      "pnpm --filter @udp/deploy kind-up",
+    );
+    expect(deployPackage.scripts["kind-up"]).toBe("tsx src/up.ts");
+    expect(indexOfRun(job("kind"), "pnpm deploy:up")).toBeGreaterThan(-1);
   });
 });

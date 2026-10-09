@@ -34,7 +34,7 @@ import {
 } from "../../adapter-base/packaging/build-script.js";
 import { dockerHostRebaseLines } from "../../adapter-base/packaging/rebase-script.js";
 import { dockerHostSignLines } from "../../adapter-base/packaging/sign-script.js";
-import { BUILD_TOOLCHAIN } from "@udp/config";
+import { BUILD_TOOLCHAIN, GITHUB_ACTIONS_RUNNER } from "@udp/config";
 
 const CHECKOUT = BUILD_TOOLCHAIN.actions.checkout;
 
@@ -186,7 +186,7 @@ const signStep = (params: PipelineTemplateParams): string[] =>
 const rebaseJob = (params: PipelineTemplateParams): string[] => [
   "  rebase:",
   "    if: github.event_name == 'schedule'",
-  "    runs-on: ubuntu-latest",
+  `    runs-on: ${GITHUB_ACTIONS_RUNNER}`,
   "    steps:",
   `      - uses: ${CHECKOUT.repo}@${CHECKOUT.sha} # ${CHECKOUT.version}`,
   "        with:",
@@ -247,7 +247,7 @@ const workflow = (params: PipelineTemplateParams): string[] => {
     "jobs:",
     "  build-and-deploy:",
     ...(schedule === null ? [] : ["    if: github.event_name != 'schedule'"]),
-    "    runs-on: ubuntu-latest",
+    `    runs-on: ${GITHUB_ACTIONS_RUNNER}`,
     "    env:",
     "      IMAGE_REF: %IMAGE%:${{ github.sha }}",
     '      UDP_TRACKED_FLAGS: "%FLAGS%"',
