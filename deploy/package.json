@@ -8,8 +8,8 @@
     "./cluster": "./src/cluster.ts"
   },
   "scripts": {
-    "up": "tsx src/up.ts",
-    "down": "tsx src/down.ts",
+    "kind-up": "tsx src/up.ts",
+    "kind-down": "tsx src/down.ts",
     "diagnose": "tsx src/diagnose.ts",
     "vm-up": "tsx src/vm-up.ts",
     "vm-restore": "tsx src/vm-restore.ts",
