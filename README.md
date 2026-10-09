@@ -11,12 +11,16 @@ Tài liệu thiết kế: `UDP_design.md` (v4).
 ```
 udp/
 ├── packages/
+│   ├── adapter-core/          Hợp đồng của mọi adapter (CloudAdapter, DomainAdapter), runner, bộ test hợp đồng dùng chung
+│   ├── cloud-adapters/        Cloud Adapter thật cho AWS, GCP, Azure (§4.2)
+│   ├── cluster-access/        ClusterAccess chế độ direct (ADR-06) — client Kubernetes dùng chung của S1 và S3
 │   ├── config/                Hằng số và biến môi trường — nguồn sự thật duy nhất
 │   ├── db/                    Prisma schema, migration, test bất biến tầng DB, script quản trị
-│   ├── design-lint/           Đối chiếu UDP_design.md với schema, route, package
+│   ├── design-lint/           Đối chiếu UDP_design.md với schema, route, package, workflow
 │   ├── experiments/           Harness phép đo §14 (E3, E4, E5, E14) và I34 — kết quả ở docs/measurements
 │   ├── flag-evaluator/        Consistent hashing và đánh giá flag (dùng chung S2 và SDK)
 │   ├── flag-snapshot/         Snapshot cấu hình flag + config_hash + delta outbox (S2 và kill-switch S3)
+│   ├── golden-path/           Golden Path (§11): mẫu dự án Node/Python, bộ sinh cây tệp, bộ quét repo
 │   ├── http/                  ProblemDetails, error handler, logger cho mọi service
 │   ├── metrics-provider/      MetricsProvider: Prometheus và bản giả cho test (S1 probe pha 1, S3 quyết định)
 │   ├── openfeature-provider/  Provider OpenFeature (SERVER key) chạy trong ứng dụng khách + hook nhãn ff + middleware /metrics
@@ -29,18 +33,23 @@ udp/
 ├── apps/
 │   ├── portal/                React SPA — /app (developer) và /admin (chủ nền tảng)
 │   └── sample-app/            Ứng dụng khách mẫu: provider + nhãn ff + /metrics + chaos (E5), port 3010
+├── sdks/
+│   └── python/                Provider OpenFeature cho Python (tên phát hành `udp-openfeature`, cùng tên gói Node)
+├── deploy/                    Triển khai chi phí 0: Dockerfile, Kustomize, cụm kind (`pnpm deploy:up`), máy ảo k3s
 ├── docs/
 │   ├── UDP_design.md          Tài liệu thiết kế
+│   ├── ban-giao/              Bàn giao theo ngày — tệp mới nhất là điểm bắt đầu
 │   ├── design/                Design system Portal đã duyệt + bản mẫu bấm được (chuẩn cho Plan #25)
-│   └── measurements/          Kết quả đo, đăng ký trước E5, sổ nợ kiểm chứng
+│   ├── measurements/          Kết quả đo, đăng ký trước E5, sổ nợ kiểm chứng
+│   └── plans/                 Spec và kế hoạch của từng plan
 └── docker/                    Cấu hình hạ tầng dev
 ```
 
 ## Yêu cầu
 
-- Node.js ≥ 20
-- pnpm ≥ 9
-- Docker Desktop
+- Node.js ≥ 22.22.2 (`engines` của `package.json`)
+- pnpm 9.12.0 (`packageManager` của `package.json`; `corepack enable` cài đúng bản này)
+- Docker — chỉ cho `pnpm dev:infra` (Prometheus) và `pnpm deploy:up` (cụm kind)
 
 ## Bắt đầu
 
