@@ -15,7 +15,7 @@ nguyên tối thiểu, và **ảnh hưởng tới kết luận nào**. Trường
 trọng nhất của một sổ nợ: nó nói món nợ này làm câu nào trong luận văn yếu đi, nên
 đọc sổ là biết ngay điều gì đang được tuyên bố mà chưa được đo.
 
-**Số mục hiện tại: 52.** Con số này được một phép kiểm của `design-lint` đối chiếu
+**Số mục hiện tại: 53.** Con số này được một phép kiểm của `design-lint` đối chiếu
 với số mục đếm được trong chính tệp, và đối chiếu với hai nơi khác trích mã nợ:
 `docs/UDP_design.md` (§16, dạng `Sổ nợ: \`mã\``) và chú thích trong mã nguồn (cùng
 dạng). Một mã nợ được nhắc ở hai nơi kia mà không có mục ở đây là một lời hứa không
@@ -1466,3 +1466,37 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   **cài đặt**: `PROVIDER_RELEASE = "^0.1.0"` và `udp-openfeature[metrics]>=0.1,<1` trỏ tới hai gói chưa tồn tại,
   nên một người dùng đi hết Golden Path hôm nay nhận 404 ở `npm install`. Đó là một đường đi của sản phẩm đang
   đứt, và nó chỉ liền sau món nợ này. Mọi mệnh đề khác của §6.8 về đóng gói thì đã đo xong.
+
+## ci-github-green — CI xanh thật trên runner GitHub, trên PR rồi sau merge
+
+- **Vì sao nợ:** [Plan #63] Lượt CI đầu tiên của nhánh Plan #16–#62 (PR #1, run `37154337078`) đỏ bốn job; Plan #63
+  sửa năm gốc lỗi và thêm cổng cho từng loại, mọi cổng xanh **tại chỗ** (`@udp/deploy` 84 ô, ba cổng mới của
+  `design-lint`, `fixture-constants` 15 ô, typecheck sáu package). Nhưng "CI xanh" chỉ chứng minh được trên runner, và
+  chạy runner cần một lượt push — việc của chủ repo. Ba thứ chỉ runner đo được: (a) cả bộ test có hết trong trần 90
+  phút không (con số ~64 phút là **ước** từ số đo ở máy dev và một lượt bị cắt); (b) cụm `kind` và máy diễn tập `vm`
+  có lên và qua E2E không — lỗi kế tiếp sau một lỗi đã sửa chỉ lộ khi lỗi trước hết che nó; (c) những job chỉ có sau
+  merge (`build-smoke`, `Deploy`, lượt chạy tay của `toolchain.yml` và `publish-rehearsal.yml`).
+- **Tiền đề:** quyền push lên `23521549-lang/udp`; secret của project Supabase CI đã nạp (đã có — job `test` của lượt
+  đầu tạo và xoá được database scratch). Không cần tài khoản nào khác.
+- **Runbook:** hai pha, vì `workflow_dispatch` chỉ hiện khi tệp workflow nằm trên nhánh mặc định (`main` đang ở Plan
+  #15).
+  1. **Trên PR.** `git push origin p61-dong-goi`. Lượt `pull_request` của PR #1 chạy tám job: `check`, `python`,
+     `test`, `i28`, `portal-demo`, `signing-e2e`, `kind`, `vm` (`build-smoke` bỏ qua PR, đúng thiết kế). Đọc bằng
+     `gh run list --branch p61-dong-goi --limit 1` rồi `gh run view <id>`; job đỏ thì `gh run view <id> --job <job-id>
+--log-failed`. Ghi thời lượng THẬT của bước `pnpm test:scratch` (dòng `##[group]Run pnpm test:scratch` tới dòng
+     kết thúc của nó) vào `docs/measurements/README.md`, và hạ/nâng trần ở `ci.yml` nếu lệch quá ×1,4.
+  2. **Sau merge** (khi pha 1 xanh): lượt `push` của `main` chạy thêm `build-smoke` (sáu app). Rồi chạy tay
+     `toolchain.yml` và `publish-rehearsal.yml` (`gh workflow run <tệp>`), và xem `Deploy` có bỏ qua đúng khi thiếu
+     secret của environment `vm` không.
+     Lưu ý khi đọc kết quả `kind`/`vm`: kubelet chỉ tiêm biến service link của những Service nó đã thấy lúc khởi động
+     container (chú thích trong `kubelet_pods.go`), nên một lượt xanh trên mã TRƯỚC Plan #63 không phải bằng chứng phủ
+     định cho lỗi đó — bằng chứng là cổng `effectiveEnv` đỏ trên manifest cũ.
+- **Đạt:** pha 1 — tám job của lượt PR kết thúc `success` (hoặc `skipped` đúng thiết kế), bước `test:scratch` dưới
+  trần; pha 2 — sáu ô `build-smoke` xanh, hai lượt chạy tay xanh. **Không đạt:** job nào đỏ ⇒ đó là gốc lỗi kế tiếp:
+  chẩn đoán từ log (job `kind`, `vm` tự in trạng thái cụm khi đỏ), sửa, thêm cổng cùng loại như Plan #63, rồi chạy
+  lại — không chạy lại cùng một commit cho tới khi xanh.
+- **Tài nguyên:** runner GitHub miễn phí (repo public); một lượt đầy đủ ~1,5 giờ (`test` là đường dài nhất).
+- **Ảnh hưởng tới kết luận:** §13.5 nói "toàn bộ bộ test chạy mỗi push và mỗi PR", "build image, `kind` và E2E rút
+  gọn đã dựng" và §16 nói "dựng cụm, E2E rút gọn và E9 chỉ chạy được ở CI". Cả ba đúng về **cấu hình** và về các cổng
+  tại chỗ, chưa đúng về **kết quả** cho tới khi mục này xanh. Mục `sdk-publish-real` phụ thuộc nó: cổng phát hành đòi
+  `ci.yml` xanh trên đúng commit được tag.
