@@ -3,7 +3,10 @@ import {
   type BuildIdentity,
   type BuildPlan,
 } from "@udp/adapter-core";
-import { BUILD_TOOLCHAIN, SIGNING_CONFIG_JSON } from "@udp/config";
+import {
+  BUILD_TOOLCHAIN,
+  SIGNING_CONFIG_JSON,
+} from "@udp/config/build-toolchain";
 import {
   AUTH_DIR,
   dockerHostOidcLines,

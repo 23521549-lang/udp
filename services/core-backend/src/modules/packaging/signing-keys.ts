@@ -1,5 +1,5 @@
 import { createHash, createPublicKey } from "node:crypto";
-import { ValidationError } from "@udp/http";
+import { ValidationError } from "@udp/http/errors";
 import { kmsCloudOf, type BuildSettings } from "@udp/shared-types";
 
 /**

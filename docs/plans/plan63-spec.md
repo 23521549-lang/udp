@@ -10,12 +10,12 @@ Bàn giao 04/10 ghi "Plan #61 đã ĐÓNG" và "không còn việc nào plan đ�
 PR `#1` là lượt đầu tiên toàn bộ mã này chạy trên runner. Lượt đó (run `37154337078`, 03/10 21:13 UTC, đúng commit
 `ac149ba` là đỉnh nhánh hôm nay) **đỏ bốn job**:
 
-| Job                    | Bước đỏ                         | Dòng lỗi (nguyên văn log)                                                                                     |
-| ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `signing-e2e`          | công cụ ký (bước đầu tiên chạy mã) | `Cannot find module '.../packages/db/src/generated/prisma/client.js' imported from .../packages/db/src/index.ts` |
-| `test`                 | `pnpm test:scratch`             | `fixture-constants.test.ts:226` `expected 'b047af…' not to be 'b047af…'`, rồi `has timed out after 40 minutes` |
-| `kind`                 | E2E rút gọn                     | `connect ECONNREFUSED 127.0.0.1:8080` — bước `pnpm deploy:up` trước đó **xanh trong 7,6 giây**                |
-| `vm`                   | `release.sh`                    | `rollout status deployment/core-backend ... timed out`; pod: `CORE_BACKEND_PORT: Expected number, received nan` |
+| Job           | Bước đỏ                            | Dòng lỗi (nguyên văn log)                                                                                        |
+| ------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `signing-e2e` | công cụ ký (bước đầu tiên chạy mã) | `Cannot find module '.../packages/db/src/generated/prisma/client.js' imported from .../packages/db/src/index.ts` |
+| `test`        | `pnpm test:scratch`                | `fixture-constants.test.ts:226` `expected 'b047af…' not to be 'b047af…'`, rồi `has timed out after 40 minutes`   |
+| `kind`        | E2E rút gọn                        | `connect ECONNREFUSED 127.0.0.1:8080` — bước `pnpm deploy:up` trước đó **xanh trong 7,6 giây**                   |
+| `vm`          | `release.sh`                       | `rollout status deployment/core-backend ... timed out`; pod: `CORE_BACKEND_PORT: Expected number, received nan`  |
 
 `build-smoke` không chạy (chỉ chạy ngoài PR). Bốn job xanh: `check`, `python`, `portal-demo`, `i28`.
 
@@ -37,13 +37,13 @@ Quét mọi entry mà một job **không có cấu hình service** chạy (mọi
 chưa lộ vì job của chúng chưa từng chạy tới đó (dòng thứ năm do QA C-12 tìm ra — một `import()` động với chuỗi literal,
 mà esbuild có đi theo):
 
-| Entry                               | Job                                   | Nạp                    | Trạng thái hôm nay                          |
-| ----------------------------------- | ------------------------------------- | ---------------------- | ------------------------------------------- |
-| `core-backend/scripts/signing-e2e.ts` | `signing-e2e`                         | `env.ts`, `db/index.ts` | đỏ                                          |
-| `core-backend/scripts/build-smoke.ts` | `build-smoke` (chỉ sau merge)         | `env.ts`               | sẽ đỏ trên `main` (qua `build-script.ts`)   |
-| `deploy/e2e-vm/vm.e2e.test.ts`      | `vm`, bước E2E                        | `env.ts`, `db/index.ts` | sẽ đỏ ngay sau khi sửa G4                   |
-| `deploy/tests/vm.test.ts`           | `gate` của `publish.yml`              | `env.ts`, `db/index.ts` | sẽ chặn lượt phát hành SDK đầu tiên         |
-| `design-lint/tests/references.test.ts` | `gate` của `publish.yml`           | `env.ts` (`await import("@udp/config")`) | sẽ chặn lượt phát hành SDK đầu tiên |
+| Entry                                  | Job                           | Nạp                                      | Trạng thái hôm nay                        |
+| -------------------------------------- | ----------------------------- | ---------------------------------------- | ----------------------------------------- |
+| `core-backend/scripts/signing-e2e.ts`  | `signing-e2e`                 | `env.ts`, `db/index.ts`                  | đỏ                                        |
+| `core-backend/scripts/build-smoke.ts`  | `build-smoke` (chỉ sau merge) | `env.ts`                                 | sẽ đỏ trên `main` (qua `build-script.ts`) |
+| `deploy/e2e-vm/vm.e2e.test.ts`         | `vm`, bước E2E                | `env.ts`, `db/index.ts`                  | sẽ đỏ ngay sau khi sửa G4                 |
+| `deploy/tests/vm.test.ts`              | `gate` của `publish.yml`      | `env.ts`, `db/index.ts`                  | sẽ chặn lượt phát hành SDK đầu tiên       |
+| `design-lint/tests/references.test.ts` | `gate` của `publish.yml`      | `env.ts` (`await import("@udp/config")`) | sẽ chặn lượt phát hành SDK đầu tiên       |
 
 Bảy entry bẩn còn lại (`experiments/scripts/e3`, `e4`, `e5`, `e5-setup`, `i34`, và `chart-values-audit`,
 `measure-flag-list` của `core-backend`) là harness đo chạy CÙNG database, không job CI nào gọi — chúng cần env, đúng
@@ -78,8 +78,8 @@ còn ghép ConfigMap + Secret trực tiếp. Lỗi chỉ chưa lộ ở `kind` v
 
 ## 3. Hai rủi ro sắp tới, cùng loại "môi trường đổi dưới chân"
 
-**Nhãn runner.** Mọi job của lượt đó mang chú thích của GitHub: *"The ubuntu-latest label will migrate to Ubuntu 26
-beginning October 19, 2026"*. Job `vm` là **diễn tập** máy công khai chạy Ubuntu 24.04 (`deploy/vm/bootstrap.sh:2`);
+**Nhãn runner.** Mọi job của lượt đó mang chú thích của GitHub: _"The ubuntu-latest label will migrate to Ubuntu 26
+beginning October 19, 2026"_. Job `vm` là **diễn tập** máy công khai chạy Ubuntu 24.04 (`deploy/vm/bootstrap.sh:2`);
 sau 19/10 nó sẽ diễn tập trên một hệ điều hành khác máy thật. Nhưng hai job `build-smoke` và `signing-e2e` diễn tập
 **pipeline mà UDP sinh cho khách**, và pipeline đó chạy `runs-on: ubuntu-latest`
 (`cicd-adapter/github-actions/index.ts`, hai chỗ) — chúng phải chạy đúng nhãn của khách, không ghim riêng (QA A7).
@@ -96,6 +96,7 @@ Trong: bốn gốc lỗi cùng mọi chỗ cùng hình dạng mà phép quét t�
 chặn từng loại, nhãn runner, concurrency, tài liệu (§3.1, §13.5, §15.1, §16, D-P37 → D-P55), sổ nợ, README.
 
 Ngoài, có lý do:
+
 - **Chạy CI thật** — cần push, việc của chủ repo; ghi ở sổ nợ `ci-github-green` (hai pha: trên PR, rồi sau merge vì
   `build-smoke`, `Deploy`, `toolchain.yml` và lượt chạy tay chỉ có trên `main`).
 - **Ghim nhãn runner của pipeline sinh cho KHÁCH** — một thay đổi hành vi sản phẩm (mọi project GitHub Actions), kéo
@@ -194,7 +195,7 @@ ghi một dòng §16 kèm cách gỡ (chạy lại job).
 - **AC-2** Job `test` có `fetch-depth: 0` và trần 90 phút kèm căn cứ (cổng); hai ô clone-nông có trong hai tệp.
 - **AC-3** Không tên script nào bị lệnh có sẵn của pnpm 9.12.0 che (cổng, ba đối chứng); đỏ trước khi đổi tên, xanh sau.
 - **AC-4** Mô hình env: **đỏ** trên manifest hiện tại với đúng bốn khoá `*_PORT`, **xanh** sau `enableServiceLinks:
-  false`; mọi workload của hai overlay mang cờ, đếm đủ.
+false`; mọi workload của hai overlay mang cờ, đếm đủ.
 - **AC-5** `build-smoke`, `signing-e2e` chạy nhãn của pipeline khách (hằng); không job nào khác chạy nhãn `-latest`.
 - **AC-6** README và §3.1: cổng `readme.test.ts` xanh; đỏ khi bỏ một package khỏi cây.
 - **AC-7** Concurrency: group có `github.event_name`, chỉ PR bị huỷ (cổng).

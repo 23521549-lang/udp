@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { envSchema } from "@udp/config/env-schema";
-import { flaggerGatePath } from "@udp/http";
+import { flaggerGatePath } from "@udp/http/flagger-gate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {

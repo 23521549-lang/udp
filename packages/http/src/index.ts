@@ -11,6 +11,12 @@
  * validate toan bo env. Do la co y chu khong phai so suat: mot lop HTTP khong
  * biet minh dang chay o production hay khong thi khong quyet dinh duoc co giau
  * `detail` cua loi hay khong — xem `error-handler.ts`.
+ *
+ * [Plan #63] Noi KHONG co env (script va test ma CI chay ngoai tien trinh
+ * service: ky image, E2E cua cum, cong phat hanh) di qua hai subpath thuan,
+ * cung quy uoc voi `@udp/config/build-toolchain`: `@udp/http/errors` (cay loi,
+ * chi phu thuoc `@udp/shared-types/problem`) va `@udp/http/flagger-gate` (chi
+ * `node:crypto`). Cong `design-lint/tests/ci-entry-purity.test.ts` giu dieu do.
  */
 
 export * from "./errors.js";

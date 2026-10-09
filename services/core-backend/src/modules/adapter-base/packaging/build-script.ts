@@ -5,7 +5,7 @@ import {
   type BuildPlan,
   type RegistryPush,
 } from "@udp/adapter-core";
-import { BUILD_TOOLCHAIN } from "@udp/config";
+import { BUILD_TOOLCHAIN } from "@udp/config/build-toolchain";
 import { CICD_WEBHOOK } from "@udp/config/constants";
 
 /**

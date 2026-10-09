@@ -32,7 +32,7 @@ quy ước tên `vm-up`/`vm-restore`, `esbuild@0.28.2` (bản `openfeature-provi
 ### 63a-2. Cổng `ci-entry-purity.test.ts` (viết trước, đỏ ở năm entry)
 
 - **Làm gì:** thêm mới. Mỗi entry: `esbuild.build({ entryPoints: [entry], absWorkingDir: ROOT, bundle: true,
-  write: false, metafile: true, platform: "node", format: "esm", logLevel: "silent", plugins })`. Plugin:
+write: false, metafile: true, platform: "node", format: "esm", logLevel: "silent", plugins })`. Plugin:
   (a) `onResolve` cho specifier trần: `@udp/*` đi theo; khớp hình dạng tên gói npm hay `node:` ⇒ để ngoài; còn lại ⇒
   ném (alias/`#imports` không được cắt im lặng — QA C-16); `kind: "entry-point"` đi theo;
   (b) `onLoad` cho tệp cấm (`packages/config/src/env.ts`, `packages/db/src/index.ts`, `packages/db/src/generated/**`)
@@ -49,7 +49,7 @@ quy ước tên `vm-up`/`vm-restore`, `esbuild@0.28.2` (bản `openfeature-provi
   thư mục bằng bộ đọc workspace (QA B1, C-13). Mọi tệp suy ra PHẢI tồn tại.
   **Fail-closed:** mỗi glob ra ≥ 1 tệp; tập suy ra ⊇ `services/core-backend/scripts/{build-smoke,signing-e2e}.ts`,
   `packages/design-lint/tests/{package-boundaries,debt-ledger,references}.test.ts`, `packages/design-lint/scripts/
-  sdk-version.ts`, `packages/openfeature-provider/scripts/pack.ts`; đối chứng dương `services/core-backend/src/index.ts`
+sdk-version.ts`, `packages/openfeature-provider/scripts/pack.ts`; đối chứng dương `services/core-backend/src/index.ts`
   PHẢI chạm tệp cấm VÀ bị luật (2) bắt (registry). Timeout ô 120 giây.
 - **Ở đâu:** `packages/design-lint/tests/ci-entry-purity.test.ts`; `packages/design-lint/package.json` thêm
   `devDependencies.esbuild: "0.28.2"`; `pnpm-lock.yaml` (`pnpm install --offline`).
@@ -132,7 +132,7 @@ quy ước tên `vm-up`/`vm-restore`, `esbuild@0.28.2` (bản `openfeature-provi
 ### 63c-2. `enableServiceLinks: false` ở chín pod template, cộng ô cấu trúc
 
 - **Làm gì:** thêm `enableServiceLinks: false` vào pod spec của `k8s/base/{core-backend,flag-service,pd-controller,
-  portal,prometheus}.yaml`, `postgres.yaml`, `migrate-job.yaml`, `k8s/overlays/kind/sample-app.yaml`,
+portal,prometheus}.yaml`, `postgres.yaml`, `migrate-job.yaml`, `k8s/overlays/kind/sample-app.yaml`,
   `k8s/overlays/vm/backup.yaml` (ở `jobTemplate.spec.template.spec`); chú thích đầy đủ ở `core-backend.yaml`, các tệp
   khác một dòng trỏ về đó. Ô cấu trúc ở cả hai tệp test: mọi `[...workloads(docs), ...byKind(docs, "CronJob")]` mang
   cờ; đếm đúng (kind: 8 — năm Deployment của base, `sample-app`, StatefulSet, Job; vm: 8 — năm Deployment,
@@ -219,7 +219,7 @@ quy ước tên `vm-up`/`vm-restore`, `esbuild@0.28.2` (bản `openfeature-provi
   - §15.1: ghi chú [v4.12, Plan #63, D-P55] ngay sau câu "cấu hình mà service từ chối là test đỏ, không phải pod crash"
     — câu đó sai tới Plan #63 vì mô hình thiếu lớp kubelet (QA A1).
   - §16: dòng "[v4.11, Plan #50] Dựng cụm…" thêm kết quả lượt đầu, trỏ `Sổ nợ: \`ci-github-green\``; dòng mới
-    "[v4.12, Plan #63] Một chỗ chờ cho job `test`" (lượt chờ bị thay; gỡ bằng chạy lại).
+"[v4.12, Plan #63] Một chỗ chờ cho job `test`" (lượt chờ bị thay; gỡ bằng chạy lại).
   - Bảng quyết định: hàng **D-P55** sau D-P54, cột mục: §3.1, §13.3 (I35), §13.5, §15.1, §16, D-P37 (QA G6).
 - `docs/measurements/kiem-chung-con-no.md`: mục `ci-github-green`, runbook HAI pha (QA A8): pha 1 trên PR (bảy job
   của PR, đo thời lượng thật của `test:scratch`); pha 2 sau merge (`build-smoke` sáu app, `Deploy`, `toolchain.yml`
@@ -260,5 +260,5 @@ quy ước tên `vm-up`/`vm-restore`, `esbuild@0.28.2` (bản `openfeature-provi
 - **Ghi chú, xử lý bằng câu chữ:** lý do bác container ở QĐ-3 nói quá (G1); arm64, Golden Path ngoài phạm vi có lý do
   (G2, G5); tiền lệ 61d-3c (G4); `portal-demo` ngoài danh sách có lý do (C-17); race của kubelet (C-11).
 - **Đã tự kiểm thay QA-C (phần agent chưa kịp làm):** `fetch-depth: 0` trên sự kiện `pull_request` — `git log
-  --diff-filter=A` không có `-m` bỏ qua diff của commit merge, nên vẫn trả commit của nhánh; job `i28` dựa đúng điều
+--diff-filter=A` không có `-m` bỏ qua diff của commit merge, nên vẫn trả commit của nhánh; job `i28` dựa đúng điều
   này và đã xanh trên chính PR đó. Nhãn `ubuntu-24.04` là nhãn chuẩn của runner GitHub.
