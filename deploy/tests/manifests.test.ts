@@ -312,6 +312,8 @@ describe("overlay kind (Plan #49)", () => {
       c.metadata.name.startsWith("udp-config-"),
     );
     expect(config?.data?.["UDP_RELEASE"]).toBe("local");
+    // [Plan #64] Postgres kèm cụm không có SSL — adapter tắt TLS ở chế độ này.
+    expect(config?.data?.["UDP_DB_TLS_MODE"]).toBe("disable");
   });
 
   it("mọi tài nguyên của UDP nằm trong namespace udp", () => {

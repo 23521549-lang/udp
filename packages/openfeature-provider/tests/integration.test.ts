@@ -521,6 +521,17 @@ describe("fail-static", () => {
     await revoke(new Date());
     // Hub SSE đóng stream của khoá thu hồi trong ≤ SSE.revocationCheckMs
     await waitFor(() => events.includes("error"), 20_000);
+    // [Plan #64] Flap lúc thu hồi: một poll 200 gửi TRƯỚC revoke có thể về SAU
+    // sự kiện "error", đặt unauthorized=false trong cửa sổ vài ms (hợp lệ theo
+    // hợp đồng — poll thành công ⇒ tươi). Khoá đã thu hồi nên mọi poll sau đều
+    // 401: đọc tới khi CHÍNH LÚC ĐỌC thấy stale=true thì không còn gì lật lại được.
+    await waitFor(
+      async () =>
+        (await client.getBooleanDetails("i15-a", true)).flagMetadata[
+          "stale"
+        ] === true,
+      10_000,
+    );
     expect(await client.getBooleanDetails("i15-a", true)).toMatchObject({
       value: before.value,
       reason: before.reason,
@@ -548,6 +559,17 @@ describe("fail-static", () => {
 
     await s2.stop();
     await waitFor(() => events.includes("stale"), 10_000);
+    // [Plan #64] Flap lúc tắt êm: graceful shutdown vẫn phục vụ kết nối keep-alive
+    // đang mở, nên một poll muộn thành công sau sự kiện "stale" có thể lật cờ về
+    // false trước khi assertion đọc (hợp lệ — poll thành công ⇒ tươi). Tiến trình
+    // đã exit nên không còn success nào nữa: đọc tới khi CHÍNH LÚC ĐỌC thấy stale=true.
+    await waitFor(
+      async () =>
+        (await client.getBooleanDetails("i15-a", true)).flagMetadata[
+          "stale"
+        ] === true,
+      10_000,
+    );
     expect(await client.getBooleanDetails("i15-a", true)).toMatchObject({
       value: before.value,
       reason: before.reason,

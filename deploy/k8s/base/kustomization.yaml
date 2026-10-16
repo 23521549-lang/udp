@@ -36,6 +36,9 @@ configMapGenerator:
       # PostgreSQL trong cụm có LISTEN/NOTIFY (§15.3) — hai đường tăng tốc bật
       - CHANGEFEED_NOTIFY_ENABLED=true
       - ROLLOUT_INTENT_LISTEN_ENABLED=true
+      # [Plan #64] Postgres kèm cụm không bật SSL — adapter tắt TLS ở chế độ này
+      # (UDP_DB_TLS_MODE=disable, chỉ cho host nội bộ; Supabase/cloud giữ verify-full)
+      - UDP_DB_TLS_MODE=disable
       - MANAGED_CLOUDS=
       # [Plan #53] Bản đang chạy; bản phát hành máy ảo ghi đè bằng tag commit (deploy/src/vm.ts)
       - UDP_RELEASE=local
