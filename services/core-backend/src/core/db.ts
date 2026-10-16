@@ -23,6 +23,7 @@ export const prisma: PrismaClient = createPrismaClient({
   connectionString: env.DATABASE_URL_S1,
   max: env.DATABASE_POOL_MAX,
   cacheKey: "__udp_prisma_s1",
+  tlsMode: env.UDP_DB_TLS_MODE,
 });
 
 /** Gọi lúc khởi động — xem `assertConnectedAs` để biết vì sao nó phải ném */

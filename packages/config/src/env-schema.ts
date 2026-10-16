@@ -185,6 +185,19 @@ export const envSchema = z
      */
     DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(100).default(5),
     /**
+     * Chế độ TLS của adapter database (`@udp/db`), [Plan #64].
+     *
+     * `verify-full` (mặc định): CA Supabase ghim + `rejectUnauthorized` — cho mọi
+     * database ngoài cụm. `disable`: plaintext, CHỈ cho host nội bộ (postgres kèm
+     * cụm kind/vm không bật SSL); host ngoài thì adapter ném fail-fast ngay lúc
+     * khởi động (rào host-binding — xem `resolveTlsOptions`), nên biến này KHÔNG
+     * BAO GIỜ được đặt khi `DATABASE_URL*` trỏ Supabase/cloud.
+     *
+     * Fail-fast thay vì đoán ý: chuỗi rỗng, sai case (`DISABLE`), giá trị lạ đều
+     * dừng tiến trình lúc parse env.
+     */
+    UDP_DB_TLS_MODE: z.enum(["verify-full", "disable"]).default("verify-full"),
+    /**
      * Chuỗi kết nối của Service 1 — nối bằng role `udp_s1`, KHÔNG phải owner.
      *
      * BẮT BUỘC, không có fallback về `DATABASE_URL`. Fallback ở đây sẽ làm ma

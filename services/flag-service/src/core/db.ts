@@ -22,6 +22,7 @@ export const prisma: PrismaClient = createPrismaClient({
   connectionString: env.DATABASE_URL_S2,
   max: env.DATABASE_POOL_MAX,
   cacheKey: "__udp_prisma_s2",
+  tlsMode: env.UDP_DB_TLS_MODE,
 });
 
 /**

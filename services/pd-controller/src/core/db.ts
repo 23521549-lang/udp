@@ -25,6 +25,7 @@ export const prisma: PrismaClient = createPrismaClient({
   connectionString: env.DATABASE_URL_S3,
   max: env.DATABASE_POOL_MAX,
   cacheKey: "__udp_prisma_s3",
+  tlsMode: env.UDP_DB_TLS_MODE,
 });
 
 export const SERVICE_ROLE = "udp_s3";
