@@ -60,17 +60,30 @@ export interface PgAdapterOptions {
    * `DB_POOL.acquireTimeoutMs`; chỉ test cạn pool mới truyền giá trị khác.
    */
   acquireTimeoutMs?: number;
+  /**
+   * Chế độ TLS — từ `UDP_DB_TLS_MODE` (env-schema, nguồn sự thật duy nhất),
+   * người gọi truyền tường minh, không đọc env ở đây.
+   * `verify-full` (mặc định): CA Supabase ghim + `rejectUnauthorized`.
+   * `disable`: plaintext, CHỈ cho host nội bộ (postgres kèm cụm không có SSL) —
+   * host ngoài thì `resolveTlsOptions` ném fail-fast. Xem hàm đó.
+   */
+  tlsMode?: TlsMode;
 }
 
-/** Dựng adapter với TLS xác thực đầy đủ, trần pool và hạn chờ pool tường minh. */
+/** Dựng adapter với TLS theo chế độ, trần pool và hạn chờ pool tường minh. */
 export function createPgAdapter({
   connectionString,
   max,
   acquireTimeoutMs = DB_POOL.acquireTimeoutMs,
+  tlsMode = "verify-full",
 }: PgAdapterOptions): PrismaPg {
+  const sanitized = sanitizeConnectionString(connectionString);
+  const tlsOptions = resolveTlsOptions(tlsMode, sanitized);
   return new PrismaPg({
-    connectionString: sanitizeConnectionString(connectionString),
-    ssl: DB_TLS_OPTIONS,
+    connectionString: sanitized,
+    // Không truyền `ssl: undefined` tường minh — phụ thuộc chi tiết `Object.assign`
+    // của `pg`; thiếu key thì chắc chắn là plaintext.
+    ...(tlsOptions === undefined ? {} : { ssl: tlsOptions }),
     max,
     /**
      * Không có nó, một truy vấn gặp pool cạn xếp hàng VÔ HẠN. Trước đây chỉ
@@ -89,7 +102,8 @@ export function createPgAdapter({
 }
 
 /**
- * Tùy chọn TLS dùng CHUNG cho mọi kết nối tới database.
+ * Tùy chọn TLS cho chế độ `verify-full` (mặc định) — dùng CHUNG cho mọi kết nối
+ * tới database ngoài cụm.
  *
  * Export ra để test bất biến — vốn cần `pg.Client` trần cho SET ROLE và
  * SET CONSTRAINTS — không phải tự dựng lại và không có cớ hạ `rejectUnauthorized`.
@@ -99,6 +113,58 @@ export const DB_TLS_OPTIONS = {
   ca: supabaseRootCa,
   rejectUnauthorized: true,
 } as const;
+
+/**
+ * Chế độ TLS của adapter — từ `UDP_DB_TLS_MODE` (env-schema).
+ * `verify-full`: CA ghim + `rejectUnauthorized`, cho mọi database ngoài cụm.
+ * `disable`: plaintext, CHỈ cho postgres nội bộ (kèm cụm kind/vm, không có SSL).
+ */
+export type TlsMode = "verify-full" | "disable";
+
+/**
+ * Host được coi là nội bộ — `disable` chỉ hợp lệ với chúng.
+ *
+ * `postgres` (tên single-label) là host của postgres kèm cụm trong cả kind lẫn
+ * vm (cluster DNS); thêm loopback và hậu tố service/cluster cho trường hợp dựng
+ * tay. Mọi host khác (Supabase, cloud, IP công cộng) bắt buộc TLS.
+ */
+function isInternalDbHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+  return (
+    h === "localhost" ||
+    h === "127.0.0.1" ||
+    h === "::1" ||
+    !h.includes(".") ||
+    h.endsWith(".svc") ||
+    h.endsWith(".cluster.local")
+  );
+}
+
+/**
+ * Tùy chọn TLS cho một lần mở kết nối — hàm thuần, dễ test.
+ *
+ * Rào fail-closed (T2): `disable` mà host không nội bộ thì NÉM ngay lúc khởi
+ * động thay vì để credential đi plaintext câm lặng. Kịch bản nó chặn: ai đó
+ * export `UDP_DB_TLS_MODE=disable` để chạy cụm kind rồi cùng shell chạy service
+ * trỏ Supabase — env rò sang, password DB đi trần trên internet công cộng.
+ */
+export function resolveTlsOptions(
+  tlsMode: TlsMode,
+  connectionString: string,
+): typeof DB_TLS_OPTIONS | undefined {
+  if (tlsMode === "disable") {
+    const host = new URL(connectionString).hostname;
+    if (!isInternalDbHost(host)) {
+      throw new Error(
+        `UDP_DB_TLS_MODE=disable không cho phép với host "${host}" — chỉ host nội bộ ` +
+          `(localhost, tên cluster như postgres, *.svc, *.cluster.local) được tắt TLS. ` +
+          `Nếu database ngoài cụm thật sự không có TLS, mở rộng allowlist trong isInternalDbHost.`,
+      );
+    }
+    return undefined;
+  }
+  return DB_TLS_OPTIONS;
+}
 
 /**
  * Tham số TLS trong chuỗi kết nối mà `pg` để GHI ĐÈ object `ssl` truyền vào.
@@ -143,7 +209,8 @@ export function sanitizeConnectionString(connectionString: string): string {
   if (offending.length > 0) {
     throw new Error(
       `Chuỗi kết nối chứa tham số TLS ${offending.join(", ")} — chúng ghi đè CA đã ghim ` +
-        `và tắt xác thực chứng chỉ. Bỏ chúng khỏi biến môi trường; TLS do DB_TLS_OPTIONS quyết định.`,
+        `và tắt xác thực chứng chỉ. Bỏ chúng khỏi biến môi trường; TLS do chế độ ` +
+        `UDP_DB_TLS_MODE quyết định (mặc định verify-full).`,
     );
   }
 

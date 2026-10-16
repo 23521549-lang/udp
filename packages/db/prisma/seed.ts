@@ -48,10 +48,15 @@ if (!connectionString) {
   throw new Error("Thiếu DATABASE_URL_DIRECT (hoặc DATABASE_URL) trong .env");
 }
 
-// Dung chung factory voi runtime: TLS xac thuc day du bang CA da ghim, tran pool
-// tuong minh. Seed chi can vai ket noi nen dat 2.
+// Dung chung factory voi runtime: TLS theo che do UDP_DB_TLS_MODE (mac dinh
+// verify-full voi CA da ghim), tran pool tuong minh. Seed chi can vai ket noi
+// nen dat 2.
 const prisma = new PrismaClient({
-  adapter: createPgAdapter({ connectionString, max: 2 }),
+  adapter: createPgAdapter({
+    connectionString,
+    max: 2,
+    tlsMode: env.UDP_DB_TLS_MODE,
+  }),
 });
 
 // UUID và tên cố định để seed idempotent — ở `seed-constants.ts` (thuần) để cấu
