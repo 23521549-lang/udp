@@ -66,7 +66,10 @@ export function createSessionConnector(
   return () => sessionClient(sanitized, tlsMode);
 }
 
-function sessionClient(connectionString: string, tlsMode: TlsMode): SessionClient {
+function sessionClient(
+  connectionString: string,
+  tlsMode: TlsMode,
+): SessionClient {
   const tlsOptions = resolveTlsOptions(tlsMode, connectionString);
   const client = new Client({
     connectionString,
