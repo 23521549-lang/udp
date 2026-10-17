@@ -108,6 +108,8 @@ export {
 } from "./adapter.js";
 export { assertConnectedAs } from "./identity.js";
 export { DbIdentityMismatchError, describeBootFailure } from "./identity.js";
+export { syncDomainCatalog } from "./domain-catalog.js";
+export type { DeclaredDomain, SyncOutcome } from "./domain-catalog.js";
 export { observeQueries } from "./observe.js";
 export type { QueryListener, QueryObservation } from "./observe.js";
 export { writeWithOutbox } from "./outbox.js";

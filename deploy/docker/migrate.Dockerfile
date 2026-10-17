@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
 # Job `udp-migrate` (Plan #49): chuỗi migration, rồi bật LOGIN và đặt mật khẩu cho ba role service từ
-# Secret của cluster, rồi seed dữ liệu demo khi `UDP_SEED=true`. Chạy lại được: migrate deploy bỏ qua
-# migration đã áp, ALTER ROLE đặt lại cùng mật khẩu, seed là upsert.
+# Secret của cluster, rồi đồng bộ `domain_catalog` (dữ liệu nền tảng — LUÔN chạy, không phụ thuộc
+# UDP_SEED), rồi seed dữ liệu demo khi `UDP_SEED=true`. Chạy lại được: migrate deploy bỏ qua
+# migration đã áp, ALTER ROLE đặt lại cùng mật khẩu, sync catalog và seed đều là upsert.
 #   docker build -f deploy/docker/migrate.Dockerfile -t udp/migrate:local .
 
 FROM node:22-alpine
@@ -18,4 +19,4 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 ENV DATABASE_URL_DIRECT=
 WORKDIR /repo/packages/db
 USER node
-CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node --import tsx scripts/cluster-bootstrap.ts && if [ \"$UDP_SEED\" = \"true\" ]; then node --import tsx prisma/seed.ts; fi"]
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node --import tsx scripts/cluster-bootstrap.ts && node --import tsx scripts/sync-catalog.ts && if [ \"$UDP_SEED\" = \"true\" ]; then node --import tsx prisma/seed.ts; fi"]

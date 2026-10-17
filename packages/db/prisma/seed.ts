@@ -67,31 +67,8 @@ const ID = SEED_IDS;
 const DEV_PASSWORD = SEED_DEV_PASSWORD;
 
 // ============================================================
-// Danh mục domain
-// ============================================================
-
-/**
- * Bảng `DomainCatalog` là khóa ngoại của `DomainConfig`, nên nó phải có dữ liệu
- * trước mọi thứ khác. Ở bản chạy thật, tiến trình khởi động đồng bộ bảng này từ
- * adapter registry; ở đây seed đóng vai trò đó cho tới khi registry tồn tại.
- *
- * Theo bất biến I29: chỉ UPSERT, không bao giờ DELETE — xóa hàng sẽ phá khóa
- * ngoại của những DomainConfig đã tồn tại.
- */
-async function seedDomainCatalog(): Promise<void> {
-  for (const entry of DOMAIN_CATALOG_SEED) {
-    await prisma.domainCatalog.upsert({
-      where: { domainType: entry.domainType },
-      update: {
-        tier: entry.tier,
-        displayName: entry.displayName,
-        defaultOrder: entry.defaultOrder,
-        isAvailable: true,
-      },
-      create: entry,
-    });
-  }
-}
+// (Catalog domain nay do `scripts/sync-catalog.ts` đồng bộ riêng trong job
+// `udp-migrate` — dữ liệu nền tảng, không phụ thuộc UDP_SEED.)
 
 // ============================================================
 // Người dùng và project
@@ -512,8 +489,7 @@ async function seedSdkKey(
 // ============================================================
 
 async function main(): Promise<void> {
-  await seedDomainCatalog();
-
+  // Catalog đã được `scripts/sync-catalog.ts` đồng bộ trước trong job udp-migrate.
   const { owner, project } = await seedUsersAndProject();
 
   const devEnv = await prisma.environment.findUniqueOrThrow({
