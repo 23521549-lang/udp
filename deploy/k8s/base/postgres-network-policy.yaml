@@ -1,0 +1,29 @@
+# [Plan #65] Chỉ client của database tới được PostgreSQL. Postgres kèm cụm không có TLS (UDP_DB_TLS_MODE=disable,
+# Plan #64), nên đây là lớp giữa mật khẩu role và một pod bất kỳ trong cụm. Danh sách khớp đúng những workload mang
+# chuỗi kết nối - `deploy/tests/manifests.test.ts` dựng lại nó từ manifest và đỏ khi lệch. `kubectl exec` vào
+# postgres-0 (vm-restore, E2E) đi qua socket trong pod nên không qua policy này.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-clients
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - core-backend
+                  - flag-service
+                  - pd-controller
+                  - udp-backup
+                  - udp-migrate
+      ports:
+        - port: 5432
+          protocol: TCP

@@ -6,6 +6,8 @@ namespace: udp
 resources:
   - namespace.yaml
   - postgres.yaml
+  # [Plan #65] chỉ client của database tới được cổng 5432
+  - postgres-network-policy.yaml
   - prometheus.yaml
   - migrate-job.yaml
   - core-backend.yaml

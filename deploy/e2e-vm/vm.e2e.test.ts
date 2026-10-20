@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { flaggerGatePath } from "@udp/http/flagger-gate";
 import { beforeAll, describe, expect, it } from "vitest";
 import { NAMESPACE } from "../src/cluster.js";
+import { expectPostgresOnlyForClients } from "../e2e/netpol-probe.js";
 import { OIDC_PATH } from "../src/vm.js";
 import {
   api,
@@ -238,6 +239,12 @@ describe("Bảng điều khiển nền tảng (Plan #53 QĐ-6)", () => {
       ready: true,
     });
   }, 240_000);
+});
+
+describe("NetworkPolicy của PostgreSQL (Plan #65)", () => {
+  it("k3s cưỡng chế: client của UDP nối được 5432, nhãn lạ và namespace khác thì không", async () => {
+    await expectPostgresOnlyForClients(kube, NAMESPACE);
+  }, 900_000);
 });
 
 /** Mã của proxy trước service (nginx của Portal, Traefik) khi phía sau chưa nhận kết nối */
