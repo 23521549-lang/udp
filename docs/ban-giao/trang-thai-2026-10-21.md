@@ -5,18 +5,22 @@ người tiếp theo"; tệp đó giữ nguyên phần Plan #63. Nguồn sự th
 `docs/measurements/` (nợ trong `kiem-chung-con-no.md`); của từng plan là `docs/plans/`.
 
 **Trạng thái một câu:** Plan #64 (nhánh `p64-sua-loi-ci`, PR #2, đích `p61-dong-goi`) đã sửa bốn lỗi của lượt CI #46
-(64a-64d, 16-17/10) và hai lỗi chỉ lộ ra sau đó (64e, 64f, 21/10), cùng với tài liệu (64g). **Mọi cổng chạy được trên
-máy đều xanh, nhưng chưa có lượt CI nào chạy trên mã mới**: còn chờ chủ repo push. **53 mục nợ kiểm chứng.**
+(64a-64d, 16-17/10) và hai lỗi chỉ lộ ra sau đó (64e, 64f, 21/10), cùng với tài liệu (64g). **Lượt `39506463646`
+(`9737605`) là lượt CI đầu tiên xanh cả 8 job** (`build-smoke` bỏ qua đúng thiết kế). Plan #65 (mục 3c) thêm
+NetworkPolicy cho PostgreSQL trong cụm và sửa ba câu thiết kế nói quá. **53 mục nợ kiểm chứng.**
+
+Quyền của phiên 21/10: được push các nhánh và gộp PR giữa các nhánh không phải `main`; **không** merge vào `main` -
+PR #1 do chủ repo gộp.
 
 ---
 
 ## 1. Nhánh và PR
 
-| Nhánh            | Đỉnh          | Vai                                                              |
-| ---------------- | ------------- | ---------------------------------------------------------------- |
-| `main` (remote)  | `46a1049`     | Plan #15 (12/09) - lượt đêm vẫn chạy trên đây                    |
-| `p61-dong-goi`   | `46d6ed6`     | Plan #16-#63, PR #1 vào `main`                                   |
-| `p64-sua-loi-ci` | sau `caabeca` | Plan #64, PR #2 (nháp) vào `p61-dong-goi`; nhánh local chưa push |
+| Nhánh            | Đỉnh          | Vai                                           |
+| ---------------- | ------------- | --------------------------------------------- |
+| `main` (remote)  | `46a1049`     | Plan #15 (12/09) - lượt đêm vẫn chạy trên đây |
+| `p61-dong-goi`   | `46d6ed6`     | Plan #16-#63, PR #1 vào `main`                |
+| `p64-sua-loi-ci` | sau `0831093` | Plan #64 và #65, PR #2 vào `p61-dong-goi`     |
 
 `fix/catalog-sync-migrate-job` (remote) tách từ `main` cũ và đã được gộp vào `p64-sua-loi-ci` bằng squash (`340b316`);
 không còn gì riêng trên đó.
@@ -58,13 +62,13 @@ Bằng chứng trên máy:
    `(ENOTFOUND) tenant/user postgres.<ref> not found` - kể cả `i22-writer-matrix` có sẵn, nên không phải lỗi của mã
    mới. Thường là project gói free bị tạm dừng vì không dùng. Hệ quả: `pnpm db:verify-chain` (bằng chứng đỏ rồi xanh
    của cổng `catalog-seeded`), `writer-matrix.test.ts` (đối chiếu hàng `Owner` với GRANT thật),
-   `schema-conformance`, `ledger-row-conformance` **chưa chạy**. Khôi phục project trên Supabase rồi chạy lại hai lệnh:
-   `pnpm db:verify-chain` và `pnpm --filter @udp/design-lint test`.
-2. **CI.** Lượt `39495017234` (`786d7a7`, mã của mục 3): `check`, `python`, `i28`, `signing-e2e`, `kind`,
-   `portal-demo` xanh. `vm` 10/11: sao lưu và khôi phục **chạy trọn** (64f đúng), nhưng đăng nhập 50 ms sau
-   `rollout status` nhận 502 - nginx của Portal gọi `core-backend` khi endpoint của Service chưa tới kube-proxy. Sửa
-   ở `9737605` (mục 3b), chưa chạy trên runner. Một rủi ro thấp còn đó: `ALTER DATABASE RENAME` trùng lúc
-   readinessProbe nối vào `udp` (QA C).
+   `schema-conformance`, `ledger-row-conformance` không chạy được ở máy. **Trên CI chúng đã xanh** (lượt
+   `39495017234`, database scratch của project CI): `catalog-seeded`, `writer-matrix` (hàng `Owner` khớp GRANT thật),
+   `schema-conformance`, `i22-writer-matrix` 166 ô. Còn thiếu đúng một bằng chứng: cổng `catalog-seeded` ĐỎ trên mã
+   cũ - cần `pnpm db:verify-chain` sau khi khôi phục project dev.
+2. **CI.** Lượt `39495017234` (`786d7a7`): `vm` 10/11 - sao lưu và khôi phục chạy trọn (64f đúng), đăng nhập 50 ms
+   sau `rollout status` nhận 502 (endpoint của Service chưa tới kube-proxy). Sửa ở `9737605`; lượt `39506463646` xanh
+   cả 8 job. Một rủi ro thấp còn đó: `ALTER DATABASE RENAME` trùng lúc readinessProbe nối vào `udp`.
 
 ## 3b. Sửa thêm trong lúc chờ CI (21/10)
 
@@ -79,6 +83,19 @@ Bằng chứng trên máy:
 Cả ba lỗi Portal chỉ lộ trong log của lượt CI xanh, không làm ô nào đỏ - nay mỗi loại có cổng. Portal 366/366 test,
 demo 17/17.
 
+## 3c. Plan #65 - NetworkPolicy cho PostgreSQL trong cụm (spec, plan: `docs/plans/plan65-*.md`)
+
+| Commit    | Nội dung                                                                                                           |
+| --------- | ------------------------------------------------------------------------------------------------------------------ |
+| `92f055b` | Cổng manifest: đúng một policy chọn postgres, hình dạng `toStrictEqual`, client dựng từ chuỗi kết nối, đối chứng   |
+| `5f65a9c` | `postgres-clients` (năm nhãn, cổng 5432); phép thử kẹp trên kind và k3s (`deploy/e2e/netpol-probe.ts`); `diagnose` |
+| `0831093` | Thiết kế: T12/§9/§3.1/§12.2 nói đúng `/internal` hôm nay chỉ có bí mật dùng chung; T15, §15.1, §16; I29; D-P57     |
+
+Ba vòng QA đổi plan ở năm chỗ: TokenReview tưởng đã có mà chưa; pod khác namespace gọi tên `postgres` gặp NXDOMAIN
+(xanh giả) - đi bằng ClusterIP; NetworkPolicy cộng dồn - cổng bắt policy thứ hai; kind v0.31 CÓ cưỡng chế nên đo ở
+cả hai cụm; khối §9 sửa tại chỗ để `internal-routes` không đỏ. Trên máy: `@udp/deploy` 93/93; hai vòng đột biến
+(bỏ policy ⇒ 6 ô đỏ; bỏ nhãn `udp-backup` ⇒ đúng hai ô của overlay `vm` đỏ), khôi phục khớp từng byte.
+
 ## 5. Thiết kế đã đổi gì (D-P56) - cần biết trước khi bảo vệ
 
 - **C2 nói thật một lần nữa:** thêm một TOOL vào domain đã có = **0** tệp ngoài thư mục adapter (I28 cưỡng chế, E1 đo
@@ -86,14 +103,17 @@ demo 17/17.
   mới. Bản trước ghi 0 cho domain, nhưng mã chưa bao giờ như vậy (từ 24-25/09): catalog do owner ghi từ bản khai
   `DOMAIN_CATALOG_SEED`, registry chỉ được kiểm khớp lúc khởi động. Đây là "đường rò thứ mười một" ở §5.3, cùng lý do
   với D-6 (giữ kiểm kiểu union `DomainType`) và với ma trận writer §1.2 (service không ghi dữ liệu nền tảng).
-- **I29** viết lại theo mã; chiều ngược (domain còn dùng được mà không còn adapter) thành giới hạn §16.
+- **I29** viết lại theo mã; chiều ngược (domain còn dùng được mà không còn adapter) thành giới hạn §16 - không bật mới
+  được (422), nhưng project đã bật domain đó thì job áp domain thất bại.
 - **T15** (nghe lén, MITM đường service → PostgreSQL) và giới hạn §16: máy công khai chạy plaintext trong mạng pod
-  của k3s một node; điều kiện gỡ ghi trong hàng đó.
+  của k3s một node, bù bằng NetworkPolicy `postgres-clients` (Plan #65); gỡ hẳn khi postgres kèm cụm có TLS.
+- **T12 (D-P57):** `/internal/*` hôm nay chỉ có bí mật dùng chung - NetworkPolicy theo cổng nội bộ và `TokenReview`
+  đều chưa làm, vì mỗi service một cổng. Giới hạn §16, gỡ khi tách cổng nội bộ.
 
 ## 6. Việc tiếp
 
-1. **Push và đọc CI:** `git push origin p64-sua-loi-ci`, rồi `gh run list --branch p64-sua-loi-ci --limit 1`. Đọc
-   trước khi kết luận gì - bài học của 04/10.
+1. **Đọc CI của Plan #65** (`gh run list --branch p64-sua-loi-ci --limit 1`): job `kind` và `vm` phải xanh cả phép thử
+   kẹp. Đọc trước khi kết luận gì - bài học của 04/10.
 2. Khôi phục project Supabase dev rồi chạy hai lệnh ở mục 4.1.
 3. PR #2 xanh ⇒ gộp vào `p61-dong-goi` ⇒ PR #1 chạy lại ⇒ xanh thì gộp vào `main` ⇒ pha 2 của `ci-github-green`.
 4. Rồi `sdk-publish-real`, và E5 (bằng chứng của C1, chưa chạy).
