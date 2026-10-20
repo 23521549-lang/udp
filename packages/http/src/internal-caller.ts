@@ -8,11 +8,12 @@ import { UnauthenticatedError } from "./errors.js";
  * có route nội bộ: Service 2 (bên gọi S1, S3) và Service 1 (bên gọi S3, Plan #39). Hai bản chép
  * là hai chỗ để một bản sửa lọt mất một bên.
  *
- * **Đây là BƯỚC MỘT của T12, không phải toàn bộ T12.** §3.2 và §12 quy định lớp chính là *SA
- * token của Kubernetes + TokenReview*, cộng NetworkPolicy; với `PATCH /internal/rules/:id` của S2
+ * **Đây là BƯỚC MỘT của T12, không phải toàn bộ T12.** §3.1 và §12 quy định lớp chính là *SA
+ * token của Kubernetes + TokenReview*, cộng NetworkPolicy - cả hai CHƯA làm (§16, Plan #65), nên hôm
+ * nay bí mật dùng chung là lớp xác thực duy nhất của `/internal`; với `PATCH /internal/rules/:id` của S2
  * còn thêm phép kiểm lease (`assertFencing`) — "chỉ có token hợp lệ là chưa đủ". §9 cho phép
- * "mTLS **hoặc** shared secret", nên bí mật dùng chung là hợp lệ, nhưng nó là lớp phòng khi
- * NetworkPolicy bị cấu hình sai chứ không phải lớp duy nhất. Guard đứng đúng chỗ §3.2 chỉ định để
+ * "mTLS **hoặc** shared secret", nên bí mật dùng chung là hợp lệ, nhưng thiết kế muốn nó là lớp phòng
+ * khi NetworkPolicy bị cấu hình sai chứ không phải lớp duy nhất. Guard đứng đúng chỗ §3.2 chỉ định để
  * ngày thêm TokenReview không phải sửa một call-site nào.
  */
 

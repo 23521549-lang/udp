@@ -89,9 +89,10 @@ export function createApp(): Express {
   });
 
   /**
-   * `/internal/*` KHONG duoc phoi ra Internet — §9 noi ro. O tang ha tang, dieu
-   * do do NetworkPolicy va Ingress dam bao; o day chi co bi mat dung chung, la
-   * lop phong khi hai thu kia bi cau hinh sai.
+   * `/internal/*` KHONG duoc phoi ra Internet — §9 noi ro. O tang ha tang, ingress
+   * va nginx cua Portal chi route duong cong khai; NetworkPolicy theo cong noi bo
+   * CHUA co vi /internal chung cong voi /sdk (§16, Plan #65). Bi mat dung chung o
+   * day vi vay la lop xac thuc DUY NHAT cua /internal, khong phai lop phong.
    */
   /**
    * Sẵn sàng nhận request chưa — CÓ chạm database, khác hẳn `/healthz`.
