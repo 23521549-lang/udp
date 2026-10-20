@@ -357,6 +357,16 @@ describe("Tổng quan (UX-5, UX-12, UX-29)", () => {
 
   it("Ctrl K: 'Mời thành viên' và 'Tạo SDK key'; phím số tắt được", async () => {
     const detail = setup();
+    // 'Mời thành viên' mở tab Thành viên, tab đó hỏi lời mời, team của project và team của người dùng
+    server.use(
+      http.get(`${API}/projects/:id/invitations`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/invitations")),
+      ),
+      http.get(`${API}/projects/:id/teams`, () =>
+        HttpResponse.json(golden("GET /projects/{id}/teams")),
+      ),
+      http.get(`${API}/teams`, () => HttpResponse.json(golden("GET /teams"))),
+    );
     const ordered = [...detail.environments].sort((a, b) => a.rank - b.rank);
     const { router } = renderApp(`/app/projects/${detail.project.id}`);
     await screen.findByRole("region", { name: "Cloud" });
