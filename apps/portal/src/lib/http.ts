@@ -260,9 +260,18 @@ async function problemOf(res: Response): Promise<ProblemDetails | undefined> {
   if (!type.includes("json")) return undefined;
   try {
     const body = (await res.json()) as Partial<ProblemDetails>;
-    return typeof body.title === "string" && typeof body.status === "number"
-      ? (body as ProblemDetails)
-      : undefined;
+    if (typeof body.title !== "string" || typeof body.status !== "number") {
+      return undefined;
+    }
+    /**
+     * RFC 9457 §3.1.1: `type` vắng thì là "about:blank". Điền ở ĐÂY, nơi duy nhất dựng ProblemDetails từ dây,
+     * để kiểu `type: string` là sự thật cho mọi chỗ đọc - `problemSlugOf` từng `.split` trên undefined và làm
+     * chính màn báo lỗi ném TypeError.
+     */
+    return {
+      ...body,
+      type: typeof body.type === "string" ? body.type : "about:blank",
+    } as ProblemDetails;
   } catch {
     return undefined;
   }
