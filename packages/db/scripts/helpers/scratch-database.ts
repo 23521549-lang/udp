@@ -326,6 +326,24 @@ export async function withScratchDatabase(
 }
 
 /**
+ * Vì sao một lượt dùng database scratch hỏng - hoặc `undefined` khi lỗi đã tự in.
+ *
+ * Lỗi của một BƯỚC (`step`, tức `execFileSync` với stdio nối thẳng) đã in ra màn hình trước khi tới
+ * đây, nên in lại chỉ thêm một dòng "Command failed". Lỗi của chính lượt chạy - nối, tạo, xoá database -
+ * thì chưa ai in: nuốt nó là để lại một câu kết không nói vì sao (`verify-chain` từng như thế, trên một
+ * project Supabase không còn nối được). Mã lỗi đi kèm khi thông điệp chưa có nó: thông điệp của pooler
+ * nói gì đó về tenant, còn mã mới nói đó là lỗi gì.
+ */
+export function runFailureDetail(err: unknown): string | undefined {
+  if (!(err instanceof Error)) return String(err);
+  if (err.message.startsWith("Command failed")) return undefined;
+  const { code } = err as { code?: unknown };
+  return typeof code === "string" && !err.message.includes(code)
+    ? `${err.message} (${code})`
+    : err.message;
+}
+
+/**
  * Chạy một lệnh con, nối thẳng stdio, ném khi mã thoát khác 0.
  *
  * `shell: true` để `pnpm`/`prisma`/`tsx` (là `.cmd` trên Windows) chạy được;

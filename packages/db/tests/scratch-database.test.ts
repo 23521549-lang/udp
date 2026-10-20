@@ -6,6 +6,7 @@ import {
   expectedRoleOf,
   maskForGitHub,
   pointAt,
+  runFailureDetail,
   SCRATCH_NAME_PATTERN,
   scratchEnv,
   scratchNameFromEnv,
@@ -258,5 +259,52 @@ describe("maskForGitHub", () => {
       (l) => lines.push(l),
     );
     expect(lines).not.toContain("::add-mask::short");
+  });
+});
+
+/**
+ * Một lượt dùng database scratch hỏng thì phải nói VÌ SAO.
+ *
+ * `verify-chain` từng kết thúc bằng `catch { … }` trần: database dev không nối được (ENOTFOUND của
+ * pooler) và người chạy chỉ thấy "Chuỗi migration KHÔNG dựng lại được từ đầu", không một chữ về
+ * nguyên nhân. Lỗi của một BƯỚC đã tự in ra stdio nên không in lại; lỗi của chính lượt chạy - nối,
+ * tạo, xoá database - thì chưa ai in.
+ */
+describe("runFailureDetail", () => {
+  it("lỗi của một bước (execFileSync) đã tự in ⇒ không in lại", () => {
+    expect(
+      runFailureDetail(new Error("Command failed: prisma migrate deploy")),
+    ).toBeUndefined();
+  });
+
+  it("lỗi nối database ⇒ nói nguyên văn, kèm mã nếu thông điệp chưa có", () => {
+    const pooler = Object.assign(
+      new Error("tenant/user postgres.abc not found"),
+      { code: "XX000" },
+    );
+    expect(runFailureDetail(pooler)).toBe(
+      "tenant/user postgres.abc not found (XX000)",
+    );
+    const dns = Object.assign(new Error("(ENOTFOUND) tenant/user x"), {
+      code: "ENOTFOUND",
+    });
+    expect(runFailureDetail(dns)).toBe("(ENOTFOUND) tenant/user x");
+  });
+
+  it("thứ bị ném không phải Error ⇒ vẫn nói ra, không nuốt", () => {
+    expect(runFailureDetail("boom")).toBe("boom");
+  });
+
+  /** Cổng cùng loại: script nào dựng database scratch cũng không được nuốt lỗi của lượt chạy */
+  it("mọi script dùng withScratchDatabase in lỗi qua runFailureDetail, không `catch` trần", () => {
+    for (const name of ["verify-chain.ts", "test-scratch.ts"]) {
+      const src = readFileSync(
+        new URL(`../scripts/${name}`, import.meta.url),
+        "utf8",
+      );
+      expect(src, name).toContain("withScratchDatabase(");
+      expect(src, name).toContain("runFailureDetail(err)");
+      expect(src, name).not.toMatch(/catch\s*\{/);
+    }
   });
 });
