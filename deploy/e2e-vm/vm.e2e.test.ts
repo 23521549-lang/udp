@@ -240,6 +240,9 @@ describe("Bảng điều khiển nền tảng (Plan #53 QĐ-6)", () => {
   }, 240_000);
 });
 
+/** Mã của proxy trước service (nginx của Portal, Traefik) khi phía sau chưa nhận kết nối */
+const PROXY_NOT_READY = new Set([502, 503, 504]);
+
 describe("sao lưu → khôi phục (QĐ-7)", () => {
   it("CronJob đẩy bản dump ra ngoài máy; khôi phục đưa database về đúng lúc sao lưu", async () => {
     const sink = await startSink(target.settings.UDP_BACKUP_UPLOAD_URL);
@@ -302,8 +305,22 @@ describe("sao lưu → khôi phục (QĐ-7)", () => {
       );
       expect(restore.status).toBe(0);
 
-      expect((await login(target, owner)).status).toBe(200);
-      expect((await login(target, later)).status).toBe(401);
+      // `rollout status` báo xong khi pod Ready, nhưng endpoint của Service còn một nhịp nữa mới tới kube-proxy:
+      // trong khoảng đó nginx của Portal (proxy `/api/`) gặp connection refused và trả 502 (lượt CI
+      // `39495017234`: đăng nhập 50 ms sau rollout). Chỉ chờ qua mã của TẦNG PROXY - mọi mã khác là câu trả lời
+      // thật của UDP và được khẳng định ngay.
+      const afterRestore = (user: Parameters<typeof login>[1]) =>
+        eventually(
+          async () => {
+            const reply = await login(target, user);
+            return PROXY_NOT_READY.has(reply.status) ? undefined : reply;
+          },
+          60_000,
+          "đăng nhập qua Traefik sau khôi phục",
+          1_000,
+        );
+      expect((await afterRestore(owner)).status).toBe(200);
+      expect((await afterRestore(later)).status).toBe(401);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       await sink.close();
