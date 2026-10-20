@@ -143,7 +143,7 @@ function isInternalDbHost(host: string): boolean {
 /**
  * Tùy chọn TLS cho một lần mở kết nối — hàm thuần, dễ test.
  *
- * Rào fail-closed (T2): `disable` mà host không nội bộ thì NÉM ngay lúc khởi
+ * Rào fail-closed (T15, §12): `disable` mà host không nội bộ thì NÉM ngay lúc khởi
  * động thay vì để credential đi plaintext câm lặng. Kịch bản nó chặn: ai đó
  * export `UDP_DB_TLS_MODE=disable` để chạy cụm kind rồi cùng shell chạy service
  * trỏ Supabase — env rò sang, password DB đi trần trên internet công cộng.
@@ -177,7 +177,7 @@ export function resolveTlsOptions(
  *   ?sslcert / ?sslkey → ssl = {}              (mất rejectUnauthorized)
  *
  * `pg/lib/connection-parameters.js` làm `Object.assign({}, config, parse(url))`,
- * nên chuỗi kết nối THẮNG. Đây đúng là thứ mô hình đe dọa T2 (§12) dựa vào để
+ * nên chuỗi kết nối THẮNG. Đây đúng là thứ mô hình đe dọa T15 (§12) dựa vào để
  * chống MITM, nên nó không được phép tắt bằng một tham số URL.
  */
 const TLS_OVERRIDE_PARAMS = [

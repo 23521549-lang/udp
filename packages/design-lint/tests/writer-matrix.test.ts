@@ -28,8 +28,17 @@ import { modelToTableMap, openClient } from "../src/db-schema.js";
 const ROLES = ["udp_s1", "udp_s2", "udp_s3"] as const;
 type Role = (typeof ROLES)[number];
 
-/** Ô "Writer" của §1.2 dùng "Service 1" / "S1" lẫn lộn; quy về một dạng */
-function writerRoleOf(row: WriterMatrixRow): Role | "split" | "append-only" {
+/**
+ * Ô "Writer" của §1.2 dùng "Service 1" / "S1" lẫn lộn; quy về một dạng.
+ *
+ * [Plan #64] `**Owner**` = dữ liệu nền tảng, KHÔNG service nào ghi (catalog domain: job migrate và seed
+ * ghi bằng owner). Phải nhận nó tường minh: thiếu nhánh này thì "không service nào" rơi xuống phép tìm
+ * "Service N" và hàng bị coi là không đọc được.
+ */
+function writerRoleOf(
+  row: WriterMatrixRow,
+): Role | "split" | "append-only" | "owner" {
+  if (/\*\*Owner\*\*/.test(row.writer)) return "owner";
   if (/Append-only/i.test(row.writer)) return "append-only";
   if (/Chia theo cột/i.test(row.writer)) return "split";
   const m = /Service\s*(\d)/.exec(row.writer) ?? /\bS(\d)\b/.exec(row.writer);
@@ -134,7 +143,11 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
     for (const row of rows) {
       const who = writerRoleOf(row);
       const roles: Role[] =
-        who === "append-only" ? [...ROLES] : who === "split" ? [] : [who];
+        who === "append-only"
+          ? [...ROLES]
+          : who === "split" || who === "owner"
+            ? []
+            : [who];
       for (const role of roles) {
         for (const model of modelsOf(row)) {
           const table = modelToTable.get(model) as string;
@@ -158,6 +171,21 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
     for (const row of rows) {
       const who = writerRoleOf(row);
       if (who === "append-only" || who === "split") continue;
+      if (who === "owner") {
+        // Không service nào là writer ⇒ không service nào có quyền ghi NÀO, kể cả một cột.
+        for (const model of modelsOf(row)) {
+          const table = modelToTable.get(model) as string;
+          for (const role of ROLES) {
+            for (const priv of ["INSERT", "UPDATE", "DELETE"] as const) {
+              if (grants.has(`${role}|${table}|${priv}`))
+                problems.push(
+                  `${role} có ${priv} trên ${table}, nhưng §1.2 nói chỉ owner ghi`,
+                );
+            }
+          }
+        }
+        continue;
+      }
 
       for (const model of modelsOf(row)) {
         const table = modelToTable.get(model) as string;
