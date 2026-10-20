@@ -1,15 +1,16 @@
 /**
  * Danh mục 16 Domain Adapter (Design §5.5).
  *
- * ĐÂY LÀ SCAFFOLD TẠM THỜI. Theo §5.3 và bất biến I29, nguồn sự thật của bảng
- * `DomainCatalog` là **adapter registry**: mỗi service lúc khởi động quét thư mục
- * `modules/domain-adapter/*` bằng readdir + import() động, rồi UPSERT một hàng cho
- * mỗi adapter tìm thấy. Đó là điều kiện để chỉ số "0 file ngoài thư mục adapter"
- * của đóng góp C2 đúng: thêm domain mới không được đụng tới migration hay file này.
+ * `DOMAIN_CATALOG_SEED` là bản khai NỀN TẢNG và là nguồn ghi DUY NHẤT của bảng
+ * `DomainCatalog` (§5.3, I29): `syncDomainCatalog` (`@udp/db`) đồng bộ nó bằng danh tính
+ * owner ở job `udp-migrate` (luôn chạy) và ở seed - một hàm, hai chỗ gọi. Ba service chỉ
+ * có `SELECT` trên bảng; lúc khởi động core-backend chỉ KIỂM mọi adapter trong registry
+ * đều có domain đang dùng được ở đây (`assertRegistryCoveredByCatalog`).
  *
- * Khi `domain-catalog.sync.ts` tồn tại, hằng số này chỉ còn dùng cho seed dev và
- * cho test cần một danh mục xác định; nó KHÔNG được trở thành đường ghi thứ hai
- * vào bảng `DomainCatalog`.
+ * Bản đầu của chú thích này hứa registry sẽ tự đồng bộ bảng lúc khởi động và file này
+ * chỉ là scaffold. Điều đó chưa từng thành mã: ghi bảng từ registry đòi role service có
+ * quyền ghi dữ liệu nền tảng, trái ma trận writer §1.2. Hệ quả cho C2 được nói thẳng ở
+ * §5.3 - xem đoạn ngay dưới.
  *
  * `tier` phân loại theo §5.5, dùng để nhóm trên UI.
  * `defaultOrder` CHỈ để sắp xếp hiển thị và phá hòa trong cùng một bậc topo —

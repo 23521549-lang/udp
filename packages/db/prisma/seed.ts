@@ -15,6 +15,7 @@ import {
   type FlagServe,
 } from "@udp/shared-types/evaluation";
 import { createPgAdapter } from "../src/adapter.js";
+import { syncDomainCatalog } from "../src/domain-catalog.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { sdkKeyMaterialOf } from "../src/sdk-key.js";
 import {
@@ -65,10 +66,6 @@ const ID = SEED_IDS;
 
 /** Mật khẩu dev — chỉ dùng ở máy cá nhân và cụm demo */
 const DEV_PASSWORD = SEED_DEV_PASSWORD;
-
-// ============================================================
-// (Catalog domain nay do `scripts/sync-catalog.ts` đồng bộ riêng trong job
-// `udp-migrate` — dữ liệu nền tảng, không phụ thuộc UDP_SEED.)
 
 // ============================================================
 // Người dùng và project
@@ -489,7 +486,16 @@ async function seedSdkKey(
 // ============================================================
 
 async function main(): Promise<void> {
-  // Catalog đã được `scripts/sync-catalog.ts` đồng bộ trước trong job udp-migrate.
+  /**
+   * [Plan #64 64e] Catalog domain TRƯỚC mọi thứ khác: nó là khoá ngoại của `domain_configs`.
+   *
+   * Job `udp-migrate` đã đồng bộ nó bằng `scripts/sync-catalog.ts` dù `UDP_SEED` là gì,
+   * nhưng seed còn chạy ở những đường không đi qua job đó: `test:scratch`, `verify-chain`,
+   * `pnpm db:seed`. Bỏ bước này khỏi seed (`340b316`) làm cả bộ test CI chết ở FK. Cùng một
+   * hàm, cùng bản khai, cùng danh tính owner với job migrate - không phải đường ghi thứ hai;
+   * chạy hai lần trong job có `UDP_SEED=true` là upsert, vô hại.
+   */
+  const catalog = await syncDomainCatalog(prisma, DOMAIN_CATALOG_SEED);
   const { owner, project } = await seedUsersAndProject();
 
   const devEnv = await prisma.environment.findUniqueOrThrow({
@@ -508,7 +514,7 @@ Seed hoàn tất.
   Đăng nhập     ${SEED_OWNER_EMAIL}   / ${DEV_PASSWORD}
                 ${SEED_ADMIN_EMAIL} / ${DEV_PASSWORD}   (PLATFORM_ADMIN)
 
-  Domain        ${DOMAIN_CATALOG_SEED.length} domain trong DomainCatalog
+  Domain        ${catalog.upserted} domain trong DomainCatalog
   Project       ${project.name} (${project.id})
   Environment   ${DEFAULT_ENVIRONMENTS.map((e) => e.name).join(", ")}
 
