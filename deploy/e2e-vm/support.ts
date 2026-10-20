@@ -4,7 +4,7 @@ import { request as httpsRequest } from "node:https";
 import type { TLSSocket } from "node:tls";
 import { COOKIE_NAMES, CSRF_HEADER } from "@udp/config/constants";
 import { NAMESPACE } from "../src/cluster.js";
-import { pinnedKubectl } from "../src/install.js";
+import { pinnedKubectl, pinnedKubectlAsync } from "../src/install.js";
 import {
   publicOrigin,
   readVmSettings,
@@ -21,6 +21,8 @@ import { parseSseBlock, type SseEvent } from "../e2e/support.js";
  */
 
 export const kube = pinnedKubectl(VM_KUBECTL_PIN);
+/** Cho lúc test còn phải phục vụ bồn nhận trong cùng tiến trình - xem `runAsync` */
+export const kubeAsync = pinnedKubectlAsync(VM_KUBECTL_PIN);
 
 export interface Target {
   settings: VmSettings;
@@ -317,7 +319,15 @@ export interface Sink {
 }
 
 export function startSink(uploadUrl: string): Promise<Sink> {
-  const port = Number(new URL(uploadUrl).port);
+  const { port: rawPort } = new URL(uploadUrl);
+  // URL không ghi cổng cho `port` rỗng, và `Number("")` là 0: bồn sẽ IM LẶNG nghe một cổng ngẫu nhiên
+  // trong khi container upload vẫn đẩy tới cổng mặc định - job sao lưu hỏng mà không ai biết vì sao.
+  if (rawPort === "") {
+    throw new Error(
+      `UDP_BACKUP_UPLOAD_URL thiếu cổng tường minh: ${uploadUrl}`,
+    );
+  }
+  const port = Number(rawPort);
   const received = new Map<string, Buffer>();
   const server = createServer((req, res) => {
     if (req.method !== "PUT") {
@@ -340,6 +350,9 @@ export function startSink(uploadUrl: string): Promise<Sink> {
             server.close(() => {
               done();
             });
+            // [Plan #64 64f] `close` chỉ tự đóng kết nối RỖI: một upload còn dở giữ nó mở mãi, và
+            // container upload không có hạn riêng - `finally` của test sẽ kẹt tới hết giờ của bước CI.
+            server.closeAllConnections();
           }),
       });
     });

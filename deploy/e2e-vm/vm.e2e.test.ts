@@ -12,6 +12,7 @@ import {
   call,
   eventually,
   kube,
+  kubeAsync,
   login,
   newUser,
   openStream,
@@ -245,7 +246,10 @@ describe("sao lưu → khôi phục (QĐ-7)", () => {
     const dir = mkdtempSync(join(tmpdir(), "udp-restore-"));
     try {
       const job = `udp-backup-e2e-${String(Date.now())}`;
-      kube.run([
+      // [Plan #64 64f] Chờ BẤT ĐỒNG BỘ: bồn nhận sống trong chính tiến trình này. `kube.run` (spawnSync)
+      // đứng yên event loop suốt `wait`, bồn không đọc được upload, job không bao giờ xong - lượt CI
+      // `39024324636` đỏ đúng như thế, curl thoát 56 khi bồn đóng.
+      await kubeAsync.run([
         "create",
         "job",
         job,
@@ -253,14 +257,29 @@ describe("sao lưu → khôi phục (QĐ-7)", () => {
         "-n",
         NAMESPACE,
       ]);
-      kube.run([
-        "wait",
-        "--for=condition=complete",
-        `job/${job}`,
-        "-n",
-        NAMESPACE,
-        "--timeout=300s",
-      ]);
+      try {
+        await kubeAsync.run([
+          "wait",
+          "--for=condition=complete",
+          `job/${job}`,
+          "-n",
+          NAMESPACE,
+          "--timeout=300s",
+        ]);
+      } catch (err) {
+        // `wait --for=condition=complete` không thoát sớm khi job Failed và chỉ nói "timed out":
+        // in log của mọi container để lượt đỏ tự nói lý do.
+        console.error(
+          kube.ask([
+            "logs",
+            `job/${job}`,
+            "-n",
+            NAMESPACE,
+            "--all-containers",
+          ]) ?? "(không đọc được log của job)",
+        );
+        throw err;
+      }
       const [[name, dump] = ["", Buffer.alloc(0)]] = [...sink.received];
       expect(name).toMatch(/^\/udp-[A-Z][a-z]{2}\.dump$/);
       // Chữ ký của định dạng custom của pg_dump
