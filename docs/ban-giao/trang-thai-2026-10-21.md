@@ -60,9 +60,24 @@ Bằng chứng trên máy:
    của cổng `catalog-seeded`), `writer-matrix.test.ts` (đối chiếu hàng `Owner` với GRANT thật),
    `schema-conformance`, `ledger-row-conformance` **chưa chạy**. Khôi phục project trên Supabase rồi chạy lại hai lệnh:
    `pnpm db:verify-chain` và `pnpm --filter @udp/design-lint test`.
-2. **CI chưa chạy trên mã mới.** Job `vm` sau bước sao lưu (khôi phục bằng `vm-restore.ts`, đăng nhập lại) chưa từng
-   chạy trên runner: lỗi kế tiếp, nếu có, chỉ lộ ở lượt sau. QA C đã đọc trước: `pg_restore` chạy trong pod postgres
-   qua socket nên không vướng TLS; một rủi ro thấp là `ALTER DATABASE RENAME` trùng lúc readinessProbe nối vào `udp`.
+2. **CI.** Lượt `39495017234` (`786d7a7`, mã của mục 3): `check`, `python`, `i28`, `signing-e2e`, `kind`,
+   `portal-demo` xanh. `vm` 10/11: sao lưu và khôi phục **chạy trọn** (64f đúng), nhưng đăng nhập 50 ms sau
+   `rollout status` nhận 502 - nginx của Portal gọi `core-backend` khi endpoint của Service chưa tới kube-proxy. Sửa
+   ở `9737605` (mục 3b), chưa chạy trên runner. Một rủi ro thấp còn đó: `ALTER DATABASE RENAME` trùng lúc
+   readinessProbe nối vào `udp` (QA C).
+
+## 3b. Sửa thêm trong lúc chờ CI (21/10)
+
+| Commit    | Nội dung                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------ |
+| `786d7a7` | `verify-chain` in lý do lượt chạy hỏng (từng nuốt lỗi); `runFailureDetail` dùng chung với `test-scratch`     |
+| `ec8f0fd` | Portal: ProblemDetails thiếu `type` ⇒ `about:blank` (RFC 9457) - màn báo lỗi từng ném `TypeError`            |
+| `4bc160c` | Portal: trùng key React làm đỏ test; mock `GET /admin/jobs` lọc theo `state` như máy chủ                     |
+| `456835d` | Portal: request không ai khai làm đỏ test (MSW `"error"` chỉ in); khai ba handler còn thiếu ở `project-ux58` |
+| `9737605` | E2E máy ảo: đăng nhập sau khôi phục chờ qua 502/503/504 của tầng proxy, tối đa 60 giây                       |
+
+Cả ba lỗi Portal chỉ lộ trong log của lượt CI xanh, không làm ô nào đỏ - nay mỗi loại có cổng. Portal 366/366 test,
+demo 17/17.
 
 ## 5. Thiết kế đã đổi gì (D-P56) - cần biết trước khi bảo vệ
 
@@ -82,8 +97,9 @@ Bằng chứng trên máy:
 2. Khôi phục project Supabase dev rồi chạy hai lệnh ở mục 4.1.
 3. PR #2 xanh ⇒ gộp vào `p61-dong-goi` ⇒ PR #1 chạy lại ⇒ xanh thì gộp vào `main` ⇒ pha 2 của `ci-github-green`.
 4. Rồi `sdk-publish-real`, và E5 (bằng chứng của C1, chưa chạy).
-5. Ngoài phạm vi, đã ghi nhận: lỗi trùng React key ở `AdminOverviewPage.tsx` (`RecentFailedJobs`); lượt đêm trên
-   `main` (Plan #15) đỏ hai lần ở `test` (09/10, 17/10).
+5. Ngoài phạm vi, đã ghi nhận: lượt đêm trên `main` (Plan #15) đỏ hai lần ở `test` (09/10, 17/10) - hết khi PR #1
+   vào `main`. Nhánh local `main`, `ux58-prototype` đã nằm trọn trong `p64-sua-loi-ci`; nhánh remote
+   `fix/catalog-sync-migrate-job` đã vào qua squash `340b316`, xoá khi PR #1 vào `main`.
 
 ## 7. Máy này
 
