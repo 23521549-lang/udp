@@ -36,6 +36,27 @@ useLocaleStore.setState({ locale: "vi" });
  * kiểm.
  */
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+
+/**
+ * Hai phần tử cùng `key` là cảnh báo của React chứ không phải lỗi: test vẫn xanh, và React có thể nhân đôi
+ * hay bỏ sót một dòng mà không ai thấy. Lần đầu nó lộ ra là trong log CI (`RecentFailedJobs`, vì mock trả cùng
+ * một danh sách cho hai trạng thái job). Đổi cảnh báo thành ô đỏ để loại lỗi này không trôi qua lần nữa.
+ */
+const duplicateKeys: string[] = [];
+const consoleError = console.error.bind(console);
+console.error = (...args: unknown[]) => {
+  const text = args.map(String).join(" ");
+  if (text.includes("Encountered two children with the same key")) {
+    duplicateKeys.push(text.slice(0, 200));
+  }
+  consoleError(...args);
+};
+afterEach(() => {
+  const found = duplicateKeys.splice(0);
+  if (found.length > 0) {
+    throw new Error(`React báo trùng key:\n${found.join("\n")}`);
+  }
+});
 afterEach(() => {
   cleanup();
   server.resetHandlers();
