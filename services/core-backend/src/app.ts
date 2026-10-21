@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import { CSRF_HEADER, env } from "@udp/config";
 import {
   errorHandler,
+  internalPortOnly,
   jsonBodyExcept,
   notFoundHandler,
   requestLogger,
@@ -73,7 +74,15 @@ const CSRF_EXEMPT_PATHS = [
  * `deps` [v4.4] — phụ thuộc RA NGOÀI tiến trình (nguồn metrics, Service 2), xem
  * `core/app-deps.ts`. Mặc định là bản thật từ cấu hình; test truyền bản giả.
  */
-export function createApp(deps: AppDeps = defaultAppDeps()): Express {
+/** [Plan #66] Cổng nội bộ: có thì `/internal/*` chỉ phục vụ trên cổng đó; không có (test, dev) thì một cổng như trước */
+export interface AppOptions {
+  internalPort?: number;
+}
+
+export function createApp(
+  deps: AppDeps = defaultAppDeps(),
+  options: AppOptions = {},
+): Express {
   const app = express();
   setAppDeps(app.locals, deps);
 
@@ -91,6 +100,11 @@ export function createApp(deps: AppDeps = defaultAppDeps()): Express {
   app.set("trust proxy", env.TRUST_PROXY_HOPS);
 
   app.use(helmet());
+  // [Plan #66] Ngay sau helmet, trước cors, parser và mọi router `/internal`: cổng công khai trả 404 cho
+  // `/internal/*` mà không đọc thân request
+  if (options.internalPort !== undefined) {
+    app.use("/internal", internalPortOnly(options.internalPort));
+  }
   app.use(
     cors({
       origin: env.CORS_ORIGIN,

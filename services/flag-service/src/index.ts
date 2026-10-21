@@ -1,5 +1,5 @@
 import { env, SDK_STATS } from "@udp/config";
-import { logger } from "@udp/http";
+import { closeServer, listenInternal, logger } from "@udp/http";
 import { describeBootFailure } from "@udp/db";
 import { assertServiceIdentity, prisma, SERVICE_ROLE } from "./core/db.js";
 import {
@@ -62,13 +62,25 @@ if (notifyAccelerator !== undefined) {
   }
 }
 
-const app = createApp();
+const app = createApp(
+  env.FLAG_SERVICE_INTERNAL_PORT === undefined
+    ? {}
+    : { internalPort: env.FLAG_SERVICE_INTERNAL_PORT },
+);
 const server = app.listen(env.FLAG_SERVICE_PORT, () => {
   logger.info(
     { port: env.FLAG_SERVICE_PORT, env: env.NODE_ENV },
     "udp-feature-flag-service đã khởi động",
   );
 });
+/** [Plan #66] `/internal/*` của Service 1 và Service 3 tới đây; NetworkPolicy chỉ mở cổng này cho hai bên đó */
+const internalServer = listenInternal(
+  app,
+  env.FLAG_SERVICE_INTERNAL_PORT,
+  (port) => {
+    logger.info({ port }, "cổng nội bộ đã mở");
+  },
+);
 
 /**
  * Vòng poll của change feed bắt đầu Ở ĐÂY, không phải trong `createApp()`.
@@ -133,11 +145,10 @@ const shutdown = (signal: string) => {
    */
   sseHub.closeAll();
   statsIngest.close();
-  const httpClosed = new Promise<void>((resolve) => {
-    server.close(() => {
-      resolve();
-    });
-  });
+  const httpClosed = Promise.all([
+    closeServer(server),
+    internalServer.close(),
+  ]).then(() => undefined);
   const listenerStopped = notifyAccelerator?.stop() ?? Promise.resolve();
   changeFeedWatcher.stop();
   pruneJob.stop();

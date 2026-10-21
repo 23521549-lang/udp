@@ -4,6 +4,7 @@ import { env } from "@udp/config";
 import {
   asyncHandler,
   errorHandler,
+  internalPortOnly,
   notFoundHandler,
   requestLogger,
 } from "@udp/http";
@@ -38,7 +39,12 @@ import { sdkRouter, sdkStatsRouter } from "./sdk/sdk.controller.js";
  *     `/internal/*` vẫn KHÔNG có: bên gọi là S1 và S3, và chặn một rollout đang
  *     chạy vì "quá nhiều yêu cầu" là tự gây ra sự cố tồi hơn thứ nó chặn.
  */
-export function createApp(): Express {
+/** [Plan #66] Cổng nội bộ: có thì `/internal/*` chỉ phục vụ trên cổng đó; không có (test, dev) thì một cổng như trước */
+export interface AppOptions {
+  internalPort?: number;
+}
+
+export function createApp(options: AppOptions = {}): Express {
   const app = express();
 
   /**
@@ -53,6 +59,10 @@ export function createApp(): Express {
 
   app.use(helmet());
   app.use(requestLogger);
+  // [Plan #66] Trước MỌI router `/internal` - router segment bên dưới mount trước cả parser JSON
+  if (options.internalPort !== undefined) {
+    app.use("/internal", internalPortOnly(options.internalPort));
+  }
   /**
    * [v4.6] OFREP mount TRƯỚC parser 1 MB toàn cục: router của nó có parser 16 KB
    * RIÊNG, đứng sau CORS và hai lớp rate limit. Mount sau dòng dưới thì trần 16 KB

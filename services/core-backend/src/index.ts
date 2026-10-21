@@ -26,7 +26,7 @@ import {
 } from "./modules/cluster/cluster-runtime.js";
 import { createClusterAccessCache } from "./modules/cluster/cluster-access-cache.js";
 import { assertRegistryCoveredByCatalog } from "./modules/domain/domain-catalog.sync.js";
-import { logger } from "@udp/http";
+import { closeServer, listenInternal, logger } from "@udp/http";
 
 /**
  * Khẳng định danh tính kết nối TRƯỚC khi mở cổng.
@@ -152,28 +152,41 @@ const clusterAccess = createClusterAccessCache({
   resolve: kit.projectClusterAccess,
 });
 
-const app = createApp({
-  ...deps,
-  metricsFor: createMetricsFor(clusterAccess),
-  provisioning: {
-    ...deps.provisioning,
-    enqueue: queue.enqueueJob,
-    enqueueDeploy: queue.enqueueDeploy,
-    withCluster: kit.withProjectCluster,
-    clusterToken: kit.projectClusterToken,
-    clusterIssuerKeys: async (projectId) =>
-      await (await clusterAccess.get(projectId)).issuerKeys(),
-    scanDrift: async (projectId, domainType) => {
-      await sweepDrift(kit, { only: [projectId], domainType });
+const app = createApp(
+  {
+    ...deps,
+    metricsFor: createMetricsFor(clusterAccess),
+    provisioning: {
+      ...deps.provisioning,
+      enqueue: queue.enqueueJob,
+      enqueueDeploy: queue.enqueueDeploy,
+      withCluster: kit.withProjectCluster,
+      clusterToken: kit.projectClusterToken,
+      clusterIssuerKeys: async (projectId) =>
+        await (await clusterAccess.get(projectId)).issuerKeys(),
+      scanDrift: async (projectId, domainType) => {
+        await sweepDrift(kit, { only: [projectId], domainType });
+      },
     },
   },
-});
+  env.CORE_BACKEND_INTERNAL_PORT === undefined
+    ? {}
+    : { internalPort: env.CORE_BACKEND_INTERNAL_PORT },
+);
 const server = app.listen(env.CORE_BACKEND_PORT, () => {
   logger.info(
     { port: env.CORE_BACKEND_PORT, env: env.NODE_ENV },
     "udp-core-backend đã khởi động",
   );
 });
+/** [Plan #66] `/internal/*` của Service 3 tới đây; NetworkPolicy chỉ mở cổng này cho nó */
+const internalServer = listenInternal(
+  app,
+  env.CORE_BACKEND_INTERNAL_PORT,
+  (port) => {
+    logger.info({ port }, "cổng nội bộ đã mở");
+  },
+);
 
 /**
  * Tắt êm.
@@ -191,12 +204,12 @@ const shutdown = (signal: string) => {
   }, 10_000);
 
   /**
-   * Callback của `server.close` khai kiểu `(err?) => void`. Truyền một hàm
-   * `async` vào đó là gửi một Promise cho bên KHÔNG await nó: nếu
-   * `$disconnect()` ném lúc tắt máy, đó là một unhandled rejection ngay trong
-   * đường tắt êm — vốn là đường phải im lặng nhất.
+   * Chờ CẢ HAI cổng đóng (Plan #66), rồi mới tới hàng đợi và database. Chuỗi
+   * promise kết thúc bằng `.catch`: nếu `$disconnect()` ném lúc tắt máy thì đó
+   * không thành một unhandled rejection ngay trong đường tắt êm — vốn là đường
+   * phải im lặng nhất.
    */
-  server.close(() => {
+  void Promise.all([closeServer(server), internalServer.close()]).then(() => {
     // Hàng đợi trước: `stop` êm chờ job đang chạy nhả lease, rồi mới đóng database
     void queue
       .stop()

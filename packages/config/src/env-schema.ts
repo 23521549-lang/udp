@@ -315,6 +315,13 @@ export const envSchema = z
     FLAG_SERVICE_PORT: port.default(3002),
     PD_CONTROLLER_PORT: port.default(3003),
     PORTAL_PORT: port.default(5173),
+    /**
+     * [Plan #66] Cổng nội bộ của Service 1 và Service 2: `/internal/*` CHỈ được phục vụ ở đây (`internalPortOnly`,
+     * `@udp/http`), và NetworkPolicy của cụm chỉ mở cổng này cho bên gọi hợp lệ (T12). Bắt buộc ở production - xem
+     * luật liên biến bên dưới; dev và test để trống thì một cổng như trước.
+     */
+    CORE_BACKEND_INTERNAL_PORT: optionalSetting(port),
+    FLAG_SERVICE_INTERNAL_PORT: optionalSetting(port),
 
     // ---------- URL nội bộ ----------
     FLAG_SERVICE_URL: z.string().url(),
@@ -543,6 +550,36 @@ export const envSchema = z
           "phải KHÁC JWT_ACCESS_SECRET — dùng chung thì refresh token (7 ngày) " +
           "verify được như access token, và hạn 15 phút mất tác dụng hoàn toàn",
       });
+    }
+
+    /**
+     * [Plan #66] Production thiếu cổng nội bộ thì tiến trình chỉ mở cổng công khai và mọi `/internal/*` trả 404 -
+     * bên gọi hỏng ngay nhưng xa chỗ phải sửa. Trùng cổng công khai thì bị từ chối ở MỌI môi trường: hôm nay listener
+     * thứ hai ném `EADDRINUSE`, nhưng nếu ai đó "bắt cho êm" lỗi đó thì chốt sẽ mở `/internal` cho mọi request
+     * (QA vòng C của Plan #66).
+     */
+    const internalPorts = [
+      ["CORE_BACKEND_INTERNAL_PORT", env.CORE_BACKEND_PORT],
+      ["FLAG_SERVICE_INTERNAL_PORT", env.FLAG_SERVICE_PORT],
+    ] as const;
+    for (const [key, publicPort] of internalPorts) {
+      const value = env[key];
+      if (value === undefined) {
+        if (env.NODE_ENV === "production") {
+          ctx.addIssue({
+            code: "custom",
+            path: [key],
+            message:
+              "bắt buộc ở production - `/internal/*` chỉ phục vụ trên cổng nội bộ",
+          });
+        }
+      } else if (value === publicPort) {
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message: `phải khác cổng công khai ${String(publicPort)}`,
+        });
+      }
     }
 
     if (env.NODE_ENV === "production" && !env.COOKIE_SECURE) {

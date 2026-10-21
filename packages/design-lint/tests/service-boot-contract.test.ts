@@ -47,7 +47,8 @@ const SERVICES = join(ROOT, "services");
 /** Gọi hàm khẳng định danh tính — nhận cả tên gốc lẫn tên bọc của từng service */
 const ASSERTS_IDENTITY = /\bassert(?:ConnectedAs|ServiceIdentity)\s*\(/;
 const BUILDS_CLIENT = /\bcreatePrismaClient\s*\(/;
-const OPENS_PORT = /\.listen\s*\(/;
+/** [Plan #66] Cả `listenInternal(` - listener thứ hai mở cổng qua `@udp/http`, không có `.listen(` trong mã service */
+const OPENS_PORT = /\.listen\s*\(|\blistenInternal\s*\(/;
 
 interface SourceFile {
   /** đường dẫn tương đối từ gốc kho, để thông báo lỗi đọc được */
