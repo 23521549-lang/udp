@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { envSchema } from "@udp/config/env-schema";
 import { SEED_DEV_SERVER_KEY } from "@udp/db/seed-constants";
@@ -19,6 +19,7 @@ import {
   byKind as byKindIn,
   containersOf,
   effectiveEnv,
+  named,
   podWorkloads,
   POD_KINDS,
   render,
@@ -528,4 +529,211 @@ describe("NetworkPolicy của PostgreSQL (Plan #65)", () => {
     };
     expect(() => postgresPolicyOf([...built.vm, second])).toThrow();
   });
+});
+
+/**
+ * [Plan #66] Cổng nội bộ của Service 1 và Service 2 - chỉ bên gọi thật tới được.
+ *
+ * Năm cách nó hỏng mà cụm vẫn chạy, và ô bắt từng cái:
+ *
+ *  - Service nội bộ đổi sang NodePort, hay một Service công khai mang thêm cổng nội bộ: cổng lộ ra IP của node.
+ *  - Cổng của Service, `containerPort` tên `internal` và `*_INTERNAL_PORT` trong ConfigMap lệch nhau: chốt
+ *    `internalPortOnly` đọc cổng PHÍA POD, nên lệch là `/internal` 404 ở mọi bên gọi.
+ *  - `*_URL` trỏ cổng công khai: mọi lời gọi nội bộ 404.
+ *  - Luật 1 của policy có `from` (chặn Traefik, NodePort, Prometheus), hay luật 2 lệch bên gọi thật. Bên gọi dựng từ
+ *    MÃ: service nào đọc `env.CORE_BACKEND_URL`/`env.FLAG_SERVICE_URL` - không từ một danh sách chép tay.
+ *  - Tên Service sinh biến service link trùng khoá cấu hình (`core-backend-internal` ⇒ `CORE_BACKEND_INTERNAL_PORT`):
+ *    hôm nay `enableServiceLinks: false` che nó, ô này không để nó phụ thuộc vào một cờ.
+ */
+const SERVICES_SRC = resolve(here, "../../services");
+
+interface Exposed {
+  name: string;
+  urlKey: string;
+  publicPort: number;
+  internalPortKey: string;
+}
+
+const EXPOSED: readonly Exposed[] = [
+  {
+    name: "core-backend",
+    urlKey: "CORE_BACKEND_URL",
+    publicPort: 3001,
+    internalPortKey: "CORE_BACKEND_INTERNAL_PORT",
+  },
+  {
+    name: "flag-service",
+    urlKey: "FLAG_SERVICE_URL",
+    publicPort: 3002,
+    internalPortKey: "FLAG_SERVICE_INTERNAL_PORT",
+  },
+];
+
+function tsFilesUnder(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) return tsFilesUnder(full);
+    return entry.name.endsWith(".ts") ? [full] : [];
+  });
+}
+
+/** Service (theo tên thư mục, cũng là nhãn `app.kubernetes.io/name`) có mã đọc `env.<urlKey>` - trừ chính nó */
+function callersOf(target: Exposed): string[] {
+  return readdirSync(SERVICES_SRC)
+    .filter((dir) => dir !== target.name)
+    .filter((dir) =>
+      tsFilesUnder(join(SERVICES_SRC, dir, "src")).some((file) =>
+        readFileSync(file, "utf8").includes(`env.${target.urlKey}`),
+      ),
+    )
+    .sort();
+}
+
+function configOf(rendered: readonly Resource[]): Record<string, string> {
+  const config = byKindIn(rendered, "ConfigMap").find((c) =>
+    c.metadata.name.startsWith("udp-config"),
+  );
+  return config?.data ?? {};
+}
+
+interface ServicePortSpec {
+  name?: string;
+  port: number;
+  targetPort?: number | string;
+  nodePort?: number;
+}
+
+describe("cổng nội bộ của Service 1 và Service 2 (Plan #66)", () => {
+  const overlays = {
+    kind: OVERLAY,
+    vm: resolve(here, "../k8s/overlays/vm"),
+  } as const;
+  const rendered: Record<keyof typeof overlays, Resource[]> = {
+    kind: [],
+    vm: [],
+  };
+  beforeAll(() => {
+    rendered.kind = render(overlays.kind).docs;
+    rendered.vm = render(overlays.vm).docs;
+  });
+
+  it("bên gọi dựng từ mã: Service 1 ← Service 3; Service 2 ← Service 1, Service 3", () => {
+    expect(callersOf(EXPOSED[0] as Exposed)).toEqual(["pd-controller"]);
+    expect(callersOf(EXPOSED[1] as Exposed)).toEqual([
+      "core-backend",
+      "pd-controller",
+    ]);
+  });
+
+  for (const name of ["kind", "vm"] as const) {
+    for (const target of EXPOSED) {
+      it(`${name}: ${target.name} - Service nội bộ ClusterIP, cổng khớp containerPort và ConfigMap, URL trỏ nó`, () => {
+        const docs = rendered[name];
+        const config = configOf(docs);
+        const internalPort = Number(config[target.internalPortKey]);
+        expect(internalPort).toBeGreaterThan(0);
+        expect(internalPort).not.toBe(target.publicPort);
+
+        const service = named(docs, "Service", `internal-${target.name}`);
+        const spec = service.spec as {
+          type?: string;
+          ports: ServicePortSpec[];
+        };
+        expect(spec.type ?? "ClusterIP").toBe("ClusterIP");
+        expect(spec.ports).toEqual([
+          { name: "internal", port: internalPort, targetPort: "internal" },
+        ]);
+
+        const [container] = containersOf(
+          named(docs, "Deployment", target.name),
+        );
+        expect(
+          container?.ports?.find((p) => p.name === "internal")?.containerPort,
+        ).toBe(internalPort);
+        expect(config[target.urlKey]).toBe(
+          `http://internal-${target.name}:${String(internalPort)}`,
+        );
+      });
+
+      it(`${name}: ${target.name} - luật 1 mở cổng công khai cho mọi nguồn, luật 2 mở cổng nội bộ chỉ cho bên gọi`, () => {
+        const docs = rendered[name];
+        const internalPort = Number(configOf(docs)[target.internalPortKey]);
+        const policies = byKindIn(docs, "NetworkPolicy").filter(
+          (p) =>
+            (p.spec as PostgresPolicy).podSelector?.matchLabels?.[
+              DB_CLIENT_LABEL
+            ] === target.name,
+        );
+        expect(policies.map((p) => p.metadata.name)).toEqual([
+          `${target.name}-ingress`,
+        ]);
+        expect((policies[0] as Resource).spec).toStrictEqual({
+          podSelector: { matchLabels: { [DB_CLIENT_LABEL]: target.name } },
+          policyTypes: ["Ingress"],
+          ingress: [
+            { ports: [{ port: target.publicPort, protocol: "TCP" }] },
+            {
+              from: [
+                {
+                  podSelector: {
+                    matchExpressions: [
+                      {
+                        key: DB_CLIENT_LABEL,
+                        operator: "In",
+                        values: callersOf(target),
+                      },
+                    ],
+                  },
+                },
+              ],
+              ports: [{ port: internalPort, protocol: "TCP" }],
+            },
+          ],
+        });
+      });
+    }
+
+    it(`${name}: không Service NodePort hay LoadBalancer nào mang cổng nội bộ`, () => {
+      const docs = rendered[name];
+      const config = configOf(docs);
+      const internalPorts = EXPOSED.map((t) =>
+        Number(config[t.internalPortKey]),
+      );
+      const leaks = byKindIn(docs, "Service").flatMap((s) => {
+        const spec = s.spec as { type?: string; ports?: ServicePortSpec[] };
+        if (spec.type !== "NodePort" && spec.type !== "LoadBalancer") return [];
+        return (spec.ports ?? [])
+          .filter(
+            (p) =>
+              p.targetPort === "internal" ||
+              internalPorts.includes(p.port) ||
+              internalPorts.includes(Number(p.targetPort)),
+          )
+          .map((p) => `${s.metadata.name}:${String(p.port)}`);
+      });
+      expect(leaks).toEqual([]);
+    });
+
+    it(`${name}: tên Service nội bộ không sinh biến service link trùng khoá cấu hình`, () => {
+      // Chỉ Service mới của đợt này: `core-backend` ⇒ `CORE_BACKEND_PORT` là va chạm có từ trước, Plan #63 chặn nó
+      // bằng `enableServiceLinks: false` ở mọi pod và có cổng riêng cho cờ đó.
+      const inner = envSchema.innerType();
+      const keys = new Set(
+        Object.keys((inner as unknown as { shape: object }).shape),
+      );
+      const internalServices = byKindIn(rendered[name], "Service").filter((s) =>
+        s.metadata.name.startsWith("internal-"),
+      );
+      expect(internalServices).toHaveLength(EXPOSED.length);
+      const clashes = internalServices.flatMap((s) => {
+        const prefix = s.metadata.name.toUpperCase().replace(/-/g, "_");
+        return [
+          `${prefix}_PORT`,
+          `${prefix}_SERVICE_HOST`,
+          `${prefix}_SERVICE_PORT`,
+        ].filter((k) => keys.has(k));
+      });
+      expect(clashes).toEqual([]);
+    });
+  }
 });

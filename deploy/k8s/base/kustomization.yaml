@@ -8,6 +8,9 @@ resources:
   - postgres.yaml
   # [Plan #65] chỉ client của database tới được cổng 5432
   - postgres-network-policy.yaml
+  # [Plan #66] cổng nội bộ của Service 1 và Service 2 chỉ mở cho bên gọi
+  - core-backend-network-policy.yaml
+  - flag-service-network-policy.yaml
   - prometheus.yaml
   - migrate-job.yaml
   - core-backend.yaml
@@ -25,8 +28,11 @@ configMapGenerator:
     literals:
       - NODE_ENV=production
       - LOG_LEVEL=info
-      - CORE_BACKEND_URL=http://core-backend:3001
-      - FLAG_SERVICE_URL=http://flag-service:3002
+      # [Plan #66] Địa chỉ mà service KHÁC dùng để gọi - chỉ đường `/internal/*` và `/healthz` - nên trỏ cổng nội bộ
+      - CORE_BACKEND_URL=http://internal-core-backend:3101
+      - FLAG_SERVICE_URL=http://internal-flag-service:3102
+      - CORE_BACKEND_INTERNAL_PORT=3101
+      - FLAG_SERVICE_INTERNAL_PORT=3102
       - PD_CONTROLLER_URL=http://pd-controller:3003
       - PROMETHEUS_URL=http://prometheus:9090
       - CORS_ORIGIN=http://localhost:8080

@@ -7,7 +7,10 @@ import {
 import { beforeAll, describe, expect, it } from "vitest";
 import { KUBE_CONTEXT, NAMESPACE, SAMPLE_NAMESPACE } from "../src/cluster.js";
 import { pinnedKubectl } from "../src/install.js";
-import { expectPostgresOnlyForClients } from "./netpol-probe.js";
+import {
+  expectInternalPortsOnlyForCallers,
+  expectPostgresOnlyForClients,
+} from "./netpol-probe.js";
 import {
   api,
   eventually,
@@ -209,6 +212,15 @@ describe("Prometheus trong cụm", () => {
 describe("NetworkPolicy của PostgreSQL (Plan #65)", () => {
   it("kindnet cưỡng chế: client của UDP nối được 5432, nhãn lạ và namespace khác thì không", async () => {
     await expectPostgresOnlyForClients(
+      pinnedKubectl(["--context", KUBE_CONTEXT]),
+      NAMESPACE,
+    );
+  }, 900_000);
+});
+
+describe("cổng nội bộ của Service 1 và Service 2 (Plan #66)", () => {
+  it("kindnet cưỡng chế: Service 3 tới cổng nội bộ, nhãn lạ và namespace khác thì không; cổng công khai không phục vụ /internal", async () => {
+    await expectInternalPortsOnlyForCallers(
       pinnedKubectl(["--context", KUBE_CONTEXT]),
       NAMESPACE,
     );
