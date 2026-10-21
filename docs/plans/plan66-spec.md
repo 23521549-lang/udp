@@ -31,16 +31,20 @@ thì BẮT BUỘC và phải khác cổng công khai (superRefine, fail-fast). T
 `FLAG_SERVICE_URL=http://flag-service:3102` - hai biến vốn là "địa chỉ service khác dùng để gọi", nay trỏ cổng nội bộ;
 listener nội bộ phục vụ cả `/healthz` nên probe của Service 1 vẫn đúng. Không thêm biến URL mới.
 
-**Manifest.** Deployment khai `containerPort` tên `internal`; Service thêm cổng `internal`. NetworkPolicy
-`core-backend-ingress` và `flag-service-ingress`: luật 1 mở cổng công khai cho MỌI nguồn (Traefik, NodePort, Prometheus,
-probe của kubelet - chọn pod là cô lập mọi ingress của nó, nên phải mở lại tường minh); luật 2 mở cổng nội bộ chỉ cho
-nhãn bên gọi: Service 1 ← `pd-controller`; Service 2 ← `core-backend`, `pd-controller`.
+**Manifest.** Deployment khai `containerPort` tên `internal`. Cổng nội bộ đi qua Service ClusterIP RIÊNG
+`internal-core-backend`, `internal-flag-service` (QA vòng A): overlay kind đổi Service công khai thành NodePort, và một
+cổng thêm vào đó sẽ lộ ra IP của node. Tên `internal-…` chứ không `…-internal`: kubelet sinh biến service link
+`<TÊN>_PORT`, và `CORE_BACKEND_INTERNAL_PORT` là biến cấu hình (QA vòng B). NetworkPolicy `core-backend-ingress` và
+`flag-service-ingress`: luật 1 mở cổng công khai cho MỌI nguồn, không có `from` (Traefik, NodePort, Prometheus, probe
+của kubelet, sample-app ở namespace khác - chọn pod là cô lập mọi ingress của nó, nên phải mở lại tường minh); luật 2
+mở cổng nội bộ chỉ cho nhãn bên gọi: Service 1 ← `pd-controller` (Service 2 không gọi route nào của Service 1, dù v4
+ghi "S2/S3"); Service 2 ← `core-backend`, `pd-controller`.
 
 **Cổng (viết trước).** `@udp/http`: chốt theo cổng trên hai listener thật (cổng công khai 404 cho `/internal`, cổng nội
 bộ 200; không chốt khi không cấu hình). `@udp/config`: production thiếu cổng nội bộ hoặc trùng cổng công khai ⇒ từ
 chối. `manifests.test.ts`: URL trong ConfigMap trỏ đúng cổng nội bộ của Service; mỗi policy mở cổng công khai cho mọi
-nguồn và cổng nội bộ chỉ cho đúng nhãn bên gọi; danh sách bên gọi dựng từ manifest (workload có biến URL của service
-đó trong ConfigMap). E2E kind và máy ảo: phép thử kẹp như Plan #65 cho cổng nội bộ của Service 2 (dương
+nguồn và cổng nội bộ chỉ cho đúng nhãn bên gọi; danh sách bên gọi dựng từ MÃ (service nào đọc `env.*_URL` - ConfigMap chung cho mọi workload nên không phân
+biệt được ai, QA vòng A); không Service NodePort nào mang cổng nội bộ. E2E kind và máy ảo: phép thử kẹp như Plan #65 cho cổng nội bộ của Service 2 (dương
 `pd-controller`, âm nhãn lạ, âm namespace khác, dương) bằng `wget` tới ClusterIP; cổng công khai vẫn tới được từ nhãn
 lạ (đối chứng: luật 1 không bị quên).
 

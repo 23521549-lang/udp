@@ -11,8 +11,8 @@ import { readDesignDoc } from "../src/design-doc.js";
  *
  * Vì sao một route nội bộ không có trong §9 là lỗi, không phải thiếu sót tài liệu:
  *
- *   - Cấu hình ingress (và NetworkPolicy theo cổng nội bộ khi nó có - §16, Plan #65)
- *     được viết từ §9. Một route không có trong tài liệu là một route không ai nghĩ
+ *   - Cấu hình ingress và NetworkPolicy theo cổng nội bộ (Plan #66) được viết từ
+ *     §9. Một route không có trong tài liệu là một route không ai nghĩ
  *     tới khi viết luật mạng.
  *   - §9 cũng là nơi ghi route nào BẮT BUỘC `X-Udp-Actor-Id`. Một route ghi không
  *     có trong bảng thì cũng không có trong câu nói về audit, và I40 mất một mặt.

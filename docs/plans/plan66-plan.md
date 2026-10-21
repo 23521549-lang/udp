@@ -48,7 +48,7 @@ và `X-Internal-Secret` (lớp ứng dụng không đổi); `notFoundHandler`; c
 
 ## 66e. Tài liệu
 
-`docs/UDP_design.md`: §3.1, §9 khối Internal và ghi chú `/internal/*`, T12, §15.3, §16 (hàng "chỉ còn một lớp" thành
+`docs/UDP_design.md`: §3.1, §9 khối Internal và ghi chú `/internal/*`, T12, §12.2, §13.5, §15.1 (không §15.3 - mục đó chỉ nói về PostgreSQL), §16 (hàng "chỉ còn một lớp" thành
 "lớp mạng có, `TokenReview` chưa"), D-P58; chú thích ba tệp mã đã sửa ở Plan #65; bàn giao.
 
 ## Kiểm cuối (R9) và kiểm thoái cấp (R11)
@@ -56,3 +56,20 @@ và `X-Internal-Secret` (lớp ứng dụng không đổi); `notFoundHandler`; c
 `@udp/http`, `@udp/config`, `@udp/deploy` test; typecheck `@udp/http`, `@udp/config`, `core-backend`, `flag-service`,
 `@udp/deploy`; eslint, prettier theo tệp đổi; `design-lint` phần không cần database. CI: cả 8 job. Kiểm thoái cấp:
 route công khai, probe, Prometheus, SSE, ingress không đổi; dev và test không cấu hình cổng nội bộ chạy như cũ.
+
+## Ba vòng QA đã bẻ gì (chạy lần lượt; vòng B bị ngắt một lần bởi giới hạn phiên, làm tiếp từ đầu)
+
+- **A (thiết kế):** overlay kind đổi Service `flag-service` thành NodePort - thêm cổng nội bộ vào đó là lộ nó ra IP
+  của node, đúng đường T12 lo ⇒ Service ClusterIP riêng; ConfigMap `udp-config` chung cho bốn workload nên không
+  dựng được bên gọi từ đó ⇒ đọc từ mã; thiết kế hứa "S2/S3" gọi Service 1 nhưng Service 2 không gọi route nào ⇒ chỉ
+  Service 3, ghi vào D-P58; mười một dòng thiết kế cần sửa.
+- **B (mã và plan trước):** `port.optional()` lệch quy ước `optionalSetting` - chuỗi rỗng bị từ chối; test-support
+  dựng Service 2 với env kế thừa - một cổng nội bộ trong `.env` của dev làm các tiến trình con giẫm cổng ⇒ đặt rỗng;
+  luật 1 phải không có `from`; tên `core-backend-internal` sinh `CORE_BACKEND_INTERNAL_PORT` trùng biến cấu hình;
+  chốt ở Service 1 đứng sau parser 1 MB ⇒ dời lên ngay sau `helmet`; `service-boot-contract` mù với `listenInternal`;
+  `internal-routes` khoá chữ tiêu đề §9.
+- **C (đúng kỹ thuật):** đo `req.socket.localPort` qua keep-alive, pipelining, IPv6 và 17 biến thể đường dẫn - không
+  lách được; pod thử mang nhãn `pd-controller`/`core-backend` thành endpoint của Service thật ⇒ phía dương bằng
+  `kubectl exec` vào pod Service 3; `wget` thoát 1 cho cả HTTP 4xx lẫn bị chặn ⇒ phân loại theo câu nó in; đo được
+  `server.close()` của Node 22 không đóng kết nối keep-alive bận (392 request sau `close()`, 12 giây chưa đóng) ⇒
+  `closeServer` đặt `connection: close`, test đỏ rồi xanh; luật trùng cổng áp cho mọi môi trường.

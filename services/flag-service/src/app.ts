@@ -100,9 +100,10 @@ export function createApp(options: AppOptions = {}): Express {
 
   /**
    * `/internal/*` KHONG duoc phoi ra Internet — §9 noi ro. O tang ha tang, ingress
-   * va nginx cua Portal chi route duong cong khai; NetworkPolicy theo cong noi bo
-   * CHUA co vi /internal chung cong voi /sdk (§16, Plan #65). Bi mat dung chung o
-   * day vi vay la lop xac thuc DUY NHAT cua /internal, khong phai lop phong.
+   * va nginx cua Portal chi route duong cong khai; o production /internal chi tra
+   * loi tren cong noi bo (`internalPortOnly`, Plan #66), va NetworkPolicy chi mo
+   * cong do cho Service 1 va Service 3. Bi mat dung chung la lop xac thuc cua
+   * /internal - chua co TokenReview (§16).
    */
   /**
    * Sẵn sàng nhận request chưa — CÓ chạm database, khác hẳn `/healthz`.
