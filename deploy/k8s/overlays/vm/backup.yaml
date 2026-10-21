@@ -34,10 +34,17 @@ spec:
           initContainers:
             - name: dump
               image: postgres:16-alpine
+              # [Plan #65] Chờ postgres nhận kết nối rồi mới dump. NetworkPolicy `postgres-clients` cần một nhịp đồng
+              # bộ để thấy IP của pod MỚI - trong nhịp đó kết nối bị từ chối ngay, và `restartPolicy: Never` làm mỗi
+              # lần thử lại là một pod mới với IP mới (lượt CI 39510991936: ba pod, `pg_dump` thoát 1 trong giây đầu).
+              # Vòng chờ cũng đỡ lúc postgres đang khởi động lại đúng 02:30. Có hạn: 30 lần, tối đa ~150 giây.
               command:
                 - sh
                 - -c
-                - pg_dump --format=custom --file=/dump/udp.dump "$DATABASE_URL_DIRECT"
+                - >-
+                  i=0; until pg_isready --dbname="$DATABASE_URL_DIRECT" --timeout=3; do
+                  i=$((i+1)); [ "$i" -ge 30 ] && exit 1; sleep 2; done;
+                  pg_dump --format=custom --file=/dump/udp.dump "$DATABASE_URL_DIRECT"
               env:
                 - name: DATABASE_URL_DIRECT
                   valueFrom:

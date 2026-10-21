@@ -1,5 +1,6 @@
 import { env, SDK_STATS } from "@udp/config";
 import { logger } from "@udp/http";
+import { describeBootFailure } from "@udp/db";
 import { assertServiceIdentity, prisma, SERVICE_ROLE } from "./core/db.js";
 import {
   changeFeedWatcher,
@@ -26,7 +27,9 @@ try {
   await assertServiceIdentity();
   logger.info({ role: SERVICE_ROLE }, "Danh tính kết nối database đã xác nhận");
 } catch (err) {
-  logger.fatal({ err }, "Không khởi động: danh tính kết nối database sai");
+  // [Plan #64] gọi đúng tên lỗi: lỗi kết nối (TLS, DNS, timeout…) không còn
+  // bị dán nhãn "danh tính sai". Chuỗi message giữ nguyên — boot-identity.test.ts ghim.
+  logger.fatal({ err }, describeBootFailure(err));
   process.exit(1);
 }
 

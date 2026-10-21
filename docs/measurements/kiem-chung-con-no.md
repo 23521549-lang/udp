@@ -1476,6 +1476,13 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   phút không (con số ~64 phút là **ước** từ số đo ở máy dev và một lượt bị cắt); (b) cụm `kind` và máy diễn tập `vm`
   có lên và qua E2E không — lỗi kế tiếp sau một lỗi đã sửa chỉ lộ khi lỗi trước hết che nó; (c) những job chỉ có sau
   merge (`build-smoke`, `Deploy`, lượt chạy tay của `toolchain.yml` và `publish-rehearsal.yml`).
+- **Tiến độ (21/10/2026, Plan #64):** pha 1 đã chạy ba lượt trên PR. Lượt `38879844829` (16/10, `46d6ed6`): 5 xanh,
+  4 đỏ (`signing-e2e`, `kind`, `vm`, `test`) - bốn gốc lỗi sửa ở 64a-64d. Lượt `39024324636` (17/10, `340b316`):
+  `check`, `python`, `i28`, `portal-demo`, `signing-e2e`, `kind` **xanh**; `test` đỏ vì catalog rỗng trên database
+  scratch (64e), `vm` đỏ ở test sao lưu vì bồn nhận bị chặn event loop (64f). Bước `test:scratch` của lượt xanh duy
+  nhất (`39019594153`) đo được 48m21s - dưới trần, xem `README.md`. Các lượt PR này chạy trên nhánh
+  `p64-sua-loi-ci` (PR #2, đích `p61-dong-goi`); pha 1 của PR #1 xanh khi PR #2 xanh và được gộp vào. Phần sau bước
+  sao lưu của `vm` (khôi phục, đăng nhập lại) chưa từng chạy trên runner. **Cập nhật cùng ngày:** lượt `39506463646` (`9737605`) xanh cả 8 job của PR #2, gồm `vm` chạy trọn sao lưu, khôi phục, đăng nhập lại; ba lượt xanh của `test:scratch` đo 31m50s - 48m21s (`README.md`). Pha 1 của PR #1 còn chờ PR #2 được gộp vào `p61-dong-goi`.
 - **Tiền đề:** quyền push lên `23521549-lang/udp`; secret của project Supabase CI đã nạp (đã có — job `test` của lượt
   đầu tạo và xoá được database scratch). Không cần tài khoản nào khác.
 - **Runbook:** hai pha, vì `workflow_dispatch` chỉ hiện khi tệp workflow nằm trên nhánh mặc định (`main` đang ở Plan

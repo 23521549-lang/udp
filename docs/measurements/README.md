@@ -166,5 +166,22 @@ Lần đo đầu tìm ra một lỗ hổng của bộ sinh differential: nó kh�
 Ba mutant còn lại chỉ bị test viết tay giết là kiểm KHAI BÁO sai dạng (semver hỏng, anyOf một nhánh,
 khoảng semver sai) — ngoài miền của differential theo thiết kế: bộ sinh chỉ tạo khai báo hợp lệ.
 
+## Bước `pnpm test:scratch` trên runner GitHub (sổ nợ `ci-github-green`, Plan #64)
+
+Đo từ thời điểm bắt đầu và kết thúc của bước trong API của GitHub Actions
+(`gh api repos/23521549-lang/udp/actions/runs/<id>/jobs`), không phải từ log.
+
+| Lượt (commit)             | Kết quả | Thời lượng | Ghi chú                                                    |
+| ------------------------- | ------- | ---------- | ---------------------------------------------------------- |
+| `39019594153` (`7b62f2e`) | xanh    | **48m21s** | lượt xanh đầu tiên của bộ test trên runner; 4570/4570 test |
+| `39495017234` (`786d7a7`) | xanh    | **31m50s** | sau 64e; cổng `catalog-seeded` chạy                        |
+| `39506463646` (`9737605`) | xanh    | **35m04s** | lượt CI đầu tiên xanh cả 8 job                             |
+| `39024324636` (`340b316`) | đỏ      | 26m02s     | catalog rỗng (G5), khoảng 40 test tích hợp chết sớm ở FK   |
+| `38879844829` (`46d6ed6`) | đỏ      | 32m08s     | I34 flaky (64d)                                            |
+
+Con số ~64 phút mà trần 90 phút của `ci.yml` dựa vào là ước từ máy dev. Ba lượt xanh: 31m50s - 48m21s, trung vị
+35m04s - cùng một bộ test dao động ×1,5 giữa các lượt (nguyên nhân chưa đo). Trần giữ nguyên: 90 phút là ×1,86 so với mẫu CHẬM nhất, và hạ trần theo trung
+vị sẽ cắt đúng những lượt chậm mà mẫu thứ nhất cho thấy là có thật.
+
 Mọi tệp thô parse qua schema chung `@udp/shared-types/measurements` (`packages/shared-types/tests/measurements.test.ts`)
 — và trang **Bằng chứng** của Bảng điều khiển nền tảng (`/admin/evidence`, Plan #56) vẽ biểu đồ thẳng từ chúng.

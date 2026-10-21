@@ -1,5 +1,9 @@
 import { PgBoss, type JobWithMetadata } from "pg-boss";
-import { DB_TLS_OPTIONS, sanitizeConnectionString } from "@udp/db";
+import {
+  resolveTlsOptions,
+  sanitizeConnectionString,
+  type TlsMode,
+} from "@udp/db";
 import { logger } from "@udp/http";
 
 /**
@@ -104,6 +108,11 @@ export interface JobQueueOptions {
   heartbeatSeconds: number;
   pollingIntervalSeconds: number;
   applicationName?: string;
+  /**
+   * Chế độ TLS — từ `UDP_DB_TLS_MODE`, người gọi truyền tường minh.
+   * Mặc định `verify-full` (an toàn).
+   */
+  tlsMode?: TlsMode;
 }
 
 interface ProvisionData {
@@ -117,13 +126,19 @@ interface DeployData {
 export async function startJobQueue(
   options: JobQueueOptions,
 ): Promise<JobQueue> {
+  const sanitized = sanitizeConnectionString(options.connectionString);
+  const tlsOptions = resolveTlsOptions(
+    options.tlsMode ?? "verify-full",
+    sanitized,
+  );
   const boss = new PgBoss({
     /**
      * Cùng đường TLS với mọi kết nối khác của repo (`@udp/db`): gỡ `sslmode` khỏi chuỗi
      * (nó THẮNG object `ssl`) và ghim CA của Supabase — không hạ `rejectUnauthorized`.
+     * Chế độ do `UDP_DB_TLS_MODE` quyết định (mặc định verify-full).
      */
-    connectionString: sanitizeConnectionString(options.connectionString),
-    ssl: DB_TLS_OPTIONS,
+    connectionString: sanitized,
+    ...(tlsOptions === undefined ? {} : { ssl: tlsOptions }),
     schema: options.schema,
     application_name: options.applicationName ?? "udp-core-backend-jobs",
     max: 4,

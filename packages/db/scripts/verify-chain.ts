@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
 import {
   pointAt,
+  runFailureDetail,
   step,
   withScratchDatabase,
 } from "./helpers/scratch-database.js";
@@ -107,8 +108,10 @@ try {
       childEnv,
     );
   });
-} catch {
+} catch (err: unknown) {
   console.error("\nChuỗi migration KHÔNG dựng lại được từ đầu.");
+  const detail = runFailureDetail(err);
+  if (detail !== undefined) console.error(detail);
   process.exit(1);
 }
 

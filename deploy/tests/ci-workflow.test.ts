@@ -174,6 +174,10 @@ describe("CI (§13.5)", () => {
       expect(service.image).toMatch(/@sha256:[0-9a-f]{64}$/);
     }
     expect(e2e.env?.BASE).toMatch(/@sha256:[0-9a-f]{64}$/);
+    // [Plan #64] skopeo từ chối ref vừa tag vừa digest — BASE (nguồn cho
+    // `docker://$BASE`) phải digest-only. Không quét mọi image: service zot là
+    // tag+digest nhưng do runner pull trực tiếp, hợp lệ.
+    expect(e2e.env?.BASE).not.toMatch(/:[^/:@]+@sha256:/);
     const order = [
       "$E2E tools",
       "skopeo copy",

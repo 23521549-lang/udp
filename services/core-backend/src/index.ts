@@ -7,6 +7,7 @@ import {
   JOB_QUEUE,
 } from "@udp/config";
 import { assertServiceIdentity, prisma } from "./core/db.js";
+import { describeBootFailure } from "@udp/db";
 import { createApp } from "./app.js";
 import { defaultAppDeps } from "./core/app-deps.js";
 import { createEgressFetch } from "./core/egress/egress.js";
@@ -41,8 +42,9 @@ try {
   logger.info({ role: "udp_s1" }, "Danh tính kết nối database đã xác nhận");
 } catch (err) {
   // Bắt để ra MỘT dòng log đọc được, thay vì một unhandled rejection kèm stack
-  // mà người trực đêm phải tự dịch.
-  logger.fatal({ err }, "Không khởi động: danh tính kết nối database sai");
+  // mà người trực đêm phải tự dịch. [Plan #64] gọi đúng tên lỗi: lỗi kết nối
+  // (TLS, DNS, timeout…) không còn bị dán nhãn "danh tính sai".
+  logger.fatal({ err }, describeBootFailure(err));
   process.exit(1);
 }
 
@@ -70,6 +72,7 @@ try {
 async function startJobs(): Promise<{ queue: JobQueue; kit: JobKit }> {
   const queue = await startJobQueue({
     connectionString: directDatabaseUrl,
+    tlsMode: env.UDP_DB_TLS_MODE,
     schema: env.PGBOSS_SCHEMA,
     retryLimit: env.JOB_RETRY_LIMIT,
     expireInSeconds: env.JOB_EXPIRE_MINUTES * 60,

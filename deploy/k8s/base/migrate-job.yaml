@@ -1,4 +1,4 @@
-# Chuỗi migration, LOGIN + mật khẩu cho udp_s1…3 từ Secret, seed khi UDP_SEED=true
+# Chuỗi migration, LOGIN + mật khẩu cho udp_s1…3 từ Secret, đồng bộ catalog domain (luôn), seed khi UDP_SEED=true
 # (deploy/docker/migrate.Dockerfile). backoffLimit rộng: lượt đầu chạy trước khi PostgreSQL sẵn sàng.
 apiVersion: batch/v1
 kind: Job

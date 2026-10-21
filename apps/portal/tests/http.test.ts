@@ -8,6 +8,7 @@ import {
   refreshSession,
   setSessionExpiredHandler,
 } from "../src/lib/http";
+import { messageOf, problemSlugOf } from "../src/lib/errors";
 import { API, golden, server } from "./msw";
 
 const ok = z.object({ ok: z.literal(true) }).strict();
@@ -207,6 +208,30 @@ describe("lớp HTTP: lỗi", () => {
     expect(err.kind).toBe("http");
     expect(err.code).toBe("DUPLICATE_RESOURCE");
     expect(err.traceId).toBe("trace-9");
+  });
+
+  /**
+   * RFC 9457 §3.1.1: `type` vắng thì mặc định là "about:blank". `problemOf` nhận một thân có `title` và `status`
+   * là ProblemDetails, nên một thân thiếu `type` (proxy, route không có ở máy chủ) từng lọt vào với `type`
+   * undefined trong khi kiểu nói `string` - và `problemSlugOf` gọi `.split` trên nó: chính `ErrorState`, chỗ
+   * báo lỗi cho người dùng, ném TypeError (log CI của bộ test Portal, `palette.test.tsx`).
+   */
+  it("ProblemDetails thiếu type ⇒ type là about:blank, câu báo lỗi vẫn dựng được", async () => {
+    server.use(
+      http.get(`${API}/probe`, () =>
+        HttpResponse.json(
+          { title: "Not Found", status: 404 },
+          {
+            status: 404,
+            headers: { "content-type": "application/problem+json" },
+          },
+        ),
+      ),
+    );
+    const err = (await api(ok, "/probe").catch((e: unknown) => e)) as ApiError;
+    expect(err.problem?.type).toBe("about:blank");
+    expect(problemSlugOf(err)).toBe("about:blank");
+    expect(typeof messageOf(err)).toBe("string");
   });
 
   it("response lệch schema ⇒ ApiError kind contract, KHÔNG trả object sai kiểu", async () => {

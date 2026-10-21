@@ -6,12 +6,14 @@ import { fileURLToPath } from "node:url";
 import { flaggerGatePath } from "@udp/http/flagger-gate";
 import { beforeAll, describe, expect, it } from "vitest";
 import { NAMESPACE } from "../src/cluster.js";
+import { expectPostgresOnlyForClients } from "../e2e/netpol-probe.js";
 import { OIDC_PATH } from "../src/vm.js";
 import {
   api,
   call,
   eventually,
   kube,
+  kubeAsync,
   login,
   newUser,
   openStream,
@@ -239,13 +241,25 @@ describe("Bảng điều khiển nền tảng (Plan #53 QĐ-6)", () => {
   }, 240_000);
 });
 
+describe("NetworkPolicy của PostgreSQL (Plan #65)", () => {
+  it("k3s cưỡng chế: client của UDP nối được 5432, nhãn lạ và namespace khác thì không", async () => {
+    await expectPostgresOnlyForClients(kube, NAMESPACE);
+  }, 900_000);
+});
+
+/** Mã của proxy trước service (nginx của Portal, Traefik) khi phía sau chưa nhận kết nối */
+const PROXY_NOT_READY = new Set([502, 503, 504]);
+
 describe("sao lưu → khôi phục (QĐ-7)", () => {
   it("CronJob đẩy bản dump ra ngoài máy; khôi phục đưa database về đúng lúc sao lưu", async () => {
     const sink = await startSink(target.settings.UDP_BACKUP_UPLOAD_URL);
     const dir = mkdtempSync(join(tmpdir(), "udp-restore-"));
     try {
       const job = `udp-backup-e2e-${String(Date.now())}`;
-      kube.run([
+      // [Plan #64 64f] Chờ BẤT ĐỒNG BỘ: bồn nhận sống trong chính tiến trình này. `kube.run` (spawnSync)
+      // đứng yên event loop suốt `wait`, bồn không đọc được upload, job không bao giờ xong - lượt CI
+      // `39024324636` đỏ đúng như thế, curl thoát 56 khi bồn đóng.
+      await kubeAsync.run([
         "create",
         "job",
         job,
@@ -253,14 +267,34 @@ describe("sao lưu → khôi phục (QĐ-7)", () => {
         "-n",
         NAMESPACE,
       ]);
-      kube.run([
-        "wait",
-        "--for=condition=complete",
-        `job/${job}`,
-        "-n",
-        NAMESPACE,
-        "--timeout=300s",
-      ]);
+      try {
+        await kubeAsync.run([
+          "wait",
+          "--for=condition=complete",
+          `job/${job}`,
+          "-n",
+          NAMESPACE,
+          "--timeout=300s",
+        ]);
+      } catch (err) {
+        // `wait --for=condition=complete` không thoát sớm khi job Failed và chỉ nói "timed out":
+        // in log của mọi container để lượt đỏ tự nói lý do.
+        console.error(
+          // Theo nhãn chứ không `job/<tên>`: cách đó chỉ đọc MỘT pod và hỏng khi container chính chưa chạy
+          // (init lỗi) - lượt 39510991936 chỉ in được "(không đọc được log của job)".
+          kube.ask([
+            "logs",
+            "-l",
+            `job-name=${job}`,
+            "-n",
+            NAMESPACE,
+            "--all-containers",
+            "--prefix",
+            "--tail=50",
+          ]) ?? "(không đọc được log của job)",
+        );
+        throw err;
+      }
       const [[name, dump] = ["", Buffer.alloc(0)]] = [...sink.received];
       expect(name).toMatch(/^\/udp-[A-Z][a-z]{2}\.dump$/);
       // Chữ ký của định dạng custom của pg_dump
@@ -283,8 +317,22 @@ describe("sao lưu → khôi phục (QĐ-7)", () => {
       );
       expect(restore.status).toBe(0);
 
-      expect((await login(target, owner)).status).toBe(200);
-      expect((await login(target, later)).status).toBe(401);
+      // `rollout status` báo xong khi pod Ready, nhưng endpoint của Service còn một nhịp nữa mới tới kube-proxy:
+      // trong khoảng đó nginx của Portal (proxy `/api/`) gặp connection refused và trả 502 (lượt CI
+      // `39495017234`: đăng nhập 50 ms sau rollout). Chỉ chờ qua mã của TẦNG PROXY - mọi mã khác là câu trả lời
+      // thật của UDP và được khẳng định ngay.
+      const afterRestore = (user: Parameters<typeof login>[1]) =>
+        eventually(
+          async () => {
+            const reply = await login(target, user);
+            return PROXY_NOT_READY.has(reply.status) ? undefined : reply;
+          },
+          60_000,
+          "đăng nhập qua Traefik sau khôi phục",
+          1_000,
+        );
+      expect((await afterRestore(owner)).status).toBe(200);
+      expect((await afterRestore(later)).status).toBe(401);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       await sink.close();

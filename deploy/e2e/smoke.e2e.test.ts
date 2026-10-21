@@ -5,7 +5,9 @@ import {
   SEED_IDS,
 } from "@udp/db/seed-constants";
 import { beforeAll, describe, expect, it } from "vitest";
-import { NAMESPACE, SAMPLE_NAMESPACE } from "../src/cluster.js";
+import { KUBE_CONTEXT, NAMESPACE, SAMPLE_NAMESPACE } from "../src/cluster.js";
+import { pinnedKubectl } from "../src/install.js";
+import { expectPostgresOnlyForClients } from "./netpol-probe.js";
 import {
   api,
   eventually,
@@ -202,4 +204,13 @@ describe("Prometheus trong cụm", () => {
     );
     expect(up.metric["namespace"]).toBe(SAMPLE_NAMESPACE);
   });
+});
+
+describe("NetworkPolicy của PostgreSQL (Plan #65)", () => {
+  it("kindnet cưỡng chế: client của UDP nối được 5432, nhãn lạ và namespace khác thì không", async () => {
+    await expectPostgresOnlyForClients(
+      pinnedKubectl(["--context", KUBE_CONTEXT]),
+      NAMESPACE,
+    );
+  }, 900_000);
 });

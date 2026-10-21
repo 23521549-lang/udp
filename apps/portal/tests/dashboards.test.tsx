@@ -336,9 +336,16 @@ describe("Bảng điều khiển: Tổng quan", () => {
       http.get(`${API}/admin/system/health`, () =>
         HttpResponse.json(golden("GET /admin/system/health")),
       ),
-      http.get(`${API}/admin/jobs`, () =>
-        HttpResponse.json(golden("GET /admin/jobs")),
-      ),
+      // Lọc theo `state` như máy chủ: trả cùng một danh sách cho mọi trạng thái làm `RecentFailedJobs` (gộp hai
+      // lượt hỏi COMPENSATION_FAILED và FAILED) thấy mỗi job hai lần - một danh sách máy chủ không bao giờ trả.
+      http.get(`${API}/admin/jobs`, ({ request }) => {
+        const state = new URL(request.url).searchParams.get("state");
+        const body = golden<{ jobs: { state: string }[] }>("GET /admin/jobs");
+        return HttpResponse.json({
+          ...body,
+          jobs: body.jobs.filter((j) => state === null || j.state === state),
+        });
+      }),
     );
   };
 

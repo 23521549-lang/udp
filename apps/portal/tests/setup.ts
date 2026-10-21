@@ -31,11 +31,38 @@ window.scrollTo = () => undefined;
 useLocaleStore.setState({ locale: "vi" });
 
 /**
- * `onUnhandledRequest: "error"`: một request mà không handler nào khai là một request
- * test không biết tới — để nó trôi qua im lặng là để test xanh trên một đường không ai
- * kiểm.
+ * Request mà không handler nào khai là một request test không biết tới — để nó trôi qua im lặng là để test
+ * xanh trên một đường không ai kiểm. `onUnhandledRequest: "error"` của MSW chỉ IN lỗi và làm request đó hỏng;
+ * ô vẫn xanh nếu màn hình chịu được lỗi mạng (log CI: `project-ux58.test.tsx` hỏi `/invitations` và `/teams`
+ * mà không ai khai). Nên ghi lại từng request và làm đỏ ô ở `afterEach`.
  */
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+const unhandledRequests: string[] = [];
+beforeAll(() =>
+  server.listen({
+    onUnhandledRequest: (request, print) => {
+      unhandledRequests.push(
+        `${request.method} ${new URL(request.url).pathname}`,
+      );
+      print.error();
+    },
+  }),
+);
+
+/**
+ * Hai phần tử cùng `key` là cảnh báo của React chứ không phải lỗi: test vẫn xanh, và React có thể nhân đôi
+ * hay bỏ sót một dòng mà không ai thấy. Lần đầu nó lộ ra là trong log CI (`RecentFailedJobs`, vì mock trả cùng
+ * một danh sách cho hai trạng thái job). Đổi cảnh báo thành ô đỏ để loại lỗi này không trôi qua lần nữa.
+ */
+const duplicateKeys: string[] = [];
+const consoleError = console.error.bind(console);
+console.error = (...args: unknown[]) => {
+  const text = args.map(String).join(" ");
+  if (text.includes("Encountered two children with the same key")) {
+    duplicateKeys.push(text.slice(0, 200));
+  }
+  consoleError(...args);
+};
+
 afterEach(() => {
   cleanup();
   server.resetHandlers();
@@ -49,5 +76,12 @@ afterEach(() => {
   delete document.documentElement.dataset.theme;
   document.cookie = "udp_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/";
   localStorage.clear();
+
+  // Dọn xong rồi mới làm đỏ: ném sớm hơn thì ô sau nhận trạng thái bẩn của ô này.
+  const problems = [
+    ...unhandledRequests.splice(0).map((r) => `request không ai khai: ${r}`),
+    ...duplicateKeys.splice(0).map((w) => `React báo trùng key: ${w}`),
+  ];
+  if (problems.length > 0) throw new Error(problems.join("\n"));
 });
 afterAll(() => server.close());

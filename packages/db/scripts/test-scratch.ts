@@ -5,6 +5,7 @@ import {
   assertScratchIdentity,
   maskForGitHub,
   measureRoundTripMs,
+  runFailureDetail,
   scratchEnv,
   scratchNameFromEnv,
   step,
@@ -128,9 +129,8 @@ try {
    * đây là để lại một dòng KHÔNG xanh không nói vì sao (đã gặp: log chỉ còn
    * tên database và câu kết).
    */
-  if (err instanceof Error && !err.message.startsWith("Command failed")) {
-    console.error(err.message);
-  }
+  const detail = runFailureDetail(err);
+  if (detail !== undefined) console.error(detail);
   process.exit(1);
 }
 

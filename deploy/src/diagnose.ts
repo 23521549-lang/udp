@@ -28,6 +28,8 @@ function show(title: string, args: readonly string[]): void {
 show("pod", ["get", "pods", "-A", "-o", "wide"]);
 show("sự kiện gần nhất", ["get", "events", "-A", "--sort-by=.lastTimestamp"]);
 show("pod của UDP", ["describe", "pods", "-n", NAMESPACE]);
+// [Plan #65] Pod nối database bị từ chối? Policy nào đang chọn postgres, và nó mở cho nhãn nào
+show("NetworkPolicy", ["describe", "networkpolicy", "-n", NAMESPACE]);
 show("job udp-migrate", [
   "logs",
   "job/udp-migrate",

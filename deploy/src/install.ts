@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ImageSpec } from "./cluster.js";
-import { query, run } from "./shell.js";
+import { query, run, runAsync } from "./shell.js";
 
 /**
  * Các bước cài UDP vào một cụm, DÙNG CHUNG cho kind (Plan #49) và máy ảo (Plan #52): hai nơi chạy khác nhau ở
@@ -23,6 +23,13 @@ export function pinnedKubectl(pin: readonly string[]): Kube {
     },
     ask: (args) => query("kubectl", [...pin, ...args]),
   };
+}
+
+/** Như `pinnedKubectl`, nhưng chờ không chặn event loop (`runAsync`) - cùng một chỗ ghép pin */
+export function pinnedKubectlAsync(pin: readonly string[]): {
+  run(args: readonly string[]): Promise<void>;
+} {
+  return { run: (args) => runAsync("kubectl", [...pin, ...args]) };
 }
 
 /** Thư mục tạm quyền 0700 cho tệp chứa bí mật — không bao giờ qua dòng lệnh (lộ trong danh sách tiến trình) */

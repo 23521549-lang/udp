@@ -24,9 +24,8 @@ import {
 import {
   assertRegistryCoveredByCatalog,
   RegistryCatalogMismatchError,
-  syncDomainCatalog,
-  type DeclaredDomain,
 } from "../src/modules/domain/domain-catalog.sync.js";
+import { syncDomainCatalog, type DeclaredDomain } from "@udp/db";
 
 /**
  * [v4.10] Cổng P17 — registry tự khám phá, type guard 7 + 6, và sync catalog.

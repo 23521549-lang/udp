@@ -15,6 +15,7 @@ import {
   type FlagServe,
 } from "@udp/shared-types/evaluation";
 import { createPgAdapter } from "../src/adapter.js";
+import { syncDomainCatalog } from "../src/domain-catalog.js";
 import { PrismaClient } from "../src/generated/prisma/client.js";
 import { sdkKeyMaterialOf } from "../src/sdk-key.js";
 import {
@@ -48,10 +49,15 @@ if (!connectionString) {
   throw new Error("Thiếu DATABASE_URL_DIRECT (hoặc DATABASE_URL) trong .env");
 }
 
-// Dung chung factory voi runtime: TLS xac thuc day du bang CA da ghim, tran pool
-// tuong minh. Seed chi can vai ket noi nen dat 2.
+// Dung chung factory voi runtime: TLS theo che do UDP_DB_TLS_MODE (mac dinh
+// verify-full voi CA da ghim), tran pool tuong minh. Seed chi can vai ket noi
+// nen dat 2.
 const prisma = new PrismaClient({
-  adapter: createPgAdapter({ connectionString, max: 2 }),
+  adapter: createPgAdapter({
+    connectionString,
+    max: 2,
+    tlsMode: env.UDP_DB_TLS_MODE,
+  }),
 });
 
 // UUID và tên cố định để seed idempotent — ở `seed-constants.ts` (thuần) để cấu
@@ -60,33 +66,6 @@ const ID = SEED_IDS;
 
 /** Mật khẩu dev — chỉ dùng ở máy cá nhân và cụm demo */
 const DEV_PASSWORD = SEED_DEV_PASSWORD;
-
-// ============================================================
-// Danh mục domain
-// ============================================================
-
-/**
- * Bảng `DomainCatalog` là khóa ngoại của `DomainConfig`, nên nó phải có dữ liệu
- * trước mọi thứ khác. Ở bản chạy thật, tiến trình khởi động đồng bộ bảng này từ
- * adapter registry; ở đây seed đóng vai trò đó cho tới khi registry tồn tại.
- *
- * Theo bất biến I29: chỉ UPSERT, không bao giờ DELETE — xóa hàng sẽ phá khóa
- * ngoại của những DomainConfig đã tồn tại.
- */
-async function seedDomainCatalog(): Promise<void> {
-  for (const entry of DOMAIN_CATALOG_SEED) {
-    await prisma.domainCatalog.upsert({
-      where: { domainType: entry.domainType },
-      update: {
-        tier: entry.tier,
-        displayName: entry.displayName,
-        defaultOrder: entry.defaultOrder,
-        isAvailable: true,
-      },
-      create: entry,
-    });
-  }
-}
 
 // ============================================================
 // Người dùng và project
@@ -507,8 +486,16 @@ async function seedSdkKey(
 // ============================================================
 
 async function main(): Promise<void> {
-  await seedDomainCatalog();
-
+  /**
+   * [Plan #64 64e] Catalog domain TRƯỚC mọi thứ khác: nó là khoá ngoại của `domain_configs`.
+   *
+   * Job `udp-migrate` đã đồng bộ nó bằng `scripts/sync-catalog.ts` dù `UDP_SEED` là gì,
+   * nhưng seed còn chạy ở những đường không đi qua job đó: `test:scratch`, `verify-chain`,
+   * `pnpm db:seed`. Bỏ bước này khỏi seed (`340b316`) làm cả bộ test CI chết ở FK. Cùng một
+   * hàm, cùng bản khai, cùng danh tính owner với job migrate - không phải đường ghi thứ hai;
+   * chạy hai lần trong job có `UDP_SEED=true` là upsert, vô hại.
+   */
+  const catalog = await syncDomainCatalog(prisma, DOMAIN_CATALOG_SEED);
   const { owner, project } = await seedUsersAndProject();
 
   const devEnv = await prisma.environment.findUniqueOrThrow({
@@ -527,7 +514,7 @@ Seed hoàn tất.
   Đăng nhập     ${SEED_OWNER_EMAIL}   / ${DEV_PASSWORD}
                 ${SEED_ADMIN_EMAIL} / ${DEV_PASSWORD}   (PLATFORM_ADMIN)
 
-  Domain        ${DOMAIN_CATALOG_SEED.length} domain trong DomainCatalog
+  Domain        ${catalog.upserted} domain trong DomainCatalog
   Project       ${project.name} (${project.id})
   Environment   ${DEFAULT_ENVIRONMENTS.map((e) => e.name).join(", ")}
 

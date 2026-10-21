@@ -15,6 +15,7 @@ import {
   SECRET_NAME,
 } from "../src/cluster.js";
 import {
+  allContainersOf,
   byKind as byKindIn,
   containersOf,
   effectiveEnv,
@@ -312,6 +313,8 @@ describe("overlay kind (Plan #49)", () => {
       c.metadata.name.startsWith("udp-config-"),
     );
     expect(config?.data?.["UDP_RELEASE"]).toBe("local");
+    // [Plan #64] Postgres kèm cụm không có SSL — adapter tắt TLS ở chế độ này.
+    expect(config?.data?.["UDP_DB_TLS_MODE"]).toBe("disable");
   });
 
   it("mọi tài nguyên của UDP nằm trong namespace udp", () => {
@@ -322,5 +325,207 @@ describe("overlay kind (Plan #49)", () => {
         d.metadata.name !== "sample-app",
     );
     expect(outside.map((d) => `${d.kind}/${d.metadata.name}`)).toEqual([]);
+  });
+});
+
+/**
+ * [Plan #65] Chỉ client của database mới tới được PostgreSQL trong cụm.
+ *
+ * Postgres kèm cụm không có TLS (`UDP_DB_TLS_MODE=disable`, Plan #64), nên NetworkPolicy `postgres-clients` là lớp
+ * giữa mật khẩu role và một pod bất kỳ trong cụm. Bốn cách nó hỏng mà cụm vẫn chạy bình thường, và ô bắt từng cái:
+ *
+ *  - Một peer mở toang (`podSelector: {}`) hay một policy THỨ HAI chọn postgres - NetworkPolicy cộng dồn, nên chỉ
+ *    soi `postgres-clients` là không đủ: ô hình dạng so cả policy bằng `toStrictEqual` và đòi đúng một policy chọn
+ *    pod postgres; ô đối chứng chứng minh cổng bắt được cả hai.
+ *  - Selector hay cổng lệch pod thật (policy chọn 0 pod là không chặn gì): lấy nhãn và `containerPort` từ chính
+ *    StatefulSet.
+ *  - Một workload mới nối database mà quên policy: trên k3s và kind nó không bao giờ nối được, và chỉ lộ trên cụm.
+ *    Danh sách client dựng lại từ chuỗi kết nối trong manifest đã dựng, không từ một danh sách chép tay.
+ *  - Nhãn thừa trong policy: một lối vào không ai dùng.
+ *
+ * Overlay `vm` dựng trần (không qua `releaseKustomization`): lớp phát hành chỉ ghim image và cấu hình, không thêm
+ * workload hay policy nào.
+ */
+const DB_CLIENT_LABEL = "app.kubernetes.io/name";
+
+interface LabelSelector {
+  matchLabels?: Record<string, string>;
+  matchExpressions?: { key: string; operator: string; values: string[] }[];
+}
+
+interface PostgresPolicy {
+  podSelector?: LabelSelector;
+  policyTypes?: string[];
+  ingress?: {
+    from?: {
+      podSelector?: LabelSelector;
+      namespaceSelector?: unknown;
+      ipBlock?: unknown;
+    }[];
+    ports?: { port: number | string; protocol?: string }[];
+  }[];
+}
+
+const OVERLAYS = {
+  kind: OVERLAY,
+  vm: resolve(here, "../k8s/overlays/vm"),
+} as const;
+const built: Record<keyof typeof OVERLAYS, Resource[]> = { kind: [], vm: [] };
+
+/**
+ * Nhãn của mọi workload có container mang chuỗi kết nối: `envFrom` secret của UDP, biến `DATABASE_URL*`, hoặc biến
+ * đọc khoá `DATABASE_URL*` của một secret. Pod postgres đọc `POSTGRES_PASSWORD` nên không bị tính nhầm là client.
+ */
+function dbClientLabels(rendered: readonly Resource[]): string[] {
+  const labels = new Set<string>();
+  for (const workload of podWorkloads(rendered)) {
+    const usesDb = allContainersOf(workload).some(
+      (c) =>
+        (c.envFrom ?? []).some((e) => e.secretRef?.name === SECRET_NAME) ||
+        (c.env ?? []).some(
+          (v) =>
+            v.name.startsWith("DATABASE_URL") ||
+            (v.valueFrom?.secretKeyRef?.key.startsWith("DATABASE_URL") ??
+              false),
+        ),
+    );
+    if (!usesDb) continue;
+    const label = templateOf(workload).metadata?.labels?.[DB_CLIENT_LABEL];
+    if (label === undefined) {
+      throw new Error(
+        `${workload.kind}/${workload.metadata.name} nối database mà pod không có nhãn ${DB_CLIENT_LABEL}`,
+      );
+    }
+    labels.add(label);
+  }
+  return [...labels].sort();
+}
+
+function postgresPodOf(rendered: readonly Resource[]): {
+  labels: Record<string, string>;
+  port: number;
+} {
+  const sets = byKindIn(rendered, "StatefulSet").filter(
+    (s) => s.metadata.name === "postgres",
+  );
+  expect(sets, "đúng một StatefulSet postgres").toHaveLength(1);
+  const template = templateOf(sets[0] as Resource);
+  const port = template.spec.containers
+    .flatMap((c) => c.ports ?? [])
+    .find((p) => p.name === "postgres")?.containerPort;
+  expect(port, "cổng tên `postgres` của container").toBeDefined();
+  return { labels: template.metadata?.labels ?? {}, port: port as number };
+}
+
+/**
+ * Policy có chọn pod mang các nhãn này không. `matchExpressions` không tự đánh giá ở đây: coi như CÓ chọn, để ô hình
+ * dạng soi nó thay vì để nó lọt qua vì "không khớp".
+ */
+function selects(
+  selector: LabelSelector | undefined,
+  labels: Record<string, string>,
+): boolean {
+  if ((selector?.matchExpressions ?? []).length > 0) return true;
+  return Object.entries(selector?.matchLabels ?? {}).every(
+    ([k, v]) => labels[k] === v,
+  );
+}
+
+function postgresPolicyOf(rendered: readonly Resource[]): PostgresPolicy {
+  const pod = postgresPodOf(rendered);
+  const touching = byKindIn(rendered, "NetworkPolicy").filter((p) =>
+    selects((p.spec as PostgresPolicy).podSelector, pod.labels),
+  );
+  expect(
+    touching.map((p) => p.metadata.name),
+    "NetworkPolicy chọn pod postgres (chúng cộng dồn: mỗi cái là một lối vào)",
+  ).toEqual(["postgres-clients"]);
+  return (touching[0] as Resource).spec as PostgresPolicy;
+}
+
+function allowedLabels(policy: PostgresPolicy): string[] {
+  return (policy.ingress ?? [])
+    .flatMap((rule) => rule.from ?? [])
+    .flatMap((peer) => peer.podSelector?.matchExpressions ?? [])
+    .flatMap((e) => e.values)
+    .sort();
+}
+
+function expectPolicyShape(rendered: readonly Resource[]): void {
+  const pod = postgresPodOf(rendered);
+  const policy = postgresPolicyOf(rendered);
+  expect(policy).toStrictEqual({
+    podSelector: {
+      matchLabels: { [DB_CLIENT_LABEL]: pod.labels[DB_CLIENT_LABEL] },
+    },
+    policyTypes: ["Ingress"],
+    ingress: [
+      {
+        from: [
+          {
+            podSelector: {
+              matchExpressions: [
+                {
+                  key: DB_CLIENT_LABEL,
+                  operator: "In",
+                  values: expect.any(Array) as unknown,
+                },
+              ],
+            },
+          },
+        ],
+        ports: [{ port: pod.port, protocol: "TCP" }],
+      },
+    ],
+  });
+  const values = allowedLabels(policy);
+  expect(values.length).toBeGreaterThan(0);
+  expect(new Set(values).size, "không nhãn lặp").toBe(values.length);
+}
+
+describe("NetworkPolicy của PostgreSQL (Plan #65)", () => {
+  beforeAll(() => {
+    built.kind = render(OVERLAYS.kind).docs;
+    built.vm = render(OVERLAYS.vm).docs;
+  });
+
+  for (const name of ["kind", "vm"] as const) {
+    it(`${name}: đúng một policy chọn postgres, một peer podSelector theo danh sách, đúng cổng của container`, () => {
+      expectPolicyShape(built[name]);
+    });
+
+    it(`${name}: mọi workload mang chuỗi kết nối đều được policy cho qua`, () => {
+      const allowed = new Set(allowedLabels(postgresPolicyOf(built[name])));
+      const clients = dbClientLabels(built[name]);
+      expect(clients.length).toBeGreaterThan(0);
+      expect(clients.filter((c) => !allowed.has(c))).toEqual([]);
+    });
+  }
+
+  it("không nhãn thừa: mỗi nhãn được phép là một client thật ở overlay vm (overlay đủ nhất)", () => {
+    expect(allowedLabels(postgresPolicyOf(built.vm))).toEqual(
+      dbClientLabels(built.vm),
+    );
+  });
+
+  it("đối chứng của chính cổng: peer mở toang và policy thứ hai đều bị bắt", () => {
+    const policy = byKindIn(built.vm, "NetworkPolicy").find(
+      (p) => p.metadata.name === "postgres-clients",
+    ) as Resource;
+    const wideOpen = structuredClone(policy);
+    (wideOpen.spec as PostgresPolicy).ingress?.[0]?.from?.push({
+      podSelector: {},
+    });
+    const withWideOpen = built.vm.map((r) => (r === policy ? wideOpen : r));
+    expect(() => {
+      expectPolicyShape(withWideOpen);
+    }).toThrow();
+
+    const second: Resource = {
+      ...policy,
+      metadata: { ...policy.metadata, name: "allow-all" },
+      spec: { podSelector: {}, policyTypes: ["Ingress"], ingress: [{}] },
+    };
+    expect(() => postgresPolicyOf([...built.vm, second])).toThrow();
   });
 });
