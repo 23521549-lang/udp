@@ -105,6 +105,10 @@ async function launch(
         env: {
           ...process.env,
           LOG_LEVEL: "warn",
+          // [Plan #66] Một cổng: test gọi `/internal` qua `baseUrl`, và một cổng nội bộ cố định kế thừa từ `.env`
+          // sẽ làm các tiến trình con giẫm lên nhau (`EADDRINUSE`). Chuỗi rỗng là "chưa đặt" (`optionalSetting`).
+          CORE_BACKEND_INTERNAL_PORT: "",
+          FLAG_SERVICE_INTERNAL_PORT: "",
           ...env,
           [spec.portEnv]: String(port),
         },

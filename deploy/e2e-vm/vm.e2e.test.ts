@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 import { flaggerGatePath } from "@udp/http/flagger-gate";
 import { beforeAll, describe, expect, it } from "vitest";
 import { NAMESPACE } from "../src/cluster.js";
-import { expectPostgresOnlyForClients } from "../e2e/netpol-probe.js";
+import {
+  expectInternalPortsOnlyForCallers,
+  expectPostgresOnlyForClients,
+} from "../e2e/netpol-probe.js";
 import { OIDC_PATH } from "../src/vm.js";
 import {
   api,
@@ -239,6 +242,12 @@ describe("Bảng điều khiển nền tảng (Plan #53 QĐ-6)", () => {
       ready: true,
     });
   }, 240_000);
+});
+
+describe("cổng nội bộ của Service 1 và Service 2 (Plan #66)", () => {
+  it("k3s cưỡng chế: Service 3 tới cổng nội bộ, nhãn lạ và namespace khác thì không; cổng công khai không phục vụ /internal", async () => {
+    await expectInternalPortsOnlyForCallers(kube, NAMESPACE);
+  }, 900_000);
 });
 
 describe("NetworkPolicy của PostgreSQL (Plan #65)", () => {

@@ -9,8 +9,8 @@ import { UnauthenticatedError } from "./errors.js";
  * là hai chỗ để một bản sửa lọt mất một bên.
  *
  * **Đây là BƯỚC MỘT của T12, không phải toàn bộ T12.** §3.1 và §12 quy định lớp chính là *SA
- * token của Kubernetes + TokenReview*, cộng NetworkPolicy - cả hai CHƯA làm (§16, Plan #65), nên hôm
- * nay bí mật dùng chung là lớp xác thực duy nhất của `/internal`; với `PATCH /internal/rules/:id` của S2
+ * token của Kubernetes + TokenReview*, cộng NetworkPolicy. NetworkPolicy theo cổng nội bộ CÓ từ Plan #66;
+ * TokenReview chưa (§16), nên hôm nay bí mật dùng chung là lớp xác thực duy nhất ở tầng ứng dụng; với `PATCH /internal/rules/:id` của S2
  * còn thêm phép kiểm lease (`assertFencing`) — "chỉ có token hợp lệ là chưa đủ". §9 cho phép
  * "mTLS **hoặc** shared secret", nên bí mật dùng chung là hợp lệ, nhưng thiết kế muốn nó là lớp phòng
  * khi NetworkPolicy bị cấu hình sai chứ không phải lớp duy nhất. Guard đứng đúng chỗ §3.2 chỉ định để
