@@ -280,12 +280,17 @@ describe("sao lưu → khôi phục (QĐ-7)", () => {
         // `wait --for=condition=complete` không thoát sớm khi job Failed và chỉ nói "timed out":
         // in log của mọi container để lượt đỏ tự nói lý do.
         console.error(
+          // Theo nhãn chứ không `job/<tên>`: cách đó chỉ đọc MỘT pod và hỏng khi container chính chưa chạy
+          // (init lỗi) - lượt 39510991936 chỉ in được "(không đọc được log của job)".
           kube.ask([
             "logs",
-            `job/${job}`,
+            "-l",
+            `job-name=${job}`,
             "-n",
             NAMESPACE,
             "--all-containers",
+            "--prefix",
+            "--tail=50",
           ]) ?? "(không đọc được log của job)",
         );
         throw err;

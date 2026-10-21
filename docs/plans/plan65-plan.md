@@ -68,3 +68,16 @@ cần database). Trên runner: `kind`, `vm` xanh. Kiểm thoái cấp: mỗi câ
   ClusterIP; mã 2 không phân biệt bị chặn với postgres đang khởi động lại - kẹp bằng dương ở hai đầu; NetworkPolicy
   cộng dồn - cổng phải bắt policy thứ hai; kind v0.31.0 của CI CÓ cưỡng chế (spec ghi "chưa chắc" - sai), nên đo ở
   cả hai cụm. Đã đọc mã kube-router `v2.6.3-k3s1`: REJECT, kết nối ESTABLISHED được giữ.
+
+## Lượt CI đầu của Plan #65 (`39510991936`) - một thoái cấp, đã sửa
+
+Phép thử kẹp xanh ở cả `kind` (kindnet) và `vm` (k3s, 63 giây). Nhưng job sao lưu trên `vm` hỏng: container `dump`
+thoát 1 ngay trong giây đầu ở cả ba pod. Bộ cưỡng chế cần một nhịp để thấy IP của pod MỚI, và CronJob sao lưu dùng
+`restartPolicy: Never` nên mỗi lần thử lại là một pod mới với IP mới - đúng cửa sổ mà QA vòng B và C đã chỉ ra, chỉ
+khác là nó rơi vào một workload thật chứ không vào pod thử. Job migrate (`OnFailure`, khởi động lại TRÊN CÙNG pod) và
+ba service (khởi động lại container, cùng IP) không bị. Trên máy công khai, đó sẽ là bản sao lưu hằng đêm hỏng.
+
+Sửa: container `dump` chờ `pg_isready --dbname="$DATABASE_URL_DIRECT"` có hạn (30 lần, ~150 giây) rồi mới
+`pg_dump`; giữ `restartPolicy: Never` vì pod hỏng còn lại để soát. Đã chạy thử vòng chờ bằng `sh` với `pg_isready` giả
+(thành công ở lần 3 ⇒ `pg_dump` chạy; không bao giờ ⇒ thoát 1 sau 30 lần) và kiểm `pg_isready` 16.15 thật đọc chuỗi
+kết nối URI. E2E in log của mọi pod trong job theo nhãn `job-name` (cách cũ chỉ đọc một pod và hỏng khi init lỗi).
