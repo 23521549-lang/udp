@@ -1482,7 +1482,7 @@ vm-restore`; (8) sau 7 ngày, đọc Metrics của máy trên Console: bộ nh�
   scratch (64e), `vm` đỏ ở test sao lưu vì bồn nhận bị chặn event loop (64f). Bước `test:scratch` của lượt xanh duy
   nhất (`39019594153`) đo được 48m21s - dưới trần, xem `README.md`. Các lượt PR này chạy trên nhánh
   `p64-sua-loi-ci` (PR #2, đích `p61-dong-goi`); pha 1 của PR #1 xanh khi PR #2 xanh và được gộp vào. Phần sau bước
-  sao lưu của `vm` (khôi phục, đăng nhập lại) chưa từng chạy trên runner. **Cập nhật cùng ngày:** lượt `39506463646` (`9737605`) xanh cả 8 job của PR #2, gồm `vm` chạy trọn sao lưu, khôi phục, đăng nhập lại; ba lượt xanh của `test:scratch` đo 31m50s - 48m21s (`README.md`). Pha 1 của PR #1 còn chờ PR #2 được gộp vào `p61-dong-goi`.
+  sao lưu của `vm` (khôi phục, đăng nhập lại) chưa từng chạy trên runner. **Cập nhật cùng ngày:** lượt `39506463646` (`9737605`) xanh cả 8 job của PR #2, gồm `vm` chạy trọn sao lưu, khôi phục, đăng nhập lại; ba lượt xanh của `test:scratch` đo 31m50s - 48m21s (`README.md`). **Pha 1 ĐẠT:** PR #2 gộp vào `p61-dong-goi` (`a1850d5`), lượt `pull_request` của PR #1 (`39581069691`) xanh cả 8 job, gồm phép thử NetworkPolicy trên kind và k3s (Plan #65). Còn pha 2 - cần chủ repo gộp PR #1 vào `main`.
 - **Tiền đề:** quyền push lên `23521549-lang/udp`; secret của project Supabase CI đã nạp (đã có — job `test` của lượt
   đầu tạo và xoá được database scratch). Không cần tài khoản nào khác.
 - **Runbook:** hai pha, vì `workflow_dispatch` chỉ hiện khi tệp workflow nằm trên nhánh mặc định (`main` đang ở Plan

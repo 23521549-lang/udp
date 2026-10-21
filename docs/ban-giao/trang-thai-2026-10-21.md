@@ -7,7 +7,9 @@ người tiếp theo"; tệp đó giữ nguyên phần Plan #63. Nguồn sự th
 **Trạng thái một câu:** Plan #64 (nhánh `p64-sua-loi-ci`, PR #2, đích `p61-dong-goi`) đã sửa bốn lỗi của lượt CI #46
 (64a-64d, 16-17/10) và hai lỗi chỉ lộ ra sau đó (64e, 64f, 21/10), cùng với tài liệu (64g). **Lượt `39506463646`
 (`9737605`) là lượt CI đầu tiên xanh cả 8 job** (`build-smoke` bỏ qua đúng thiết kế). Plan #65 (mục 3c) thêm
-NetworkPolicy cho PostgreSQL trong cụm và sửa ba câu thiết kế nói quá. **53 mục nợ kiểm chứng.**
+NetworkPolicy cho PostgreSQL trong cụm và sửa ba câu thiết kế nói quá. **PR #2 đã gộp vào `p61-dong-goi`
+(`a1850d5`), và lượt CI của PR #1 trên đó (`39581069691`) xanh cả 8 job** - pha 1 của `ci-github-green` đạt. Việc
+còn lại cần chủ repo: gộp PR #1 vào `main` (mục 6). **53 mục nợ kiểm chứng.**
 
 Quyền của phiên 21/10: được push các nhánh và gộp PR giữa các nhánh không phải `main`; **không** merge vào `main` -
 PR #1 do chủ repo gộp.
@@ -16,11 +18,11 @@ PR #1 do chủ repo gộp.
 
 ## 1. Nhánh và PR
 
-| Nhánh            | Đỉnh          | Vai                                           |
-| ---------------- | ------------- | --------------------------------------------- |
-| `main` (remote)  | `46a1049`     | Plan #15 (12/09) - lượt đêm vẫn chạy trên đây |
-| `p61-dong-goi`   | `46d6ed6`     | Plan #16-#63, PR #1 vào `main`                |
-| `p64-sua-loi-ci` | sau `0831093` | Plan #64 và #65, PR #2 vào `p61-dong-goi`     |
+| Nhánh            | Đỉnh          | Vai                                                        |
+| ---------------- | ------------- | ---------------------------------------------------------- |
+| `main` (remote)  | `46a1049`     | Plan #15 (12/09) - lượt đêm vẫn chạy trên đây              |
+| `p61-dong-goi`   | sau `a1850d5` | Plan #16-#65, PR #1 vào `main` - CI xanh, chờ chủ repo gộp |
+| `p64-sua-loi-ci` | `1af8e4a`     | Plan #64 và #65, PR #2 - ĐÃ GỘP vào `p61-dong-goi`         |
 
 `fix/catalog-sync-migrate-job` (remote) tách từ `main` cũ và đã được gộp vào `p64-sua-loi-ci` bằng squash (`340b316`);
 không còn gì riêng trên đó.
@@ -85,11 +87,12 @@ demo 17/17.
 
 ## 3c. Plan #65 - NetworkPolicy cho PostgreSQL trong cụm (spec, plan: `docs/plans/plan65-*.md`)
 
-| Commit    | Nội dung                                                                                                           |
-| --------- | ------------------------------------------------------------------------------------------------------------------ |
-| `92f055b` | Cổng manifest: đúng một policy chọn postgres, hình dạng `toStrictEqual`, client dựng từ chuỗi kết nối, đối chứng   |
-| `5f65a9c` | `postgres-clients` (năm nhãn, cổng 5432); phép thử kẹp trên kind và k3s (`deploy/e2e/netpol-probe.ts`); `diagnose` |
-| `0831093` | Thiết kế: T12/§9/§3.1/§12.2 nói đúng `/internal` hôm nay chỉ có bí mật dùng chung; T15, §15.1, §16; I29; D-P57     |
+| Commit    | Nội dung                                                                                                             |
+| --------- | -------------------------------------------------------------------------------------------------------------------- |
+| `92f055b` | Cổng manifest: đúng một policy chọn postgres, hình dạng `toStrictEqual`, client dựng từ chuỗi kết nối, đối chứng     |
+| `5f65a9c` | `postgres-clients` (năm nhãn, cổng 5432); phép thử kẹp trên kind và k3s (`deploy/e2e/netpol-probe.ts`); `diagnose`   |
+| `0831093` | Thiết kế: T12/§9/§3.1/§12.2 nói đúng `/internal` hôm nay chỉ có bí mật dùng chung; T15, §15.1, §16; I29; D-P57       |
+| `1af8e4a` | Sao lưu: container `dump` chờ `pg_isready` có hạn - pod mới bị policy từ chối trong nhịp đồng bộ đầu (lượt CI lộ ra) |
 
 Ba vòng QA đổi plan ở năm chỗ: TokenReview tưởng đã có mà chưa; pod khác namespace gọi tên `postgres` gặp NXDOMAIN
 (xanh giả) - đi bằng ClusterIP; NetworkPolicy cộng dồn - cổng bắt policy thứ hai; kind v0.31 CÓ cưỡng chế nên đo ở
@@ -112,11 +115,13 @@ cả hai cụm; khối §9 sửa tại chỗ để `internal-routes` không đ�
 
 ## 6. Việc tiếp
 
-1. **Đọc CI của Plan #65** (`gh run list --branch p64-sua-loi-ci --limit 1`): job `kind` và `vm` phải xanh cả phép thử
-   kẹp. Đọc trước khi kết luận gì - bài học của 04/10.
-2. Khôi phục project Supabase dev rồi chạy hai lệnh ở mục 4.1.
-3. PR #2 xanh ⇒ gộp vào `p61-dong-goi` ⇒ PR #1 chạy lại ⇒ xanh thì gộp vào `main` ⇒ pha 2 của `ci-github-green`.
-4. Rồi `sdk-publish-real`, và E5 (bằng chứng của C1, chưa chạy).
+1. **Chủ repo gộp PR #1 vào `main`** (CI xanh ở `39581069691`; mô tả PR đã viết lại cho đủ Plan #16-#65). Rồi pha 2
+   của `ci-github-green`: lượt `push` của `main` chạy `build-smoke`; chạy tay `toolchain.yml` và `publish-rehearsal.yml`
+   (`gh workflow run <tệp>`).
+2. Khôi phục project Supabase dev rồi chạy hai lệnh ở mục 4.1 - bằng chứng ĐỎ của cổng `catalog-seeded` trên mã cũ.
+3. Rồi `sdk-publish-real` (cần tài khoản npm, PyPI của chủ repo), và E5 (bằng chứng của C1, cần cụm có Prometheus).
+4. Việc kỹ thuật lớn kế tiếp nếu muốn gỡ giới hạn T12: tách `/internal/*` sang cổng riêng, NetworkPolicy cho cổng đó,
+   `TokenReview` ở Service 1 và Service 2 (§16, D-P57) - một plan riêng, chạm cả ba service và manifest.
 5. Ngoài phạm vi, đã ghi nhận: lượt đêm trên `main` (Plan #15) đỏ hai lần ở `test` (09/10, 17/10) - hết khi PR #1
    vào `main`. Nhánh local `main`, `ux58-prototype` đã nằm trọn trong `p64-sua-loi-ci`; nhánh remote
    `fix/catalog-sync-migrate-job` đã vào qua squash `340b316`, xoá khi PR #1 vào `main`.
