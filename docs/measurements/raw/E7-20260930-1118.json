@@ -1,0 +1,86 @@
+{
+  "experiment": "E7",
+  "at": "2026-09-30T04:18:02.317Z",
+  "environment": {
+    "commit": "9234d7f56ca6ef916746f47f21d2a4feadf8f0fc",
+    "sourceDirty": true,
+    "sourceDiffSha256": "7b682bc5080e16c50066ff9a52fb3211e78bdf4dc8cbc1f20d556e27365fed37",
+    "node": "v22.20.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "memoryGiB": 7.7,
+    "freeMemoryGiB": 0.2,
+    "geometry": "in-process (không mạng)"
+  },
+  "data": {
+    "alpha": 0.001,
+    "scenarios": [
+      {
+        "name": "canary 10/90",
+        "n": 1000000,
+        "df": 1,
+        "critical": 10.828,
+        "chi2": 0.12484444444444445,
+        "pass": true,
+        "variants": [
+          {
+            "key": "on",
+            "expectedShare": 0.1,
+            "observedShare": 0.100106
+          },
+          {
+            "key": "off",
+            "expectedShare": 0.9,
+            "observedShare": 0.899894
+          }
+        ]
+      },
+      {
+        "name": "canary 1/99",
+        "n": 1000000,
+        "df": 1,
+        "critical": 10.828,
+        "chi2": 0.33979797979797977,
+        "pass": true,
+        "variants": [
+          {
+            "key": "on",
+            "expectedShare": 0.01,
+            "observedShare": 0.009942
+          },
+          {
+            "key": "off",
+            "expectedShare": 0.99,
+            "observedShare": 0.990058
+          }
+        ]
+      },
+      {
+        "name": "ba variant 20/30/50",
+        "n": 1000000,
+        "df": 2,
+        "critical": 13.816,
+        "chi2": 2.3009920000000004,
+        "pass": true,
+        "variants": [
+          {
+            "key": "a",
+            "expectedShare": 0.2,
+            "observedShare": 0.200568
+          },
+          {
+            "key": "b",
+            "expectedShare": 0.3,
+            "observedShare": 0.299556
+          },
+          {
+            "key": "c",
+            "expectedShare": 0.5,
+            "observedShare": 0.499876
+          }
+        ]
+      }
+    ]
+  }
+}

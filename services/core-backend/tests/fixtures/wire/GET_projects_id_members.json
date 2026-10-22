@@ -1,0 +1,28 @@
+{
+  "route": "GET /projects/{id}/members",
+  "status": 200,
+  "body": {
+    "members": [
+      {
+        "userId": "92d1a752-9105-45ce-9667-5623d6a0860c",
+        "projectRole": "OWNER",
+        "createdAt": "2026-09-24T19:40:48.020Z",
+        "user": {
+          "id": "92d1a752-9105-45ce-9667-5623d6a0860c",
+          "email": "wire-owner-b3650518-f8ad-4465-9cc0-f2a6ef5edf85@udp.local",
+          "name": "Test User"
+        }
+      },
+      {
+        "userId": "bf5a9b04-6f87-4d35-8c7e-26ed3ff7800c",
+        "projectRole": "DEVELOPER",
+        "createdAt": "2026-09-24T19:40:48.633Z",
+        "user": {
+          "id": "bf5a9b04-6f87-4d35-8c7e-26ed3ff7800c",
+          "email": "wire-member-8e7d3012-a459-47f6-bbfc-035b5724c0d3@udp.local",
+          "name": "Test User"
+        }
+      }
+    ]
+  }
+}

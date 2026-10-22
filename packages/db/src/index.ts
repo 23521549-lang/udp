@@ -1,5 +1,5 @@
 import { env, isDevelopment, isProduction } from "@udp/config";
-import { createPgAdapter } from "./adapter.js";
+import { createPgAdapter, type TlsMode } from "./adapter.js";
 import { PrismaClient } from "./generated/prisma/client.js";
 
 /**
@@ -29,6 +29,12 @@ export interface PrismaClientOptions {
   max: number;
   /** Khoá giữ instance trên globalThis — mỗi service một khoá riêng */
   cacheKey: string;
+  /**
+   * Chế độ TLS — từ `UDP_DB_TLS_MODE`, người gọi truyền tường minh
+   * (quy tắc của package: chuỗi kết nối và chế độ do NGƯỜI GỌI đưa vào,
+   * không đọc env ở đây). Mặc định `verify-full`.
+   */
+  tlsMode?: TlsMode;
 }
 
 /**
@@ -49,6 +55,8 @@ export function createPrismaClient(options: PrismaClientOptions): PrismaClient {
     adapter: createPgAdapter({
       connectionString: options.connectionString,
       max: options.max,
+      // exactOptionalPropertyTypes: không truyền undefined tường minh.
+      ...(options.tlsMode === undefined ? {} : { tlsMode: options.tlsMode }),
     }),
     /**
      * Sự kiện `query` LUÔN bật, ở mọi môi trường: đó là đường duy nhất để đếm
@@ -94,20 +102,50 @@ if (typeof BigInt.prototype.toJSON !== "function") {
 export {
   createPgAdapter,
   DB_TLS_OPTIONS,
+  resolveTlsOptions,
   sanitizeConnectionString,
+  type TlsMode,
 } from "./adapter.js";
 export { assertConnectedAs } from "./identity.js";
+export { DbIdentityMismatchError, describeBootFailure } from "./identity.js";
+export { syncDomainCatalog } from "./domain-catalog.js";
+export type { DeclaredDomain, SyncOutcome } from "./domain-catalog.js";
 export { observeQueries } from "./observe.js";
 export type { QueryListener, QueryObservation } from "./observe.js";
 export { writeWithOutbox } from "./outbox.js";
-export type { ConfigChangeType, OutboxWrite } from "./outbox.js";
+export type { ConfigChangeType, OutboxState, OutboxWrite } from "./outbox.js";
 export { createSessionConnector } from "./session.js";
+export { createListenAccelerator } from "./listen-accelerator.js";
+export { keepLease } from "./lease-keeper.js";
+export type { LeaseKeeper, LeaseKeeperOptions } from "./lease-keeper.js";
+export { ACTIVE_ROLLOUT_STATUS_SQL } from "./rollout-status.js";
+export { loadTimezoneNames } from "./timezones.js";
+export type { TimezoneSource } from "./timezones.js";
+export {
+  envSlugOf,
+  issueSdkKeyToken,
+  maskedKeyOf,
+  SDK_KEY_HASH_PATTERN,
+  SDK_KEY_PLAINTEXT_PATTERN,
+  SDK_KEY_SUFFIX_PATTERN,
+  sdkKeyMaterialOf,
+} from "./sdk-key.js";
+export type { SdkKeyMaterial } from "./sdk-key.js";
+export type {
+  IdentityVerdict,
+  ListenAccelerator,
+  ListenAcceleratorDeps,
+  ListenLogger,
+  ListenTiming,
+} from "./listen-accelerator.js";
 export type { SessionClient, SessionConnector } from "./session.js";
 export {
   dbAvailabilityError,
   dbConstraintError,
+  hasSqlState,
   httpStatusOf,
   UDP_SQLSTATE,
+  uniqueViolationIndexOf,
 } from "./errors.js";
 export type { DbAvailabilityError, DbConstraintError } from "./errors.js";
 export * from "./generated/prisma/client.js";

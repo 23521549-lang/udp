@@ -1,0 +1,255 @@
+{
+  "route": "GET /projects/{id}/deployments",
+  "status": 200,
+  "body": {
+    "deployments": [
+      {
+        "deploymentId": "0b512d0a-1b05-4f08-8dad-a70865cdd1eb",
+        "status": "DEPLOY_FAILURE",
+        "workloadName": "p-4472f5d7",
+        "imageTag": "0123456789abcdef0123456789abcdef01234567",
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": "SIGNATURE_STALE",
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:22.023Z",
+        "lastEventAt": "2026-10-02T14:45:22.023Z",
+        "events": [
+          {
+            "id": "01a0fd13-b348-7096-b866-438967a06011",
+            "eventType": "DEPLOY_FAILURE",
+            "occurredAt": "2026-10-02T14:45:22.023Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "6d9fa035-1ed6-4cbe-9dec-d3a7b61b551a",
+        "status": "DEPLOY_FAILURE",
+        "workloadName": "p-4472f5d7",
+        "imageTag": "0123456789abcdef0123456789abcdef01234567",
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": "SIGNATURE_MISMATCH",
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:21.091Z",
+        "lastEventAt": "2026-10-02T14:45:21.091Z",
+        "events": [
+          {
+            "id": "01a0fd13-afa3-71d9-a2a8-e7d2dcad86e8",
+            "eventType": "DEPLOY_FAILURE",
+            "occurredAt": "2026-10-02T14:45:21.091Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "c4002b94-c592-4a5a-a825-e17f47ad3aa2",
+        "status": "DEPLOY_FAILURE",
+        "workloadName": "p-4472f5d7",
+        "imageTag": "0123456789abcdef0123456789abcdef01234567",
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": "SIGNATURE_INVALID",
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:20.084Z",
+        "lastEventAt": "2026-10-02T14:45:20.084Z",
+        "events": [
+          {
+            "id": "01a0fd13-abb3-77c5-ade8-d330b2b6ebd9",
+            "eventType": "DEPLOY_FAILURE",
+            "occurredAt": "2026-10-02T14:45:20.084Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "41fec66a-61fa-47e6-b1a6-2483c6e14713",
+        "status": "DEPLOY_FAILURE",
+        "workloadName": "p-4472f5d7",
+        "imageTag": "0123456",
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": "SIGNATURE_MISSING",
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:19.100Z",
+        "lastEventAt": "2026-10-02T14:45:19.100Z",
+        "events": [
+          {
+            "id": "01a0fd13-a7dd-7453-bac6-3ae24b30ea07",
+            "eventType": "DEPLOY_FAILURE",
+            "occurredAt": "2026-10-02T14:45:19.100Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "24b54dc5-5576-4ac3-b147-760af11b6047",
+        "status": "DEPLOY_SUCCESS",
+        "workloadName": "p-4472f5d7",
+        "imageTag": "0123456789abcdef0123456789abcdef01234567",
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": "VERIFIED",
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:17.919Z",
+        "lastEventAt": "2026-10-02T14:45:18.635Z",
+        "events": [
+          {
+            "id": "01a0fd13-a341-7654-8b32-ccf98a331ca2",
+            "eventType": "DEPLOY_START",
+            "occurredAt": "2026-10-02T14:45:17.919Z"
+          },
+          {
+            "id": "01a0fd13-a604-72db-8c6a-c251417bf587",
+            "eventType": "DEPLOY_SUCCESS",
+            "occurredAt": "2026-10-02T14:45:18.635Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "ccaf999f-b538-4b9f-b9dd-7004f2437f19",
+        "status": "DEPLOY_START",
+        "workloadName": "p-4472f5d7",
+        "imageTag": "0123456",
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": null,
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:17.129Z",
+        "lastEventAt": "2026-10-02T14:45:17.129Z",
+        "events": [
+          {
+            "id": "01a0fd13-a02a-7127-86d1-076ec7773631",
+            "eventType": "DEPLOY_START",
+            "occurredAt": "2026-10-02T14:45:17.129Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "cf3ff4fe-8801-469d-a899-59a7150c45eb",
+        "status": "DEPLOY_START",
+        "workloadName": "p-4472f5d7",
+        "imageTag": "0123456789abcdef0123456789abcdef01234567",
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": null,
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:15.632Z",
+        "lastEventAt": "2026-10-02T14:45:15.632Z",
+        "events": [
+          {
+            "id": "01a0fd13-9a49-7307-9948-648306a4788e",
+            "eventType": "DEPLOY_START",
+            "occurredAt": "2026-10-02T14:45:15.632Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "6abf3fe8-be56-4762-9f04-73b85fe62665",
+        "status": "DEPLOY_FAILURE",
+        "workloadName": "p-4472f5d7",
+        "imageTag": null,
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": null,
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:15.129Z",
+        "lastEventAt": "2026-10-02T14:45:15.129Z",
+        "events": [
+          {
+            "id": "01a0fd13-9857-76df-a4ac-3d6a0ea0c8d5",
+            "eventType": "DEPLOY_FAILURE",
+            "occurredAt": "2026-10-02T14:45:15.129Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "bd873477-36c3-4d6a-ab04-b6f83937d2e8",
+        "status": "DEPLOY_FAILURE",
+        "workloadName": "p-4472f5d7",
+        "imageTag": null,
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": null,
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:06.186Z",
+        "lastEventAt": "2026-10-02T14:45:06.186Z",
+        "events": [
+          {
+            "id": "01a0fd13-7568-709d-8eb4-b5d5b9eb82a7",
+            "eventType": "DEPLOY_FAILURE",
+            "occurredAt": "2026-10-02T14:45:06.186Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "c7f09144-2a39-4abb-bdea-d7850db9b259",
+        "status": "DEPLOY_START",
+        "workloadName": "p-4472f5d7",
+        "imageTag": null,
+        "commitSha": null,
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": null,
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:05.636Z",
+        "lastEventAt": "2026-10-02T14:45:05.636Z",
+        "events": [
+          {
+            "id": "01a0fd13-733f-767c-805c-a15abff0068c",
+            "eventType": "DEPLOY_START",
+            "occurredAt": "2026-10-02T14:45:05.636Z"
+          }
+        ]
+      },
+      {
+        "deploymentId": "f4c7d359-a9e7-4211-80a5-b9fb84e77585",
+        "status": "DEPLOY_START",
+        "workloadName": "p-4472f5d7",
+        "imageTag": "0123456",
+        "commitSha": "0123456789abcdef0123456789abcdef01234567",
+        "triggeredBy": "WEBHOOK",
+        "rebase": false,
+        "signature": null,
+        "trustedDeploy": null,
+        "rolloutSessionId": null,
+        "restoresDeploymentId": null,
+        "startedAt": "2026-10-02T14:45:03.360Z",
+        "lastEventAt": "2026-10-02T14:45:03.360Z",
+        "events": [
+          {
+            "id": "01a0fd13-6a5c-77b8-a64d-0f2ada4c981e",
+            "eventType": "DEPLOY_START",
+            "occurredAt": "2026-10-02T14:45:03.360Z"
+          }
+        ]
+      }
+    ]
+  }
+}

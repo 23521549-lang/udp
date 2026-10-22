@@ -1,0 +1,109 @@
+{
+  "route": "GET /projects/{id}/repo-scan",
+  "status": 200,
+  "body": {
+    "scan": {
+      "host": "github",
+      "repoUrl": "https://github.com/acme/legacy-web",
+      "runtime": "nodejs",
+      "cicdTool": "github-actions",
+      "findings": [
+        {
+          "id": "runtime",
+          "detail": "Runtime nodejs (express)",
+          "status": "ok",
+          "evidence": [
+            "package.json"
+          ]
+        },
+        {
+          "id": "dockerfile",
+          "detail": "Không có Dockerfile: UDP build image bằng Buildpacks (nodejs)",
+          "status": "ok",
+          "evidence": [],
+          "suggestion": {
+            "file": {
+              "path": "Dockerfile",
+              "content": "# Golden Path (§11.1) — build nhiều tầng: tầng chạy chỉ có dist/ và phụ thuộc production.\n# `npm ci` cần package-lock.json: chạy `npm install` một lần ở máy và commit tệp khoá.\n# Image nền ghim digest (tag để đọc): tag đẩy đè được. UDP cập nhật digest theo bản vá của Node 22.\nFROM node:22.23.3-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build\nWORKDIR /app\nCOPY package.json package-lock.json ./\nRUN npm ci\nCOPY tsconfig.json ./\nCOPY src ./src\nRUN npm run build && npm prune --omit=dev\n\nFROM node:22.23.3-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402\nENV NODE_ENV=production\nWORKDIR /app\nCOPY --from=build /app/package.json ./\nCOPY --from=build /app/node_modules ./node_modules\nCOPY --from=build /app/dist ./dist\nUSER node\nEXPOSE 3000\nCMD [\"node\", \"dist/index.js\"]\n"
+            },
+            "text": "Muốn tự quyết image nền: thêm Dockerfile nhiều tầng của Golden Path"
+          }
+        },
+        {
+          "id": "metrics-endpoint",
+          "detail": "Có thư viện Prometheus client: endpoint /metrics",
+          "status": "ok",
+          "evidence": [
+            "package.json"
+          ]
+        },
+        {
+          "id": "openfeature",
+          "detail": "Chưa có OpenFeature SDK",
+          "status": "missing",
+          "evidence": [
+            "package.json"
+          ],
+          "suggestion": {
+            "text": "Thêm OpenFeature SDK rồi đánh giá flag qua client của nó"
+          }
+        },
+        {
+          "id": "udp-provider",
+          "detail": "Chưa dùng UDPFeatureFlagProvider: rollout mức flag không tách được nhánh",
+          "status": "missing",
+          "evidence": [],
+          "suggestion": {
+            "file": {
+              "path": "src/telemetry.ts",
+              "content": "import { MetricsHook, SpanHook } from \"@openfeature/open-telemetry-hooks\";\nimport { OpenFeature } from \"@openfeature/server-sdk\";\nimport { UDPFeatureFlagProvider } from \"udp-openfeature\";\n\n/**\n * Feature flag của UDP — thiết lập MỘT LẦN, trước khi tạo ứng dụng (Golden Path §11.1).\n *\n * - `UDP_FLAG_HOST`, `UDP_SDK_KEY`: địa chỉ Service 2 và SERVER key của environment (trang SDK keys\n *   trên Portal). Không truyền projectId: key đã mang project và environment.\n * - Service 2 không tới được hay khoá bị từ chối: ứng dụng VẪN khởi động và trả giá trị mặc định\n *   trong code; provider tiếp tục thử nền và phát READY khi có cấu hình.\n * - Hook gắn nhãn `ff` do provider TỰ gắn — không có bước cài hook nào ở đây.\n */\nexport async function startFeatureFlags(\n  env: NodeJS.ProcessEnv = process.env,\n): Promise<void> {\n  // Span và counter chuẩn OTel semconv — có tác dụng khi ứng dụng cấu hình OpenTelemetry SDK\n  OpenFeature.addHooks(new SpanHook(), new MetricsHook());\n\n  const host = env[\"UDP_FLAG_HOST\"];\n  const sdkKey = env[\"UDP_SDK_KEY\"];\n  if (host === undefined || sdkKey === undefined) {\n    console.warn(\n      \"Thiếu UDP_FLAG_HOST hoặc UDP_SDK_KEY — mọi flag trả giá trị mặc định trong code\",\n    );\n    return;\n  }\n  try {\n    await OpenFeature.setProviderAndWait(\n      new UDPFeatureFlagProvider({ host, sdkKey, logger: console }),\n    );\n  } catch (err) {\n    console.warn(\"UDP flags chưa sẵn sàng — chạy với giá trị mặc định\", err);\n  }\n}\n"
+            },
+            "text": "Đặt UDPFeatureFlagProvider làm provider của OpenFeature (hook nhãn ff tự gắn)"
+          }
+        },
+        {
+          "id": "udp-middleware",
+          "detail": "Chưa có middleware đo của UDP: metric không có nhãn ff, rollout mức flag bị chặn (§8.5)",
+          "status": "missing",
+          "evidence": [],
+          "suggestion": {
+            "file": {
+              "path": "src/app.ts",
+              "content": "import type { Client } from \"@openfeature/server-sdk\";\nimport { udpMetricsMiddleware } from \"udp-openfeature/metrics\";\nimport express, { type Express } from \"express\";\nimport type { Registry } from \"prom-client\";\nimport { helloRouter } from \"./routes/hello.js\";\n\nexport interface AppDeps {\n  /** Client OpenFeature của ứng dụng */\n  flags: Client;\n  /** Registry mà `/metrics` phơi — cũng là nơi middleware đăng ký histogram */\n  registry: Registry;\n}\n\n/**\n * Ứng dụng Express theo Golden Path (§11.1).\n *\n * `/healthz` và `/metrics` đăng ký TRƯỚC middleware đo: chúng không phải lưu lượng người dùng, đếm\n * chúng làm bẩn tỉ lệ lỗi mà UDP phân tích khi rollout. Mọi route nghiệp vụ đăng ký SAU middleware.\n *\n * Middleware ghi histogram `http_server_request_duration_seconds` với nhãn `ff` — một series tổng\n * `ff=\"\"` cộng một series cho mỗi flag đang rollout đã được đánh giá trong request. `service_name`\n * lấy từ `OTEL_SERVICE_NAME` (PHẢI bằng tên workload), `service_version` từ `service.version` trong\n * `OTEL_RESOURCE_ATTRIBUTES` — manifest `k8s/deployment.yaml` đặt cả hai.\n */\nexport function createApp(deps: AppDeps): Express {\n  const app = express();\n  app.disable(\"x-powered-by\");\n\n  app.get(\"/healthz\", (_req, res) => {\n    res.json({ ok: true });\n  });\n  app.get(\"/metrics\", (_req, res, next) => {\n    deps.registry\n      .metrics()\n      .then((text) => {\n        res.set(\"Content-Type\", deps.registry.contentType).end(text);\n      })\n      .catch(next);\n  });\n\n  app.use(udpMetricsMiddleware({ registry: deps.registry }));\n  app.use(express.json());\n  app.use(\"/api\", helloRouter(deps.flags));\n  return app;\n}\n"
+            },
+            "text": "Đăng ký middleware đo của UDP TRƯỚC mọi route nghiệp vụ"
+          }
+        },
+        {
+          "id": "service-version",
+          "detail": "Không thấy manifest Kubernetes trong repo (có thể nằm ở repo GitOps)",
+          "status": "unknown",
+          "evidence": [],
+          "suggestion": {
+            "file": {
+              "path": "k8s/deployment.yaml",
+              "content": "# Golden Path (§11.1) — áp vào namespace của environment: kubectl -n <namespace> apply -f k8s/\n#\n# UDP áp image của mỗi lần deploy (§8.3) và gắn nhãn pod app.kubernetes.io/version = tag của image;\n# SERVICE_VERSION đọc nhãn đó, nên service.version trên metric luôn là image ĐANG chạy — kể cả sau\n# rollback. Lần áp đầu tiên dùng image \"bootstrap\" (chưa tồn tại): pod chờ tới lần deploy đầu của\n# pipeline.\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: p-828d662a\n  labels:\n    app.kubernetes.io/name: p-828d662a\nspec:\n  replicas: 2\n  selector:\n    matchLabels:\n      app.kubernetes.io/name: p-828d662a\n  template:\n    metadata:\n      labels:\n        app.kubernetes.io/name: p-828d662a\n        app.kubernetes.io/version: bootstrap\n      annotations:\n        prometheus.io/scrape: \"true\"\n        prometheus.io/port: \"3000\"\n        prometheus.io/path: /metrics\n    spec:\n      containers:\n        - name: p-828d662a\n          image: REGISTRY_REF/p-828d662a:bootstrap\n          ports:\n            - name: http\n              containerPort: 3000\n          env:\n            - name: PORT\n              value: \"3000\"\n            # PHẢI bằng workloadName của rollout (§6.6)\n            - name: OTEL_SERVICE_NAME\n              value: p-828d662a\n            - name: SERVICE_VERSION\n              valueFrom:\n                fieldRef:\n                  fieldPath: metadata.labels['app.kubernetes.io/version']\n            - name: OTEL_RESOURCE_ATTRIBUTES\n              value: service.version=$(SERVICE_VERSION)\n            # Secret do bạn tạo: kubectl -n <namespace> create secret generic p-828d662a-udp\n            #   --from-literal=host=<địa chỉ Service 2> --from-literal=sdkKey=<SERVER key>\n            - name: UDP_FLAG_HOST\n              valueFrom:\n                secretKeyRef:\n                  name: p-828d662a-udp\n                  key: host\n            - name: UDP_SDK_KEY\n              valueFrom:\n                secretKeyRef:\n                  name: p-828d662a-udp\n                  key: sdkKey\n          readinessProbe:\n            httpGet:\n              path: /healthz\n              port: http\n          livenessProbe:\n            httpGet:\n              path: /healthz\n              port: http\n            initialDelaySeconds: 10\n          resources:\n            requests:\n              cpu: 50m\n              memory: 64Mi\n            limits:\n              memory: 256Mi\n"
+            },
+            "text": "Đặt OTEL_SERVICE_NAME và OTEL_RESOURCE_ATTRIBUTES=service.version=… như manifest Golden Path"
+          }
+        },
+        {
+          "id": "pipeline",
+          "detail": "Pipeline github-actions chưa báo deploy về UDP: DORA và luồng áp image không có dữ liệu",
+          "status": "missing",
+          "evidence": [
+            ".github/workflows/ci.yml"
+          ],
+          "suggestion": {
+            "text": "Dùng pipeline mà UDP sinh cho công cụ CI/CD của project (bước cuối ký và báo deploy)"
+          }
+        }
+      ],
+      "language": "nodejs",
+      "framework": "express",
+      "scannedAt": "2026-10-01T20:04:42.328Z",
+      "truncated": false,
+      "flagLevelReady": false
+    }
+  }
+}

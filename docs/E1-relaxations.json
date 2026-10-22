@@ -1,0 +1,21 @@
+{
+  "$comment": [
+    "[v4.10] So lieu E1 — so lan phai NOI LONG bo test hop dong cho mot ho adapter.",
+    "S13.2: 'neu bo test phai noi long de SaaSAdapter lot, thi khung adapter da go ep,",
+    "va so lan phai noi long chinh la so lieu bao cao o E1'.",
+    "",
+    "Tep nay ton tai de con so do DOC DUOC ma khong phai mo ma nguon, va de mot lan",
+    "noi long khong the xay ra am tham: `CONTRACT_RELAXATIONS` trong",
+    "packages/adapter-core/src/contract/index.ts la nguon su that, va mot phep kiem",
+    "trong design-lint khang dinh hai ben khop nhau. Them mot hang o mot ben ma quen",
+    "ben kia la mot test do.",
+    "",
+    "Gia tri hien tai la RONG, va do la mot ket qua chu khong phai mot cho trong:",
+    "tinh tu P7 den P18, bon ho hien thuc (SimCloud adapter, InMemoryLedger,",
+    "PrismaLedger, adapter Domain gia) da di qua ba bo hop dong ma khong phai noi",
+    "long phep nao."
+  ],
+  "measuredAt": "2026-09-24",
+  "relaxations": [],
+  "count": 0
+}

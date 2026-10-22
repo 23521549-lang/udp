@@ -1,0 +1,17 @@
+{
+  "route": "POST /projects/{id}/cloud/preflight",
+  "status": 200,
+  "body": {
+    "preflight": {
+      "ok": false,
+      "confidence": "heuristic",
+      "missingPermissions": [
+        "ec2:CreateVpc",
+        "ec2:ModifyVpcAttribute"
+      ],
+      "quotaWarnings": [],
+      "docUrl": "https://udp.example/docs/byoc/aws",
+      "checkedAt": "2026-09-25T05:58:21.509Z"
+    }
+  }
+}

@@ -1,0 +1,37 @@
+# Chuỗi migration, LOGIN + mật khẩu cho udp_s1…3 từ Secret, đồng bộ catalog domain (luôn), seed khi UDP_SEED=true
+# (deploy/docker/migrate.Dockerfile). backoffLimit rộng: lượt đầu chạy trước khi PostgreSQL sẵn sàng.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: udp-migrate
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: udp-migrate
+    spec:
+      enableServiceLinks: false # [Plan #63 QĐ-5] lý do ở base/core-backend.yaml
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: migrate
+          image: udp/migrate
+          envFrom:
+            - configMapRef:
+                name: udp-config
+            - secretRef:
+                name: udp-secrets
+          env:
+            - name: UDP_SEED
+              value: "false"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false

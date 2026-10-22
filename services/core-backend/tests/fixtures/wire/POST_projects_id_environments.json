@@ -1,0 +1,25 @@
+{
+  "route": "POST /projects/{id}/environments",
+  "status": 201,
+  "body": {
+    "environment": {
+      "id": "5d26784e-df43-404a-8a18-535eb9cb60eb",
+      "name": "qa",
+      "k8sNamespace": "udp-p-912137bb-1aa925-qa",
+      "isProduction": false,
+      "rank": 3,
+      "autoDeploy": true
+    },
+    "job": {
+      "id": "918cf6e0-8b9f-43fb-990e-1de952c08e58",
+      "jobType": "ENVIRONMENT_APPLY",
+      "state": "QUEUED",
+      "attempt": 0,
+      "confirmedMonthlyUsd": null,
+      "lastError": null,
+      "cancellable": false,
+      "createdAt": "2026-09-26T15:09:50.323Z",
+      "updatedAt": "2026-09-26T15:09:50.323Z"
+    }
+  }
+}

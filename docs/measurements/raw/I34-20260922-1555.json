@@ -1,0 +1,75 @@
+{
+  "experiment": "I34",
+  "at": "2026-09-22T08:55:01.681Z",
+  "environment": {
+    "commit": "f39055aa33401f720de07575e5967c592d9bd427",
+    "sourceDirty": true,
+    "sourceDiffSha256": "4b1e94a262ffd19d3a66e56cb03d05e7ad069335abfb20e48bae307d8a7bcd99",
+    "node": "v22.20.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "memoryGiB": 7.7,
+    "freeMemoryGiB": 1,
+    "geometry": "dev-box (Windows, cùng máy) → Supabase ap-southeast-1"
+  },
+  "data": {
+    "method": {
+      "evaluateEveryMs": 50,
+      "staleAfterSeconds": 120,
+      "change": "ghi qua Service 2 thứ hai (không qua proxy) sau 1/5 thời gian ngắt",
+      "wrong": "lỗi, hoặc value/reason khác lần đánh giá khoẻ cuối trước khi ngắt"
+    },
+    "phases": [
+      {
+        "phase": "hố đen (proxy giữ kết nối, nuốt byte)",
+        "pass": false,
+        "outageSeconds": 300,
+        "evaluationsDuringOutage": 5134,
+        "wrongOrErrorDuringOutage": 0,
+        "staleAfterSeconds": 110.5,
+        "convergedAfterRestoreSeconds": 12,
+        "convergeLimitSeconds": 80,
+        "events": [
+          {
+            "t": 110.5,
+            "event": "STALE"
+          },
+          {
+            "t": 313.3,
+            "event": "READY"
+          },
+          {
+            "t": 313.3,
+            "event": "CONFIGURATION_CHANGED"
+          }
+        ]
+      },
+      {
+        "phase": "Service 2 chết",
+        "pass": false,
+        "outageSeconds": 300,
+        "evaluationsDuringOutage": 4971,
+        "wrongOrErrorDuringOutage": 0,
+        "staleAfterSeconds": 110.1,
+        "convergedAfterRestoreSeconds": 19.1,
+        "convergeLimitSeconds": 80,
+        "events": [
+          {
+            "t": 110.1,
+            "event": "STALE"
+          },
+          {
+            "t": 320.6,
+            "event": "READY"
+          },
+          {
+            "t": 320.6,
+            "event": "CONFIGURATION_CHANGED"
+          }
+        ]
+      }
+    ],
+    "pass": false
+  }
+}

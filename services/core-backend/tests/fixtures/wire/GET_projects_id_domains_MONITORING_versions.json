@@ -1,0 +1,36 @@
+{
+  "route": "GET /projects/{id}/domains/MONITORING/versions",
+  "status": 200,
+  "body": {
+    "versions": {
+      "domainType": "MONITORING",
+      "toolId": "fake-metrics",
+      "current": "0.9.0",
+      "available": [
+        {
+          "version": "1.0.0",
+          "provides": [
+            {
+              "id": "metrics.query",
+              "version": "2.0.0"
+            }
+          ],
+          "changes": [],
+          "validation": {
+            "valid": true,
+            "errors": [],
+            "warnings": [],
+            "deployOrder": [
+              [
+                "monitoring:fake-metrics"
+              ],
+              [
+                "progressive_delivery:fake-rollouts"
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "route": "GET /admin/platform",
+  "status": 200,
+  "body": {
+    "platform": {
+      "release": null,
+      "node": {
+        "state": "ok",
+        "name": "udp-vm",
+        "cpuCores": 2,
+        "cpuUsedCores": 0.46,
+        "memoryBytes": 12884901888,
+        "memoryUsedBytes": 4931584000
+      },
+      "postgresVolume": {
+        "state": "ok",
+        "capacityBytes": 21474836480
+      },
+      "backup": {
+        "state": "ok",
+        "schedule": "30 19 * * *",
+        "lastScheduleAt": "2026-09-29T12:44:07.229Z",
+        "lastSuccessAt": "2026-09-29T12:44:07.229Z",
+        "lastFailureAt": null
+      },
+      "certificate": {
+        "state": "ok",
+        "name": "udp-tls",
+        "ready": true,
+        "notAfter": "2026-11-22T17:44:07.229Z",
+        "issuer": "udp-letsencrypt"
+      },
+      "checkedAt": "2026-09-29T17:44:18.063Z"
+    }
+  }
+}

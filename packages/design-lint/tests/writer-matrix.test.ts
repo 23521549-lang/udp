@@ -28,8 +28,17 @@ import { modelToTableMap, openClient } from "../src/db-schema.js";
 const ROLES = ["udp_s1", "udp_s2", "udp_s3"] as const;
 type Role = (typeof ROLES)[number];
 
-/** Ô "Writer" của §1.2 dùng "Service 1" / "S1" lẫn lộn; quy về một dạng */
-function writerRoleOf(row: WriterMatrixRow): Role | "split" | "append-only" {
+/**
+ * Ô "Writer" của §1.2 dùng "Service 1" / "S1" lẫn lộn; quy về một dạng.
+ *
+ * [Plan #64] `**Owner**` = dữ liệu nền tảng, KHÔNG service nào ghi (catalog domain: job migrate và seed
+ * ghi bằng owner). Phải nhận nó tường minh: thiếu nhánh này thì "không service nào" rơi xuống phép tìm
+ * "Service N" và hàng bị coi là không đọc được.
+ */
+function writerRoleOf(
+  row: WriterMatrixRow,
+): Role | "split" | "append-only" | "owner" {
+  if (/\*\*Owner\*\*/.test(row.writer)) return "owner";
   if (/Append-only/i.test(row.writer)) return "append-only";
   if (/Chia theo cột/i.test(row.writer)) return "split";
   const m = /Service\s*(\d)/.exec(row.writer) ?? /\bS(\d)\b/.exec(row.writer);
@@ -134,7 +143,11 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
     for (const row of rows) {
       const who = writerRoleOf(row);
       const roles: Role[] =
-        who === "append-only" ? [...ROLES] : who === "split" ? [] : [who];
+        who === "append-only"
+          ? [...ROLES]
+          : who === "split" || who === "owner"
+            ? []
+            : [who];
       for (const role of roles) {
         for (const model of modelsOf(row)) {
           const table = modelToTable.get(model) as string;
@@ -158,6 +171,21 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
     for (const row of rows) {
       const who = writerRoleOf(row);
       if (who === "append-only" || who === "split") continue;
+      if (who === "owner") {
+        // Không service nào là writer ⇒ không service nào có quyền ghi NÀO, kể cả một cột.
+        for (const model of modelsOf(row)) {
+          const table = modelToTable.get(model) as string;
+          for (const role of ROLES) {
+            for (const priv of ["INSERT", "UPDATE", "DELETE"] as const) {
+              if (grants.has(`${role}|${table}|${priv}`))
+                problems.push(
+                  `${role} có ${priv} trên ${table}, nhưng §1.2 nói chỉ owner ghi`,
+                );
+            }
+          }
+        }
+        continue;
+      }
 
       for (const model of modelsOf(row)) {
         const table = modelToTable.get(model) as string;
@@ -202,14 +230,14 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
     expect(actual).toEqual(declared);
   });
 
-  it("ba quyền kill-switch của S3 khớp đúng những gì §1.2 liệt kê", () => {
-    // Ô của hàng Service 2 nêu ngoại lệ bằng `bảng.cột`. Bóc đúng dạng đó rồi
-    // đối chiếu: thừa một quyền là §7.6 bị nới ra mà không ai ghi lại.
-    const row = rows.find((r) => writerRoleOf(r) === "udp_s2");
-    expect(row).toBeDefined();
-    // Ngoại lệ được viết ở ô READER, không phải ô Writer — đọc cả hai để chỗ
-    // đặt câu văn không quyết định được test có chạy hay không.
-    const cell = `${(row as WriterMatrixRow).writer} ${(row as WriterMatrixRow).reader}`;
+  it("mọi quyền UPDATE mức cột của S3 khớp đúng những gì §1.2 liệt kê", () => {
+    // §1.2 nêu ngoại lệ mức cột của S3 bằng dạng `bảng.cột` — ba quyền kill-switch
+    // ở hàng Service 2, và [v4.2] `rollout_events.processed_at` ở hàng RolloutEvent.
+    // Bóc đúng dạng đó trên MỌI hàng rồi đối chiếu: thừa một quyền là §7.6 bị
+    // nới ra mà không ai ghi lại; thiếu là kill-switch im lặng không tác dụng.
+    // Đọc cả ô Writer lẫn ô Reader để chỗ đặt câu văn không quyết định được
+    // test có chạy hay không.
+    const cell = rows.map((r) => `${r.writer} ${r.reader}`).join(" ");
 
     const dotted = [...cell.matchAll(/`([a-z_]+)\.([a-z_]+)`/g)].map(
       (m) => [m[1] as string, m[2] as string] as const,
@@ -252,7 +280,9 @@ describe("A6 — §1.2 ràng buộc GRANT thật", () => {
 
     // Chiều còn lại: mọi bảng mà S3 có UPDATE đều PHẢI được §1.2 nhắc tới.
     // Vòng lặp trên chỉ đi qua bảng tài liệu nêu, nên cấp cho S3 quyền trên một
-    // bảng §1.2 không nhắc sẽ lọt hoàn toàn.
+    // bảng §1.2 không nhắc sẽ lọt hoàn toàn. Đã đo 12/09/2026: chính dòng này
+    // đỏ khi migration `rollout_intent_processed` cấp `processed_at` trước khi
+    // §1.2 được sửa — đúng việc nó sinh ra để làm.
     const s3UpdateTables = [...grants.keys()]
       .filter((k) => k.startsWith("udp_s3|") && k.endsWith("|UPDATE"))
       .map((k) => k.split("|")[1] as string);

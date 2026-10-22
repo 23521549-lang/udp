@@ -1,0 +1,13 @@
+{
+  "route": "POST /auth/register",
+  "status": 201,
+  "body": {
+    "user": {
+      "id": "17e9b50e-7c30-4788-ac9e-4cd3a5fa091b",
+      "email": "deploy-outsider-8e039f07-618c-4fd2-9acd-b6fca6db5f7e@udp.local",
+      "name": "Test User",
+      "platformRole": "USER"
+    },
+    "csrfToken": "fake-csrf-token-for-golden-capture"
+  }
+}

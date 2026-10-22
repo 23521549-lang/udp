@@ -1,0 +1,232 @@
+{
+  "route": "GET /projects/{id}/architecture",
+  "status": 200,
+  "body": {
+    "architecture": {
+      "cloud": {
+        "provider": "AWS",
+        "region": "ap-southeast-1",
+        "mode": "BYOC",
+        "authKind": "AWS_ROLE",
+        "lastValidatedAt": "2026-09-30T04:50:59.733Z"
+      },
+      "cluster": {
+        "clusterId": "udp-dash",
+        "apiEndpoint": "https://ABCD.gr7.ap-southeast-1.eks.amazonaws.com"
+      },
+      "resources": [
+        {
+          "step": "NETWORK",
+          "kind": "nat-gateway",
+          "name": "nat",
+          "status": "READY"
+        },
+        {
+          "step": "NETWORK",
+          "kind": "subnet",
+          "name": "private-a",
+          "status": "READY"
+        },
+        {
+          "step": "NETWORK",
+          "kind": "vpc",
+          "name": "vpc",
+          "status": "READY"
+        },
+        {
+          "step": "CLUSTER",
+          "kind": "cluster",
+          "name": "udp-dash",
+          "status": "READY"
+        },
+        {
+          "step": "CLUSTER",
+          "kind": "nodegroup",
+          "name": "default",
+          "status": "READY"
+        }
+      ],
+      "environments": [
+        {
+          "id": "c9702404-87d4-4de6-b0b8-9c720f0dcff5",
+          "name": "dev",
+          "namespace": "udp-p-c313b302-69a10a-dev",
+          "isProduction": false,
+          "workloads": [
+            {
+              "name": "checkout-api",
+              "imageTag": "v1.2.0",
+              "commitSha": "45863244d7064235a7ba07a6ae67a3be",
+              "lastEvent": "DEPLOY_SUCCESS",
+              "at": "2026-09-30T04:50:59.733Z"
+            },
+            {
+              "name": "checkout-worker",
+              "imageTag": "v1.5.0",
+              "commitSha": "7fea844077524830bfdaf22ffa63d8b0",
+              "lastEvent": "DEPLOY_FAILURE",
+              "at": "2026-09-30T01:50:59.733Z"
+            }
+          ]
+        },
+        {
+          "id": "40c4f341-281b-4605-a3ba-57550b840b7b",
+          "name": "staging",
+          "namespace": "udp-p-c313b302-69a10a-staging",
+          "isProduction": false,
+          "workloads": []
+        },
+        {
+          "id": "8e204eb5-16d2-4ef4-8237-8039bc93a712",
+          "name": "prod",
+          "namespace": "udp-p-c313b302-69a10a-prod",
+          "isProduction": true,
+          "workloads": [
+            {
+              "name": "checkout-api",
+              "imageTag": "v1.1.0",
+              "commitSha": "2a871f4e98734ab6971973e3c8aac380",
+              "lastEvent": "DEPLOY_PENDING",
+              "at": "2026-09-30T05:50:59.733Z"
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "key": "container_registry:ghcr",
+          "domainType": "CONTAINER_REGISTRY",
+          "displayName": "Container Registry",
+          "toolId": "ghcr",
+          "adapterVersion": "1.0.0",
+          "scope": "cluster",
+          "tier": 0,
+          "status": "ACTIVE",
+          "drift": {
+            "verdict": "CLEAN",
+            "at": null
+          },
+          "provides": [
+            "registry.oci"
+          ]
+        },
+        {
+          "key": "monitoring:prometheus-grafana",
+          "domainType": "MONITORING",
+          "displayName": "Monitoring",
+          "toolId": "prometheus-grafana",
+          "adapterVersion": "1.0.0",
+          "scope": "cluster",
+          "tier": 1,
+          "status": "ACTIVE",
+          "drift": {
+            "verdict": "DRIFTED",
+            "at": "2026-09-30T03:50:59.733Z"
+          },
+          "provides": [
+            "metrics.query",
+            "metrics.scrape"
+          ]
+        },
+        {
+          "key": "logging:loki",
+          "domainType": "LOGGING",
+          "displayName": "Logging",
+          "toolId": "loki",
+          "adapterVersion": "1.0.0",
+          "scope": "cluster",
+          "tier": 0,
+          "status": "ERROR",
+          "drift": {
+            "verdict": "CLEAN",
+            "at": null
+          },
+          "provides": [
+            "logs.sink"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "monitoring:prometheus-grafana",
+          "to": "container_registry:ghcr",
+          "capabilityId": "registry.oci"
+        }
+      ],
+      "deploys": [
+        {
+          "date": "2026-09-17",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-18",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-19",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-20",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-21",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-22",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-23",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-24",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-25",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-26",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-27",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-28",
+          "success": 0,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-29",
+          "success": 2,
+          "failure": 0
+        },
+        {
+          "date": "2026-09-30",
+          "success": 1,
+          "failure": 1
+        }
+      ],
+      "valid": true,
+      "generatedAt": "2026-09-30T06:51:07.038Z"
+    }
+  }
+}

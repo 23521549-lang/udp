@@ -1,0 +1,17 @@
+{
+  "route": "POST /projects/{id}/domains/MONITORING/retry",
+  "status": 202,
+  "body": {
+    "job": {
+      "id": "ba30909e-ec37-4d7d-be6d-a3039ba08535",
+      "jobType": "DOMAIN_APPLY",
+      "state": "QUEUED",
+      "attempt": 0,
+      "confirmedMonthlyUsd": null,
+      "lastError": null,
+      "cancellable": false,
+      "createdAt": "2026-09-28T14:39:57.595Z",
+      "updatedAt": "2026-09-28T14:39:57.595Z"
+    }
+  }
+}

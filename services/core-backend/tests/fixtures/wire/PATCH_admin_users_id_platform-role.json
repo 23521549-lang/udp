@@ -1,0 +1,13 @@
+{
+  "route": "PATCH /admin/users/{id}/platform-role",
+  "status": 200,
+  "body": {
+    "user": {
+      "id": "f57c51dd-2b32-415b-96d3-e5e17ec74c15",
+      "email": "admin-plain-40d2696c-2d02-44f0-b391-d7e1160d2164@udp.local",
+      "name": "Test User",
+      "platformRole": "PLATFORM_ADMIN",
+      "createdAt": "2026-09-25T03:16:28.532Z"
+    }
+  }
+}

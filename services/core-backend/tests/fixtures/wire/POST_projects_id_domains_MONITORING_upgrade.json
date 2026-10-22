@@ -1,0 +1,17 @@
+{
+  "route": "POST /projects/{id}/domains/MONITORING/upgrade",
+  "status": 202,
+  "body": {
+    "job": {
+      "id": "eaad8ab3-b989-4338-8da5-9c837a6a58a9",
+      "jobType": "DOMAIN_APPLY",
+      "state": "QUEUED",
+      "attempt": 0,
+      "confirmedMonthlyUsd": null,
+      "lastError": null,
+      "cancellable": true,
+      "createdAt": "2026-09-25T19:18:07.851Z",
+      "updatedAt": "2026-09-25T19:18:07.851Z"
+    }
+  }
+}

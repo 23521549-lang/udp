@@ -1,0 +1,9 @@
+# Plan #40 — PLAN (theo `plan40-spec.md` v1) — XONG 26/09/2026
+
+| Pha | Làm gì                                                                                                                                                                                                                  | Cổng                         |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| P1  | S2: `POST /internal/environments/:id/backfill` qua ADR-05, change type `environment.backfilled`; client S1 `backfillEnvironment`; §9 S2 Internal                                                                        | tích hợp S2 (AC-1/2 phía S2) |
+| P2  | S1: `GET/POST/PATCH/DELETE /projects/:id/environments` cho project chưa có cluster — luật tên, trần, bù trừ khi S2 hỏng, bốn điều kiện xoá; wire + golden; §9                                                           | tích hợp S1 (AC-1..4)        |
+| P3  | JobType `ENVIRONMENT_APPLY` (migration), payload, worker; ADD/REMOVE trên thế giới mô phỏng; lớp nền Helm dọn instance mồ côi theo nhãn; xoá namespace bằng token quản trị; route tạo/xoá gửi job khi có cluster; retry | tích hợp S1 (AC-5/6)         |
+| P4  | Portal: tab Environment (danh sách, tạo, sửa, xoá có xác nhận), api + msw theo golden, I38                                                                                                                              | Portal (AC-7)                |
+| P5  | §2.2, §8, §9, §16/§17, D-P31; sổ nợ `portal-env-crud` trả; bàn giao; cổng đầy đủ                                                                                                                                        | cổng đầy đủ (AC-8)           |

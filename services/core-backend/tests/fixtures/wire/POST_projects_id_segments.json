@@ -1,0 +1,31 @@
+{
+  "route": "POST /projects/{id}/segments",
+  "status": 201,
+  "body": {
+    "segment": {
+      "id": "78e75837-bf3a-41e7-b9fc-9aa6ce8fa38a",
+      "name": "seg-00be6ce1",
+      "description": null,
+      "createdAt": "2026-09-24T19:35:45.636Z",
+      "updatedAt": "2026-09-24T19:35:45.636Z",
+      "summary": {
+        "conditionCount": 0,
+        "userIdCount": 2,
+        "hasRegex": false,
+        "payloadBytes": 52
+      },
+      "usage": {
+        "flagCount": 0,
+        "productionFlagCount": 0,
+        "flags": []
+      },
+      "conditions": {
+        "all": [],
+        "userIds": [
+          "u-detail-1",
+          "u-detail-2"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,264 @@
+/**
+ * MỌI query key của Portal — một nơi duy nhất (§10.14).
+ *
+ * §10.12 cảnh báo bằng chữ: key của mọi query thuộc phạm vi environment phải chứa
+ * `envId`, nếu không dữ liệu của `dev` bị cache lẫn sang `prod`. Một cảnh báo bằng chữ bị
+ * quên ở màn hình thứ mười, nên nó thành hai phép kiểm máy (bất biến I38,
+ * `tests/i38-query-keys.test.ts`):
+ *
+ * 1. Mỗi key dưới đây khai phạm vi của nó (`ENV_SCOPED` hoặc `NOT_ENV_SCOPED`), và key
+ *    phạm vi env PHẢI nhận `envId` — kiểm bằng cách gọi thật và tìm giá trị đã truyền.
+ * 2. Không tệp nào khác trong `src/` được viết `queryKey: [` trần — phải đi qua đây.
+ *
+ * Miễn trừ phải KHAI, không phải bỏ sót: `flagEnvs` (ma trận hiện MỌI env cùng lúc),
+ * `segments`/`segment` (segment thuộc PROJECT, một bản cho mọi env — §2.2).
+ */
+/**
+ * [Plan #60 H6] Bộ lọc của hai danh sách quản trị nằm NGUYÊN trong key, có kiểu: TanStack băm object theo khoá đã sắp
+ * và bỏ khoá `undefined`, nên `{}` và `{ search: undefined }` là cùng một mục cache (danh bạ project dùng chung trang
+ * Project không lọc).
+ */
+interface AdminUsersKeyFilter {
+  search?: string | undefined;
+  platformRole?: string | undefined;
+  order?: "asc" | undefined;
+}
+interface AdminProjectsKeyFilter {
+  search?: string | undefined;
+  status?: string | undefined;
+  order?: "asc" | undefined;
+}
+
+export const qk = {
+  me: () => ["me"] as const,
+  /** [Plan #60] Cách đăng nhập mà triển khai bật (Quên mật khẩu, GitHub) — công khai, không theo người */
+  authOptions: () => ["authOptions"] as const,
+  /** [Plan #53] Trang chủ của người đang đăng nhập — mọi project của họ trong một lời gọi */
+  home: () => ["home"] as const,
+  /** [Plan #41] Một trang danh sách project */
+  projects: (offset: number) => ["projects", offset] as const,
+  project: (projectId: string) => ["project", projectId] as const,
+  members: (projectId: string) => ["members", projectId] as const,
+  /** [Plan #55] Lời mời đang chờ và nhóm có quyền của một project */
+  projectInvitations: (projectId: string) =>
+    ["projectInvitations", projectId] as const,
+  projectTeams: (projectId: string) => ["projectTeams", projectId] as const,
+  /** [Plan #55] Nhóm của người đang đăng nhập, một nhóm, lời mời đang chờ của nhóm */
+  teams: () => ["teams"] as const,
+  team: (teamId: string) => ["team", teamId] as const,
+  teamInvitations: (teamId: string) => ["teamInvitations", teamId] as const,
+  /** [Plan #55] Lời mời người cầm đường dẫn đang xem — chỉ trong bộ nhớ của trang, không lưu đâu cả */
+  invitation: (token: string) => ["invitation", token] as const,
+  audit: (projectId: string, filters: Record<string, string | undefined>) =>
+    ["audit", projectId, filters] as const,
+  sdkKeys: (projectId: string, envId: string) =>
+    ["sdkKeys", projectId, envId] as const,
+
+  /** [Plan #41] `page` trong key: mỗi trang, mỗi lần tìm là một mục cache riêng */
+  flags: (
+    projectId: string,
+    envId: string,
+    include: "stats" | "none" | "count",
+    page: Readonly<Record<string, string | number | boolean | undefined>>,
+  ) => ["flags", projectId, envId, include, page] as const,
+  flag: (projectId: string, flagId: string, envId: string) =>
+    ["flag", projectId, flagId, envId] as const,
+  flagRules: (projectId: string, flagId: string, envId: string) =>
+    ["flagRules", projectId, flagId, envId] as const,
+  flagEnvs: (projectId: string, flagId: string) =>
+    ["flagEnvs", projectId, flagId] as const,
+  flagStats: (
+    projectId: string,
+    flagId: string,
+    envId: string,
+    days: number,
+    granularity: string,
+    tz: string,
+  ) => ["flagStats", projectId, flagId, envId, days, granularity, tz] as const,
+  staleFlags: (projectId: string, category: string | undefined) =>
+    ["staleFlags", projectId, category ?? "all"] as const,
+
+  segments: (projectId: string) => ["segments", projectId] as const,
+  segment: (projectId: string, segmentId: string) =>
+    ["segment", projectId, segmentId] as const,
+
+  rollouts: (projectId: string, envId: string) =>
+    ["rollouts", projectId, envId] as const,
+  rollout: (projectId: string, rolloutId: string) =>
+    ["rollout", projectId, rolloutId] as const,
+  activeRollouts: (projectId: string) =>
+    ["rollouts-active", projectId] as const,
+
+  deployments: (projectId: string, envId: string) =>
+    ["deployments", projectId, envId] as const,
+  /** [Plan #45] Thẻ "Deploy gần nhất" của Tổng quan — deploy thuộc MỘT env */
+  deploymentLatest: (projectId: string, envId: string) =>
+    ["deploymentLatest", projectId, envId] as const,
+  /** [Plan #45] Nhật ký một lần deploy — id đã gắn đúng một env */
+  deploymentLogs: (projectId: string, deploymentId: string) =>
+    ["deploymentLogs", projectId, deploymentId] as const,
+  /** §10.14: `range` trong key — đổi khoảng mà số không đổi là key thiếu `range` */
+  dora: (projectId: string, envId: string, days: number) =>
+    ["dora", projectId, envId, days] as const,
+
+  /** §10.14: `["catalog"]`, staleTime vô hạn — registry chỉ đổi khi triển khai lại */
+  catalog: () => ["catalog"] as const,
+  domains: (projectId: string) => ["domains", projectId] as const,
+  domain: (projectId: string, type: string) =>
+    ["domain", projectId, type] as const,
+  domainDrift: (projectId: string, type: string) =>
+    ["drift", projectId, type] as const,
+  /** [Plan #45] Bản đang chạy, bản nâng được, kết quả validator — hộp nâng cấp (§10.13) */
+  domainVersions: (projectId: string, type: string) =>
+    ["domainVersions", projectId, type] as const,
+  /** §10.12 kiểm trực tiếp: khoá theo nội dung trạng thái đích đã chuẩn hoá */
+  domainValidation: (projectId: string, target: string) =>
+    ["domainValidation", projectId, target] as const,
+  /** Plan #36: webhook CI/CD của project — đường, secret đã sinh chưa (không bao giờ giá trị) */
+  cicd: (projectId: string) => ["cicd", projectId] as const,
+  pipelineTemplate: (projectId: string) =>
+    ["pipelineTemplate", projectId] as const,
+  /** [Plan #48] Cây Golden Path và lần quét repo mới nhất (§11) */
+  goldenPath: (projectId: string) => ["goldenPath", projectId] as const,
+  repoScan: (projectId: string) => ["repoScan", projectId] as const,
+  /** [Plan #61] Mục Đóng gói: cài đặt build, dự đoán, việc cần làm, script danh tính */
+  projectBuild: (projectId: string) => ["projectBuild", projectId] as const,
+  /** Plan #38: chi phí THỰC của project; `days` trong key — đổi cửa sổ mà số không đổi là thiếu nó */
+  cost: (projectId: string, days: number) => ["cost", projectId, days] as const,
+  /** [Plan #53] Sơ đồ kiến trúc — cũng là nguồn của lưới sức khoẻ domain ở Tổng quan */
+  architecture: (projectId: string) => ["architecture", projectId] as const,
+  /** [Plan #53] Request, lỗi, độ trễ của MỘT env; `range` trong key như `dora` */
+  red: (projectId: string, envId: string, range: string) =>
+    ["red", projectId, envId, range] as const,
+  cloud: (projectId: string) => ["cloud", projectId] as const,
+  cloudSetup: (projectId: string, provider: string) =>
+    ["cloudSetup", projectId, provider] as const,
+  provisionPreview: (projectId: string) =>
+    ["provisionPreview", projectId] as const,
+  jobs: (projectId: string) => ["jobs", projectId] as const,
+  job: (projectId: string, jobId: string) => ["job", projectId, jobId] as const,
+
+  /** [Plan #53] Theo trang: `offset` trong key — mỗi trang một mục cache */
+  adminUsers: (filter: AdminUsersKeyFilter, offset: number) =>
+    ["admin", "users", filter, offset] as const,
+  adminProjects: (filter: AdminProjectsKeyFilter, offset: number) =>
+    ["admin", "projects", filter, offset] as const,
+  adminCredentials: () => ["admin", "credentials"] as const,
+  adminJobs: (state: string, offset: number) =>
+    ["admin", "jobs", state, offset] as const,
+  adminOverview: () => ["admin", "overview"] as const,
+  adminPlatform: () => ["admin", "platform"] as const,
+  /** §10.14: `["orphans"]` — invalidate khi dọn một tài nguyên */
+  adminOrphans: () => ["admin", "orphans"] as const,
+  adminSystem: () => ["admin", "system"] as const,
+  /** [Plan #56] E10 của cả nền tảng; `days` trong key — đổi cửa sổ là một mục cache khác */
+  adminEvidenceDora: (days: number) => ["admin", "evidenceDora", days] as const,
+  /** [Plan #56] Tệp kết quả đo nạp lúc build — không bao giờ cũ trong một phiên */
+  measurements: () => ["measurements"] as const,
+} as const;
+
+export type QueryKeyName = keyof typeof qk;
+
+/** Dữ liệu thuộc về MỘT environment — key phải mang `envId` */
+export const ENV_SCOPED = [
+  "sdkKeys",
+  "flags",
+  "flag",
+  "flagRules",
+  "flagStats",
+  "rollouts",
+  "deployments",
+  "deploymentLatest",
+  "dora",
+  "red",
+] as const satisfies readonly QueryKeyName[];
+
+/**
+ * Không thuộc phạm vi env — mỗi dòng một lý do.
+ *
+ * `rollout`: id rollout đã gắn đúng một env (session có `environment_id`), nên key theo
+ * id không thể lẫn giữa env. `activeRollouts`: watcher của cả project (§10.9).
+ */
+export const NOT_ENV_SCOPED = {
+  me: "người dùng hiện tại",
+  authOptions: "cấu hình đăng nhập của cả triển khai, không thuộc project nào",
+  home: "gom mọi project của người dùng; env nằm trong từng dòng của response",
+  projects: "danh sách project",
+  project: "project và danh sách env của nó",
+  members: "thành viên thuộc project",
+  projectInvitations: "lời mời vào project, không theo env",
+  projectTeams: "quyền của nhóm trên cả project",
+  teams: "nhóm của người dùng, không thuộc project nào",
+  team: "một nhóm, không thuộc project nào",
+  teamInvitations: "lời mời vào nhóm",
+  invitation: "một lời mời, trước khi có project nào",
+  audit: "nhật ký của project, lọc env bằng tham số riêng",
+  flagEnvs: "ma trận flag × env: cố ý hiện MỌI env (§10.14)",
+  staleFlags: "Cleanup Center gộp mọi env (§6.7)",
+  segments: "segment thuộc project, một bản cho mọi env (§2.2)",
+  segment: "segment thuộc project (§2.2)",
+  rollout: "id rollout đã gắn đúng một env",
+  activeRollouts: "watcher auto-rollback của cả project (§10.9)",
+  catalog: "danh mục của cả hệ thống, dựng từ registry (§5.3)",
+  domains: "domain cấu hình theo project; binding theo env tới sau job (§2.2)",
+  domain: "một domain của project",
+  domainDrift: "drift của một domain, quét ở phạm vi cluster",
+  domainVersions: "bản adapter của một domain, một cluster cho mọi env",
+  deploymentLogs: "id deployment đã gắn đúng một env",
+  domainValidation: "kiểm trạng thái đích của cả project",
+  cicd: "webhook CI/CD của project; environment nằm trong thân webhook (§8.3)",
+  pipelineTemplate: "một pipeline cho MỌI env của project, env chọn theo nhánh",
+  goldenPath: "mã nguồn của project, một repo cho mọi env",
+  repoScan: "repo của project, một lần quét cho mọi env",
+  projectBuild: "cách build image của project, một cho mọi env",
+  cost: "chi phí cả project, chia theo environment ngay trong response",
+  architecture:
+    "sơ đồ của cả project: một cluster cho mọi env, env là các khung bên trong",
+  cloud: "credential cloud thuộc project, một bản cho mọi env (§4.3)",
+  cloudSetup: "dữ liệu setup theo project và cloud, không theo env",
+  provisionPreview: "hạ tầng của cả project: một cluster cho mọi env (§8.1)",
+  jobs: "job provisioning thuộc project, không theo env",
+  job: "một job provisioning dựng hạ tầng cho mọi env",
+  adminUsers: "toàn hệ thống, không thuộc project nào",
+  adminProjects: "toàn hệ thống",
+  adminCredentials: "toàn hệ thống",
+  adminJobs: "toàn hệ thống",
+  adminOrphans: "toàn hệ thống",
+  adminSystem: "toàn hệ thống",
+  adminOverview: "toàn hệ thống",
+  adminPlatform: "cụm chạy UDP, không thuộc project nào",
+  adminEvidenceDora:
+    "DORA của env production MỌI project, env nằm trong từng dòng",
+  measurements: "tệp kết quả đo của repo, không thuộc project nào",
+} as const satisfies Partial<Record<QueryKeyName, string>>;
+
+/**
+ * TIỀN TỐ để invalidate mọi biến thể của một họ key (mọi env, mọi tham số) — dùng khi một
+ * thay đổi chạm tới tất cả, ví dụ bật flag ở một env làm đổi danh sách của env đó VÀ ma
+ * trận. Tiền tố không dùng để ĐỌC, nên không thuộc I38.
+ */
+export const qkPrefix = {
+  /** [Plan #41] Mọi trang danh sách project — tạo, xoá, đổi chủ làm lệch mọi trang */
+  projectsAll: () => ["projects"] as const,
+  flagsOf: (projectId: string) => ["flags", projectId] as const,
+  flagOf: (projectId: string, flagId: string) =>
+    ["flag", projectId, flagId] as const,
+  /** [Plan #40] Ma trận env của MỌI flag — thêm/xoá environment đổi số cột */
+  flagEnvsOf: (projectId: string) => ["flagEnvs", projectId] as const,
+  staleFlagsOf: (projectId: string) => ["staleFlags", projectId] as const,
+  /**
+   * [Plan #41] MỌI key đọc cấu hình flag/segment của project — thứ đổi khi `config_version` của
+   * một environment tiến (luồng `flag_changed`, §10.14). Không gồm số đếm telemetry.
+   */
+  configOf: (projectId: string) =>
+    [
+      ["flags", projectId],
+      ["flag", projectId],
+      ["flagRules", projectId],
+      ["flagEnvs", projectId],
+      ["staleFlags", projectId],
+      ["segments", projectId],
+      ["segment", projectId],
+    ] as const,
+  adminUsersAll: () => ["admin", "users"] as const,
+} as const;

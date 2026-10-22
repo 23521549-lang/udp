@@ -1,0 +1,543 @@
+{
+  "experiment": "E1",
+  "at": "2026-09-26T17:23:56.476Z",
+  "environment": {
+    "commit": "56d23862dc009750ef773464a30968df4f8a6323",
+    "sourceDirty": true,
+    "sourceDiffSha256": "cc1254a99c3c97de7b950eb3fa09075adacd06a54d51358a7c840dc7e0cddc0f",
+    "node": "v22.20.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "memoryGiB": 7.7,
+    "freeMemoryGiB": 0.3,
+    "geometry": "git (không mạng)"
+  },
+  "data": {
+    "tag": "adapter-interface-v1",
+    "tagCommit": "06f1070",
+    "head": "56d2386",
+    "interfaceBreaks": {
+      "count": 0,
+      "bySurface": {
+        "cloudMethods": {
+          "added": [],
+          "removed": []
+        },
+        "domainMethods": {
+          "added": [],
+          "removed": []
+        },
+        "domainProperties": {
+          "added": [],
+          "removed": []
+        },
+        "cicdMethods": {
+          "added": [],
+          "removed": []
+        }
+      },
+      "before": {
+        "cloudMethods": [
+          "validateCredential",
+          "preflightPermissions",
+          "estimateCost",
+          "networkSteps",
+          "clusterSteps",
+          "getClusterStatus",
+          "getKubeAuthToken",
+          "listTaggedResources",
+          "rebuildLedgerFromCloud",
+          "teardown"
+        ],
+        "domainMethods": [
+          "deploy",
+          "configure",
+          "upgrade",
+          "detectDrift",
+          "onDependencyChanged",
+          "healthcheck",
+          "teardown"
+        ],
+        "domainProperties": [
+          "domainType",
+          "toolId",
+          "version",
+          "scope",
+          "capabilities",
+          "configSchema"
+        ],
+        "cicdMethods": [
+          "verifySignature",
+          "parsePayload",
+          "renderPipelineTemplate"
+        ],
+        "context": [
+          "k8s",
+          "environment",
+          "systemNamespace",
+          "region",
+          "quota",
+          "resolved",
+          "tags",
+          "progress",
+          "fetch"
+        ]
+      },
+      "after": {
+        "cloudMethods": [
+          "validateCredential",
+          "preflightPermissions",
+          "estimateCost",
+          "networkSteps",
+          "clusterSteps",
+          "getClusterStatus",
+          "getKubeAuthToken",
+          "listTaggedResources",
+          "rebuildLedgerFromCloud",
+          "teardown"
+        ],
+        "domainMethods": [
+          "deploy",
+          "configure",
+          "upgrade",
+          "detectDrift",
+          "onDependencyChanged",
+          "healthcheck",
+          "teardown"
+        ],
+        "domainProperties": [
+          "domainType",
+          "toolId",
+          "version",
+          "scope",
+          "capabilities",
+          "configSchema"
+        ],
+        "cicdMethods": [
+          "verifySignature",
+          "parsePayload",
+          "renderPipelineTemplate"
+        ],
+        "context": [
+          "k8s",
+          "environment",
+          "environments",
+          "systemNamespace",
+          "region",
+          "quota",
+          "resolved",
+          "tags",
+          "progress",
+          "fetch"
+        ]
+      }
+    },
+    "interfaceFileCommits": [
+      {
+        "commit": "0739258",
+        "subject": "P38: Database Operators (6) và Cost Management (2) — đủ 72/72 tool của §5.5 (D-P29)"
+      },
+      {
+        "commit": "2ebc86d",
+        "subject": "P37: Infrastructure IaC (7) và Security Scanning (7); bước pipeline từ domain khác (D-P28)"
+      },
+      {
+        "commit": "9037653",
+        "subject": "P36: CI/CD (6 adapter) và Luồng 3 — deploy qua webhook (§8.3, D-P27)"
+      },
+      {
+        "commit": "ce96a9f",
+        "subject": "P21+P22: day-2 drift scan and upgrade, three-layer I32(c) enforcement, E16 mutation grid, remaining design corrections and the 28-item verification debt ledger"
+      }
+    ],
+    "contextExtension": {
+      "added": [
+        "environments"
+      ],
+      "removed": []
+    },
+    "contractRelaxations": 0,
+    "toolsAtHead": 72,
+    "toolsAddedAfterTag": 72,
+    "batches": [
+      {
+        "commit": "e68a863",
+        "subject": "Add Helm adapter base and prometheus-grafana adapter with enforced egress rule",
+        "tools": [
+          "monitoring-adapter/prometheus-grafana"
+        ],
+        "files": 5,
+        "byKind": {
+          "adapter": 1,
+          "adapter-base": 1,
+          "adapter-core": 0,
+          "catalog": 0,
+          "schema": 0,
+          "test": 2,
+          "docs": 0,
+          "product": 1
+        },
+        "outsideAdapters": [
+          "eslint.config.mjs",
+          "services/core-backend/src/modules/adapter-base/helm.ts"
+        ]
+      },
+      {
+        "commit": "067a7bd",
+        "subject": "P20: SaaS adapter base, datadog adapter, two-way drift comparison, four adapters through the 42-check domain contract",
+        "tools": [
+          "monitoring-adapter/datadog"
+        ],
+        "files": 7,
+        "byKind": {
+          "adapter": 2,
+          "adapter-base": 2,
+          "adapter-core": 0,
+          "catalog": 0,
+          "schema": 0,
+          "test": 3,
+          "docs": 0,
+          "product": 0
+        },
+        "outsideAdapters": [
+          "services/core-backend/src/modules/adapter-base/helm.ts",
+          "services/core-backend/src/modules/adapter-base/saas.ts"
+        ]
+      },
+      {
+        "commit": "a24b660",
+        "subject": "P31 P4: bốn adapter Monitoring — New Relic, Dynatrace, Grafana Cloud, VictoriaMetrics; mỗi adapter qua đủ 42 phép, 0 nới lỏng",
+        "tools": [
+          "monitoring-adapter/dynatrace",
+          "monitoring-adapter/grafana-cloud",
+          "monitoring-adapter/newrelic",
+          "monitoring-adapter/victoria-metrics"
+        ],
+        "files": 17,
+        "byKind": {
+          "adapter": 4,
+          "adapter-base": 3,
+          "adapter-core": 0,
+          "catalog": 0,
+          "schema": 0,
+          "test": 8,
+          "docs": 0,
+          "product": 2
+        },
+        "outsideAdapters": [
+          "packages/metrics-provider/src/prometheus.ts",
+          "packages/metrics-provider/src/source.ts",
+          "services/core-backend/src/modules/adapter-base/agent-cluster.ts",
+          "services/core-backend/src/modules/adapter-base/contract-fixtures.ts",
+          "services/core-backend/src/modules/adapter-base/helm.ts"
+        ]
+      },
+      {
+        "commit": "484d550",
+        "subject": "P31 P5: ba adapter Tracing — Jaeger, Tempo, Zipkin; traces.sink lấy major làm giao thức dây (1 = OTLP, 2 = Zipkin v2 JSON)",
+        "tools": [
+          "tracing-adapter/jaeger",
+          "tracing-adapter/tempo",
+          "tracing-adapter/zipkin"
+        ],
+        "files": 9,
+        "byKind": {
+          "adapter": 3,
+          "adapter-base": 0,
+          "adapter-core": 0,
+          "catalog": 0,
+          "schema": 0,
+          "test": 6,
+          "docs": 0,
+          "product": 0
+        },
+        "outsideAdapters": []
+      },
+      {
+        "commit": "6dbacdd",
+        "subject": "P32 P3–P6: bảy adapter Logging — Loki, ELK (ECK), OpenSearch, Splunk, Datadog Logs, Fluent Bit, Fluentd; d14 dựng binding cùng hình",
+        "tools": [
+          "logging-adapter/datadog-logs",
+          "logging-adapter/elk",
+          "logging-adapter/fluent-bit",
+          "logging-adapter/fluentd",
+          "logging-adapter/loki",
+          "logging-adapter/opensearch",
+          "logging-adapter/splunk"
+        ],
+        "files": 23,
+        "byKind": {
+          "adapter": 7,
+          "adapter-base": 0,
+          "adapter-core": 1,
+          "catalog": 0,
+          "schema": 0,
+          "test": 10,
+          "docs": 5,
+          "product": 0
+        },
+        "outsideAdapters": [
+          "packages/adapter-core/src/contract/domain.ts"
+        ]
+      },
+      {
+        "commit": "83f16d7",
+        "subject": "P33: chín adapter — Service Mesh (Istio, Linkerd, Consul Connect, Kuma), Ingress (NGINX, Traefik), Progressive Delivery (Flagger, Argo Rollouts, Spinnaker)",
+        "tools": [
+          "ingress-adapter/nginx",
+          "ingress-adapter/traefik",
+          "progressive-delivery-adapter/argo-rollouts",
+          "progressive-delivery-adapter/flagger",
+          "progressive-delivery-adapter/spinnaker",
+          "service-mesh-adapter/consul-connect",
+          "service-mesh-adapter/istio",
+          "service-mesh-adapter/kuma",
+          "service-mesh-adapter/linkerd"
+        ],
+        "files": 25,
+        "byKind": {
+          "adapter": 9,
+          "adapter-base": 1,
+          "adapter-core": 0,
+          "catalog": 0,
+          "schema": 0,
+          "test": 11,
+          "docs": 4,
+          "product": 0
+        },
+        "outsideAdapters": [
+          "services/core-backend/src/modules/adapter-base/traffic-router.ts"
+        ]
+      },
+      {
+        "commit": "f4ea7e8",
+        "subject": "P34: mười adapter — GitOps (Argo CD, Flux), Policy (Gatekeeper, Kyverno), Secrets (Vault, Sealed Secrets, ESO, AWS SM, GCP SM, Azure KV); spec + plan #35, #36",
+        "tools": [
+          "gitops-adapter/argo-cd",
+          "gitops-adapter/flux",
+          "policy-adapter/gatekeeper",
+          "policy-adapter/kyverno",
+          "secrets-adapter/aws-secrets-manager",
+          "secrets-adapter/azure-key-vault",
+          "secrets-adapter/external-secrets",
+          "secrets-adapter/gcp-secret-manager",
+          "secrets-adapter/sealed-secrets",
+          "secrets-adapter/vault"
+        ],
+        "files": 32,
+        "byKind": {
+          "adapter": 10,
+          "adapter-base": 2,
+          "adapter-core": 0,
+          "catalog": 0,
+          "schema": 0,
+          "test": 12,
+          "docs": 8,
+          "product": 0
+        },
+        "outsideAdapters": [
+          "services/core-backend/src/modules/adapter-base/git-repo.ts",
+          "services/core-backend/src/modules/adapter-base/secrets-store.ts"
+        ]
+      },
+      {
+        "commit": "efda407",
+        "subject": "P35 P3–P5: chín adapter registry — ECR, GCP Artifact Registry, ACR, Docker Hub, GHCR, Harbor; GitHub Packages, Artifactory, Nexus",
+        "tools": [
+          "artifact-registry-adapter/artifactory",
+          "artifact-registry-adapter/github-packages",
+          "artifact-registry-adapter/nexus",
+          "container-registry-adapter/acr",
+          "container-registry-adapter/docker-hub",
+          "container-registry-adapter/ecr",
+          "container-registry-adapter/gcp-artifact-registry",
+          "container-registry-adapter/ghcr",
+          "container-registry-adapter/harbor"
+        ],
+        "files": 27,
+        "byKind": {
+          "adapter": 9,
+          "adapter-base": 3,
+          "adapter-core": 0,
+          "catalog": 0,
+          "schema": 0,
+          "test": 11,
+          "docs": 4,
+          "product": 0
+        },
+        "outsideAdapters": [
+          "services/core-backend/src/modules/adapter-base/contract-fixtures.ts",
+          "services/core-backend/src/modules/adapter-base/github.ts",
+          "services/core-backend/src/modules/adapter-base/registry.ts"
+        ]
+      },
+      {
+        "commit": "9037653",
+        "subject": "P36: CI/CD (6 adapter) và Luồng 3 — deploy qua webhook (§8.3, D-P27)",
+        "tools": [
+          "cicd-adapter/circleci",
+          "cicd-adapter/drone",
+          "cicd-adapter/github-actions",
+          "cicd-adapter/gitlab-ci",
+          "cicd-adapter/jenkins",
+          "cicd-adapter/tekton"
+        ],
+        "files": 71,
+        "byKind": {
+          "adapter": 6,
+          "adapter-base": 6,
+          "adapter-core": 1,
+          "catalog": 0,
+          "schema": 2,
+          "test": 29,
+          "docs": 5,
+          "product": 22
+        },
+        "outsideAdapters": [
+          "apps/portal/src/features/deployment/DeploymentsPage.tsx",
+          "apps/portal/src/features/deployment/deployment-api.ts",
+          "apps/portal/src/features/domain/CicdPanel.tsx",
+          "apps/portal/src/features/domain/DomainDetailPage.tsx",
+          "apps/portal/src/features/domain/domain-api.ts",
+          "apps/portal/src/lib/query-keys.ts",
+          "packages/adapter-core/src/domain.ts",
+          "packages/config/src/constants.ts",
+          "packages/db/prisma/migrations/20260926090000_cicd_webhook/migration.sql",
+          "packages/db/prisma/schema.prisma",
+          "packages/shared-types/src/wire.ts",
+          "services/core-backend/src/app.ts",
+          "services/core-backend/src/core/app-deps.ts",
+          "services/core-backend/src/index.ts",
+          "services/core-backend/src/jobs/boss.ts",
+          "services/core-backend/src/jobs/deploy.job.ts",
+          "services/core-backend/src/jobs/reconcile.ts",
+          "services/core-backend/src/modules/adapter-base/cicd-suite.ts",
+          "services/core-backend/src/modules/adapter-base/cicd.ts",
+          "services/core-backend/src/modules/adapter-base/contract-fixtures.ts",
+          "services/core-backend/src/modules/adapter-base/descriptor.ts",
+          "services/core-backend/src/modules/adapter-base/pipeline-template.ts",
+          "services/core-backend/src/modules/adapter-base/registry.ts",
+          "services/core-backend/src/modules/cicd/cicd-webhook.service.ts",
+          "services/core-backend/src/modules/cicd/cicd.controller.ts",
+          "services/core-backend/src/modules/cicd/cicd.service.ts",
+          "services/core-backend/src/modules/cicd/deploy.service.ts",
+          "services/core-backend/src/modules/cicd/webhook-secret.ts",
+          "services/core-backend/src/modules/cicd/workload.ts",
+          "services/core-backend/src/modules/deployment/deployment.controller.ts",
+          "services/core-backend/src/modules/project/project.controller.ts"
+        ]
+      },
+      {
+        "commit": "2ebc86d",
+        "subject": "P37: Infrastructure IaC (7) và Security Scanning (7); bước pipeline từ domain khác (D-P28)",
+        "tools": [
+          "infra-adapter/ack",
+          "infra-adapter/ansible",
+          "infra-adapter/aso",
+          "infra-adapter/config-connector",
+          "infra-adapter/crossplane",
+          "infra-adapter/pulumi",
+          "infra-adapter/terraform",
+          "security-adapter/aqua",
+          "security-adapter/checkov",
+          "security-adapter/falco",
+          "security-adapter/grype",
+          "security-adapter/snyk",
+          "security-adapter/trivy",
+          "security-adapter/zap"
+        ],
+        "files": 70,
+        "byKind": {
+          "adapter": 20,
+          "adapter-base": 6,
+          "adapter-core": 2,
+          "catalog": 0,
+          "schema": 0,
+          "test": 22,
+          "docs": 5,
+          "product": 15
+        },
+        "outsideAdapters": [
+          "apps/portal/src/features/domain/ValidationPanel.tsx",
+          "apps/portal/src/features/domain/domain-labels.ts",
+          "apps/portal/src/lib/errors.ts",
+          "packages/adapter-core/src/domain.ts",
+          "packages/adapter-core/src/index.ts",
+          "packages/shared-types/src/capability.ts",
+          "packages/shared-types/src/cloud-api.ts",
+          "packages/shared-types/src/domain-api.ts",
+          "packages/shared-types/src/problem.ts",
+          "packages/shared-types/src/provisioning-api.ts",
+          "packages/shared-types/src/wire.ts",
+          "services/core-backend/src/modules/adapter-base/cert-manager.ts",
+          "services/core-backend/src/modules/adapter-base/cicd-suite.ts",
+          "services/core-backend/src/modules/adapter-base/helm.ts",
+          "services/core-backend/src/modules/adapter-base/pipeline-steps.ts",
+          "services/core-backend/src/modules/adapter-base/pipeline-template.ts",
+          "services/core-backend/src/modules/adapter-base/state-backend.ts",
+          "services/core-backend/src/modules/cicd/cicd.service.ts",
+          "services/core-backend/src/modules/domain/config-fields.ts",
+          "services/core-backend/src/modules/domain/domain-adapter.registry.ts",
+          "services/core-backend/src/modules/domain/domain-target.ts",
+          "services/core-backend/src/modules/domain/project-domain.service.ts",
+          "services/core-backend/src/modules/provisioning/provisioning.service.ts"
+        ]
+      },
+      {
+        "commit": "0739258",
+        "subject": "P38: Database Operators (6) và Cost Management (2) — đủ 72/72 tool của §5.5 (D-P29)",
+        "tools": [
+          "cost-adapter/kubecost",
+          "cost-adapter/opencost",
+          "database-adapter/cloudnative-pg",
+          "database-adapter/k8ssandra",
+          "database-adapter/minio",
+          "database-adapter/mongodb",
+          "database-adapter/mysql",
+          "database-adapter/redis"
+        ],
+        "files": 62,
+        "byKind": {
+          "adapter": 8,
+          "adapter-base": 2,
+          "adapter-core": 5,
+          "catalog": 0,
+          "schema": 0,
+          "test": 24,
+          "docs": 5,
+          "product": 18
+        },
+        "outsideAdapters": [
+          "apps/portal/src/features/provisioning/CostPanel.tsx",
+          "apps/portal/src/features/provisioning/InfraPage.tsx",
+          "apps/portal/src/features/provisioning/provisioning-api.ts",
+          "apps/portal/src/lib/errors.ts",
+          "apps/portal/src/lib/query-keys.ts",
+          "packages/adapter-core/src/contract/domain.ts",
+          "packages/adapter-core/src/domain.ts",
+          "packages/adapter-core/src/index.ts",
+          "packages/adapter-core/src/testing/domain-contract-env.ts",
+          "packages/adapter-core/src/testing/index.ts",
+          "packages/config/src/constants.ts",
+          "packages/shared-types/src/capability.ts",
+          "packages/shared-types/src/domain-api.ts",
+          "packages/shared-types/src/wire.ts",
+          "services/core-backend/src/core/app-deps.ts",
+          "services/core-backend/src/index.ts",
+          "services/core-backend/src/jobs/deploy.job.ts",
+          "services/core-backend/src/jobs/drift-scan.job.ts",
+          "services/core-backend/src/jobs/job-kit.ts",
+          "services/core-backend/src/modules/adapter-base/database.ts",
+          "services/core-backend/src/modules/adapter-base/helm.ts",
+          "services/core-backend/src/modules/cost/cost.controller.ts",
+          "services/core-backend/src/modules/cost/cost.service.ts",
+          "services/core-backend/src/modules/project/project.controller.ts",
+          "services/core-backend/src/modules/provisioning/domain-phase.ts"
+        ]
+      }
+    ],
+    "outsideAdaptersTotal": 95,
+    "outsideAdaptersPerTool": 1.32
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "route": "POST /projects/{id}/environments/{id}/keys",
+  "status": 201,
+  "body": {
+    "key": {
+      "id": "1bb7bc7b-ce01-4920-ac32-911c5a170b03",
+      "environmentId": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+      "keyType": "SERVER",
+      "label": "prod-api",
+      "keySuffix": "53bb02",
+      "maskedKey": "udp_sk_…53bb02",
+      "status": "active",
+      "createdBy": {
+        "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+        "name": "Test User"
+      },
+      "createdAt": "2026-09-24T19:36:10.233Z",
+      "lastUsedAt": null,
+      "revokedAt": null
+    },
+    "secretKey": "udp_sk_dev_FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE"
+  }
+}

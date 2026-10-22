@@ -1,0 +1,3253 @@
+{
+  "route": "GET /domains/catalog",
+  "status": 200,
+  "body": {
+    "domains": [
+      {
+        "domainType": "CONTAINER_REGISTRY",
+        "tier": "CORE",
+        "displayName": "Container Registry",
+        "defaultOrder": 10,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "acr",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "registryName",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "tokenName",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "tokenPassword",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "docker-hub",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "namespace",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "username",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "accessToken",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "ecr",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "accountId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "region",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "repositoryPrefix",
+                  "required": false,
+                  "default": "udp",
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "gcp-artifact-registry",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "projectId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "location",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "repository",
+                  "required": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "ghcr",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "owner",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "username",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "token",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "harbor",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "policy.admission"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "externalUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "adminPassword",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 50,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 5,
+                  "max": 2000
+                },
+                {
+                  "key": "pullRobotName",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "pullRobotSecret",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "CICD",
+        "tier": "CORE",
+        "displayName": "CI/CD",
+        "defaultOrder": 20,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "circleci",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "pipeline.trigger",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "registry.oci"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "registry.oci": "CI cần nơi đẩy image: bật một tool ở domain Container Registry"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "projectSlug",
+                  "required": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "drone",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "pipeline.trigger",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "registry.oci"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "registry.oci": "CI cần nơi đẩy image: bật một tool ở domain Container Registry"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "serverHost",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "gitProvider",
+                  "required": true,
+                  "kind": "enum",
+                  "options": [
+                    "github",
+                    "gitlab",
+                    "gitea"
+                  ]
+                },
+                {
+                  "key": "clientId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "clientSecret",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "rpcSecret",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 8,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 100
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "github-actions",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "pipeline.trigger",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "registry.oci"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "registry.oci": "CI cần nơi đẩy image: bật một tool ở domain Container Registry"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "repository",
+                  "required": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "gitlab-ci",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "pipeline.trigger",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "registry.oci"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "registry.oci": "CI cần nơi đẩy image: bật một tool ở domain Container Registry"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "projectPath",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "gitlabUrl",
+                  "required": false,
+                  "default": "https://gitlab.com",
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "jenkins",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "pipeline.trigger",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "registry.oci"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "registry.oci": "CI cần nơi đẩy image: bật một tool ở domain Container Registry"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "adminUser",
+                  "required": false,
+                  "default": "admin",
+                  "kind": "string"
+                },
+                {
+                  "key": "adminPassword",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 20,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 5,
+                  "max": 500
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "tekton",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "pipeline.trigger",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "registry.oci"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "registry.oci": "CI cần nơi đẩy image: bật một tool ở domain Container Registry"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "INFRA",
+        "tier": "CORE",
+        "displayName": "Infrastructure as Code",
+        "defaultOrder": 30,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "ack",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "infra.provision",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "roleArn",
+                  "required": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "ansible",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "infra.provision",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "pipeline.trigger"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "pipeline.trigger": "ansible chạy như một bước của pipeline: bật một tool ở domain CI/CD"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "playbook",
+                  "required": false,
+                  "default": "ansible/site.yml",
+                  "kind": "string"
+                },
+                {
+                  "key": "inventory",
+                  "required": false,
+                  "default": "ansible/inventory",
+                  "kind": "string"
+                },
+                {
+                  "key": "version",
+                  "required": false,
+                  "default": "2.21.0",
+                  "kind": "string"
+                },
+                {
+                  "key": "useVault",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "checkOnly",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "aso",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "infra.provision",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "subscriptionId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "tenantId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "clientId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "groups",
+                  "required": false,
+                  "kind": "json"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "config-connector",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "infra.provision",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "googleServiceAccount",
+                  "required": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "crossplane",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "infra.provision",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "providers",
+                  "required": true,
+                  "kind": "json"
+                },
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "pulumi",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "infra.provision",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "pipeline.trigger"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "pipeline.trigger": "pulumi chạy như một bước của pipeline: bật một tool ở domain CI/CD"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "workingDirectory",
+                  "required": false,
+                  "default": "infra",
+                  "kind": "string"
+                },
+                {
+                  "key": "runtime",
+                  "required": false,
+                  "default": "nodejs",
+                  "kind": "enum",
+                  "options": [
+                    "nodejs",
+                    "python",
+                    "go"
+                  ]
+                },
+                {
+                  "key": "version",
+                  "required": false,
+                  "default": "3.267.0",
+                  "kind": "string"
+                },
+                {
+                  "key": "backend",
+                  "required": true,
+                  "kind": "json"
+                },
+                {
+                  "key": "autoApply",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "terraform",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "infra.provision",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "pipeline.trigger"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "pipeline.trigger": "terraform chạy như một bước của pipeline: bật một tool ở domain CI/CD"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "workingDirectory",
+                  "required": false,
+                  "default": "infra",
+                  "kind": "string"
+                },
+                {
+                  "key": "version",
+                  "required": false,
+                  "default": "1.16.4",
+                  "kind": "string"
+                },
+                {
+                  "key": "backend",
+                  "required": true,
+                  "kind": "json"
+                },
+                {
+                  "key": "autoApply",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "MONITORING",
+        "tier": "STANDARD",
+        "displayName": "Monitoring",
+        "defaultOrder": 40,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "datadog",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "1.0.0"
+              },
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "traces.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "site",
+                  "required": true,
+                  "kind": "enum",
+                  "options": [
+                    "datadoghq.com",
+                    "datadoghq.eu",
+                    "ap1.datadoghq.com"
+                  ]
+                },
+                {
+                  "key": "apiKey",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "appKey",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "maxHosts",
+                  "required": false,
+                  "default": 50,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 10000
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "dynatrace",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "1.0.0"
+              },
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              },
+              {
+                "id": "traces.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "environmentUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "apiToken",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "dataIngestToken",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "mode",
+                  "required": false,
+                  "default": "cloudNativeFullStack",
+                  "kind": "enum",
+                  "options": [
+                    "cloudNativeFullStack",
+                    "classicFullStack",
+                    "applicationMonitoring"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "grafana-cloud",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "2.0.0"
+              },
+              {
+                "id": "metrics.scrape",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "logs.sink",
+              "traces.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "prometheusUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "prometheusUser",
+                  "required": true,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 0
+                },
+                {
+                  "key": "accessToken",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "newrelic",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "1.0.0"
+              },
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "traces.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "accountId",
+                  "required": true,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 0
+                },
+                {
+                  "key": "region",
+                  "required": true,
+                  "kind": "enum",
+                  "options": [
+                    "US",
+                    "EU"
+                  ]
+                },
+                {
+                  "key": "licenseKey",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "userKey",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "lowDataMode",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "prometheus-grafana",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "2.0.0"
+              },
+              {
+                "id": "metrics.scrape",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "registry.oci"
+              }
+            ],
+            "recommends": [
+              "logs.sink"
+            ],
+            "conflicts": [],
+            "hints": {
+              "registry.oci": "Bật domain Container Registry để Grafana kéo được dashboard của bạn"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionDays",
+                  "required": true,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 365
+                },
+                {
+                  "key": "dashboards",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 20,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "victoria-metrics",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "metrics.query",
+                "version": "2.1.0"
+              },
+              {
+                "id": "metrics.scrape",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "logs.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionDays",
+                  "required": true,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 365
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 20,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                },
+                {
+                  "key": "grafana",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "LOGGING",
+        "tier": "STANDARD",
+        "displayName": "Logging",
+        "defaultOrder": 50,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "datadog-logs",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "site",
+                  "required": true,
+                  "kind": "enum",
+                  "options": [
+                    "datadoghq.com",
+                    "datadoghq.eu",
+                    "ap1.datadoghq.com"
+                  ]
+                },
+                {
+                  "key": "apiKey",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "elk",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "nodeCount",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 30,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                },
+                {
+                  "key": "kibana",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "fluent-bit",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [],
+            "requires": [
+              {
+                "id": "logs.sink",
+                "constraint": "^1"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "logs.sink": "Fluent Bit cần nơi nhận log: bật Datadog, New Relic hay Dynatrace ở domain Monitoring"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "excludeSystemNamespaces",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "fluentd",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [],
+            "requires": [
+              {
+                "id": "logs.sink",
+                "constraint": "^1"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "logs.sink": "Fluentd cần nơi nhận log: bật Datadog, New Relic hay Dynatrace ở domain Monitoring"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "bufferGb",
+                  "required": false,
+                  "default": 5,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 100
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "loki",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionHours",
+                  "required": false,
+                  "default": 168,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 24,
+                  "max": 8760
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 20,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "opensearch",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "adminPassword",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 30,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 1000
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "splunk",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "logs.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "hecEndpoint",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "hecToken",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "index",
+                  "required": false,
+                  "default": "main",
+                  "kind": "string"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "TRACING",
+        "tier": "STANDARD",
+        "displayName": "Tracing",
+        "defaultOrder": 60,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "jaeger",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traces.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionHours",
+                  "required": false,
+                  "default": 72,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 720
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "tempo",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traces.sink",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "retentionHours",
+                  "required": false,
+                  "default": 72,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 720
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "zipkin",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traces.sink",
+                "version": "2.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "maxSpans",
+                  "required": false,
+                  "default": 500000,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 10000,
+                  "max": 5000000
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "SERVICE_MESH",
+        "tier": "STANDARD",
+        "displayName": "Service Mesh",
+        "defaultOrder": 70,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "consul-connect",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "mesh.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "servers",
+                  "required": false,
+                  "kind": "json"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 100
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "istio",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "mesh.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query",
+              "traces.sink"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "accessLog",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "tracingSamplingPercent",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": false,
+                  "min": 0,
+                  "max": 100
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "kuma",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "mesh.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "linkerd",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "mesh.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "trustAnchorPem",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "issuerCertPem",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "issuerKeyPem",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "highAvailability",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "INGRESS",
+        "tier": "STANDARD",
+        "displayName": "Ingress",
+        "defaultOrder": 80,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "nginx",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "ingress.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 2,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                },
+                {
+                  "key": "ingressClass",
+                  "required": false,
+                  "default": "nginx",
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "traefik",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "ingress.traffic-split",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "metrics.query"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 2,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                },
+                {
+                  "key": "dashboard",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "PROGRESSIVE_DELIVERY",
+        "tier": "STANDARD",
+        "displayName": "Progressive Delivery",
+        "defaultOrder": 90,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "argo-rollouts",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traffic.control",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "id": "metrics.query",
+                "constraint": ">=1"
+              },
+              {
+                "anyOf": [
+                  {
+                    "id": "mesh.traffic-split"
+                  },
+                  {
+                    "id": "ingress.traffic-split"
+                  }
+                ]
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "mesh.traffic-split": "Argo Rollouts cần một service mesh hoặc ingress để chia traffic. Bật domain Service Mesh hoặc Ingress."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "dashboard",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "flagger",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traffic.control",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "anyOf": [
+                  {
+                    "id": "mesh.traffic-split"
+                  },
+                  {
+                    "id": "ingress.traffic-split"
+                  }
+                ]
+              },
+              {
+                "id": "metrics.query",
+                "constraint": "^2"
+              }
+            ],
+            "recommends": [
+              "traces.sink"
+            ],
+            "conflicts": [
+              "service_mesh:consul-connect"
+            ],
+            "hints": {
+              "mesh.traffic-split": "Flagger cần Istio/Linkerd/Kuma (mesh) hoặc NGINX/Traefik (ingress). Bật domain Service Mesh hoặc Ingress.",
+              "metrics.query": "Flagger cần nguồn PromQL: bật Prometheus, VictoriaMetrics hay Grafana Cloud ở Monitoring."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "slackWebhook",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "spinnaker",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "traffic.control",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "id": "metrics.query",
+                "constraint": ">=1"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [
+              "monitoring:dynatrace"
+            ],
+            "hints": {
+              "metrics.query": "Spinnaker (Kayenta) cần nguồn metrics: bật một tool ở domain Monitoring."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 20,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 5,
+                  "max": 500
+                },
+                {
+                  "key": "kayenta",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "GITOPS",
+        "tier": "STANDARD",
+        "displayName": "GitOps",
+        "defaultOrder": 100,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "argo-cd",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "gitops.sync",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "repoUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "revision",
+                  "required": false,
+                  "default": "main",
+                  "kind": "string"
+                },
+                {
+                  "key": "path",
+                  "required": false,
+                  "default": ".",
+                  "kind": "string"
+                },
+                {
+                  "key": "token",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "syncPolicy",
+                  "required": false,
+                  "default": "automated",
+                  "kind": "enum",
+                  "options": [
+                    "automated",
+                    "manual"
+                  ]
+                },
+                {
+                  "key": "highAvailability",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "flux",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "gitops.sync",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "repoUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "revision",
+                  "required": false,
+                  "default": "main",
+                  "kind": "string"
+                },
+                {
+                  "key": "path",
+                  "required": false,
+                  "default": ".",
+                  "kind": "string"
+                },
+                {
+                  "key": "token",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "intervalMinutes",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 60
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "SECRETS",
+        "tier": "STANDARD",
+        "displayName": "Secrets Management",
+        "defaultOrder": 110,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "aws-secrets-manager",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "region",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "roleArn",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "rotationPollSeconds",
+                  "required": false,
+                  "default": 120,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 30,
+                  "max": 3600
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "azure-key-vault",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "keyVaultName",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "tenantId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "clientId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "rotationPollSeconds",
+                  "required": false,
+                  "default": 120,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 30,
+                  "max": 3600
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "external-secrets",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "concurrent",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 10
+                },
+                {
+                  "key": "webhook",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "gcp-secret-manager",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "projectId",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "gcpServiceAccount",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "rotationPollSeconds",
+                  "required": false,
+                  "default": 120,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 30,
+                  "max": 3600
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "sealed-secrets",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [
+              "gitops.sync"
+            ],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "keyRenewDays",
+                  "required": false,
+                  "default": 30,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 0,
+                  "max": 365
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "vault",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "secrets.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 100
+                },
+                {
+                  "key": "injector",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "csi",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "SECURITY",
+        "tier": "STANDARD",
+        "displayName": "Security Scanning",
+        "defaultOrder": 120,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "aqua",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "security.scan",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "gateway",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "enforcerToken",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "checkov",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "security.scan",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "pipeline.trigger"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "pipeline.trigger": "checkov chạy như một bước của pipeline: bật một tool ở domain CI/CD"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "directory",
+                  "required": false,
+                  "default": ".",
+                  "kind": "string"
+                },
+                {
+                  "key": "frameworks",
+                  "required": false,
+                  "kind": "json"
+                },
+                {
+                  "key": "version",
+                  "required": false,
+                  "default": "3.3.22",
+                  "kind": "string"
+                },
+                {
+                  "key": "softFail",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "falco",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "security.scan",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "driver",
+                  "required": false,
+                  "default": "modern_ebpf",
+                  "kind": "enum",
+                  "options": [
+                    "modern_ebpf",
+                    "ebpf",
+                    "kmod"
+                  ]
+                },
+                {
+                  "key": "minimumPriority",
+                  "required": false,
+                  "default": "warning",
+                  "kind": "enum",
+                  "options": [
+                    "emergency",
+                    "alert",
+                    "critical",
+                    "error",
+                    "warning",
+                    "notice",
+                    "informational",
+                    "debug"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "grype",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "security.scan",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "pipeline.trigger"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "pipeline.trigger": "grype chạy như một bước của pipeline: bật một tool ở domain CI/CD"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "failOn",
+                  "required": false,
+                  "default": "high",
+                  "kind": "enum",
+                  "options": [
+                    "critical",
+                    "high",
+                    "medium",
+                    "low"
+                  ]
+                },
+                {
+                  "key": "onlyFixed",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "version",
+                  "required": false,
+                  "default": "v0.119.0",
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "snyk",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "security.scan",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "integrationId",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "region",
+                  "required": false,
+                  "default": "us",
+                  "kind": "enum",
+                  "options": [
+                    "us",
+                    "eu",
+                    "au"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "trivy",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "security.scan",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "severities",
+                  "required": false,
+                  "kind": "json"
+                },
+                {
+                  "key": "ignoreUnfixed",
+                  "required": false,
+                  "default": true,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "concurrentScans",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 10
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "zap",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "security.scan",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [
+              {
+                "id": "pipeline.trigger"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "pipeline.trigger": "zap chạy như một bước của pipeline: bật một tool ở domain CI/CD"
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "targets",
+                  "required": true,
+                  "kind": "json"
+                },
+                {
+                  "key": "failOnWarnings",
+                  "required": false,
+                  "default": false,
+                  "kind": "boolean"
+                },
+                {
+                  "key": "version",
+                  "required": false,
+                  "default": "2.17.0",
+                  "kind": "string"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "POLICY",
+        "tier": "STANDARD",
+        "displayName": "Policy & Governance",
+        "defaultOrder": 130,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "gatekeeper",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "policy.admission",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                },
+                {
+                  "key": "auditIntervalSeconds",
+                  "required": false,
+                  "default": 60,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 30,
+                  "max": 3600
+                },
+                {
+                  "key": "failurePolicy",
+                  "required": false,
+                  "default": "Ignore",
+                  "kind": "enum",
+                  "options": [
+                    "Ignore",
+                    "Fail"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "kyverno",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "policy.admission",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "podSecurityStandard",
+                  "required": false,
+                  "default": "baseline",
+                  "kind": "enum",
+                  "options": [
+                    "baseline",
+                    "restricted"
+                  ]
+                },
+                {
+                  "key": "validationFailureAction",
+                  "required": false,
+                  "default": "Audit",
+                  "kind": "enum",
+                  "options": [
+                    "Audit",
+                    "Enforce"
+                  ]
+                },
+                {
+                  "key": "replicas",
+                  "required": false,
+                  "default": 1,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 3
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "DATABASE",
+        "tier": "STANDARD",
+        "displayName": "Database Operators",
+        "defaultOrder": 140,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "cloudnative-pg",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "postgresVersion",
+                  "required": false,
+                  "default": "16",
+                  "kind": "enum",
+                  "options": [
+                    "15",
+                    "16",
+                    "17"
+                  ]
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "k8ssandra",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "cassandraVersion",
+                  "required": false,
+                  "default": "4.1.6",
+                  "kind": "enum",
+                  "options": [
+                    "4.0.14",
+                    "4.1.6"
+                  ]
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "minio",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "object.store",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "credentialSeed",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 4,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 4,
+                  "max": 16
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "mongodb",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "mongodbVersion",
+                  "required": false,
+                  "default": "7.0.14",
+                  "kind": "enum",
+                  "options": [
+                    "6.0.18",
+                    "7.0.14"
+                  ]
+                },
+                {
+                  "key": "credentialSeed",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "mysql",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "mysqlVersion",
+                  "required": false,
+                  "default": "8.4.3",
+                  "kind": "enum",
+                  "options": [
+                    "8.0.40",
+                    "8.4.3"
+                  ]
+                },
+                {
+                  "key": "credentialSeed",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "redis",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "db.instance",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "redisVersion",
+                  "required": false,
+                  "default": "v7.2.6",
+                  "kind": "enum",
+                  "options": [
+                    "v7.0.15",
+                    "v7.2.6"
+                  ]
+                },
+                {
+                  "key": "credentialSeed",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 10,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 500
+                },
+                {
+                  "key": "productionReplicas",
+                  "required": false,
+                  "default": 3,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1,
+                  "max": 5
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "COST",
+        "tier": "ADVANCED",
+        "displayName": "Cost Management",
+        "defaultOrder": 150,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "kubecost",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "cost.query",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "id": "metrics.query",
+                "constraint": "^2"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "metrics.query": "Kubecost tính chi phí từ PromQL: bật Prometheus, VictoriaMetrics hay Grafana Cloud ở Monitoring."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "kubecostToken",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "opencost",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "cost.query",
+                "version": "1.0.0",
+                "exclusive": true
+              }
+            ],
+            "requires": [
+              {
+                "id": "metrics.query",
+                "constraint": "^2"
+              }
+            ],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {
+              "metrics.query": "OpenCost tính chi phí từ PromQL: bật Prometheus, VictoriaMetrics hay Grafana Cloud ở Monitoring."
+            },
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "pricing",
+                  "required": false,
+                  "default": "cloud",
+                  "kind": "enum",
+                  "options": [
+                    "cloud",
+                    "custom"
+                  ]
+                },
+                {
+                  "key": "cpuHourlyUsd",
+                  "required": false,
+                  "default": 0.031611,
+                  "kind": "number",
+                  "integer": false,
+                  "min": 0,
+                  "max": 10
+                },
+                {
+                  "key": "ramGiBHourlyUsd",
+                  "required": false,
+                  "default": 0.004237,
+                  "kind": "number",
+                  "integer": false,
+                  "min": 0,
+                  "max": 10
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "domainType": "ARTIFACT_REGISTRY",
+        "tier": "ADVANCED",
+        "displayName": "Artifact & Package Registry",
+        "defaultOrder": 160,
+        "isAvailable": true,
+        "tools": [
+          {
+            "toolId": "artifactory",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "packages.store",
+                "version": "1.0.0"
+              },
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "externalUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "adminPassword",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 100,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 10,
+                  "max": 2000
+                },
+                {
+                  "key": "pullUser",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "pullToken",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "github-packages",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "packages.store",
+                "version": "1.0.0"
+              },
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "owner",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "username",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "token",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          },
+          {
+            "toolId": "nexus",
+            "version": "1.0.0",
+            "scope": "cluster",
+            "provides": [
+              {
+                "id": "packages.store",
+                "version": "1.0.0"
+              },
+              {
+                "id": "registry.oci",
+                "version": "1.0.0"
+              }
+            ],
+            "requires": [],
+            "recommends": [],
+            "conflicts": [],
+            "hints": {},
+            "config": {
+              "kind": "object",
+              "fields": [
+                {
+                  "key": "externalUrl",
+                  "required": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "adminPassword",
+                  "required": true,
+                  "secret": true,
+                  "kind": "string"
+                },
+                {
+                  "key": "storageGb",
+                  "required": false,
+                  "default": 100,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 10,
+                  "max": 2000
+                },
+                {
+                  "key": "dockerPort",
+                  "required": false,
+                  "default": 8082,
+                  "kind": "number",
+                  "integer": true,
+                  "min": 1024,
+                  "max": 65535
+                },
+                {
+                  "key": "pullUser",
+                  "required": false,
+                  "kind": "string"
+                },
+                {
+                  "key": "pullPassword",
+                  "required": false,
+                  "secret": true,
+                  "kind": "string"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

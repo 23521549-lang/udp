@@ -1,0 +1,36 @@
+# Chứng chỉ Let's Encrypt qua HTTP-01 (Plan #52 QĐ-5): cert-manager (bootstrap.sh cài) giữ khoá tài khoản ACME và
+# chứng chỉ trong Secret — không PVC nào cho Traefik. Email là giá trị giữ chỗ; bản phát hành thay theo nhãn
+# `udp.io/acme`. Bản staging để thử cấu hình mà không đốt hạn mức của Let's Encrypt.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: udp-letsencrypt
+  labels:
+    udp.io/acme: "true"
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: acme@udp.invalid
+    privateKeySecretRef:
+      name: udp-letsencrypt-account
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: udp-letsencrypt-staging
+  labels:
+    udp.io/acme: "true"
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: acme@udp.invalid
+    privateKeySecretRef:
+      name: udp-letsencrypt-staging-account
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: traefik

@@ -1,0 +1,168 @@
+{
+  "route": "GET /projects/{id}/domains",
+  "status": 200,
+  "body": {
+    "domainSetVersion": 1,
+    "domains": [
+      {
+        "domainType": "CONTAINER_REGISTRY",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "CICD",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "INFRA",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "MONITORING",
+        "isEnabled": true,
+        "selectedTool": "datadog",
+        "toolConfig": {
+          "site": "datadoghq.com",
+          "apiKey": {
+            "$udpSecret": "kept"
+          },
+          "appKey": {
+            "$udpSecret": "kept"
+          },
+          "maxHosts": 50
+        },
+        "status": "PENDING",
+        "adapterVersion": "1.0.0",
+        "updatedAt": "2026-09-25T20:14:15.023Z"
+      },
+      {
+        "domainType": "LOGGING",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "TRACING",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "SERVICE_MESH",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "INGRESS",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "PROGRESSIVE_DELIVERY",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "GITOPS",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "SECRETS",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "SECURITY",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "POLICY",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "DATABASE",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "COST",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      },
+      {
+        "domainType": "ARTIFACT_REGISTRY",
+        "isEnabled": false,
+        "selectedTool": null,
+        "toolConfig": null,
+        "status": null,
+        "adapterVersion": null,
+        "updatedAt": null
+      }
+    ],
+    "preferences": [
+      {
+        "capabilityId": "metrics.query",
+        "providerToolId": "monitoring:datadog"
+      }
+    ]
+  }
+}

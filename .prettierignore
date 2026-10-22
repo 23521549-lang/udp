@@ -13,3 +13,25 @@ packages/db/prisma/migrations/
 #  2. Bang trong do duoc @udp/design-lint doc bang may de doi chieu voi schema.
 #     Reflow bang la doi dau vao cua mot bo kiem dang chay.
 docs/UDP_design.md
+
+# Ket qua do (JSON do harness ghi) la DU LIEU, khong phai ma: prettier gop mang so
+# len mot dong, lam lech file so voi luc harness ghi ra
+docs/measurements/raw/
+
+# Ban mau Portal da duyet (Plan #25 code theo): giu nguyen tung byte nhu luc duyet
+docs/design/portal-prototype.html
+
+# Bản chép CSS của bản mẫu trong Portal: cùng lý do — so NGUYÊN VĂN với bản mẫu
+# (apps/portal/tests/design-lint.test.ts), Prettier định dạng lại là vỡ phép so đó
+apps/portal/src/styles/prototype.css
+
+# Mẫu golden capture: DỮ LIỆU do `tests/helpers/wire-capture.ts` ghi, không phải mã —
+# định dạng lại tay là lệch với lần ghi kế tiếp
+services/core-backend/tests/fixtures/wire/
+
+# Sinh bởi `pnpm --filter @udp/flag-evaluator conformance` — so bằng JSON đã parse, không theo byte
+packages/flag-evaluator/conformance/vectors.json
+
+# Bản chép NGUYÊN VĂN phần <style> của docs/design/portal-prototype.html (design-lint so từng ký tự):
+# Prettier dàn dòng tệp này là vỡ luật đó. Sửa thì sửa bản mẫu rồi chép lại.
+apps/portal/src/styles/prototype.css

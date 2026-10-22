@@ -1,0 +1,11 @@
+{
+  "route": "POST /projects/{id}/domains/MONITORING/drift",
+  "status": 200,
+  "body": {
+    "drift": {
+      "verdict": "DRIFTED",
+      "message": "replicas 3 ≠ 1",
+      "at": "2026-09-25T19:18:28.228Z"
+    }
+  }
+}

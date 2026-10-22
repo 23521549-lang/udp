@@ -1,0 +1,13 @@
+{
+  "route": "POST /projects/{id}/flags/{id}/evaluate",
+  "status": 200,
+  "body": {
+    "evaluation": {
+      "reason": "DEFAULT",
+      "value": true,
+      "variant": "on"
+    },
+    "configVersion": 21,
+    "draft": true
+  }
+}

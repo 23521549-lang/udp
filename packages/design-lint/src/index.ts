@@ -7,3 +7,4 @@
  */
 export * from "./design-doc.js";
 export * from "./db-schema.js";
+export * from "./chart-bump.js";

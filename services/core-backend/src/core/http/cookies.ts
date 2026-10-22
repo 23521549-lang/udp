@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { CookieOptions, Response } from "express";
-import { COOKIE_NAMES, env } from "@udp/config";
+import { AUTH, COOKIE_NAMES, env } from "@udp/config";
 
 /**
  * Đường dẫn hẹp cho refresh cookie: trình duyệt chỉ gửi nó tới đúng endpoint
@@ -8,6 +8,9 @@ import { COOKIE_NAMES, env } from "@udp/config";
  * token có thời hạn dài nhất trong hệ thống.
  */
 export const REFRESH_COOKIE_PATH = "/api/v1/auth/refresh";
+
+/** [v4.12, Plan #60 QĐ-8] Cookie `state` của OAuth chỉ đi về hai route GitHub */
+export const OAUTH_COOKIE_PATH = "/api/v1/auth/github";
 
 const MS_PER_SECOND = 1_000;
 
@@ -106,6 +109,25 @@ export function setAuthCookies(
   });
 
   return csrfToken;
+}
+
+/**
+ * [v4.12, Plan #60 QĐ-8] `state` đã ký của một lần đăng nhập GitHub. `SameSite=Lax` vẫn gửi theo lần GitHub chuyển
+ * trình duyệt về (điều hướng GET cấp cao nhất); `path` hẹp để không đi kèm request nào khác.
+ */
+export function setOAuthCookie(res: Response, value: string): void {
+  res.cookie(COOKIE_NAMES.oauthState, value, {
+    ...baseOptions(),
+    path: OAUTH_COOKIE_PATH,
+    maxAge: AUTH.oauthStateTtlSeconds * MS_PER_SECOND,
+  });
+}
+
+export function clearOAuthCookie(res: Response): void {
+  res.clearCookie(COOKIE_NAMES.oauthState, {
+    ...baseOptions(),
+    path: OAUTH_COOKIE_PATH,
+  });
 }
 
 /**

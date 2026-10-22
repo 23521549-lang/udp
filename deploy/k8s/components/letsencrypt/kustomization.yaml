@@ -1,0 +1,6 @@
+# Let's Encrypt (Plan #52 QĐ-5) — bản phát hành kèm component này khi `TLS_ISSUER` là `letsencrypt` hay
+# `letsencrypt-staging`; lượt CI (CA tự ký) không kèm, để runner không đăng ký tài khoản ACME ở mỗi lượt.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - issuers.yaml

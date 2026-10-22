@@ -10,7 +10,7 @@ import type { ProjectRole } from "@udp/db";
  * đường vòng tới cùng bất biến ấy, và `idx_one_owner_per_project` sẽ chặn bằng
  * một lỗi 409 khó hiểu thay vì API nói thẳng rằng phải dùng endpoint khác.
  */
-const ASSIGNABLE_ROLES = ["MAINTAINER", "DEVELOPER", "VIEWER"] as const;
+export const ASSIGNABLE_ROLES = ["MAINTAINER", "DEVELOPER", "VIEWER"] as const;
 
 export const addMemberSchema = z.object({
   email: z.string().email("Email không hợp lệ").trim().toLowerCase(),

@@ -1,0 +1,351 @@
+{
+  "experiment": "E14",
+  "at": "2026-09-22T08:42:05.276Z",
+  "environment": {
+    "commit": "f39055aa33401f720de07575e5967c592d9bd427",
+    "sourceDirty": true,
+    "sourceDiffSha256": "4b1e94a262ffd19d3a66e56cb03d05e7ad069335abfb20e48bae307d8a7bcd99",
+    "node": "v22.20.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "memoryGiB": 7.7,
+    "freeMemoryGiB": 1.1,
+    "geometry": "in-process (không mạng)"
+  },
+  "data": {
+    "method": {
+      "formula": "R·S·M·(B+3)·(1+T·V)",
+      "R": 10,
+      "S": 2,
+      "M": 1,
+      "B": 10,
+      "rendersPerCell": 20,
+      "realisticRequests": 2000,
+      "realisticErrorRate": 0.05,
+      "notMeasuredHere": "dung lượng TSDB sau 1 giờ, scrape duration phía Prometheus — sổ nợ E14-prometheus"
+    },
+    "cells": [
+      {
+        "T": 0,
+        "V": 2,
+        "predicted": {
+          "total": 260,
+          "bucket": 220
+        },
+        "complete": {
+          "series": {
+            "bucket": 220,
+            "total": 260
+          },
+          "expositionBytes": 45810,
+          "renderMs": {
+            "p50": 0.52,
+            "max": 1.33
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 220,
+            "total": 260
+          },
+          "expositionBytes": 46212,
+          "renderMs": {
+            "p50": 0.34,
+            "max": 0.54
+          }
+        },
+        "realisticShareOfCeiling": 1
+      },
+      {
+        "T": 1,
+        "V": 2,
+        "predicted": {
+          "total": 780,
+          "bucket": 660
+        },
+        "complete": {
+          "series": {
+            "bucket": 660,
+            "total": 780
+          },
+          "expositionBytes": 141580,
+          "renderMs": {
+            "p50": 1.18,
+            "max": 2.6
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 660,
+            "total": 780
+          },
+          "expositionBytes": 142601,
+          "renderMs": {
+            "p50": 0.85,
+            "max": 2.23
+          }
+        },
+        "realisticShareOfCeiling": 1
+      },
+      {
+        "T": 2,
+        "V": 2,
+        "predicted": {
+          "total": 1300,
+          "bucket": 1100
+        },
+        "complete": {
+          "series": {
+            "bucket": 1100,
+            "total": 1300
+          },
+          "expositionBytes": 237337,
+          "renderMs": {
+            "p50": 1.68,
+            "max": 4.24
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 1100,
+            "total": 1300
+          },
+          "expositionBytes": 238941,
+          "renderMs": {
+            "p50": 1.49,
+            "max": 4.57
+          }
+        },
+        "realisticShareOfCeiling": 1
+      },
+      {
+        "T": 3,
+        "V": 2,
+        "predicted": {
+          "total": 1820,
+          "bucket": 1540
+        },
+        "complete": {
+          "series": {
+            "bucket": 1540,
+            "total": 1820
+          },
+          "expositionBytes": 333218,
+          "renderMs": {
+            "p50": 1.97,
+            "max": 4.84
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 1540,
+            "total": 1820
+          },
+          "expositionBytes": 335314,
+          "renderMs": {
+            "p50": 2.76,
+            "max": 4.56
+          }
+        },
+        "realisticShareOfCeiling": 1
+      },
+      {
+        "T": 50,
+        "V": 2,
+        "predicted": {
+          "total": 26260,
+          "bucket": 22220
+        },
+        "complete": {
+          "series": {
+            "bucket": 22220,
+            "total": 26260
+          },
+          "expositionBytes": 4856511,
+          "renderMs": {
+            "p50": 42.98,
+            "max": 67.07
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 22209,
+            "total": 26247
+          },
+          "expositionBytes": 4881222,
+          "renderMs": {
+            "p50": 48.95,
+            "max": 106.44
+          }
+        },
+        "realisticShareOfCeiling": 1
+      },
+      {
+        "T": 0,
+        "V": 4,
+        "predicted": {
+          "total": 260,
+          "bucket": 220
+        },
+        "complete": {
+          "series": {
+            "bucket": 220,
+            "total": 260
+          },
+          "expositionBytes": 45795,
+          "renderMs": {
+            "p50": 0.24,
+            "max": 1.61
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 220,
+            "total": 260
+          },
+          "expositionBytes": 46190,
+          "renderMs": {
+            "p50": 0.24,
+            "max": 1.49
+          }
+        },
+        "realisticShareOfCeiling": 1
+      },
+      {
+        "T": 1,
+        "V": 4,
+        "predicted": {
+          "total": 1300,
+          "bucket": 1100
+        },
+        "complete": {
+          "series": {
+            "bucket": 1100,
+            "total": 1300
+          },
+          "expositionBytes": 237412,
+          "renderMs": {
+            "p50": 1.7,
+            "max": 5.17
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 1078,
+            "total": 1274
+          },
+          "expositionBytes": 233909,
+          "renderMs": {
+            "p50": 1.68,
+            "max": 3.23
+          }
+        },
+        "realisticShareOfCeiling": 0.98
+      },
+      {
+        "T": 2,
+        "V": 4,
+        "predicted": {
+          "total": 2340,
+          "bucket": 1980
+        },
+        "complete": {
+          "series": {
+            "bucket": 1980,
+            "total": 2340
+          },
+          "expositionBytes": 429031,
+          "renderMs": {
+            "p50": 4.1,
+            "max": 6.55
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 1925,
+            "total": 2275
+          },
+          "expositionBytes": 419239,
+          "renderMs": {
+            "p50": 2.72,
+            "max": 5.27
+          }
+        },
+        "realisticShareOfCeiling": 0.972
+      },
+      {
+        "T": 3,
+        "V": 4,
+        "predicted": {
+          "total": 3380,
+          "bucket": 2860
+        },
+        "complete": {
+          "series": {
+            "bucket": 2860,
+            "total": 3380
+          },
+          "expositionBytes": 620541,
+          "renderMs": {
+            "p50": 4.03,
+            "max": 6.12
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 2783,
+            "total": 3289
+          },
+          "expositionBytes": 606869,
+          "renderMs": {
+            "p50": 4.4,
+            "max": 5.71
+          }
+        },
+        "realisticShareOfCeiling": 0.973
+      },
+      {
+        "T": 50,
+        "V": 4,
+        "predicted": {
+          "total": 52260,
+          "bucket": 44220
+        },
+        "complete": {
+          "series": {
+            "bucket": 44220,
+            "total": 52260
+          },
+          "expositionBytes": 9666966,
+          "renderMs": {
+            "p50": 93.79,
+            "max": 147.47
+          }
+        },
+        "completeMatchesFormula": true,
+        "realistic": {
+          "series": {
+            "bucket": 43142,
+            "total": 50986
+          },
+          "expositionBytes": 9474663,
+          "renderMs": {
+            "p50": 91.87,
+            "max": 165.02
+          }
+        },
+        "realisticShareOfCeiling": 0.976
+      }
+    ]
+  }
+}

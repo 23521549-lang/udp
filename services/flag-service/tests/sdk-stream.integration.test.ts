@@ -1,9 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { env, SSE } from "@udp/config";
 import { createPrismaClient } from "@udp/db";
 import {
+  applyChange,
   configHashOf,
   type SdkConfigResponse,
   type SdkStreamDelta,
@@ -20,7 +21,14 @@ import {
 import { createCircuitBreaker } from "../src/changefeed/circuit-breaker.js";
 import { createVersionWatcher } from "../src/changefeed/version.watcher.js";
 import { sseHub } from "../src/sdk/index.js";
-import { stableOwner } from "./helpers/fixture.js";
+import {
+  createActiveFlag,
+  internalCall,
+  newSdkKeyToken,
+  sdkKeyData,
+  sha256,
+  stableOwner,
+} from "@udp/test-support";
 import { openSse, type SseReader } from "./helpers/sse-reader.js";
 
 /**
@@ -37,8 +45,9 @@ import { openSse, type SseReader } from "./helpers/sse-reader.js";
  * kiện của tiến trình, đúng như production chỉ có một bộ.
  */
 
+/** User có thật (FK của audit và outbox) — route ghi của S2 bắt buộc actor [v4.5] */
+let actorId = "";
 const app = createApp();
-const SECRET = env.INTERNAL_SERVICE_SECRET;
 
 const admin = createPrismaClient({
   connectionString: env.DATABASE_URL_DIRECT,
@@ -57,8 +66,6 @@ const watcherOf = (deltaMode: boolean) =>
 const snapshotWatcher = watcherOf(false);
 const deltaWatcher = watcherOf(true);
 
-const sha256 = (v: string): string =>
-  createHash("sha256").update(v).digest("hex");
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -75,11 +82,11 @@ async function waitUntil(
   }
 }
 
-const DEV_KEY = `udp_sk_test_${randomUUID()}`;
-const PROD_KEY = `udp_sk_test_${randomUUID()}`;
-const CLIENT_KEY = `udp_ck_test_${randomUUID()}`;
-const REVOKED_KEY = `udp_sk_test_${randomUUID()}`;
-const DOOMED_KEY = `udp_sk_test_${randomUUID()}`;
+const DEV_KEY = newSdkKeyToken("SERVER");
+const PROD_KEY = newSdkKeyToken("SERVER");
+const CLIENT_KEY = newSdkKeyToken("CLIENT");
+const REVOKED_KEY = newSdkKeyToken("SERVER");
+const DOOMED_KEY = newSdkKeyToken("SERVER");
 
 let server: Server | undefined;
 let base = "";
@@ -96,6 +103,7 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${String((listening.address() as AddressInfo).port)}`;
 
   const owner = await stableOwner(admin);
+  actorId = owner.id;
   const suffix = randomUUID().slice(0, 8);
   const project = await admin.project.create({
     data: {
@@ -128,15 +136,15 @@ beforeAll(async () => {
     raw: string,
     environmentId: string,
     extra: { keyType?: "SERVER" | "CLIENT"; revokedAt?: Date } = {},
-  ) => ({
-    environmentId,
-    keyType: extra.keyType ?? "SERVER",
-    keyHash: sha256(raw),
-    keySuffix: raw.slice(-6),
-    label: "streamtest",
-    createdById: owner.id,
-    ...(extra.revokedAt === undefined ? {} : { revokedAt: extra.revokedAt }),
-  });
+  ) =>
+    sdkKeyData({
+      token: raw,
+      environmentId,
+      keyType: extra.keyType ?? "SERVER",
+      createdById: owner.id,
+      label: "streamtest",
+      ...(extra.revokedAt === undefined ? {} : { revokedAt: extra.revokedAt }),
+    });
   await admin.sdkKey.createMany({
     data: [
       key(DEV_KEY, dev),
@@ -147,7 +155,7 @@ beforeAll(async () => {
     ],
   });
 
-  const created = await createFlag(`base-${suffix}`).expect(201);
+  const created = await createFlag(`base-${suffix}`);
   flagId = created.body.flag.id as string;
 });
 
@@ -166,16 +174,18 @@ afterAll(async () => {
     await admin.configChangeLog.deleteMany({
       where: { environmentId: { in: envIds } },
     });
+    await admin.auditLog.deleteMany({ where: { projectId: projectId } });
     await admin.project.delete({ where: { id: projectId } });
   }
   await admin.$disconnect();
 });
 
-function createFlag(key: string): request.Test {
-  return request(app)
-    .post("/internal/flags")
-    .set("X-Internal-Secret", SECRET)
-    .send({ projectId, key, flagType: "BOOLEAN" });
+function createFlag(key: string): Promise<request.Response> {
+  return createActiveFlag(app, actorId, {
+    projectId,
+    key,
+    flagType: "BOOLEAN",
+  });
 }
 
 const configOf = (key: string): request.Test =>
@@ -275,7 +285,7 @@ describe("đẩy thay đổi", () => {
     const first = await s.next(5_000);
 
     const key = `snap-${randomUUID().slice(0, 8)}`;
-    await createFlag(key).expect(201);
+    await createFlag(key);
     await snapshotWatcher.tick();
 
     const event = await s.next(5_000);
@@ -291,7 +301,7 @@ describe("đẩy thay đổi", () => {
     const s = await open(DEV_KEY);
     const held = bodyOf<SdkConfigResponse>((await s.next(5_000)).data);
 
-    await createFlag(`delta-${randomUUID().slice(0, 8)}`).expect(201);
+    await createFlag(`delta-${randomUUID().slice(0, 8)}`);
     await deltaWatcher.tick();
 
     const event = await s.next(5_000);
@@ -301,17 +311,14 @@ describe("đẩy thay đổi", () => {
     expect(Number(event.id)).toBe(change.toVersion);
     expect(JSON.stringify(change)).not.toContain("rolloutSessionId");
 
-    // Áp đúng như provider §6.8: thay entry theo `key`, không đọc lại gì
-    let flags = held.flags;
-    for (const item of change.changes) {
-      expect(item.kind).toBe("flag");
-      flags = [...flags.filter((f) => f.key !== item.flag.key), item.flag];
-    }
-    const applied: Snapshot = {
-      flags,
+    // Áp bằng CÙNG hàm với provider §6.8 [v4.7]: tạo flag DRAFT là `flagAbsent`
+    // (xoá nếu có), kích hoạt là entry đầy đủ [v4.6]
+    expect(change.changes.map((c) => c.kind)).toEqual(["flagAbsent", "flag"]);
+    const applied = change.changes.reduce<Snapshot>(applyChange, {
+      flags: held.flags,
       segments: held.segments,
       trackedFlags: held.trackedFlags,
-    };
+    });
     expect(configHashOf(applied)).toBe(change.configHash);
     s.close();
   });
@@ -330,9 +337,10 @@ describe("đẩy thay đổi", () => {
       where: { flagId, environmentId: devEnv },
       select: { id: true },
     });
-    await request(app)
-      .patch(`/internal/flag-envs/${envConfig.id}`)
-      .set("X-Internal-Secret", SECRET)
+    await internalCall(
+      request(app).patch(`/internal/flag-envs/${envConfig.id}`),
+      actorId,
+    )
       .send({ isEnabled: true })
       .expect(200);
     await snapshotWatcher.tick();
@@ -369,7 +377,7 @@ describe("đẩy thay đổi", () => {
     await s.next(5_000);
     await sleep(300);
 
-    await createFlag(`json-${randomUUID().slice(0, 8)}`).expect(201);
+    await createFlag(`json-${randomUUID().slice(0, 8)}`);
     await snapshotWatcher.tick();
     expect((await s.next(5_000)).event).toBe("snapshot");
     expect(sseHub.size()).toBe(1);

@@ -163,7 +163,7 @@ describe("A5 — con số tài liệu tự tuyên bố phải khớp thực tế
   });
 
   it("số domain khớp DOMAIN_CATALOG_SEED", async () => {
-    const { DOMAIN_CATALOG_SEED } = await import("@udp/config");
+    const { DOMAIN_CATALOG_SEED } = await import("@udp/config/domains");
     expect(DOMAIN_CATALOG_SEED.length).toBe(
       claimed(/\*\*(\d+) domain\*\*, khớp/g),
     );

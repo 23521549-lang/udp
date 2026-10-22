@@ -1,0 +1,7 @@
+# CA tự ký của cert-manager (Plan #52 QĐ-11) — CHỈ khi `TLS_ISSUER=self-signed` (lượt CI không có DNS công khai
+# cho Let's Encrypt). Gốc tự ký → chứng chỉ CA → ClusterIssuer `udp-self-signed` cấp chứng chỉ cho host: E2E tin
+# CA đó (`NODE_EXTRA_CA_CERTS`) và vẫn kiểm tên host như với chứng chỉ thật.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - ca.yaml

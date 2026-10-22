@@ -1,0 +1,17 @@
+{
+  "route": "POST /projects/{id}/provision",
+  "status": 202,
+  "body": {
+    "job": {
+      "id": "39f5e97f-6b35-414e-86ab-d1606484f8a9",
+      "jobType": "PROVISION",
+      "state": "QUEUED",
+      "attempt": 0,
+      "confirmedMonthlyUsd": 365.22,
+      "lastError": null,
+      "cancellable": true,
+      "createdAt": "2026-09-25T08:38:15.751Z",
+      "updatedAt": "2026-09-25T08:38:15.751Z"
+    }
+  }
+}

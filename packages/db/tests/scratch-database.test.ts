@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertScratchName,
@@ -5,9 +6,11 @@ import {
   expectedRoleOf,
   maskForGitHub,
   pointAt,
+  runFailureDetail,
   SCRATCH_NAME_PATTERN,
   scratchEnv,
   scratchNameFromEnv,
+  testEnv,
 } from "../scripts/helpers/scratch-database.js";
 
 /**
@@ -127,7 +130,11 @@ describe("scratchEnv", () => {
 
   it("đổi MỌI chuỗi kết nối, kể cả biến chưa có tên trong danh sách nào", () => {
     const out = scratchEnv(
-      { ...base, DATABASE_URL_S3: "postgresql://udp_s3.abc:x@h:6543/postgres" },
+      {
+        ...base,
+        DATABASE_URL_S3: "postgresql://udp_s3.abc:x@h:6543/postgres",
+        DATABASE_URL_S3_DIRECT: "postgresql://udp_s3.abc:x@h:5432/postgres",
+      },
       "udp_scratch_9",
     );
     for (const key of [
@@ -137,6 +144,7 @@ describe("scratchEnv", () => {
       "DATABASE_URL_S2",
       "DATABASE_URL_S2_DIRECT",
       "DATABASE_URL_S3",
+      "DATABASE_URL_S3_DIRECT",
     ]) {
       expect(new URL(out[key] ?? "").pathname, key).toBe("/udp_scratch_9");
     }
@@ -170,6 +178,38 @@ describe("scratchEnv", () => {
     const snapshot = { ...base };
     scratchEnv(base, "udp_scratch_9");
     expect(base).toEqual(snapshot);
+  });
+});
+
+describe("testEnv", () => {
+  it("ép NODE_ENV về test dù .env đã khai development", () => {
+    const out = testEnv({ NODE_ENV: "development", DATABASE_URL: BASE });
+    expect(out["NODE_ENV"]).toBe("test");
+    expect(out["DATABASE_URL"]).toBe(BASE);
+  });
+
+  it("đặt NODE_ENV cả khi biến chưa có", () => {
+    expect(testEnv({})["NODE_ENV"]).toBe("test");
+  });
+
+  it("không sửa object đầu vào", () => {
+    const base: NodeJS.ProcessEnv = { NODE_ENV: "development" };
+    testEnv(base);
+    expect(base["NODE_ENV"]).toBe("development");
+  });
+
+  /**
+   * Chốt NƠI DÙNG chứ không chỉ chốt hàm: `testEnv` đúng mà bước 3/3 vẫn nhận
+   * `childEnv` thì bộ test lại chạy với `NODE_ENV=development`, và triệu chứng
+   * (400 ở các route có seam `asOf`) không hề nhắc tới biến môi trường nào.
+   */
+  it("bước chạy test của test-scratch dùng testEnv, không dùng childEnv trần", () => {
+    const src = readFileSync(
+      new URL("../scripts/test-scratch.ts", import.meta.url),
+      "utf8",
+    );
+    const step3 = src.slice(src.indexOf('"3/3'));
+    expect(step3).toContain("testEnv(childEnv)");
   });
 });
 
@@ -219,5 +259,52 @@ describe("maskForGitHub", () => {
       (l) => lines.push(l),
     );
     expect(lines).not.toContain("::add-mask::short");
+  });
+});
+
+/**
+ * Một lượt dùng database scratch hỏng thì phải nói VÌ SAO.
+ *
+ * `verify-chain` từng kết thúc bằng `catch { … }` trần: database dev không nối được (ENOTFOUND của
+ * pooler) và người chạy chỉ thấy "Chuỗi migration KHÔNG dựng lại được từ đầu", không một chữ về
+ * nguyên nhân. Lỗi của một BƯỚC đã tự in ra stdio nên không in lại; lỗi của chính lượt chạy - nối,
+ * tạo, xoá database - thì chưa ai in.
+ */
+describe("runFailureDetail", () => {
+  it("lỗi của một bước (execFileSync) đã tự in ⇒ không in lại", () => {
+    expect(
+      runFailureDetail(new Error("Command failed: prisma migrate deploy")),
+    ).toBeUndefined();
+  });
+
+  it("lỗi nối database ⇒ nói nguyên văn, kèm mã nếu thông điệp chưa có", () => {
+    const pooler = Object.assign(
+      new Error("tenant/user postgres.abc not found"),
+      { code: "XX000" },
+    );
+    expect(runFailureDetail(pooler)).toBe(
+      "tenant/user postgres.abc not found (XX000)",
+    );
+    const dns = Object.assign(new Error("(ENOTFOUND) tenant/user x"), {
+      code: "ENOTFOUND",
+    });
+    expect(runFailureDetail(dns)).toBe("(ENOTFOUND) tenant/user x");
+  });
+
+  it("thứ bị ném không phải Error ⇒ vẫn nói ra, không nuốt", () => {
+    expect(runFailureDetail("boom")).toBe("boom");
+  });
+
+  /** Cổng cùng loại: script nào dựng database scratch cũng không được nuốt lỗi của lượt chạy */
+  it("mọi script dùng withScratchDatabase in lỗi qua runFailureDetail, không `catch` trần", () => {
+    for (const name of ["verify-chain.ts", "test-scratch.ts"]) {
+      const src = readFileSync(
+        new URL(`../scripts/${name}`, import.meta.url),
+        "utf8",
+      );
+      expect(src, name).toContain("withScratchDatabase(");
+      expect(src, name).toContain("runFailureDetail(err)");
+      expect(src, name).not.toMatch(/catch\s*\{/);
+    }
   });
 });

@@ -1,0 +1,89 @@
+{
+  "route": "GET /admin/overview",
+  "status": 200,
+  "body": {
+    "overview": {
+      "users": {
+        "total": 53,
+        "admins": 2,
+        "newLast7d": 21
+      },
+      "projects": {
+        "total": 42,
+        "byStatus": {
+          "DRAFT": 19,
+          "PROVISIONING": 2,
+          "ACTIVE": 16,
+          "ERROR": 5
+        }
+      },
+      "clouds": [
+        {
+          "provider": "AWS",
+          "projects": 25
+        }
+      ],
+      "jobs": {
+        "running": 1,
+        "failed": 12,
+        "compensationFailed": 2,
+        "cancelRequested": 0
+      },
+      "orphans": {
+        "count": 2,
+        "usdPerHour": 0,
+        "unpriced": 2
+      },
+      "tools": [
+        {
+          "domainType": "PROGRESSIVE_DELIVERY",
+          "toolId": "fake-rollouts",
+          "projects": 21
+        },
+        {
+          "domainType": "MONITORING",
+          "toolId": "fake-metrics",
+          "projects": 20
+        },
+        {
+          "domainType": "MONITORING",
+          "toolId": "fake-metrics-b",
+          "projects": 2
+        },
+        {
+          "domainType": "CONTAINER_REGISTRY",
+          "toolId": "ghcr",
+          "projects": 1
+        },
+        {
+          "domainType": "COST",
+          "toolId": "fake-cost",
+          "projects": 1
+        },
+        {
+          "domainType": "LOGGING",
+          "toolId": "loki",
+          "projects": 1
+        },
+        {
+          "domainType": "MONITORING",
+          "toolId": "prometheus-grafana",
+          "projects": 1
+        },
+        {
+          "domainType": "TRACING",
+          "toolId": "fake-tracer",
+          "projects": 1
+        }
+      ],
+      "deploys7d": {
+        "success": 45,
+        "failure": 22
+      },
+      "database": {
+        "sizeBytes": 302738579
+      },
+      "generatedAt": "2026-09-29T17:44:17.802Z"
+    }
+  }
+}

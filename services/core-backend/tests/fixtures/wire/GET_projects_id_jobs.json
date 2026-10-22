@@ -1,0 +1,19 @@
+{
+  "route": "GET /projects/{id}/jobs",
+  "status": 200,
+  "body": {
+    "jobs": [
+      {
+        "id": "39f5e97f-6b35-414e-86ab-d1606484f8a9",
+        "jobType": "PROVISION",
+        "state": "CANCEL_REQUESTED",
+        "attempt": 0,
+        "confirmedMonthlyUsd": 365.22,
+        "lastError": null,
+        "cancellable": false,
+        "createdAt": "2026-09-25T08:38:15.751Z",
+        "updatedAt": "2026-09-25T08:38:19.161Z"
+      }
+    ]
+  }
+}

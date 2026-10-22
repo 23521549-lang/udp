@@ -1,0 +1,65 @@
+{
+  "experiment": "kyverno-crd",
+  "at": "2026-10-03T07:46:34.239Z",
+  "environment": {
+    "commit": "df07c7e8b34e9b6d4fd18107fd8145bee4fb59b8",
+    "sourceDirty": true,
+    "sourceDiffSha256": "1aa9c31aa8242250391867b81989f12316fb00e1b074d2c774b4e57800296ed7",
+    "node": "v22.20.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "memoryGiB": 7.7,
+    "freeMemoryGiB": 0.2,
+    "geometry": "máy dev → raw.githubusercontent.com (tải CRD), kiểm schema in-process",
+    "note": "61d-3b: policy sinh tu ma san pham, kiem theo CRD that cua Kyverno v1.19.1"
+  },
+  "data": {
+    "tag": "v1.19.1",
+    "crdUrl": "https://raw.githubusercontent.com/kyverno/kyverno/v1.19.1/config/crds/policies.kyverno.io/policies.kyverno.io_imagevalidatingpolicies.yaml",
+    "crdSha256": "32436252cd83925e228604dd33d5218509621946df7c8239f3d9df878d5f0503",
+    "crdBytes": 444664,
+    "versions": [
+      {
+        "name": "v1",
+        "served": true,
+        "storage": false,
+        "deprecated": false
+      },
+      {
+        "name": "v1alpha1",
+        "served": true,
+        "storage": false,
+        "deprecated": true
+      },
+      {
+        "name": "v1beta1",
+        "served": true,
+        "storage": true,
+        "deprecated": false
+      }
+    ],
+    "storageVersion": "v1beta1",
+    "policyApiVersion": "policies.kyverno.io/v1beta1",
+    "writesStorageVersion": true,
+    "cases": [
+      {
+        "case": "ghcr, một khoá",
+        "valid": true,
+        "errors": []
+      },
+      {
+        "case": "ECR, hai khoá (xoay khoá)",
+        "valid": true,
+        "errors": []
+      },
+      {
+        "case": "Harbor riêng tư (pushAuth basic), cổng khác 443",
+        "valid": true,
+        "errors": []
+      }
+    ],
+    "allValid": true,
+    "brokenRejected": true
+  }
+}

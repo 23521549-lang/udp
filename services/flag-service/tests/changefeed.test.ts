@@ -1,14 +1,17 @@
+import { CHANGE_FEED } from "@udp/config";
 import {
   configHashOf,
   type Snapshot,
   type SnapshotFlag,
+  type SnapshotSegment,
 } from "@udp/flag-evaluator";
 import { CONFIG_CHANGE_TYPES, type ConfigChangeType } from "@udp/shared-types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  ChangeFeed,
-  ChangeRecord,
-  EnvironmentState,
+import {
+  TOO_LARGE,
+  type ChangeFeed,
+  type ChangeRecord,
+  type EnvironmentState,
 } from "../src/changefeed/change-feed.interface.js";
 import {
   createConfigChangeEvents,
@@ -49,15 +52,30 @@ const flag = (key: string, enabled: boolean): SnapshotFlag => ({
   rules: [],
 });
 
-const snap = (flags: SnapshotFlag[]): Snapshot => ({
+const snap = (
+  flags: SnapshotFlag[],
+  segments: SnapshotSegment[] = [],
+): Snapshot => ({
   flags,
-  segments: [],
+  segments,
   trackedFlags: [],
 });
 
 interface Harness {
   loads: number;
-  setStored: (version: number, flags: SnapshotFlag[]) => void;
+  setStored: (
+    version: number,
+    flags: SnapshotFlag[],
+    segments?: SnapshotSegment[],
+  ) => void;
+  /** [v4.9] Tầng 1 tiến tới trạng thái khác giữa hai vòng poll */
+  setTarget: (target: EnvironmentState) => void;
+  /** [v4.9] Lô delta của vòng tới */
+  setRecords: (records: ChangeRecord[]) => void;
+  /** [v4.9] Feed trả `TOO_LARGE` — lô vượt ngân sách byte (V22) */
+  tooLarge: boolean;
+  /** [v4.9] Ngân sách byte mà poller truyền xuống feed, của lần gọi cuối */
+  maxBytesSeen: number | undefined;
 }
 
 /**
@@ -68,7 +86,11 @@ interface Harness {
  */
 function harness(options: {
   deltaMode: boolean;
-  cached: { version: number; flags: SnapshotFlag[] };
+  cached: {
+    version: number;
+    flags: SnapshotFlag[];
+    segments?: SnapshotSegment[];
+  };
   target: EnvironmentState;
   records?: ChangeRecord[];
   events?: ConfigChangeEvents;
@@ -76,13 +98,25 @@ function harness(options: {
   const stored = {
     version: options.cached.version,
     flags: options.cached.flags,
+    segments: options.cached.segments ?? [],
   };
+  let target = options.target;
+  let records = options.records ?? [];
   const state: Harness = {
     loads: 0,
-    setStored: (version, flags) => {
+    setStored: (version, flags, segments = []) => {
       stored.version = version;
       stored.flags = flags;
+      stored.segments = segments;
     },
+    setTarget: (next) => {
+      target = next;
+    },
+    setRecords: (next) => {
+      records = next;
+    },
+    tooLarge: false,
+    maxBytesSeen: undefined,
   };
 
   const load: EntryLoader = (environmentId) => {
@@ -91,18 +125,18 @@ function harness(options: {
       environmentId,
       environmentName: "dev",
       configVersion: stored.version,
-      configHash: configHashOf(snap(stored.flags)),
-      snapshot: snap(stored.flags),
+      configHash: configHashOf(snap(stored.flags, stored.segments)),
+      snapshot: snap(stored.flags, stored.segments),
     });
   };
 
   const feed: ChangeFeed = {
-    statesOf: (ids) =>
-      Promise.resolve(new Map(ids.map((id) => [id, options.target]))),
-    deltasSince: (_environmentId, cursor) =>
-      Promise.resolve(
-        (options.records ?? []).filter((r) => r.configVersion > cursor),
-      ),
+    statesOf: (ids) => Promise.resolve(new Map(ids.map((id) => [id, target]))),
+    deltasSince: (_environmentId, cursor, _limit, maxBytes) => {
+      state.maxBytesSeen = maxBytes;
+      if (state.tooLarge) return Promise.resolve(TOO_LARGE);
+      return Promise.resolve(records.filter((r) => r.configVersion > cursor));
+    },
   };
 
   const cache = createSnapshotCache(load);
@@ -126,6 +160,26 @@ const deltaRow = (
   configVersion,
   changeType,
   payload: JSON.parse(JSON.stringify({ flag: f })) as ChangeRecord["payload"],
+});
+
+/** [v4.9] id segment phải là UUID — câu đọc snapshot parse chặt hình dạng đó */
+const SEG = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+const segment = (id: string, userIds: string[]): SnapshotSegment => ({
+  id,
+  all: [],
+  userIds,
+});
+
+const segmentRow = (
+  configVersion: number,
+  s: SnapshotSegment,
+): ChangeRecord => ({
+  configVersion,
+  changeType: "segment.updated",
+  payload: JSON.parse(
+    JSON.stringify({ segment: s }),
+  ) as ChangeRecord["payload"],
 });
 
 beforeEach(() => {
@@ -321,6 +375,160 @@ describe("quy tắc rơi tầng", () => {
     expect(readCounters().changefeed_fallback_total).toBe(3);
     expect(h.breaker.isOpen(ENV)).toBe(true);
   });
+
+  /**
+   * [v4.9] Ba loại dòng MỚI phải KHÔNG rơi tầng, và lý do là cùng một câu:
+   * breaker đếm "tầng 2 hỏng", nên mọi thứ tầng 2 xử lý được mà bị đếm sẽ mở
+   * mạch 5 phút và tắt đường delta cho mọi thay đổi khác của environment (R14).
+   */
+  it("[v4.9] segment.updated ×3 liên tiếp: áp bằng delta, KHÔNG mở breaker (AC-5.2)", async () => {
+    const s0 = segment(SEG, ["u1"]);
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)], segments: [s0] },
+      target: {
+        configVersion: 7,
+        configHash: configHashOf(snap([flag("a", false)], [s0])),
+      },
+    });
+    await h.cache.get(ENV, "SERVER");
+    const before = h.state.loads;
+
+    for (let i = 0; i < 3; i += 1) {
+      const next = segment(SEG, ["u1", `u${String(i + 2)}`]);
+      const version = 8 + i;
+      h.state.setRecords([segmentRow(version, next)]);
+      h.state.setTarget({
+        configVersion: version,
+        configHash: configHashOf(snap([flag("a", false)], [next])),
+      });
+      await h.watcher.tick();
+      expect(h.cache.peek(ENV, "SERVER")?.snapshot.segments).toEqual([next]);
+    }
+
+    expect(h.state.loads, "đã rơi về snapshot").toBe(before);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+    expect(h.breaker.isOpen(ENV)).toBe(false);
+  });
+
+  it("[v4.9] segment đã xoá ⇒ segmentAbsent áp được, không rơi tầng", async () => {
+    const s0 = segment(SEG, ["u1"]);
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [], segments: [s0] },
+      target: { configVersion: 8, configHash: configHashOf(snap([], [])) },
+      records: [
+        {
+          configVersion: 8,
+          changeType: "segment.updated",
+          payload: { absentSegmentId: SEG },
+        },
+      ],
+    });
+    await h.cache.get(ENV, "SERVER");
+    const before = h.state.loads;
+
+    await h.watcher.tick();
+
+    expect(h.cache.peek(ENV, "SERVER")?.snapshot.segments).toEqual([]);
+    expect(h.state.loads).toBe(before);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
+
+  it("[v4.9] sdkkey.revoked: version tiến, nội dung y nguyên, KHÔNG rơi tầng (L1)", async () => {
+    /**
+     * Đây là toàn bộ lý do L1 dám cho thu hồi khoá đi qua outbox. Nếu dòng này
+     * rơi vào `unknown-change-type` thì mỗi lần thu hồi bắn một snapshot đầy đủ
+     * cho mọi stream của environment, và ba lần thu hồi liên tiếp mở breaker.
+     */
+    const flags = [flag("a", false)];
+    const hash = configHashOf(snap(flags));
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags },
+      target: { configVersion: 8, configHash: hash },
+      records: [
+        {
+          configVersion: 8,
+          changeType: "sdkkey.revoked",
+          payload: { sdkKeyId: "9d2f4c1e-0000-4000-8000-000000000001" },
+        },
+      ],
+    });
+    await h.cache.get(ENV, "SERVER");
+    const before = h.state.loads;
+
+    await h.watcher.tick();
+
+    const entry = h.cache.peek(ENV, "SERVER");
+    expect(entry?.configVersion).toBe(8);
+    expect(entry?.configHash).toBe(hash);
+    expect(entry?.snapshot.flags).toEqual(flags);
+    expect(h.state.loads, "đã rơi về snapshot").toBe(before);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
+
+  it("[v4.9] lô delta vượt ngân sách byte ⇒ snapshot, lý do too-large, breaker KHÔNG đếm (AC-5.8)", async () => {
+    const after = [flag("a", true)];
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 8, configHash: configHashOf(snap(after)) },
+      records: [deltaRow(8, "flag.updated", flag("a", true))],
+    });
+    await h.cache.get(ENV, "SERVER");
+    const before = h.state.loads;
+
+    h.state.tooLarge = true;
+    h.state.setStored(8, after);
+
+    await h.watcher.tick();
+
+    // Ngân sách là hằng số của `@udp/config`, không phải một con số ở poller
+    expect(h.state.maxBytesSeen).toBe(CHANGE_FEED.maxDeltaBytes);
+    // Thay đổi vẫn tới nơi — chỉ bằng snapshot
+    expect(h.state.loads).toBe(before + 1);
+    expect(h.cache.peek(ENV, "SERVER")?.configVersion).toBe(8);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+
+    // Ba lượt nữa cũng không mở mạch: `too-large` không phải sự cố của tầng 2
+    for (let version = 9; version <= 11; version += 1) {
+      h.state.setTarget({
+        configVersion: version,
+        configHash: configHashOf(snap(after)),
+      });
+      h.state.setStored(version, after);
+      await h.watcher.tick();
+    }
+    expect(h.breaker.isOpen(ENV)).toBe(false);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
+
+  it("[v4.11] environment.backfilled: một dòng nhiều flag ⇒ áp bằng snapshot, breaker KHÔNG đếm (Plan #40)", async () => {
+    const after = [flag("a", false), flag("b", false)];
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 8, configHash: configHashOf(snap(after)) },
+      records: [
+        {
+          configVersion: 8,
+          changeType: "environment.backfilled",
+          payload: { addedFlagKeys: ["b"] },
+        },
+      ],
+    });
+    await h.cache.get(ENV, "SERVER");
+    const before = h.state.loads;
+    h.state.setStored(8, after);
+
+    await h.watcher.tick();
+
+    expect(h.state.loads).toBe(before + 1);
+    expect(h.cache.peek(ENV, "SERVER")?.snapshot.flags).toEqual(after);
+    expect(h.breaker.isOpen(ENV)).toBe(false);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
 });
 
 describe("chống bão snapshot", () => {
@@ -515,6 +723,92 @@ describe("tầng 2 áp được ba change_type của đường ghi rule (Plan #1
     expect(h.cache.peek(ENV, "SERVER")?.configVersion).toBe(8);
     expect(readCounters().changefeed_fallback_total).toBe(0);
   });
+});
+
+describe("tầng 2 áp được tập trackedFlags [v4.3] (§6.6)", () => {
+  const trackedRow = (
+    configVersion: number,
+    changeType: "rollout.tracked" | "rollout.untracked",
+    trackedFlags: string[],
+  ): ChangeRecord => ({
+    configVersion,
+    changeType,
+    payload: { trackedFlags },
+  });
+
+  it("flag đổi rồi tập tracked đổi trong cùng một lô ⇒ áp cả hai, hash khớp, không rơi tầng", async () => {
+    const after: Snapshot = {
+      flags: [flag("a", true)],
+      segments: [],
+      trackedFlags: ["a", "b-c"],
+    };
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: { configVersion: 9, configHash: configHashOf(after) },
+      records: [
+        deltaRow(8, "rule.ramped", flag("a", true)),
+        trackedRow(9, "rollout.tracked", ["a", "b-c"]),
+      ],
+    });
+
+    await h.cache.get(ENV, "SERVER");
+    const before = h.state.loads;
+    await h.watcher.tick();
+
+    expect(h.state.loads).toBe(before);
+    expect(h.cache.peek(ENV, "SERVER")?.snapshot).toEqual(after);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
+
+  it("untrack thay CẢ tập — kể cả về rỗng", async () => {
+    const h = harness({
+      deltaMode: true,
+      cached: { version: 7, flags: [flag("a", false)] },
+      target: {
+        configVersion: 8,
+        configHash: configHashOf(snap([flag("a", false)])),
+      },
+      records: [trackedRow(8, "rollout.untracked", [])],
+    });
+
+    await h.cache.get(ENV, "SERVER");
+    await h.watcher.tick();
+
+    expect(h.cache.peek(ENV, "SERVER")?.snapshot.trackedFlags).toEqual([]);
+    expect(readCounters().changefeed_fallback_total).toBe(0);
+  });
+
+  it.each([
+    ["chưa sắp", { trackedFlags: ["b", "a"] }],
+    ["trùng", { trackedFlags: ["a", "a"] }],
+    ["phần tử không phải chuỗi", { trackedFlags: ["a", 1] }],
+    ["thiếu trường", { flags: ["a"] }],
+  ])(
+    "payload %s ⇒ rơi về snapshot, không áp một tập sai",
+    async (_label, payload) => {
+      const h = harness({
+        deltaMode: true,
+        cached: { version: 7, flags: [flag("a", false)] },
+        target: {
+          configVersion: 8,
+          configHash: configHashOf(snap([flag("a", false)])),
+        },
+        records: [
+          {
+            configVersion: 8,
+            changeType: "rollout.tracked",
+            payload,
+          },
+        ],
+      });
+
+      await h.cache.get(ENV, "SERVER");
+      await h.watcher.tick();
+
+      expect(readCounters().changefeed_fallback_total).toBe(1);
+    },
+  );
 });
 
 describe("sự kiện thay đổi cho sdk/ (Plan #13, Mục 4)", () => {

@@ -1,0 +1,16 @@
+{
+  "route": "POST /projects/{id}/transfer-ownership",
+  "status": 200,
+  "body": {
+    "member": {
+      "userId": "81a54d51-e074-44c1-be09-098158e09aa6",
+      "projectRole": "OWNER",
+      "createdAt": "2026-09-24T19:33:44.210Z",
+      "user": {
+        "id": "81a54d51-e074-44c1-be09-098158e09aa6",
+        "email": "test-b9b82b3f-dbea-4018-907c-b12ef4312f81@udp.local",
+        "name": "Test User"
+      }
+    }
+  }
+}

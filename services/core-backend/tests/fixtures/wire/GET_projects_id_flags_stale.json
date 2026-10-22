@@ -1,0 +1,42 @@
+{
+  "route": "GET /projects/{id}/flags/stale",
+  "status": 200,
+  "body": {
+    "telemetry": {
+      "firstReportAt": "2026-08-05T19:00:00.000Z",
+      "observedDays": 50
+    },
+    "telemetryGaps": [],
+    "counts": {
+      "UNUSED": 1,
+      "SETTLED": 0,
+      "STALE_DRAFT": 0
+    },
+    "total": 1,
+    "items": [
+      {
+        "flag": {
+          "id": "70e16729-548a-4d19-9882-a9a5ebc4267a",
+          "key": "f-b8e08a59",
+          "description": null,
+          "lifecycleStatus": "ACTIVE",
+          "flagType": "BOOLEAN",
+          "createdAt": "2026-09-24T19:38:00.301Z",
+          "activatedAt": "2026-07-26T19:38:02.865Z",
+          "updatedAt": "2026-09-24T19:38:02.872Z"
+        },
+        "category": "UNUSED",
+        "lastEvaluatedAt": null,
+        "evalCount30d": 0,
+        "distribution": [],
+        "byEnv": [],
+        "archive": {
+          "allowed": true,
+          "evalCount7d": 0,
+          "lastEvaluatedAt": null
+        },
+        "clientTrafficUnobserved": false
+      }
+    ]
+  }
+}

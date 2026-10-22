@@ -1,0 +1,72 @@
+# Golden Path (§11.1) — áp vào namespace của environment: kubectl -n <namespace> apply -f k8s/
+#
+# UDP áp image của mỗi lần deploy (§8.3) và gắn nhãn pod app.kubernetes.io/version = tag của image;
+# SERVICE_VERSION đọc nhãn đó, nên service.version trên metric luôn là image ĐANG chạy — kể cả sau
+# rollback. Lần áp đầu tiên dùng image "bootstrap" (chưa tồn tại): pod chờ tới lần deploy đầu của
+# pipeline.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: golden-path-app
+  labels:
+    app.kubernetes.io/name: golden-path-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: golden-path-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: golden-path-app
+        app.kubernetes.io/version: bootstrap
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: golden-path-app
+          image: REGISTRY_REF/golden-path-app:bootstrap
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            # PHẢI bằng workloadName của rollout (§6.6)
+            - name: OTEL_SERVICE_NAME
+              value: golden-path-app
+            - name: SERVICE_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app.kubernetes.io/version']
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.version=$(SERVICE_VERSION)
+            # Secret do bạn tạo: kubectl -n <namespace> create secret generic golden-path-app-udp
+            #   --from-literal=host=<địa chỉ Service 2> --from-literal=sdkKey=<SERVER key>
+            - name: UDP_FLAG_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: golden-path-app-udp
+                  key: host
+            - name: UDP_SDK_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: golden-path-app-udp
+                  key: sdkKey
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi

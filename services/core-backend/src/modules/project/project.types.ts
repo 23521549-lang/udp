@@ -24,6 +24,15 @@ export const resourceQuotaSchema = z.object({
  * `DEFAULT_RESOURCE_QUOTA`. Cách này thoả cả hai mục và giữ được nguyên tắc
  * "giá trị an toàn, người dùng phải chủ động nâng" của §4.4.
  */
+/** [v4.11, Plan #41] `GET /projects` theo trang — cùng trần với `GET /flags` */
+export const listProjectsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+    offset: z.coerce.number().int().min(0).default(0),
+  })
+  .strict();
+export type ListProjectsQuery = z.infer<typeof listProjectsQuerySchema>;
+
 export const createProjectSchema = z
   .object({
     name: z.string().trim().min(1, "Tên project không được để trống").max(255),

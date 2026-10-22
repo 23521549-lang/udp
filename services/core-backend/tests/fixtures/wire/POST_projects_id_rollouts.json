@@ -1,0 +1,44 @@
+{
+  "route": "POST /projects/{id}/rollouts",
+  "status": 201,
+  "body": {
+    "rollout": {
+      "id": "6d17ebd8-b819-4ba9-a038-7f4eccfac687",
+      "projectId": "1be98354-e142-4fb5-96dc-f0634d075b2c",
+      "environment": {
+        "id": "61391e3a-f004-4264-8dcc-87e3634c9f6d",
+        "name": "dev",
+        "isProduction": false
+      },
+      "scope": "FLAG_LEVEL",
+      "controlMode": "udp-driven",
+      "strategy": "CANARY",
+      "status": "PENDING",
+      "currentTrafficPercentage": 30,
+      "baselinePercentage": 30,
+      "flag": {
+        "id": "6fb0ec54-5b32-4e63-8f22-952aaf960d7b",
+        "key": "t-8dbbed41",
+        "targetVariant": "on",
+        "targetingRuleId": "3cf1161a-1dda-4023-908d-1030ecf23e7c"
+      },
+      "workloadName": "checkout",
+      "thresholds": {
+        "errorRate": 0.05,
+        "minErrors": 5,
+        "latencyP99Ms": 1000,
+        "relativeErrorRate": 1.5,
+        "maxConsecutiveBreaches": 2
+      },
+      "stepPercent": 10,
+      "stepIntervalSeconds": 300,
+      "analysisIntervalSeconds": 30,
+      "warmUpRequests": 100,
+      "metricWindowSeconds": 60,
+      "maxDurationSeconds": 86400,
+      "events": [],
+      "createdAt": "2026-09-24T19:39:00.424Z",
+      "updatedAt": "2026-09-24T19:39:00.424Z"
+    }
+  }
+}

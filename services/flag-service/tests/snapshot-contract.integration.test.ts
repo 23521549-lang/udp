@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { env } from "@udp/config";
+import { ACTOR_HEADER, env } from "@udp/config";
 import { createPrismaClient, observeQueries } from "@udp/db";
 import { configHashOf, type Snapshot } from "@udp/flag-evaluator";
+import { stateFor } from "@udp/flag-snapshot";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
-import { stableOwner } from "./helpers/fixture.js";
+import { createActiveFlag, stableOwner } from "@udp/test-support";
 import { prismaEntryLoader } from "../src/changefeed/snapshot.cache.js";
-import { stateFor } from "../src/evaluation/snapshot-builder.js";
 
 /**
  * Hợp đồng trên dây của ADR-05.
@@ -30,6 +30,8 @@ import { stateFor } from "../src/evaluation/snapshot-builder.js";
  * production không đi thì test không chứng minh được điều cần.
  */
 
+/** User có thật (FK của audit và outbox) — route ghi của S2 bắt buộc actor [v4.5] */
+let actorId = "";
 const app = createApp();
 const SECRET = env.INTERNAL_SERVICE_SECRET;
 
@@ -48,6 +50,7 @@ let envIds: string[];
 
 beforeAll(async () => {
   const owner = await stableOwner(admin);
+  actorId = owner.id;
   const suffix = randomUUID().slice(0, 8);
 
   const project = await admin.project.create({
@@ -84,16 +87,14 @@ afterAll(async () => {
     await admin.configChangeLog.deleteMany({
       where: { environmentId: { in: envIds } },
     });
+    await admin.auditLog.deleteMany({ where: { projectId: projectId } });
     await admin.project.delete({ where: { id: projectId } });
   }
   await admin.$disconnect();
 });
 
-const createFlag = (key: string): request.Test =>
-  request(app)
-    .post("/internal/flags")
-    .set("X-Internal-Secret", SECRET)
-    .send({ projectId, key, flagType: "BOOLEAN" });
+const createFlag = (key: string): Promise<request.Response> =>
+  createActiveFlag(app, actorId, { projectId, key, flagType: "BOOLEAN" });
 
 /** Đúng tập khoá §9 khai cho `SdkConfigResponse.flags[]` và `.rules[]` */
 const FLAG_KEYS = [
@@ -116,7 +117,7 @@ const RULE_KEYS = [
 
 describe("snapshot mang ĐÚNG hình dạng dây (§9)", () => {
   it("không có trường nào ngoài tập §9 khai — kể cả id nội bộ", async () => {
-    await createFlag(`shape-${randomUUID().slice(0, 8)}`).expect(201);
+    await createFlag(`shape-${randomUUID().slice(0, 8)}`);
 
     const { snapshot } = await readEntry(envId);
     expect(snapshot.flags.length).toBeGreaterThan(0);
@@ -152,7 +153,7 @@ describe("snapshot mang ĐÚNG hình dạng dây (§9)", () => {
 
 describe("config_hash là hash của snapshot trên dây", () => {
   it("hash tính lại từ snapshot khớp con số S2 đã ghi", async () => {
-    await createFlag(`hash-${randomUUID().slice(0, 8)}`).expect(201);
+    await createFlag(`hash-${randomUUID().slice(0, 8)}`);
 
     const entry = await readEntry(envId);
     expect(configHashOf(entry.snapshot)).toBe(entry.configHash);
@@ -172,18 +173,33 @@ describe("payload của outbox là DELTA, không phải thông báo", () => {
     const before = (await readEntry(envId)).snapshot;
 
     const key = `delta-${randomUUID().slice(0, 8)}`;
-    await createFlag(key).expect(201);
+    await createFlag(key);
 
     const after = await admin.environment.findUniqueOrThrow({
       where: { id: envId },
       select: { configVersion: true, configHash: true },
     });
 
+    /**
+     * [v4.6] Hai dòng: `flag.created` của một flag DRAFT mang `absentFlagKey`
+     * (DRAFT không vào snapshot, §6.7), rồi `flag.updated` của lần kích hoạt mang
+     * entry đầy đủ. Áp dòng thứ hai lên snapshot TRƯỚC khi tạo là đủ — ở version
+     * giữa, flag không có mặt.
+     */
+    const created = await admin.configChangeLog.findFirstOrThrow({
+      where: { environmentId: envId, configVersion: after.configVersion - 1 },
+      select: { changeType: true, payload: true },
+    });
+    expect(created).toEqual({
+      changeType: "flag.created",
+      payload: { absentFlagKey: key },
+    });
+
     const log = await admin.configChangeLog.findFirstOrThrow({
       where: { environmentId: envId, configVersion: after.configVersion },
       select: { changeType: true, payload: true },
     });
-    expect(log.changeType).toBe("flag.created");
+    expect(log.changeType).toBe("flag.updated");
 
     /**
      * Thu hẹp `JsonValue` trước khi ép kiểu, chứ không ép hai lần qua `unknown`:
@@ -222,10 +238,11 @@ describe("payload của outbox là DELTA, không phải thông báo", () => {
 
   it("delta mang đủ variant và default để dựng lại entry", async () => {
     const key = `full-${randomUUID().slice(0, 8)}`;
-    await createFlag(key).expect(201);
+    await createFlag(key);
 
+    // Lần kích hoạt — dòng đầu tiên mang entry của flag (DRAFT thì vắng, §6.7)
     const log = await admin.configChangeLog.findFirstOrThrow({
-      where: { environmentId: envId, changeType: "flag.created" },
+      where: { environmentId: envId, changeType: "flag.updated" },
       orderBy: { configVersion: "desc" },
       select: { payload: true },
     });
@@ -267,7 +284,7 @@ describe("đường nạp snapshot là MỘT câu lệnh (I19 [v4.2], I21)", () 
 
   it("stateFor trong transaction ghi phát đúng 1 truy vấn dưới row-lock", async () => {
     const key = `one-${randomUUID().slice(0, 8)}`;
-    await createFlag(key).expect(201);
+    await createFlag(key);
     const selects = await selectsDuring(() =>
       admin.$transaction((tx) => stateFor(key)(tx, envId)),
     );

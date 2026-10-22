@@ -1,17 +1,13 @@
 /**
- * Hai bộ đếm mà ADR-05 gọi đích danh, và KHÔNG cái nào khác.
+ * Hai bộ đếm mà ADR-05 gọi đích danh: `changefeed_hash_mismatch_total` khi hash
+ * lệch sau khi áp delta, và `changefeed_fallback_total` khi rơi về snapshot (§1.4).
  *
- * §1.4 nêu đúng hai: `changefeed_hash_mismatch_total` khi hash lệch sau khi áp
- * delta, và `changefeed_fallback_total` khi rơi về snapshot. Thêm bộ đếm thứ ba
- * ở đây là tự đặt ra một hợp đồng quan sát mà tài liệu không có, và phép đo E4
- * sẽ báo cáo một con số không ai định nghĩa.
- *
- * **Chưa nối vào Prometheus, và đó là hoãn có chủ đích chứ không phải bỏ sót.**
- * Service 2 hiện chưa có endpoint `/metrics` cũng chưa có `prom-client` — thêm
- * một phụ thuộc cho hai con số mà chưa có ai scrape là dựng nửa cây cầu. Hôm nay
- * người tiêu thụ chúng là test: chúng là cách duy nhất khẳng định "ngắt mạch đã
- * bật" và "hash đã lệch" mà không phải soi vào nội tạng của watcher. Ngày Service
- * 2 có `/metrics`, chỗ nối là đúng file này.
+ * [v4.8] Service 2 đã có `/metrics` (`core/metrics.ts`): hai số này được PHẢN
+ * CHIẾU sang Prometheus qua `onIncrement`, còn bản đồng bộ ở đây giữ nguyên cho
+ * test (đọc ngay, không `await` như `Counter.get()` của prom-client). Hướng phụ
+ * thuộc là `core → changefeed`: change feed không biết có ai scrape. Các bộ đếm
+ * KHÁC của S2 (truy vấn, byte — phép đo E4) sống ở `core/metrics.ts` và mỗi cái có
+ * định nghĩa ở §14 — không bộ đếm nào "để đó".
  *
  * Một lưu ý về ngữ nghĩa: §1.4 viết `changefeed_fallback_total` ở dòng "rơi về
  * snapshot 3 lần liên tiếp ⇒ ngắt mạch", đọc sát chữ thì nó chỉ tăng LÚC ngắt
@@ -27,8 +23,19 @@ const counters = {
 
 export type ChangefeedCounter = keyof typeof counters;
 
+const listeners = new Set<(name: ChangefeedCounter) => void>();
+
 export function incrementCounter(name: ChangefeedCounter): void {
   counters[name] += 1;
+  for (const listener of listeners) listener(name);
+}
+
+/** Nghe mỗi lần tăng — `core/metrics.ts` phản chiếu sang Prometheus */
+export function onIncrement(
+  listener: (name: ChangefeedCounter) => void,
+): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 export function readCounters(): Readonly<Record<ChangefeedCounter, number>> {

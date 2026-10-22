@@ -1,0 +1,15 @@
+# Dữ liệu sống lâu trên boot volume của máy ảo (local-path của k3s) — rộng hơn 2 GiB của kind.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: udp
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi

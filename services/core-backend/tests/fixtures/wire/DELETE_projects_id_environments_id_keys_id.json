@@ -1,0 +1,22 @@
+{
+  "route": "DELETE /projects/{id}/environments/{id}/keys/{id}",
+  "status": 200,
+  "body": {
+    "key": {
+      "id": "fd38e2c0-15ba-419a-bdf1-ba15f8fbf764",
+      "environmentId": "3bf254bf-206a-4054-8547-d0574c3f2fb2",
+      "keyType": "CLIENT",
+      "label": "doomed",
+      "keySuffix": "e61a98",
+      "maskedKey": "udp_ck_…e61a98",
+      "status": "revoked",
+      "createdBy": {
+        "id": "2d6b58fa-cd42-446b-a071-9262f6e75592",
+        "name": "Test User"
+      },
+      "createdAt": "2026-09-24T19:36:16.263Z",
+      "lastUsedAt": null,
+      "revokedAt": "2026-09-24T19:36:17.079Z"
+    }
+  }
+}

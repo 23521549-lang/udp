@@ -81,7 +81,7 @@ export const notifyAccelerator =
   listenUrl === undefined
     ? undefined
     : createNotifyAccelerator({
-        connect: createSessionConnector(listenUrl),
+        connect: createSessionConnector(listenUrl, env.UDP_DB_TLS_MODE),
         expectedRole: SERVICE_ROLE,
         holds: (environmentId) => configCache.holds(environmentId),
         wake: () => {

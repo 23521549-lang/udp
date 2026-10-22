@@ -1,0 +1,211 @@
+{
+  "route": "GET /admin/jobs",
+  "status": 200,
+  "body": {
+    "jobs": [
+      {
+        "id": "52ea9adb-3377-4140-b453-2759861593a4",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T22:55:39.263Z",
+          "step": "COMPENSATION",
+          "message": "subnet-public-b: Error: Connection terminated unexpectedly",
+          "orphans": [],
+          "domainTeardownFailures": []
+        },
+        "createdAt": "2026-09-25T22:55:23.681Z",
+        "updatedAt": "2026-09-25T22:55:39.335Z",
+        "project": {
+          "id": "9f64f989-7995-4016-9a49-f7199c127a25",
+          "name": "p-3914a67c"
+        }
+      },
+      {
+        "id": "5d4d2cd9-996d-4586-b9da-9791b105cf12",
+        "jobType": "DOMAIN_APPLY",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T22:54:02.854Z",
+          "step": "DOMAIN_APPLY",
+          "message": "MONITORING: healthcheck trả healthy = false",
+          "orphans": []
+        },
+        "createdAt": "2026-09-25T22:54:01.568Z",
+        "updatedAt": "2026-09-25T22:54:02.903Z",
+        "project": {
+          "id": "a7f2942e-2dac-4158-a024-8293050b9161",
+          "name": "p-4daa8f6d"
+        }
+      },
+      {
+        "id": "3eb0cef8-5994-4cde-b2b1-df2b3b36c8b1",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T22:52:12.309Z",
+          "step": "COMPENSATION",
+          "message": "lượt cuối của worker đã dừng giữa chừng — đối soát bù trừ",
+          "orphans": [],
+          "domainTeardownFailures": []
+        },
+        "createdAt": "2026-09-25T22:51:55.929Z",
+        "updatedAt": "2026-09-25T22:52:12.359Z",
+        "project": {
+          "id": "a6ef7d90-aebe-43a8-aed1-9a501edc289a",
+          "name": "p-c13f6770"
+        }
+      },
+      {
+        "id": "206c4fd3-4fac-4d2e-8186-53107763c311",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T22:51:54.449Z",
+          "step": "COMPENSATION",
+          "message": "hủy theo yêu cầu",
+          "orphans": [],
+          "domainTeardownFailures": []
+        },
+        "createdAt": "2026-09-25T22:51:51.931Z",
+        "updatedAt": "2026-09-25T22:51:54.498Z",
+        "project": {
+          "id": "08028469-e231-4105-be49-fab27877e940",
+          "name": "p-1e4aca56"
+        }
+      },
+      {
+        "id": "2b5e044a-d06b-48ad-a092-12ab8f052bc5",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T22:51:50.037Z",
+          "step": "COMPENSATION",
+          "message": "hủy theo yêu cầu",
+          "orphans": [],
+          "domainTeardownFailures": []
+        },
+        "createdAt": "2026-09-25T22:51:34.522Z",
+        "updatedAt": "2026-09-25T22:51:50.090Z",
+        "project": {
+          "id": "3e2f91be-9134-4cd6-9cc5-5e0a124b3a66",
+          "name": "p-32d36731"
+        }
+      },
+      {
+        "id": "8a0c23b1-9279-45b6-aaf8-53a763c24d76",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T22:51:32.649Z",
+          "step": "COMPENSATION",
+          "message": "hủy theo yêu cầu",
+          "orphans": [],
+          "domainTeardownFailures": []
+        },
+        "createdAt": "2026-09-25T22:51:18.496Z",
+        "updatedAt": "2026-09-25T22:51:32.709Z",
+        "project": {
+          "id": "e5a46672-f2cd-4fd1-8178-0132426c83ee",
+          "name": "p-18efc076"
+        }
+      },
+      {
+        "id": "959bc14b-341d-4302-9a36-b6fe8bd8c20c",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T22:51:16.658Z",
+          "step": "COMPENSATION",
+          "message": "domain PROGRESSIVE_DELIVERY: chart không cài được",
+          "orphans": [],
+          "domainTeardownFailures": []
+        },
+        "createdAt": "2026-09-25T22:50:59.294Z",
+        "updatedAt": "2026-09-25T22:51:16.711Z",
+        "project": {
+          "id": "d88462f3-92e9-402f-8d72-368b6ace6db5",
+          "name": "p-6bd40549"
+        }
+      },
+      {
+        "id": "618385e0-be43-49a4-b576-9e1583c7db39",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T22:50:07.292Z",
+          "step": "COMPENSATION",
+          "message": "cluster: Error: InsufficientCapacity",
+          "orphans": [],
+          "domainTeardownFailures": []
+        },
+        "createdAt": "2026-09-25T22:49:52.864Z",
+        "updatedAt": "2026-09-25T22:50:07.343Z",
+        "project": {
+          "id": "0e6baff8-0cda-4f19-8b42-67a43164285e",
+          "name": "p-62672347"
+        }
+      },
+      {
+        "id": "b63b758f-a28a-45fd-96e4-42b73502fc32",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T22:49:50.786Z",
+          "step": "COMPENSATION",
+          "message": "cluster: Error: InsufficientCapacity",
+          "orphans": [],
+          "domainTeardownFailures": []
+        },
+        "createdAt": "2026-09-25T22:49:35.797Z",
+        "updatedAt": "2026-09-25T22:49:50.839Z",
+        "project": {
+          "id": "4f4bfae9-1714-4187-a1eb-ef3c1201247d",
+          "name": "p-23bbd12e"
+        }
+      },
+      {
+        "id": "d93abb22-97c9-47be-8bdd-4c99624706a5",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": null,
+        "createdAt": "2026-09-25T09:03:17.828Z",
+        "updatedAt": "2026-09-25T09:03:21.807Z",
+        "project": {
+          "id": "51bb2d6a-d1c8-459d-837e-33c49460b7f7",
+          "name": "p-ab4ec928"
+        }
+      },
+      {
+        "id": "26ab740a-0e15-4f60-b231-71981c97da6a",
+        "jobType": "PROVISION",
+        "state": "FAILED",
+        "attempt": 0,
+        "lastError": {
+          "at": "2026-09-25T08:56:49.336Z",
+          "step": "COMPENSATION",
+          "message": "cluster: Error: InsufficientCapacity",
+          "orphans": [],
+          "domainTeardownFailures": []
+        },
+        "createdAt": "2026-09-25T08:56:30.706Z",
+        "updatedAt": "2026-09-25T08:56:49.398Z",
+        "project": {
+          "id": "2d9da20e-a9ca-4222-9fcd-0d49eab42603",
+          "name": "p-4cd215ca"
+        }
+      }
+    ],
+    "total": 11
+  }
+}

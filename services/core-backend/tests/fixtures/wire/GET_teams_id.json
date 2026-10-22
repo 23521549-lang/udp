@@ -1,0 +1,41 @@
+{
+  "route": "GET /teams/{id}",
+  "status": 200,
+  "body": {
+    "team": {
+      "id": "67de7529-2920-454c-b9dd-4247d7a51254",
+      "name": "Nhóm thanh toán",
+      "myRole": "MEMBER",
+      "createdAt": "2026-09-30T03:18:56.679Z",
+      "members": [
+        {
+          "userId": "14b8673e-df0e-49a1-a98e-4204130fb928",
+          "teamRole": "OWNER",
+          "createdAt": "2026-09-30T03:18:56.679Z",
+          "user": {
+            "id": "14b8673e-df0e-49a1-a98e-4204130fb928",
+            "email": "grant-lead-5a662b83-8309-4c20-8d05-5854367d20f9@udp.local",
+            "name": "Test User"
+          }
+        },
+        {
+          "userId": "dc6ac3c3-e9fc-464b-9c7d-b692af52b6e9",
+          "teamRole": "MEMBER",
+          "createdAt": "2026-09-30T03:18:57.349Z",
+          "user": {
+            "id": "dc6ac3c3-e9fc-464b-9c7d-b692af52b6e9",
+            "email": "grant-dev-9816aa61-2829-4cc9-a2af-5176e04e19f5@udp.local",
+            "name": "Test User"
+          }
+        }
+      ],
+      "projects": [
+        {
+          "id": "1f9984fe-d6d6-4353-aa56-12c554feddfb",
+          "name": "p-ca2ed2b1",
+          "projectRole": "DEVELOPER"
+        }
+      ]
+    }
+  }
+}

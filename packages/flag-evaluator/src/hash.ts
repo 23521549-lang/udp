@@ -6,7 +6,7 @@ import { TOTAL_BUCKETS } from "@udp/config/constants";
  *
  * Package này chạy trong ỨNG DỤNG CỦA KHÁCH, không chỉ trong Service 2. Đó là
  * điều kiện của bất biến I26: local evaluation và OFREP phải cho cùng một
- * `ResolutionDetails`, và cách duy nhất bảo đảm điều đó bằng cấu trúc là hai bên
+ * `Evaluation` [v4.6], và cách duy nhất bảo đảm điều đó bằng cấu trúc là hai bên
  * gọi CÙNG một hàm. Vì vậy ở đây chỉ import subpath `@udp/config/constants` —
  * entry chính của `@udp/config` chạy validate toàn bộ biến môi trường lúc nạp
  * module, và một SDK không có lý do gì phải có `.env` của UDP.

@@ -1,0 +1,28 @@
+# [Plan #66] Cổng nội bộ của Service 1 chỉ mở cho bên gọi `/internal/*` thật: Service 3 (T12; Service 2 không gọi Service
+# 1). Chọn pod là cô lập MỌI ingress của nó, nên luật 1 mở lại cổng công khai cho mọi nguồn - không có `from`: nginx của
+# Portal, Prometheus, probe của kubelet. Bên gọi dựng lại được từ mã: `deploy/tests/manifests.test.ts` đọc service nào dùng
+# `env.CORE_BACKEND_URL` và đỏ khi lệch.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: core-backend-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: core-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 3001
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - pd-controller
+      ports:
+        - port: 3101
+          protocol: TCP

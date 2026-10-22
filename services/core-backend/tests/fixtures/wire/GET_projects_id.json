@@ -1,0 +1,57 @@
+{
+  "route": "GET /projects/{id}",
+  "status": 200,
+  "body": {
+    "project": {
+      "id": "6dafb57e-43f9-432a-865a-c3fdca566081",
+      "name": "p-46b44e55",
+      "ownerId": "10c7017a-cec1-49ae-9886-919ca6c2e7e6",
+      "creationMode": "CREATE_NEW",
+      "languageRuntime": "nodejs",
+      "repoUrl": null,
+      "status": "ACTIVE",
+      "resourceQuota": {
+        "maxNodes": 3,
+        "maxNodeSize": "medium",
+        "maxDatabases": 2,
+        "maxStorageGb": 50,
+        "maxLoadBalancers": 3
+      },
+      "expiresAt": null,
+      "createdAt": "2026-09-28T14:40:22.951Z",
+      "myRole": "OWNER"
+    },
+    "environments": [
+      {
+        "id": "eed4989c-6c45-4300-b2b4-5f50fa6b8bfa",
+        "name": "dev",
+        "k8sNamespace": "udp-p-46b44e55-6dafb5-dev",
+        "isProduction": false,
+        "rank": 0,
+        "autoDeploy": true
+      },
+      {
+        "id": "7e301a63-e872-4a98-ae5f-b44b8fc4290d",
+        "name": "staging",
+        "k8sNamespace": "udp-p-46b44e55-6dafb5-staging",
+        "isProduction": false,
+        "rank": 1,
+        "autoDeploy": true
+      },
+      {
+        "id": "3279efc2-eab1-47fd-acc4-ac139f0fba3c",
+        "name": "prod",
+        "k8sNamespace": "udp-p-46b44e55-6dafb5-prod",
+        "isProduction": true,
+        "rank": 2,
+        "autoDeploy": false
+      }
+    ],
+    "cluster": {
+      "clusterId": "cluster-174",
+      "apiEndpoint": "https://cluster-174.sim.invalid",
+      "provider": "AWS",
+      "region": "ap-southeast-1"
+    }
+  }
+}

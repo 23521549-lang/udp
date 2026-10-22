@@ -1,0 +1,57 @@
+# UDP trong một cluster (Plan #49) — phần dùng chung mọi nơi chạy; overlay đặt image và cách truy cập.
+# Secret `udp-secrets` KHÔNG ở đây: `pnpm deploy:up` sinh nó (deploy/src/cluster.ts), không commit.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: udp
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  # [Plan #65] chỉ client của database tới được cổng 5432
+  - postgres-network-policy.yaml
+  # [Plan #66] cổng nội bộ của Service 1 và Service 2 chỉ mở cho bên gọi
+  - core-backend-network-policy.yaml
+  - flag-service-network-policy.yaml
+  - prometheus.yaml
+  - migrate-job.yaml
+  - core-backend.yaml
+  # [Plan #53 QĐ-6] ServiceAccount + RBAC chỉ đọc của Service 1 (cộng `tokenreviews: create`, Plan #67) cho Bảng điều khiển nền tảng
+  - core-backend-rbac.yaml
+  - flag-service.yaml
+  - pd-controller.yaml
+  # [Plan #67] Danh tính bên gọi `/internal/*`: ServiceAccount, quyền TokenReview, ValidatingAdmissionPolicy
+  - internal-identity.yaml
+  - portal.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: udp
+# Cấu hình không bí mật — hậu tố băm theo nội dung: đổi cấu hình là rollout lại service
+configMapGenerator:
+  - name: udp-config
+    literals:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      # [Plan #66] Địa chỉ mà service KHÁC dùng để gọi - chỉ đường `/internal/*` và `/healthz` - nên trỏ cổng nội bộ
+      - CORE_BACKEND_URL=http://internal-core-backend:3101
+      - FLAG_SERVICE_URL=http://internal-flag-service:3102
+      - CORE_BACKEND_INTERNAL_PORT=3101
+      - FLAG_SERVICE_INTERNAL_PORT=3102
+      # [Plan #67] Bên gọi gửi token chiếu (volume `internal-token`), bên nhận hỏi TokenReview
+      - INTERNAL_AUTH_MODE=token-review
+      - INTERNAL_TOKEN_DIR=/var/run/secrets/udp/internal
+      - PD_CONTROLLER_URL=http://pd-controller:3003
+      - PROMETHEUS_URL=http://prometheus:9090
+      - CORS_ORIGIN=http://localhost:8080
+      - COOKIE_DOMAIN=localhost
+      - COOKIE_SECURE=true
+      # Portal (nginx) là một hop proxy trước Service 1
+      - TRUST_PROXY_HOPS=1
+      - CHANGEFEED_MODE=delta
+      # PostgreSQL trong cụm có LISTEN/NOTIFY (§15.3) — hai đường tăng tốc bật
+      - CHANGEFEED_NOTIFY_ENABLED=true
+      - ROLLOUT_INTENT_LISTEN_ENABLED=true
+      # [Plan #64] Postgres kèm cụm không bật SSL — adapter tắt TLS ở chế độ này
+      # (UDP_DB_TLS_MODE=disable, chỉ cho host nội bộ; Supabase/cloud giữ verify-full)
+      - UDP_DB_TLS_MODE=disable
+      - MANAGED_CLOUDS=
+      # [Plan #53] Bản đang chạy; bản phát hành máy ảo ghi đè bằng tag commit (deploy/src/vm.ts)
+      - UDP_RELEASE=local

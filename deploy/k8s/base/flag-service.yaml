@@ -1,0 +1,86 @@
+# Service 2 — ghi cấu hình flag, SDK/OFREP, change feed (Plan #49). Chạy mã nguồn bằng tsx (deploy/docker/service.Dockerfile, QĐ-1): startupProbe
+# cho tsx thời gian biên dịch lúc khởi động; /readyz chỉ xanh khi database và danh tính role đã khẳng định.
+apiVersion: v1
+kind: Service
+metadata:
+  name: flag-service
+spec:
+  selector:
+    app.kubernetes.io/name: flag-service
+  ports:
+    - name: http
+      port: 3002
+      targetPort: http
+---
+# [Plan #66] Cổng nội bộ: `/internal/*` chỉ phục vụ ở đây (Service 1 và Service 3 gọi qua Service này). Service RIÊNG, ClusterIP:
+# overlay kind đổi Service công khai thành NodePort, và một cổng thêm vào đó sẽ lộ ra IP của node. Tên đặt
+# `internal-…` chứ không `…-internal`: kubelet sinh biến service link `<TÊN>_PORT`, và `FLAG_SERVICE_INTERNAL_PORT` là biến cấu hình.
+apiVersion: v1
+kind: Service
+metadata:
+  name: internal-flag-service
+spec:
+  selector:
+    app.kubernetes.io/name: flag-service
+  ports:
+    - name: internal
+      port: 3102
+      targetPort: internal
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flag-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flag-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flag-service
+    spec:
+      enableServiceLinks: false # [Plan #63 QĐ-5] lý do ở base/core-backend.yaml
+      # [Plan #67] ServiceAccount riêng: bên NHẬN `/internal/*` gọi TokenReview bằng token mặc định của nó
+      serviceAccountName: flag-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: flag-service
+          image: udp/flag-service
+          ports:
+            - name: http
+              containerPort: 3002
+            - name: internal
+              containerPort: 3102
+          envFrom:
+            - configMapRef:
+                name: udp-config
+            - secretRef:
+                name: udp-secrets
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false

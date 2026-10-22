@@ -1,0 +1,147 @@
+{
+  "experiment": "E8",
+  "at": "2026-09-26T17:29:54.304Z",
+  "environment": {
+    "commit": "56d23862dc009750ef773464a30968df4f8a6323",
+    "sourceDirty": true,
+    "sourceDiffSha256": "ac4d583b1f77fafc8b05df3f8389ad8841ced4021fc2f2412bec4d77f7846430",
+    "node": "v22.20.0",
+    "os": "win32 10.0.26200",
+    "cpu": "12th Gen Intel(R) Core(TM) i7-12650H",
+    "cpuCount": 16,
+    "memoryGiB": 7.7,
+    "freeMemoryGiB": 0.7,
+    "geometry": "in-process (không mạng)",
+    "note": "sau khi bộ sinh differential có conflicts một chiều"
+  },
+  "data": {
+    "target": "services/core-backend/src/modules/capability/capability.resolver.ts",
+    "suite": "tests/capability-resolver.test.ts",
+    "mutants": 17,
+    "killedByDifferential": 14,
+    "killedBySuite": 17,
+    "survivors": [],
+    "oracleCodes": 7,
+    "results": [
+      {
+        "id": "exclusive-off-by-one",
+        "what": "exclusive chỉ bắt từ ba provider",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "exclusive-every",
+        "what": "exclusive chỉ khi MỌI provider exclusive",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "conflicts-one-way",
+        "what": "conflicts chỉ kiểm một chiều",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "anyof-skipped",
+        "what": "anyOf không thoả mà vẫn qua",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "requires-ignores-constraint",
+        "what": "requires bỏ qua ràng buộc semver",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "missing-vs-mismatch-swapped",
+        "what": "đảo MISSING_CAPABILITY và VERSION_MISMATCH",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "recommends-inverted",
+        "what": "cảnh báo recommends khi ĐÃ có",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "no-consumer-still-chooses",
+        "what": "chọn provider cả khi không ai tiêu thụ (D-10)",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "preference-unchecked",
+        "what": "preference không thoả semver vẫn được chọn (D-4')",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "no-satisfying-silent",
+        "what": "không provider nào thoả mà không báo",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "ambiguous-picks-first",
+        "what": "nhiều provider thoả ⇒ chọn đại cái đầu thay vì AMBIGUOUS_PROVIDER",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "verify-chosen-dropped",
+        "what": "bỏ bước 6 verifyChosen",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "self-loop-is-cycle",
+        "what": "adapter tự thoả bị coi là chu trình",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "cycle-never-detected",
+        "what": "không bao giờ phát hiện chu trình (vòng lặp không dừng)",
+        "killedByDifferential": true,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "version-not-semver-accepted",
+        "what": "version provides không phải semver vẫn nhận",
+        "killedByDifferential": false,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "anyof-single-branch-accepted",
+        "what": "anyOf một nhánh vẫn nhận",
+        "killedByDifferential": false,
+        "killedBySuite": true,
+        "timedOut": false
+      },
+      {
+        "id": "bad-range-accepted",
+        "what": "constraint không phải khoảng semver vẫn nhận",
+        "killedByDifferential": false,
+        "killedBySuite": true,
+        "timedOut": false
+      }
+    ]
+  }
+}

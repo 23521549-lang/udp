@@ -1,0 +1,11 @@
+# Plan #28 — PLAN (theo `plan28-spec.md` v1)
+
+| Pha | Làm gì                                                                                                                                                                                          | Cổng                                                |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| P1  | `RunPlan.inherited` trộn vào `prior`; `inheritedFromLedger(rows)`; phép kiểm hợp đồng "hai pha tách rời" trên kế hoạch thật ba cloud                                                            | test runner, hợp đồng Cloud × 3, lưới K1..K10       |
+| P2  | `pg-boss` (ghim, Node ≥ 22.12); `jobs/boss.ts` (polling, schema riêng, `DATABASE_URL_DIRECT`); `claim` theo đồng hồ DB + lọc trạng thái; `keepLease` (+ `touch()`); đối soát `pgboss-reconcile` | tích hợp DB thật (AC-2), test lease                 |
+| P3  | `bootstrapManifests` thuần (§12.2); transport `fetch` + CA; `TokenSource` qua `TokenRequest`; `clusterAccessFor(project)`                                                                       | test thuần manifest, transport giả tầng HTTP (AC-6) |
+| P4  | `provision.job.ts`: bốn pha, compensation, hủy hợp tác, domain theo bậc + binding, sự kiện deploy, `cluster_access`                                                                             | tích hợp SimCloud + cluster giả (AC-3..AC-5)        |
+| P5  | `GET /preview`, `POST /provision`, `GET /jobs`, `GET /jobs/:jobId`, SSE, `POST cancel`; chặn đổi credential khi có job; schema dây + golden                                                     | tích hợp (AC-7, AC-8), golden, I10                  |
+| P6  | Portal: bước 4 (xem trước + xác nhận), bước 5 + trang nhật ký job (SSE ⇒ `invalidateQueries`)                                                                                                   | test Portal (AC-9), I38, build                      |
+| P7  | §10.15 / §16 cập nhật; sổ nợ trả `portal-job-stream`, `portal-preview`, mở rộng `I32-cluster`; bàn giao                                                                                         | design-lint, sổ nợ ba nơi                           |

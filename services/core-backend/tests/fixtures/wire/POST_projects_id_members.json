@@ -1,0 +1,16 @@
+{
+  "route": "POST /projects/{id}/members",
+  "status": 201,
+  "body": {
+    "member": {
+      "userId": "fd76cd62-8147-4381-8797-d721945fcc29",
+      "projectRole": "MAINTAINER",
+      "createdAt": "2026-10-01T20:03:37.438Z",
+      "user": {
+        "id": "fd76cd62-8147-4381-8797-d721945fcc29",
+        "email": "cicd-maintainer-6b284ec5-db74-44c9-87d6-6b2dcd93ad0f@udp.local",
+        "name": "Test User"
+      }
+    }
+  }
+}

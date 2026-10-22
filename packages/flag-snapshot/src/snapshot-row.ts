@@ -1,0 +1,230 @@
+import { Prisma } from "@udp/db";
+import { z } from "zod";
+
+/**
+ * Đọc MỌI thứ cần để dựng snapshot của một environment bằng MỘT câu lệnh SQL.
+ *
+ * Trước đó đường này là 9 truy vấn Prisma (environment, environment lần hai,
+ * project, segments, feature_flags, flag_variants, flag_env_configs,
+ * flag_targeting_rules, COMMIT) gói trong một transaction `RepeatableRead` —
+ * đo 12/09/2026 trên env seed: 957ms, và chạy DƯỚI row-lock của `environments`
+ * ở mọi lần ghi flag/rule/env-config (`stateFor`). Một câu lệnh: 77ms.
+ *
+ * Vì sao một câu lệnh là bảo đảm MẠNH HƠN transaction `RepeatableRead`, không
+ * phải bỏ nó cho nhanh: PostgreSQL 17 §13.2.1 — "a SELECT query (without a
+ * FOR UPDATE/SHARE clause) sees only data committed before the query began; it
+ * never sees either uncommitted data or changes committed by concurrent
+ * transactions during the query's execution … a SELECT query sees a snapshot of
+ * the database as of the instant the query begins to run". Mọi subquery và
+ * `json_agg` bên dưới là một phần của cùng câu lệnh, nên `(config_version,
+ * config_hash, snapshot)` nói về cùng một khoảnh khắc BẰNG CẤU TRÚC — không có
+ * khe nào giữa "đọc version" và "đọc nội dung" để một lần ghi chen vào.
+ *
+ * Bốn quy tắc của câu lệnh, mỗi cái canh một bất biến:
+ *   - MỌI tầng lồng có điều kiện environment/project của chính nó; riêng
+ *     `flag_env_configs` lọc `environment_id = e.id` — đây là nơi I14 (SDK key
+ *     của `dev` không đọc được cấu hình `prod`) được quyết định.
+ *   - `COALESCE(…, '[]')` ở MỌI tầng `json_agg`: trên tập rỗng nó trả NULL, và
+ *     environment vừa tạo (0 flag) là ca phổ biến nhất trong fixture.
+ *   - Thứ tự TẤT ĐỊNH ngay trong SQL (`flags` theo key, `rules` theo priority
+ *     rồi id, `segments` theo id, `trackedFlags` theo key): Postgres không bảo
+ *     đảm thứ tự khi thiếu `ORDER BY`, và thứ tự trả về đổi sau mỗi UPDATE —
+ *     đầu vào của hàm băm không được phép có một khác biệt không tất định.
+ *     `trackedFlags` sắp `COLLATE "C"` vì nó đi thẳng lên dây như một mảng mà bên
+ *     đọc so bằng `<` của JS; collation `en_US` bỏ qua dấu `-` trong key flag nên
+ *     sắp khác (`a-c` / `ab`).
+ *   - Kết quả đi qua zod TRƯỚC khi vào mapping: `$queryRaw` trả `unknown`, và
+ *     một cột đổi tên trong migration phải nổ ở đây với tên trường, không nổ
+ *     ở `pickVariant` trong tiến trình của khách.
+ *
+ * Chuỗi `udp:snapshot` trong câu lệnh là nhãn để test đếm truy vấn nhận ra nó.
+ */
+
+const uuid = z.string().uuid();
+
+const ruleRowSchema = z.object({
+  id: uuid,
+  ruleType: z.string(),
+  priority: z.number().int(),
+  bucketSalt: z.string(),
+  condition: z.unknown(),
+  serve: z.unknown(),
+});
+
+const envConfigRowSchema = z.object({
+  isEnabled: z.boolean(),
+  defaultVariantId: uuid.nullable(),
+  rules: z.array(ruleRowSchema),
+});
+
+const flagRowSchema = z.object({
+  key: z.string(),
+  flagType: z.string(),
+  lifecycleStatus: z.string(),
+  stickinessAttribute: z.string(),
+  defaultVariantId: uuid.nullable(),
+  variants: z.array(
+    z.object({ id: uuid, key: z.string(), value: z.unknown() }),
+  ),
+  /** NULL khi flag chưa có cấu hình ở environment này */
+  envConfig: envConfigRowSchema.nullable(),
+});
+
+export const snapshotRowSchema = z.object({
+  name: z.string(),
+  configVersion: z.number().int(),
+  configHash: z.string(),
+  /**
+   * [v4.6] Hình `conditions` được CHECK `segments_conditions_shape` giữ ở tầng
+   * database, nên parse chặt ở đây không bao giờ là nơi lỗi lộ ra đầu tiên.
+   */
+  segments: z.array(
+    z.object({
+      id: uuid,
+      conditions: z.object({
+        all: z.array(z.unknown()),
+        userIds: z.array(z.string()),
+      }),
+    }),
+  ),
+  flags: z.array(flagRowSchema),
+  /** [v4.3] Key các flag đang track ở environment này, đã sắp `COLLATE "C"` */
+  trackedFlags: z.array(z.string()),
+});
+
+export type SnapshotRow = z.infer<typeof snapshotRowSchema>;
+export type FlagRow = z.infer<typeof flagRowSchema>;
+
+/**
+ * [v4.10] Phần `segments` của câu lệnh — hoặc `'[]'` khi bên gọi đã có sẵn danh
+ * sách đó (`SnapshotOptions.segments`).
+ *
+ * Bỏ hẳn subquery chứ không đọc rồi ném đi: đó là toàn bộ điểm của việc dùng
+ * lại. Ở trần `SEGMENT.maxProjectBytes`, riêng phần segment là ~899ms mỗi
+ * environment, và ~853ms trong đó là đẩy 4 MiB qua dây (đo 23/09/2026, mục
+ * `segment-cap-perf` của `docs/measurements/kiem-chung-con-no.md`) — một lần ghi
+ * chạm 10 environment trả giá đó mười lần cho cùng một danh sách.
+ */
+const segmentsSql = (shared: boolean): Prisma.Sql =>
+  shared
+    ? Prisma.sql`'[]'::json`
+    : Prisma.sql`COALESCE((
+      SELECT json_agg(json_build_object('id', s.id, 'conditions', s.conditions) ORDER BY s.id)
+        FROM segments s
+       WHERE s.project_id = e.project_id
+    ), '[]'::json)`;
+
+const snapshotSql = (
+  environmentId: string,
+  includeDrafts: boolean,
+  sharedSegments: boolean,
+): Prisma.Sql => Prisma.sql`
+  /* udp:snapshot */
+  SELECT
+    e.name,
+    e.config_version AS "configVersion",
+    e.config_hash    AS "configHash",
+    ${segmentsSql(sharedSegments)} AS segments,
+    COALESCE((
+      SELECT json_agg(json_build_object(
+          'key',                 f.key,
+          'flagType',            f.flag_type,
+          'lifecycleStatus',     f.lifecycle_status,
+          'stickinessAttribute', f.stickiness_attribute,
+          'defaultVariantId',    f.default_variant_id,
+          'variants', COALESCE((
+            SELECT json_agg(json_build_object('id', v.id, 'key', v.key, 'value', v.value) ORDER BY v.id)
+              FROM flag_variants v
+             WHERE v.flag_id = f.id
+          ), '[]'::json),
+          'envConfig', (
+            SELECT json_build_object(
+                'isEnabled',        c.is_enabled,
+                'defaultVariantId', c.default_variant_id,
+                'rules', COALESCE((
+                  SELECT json_agg(json_build_object(
+                      'id',         r.id,
+                      'ruleType',   r.rule_type,
+                      'priority',   r.priority,
+                      'bucketSalt', r.bucket_salt,
+                      'condition',  r.condition,
+                      'serve',      r.serve
+                    ) ORDER BY r.priority, r.id)
+                    FROM flag_targeting_rules r
+                   WHERE r.flag_env_config_id = c.id
+                ), '[]'::json))
+              FROM flag_env_configs c
+             WHERE c.flag_id = f.id AND c.environment_id = e.id
+          )
+        ) ORDER BY f.key)
+        FROM feature_flags f
+       WHERE f.project_id = e.project_id
+         AND (${includeDrafts} OR f.lifecycle_status <> 'DRAFT')
+    ), '[]'::json) AS flags,
+    COALESCE((
+      SELECT json_agg(tf.key ORDER BY tf.key COLLATE "C")
+        FROM flag_env_configs tc
+        JOIN feature_flags tf ON tf.id = tc.flag_id
+       WHERE tc.environment_id = e.id
+         AND tc.is_tracked
+    ), '[]'::json) AS "trackedFlags"
+  FROM environments e
+  WHERE e.id = ${environmentId}::uuid
+`;
+
+/**
+ * Bất kỳ client nào đọc được bảng cấu hình — client thường của S2, transaction
+ * ghi của S2, hoặc transaction kill-switch dưới `udp_s3` (có SELECT trên mọi bảng
+ * mà câu lệnh chạm, xem migration `service_roles`).
+ */
+export type SnapshotReader = Pick<Prisma.TransactionClient, "$queryRaw">;
+
+/**
+ * Hàng snapshot của một environment, hoặc `undefined` nếu environment không tồn
+ * tại. Chạy được cả trên client thường lẫn trong transaction ghi (`stateFor`):
+ * `TransactionClient` là tập con cấu trúc của `PrismaClient`.
+ */
+
+export interface SnapshotOptions {
+  /**
+   * [v4.6] Có cả flag DRAFT — CHỈ cho Flag Evaluation Tester ở server. DRAFT
+   * không bao giờ xuống SDK (§6.7), và không bao giờ vào `config_hash`: mọi đường
+   * ghi và `/sdk/config` dùng mặc định `false`.
+   */
+  includeDrafts?: boolean;
+  /**
+   * [v4.10] Danh sách `segments` của project ĐÃ ĐỌC, dùng lại thay vì đọc lại.
+   *
+   * Câu lệnh lọc `WHERE s.project_id = e.project_id`, nên với mọi environment
+   * của CÙNG một project nó trả đúng một kết quả — cùng nội dung, cùng thứ tự
+   * `ORDER BY s.id`. Truyền lại kết quả đó cho ra hàng y nguyên từng bit, tức
+   * `config_hash` không đổi (I15c).
+   *
+   * Tiền đề của bên gọi, và là lý do trường này KHÔNG dành cho đường đọc thường:
+   * danh sách phải đọc từ một environment của cùng project, trong cùng
+   * transaction. `@udp/flag-snapshot` dùng nó ở đúng một chỗ — các hàm dựng
+   * `stateOf` của một lần ghi fan-out, nơi bước 1 của ADR-05 đã khoá mọi
+   * environment của project nên không lần ghi segment nào chen vào được giữa hai
+   * environment.
+   */
+  segments?: SnapshotRow["segments"];
+}
+
+export async function snapshotRowOf(
+  db: SnapshotReader,
+  environmentId: string,
+  options: SnapshotOptions = {},
+): Promise<SnapshotRow | undefined> {
+  const shared = options.segments;
+  const rows = await db.$queryRaw<unknown[]>(
+    snapshotSql(
+      environmentId,
+      options.includeDrafts ?? false,
+      shared !== undefined,
+    ),
+  );
+  const first = rows[0];
+  if (first === undefined) return undefined;
+  const row = snapshotRowSchema.parse(first);
+  return shared === undefined ? row : { ...row, segments: shared };
+}

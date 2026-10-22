@@ -1,0 +1,191 @@
+import {
+  configHashOf,
+  type SdkStreamChange,
+  type Snapshot,
+  type SnapshotFlag,
+} from "@udp/flag-evaluator";
+import type { SdkStatsReport } from "@udp/shared-types";
+import { withInternals, type ProviderInternals } from "./internals.js";
+import { UDPFeatureFlagProvider, type UDPProviderOptions } from "./provider.js";
+import type { SseItem } from "./sse.js";
+import type {
+  ConfigResult,
+  StatsPostResult,
+  StreamOpen,
+  Transport,
+} from "./transport.js";
+
+/**
+ * Chỗ dựa cho TEST và PHÉP ĐO (§6.8, §14) [v4.8] — subpath `./testing` chỉ có
+ * trong monorepo, KHÔNG nằm trong gói phát hành (`publishConfig.exports`).
+ *
+ * `InMemoryTransport` điều khiển được: mỗi lời gọi `/sdk/config` lấy phản hồi kế
+ * tiếp trong hàng đợi, mỗi lần mở stream lấy một `ScriptedStream` mà người gọi đẩy
+ * sự kiện vào — test tất định cho vòng đồng bộ, và E3/E14 nạp snapshot tổng hợp
+ * vào provider THẬT mà không cần mạng.
+ */
+
+/** Dựng provider với tham số nội bộ (transport, cache, tuỳ chọn đồng bộ) */
+export function createProviderForTesting(
+  options: UDPProviderOptions,
+  internals: ProviderInternals,
+): UDPFeatureFlagProvider {
+  return withInternals(internals, () => new UDPFeatureFlagProvider(options));
+}
+
+export { ConfigStore } from "./store.js";
+export type { ProviderInternals } from "./internals.js";
+export type { StatsOptions } from "./stats.js";
+export type { SyncOptions } from "./sync.js";
+
+export class ScriptedStream {
+  private readonly queue: (SseItem | "end" | "fail")[] = [];
+  private wake: (() => void) | undefined;
+
+  push(item: SseItem): void {
+    this.queue.push(item);
+    this.wake?.();
+  }
+  event(event: string, data: unknown): void {
+    this.push({
+      kind: "event",
+      event,
+      data: JSON.stringify(data),
+      id: undefined,
+    });
+  }
+  end(): void {
+    this.queue.push("end");
+    this.wake?.();
+  }
+  fail(): void {
+    this.queue.push("fail");
+    this.wake?.();
+  }
+
+  async *items(signal: AbortSignal): AsyncGenerator<SseItem> {
+    for (;;) {
+      if (signal.aborted) throw new Error("aborted");
+      const next = this.queue.shift();
+      if (next === "end") return;
+      if (next === "fail") throw new Error("stream hỏng");
+      if (next !== undefined) {
+        yield next;
+        continue;
+      }
+      await new Promise<void>((resolve) => {
+        this.wake = resolve;
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      this.wake = undefined;
+    }
+  }
+}
+
+export class InMemoryTransport implements Transport {
+  readonly configCalls: (string | undefined)[] = [];
+  readonly streamCalls: (number | undefined)[] = [];
+  /** Mọi báo cáo `/sdk/stats` đã nhận, theo thứ tự */
+  readonly statsReports: SdkStatsReport[] = [];
+  /** `"hang"`: server nhận kết nối rồi im — chỉ tín hiệu huỷ/quá hạn kết thúc nó */
+  readonly configs: (ConfigResult | "hang")[] = [];
+  readonly streams: (ScriptedStream | Exclude<StreamOpen, { kind: "open" }>)[] =
+    [];
+  readonly stats: (StatsPostResult | "hang" | "throw")[] = [];
+  /** Phản hồi khi hàng đợi `/sdk/config` rỗng */
+  defaultConfig: ConfigResult = {
+    kind: "unavailable",
+    retryAfterMs: undefined,
+  };
+  /** Phản hồi khi hàng đợi `/sdk/stats` rỗng */
+  defaultStats: StatsPostResult = { kind: "accepted" };
+
+  getConfig(
+    ifNoneMatch: string | undefined,
+    signal: AbortSignal,
+  ): Promise<ConfigResult> {
+    this.configCalls.push(ifNoneMatch);
+    const next = this.configs.shift() ?? this.defaultConfig;
+    if (next !== "hang") return Promise.resolve(next);
+    return new Promise((resolve) => {
+      signal.addEventListener(
+        "abort",
+        () => resolve({ kind: "unavailable", retryAfterMs: undefined }),
+        { once: true },
+      );
+    });
+  }
+
+  openStream(
+    since: number | undefined,
+    signal: AbortSignal,
+  ): Promise<StreamOpen> {
+    this.streamCalls.push(since);
+    const next = this.streams.shift();
+    if (next === undefined) {
+      return Promise.resolve({ kind: "unavailable", retryAfterMs: undefined });
+    }
+    if (next instanceof ScriptedStream) {
+      return Promise.resolve({ kind: "open", items: next.items(signal) });
+    }
+    return Promise.resolve(next);
+  }
+
+  postStats(
+    report: SdkStatsReport,
+    signal: AbortSignal,
+  ): Promise<StatsPostResult> {
+    this.statsReports.push(report);
+    const next = this.stats.shift() ?? this.defaultStats;
+    // `"throw"`: transport của ứng dụng khách ném — provider phải nuốt (I33)
+    if (next === "throw") return Promise.reject(new Error("postStats hỏng"));
+    if (next !== "hang") return Promise.resolve(next);
+    return new Promise((resolve) => {
+      signal.addEventListener("abort", () => resolve({ kind: "ambiguous" }), {
+        once: true,
+      });
+    });
+  }
+}
+
+export const flag = (
+  key: string,
+  over: Partial<SnapshotFlag> = {},
+): SnapshotFlag => ({
+  key,
+  type: "BOOLEAN",
+  isEnabled: true,
+  stickinessAttribute: "targetingKey",
+  variants: { on: true, off: false },
+  defaultVariantKey: "on",
+  rules: [],
+  ...over,
+});
+
+/** Body `/sdk/config` (hoặc data của event `snapshot`) có hash đúng */
+export function configBody(
+  configVersion: number,
+  flags: Snapshot["flags"],
+  trackedFlags: string[] = [],
+) {
+  const snapshot: Snapshot = { flags, segments: [], trackedFlags };
+  return {
+    configVersion,
+    configHash: configHashOf(snapshot),
+    environment: "dev",
+    trackedFlags,
+    flags,
+    segments: [],
+  };
+}
+
+/** Data của event `flag_changed` từ `from` sang snapshot `after` */
+export function deltaBody(
+  fromVersion: number,
+  toVersion: number,
+  after: Snapshot,
+  changes: SdkStreamChange[],
+  configHash: string = configHashOf(after),
+) {
+  return { fromVersion, toVersion, configHash, changes };
+}

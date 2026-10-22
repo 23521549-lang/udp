@@ -1,0 +1,163 @@
+# Bàn giao trạng thái — UDP, phiên 25/09/2026
+
+Tiếp nối `trang-thai-2026-09-24.md`. Tệp này nói: Plan #25 (Portal) đã tới đâu, bằng
+chứng là gì, và cái gì **chưa** được kiểm lại trong phiên này.
+
+## 1. Đã làm, có bằng chứng
+
+Commit (mới nhất trước, tất cả **local**, chưa push):
+
+```
+78332b8  P25 P1-P8: Portal SPA on the wire contract
+1f6b8cb  P25 P0: wire schemas, sendJson in all Portal controllers, myRole, golden capture
+```
+
+cộng một commit tài liệu (§10.15 `[v4.11]` và hai tệp bàn giao này).
+
+### P0 — hợp đồng dây (đóng)
+
+- `@udp/shared-types/wire`: schema `.strict()` cho **mọi** phong bì response Portal gọi
+  (40 route). Controller auth/project/member/environment/flag/segment/rollout gửi qua
+  `sendJson`.
+- `myRole` do server tính theo bốn đường vào (middleware; `OWNER` tường minh ở
+  `POST /projects`; hàng thành viên trong cùng truy vấn ở `GET /projects`, **ném** khi
+  thiếu, không `?? "VIEWER"`). `PublicProject` giữ nguyên (tầng view ở `project.view.ts`).
+- Golden capture: `UDP_CAPTURE_WIRE=1` ghi response 2xx thật vào
+  `services/core-backend/tests/fixtures/wire/` (40 tệp, `secretKey`/`csrfToken` thay bằng
+  giá trị giả cùng dạng). Cổng `wire-golden.test.ts` **48/48**. Cổng này lộ ra 8 route
+  chưa từng được test nào đi qua đường 2xx (`GET /projects/:id`, `GET /auth/me`…) —
+  `wire-routes.integration.test.ts` (6/6) phủ chúng và khẳng định `myRole` từng đường.
+
+| Bộ test core-backend (chạy từng tệp, sau thay đổi)              | Kết quả                     |
+| --------------------------------------------------------------- | --------------------------- |
+| auth / project / project-resources / flag / rollout integration | 16 / 23 / 70 / 29 / 19 xanh |
+| 15 tệp còn lại (trừ `grid-tier2`)                               | xanh                        |
+| `wire-golden` + `wire-routes`                                   | 48 + 6 xanh                 |
+
+### P1–P8 — Portal (`apps/portal`)
+
+| Cổng                                                   | Kết quả                                                                       |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `pnpm --filter @udp/portal test`                       | **61/61** (http 12, rules-model 11, I38 11, design-lint 8, app 12, rollout 7) |
+| `vite build`                                           | xanh, JS 137 KB gzip                                                          |
+| `tsc` toàn workspace                                   | 0 lỗi                                                                         |
+| `eslint .` (nay phủ `.tsx`)                            | 0 lỗi                                                                         |
+| `@udp/shared-types` / `@udp/http` / `@udp/design-lint` | 103 / 47 / 124 xanh                                                           |
+
+Màn hình: đăng nhập/đăng ký, danh sách + tạo project (bước 1), Tổng quan, Flag (danh
+sách nhóm, phím tắt j/k/c/Ctrl S, xem nhanh, bật/tắt theo env có xác nhận gõ key ở
+production và Hoàn tác ở env khác, trình sửa rule giữ `id`, tester, thống kê, snippet),
+Dọn dẹp flag, Segment, Rollout (tạo FLAG_LEVEL có `canaryPairOf` + probe, chi tiết có
+polling theo trạng thái, intent, "vì sao đang đứng yên", biểu đồ), Cài đặt (SDK key hiện
+một lần, thành viên + ma trận quyền, nhật ký diff, quota/TTL/xoá).
+
+**QĐ-2 (font) đã đo:** `cmap` của Geist 400/600 và Geist Mono 400 phủ đủ 102 ký tự tiếng
+Việt, thiếu 0 ⇒ giữ Geist.
+
+### P9 — sửa thiết kế
+
+`docs/UDP_design.md` §10.15: bảng D-P1..D-P14 (mỗi chỗ lệch §10 kèm lý do).
+
+## 2. CHƯA kiểm lại trong phiên này — nói thẳng
+
+1. **`grid-tier2.test.ts`**: lượt đầu hết giờ 420s, lượt chạy riêng bị hệ thống dừng vì
+   máy thiếu RAM (còn ~1,4/7,7 GiB, một dự án khác đang chạy vitest song song). Tệp này
+   không chạm mã đã sửa (provisioning, không controller), nhưng **chưa có bằng chứng xanh
+   sau thay đổi**. Chạy lại khi máy rảnh: `pnpm --filter @udp/core-backend exec vitest run
+tests/grid-tier2.test.ts`.
+2. **`pnpm test:scratch`** (đúng lệnh CI) chưa chạy trong phiên này.
+3. **`pnpm format:check` đỏ ở HEAD từ trước**: ~37 tệp (vd. `tests/helpers/tier2.ts`,
+   `capability.resolver.ts`) lệch Prettier 3.9.6 ngay ở commit `e256ed1`. Không tệp nào
+   phiên này chạm nằm trong danh sách đó; không định dạng lại hộ vì ngoài phạm vi.
+4. **P9 phần đo:** ngân sách hiệu năng Portal chưa đo. Đợt đột biến thì ĐÃ chạy: 6/6 đỏ
+   (bỏ `envId` khỏi key flags → I38 đỏ; bỏ `id` rule khi PUT → rules-model đỏ; bỏ Web
+   Locks → http đỏ; bỏ single-flight → http đỏ; bỏ xác nhận production → app đỏ; polling
+   không dừng khi kết thúc → rollout đỏ). Mã khôi phục nguyên sau mỗi đột biến.
+
+## 3. Bẫy mới tìm ra
+
+| Bẫy                                                  | Sự thật                                                                                                                          |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Prettier trên thư mục có tệp chưa định dạng từ trước | Chạy `--write` theo glob rộng sửa luôn tệp người khác; chỉ đưa đúng tệp mình chạm                                                |
+| `fetch` của Node trong jsdom                         | Không nhận URL tương đối ⇒ `lib/http.ts` dựng URL tuyệt đối theo `window.location.origin`                                        |
+| `navigator.locks.request`                            | Kiểu DOM trả `Promise<Promise<T>>`; lúc chạy đã phẳng                                                                            |
+| Cổng ranh giới package                               | Từng đọc `from "@udp/…"` trong CHUỖI là một import; nay chỉ đọc câu lệnh `import/export` đầu dòng (549/549 import thật vẫn khớp) |
+| Python sửa tệp                                       | `"\b"` trong chuỗi Python thường là ký tự backspace — dùng raw string                                                            |
+
+## 4. Phần tiếp theo trong cùng ngày (sau khi người dùng bảo "tiếp tục")
+
+| Commit    | Việc                                                                                        | Bằng chứng                                             |
+| --------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `bda2fbe` | Bảng lệnh Ctrl K + nút "Tìm nhanh" + phím 1..9 đổi env — trả `portal-cmdk`                  | `palette.test.tsx` 5/5                                 |
+| `69ae8b3` | Sao chép rule giữa env, diff trước khi áp, giữ `id` rule ĐÍCH — trả `portal-config-promote` | `promote.test.tsx` 5/5; đột biến "gửi id nguồn" ⇒ 3 đỏ |
+| `7261636` | Cảnh báo trần dung lượng segment trước khi lưu — trả `portal-segment-quota`                 | `segment-quota.test.tsx` 6/6                           |
+| `4bfd87f` | Lease localStorage khi thiếu Web Locks — trả `portal-refresh-lock`                          | hai "tab" thật ⇒ 1 lần refresh; đột biến bỏ lease ⇒ đỏ |
+| `ecc68db` | **Sửa lỗi**: danh sách flag chỉ đọc 100 hàng đầu (mất flag im lặng)                         | 230 flag ⇒ đủ 3 trang                                  |
+| `5bb733d` | `GET /deployments`, `GET /metrics/dora`, màn Deploy — trả `portal-deployments`              | tích hợp 7/7, `dora.test.ts` 9/9                       |
+| `a353b51` | Sáu route `/admin/*` + sáu màn hình — trả `portal-admin`                                    | tích hợp 11/11 (USER ⇒ 403 mọi route)                  |
+
+Sổ nợ: 49 → **43** mục. Portal: **90/90** test. Golden: **66/66** (thêm 9 route).
+
+**Kiểm lại phần nợ của phiên sáng:** `grid-tier2` **45/45 xanh** (515 giây).
+`pnpm test:scratch` chạy được tới hết core-backend (**650/650**, mọi package trong
+`packages/` xanh) rồi bị hệ thống dừng vì máy thiếu RAM khi đang ở flag-service; database
+scratch đã tự dọn (`scratch-drop` xác nhận không còn). flag-service, pd-controller,
+sample-app, experiments **chưa** có lượt scratch xanh sau thay đổi — chúng không bị sửa
+trong phiên này, nhưng vẫn phải chạy khi máy có ≥ 2 GiB trống.
+
+Bẫy mới: chạy Prettier từ `apps/portal` thì nó KHÔNG đọc `.prettierignore` ở gốc — đã
+định dạng lại `prototype.css`, và cổng "chép nguyên văn" bắt được ngay. Luôn chạy
+Prettier từ gốc repo.
+
+## 5. Plan #26 — Cloud Adapter AWS/GCP/Azure và bước cloud (`plan26-spec.md`, `plan26-plan.md`)
+
+| Commit    | Việc                                                                                                        | Bằng chứng                                                      |
+| --------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `124b086` | P1 lõi `@udp/cloud-adapters`: kế hoạch + cổng trung tính + một lõi điều phối                                | hợp đồng Cloud 38/38 trên kế hoạch đối chứng                    |
+| `dda4ece` | P2 AWS (EKS), SDK v3                                                                                        | 38/38, cổng kiểm ở tầng command                                 |
+| `32069b2` | P3 GCP (GKE), REST qua `fetch` tiêm vào; codec label đi–về                                                  | 38/38; hợp đồng bắt được `udp.owner` (email) vi phạm luật label |
+| `df8055a` | **Sửa lõi**: xoá trong một bậc theo thứ tự NGƯỢC kế hoạch (EIP trước NAT ⇒ cloud thật từ chối ⇒ mồ côi)     | cổng giả từ chối xoá thứ đang dùng                              |
+| `5287c22` | P4 Azure (AKS), ARM REST; không bao giờ PUT đè; gỡ NAT khỏi subnet trước khi xoá                            | 38/38, 83 test cổng                                             |
+| `ebc4eaf` | P5 Service 1 là OIDC issuer; env federation AWS + MANAGED dùng identity nền (bỏ nhóm khoá tĩnh `MANAGED_*`) | S1 678/678; kid kiểm bằng vector RFC 7638                       |
+| `1683fc1` | P6 năm route `/projects/:id/cloud`, resolver, migration `cloud_credentials.region`                          | tích hợp 18/18 + quét sentinel DB/log; golden +5                |
+| (P7+P8)   | Portal: thẻ Cloud + bước 2 của wizard; `CodeBlock` dùng chung; slug lỗi `type`; trả `portal-cloud-step`     | Portal 100/100, build xanh, design-lint 124/124                 |
+
+**Migration đã áp lên DB dev:** `20260925090000_cloud_credential_region` (`migrate deploy`).
+
+**Env đổi** (xem `.env.example`): thêm `UDP_OIDC_ISSUER` + `UDP_OIDC_SIGNING_KEY`,
+`UDP_AWS_PRINCIPAL_ARN` + `UDP_EXTERNAL_ID_SECRET`, `MANAGED_CLOUDS` +
+`MANAGED_GCP_PROJECT_ID` / `MANAGED_AZURE_SUBSCRIPTION_ID` / `MANAGED_AZURE_RESOURCE_GROUP`.
+Nhóm `MANAGED_AWS_ACCESS_KEY_ID`… bị bỏ (không mã nào đọc, trái §4.3). Biến tuỳ chọn để
+chuỗi rỗng = chưa đặt, nên `.env` cũ vẫn khởi động.
+
+**Nợ kiểm chứng của plan (sổ, không phải nợ kỹ thuật):** `I31-aws`, `I31-gcp`,
+`I31-azure` (lưới K1..K10 trên cloud thật), `cred-federation` (cloud thật tin issuer
+công khai của UDP). Sổ nợ: 43 → 45 → **44** mục.
+
+**Chưa kiểm lại:** lượt S1 đầy đủ cuối cùng chạy trong khi tôi còn sửa tệp — 31/32 tệp
+xanh, tệp cloud đỏ 3 ca vì đổi import giữa lượt, chạy lại riêng trên mã cuối: xanh.
+`pnpm test:scratch` vẫn chưa có lượt xanh trọn vẹn (thiếu RAM).
+
+Bẫy mới: mẫu golden giữ MỘT response mỗi route — test Portal cần cloud khác cloud của mẫu
+thì đổi nhãn trên hình dạng đã kiểm (`setupFor` trong `cloud.test.tsx`), không tự viết
+response.
+
+## 6. Plan #27 — Domain Config, Catalog, Drift (`plan27-spec.md`, `plan27-plan.md`)
+
+| Phần   | Việc                                                                                                                            | Bằng chứng                                       |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| S1     | `GET /domains/catalog` dựng từ registry; `GET/PUT /projects/:id/domains`, `POST …/validate`, `GET …/:type`, `GET …/:type/drift` | tích hợp 14/14, thuần 10/10, golden +6 (68/68)   |
+| S1     | **Sửa lỗi**: resolver so khoá lệch chữ hoa/thường ⇒ mọi preference thật bị ném `OrphanPreferenceError`                          | test hồi quy với `MONITORING` + preference từ DB |
+| http   | `AppError.withSuggestedAction` (nút "Bật …" lên Problem Details)                                                                | test qua HTTP thật                               |
+| Portal | Trang Domain, chi tiết domain (drift), Catalog quản trị, bước 3 wizard                                                          | Portal 108/108, build xanh                       |
+
+S1 đầy đủ: **36/36 tệp** xanh. Sổ nợ **42** mục (trả `domains-catalog-route`,
+`portal-domain-screens`; viết lại tiền đề `domain-day2-route`: cần hàng đợi + cluster).
+
+Không làm và vì sao: `POST …/upgrade`, `POST …/drift`, áp cấu hình cho project đã rời nháp
+— cả ba chạy adapter trên cluster qua job `DOMAIN_APPLY`; hàng đợi và transport cluster
+chưa có, và route trả 202 không có gì thực thi là stub.
+
+Bẫy: Prettier theo thư mục định dạng luôn các tệp lệch sẵn ở HEAD (`domain-catalog.sync.ts`,
+`capability.resolver.ts`…) — chỉ đưa đúng tệp mình sửa, và với tệp lệch sẵn thì sửa tay đúng
+dòng.

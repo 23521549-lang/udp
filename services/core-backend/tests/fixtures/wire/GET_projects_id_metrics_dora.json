@@ -1,0 +1,38 @@
+{
+  "route": "GET /projects/{id}/metrics/dora",
+  "status": 200,
+  "body": {
+    "dora": {
+      "window": {
+        "from": "2026-09-18T03:16:22.721Z",
+        "to": "2026-09-25T03:16:22.721Z",
+        "days": 7
+      },
+      "deployments": 2,
+      "deploymentFrequencyPerDay": 0.2857142857142857,
+      "leadTimeSeconds": {
+        "median": 9000,
+        "samples": 2
+      },
+      "changeFailureRate": {
+        "value": 0.5,
+        "failed": 1,
+        "total": 2
+      },
+      "recoveryTimeSeconds": {
+        "median": 3600,
+        "samples": 1
+      },
+      "reworkRate": {
+        "value": 0,
+        "rework": 0,
+        "total": 2
+      },
+      "rollbacks": {
+        "auto": 1,
+        "manual": 0
+      },
+      "environmentId": "5d7c4aa1-7694-4cba-ab3a-5f65979a8636"
+    }
+  }
+}

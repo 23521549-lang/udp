@@ -1,0 +1,11 @@
+{
+  "route": "POST /projects/{id}/cloud/validate",
+  "status": 200,
+  "body": {
+    "validation": {
+      "valid": false,
+      "reason": "permission: AccessDenied: trust policy đã bị xoá",
+      "checkedAt": "2026-09-25T05:58:22.133Z"
+    }
+  }
+}

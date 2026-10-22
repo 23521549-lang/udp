@@ -10,11 +10,12 @@ import { describe, expect, it } from "vitest";
  *    (`DATABASE_URL_S1`…), và khẳng định `current_user` lúc khởi động
  *    rồi mới mở cổng."
  *
- * Hôm nay chỉ `core-backend` có mã, và hành vi của nó đã được canh bằng một
- * test dựng thật tiến trình (`services/core-backend/tests/boot-identity.test.ts`).
- * Nhưng `flag-service` và `pd-controller` còn rỗng, và ngày chúng có mã thì
- * không có gì nhắc người viết rằng câu trên áp cho chúng nữa — trừ khi câu đó
- * được máy kiểm. Đó là việc của file này.
+ * Khi file này ra đời chỉ `core-backend` có mã, và hành vi của nó đã được canh
+ * bằng một test dựng thật tiến trình (`tests/boot-identity.test.ts` của nó).
+ * `flag-service` và `pd-controller` còn rỗng, và ngày chúng có mã thì không có
+ * gì nhắc người viết rằng câu trên áp cho chúng nữa — trừ khi câu đó được máy
+ * kiểm. Đó là việc của file này; nay cả ba service đều có mã và mỗi service
+ * có `boot-identity.test.ts` của riêng mình, còn lint này vẫn canh service thứ tư.
  *
  * Phân công rõ ràng giữa hai lớp canh:
  *   - Test dựng tiến trình đo HÀNH VI, sâu, nhưng mỗi service phải viết một cái.
@@ -46,7 +47,8 @@ const SERVICES = join(ROOT, "services");
 /** Gọi hàm khẳng định danh tính — nhận cả tên gốc lẫn tên bọc của từng service */
 const ASSERTS_IDENTITY = /\bassert(?:ConnectedAs|ServiceIdentity)\s*\(/;
 const BUILDS_CLIENT = /\bcreatePrismaClient\s*\(/;
-const OPENS_PORT = /\.listen\s*\(/;
+/** [Plan #66] Cả `listenInternal(` - listener thứ hai mở cổng qua `@udp/http`, không có `.listen(` trong mã service */
+const OPENS_PORT = /\.listen\s*\(|\blistenInternal\s*\(/;
 
 interface SourceFile {
   /** đường dẫn tương đối từ gốc kho, để thông báo lỗi đọc được */

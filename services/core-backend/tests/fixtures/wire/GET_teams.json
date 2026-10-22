@@ -1,0 +1,16 @@
+{
+  "route": "GET /teams",
+  "status": 200,
+  "body": {
+    "teams": [
+      {
+        "id": "8b61b581-d6cf-4d19-af03-33ffc0fbe8f7",
+        "name": "Nhóm di động",
+        "myRole": "OWNER",
+        "memberCount": 1,
+        "projectCount": 0,
+        "createdAt": "2026-09-30T03:18:34.695Z"
+      }
+    ]
+  }
+}

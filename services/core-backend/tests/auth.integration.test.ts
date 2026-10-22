@@ -33,7 +33,7 @@ async function registerUser(): Promise<{
   const email = freshEmail();
   const res = await request(app)
     .post(`${API}/auth/register`)
-    .send({ email, password: PASSWORD, name: "Test User" })
+    .send({ email, password: PASSWORD, name: "Test User", acceptTerms: true })
     .expect(201);
   created.push(email);
   return {
@@ -79,7 +79,7 @@ describe("đăng ký và đăng nhập", () => {
     const email = freshEmail();
     const res = await request(app)
       .post(`${API}/auth/register`)
-      .send({ email, password: PASSWORD, name: "Test User" })
+      .send({ email, password: PASSWORD, name: "Test User", acceptTerms: true })
       .expect(201);
     created.push(email);
 
@@ -94,7 +94,7 @@ describe("đăng ký và đăng nhập", () => {
     const { email } = await registerUser();
     const res = await request(app)
       .post(`${API}/auth/register`)
-      .send({ email, password: PASSWORD, name: "Ai đó" })
+      .send({ email, password: PASSWORD, name: "Ai đó", acceptTerms: true })
       .expect(409);
     expect(res.headers["content-type"]).toContain("application/problem+json");
   });
@@ -106,7 +106,12 @@ describe("đăng ký và đăng nhập", () => {
     expect(Buffer.byteLength(viet, "utf8")).toBeGreaterThan(72);
     await request(app)
       .post(`${API}/auth/register`)
-      .send({ email: freshEmail(), password: viet, name: "X" })
+      .send({
+        email: freshEmail(),
+        password: viet,
+        name: "X",
+        acceptTerms: true,
+      })
       .expect(400);
   });
 

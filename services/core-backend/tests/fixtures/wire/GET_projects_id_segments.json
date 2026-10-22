@@ -1,0 +1,269 @@
+{
+  "route": "GET /projects/{id}/segments",
+  "status": 200,
+  "body": {
+    "segments": [
+      {
+        "id": "ee8aba70-efe9-43ea-8086-14b7da48d6d7",
+        "name": "audited-056e2638",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:41.591Z",
+        "updatedAt": "2026-09-24T19:35:41.591Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "37296b4e-2a18-4734-9bd8-821b0b4f2787",
+        "name": "first-0b2a8009",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:31.838Z",
+        "updatedAt": "2026-09-24T19:35:33.381Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "a7295f78-2f45-4ccf-9d49-babb82ef1957",
+        "name": "put-maintainer-557949b7",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:07.069Z",
+        "updatedAt": "2026-09-24T19:35:08.635Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "45695c7f-e564-44c7-94f1-ead10f72f15f",
+        "name": "put-owner-13fe9687",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:04.127Z",
+        "updatedAt": "2026-09-24T19:35:05.680Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "14b0e654-48f7-4cf9-96e6-77a347df233d",
+        "name": "role-developer-367695a0",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:02.509Z",
+        "updatedAt": "2026-09-24T19:35:02.509Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "98d7e34e-ba2b-468a-b5c1-c2b4ed117c0c",
+        "name": "role-maintainer-bbf1fba2",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:01.033Z",
+        "updatedAt": "2026-09-24T19:35:01.033Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "5340ac57-1e54-4f37-8a56-8fc2c55077d6",
+        "name": "role-owner-464e0355",
+        "description": null,
+        "createdAt": "2026-09-24T19:34:59.562Z",
+        "updatedAt": "2026-09-24T19:34:59.562Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "ebfba4f7-a006-4d56-babb-dc46259503a2",
+        "name": "seg-1a536dc0",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:23.092Z",
+        "updatedAt": "2026-09-24T19:35:23.092Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "c60d32e6-a9c9-429f-9f42-97f33f27b304",
+        "name": "seg-24df3487",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:13.167Z",
+        "updatedAt": "2026-09-24T19:35:13.167Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "47a5797c-92f1-4af3-abd7-2d98a4a399fb",
+        "name": "seg-5036b66f",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:10.017Z",
+        "updatedAt": "2026-09-24T19:35:10.017Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "a6ac6ec5-0514-4224-8074-4fe79b89df2b",
+        "name": "seg-5f1da21c",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:43.562Z",
+        "updatedAt": "2026-09-24T19:35:43.562Z",
+        "summary": {
+          "conditionCount": 1,
+          "userIdCount": 500,
+          "hasRegex": true,
+          "payloadBytes": 130088
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "eacb5b9a-5877-44f9-98df-991869333056",
+        "name": "seg-721d9ed7",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:24.634Z",
+        "updatedAt": "2026-09-24T19:35:24.634Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "9194e5e9-50fb-4c69-81c4-aa5f593f43a8",
+        "name": "seg-8bab03f1",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:29.030Z",
+        "updatedAt": "2026-09-24T19:35:29.030Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "51efb6b3-a731-45e4-b7d9-7e2da6d0d569",
+        "name": "seg-b2f1f3be",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:11.614Z",
+        "updatedAt": "2026-09-24T19:35:11.614Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 0,
+          "productionFlagCount": 0
+        }
+      },
+      {
+        "id": "675adeac-c69d-4bcc-bd5b-1c0124e46817",
+        "name": "seg-e5992732",
+        "description": null,
+        "createdAt": "2026-09-24T19:35:35.447Z",
+        "updatedAt": "2026-09-24T19:35:35.447Z",
+        "summary": {
+          "conditionCount": 0,
+          "userIdCount": 1,
+          "hasRegex": false,
+          "payloadBytes": 31
+        },
+        "usage": {
+          "flagCount": 1,
+          "productionFlagCount": 0
+        }
+      }
+    ],
+    "quota": {
+      "segmentCount": 15,
+      "maxSegments": 100,
+      "payloadBytes": 130522,
+      "maxPayloadBytes": 4194304
+    }
+  }
+}

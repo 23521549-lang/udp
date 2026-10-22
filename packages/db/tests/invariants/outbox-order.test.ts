@@ -6,7 +6,11 @@ import {
 } from "@udp/shared-types/change-feed";
 import type { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createPrismaClient, writeWithOutbox } from "../../src/index.js";
+import {
+  createPrismaClient,
+  observeQueries,
+  writeWithOutbox,
+} from "../../src/index.js";
 import type { PrismaClient } from "../../src/index.js";
 import { openClient } from "../helpers/db.js";
 
@@ -30,6 +34,7 @@ if (url === undefined) throw new Error("DATABASE_URL_DIRECT chưa được đặ
 let prisma: PrismaClient;
 let projectId: string;
 let envIds: string[];
+let ownerId: string;
 
 beforeAll(async () => {
   prisma = createPrismaClient({
@@ -84,6 +89,7 @@ beforeAll(async () => {
 
   projectId = project.id;
   envIds = project.environments.map((e) => e.id);
+  ownerId = owner.id;
 });
 
 afterAll(async () => {
@@ -202,6 +208,97 @@ describe("ADR-05 — thứ tự bốn bước của outbox writer", () => {
     for (const [i, row] of after.entries()) {
       expect(row.configVersion).toBe(before[i]?.configVersion);
     }
+  });
+});
+
+/**
+ * [v4.10] Bước 4 gộp khi `payload` giống nhau ở mọi environment.
+ *
+ * Hai khẳng định, và cái thứ hai quan trọng bằng cái thứ nhất: gộp chỉ được xảy
+ * ra khi payload THẬT SỰ giống nhau. Hình dạng SQL được kiểm bằng văn bản truy
+ * vấn (`unnest`) vì đó là chỗ tiết kiệm nằm — một lần đẩy payload lên dây thay
+ * cho N — chứ không phải chỉ số dòng ra.
+ */
+describe("[v4.10] bước 4 — một câu INSERT khi payload giống nhau", () => {
+  const insertsDuring = async (
+    work: () => Promise<unknown>,
+  ): Promise<string[]> => {
+    const seen: string[] = [];
+    const stop = observeQueries(prisma, (q) => seen.push(q.query));
+    try {
+      await work();
+    } finally {
+      stop();
+    }
+    return seen.filter((q) => /INSERT INTO config_change_log/i.test(q));
+  };
+
+  /** Dòng outbox của version vừa cấp, cho từng environment */
+  const logsOfLatest = async (): Promise<
+    { changeType: string; payload: unknown; actorUserId: string | null }[]
+  > => {
+    const envs = await prisma.environment.findMany({
+      where: { id: { in: envIds } },
+      select: { id: true, configVersion: true },
+      orderBy: { id: "asc" },
+    });
+    return Promise.all(
+      envs.map((e) =>
+        prisma.configChangeLog.findFirstOrThrow({
+          where: { environmentId: e.id, configVersion: e.configVersion },
+          select: { changeType: true, payload: true, actorUserId: true },
+        }),
+      ),
+    );
+  };
+
+  it("payload GIỐNG NHAU ⇒ một câu `unnest`, vẫn đúng một dòng mỗi environment", async () => {
+    const delta = { segment: { id: "dung-chung", userIds: ["u1"] } };
+    const inserts = await insertsDuring(() =>
+      writeWithOutbox(prisma, {
+        environmentIds: envIds,
+        changeType: "segment.updated",
+        notify: false,
+        actorUserId: ownerId,
+        mutate: () => Promise.resolve(),
+        stateOf: () => Promise.resolve({ configHash: "f".repeat(64), delta }),
+      }),
+    );
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toContain("unnest");
+
+    const logs = await logsOfLatest();
+    expect(logs).toHaveLength(envIds.length);
+    for (const log of logs) {
+      expect(log.changeType).toBe("segment.updated");
+      expect(log.payload).toEqual(delta);
+      expect(log.actorUserId).toBe(ownerId);
+    }
+  });
+
+  it("payload KHÁC nhau ⇒ vẫn một câu cho mỗi environment", async () => {
+    const inserts = await insertsDuring(() =>
+      writeWithOutbox(prisma, {
+        environmentIds: envIds,
+        changeType: "flag.updated",
+        notify: false,
+        mutate: () => Promise.resolve(),
+        stateOf: (_tx, environmentId) =>
+          Promise.resolve({
+            configHash: "f".repeat(64),
+            delta: { environmentId },
+          }),
+      }),
+    );
+
+    expect(inserts).toHaveLength(envIds.length);
+    expect(inserts.every((q) => !q.includes("unnest"))).toBe(true);
+
+    const logs = await logsOfLatest();
+    expect(logs.map((l) => l.payload)).toEqual(
+      [...envIds].sort().map((environmentId) => ({ environmentId })),
+    );
   });
 });
 

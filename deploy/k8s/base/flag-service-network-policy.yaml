@@ -1,0 +1,29 @@
+# [Plan #66] Cổng nội bộ của Service 2 chỉ mở cho bên gọi `/internal/*` thật: Service 1 và Service 3 (T12). Chọn pod là cô
+# lập MỌI ingress của nó, nên luật 1 mở lại cổng công khai cho mọi nguồn - không có `from`: Traefik ở kube-system,
+# NodePort của kind (nguồn là IP của node), Prometheus, probe của kubelet, sample-app ở namespace khác. Bên gọi dựng lại
+# được từ mã: `deploy/tests/manifests.test.ts` đọc service nào dùng `env.FLAG_SERVICE_URL` và đỏ khi lệch.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: flag-service-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: flag-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 3002
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - core-backend
+                  - pd-controller
+      ports:
+        - port: 3102
+          protocol: TCP

@@ -1,0 +1,77 @@
+{
+  "route": "PUT /projects/{id}/flags/{id}/variants",
+  "status": 200,
+  "body": {
+    "flag": {
+      "id": "8b22ea29-9e62-4fa0-b605-cb0e0a7fea7c",
+      "key": "vp-f5c9012a",
+      "flagType": "STRING",
+      "description": null,
+      "lifecycleStatus": "ACTIVE",
+      "stickinessAttribute": "targetingKey",
+      "defaultVariantId": "9bcdf904-0b8c-4d07-a38d-d6c71418c5a8",
+      "permanent": false,
+      "activatedAt": "2026-09-28T14:02:30.131Z",
+      "createdAt": "2026-09-28T14:02:28.528Z",
+      "updatedAt": "2026-09-28T14:02:33.203Z",
+      "variants": [
+        {
+          "id": "c097ebf3-49d9-4b9e-8724-fddff159fcb3",
+          "key": "blue",
+          "value": "#00f"
+        },
+        {
+          "id": "9bcdf904-0b8c-4d07-a38d-d6c71418c5a8",
+          "key": "green",
+          "value": "#0f0"
+        },
+        {
+          "id": "23d2f87b-03ed-4f5b-943a-ef99a57a5cd7",
+          "key": "red",
+          "value": "#f00"
+        }
+      ],
+      "envs": [
+        {
+          "environment": {
+            "id": "87edc728-ff90-44a5-b48c-b0729329534f",
+            "name": "dev",
+            "isProduction": false
+          },
+          "configId": "c7238ee7-1feb-4f7c-9c7c-d5eac9fd7008",
+          "isEnabled": false,
+          "defaultVariantId": null,
+          "isTracked": false,
+          "ruleCount": 0,
+          "updatedAt": "2026-09-28T14:02:28.528Z"
+        },
+        {
+          "environment": {
+            "id": "92ad958d-b81c-4539-84e4-293b87e025f5",
+            "name": "staging",
+            "isProduction": false
+          },
+          "configId": "505277cc-6bca-40f7-af5f-d23eb5a1c69f",
+          "isEnabled": false,
+          "defaultVariantId": null,
+          "isTracked": false,
+          "ruleCount": 0,
+          "updatedAt": "2026-09-28T14:02:28.528Z"
+        },
+        {
+          "environment": {
+            "id": "c4f44234-753a-428a-88a9-c30309f5b0d6",
+            "name": "prod",
+            "isProduction": true
+          },
+          "configId": "db9f6a0b-4806-4462-8b82-2a8fcfffe20a",
+          "isEnabled": false,
+          "defaultVariantId": null,
+          "isTracked": false,
+          "ruleCount": 0,
+          "updatedAt": "2026-09-28T14:02:28.528Z"
+        }
+      ]
+    }
+  }
+}

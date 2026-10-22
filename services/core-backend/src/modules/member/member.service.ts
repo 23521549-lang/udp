@@ -56,7 +56,7 @@ export async function add(
     }),
     prisma.auditLog.create({
       data: {
-        project: { connect: { id: projectId } },
+        projectId,
         ...auditEntry({
           action: "member.add",
           targetType: "ProjectMember",
@@ -105,7 +105,7 @@ export async function updateRole(
     }),
     prisma.auditLog.create({
       data: {
-        project: { connect: { id: projectId } },
+        projectId,
         ...auditEntry({
           action: "member.role.update",
           targetType: "ProjectMember",
@@ -147,7 +147,7 @@ export async function remove(
     }),
     prisma.auditLog.create({
       data: {
-        project: { connect: { id: projectId } },
+        projectId,
         ...auditEntry({
           action: "member.remove",
           targetType: "ProjectMember",

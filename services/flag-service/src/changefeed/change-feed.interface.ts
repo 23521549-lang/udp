@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient } from "@udp/db";
+import { Prisma, type PrismaClient } from "@udp/db";
+import { z } from "zod";
 
 /**
  * Đường ĐỌC của ADR-05, tách khỏi nơi dữ liệu thực sự nằm.
@@ -37,6 +38,19 @@ export interface ChangeRecord {
   payload: Prisma.JsonValue;
 }
 
+/**
+ * [v4.9] Lô delta vượt ngân sách byte (V22) — KHÔNG phải lỗi.
+ *
+ * Tách khỏi `ChangeRecord[]` bằng một giá trị riêng chứ không bằng mảng rỗng: mảng
+ * rỗng đã có nghĩa "không còn dòng nào sau con trỏ", và trộn hai thứ đó lại thì
+ * poller kết luận "đã đuổi kịp" trong khi còn nguyên một lô chưa đọc.
+ */
+export const TOO_LARGE = "too-large";
+export type DeltaBatch = ChangeRecord[] | typeof TOO_LARGE;
+
+/** [v4.11, Plan #40] Dòng outbox mang nhiều flag — áp bằng snapshot, KHÔNG phải lỗi */
+export const BULK_CHANGE = "bulk-change";
+
 export interface ChangeFeed {
   /**
    * TẦNG 1 — version và hash thật của nhiều environment, trong MỘT truy vấn.
@@ -59,12 +73,19 @@ export interface ChangeFeed {
    * `config_version` chỉ liên tục TRONG một environment. Thiếu nó thì version
    * của các environment khác nhau xen kẽ và phép kiểm "liên tục" hỏng ở gần như
    * mọi dòng — trong khi triệu chứng chỉ là "tầng 2 không bao giờ dùng được".
+   *
+   * [v4.9] `maxBytes` là ngân sách byte của CẢ LÔ (V22), và nó được cưỡng chế
+   * TRONG câu lệnh chứ không ở JS: một dòng `segment.updated` mang tới 4 MiB
+   * (V21), nên "đọc 100 dòng về rồi mới đo" là đúng cái phải tránh — hàng trăm
+   * MB đi qua dây database trước khi ta kết luận là quá lớn. Vượt ngân sách ⇒
+   * `TOO_LARGE`, và người gọi rơi về snapshot (có trần nên luôn rẻ hơn).
    */
   deltasSince(
     environmentId: string,
     cursor: number,
     limit: number,
-  ): Promise<ChangeRecord[]>;
+    maxBytes: number,
+  ): Promise<DeltaBatch>;
 }
 
 /**
@@ -90,13 +111,77 @@ export function postgresChangeFeed(client: PrismaClient): ChangeFeed {
       );
     },
 
-    deltasSince(environmentId, cursor, limit) {
-      return client.configChangeLog.findMany({
-        where: { environmentId, configVersion: { gt: cursor } },
-        orderBy: { configVersion: "asc" },
-        take: limit,
-        select: { configVersion: true, changeType: true, payload: true },
-      });
+    async deltasSince(environmentId, cursor, limit, maxBytes) {
+      const rows = await client.$queryRaw<unknown[]>(
+        deltasSql(environmentId, cursor, limit, maxBytes),
+      );
+      const batch = deltaRowsSchema.parse(rows);
+
+      /**
+       * Tổng lũy kế không giảm (`octet_length` không âm), nên dòng CUỐI trả lời
+       * cho cả lô: nó vượt ngân sách thì lô vượt.
+       */
+      if (batch.at(-1)?.overBudget === true) return TOO_LARGE;
+
+      return batch.map((r) => ({
+        configVersion: r.configVersion,
+        changeType: r.changeType,
+        payload: r.payload as Prisma.JsonValue,
+      }));
     },
   };
 }
+
+/**
+ * MỘT câu lệnh, hai tầng, và cả hai tầng đều cần thiết (V22).
+ *
+ * Tầng trong `LIMIT` số dòng NGAY SAU con trỏ — đúng phép đọc cũ của
+ * `findMany`. Tầng ngoài cộng dồn `octet_length(payload::text)` bằng window
+ * function theo cùng thứ tự version, rồi CHỈ trả `payload` của những dòng còn
+ * trong ngân sách. Dòng đầu tiên làm tràn ngân sách vì thế không đi qua dây, và
+ * `overBudget` là một `boolean` chứ không phải tổng: tổng là `bigint`, mà
+ * `node-postgres` trả `bigint` dưới dạng chuỗi (R7 V3) — so sánh ở SQL thì không
+ * có chỗ nào cho lỗi ép kiểu.
+ *
+ * `coalesce(octet_length(...), 0)`: cột `payload` nhận cả `'null'::jsonb`, và
+ * `octet_length(NULL)` là NULL, thứ sẽ làm mọi tổng lũy kế sau nó thành NULL.
+ */
+const deltasSql = (
+  environmentId: string,
+  cursor: number,
+  limit: number,
+  maxBytes: number,
+): Prisma.Sql => Prisma.sql`
+  /* udp:deltas */
+  SELECT
+    t."configVersion",
+    t."changeType",
+    CASE WHEN t."overBudget" THEN NULL ELSE t.payload END AS payload,
+    t."overBudget"
+  FROM (
+    SELECT
+      r.config_version AS "configVersion",
+      r.change_type    AS "changeType",
+      r.payload,
+      SUM(COALESCE(OCTET_LENGTH(r.payload::text), 0))
+        OVER (ORDER BY r.config_version) > ${maxBytes}::bigint AS "overBudget"
+    FROM (
+      SELECT config_version, change_type, payload
+        FROM config_change_log
+       WHERE environment_id = ${environmentId}::uuid
+         AND config_version > ${cursor}
+       ORDER BY config_version
+       LIMIT ${limit}
+    ) r
+  ) t
+  ORDER BY t."configVersion"
+`;
+
+const deltaRowsSchema = z.array(
+  z.object({
+    configVersion: z.number().int(),
+    changeType: z.string(),
+    payload: z.unknown(),
+    overBudget: z.boolean(),
+  }),
+);

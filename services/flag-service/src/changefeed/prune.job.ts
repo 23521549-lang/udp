@@ -1,5 +1,5 @@
 import { CHANGE_FEED } from "@udp/config";
-import { logger } from "@udp/http";
+import { createBatchJob, type BatchJob } from "../core/batch-job.js";
 
 /**
  * Dọn `ConfigChangeLog` quá hạn (§2.2) — qua hàm `udp_prune_config_change_log`,
@@ -10,8 +10,12 @@ import { logger } from "@udp/http";
  * chạy song song chỉ làm lô sau xoá ít hơn (khoá hàng rời nhau, không chặn INSERT
  * mới). ADR-05 đã bỏ advisory lock khỏi đường đúng đắn; ở đây còn không cần tới.
  *
- * Dọn là việc nền: hỏng thì ghi log và để lượt sau thử lại, KHÔNG ném ra vòng lặp —
- * bảng dài thêm một giờ không hại gì, còn một tiến trình chết vì việc dọn thì hại.
+ * [v4.9] Nhịp, trần số lô mỗi lượt, `unref`, luật không chồng lượt và luật "không
+ * ném ra vòng lặp" nay nằm ở `core/batch-job.ts`, dùng chung với job gộp stats.
+ * Phần RIÊNG của việc dọn chỉ còn điều kiện dừng: lô trả về ít hơn `batchSize`
+ * nghĩa là đã hết dòng quá hạn. Dọn là việc nền: hỏng thì ghi log và để lượt sau
+ * thử lại, KHÔNG ném — bảng dài thêm một giờ không hại gì, còn một tiến trình
+ * chết vì việc dọn thì hại.
  */
 
 export interface PruneJobDeps {
@@ -23,12 +27,8 @@ export interface PruneJobDeps {
   random?: () => number;
 }
 
-export interface PruneJob {
-  /** Một lượt: lặp lô tới khi lô thiếu hoặc chạm trần. Không ném; trả tổng đã xoá */
-  runOnce(): Promise<number>;
-  start(): void;
-  stop(): void;
-}
+/** Một lượt: lặp lô tới khi lô thiếu hoặc chạm trần. Không ném; trả tổng đã xoá */
+export type PruneJob = BatchJob;
 
 export function createPruneJob({
   prune,
@@ -37,65 +37,18 @@ export function createPruneJob({
   maxBatchesPerRun = CHANGE_FEED.prune.maxBatchesPerRun,
   random = Math.random,
 }: PruneJobDeps): PruneJob {
-  let timer: NodeJS.Timeout | undefined;
-  let running: Promise<number> | undefined;
-  let started = false;
-
-  const runOnce = (): Promise<number> => {
-    // Không chồng lượt: một lượt đang bay thì người gọi thứ hai nhận đúng lượt đó
-    if (running !== undefined) return running;
-
-    running = (async () => {
-      let total = 0;
-      try {
-        for (let batch = 0; batch < maxBatchesPerRun; batch += 1) {
-          const deleted = await prune(batchSize);
-          total += deleted;
-          if (deleted < batchSize) break;
-        }
-        if (total > 0) {
-          logger.info({ deleted: total }, "Đã dọn ConfigChangeLog quá hạn");
-        }
-      } catch (err) {
-        logger.error(
-          { err, deleted: total },
-          "Dọn ConfigChangeLog hỏng — lượt sau thử lại",
-        );
-      }
-      return total;
-    })().finally(() => {
-      running = undefined;
-    });
-
-    return running;
-  };
-
-  const schedule = (delayMs: number): void => {
-    if (!started) return;
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      void runOnce().finally(() => {
-        schedule(intervalMs);
-      });
-    }, delayMs);
-    timer.unref();
-  };
-
-  return {
-    runOnce,
-
-    start() {
-      if (started) return;
-      started = true;
-      // Lần đầu trễ NGẪU NHIÊN trong một chu kỳ: các replica khởi động cùng lúc
-      // (một lần deploy) không cùng dọn một lúc.
-      schedule(Math.floor(random() * intervalMs));
+  return createBatchJob({
+    label: "config-change-log-prune",
+    intervalMs,
+    maxStepsPerRun: maxBatchesPerRun,
+    random,
+    messages: {
+      done: "Đã dọn ConfigChangeLog quá hạn",
+      failed: "Dọn ConfigChangeLog hỏng — lượt sau thử lại",
     },
-
-    stop() {
-      started = false;
-      clearTimeout(timer);
-      timer = undefined;
+    step: async () => {
+      const deleted = await prune(batchSize);
+      return { processed: deleted, more: deleted >= batchSize };
     },
-  };
+  });
 }

@@ -1,0 +1,348 @@
+import type { SettingsSearch } from "../../app/router";
+import { count, defineMessages } from "../../i18n";
+import { formatNumber } from "../../lib/format";
+import type { StartTask } from "./getting-started";
+
+type SettingsTab = NonNullable<SettingsSearch["tab"]>;
+export type WizardStep = "project" | "cloud" | "domains" | "preview" | "deploy";
+interface StartCopy {
+  title: string;
+  hint: string;
+}
+
+/**
+ * Chữ của phân hệ project: danh sách project, wizard tạo project, khung project (bộ chọn environment),
+ * Tổng quan, trang Cài đặt và bảng lệnh Ctrl K.
+ */
+export const projectMessages = defineMessages({
+  vi: {
+    projects: "Project",
+    createProject: "Tạo project",
+    cancel: "Huỷ",
+    creating: "Đang tạo…",
+    list: {
+      lead: "Mọi project mà bạn là thành viên.",
+      label: "Project của bạn",
+      pages: "Trang của danh sách project",
+    },
+    wizard: {
+      createNewProject: "Tạo project mới",
+      step1: "Bước 1/5: Project",
+      step2: "Bước 2/5: Cloud",
+      step3: "Bước 3/5: Domain",
+      step4: "Bước 4/5: Xem trước",
+      step5: "Bước 5/5: Triển khai",
+      /** [Plan #58 UX-15] Thanh năm bước: bước đang làm, bước đã qua bấm được để quay lại */
+      steps: "Các bước tạo project",
+      stepName: {
+        project: "Project",
+        cloud: "Cloud",
+        domains: "Domain",
+        preview: "Xem trước",
+        deploy: "Triển khai",
+      } satisfies Record<WizardStep, string>,
+      stepDone: "đã xong",
+      back: "Quay lại",
+      createAndContinue: "Tạo và tiếp tục",
+      next: "Tiếp tục",
+      later: "Để sau",
+      cloudTitle: "Kết nối cloud",
+      cloudLead: (name: string) =>
+        `Project ${name} đã tạo. Chọn nơi UDP dựng hạ tầng; có thể làm sau ở Cài đặt, thẻ Cloud.`,
+      domainTitle: "Chọn domain",
+      domainLead:
+        "Cấu hình được kiểm trước khi lưu; mọi lựa chọn đổi được sau ở trang Domain.",
+      previewTitle: "Xem trước và triển khai",
+      previewLead:
+        "Chi phí ước tính và thứ tự UDP dựng hạ tầng trên tài khoản cloud của bạn. Có thể triển khai sau ở trang Hạ tầng.",
+      jobTitle: "Đang triển khai",
+      jobLead:
+        "Tiến độ cập nhật trực tiếp. Rời trang không dừng việc triển khai; theo dõi tiếp ở trang Hạ tầng.",
+      openProject: "Mở project",
+      nameRequired: "Nhập tên project.",
+      createLead:
+        "Project sinh sẵn ba environment: dev, staging và prod (production, nơi người dùng thật dùng).",
+      draftNote:
+        "Project mới đứng ở trạng thái Nháp cho tới khi triển khai; flag, segment, rollout và SDK key dùng được ngay.",
+      name: "Tên project",
+      mode: "Cách tạo",
+      createNew: "Tạo mới",
+      createNewHint: "Dựng từ mẫu Golden Path",
+      importExisting: "Nhập kho có sẵn",
+      importExistingHint: "Dùng repo đã có",
+      repoUrl: "URL kho mã",
+      repoUrlPlaceholder: "https://github.com/org/repo…",
+      runtime: "Runtime",
+    },
+    layout: {
+      outside: "useProjectContext ngoài ProjectLayout",
+      noEnvironments: "Project không có environment nào",
+      environment: (name: string) => `Environment: ${name}`,
+      productionLock: "Production: mọi thay đổi cần xác nhận",
+      search: "Tìm environment",
+      searchPlaceholder: "Tìm environment…",
+      environments: "Environment",
+      noMatch: (q: string) => `Không environment nào khớp “${q}”.`,
+      realUsers: "Người dùng thật, cần xác nhận",
+      namespace: (ns: string) => `Namespace ${ns}`,
+    },
+    overview: {
+      title: "Tổng quan",
+      yourRole: (role: string) => `Vai của bạn: ${role}`,
+      flagsOn: (env: string) => `flag bật ở ${env}`,
+      runningRollouts: "rollout đang chạy",
+      members: "thành viên",
+      membersLink: (n: number) =>
+        `${formatNumber(n)} thành viên. Mở trang thành viên để mời thêm`,
+      cloud: "Cloud",
+      cluster: "Cluster",
+      noCluster: "Chưa có cluster: project chưa dựng hạ tầng.",
+      /** [Plan #58 UX-12] Thẻ "Bắt đầu": việc tự đánh dấu, thứ tự nào cũng được */
+      start: {
+        title: "Bắt đầu",
+        progress: (done: number, total: number) =>
+          `Xong ${formatNumber(done)}/${formatNumber(total)} việc`,
+        lead: "Làm theo thứ tự nào cũng được. Mỗi việc tự đánh dấu khi xong.",
+        hide: "Ẩn thẻ này",
+        done: "Xong",
+        todo: "Chưa làm",
+        checking: "Đang kiểm…",
+        task: {
+          sdkKey: {
+            title: "Tạo SDK key",
+            hint: "Ứng dụng dùng key này để hỏi giá trị flag.",
+          },
+          flag: {
+            title: "Tạo flag đầu tiên",
+            hint: "Flag chạy được ngay, chưa cần cloud.",
+          },
+          cloud: {
+            title: "Kết nối cloud",
+            hint: "Tài khoản cloud nơi UDP dựng hạ tầng. Làm sau cũng được.",
+          },
+          domains: {
+            title: "Chọn domain",
+            hint: "Công cụ hạ tầng project cần, ví dụ CI/CD và Monitoring.",
+          },
+          deploy: {
+            title: "Deploy lần đầu",
+            hint: "Dựng hạ tầng, rồi pipeline CI báo cho UDP sau mỗi lần build.",
+          },
+        } satisfies Record<StartTask, StartCopy>,
+      },
+      latestDeploy: "Deploy gần nhất",
+      latestDeployIn: (env: string) => `Deploy gần nhất ở ${env}`,
+      noDeploy: "Chưa có lần deploy nào.",
+      deployHistory: "Xem lịch sử deploy",
+      health: "Sức khoẻ domain",
+      manageDomains: "Quản lý domain",
+      noDomains: "Project chưa bật domain nào.",
+      architecture: "Kiến trúc",
+      environments: "Environment",
+      production: "Production",
+      productionHidden: "production",
+      autoDeploy: "Tự deploy",
+      manualDeploy: "Deploy thủ công",
+      recentRollouts: (env: string) => `Rollout gần đây ở ${env}`,
+      noRollouts: "Chưa có rollout nào ở environment này.",
+      map: {
+        noCloud: "Chưa kết nối cloud",
+        noCluster: "Chưa có cluster",
+        cluster: (tools: number) =>
+          `Cluster, ${formatNumber(tools)} công cụ dùng chung`,
+        workloads: (n: number) => `${formatNumber(n)} workload`,
+        open: "Mở sơ đồ đầy đủ",
+      },
+    },
+    settings: {
+      title: "Cài đặt",
+      lead: "SDK key, environment, thành viên, nhật ký, cloud và trần tài nguyên.",
+      sections: "Mục cài đặt",
+      tab: {
+        keys: "SDK key",
+        environments: "Environment",
+        members: "Thành viên",
+        audit: "Nhật ký",
+        cloud: "Cloud",
+        project: "Project",
+      } satisfies Record<SettingsTab, string>,
+    },
+    palette: {
+      search: "Tìm flag, rollout hoặc gõ lệnh",
+      searchPlaceholder: "Tìm flag, rollout hoặc gõ lệnh…",
+      group: { flag: "Flag", rollout: "Rollout", command: "Lệnh" },
+      createFlag: "Tạo flag",
+      createRollout: "Tạo rollout",
+      inviteMember: "Mời thành viên",
+      createSdkKey: "Tạo SDK key",
+      switchTo: (env: string) => `Chuyển sang ${env}`,
+      openOverview: "Mở Tổng quan",
+      openSegments: "Mở Segment",
+      openSettings: "Mở Cài đặt",
+    },
+  },
+  en: {
+    projects: "Projects",
+    createProject: "Create project",
+    cancel: "Cancel",
+    creating: "Creating…",
+    list: {
+      lead: "Every project you are a member of.",
+      label: "Your projects",
+      pages: "Project list pages",
+    },
+    wizard: {
+      createNewProject: "Create a new project",
+      step1: "Step 1/5: Project",
+      step2: "Step 2/5: Cloud",
+      step3: "Step 3/5: Domains",
+      step4: "Step 4/5: Preview",
+      step5: "Step 5/5: Deploy",
+      steps: "Project creation steps",
+      stepName: {
+        project: "Project",
+        cloud: "Cloud",
+        domains: "Domains",
+        preview: "Preview",
+        deploy: "Deploy",
+      },
+      stepDone: "done",
+      back: "Back",
+      createAndContinue: "Create and continue",
+      next: "Continue",
+      later: "Skip for now",
+      cloudTitle: "Connect a cloud",
+      cloudLead: (name: string) =>
+        `Project ${name} was created. Choose where UDP provisions infrastructure; you can also do this later in Settings, Cloud tab.`,
+      domainTitle: "Choose domains",
+      domainLead:
+        "The configuration is validated before saving; you can change any choice later on the Domains page.",
+      previewTitle: "Preview and deploy",
+      previewLead:
+        "The estimated cost and the order in which UDP provisions infrastructure in your cloud account. You can deploy later on the Infrastructure page.",
+      jobTitle: "Deploying",
+      jobLead:
+        "Progress updates live. Leaving the page does not stop the deployment; keep following it on the Infrastructure page.",
+      openProject: "Open project",
+      nameRequired: "Enter a project name.",
+      createLead:
+        "A project comes with three environments: dev, staging and prod (production, where real users are).",
+      draftNote:
+        "A new project stays in Draft until it is deployed; flags, segments, rollouts and SDK keys work right away.",
+      name: "Project name",
+      mode: "How to create it",
+      createNew: "Create new",
+      createNewHint: "Build from a Golden Path template",
+      importExisting: "Import a repository",
+      importExistingHint: "Use a repository you already have",
+      repoUrl: "Repository URL",
+      repoUrlPlaceholder: "https://github.com/org/repo…",
+      runtime: "Runtime",
+    },
+    layout: {
+      outside: "useProjectContext outside ProjectLayout",
+      noEnvironments: "The project has no environments",
+      environment: (name: string) => `Environment: ${name}`,
+      productionLock: "Production: every change needs confirmation",
+      search: "Search environments",
+      searchPlaceholder: "Search environments…",
+      environments: "Environments",
+      noMatch: (q: string) => `No environment matches “${q}”.`,
+      realUsers: "Real users, needs confirmation",
+      namespace: (ns: string) => `Namespace ${ns}`,
+    },
+    overview: {
+      title: "Overview",
+      yourRole: (role: string) => `Your role: ${role}`,
+      flagsOn: (env: string) => `flags on in ${env}`,
+      runningRollouts: "running rollouts",
+      members: "members",
+      membersLink: (n: number) =>
+        `${count(n, "member", "members")}. Open the members page to invite more`,
+      cloud: "Cloud",
+      cluster: "Cluster",
+      noCluster: "No cluster yet: the project has no infrastructure yet.",
+      start: {
+        title: "Get started",
+        progress: (done: number, total: number) =>
+          `${formatNumber(done)} of ${formatNumber(total)} done`,
+        lead: "Do them in any order. Each task checks itself off when it is done.",
+        hide: "Hide this card",
+        done: "Done",
+        todo: "To do",
+        checking: "Checking…",
+        task: {
+          sdkKey: {
+            title: "Create an SDK key",
+            hint: "Your app uses this key to ask for flag values.",
+          },
+          flag: {
+            title: "Create your first flag",
+            hint: "Flags work right away, no cloud needed.",
+          },
+          cloud: {
+            title: "Connect a cloud",
+            hint: "The cloud account where UDP sets up infrastructure. This can wait.",
+          },
+          domains: {
+            title: "Choose domains",
+            hint: "The infrastructure tools the project needs, such as CI/CD and Monitoring.",
+          },
+          deploy: {
+            title: "Deploy for the first time",
+            hint: "Set up the infrastructure, then your CI pipeline reports each build to UDP.",
+          },
+        },
+      },
+      latestDeploy: "Latest deployment",
+      latestDeployIn: (env: string) => `Latest deployment in ${env}`,
+      noDeploy: "No deployments yet.",
+      deployHistory: "View deployment history",
+      health: "Domain health",
+      manageDomains: "Manage domains",
+      noDomains: "The project has no domains enabled.",
+      architecture: "Architecture",
+      environments: "Environments",
+      production: "Production",
+      productionHidden: "production",
+      autoDeploy: "Auto-deploy",
+      manualDeploy: "Manual deploy",
+      recentRollouts: (env: string) => `Recent rollouts in ${env}`,
+      noRollouts: "No rollouts in this environment yet.",
+      map: {
+        noCloud: "No cloud connected",
+        noCluster: "No cluster yet",
+        cluster: (tools: number) =>
+          `Cluster, ${count(tools, "shared tool", "shared tools")}`,
+        workloads: (n: number) => count(n, "workload", "workloads"),
+        open: "Open the full diagram",
+      },
+    },
+    settings: {
+      title: "Settings",
+      lead: "SDK keys, environments, members, audit log, cloud and resource quota.",
+      sections: "Settings sections",
+      tab: {
+        keys: "SDK keys",
+        environments: "Environments",
+        members: "Members",
+        audit: "Audit log",
+        cloud: "Cloud",
+        project: "Project",
+      },
+    },
+    palette: {
+      search: "Search flags and rollouts or type a command",
+      searchPlaceholder: "Search flags and rollouts or type a command…",
+      group: { flag: "Flags", rollout: "Rollouts", command: "Commands" },
+      createFlag: "Create flag",
+      createRollout: "Create rollout",
+      inviteMember: "Invite a member",
+      createSdkKey: "Create SDK key",
+      switchTo: (env: string) => `Switch to ${env}`,
+      openOverview: "Open Overview",
+      openSegments: "Open Segments",
+      openSettings: "Open Settings",
+    },
+  },
+});

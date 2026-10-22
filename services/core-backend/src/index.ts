@@ -1,7 +1,40 @@
-import { env } from "@udp/config";
+import { hostname } from "node:os";
+import {
+  DEPLOY_WATCH,
+  directDatabaseUrl,
+  env,
+  JOB_LEASE,
+  JOB_QUEUE,
+  INTERNAL_AUDIENCE,
+  INTERNAL_CALLERS,
+} from "@udp/config";
 import { assertServiceIdentity, prisma } from "./core/db.js";
+import { tokenReviewIdentity } from "@udp/cluster-access/in-cluster";
+import { describeBootFailure } from "@udp/db";
 import { createApp } from "./app.js";
-import { logger } from "@udp/http";
+import { defaultAppDeps } from "./core/app-deps.js";
+import { createEgressFetch } from "./core/egress/egress.js";
+import { createMetricsFor } from "./core/metrics-source.js";
+import { startJobQueue, type JobQueue } from "./jobs/boss.js";
+import { createDeployJob } from "./jobs/deploy.job.js";
+import { sweepDrift } from "./jobs/drift-scan.job.js";
+import { createJobKit, type JobKit, type JobKitDeps } from "./jobs/job-kit.js";
+import { createJobWorker } from "./jobs/job-worker.js";
+import { sweepOrphans } from "./jobs/orphan-scan.job.js";
+import { sweepProjectTtl } from "./jobs/project-ttl.job.js";
+import { reconcileDeploys, reconcileJobs } from "./jobs/reconcile.js";
+import {
+  createClusterRuntime,
+  egressTransport,
+} from "./modules/cluster/cluster-runtime.js";
+import { createClusterAccessCache } from "./modules/cluster/cluster-access-cache.js";
+import { assertRegistryCoveredByCatalog } from "./modules/domain/domain-catalog.sync.js";
+import {
+  assertInternalCallerReady,
+  closeServer,
+  listenInternal,
+  logger,
+} from "@udp/http";
 
 /**
  * Khẳng định danh tính kết nối TRƯỚC khi mở cổng.
@@ -17,18 +50,188 @@ try {
   logger.info({ role: "udp_s1" }, "Danh tính kết nối database đã xác nhận");
 } catch (err) {
   // Bắt để ra MỘT dòng log đọc được, thay vì một unhandled rejection kèm stack
-  // mà người trực đêm phải tự dịch.
-  logger.fatal({ err }, "Không khởi động: danh tính kết nối database sai");
+  // mà người trực đêm phải tự dịch. [Plan #64] gọi đúng tên lỗi: lỗi kết nối
+  // (TLS, DNS, timeout…) không còn bị dán nhãn "danh tính sai".
+  logger.fatal({ err }, describeBootFailure(err));
   process.exit(1);
 }
 
-const app = createApp();
+/**
+ * [Plan #67] Bên gọi `/internal/*`: đọc thử token chiếu của từng đích TRƯỚC khi mở cổng (chế độ `token-review`).
+ * Deployment thiếu volume `projected` thì sập ở đây với một câu rõ, thay vì chạy rồi nhận 401 ở mọi lời gọi nội bộ.
+ */
+try {
+  await assertInternalCallerReady(["flag-service"]);
+} catch (err) {
+  logger.fatal({ err }, "Không đọc được token chiếu của bên gọi nội bộ");
+  process.exit(1);
+}
+
+/**
+ * [v4.11] Registry Domain Adapter khớp catalog TRƯỚC khi mở cổng (Plan #27 QĐ-2): một
+ * adapter khai domain mà catalog không biết (hay đã gỡ) sẽ hiện trên Portal rồi vỡ ở lần
+ * ghi `domain_configs` đầu tiên vì khoá ngoại. Sập lúc boot là chỗ đúng để thấy nó.
+ */
+const deps = defaultAppDeps();
+try {
+  await assertRegistryCoveredByCatalog(prisma, await deps.domainRegistry());
+} catch (err) {
+  logger.fatal(
+    { err },
+    "Không khởi động: registry Domain Adapter lệch catalog",
+  );
+  process.exit(1);
+}
+
+/**
+ * [v4.11] Hàng đợi + worker provisioning trong CHÍNH tiến trình này (Plan #28 QĐ-2). Hàng
+ * đợi đi qua `DATABASE_URL_DIRECT` (ADR-02 đk 1: pooler transaction mode phá advisory lock);
+ * worker ghi nghiệp vụ bằng `udp_s1` như mọi đường khác của Service 1.
+ */
+async function startJobs(): Promise<{ queue: JobQueue; kit: JobKit }> {
+  const queue = await startJobQueue({
+    connectionString: directDatabaseUrl,
+    tlsMode: env.UDP_DB_TLS_MODE,
+    schema: env.PGBOSS_SCHEMA,
+    retryLimit: env.JOB_RETRY_LIMIT,
+    expireInSeconds: env.JOB_EXPIRE_MINUTES * 60,
+    // Trần một lượt theo dõi + năm phút cho áp, hoàn tác và ghi kết luận
+    deployExpireInSeconds: DEPLOY_WATCH.maxWatchSeconds + 300,
+    heartbeatSeconds: JOB_LEASE.renewIntervalMs / 1_000,
+    pollingIntervalSeconds: JOB_QUEUE.pollingIntervalSeconds,
+  });
+  const workerDeps: JobKitDeps = {
+    prisma,
+    platform: deps.cloud,
+    domainRegistry: deps.domainRegistry,
+    clusters: createClusterRuntime(egressTransport),
+    egressFetch: createEgressFetch(),
+    workerId: `${hostname()}-${String(process.pid)}`,
+    lease: {
+      leaseMs: JOB_LEASE.durationSeconds * 1_000,
+      renewIntervalMs: JOB_LEASE.renewIntervalMs,
+      errorRetryMs: JOB_LEASE.renewErrorRetryMs,
+    },
+  };
+  const worker = createJobWorker(workerDeps);
+  const kit = createJobKit(workerDeps);
+  await queue.workJobs((jobId, attempt) => worker.run(jobId, attempt));
+  await queue.workCompensation((jobId) => worker.compensate(jobId));
+  const deploys = createDeployJob(kit, DEPLOY_WATCH);
+  await queue.workDeploys(
+    (deploymentId, attempt) => deploys.run(deploymentId, attempt),
+    DEPLOY_WATCH.concurrency,
+  );
+  await queue.schedule("reconcile", JOB_QUEUE.reconcileCron, async () => {
+    const outcome = await reconcileJobs(prisma, queue);
+    if (outcome.resent.length + outcome.compensating.length > 0) {
+      logger.warn(outcome, "Đối soát job đã chữa lệch");
+    }
+    const deployOutcome = await reconcileDeploys(prisma, queue);
+    if (deployOutcome.resent.length + deployOutcome.abandoned.length > 0) {
+      logger.warn(deployOutcome, "Đối soát deploy đã chữa lệch");
+    }
+  });
+  await queue.schedule("projectTtl", JOB_QUEUE.projectTtlCron, async () => {
+    const outcome = await sweepProjectTtl({
+      prisma,
+      enqueue: queue.enqueueJob,
+    });
+    logger.info(outcome, "Lượt TTL project");
+  });
+  await queue.schedule("orphanScan", JOB_QUEUE.orphanScanCron, async () => {
+    const outcome = await sweepOrphans(kit);
+    if (outcome.resolved.length + outcome.unresolved.length > 0) {
+      logger.warn(outcome, "Quét hàng sổ CREATING treo");
+    }
+  });
+  await queue.schedule("driftScan", JOB_QUEUE.driftScanCron, async () => {
+    const outcome = await sweepDrift(kit);
+    logger.info(
+      { scanned: outcome.scanned.length, skipped: outcome.skipped },
+      "Lượt quét drift",
+    );
+  });
+  return { queue, kit };
+}
+
+const { queue, kit } = await startJobs().catch((err: unknown) => {
+  logger.fatal({ err }, "Không khởi động: hàng đợi job không lên được");
+  process.exit(1);
+});
+
+/**
+ * [v4.11, Plan #39 / v4.12, Plan #61 61d-2b-1] MỘT bộ nhớ đệm `ClusterAccess` cho cả hai bên đọc cụm:
+ * đo metrics qua proxy, và đọc khoá công khai của cụm cho Trusted Deploy của ba CI trong cụm.
+ *
+ * Dùng chung chứ không hai bản: một lượt dựng `ClusterAccess` kéo theo một lần lấy credential cloud và một
+ * token quản trị, nên hai bộ đệm nghĩa là gấp đôi việc đó cho cùng một project trong cùng một hạn token.
+ */
+const clusterAccess = createClusterAccessCache({
+  resolve: kit.projectClusterAccess,
+});
+
+/**
+ * [Plan #67] Lớp danh tính của `/internal/*`: ở chế độ `token-review` mọi lời gọi nội bộ phải mang token chiếu của một
+ * ServiceAccount trong `INTERNAL_CALLERS["core-backend"]`, hỏi qua `TokenReview`. Ngoài cụm thì KHÔNG khởi động - lùi về
+ * bí mật dùng chung là tắt im lặng lớp mà cấu hình đòi.
+ */
+const identity =
+  env.INTERNAL_AUTH_MODE === "token-review"
+    ? await tokenReviewIdentity(
+        INTERNAL_AUDIENCE["core-backend"],
+        INTERNAL_CALLERS["core-backend"],
+      )
+    : undefined;
+if (identity?.kind === "outside") {
+  logger.fatal(
+    { reason: identity.reason },
+    "Không khởi động: INTERNAL_AUTH_MODE=token-review mà tiến trình không chạy trong cụm",
+  );
+  process.exit(1);
+}
+const appOptions = {
+  ...(env.CORE_BACKEND_INTERNAL_PORT === undefined
+    ? {}
+    : { internalPort: env.CORE_BACKEND_INTERNAL_PORT }),
+  ...(identity?.kind === "ready"
+    ? { identity: { verifier: identity.verifier, callers: identity.callers } }
+    : {}),
+};
+
+const app = createApp(
+  {
+    ...deps,
+    metricsFor: createMetricsFor(clusterAccess),
+    provisioning: {
+      ...deps.provisioning,
+      enqueue: queue.enqueueJob,
+      enqueueDeploy: queue.enqueueDeploy,
+      withCluster: kit.withProjectCluster,
+      clusterToken: kit.projectClusterToken,
+      clusterIssuerKeys: async (projectId) =>
+        await (await clusterAccess.get(projectId)).issuerKeys(),
+      scanDrift: async (projectId, domainType) => {
+        await sweepDrift(kit, { only: [projectId], domainType });
+      },
+    },
+  },
+  appOptions,
+);
 const server = app.listen(env.CORE_BACKEND_PORT, () => {
   logger.info(
     { port: env.CORE_BACKEND_PORT, env: env.NODE_ENV },
     "udp-core-backend đã khởi động",
   );
 });
+/** [Plan #66] `/internal/*` của Service 3 tới đây; NetworkPolicy chỉ mở cổng này cho nó */
+const internalServer = listenInternal(
+  app,
+  env.CORE_BACKEND_INTERNAL_PORT,
+  (port) => {
+    logger.info({ port }, "cổng nội bộ đã mở");
+  },
+);
 
 /**
  * Tắt êm.
@@ -46,14 +249,16 @@ const shutdown = (signal: string) => {
   }, 10_000);
 
   /**
-   * Callback của `server.close` khai kiểu `(err?) => void`. Truyền một hàm
-   * `async` vào đó là gửi một Promise cho bên KHÔNG await nó: nếu
-   * `$disconnect()` ném lúc tắt máy, đó là một unhandled rejection ngay trong
-   * đường tắt êm — vốn là đường phải im lặng nhất.
+   * Chờ CẢ HAI cổng đóng (Plan #66), rồi mới tới hàng đợi và database. Chuỗi
+   * promise kết thúc bằng `.catch`: nếu `$disconnect()` ném lúc tắt máy thì đó
+   * không thành một unhandled rejection ngay trong đường tắt êm — vốn là đường
+   * phải im lặng nhất.
    */
-  server.close(() => {
-    void prisma
-      .$disconnect()
+  void Promise.all([closeServer(server), internalServer.close()]).then(() => {
+    // Hàng đợi trước: `stop` êm chờ job đang chạy nhả lease, rồi mới đóng database
+    void queue
+      .stop()
+      .then(() => prisma.$disconnect())
       .catch((err: unknown) => {
         logger.error({ err }, "Lỗi khi đóng kết nối database");
       })

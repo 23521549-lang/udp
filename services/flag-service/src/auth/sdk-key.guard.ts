@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import type { Request, RequestHandler } from "express";
-import type { SdkKeyType } from "@udp/db";
-import { asyncHandler, UnauthenticatedError } from "@udp/http";
+import { SDK_KEY } from "@udp/config";
+import { sdkKeyMaterialOf, type SdkKeyType } from "@udp/db";
+import { asyncHandler, logger, UnauthenticatedError } from "@udp/http";
 import { prisma } from "../core/db.js";
 
 /**
@@ -49,8 +49,9 @@ const reject = (): UnauthenticatedError =>
   new UnauthenticatedError("SDK key không hợp lệ");
 
 /**
- * Không cần `timingSafeEqual` ở đây, và lý do phải nói rõ để không ai "sửa" lại.
+ * Tra khoá theo hash — `sdkKeyMaterialOf`, CÙNG hàm Service 1 dùng lúc phát hành.
  *
+ * Không cần `timingSafeEqual` ở đây, và lý do phải nói rõ để không ai "sửa" lại.
  * Thứ được đem đi tra là `sha256(token)`, nên thời gian phản hồi chỉ tiết lộ
  * thông tin về HASH chứ không về token, và không ai đi ngược được preimage của
  * sha256. `key_hash` lại là `@unique`, nên tra cứu là một lần dò index: thời
@@ -60,11 +61,7 @@ const reject = (): UnauthenticatedError =>
  * `row.keyHash === computed` — vì phép so chuỗi của JS thoát sớm ở byte đầu tiên
  * lệch. Nó không thêm an toàn nào (database vừa so xong rồi) mà mở lại đúng kênh
  * bên vừa nói là không có.
- */
-const hashOf = (token: string): string =>
-  createHash("sha256").update(token).digest("hex");
-
-/**
+ *
  * KHÔNG cache kết quả tra khoá trong lát cắt này — và đây là lựa chọn, không
  * phải bỏ sót.
  *
@@ -82,29 +79,79 @@ const hashOf = (token: string): string =>
  * còn dưới khoảng 50, tra thẳng vẫn dư sức. Vượt mốc đó thì cách đúng là
  * invalidate theo `change_type = "sdkkey.revoked"` qua chính change feed — chứ
  * không phải một TTL đoán mò.
- *
- * Cùng lý do, `last_used_at` (và `SDK_KEY.lastUsedThrottleMs`) chưa được ghi:
- * hôm nay chưa có màn hình nào đọc nó, nên nó chỉ là một lệnh ghi thêm trên
- * đường đọc nóng.
  */
 async function lookup(token: string): Promise<ResolvedSdkKey | null> {
   const row = await prisma.sdkKey.findUnique({
-    where: { keyHash: hashOf(token) },
+    where: { keyHash: sdkKeyMaterialOf(token).keyHash },
     select: {
       id: true,
       environmentId: true,
       keyType: true,
       revokedAt: true,
+      lastUsedAt: true,
     },
   });
 
   if (row === null || row.revokedAt !== null) return null;
+
+  touchLastUsed(row.id, row.lastUsedAt);
 
   return {
     id: row.id,
     environmentId: row.environmentId,
     keyType: row.keyType,
   };
+}
+
+/** Khoá ⇒ lần tiến trình này bắn UPDATE gần nhất (epoch ms) */
+const touched = new Map<string, number>();
+
+/**
+ * [v4.9] `last_used_at` — BẮN-VÀ-QUÊN, throttle hai lớp (§3.7, R34).
+ *
+ * Danh sách SDK key của Portal hiển thị cột này, nên món nợ ghi ở khối trên đến
+ * hạn. Nhưng nó nằm trên đường đọc NÓNG của mọi `/sdk/*` và OFREP, nên ba luật:
+ *
+ *   - **Không `await`.** Một RTT ~52 ms thêm vào mỗi `/sdk/config` chỉ để cập
+ *     nhật một cột trang trí là cái giá sai. Lỗi ghi ⇒ `logger.debug`, request
+ *     không bị ảnh hưởng.
+ *   - **Điều kiện `WHERE` làm throttle THẬT.** Nó throttle đúng cả giữa các
+ *     replica và không phụ thuộc đồng hồ của tiến trình nào: tối đa một lần ghi
+ *     mỗi `lastUsedThrottleMs` cho mỗi khoá, dù bao nhiêu replica cùng chạy.
+ *   - **Map trong tiến trình chỉ chặn cơn dội đồng thời.** N request song song
+ *     của CÙNG một khoá đều thấy `last_used_at` cũ (hàng đầu chưa commit) nên
+ *     đều đủ điều kiện; Map cắt chúng còn một. Nó có trần
+ *     `SDK_KEY.lastUsedTrackedKeys`: đầy thì dọn mục hết hạn, còn đầy nữa thì
+ *     xoá hết — mất throttle trong tiến trình một lượt vẫn an toàn, vì lớp
+ *     `WHERE` mới là lớp giữ đúng số lần ghi.
+ */
+function touchLastUsed(keyId: string, lastUsedAt: Date | null): void {
+  const nowMs = Date.now();
+  const throttleMs = SDK_KEY.lastUsedThrottleMs;
+
+  if (lastUsedAt !== null && nowMs - lastUsedAt.getTime() < throttleMs) return;
+  const last = touched.get(keyId);
+  if (last !== undefined && nowMs - last < throttleMs) return;
+
+  if (touched.size >= SDK_KEY.lastUsedTrackedKeys) {
+    for (const [id, at] of touched) {
+      if (nowMs - at >= throttleMs) touched.delete(id);
+    }
+    if (touched.size >= SDK_KEY.lastUsedTrackedKeys) touched.clear();
+  }
+  touched.set(keyId, nowMs);
+
+  void prisma.$executeRaw`UPDATE sdk_keys SET last_used_at = now()
+                  WHERE id = ${keyId}::uuid
+                    AND (last_used_at IS NULL
+                         OR last_used_at < now() - make_interval(secs => ${throttleMs / 1_000}::double precision))`.catch(
+    (err: unknown) => {
+      logger.debug(
+        { err, keyId },
+        "Không cập nhật được last_used_at của SDK key",
+      );
+    },
+  );
 }
 
 /**

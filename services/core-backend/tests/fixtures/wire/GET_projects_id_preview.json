@@ -1,0 +1,69 @@
+{
+  "route": "GET /projects/{id}/preview",
+  "status": 200,
+  "body": {
+    "preview": {
+      "provider": "AWS",
+      "region": "ap-southeast-1",
+      "cluster": {
+        "nodeSize": "medium",
+        "nodeCount": 2
+      },
+      "cost": {
+        "monthlyUsd": 365.22,
+        "breakdown": [
+          {
+            "item": "control-plane",
+            "monthlyUsd": 73
+          },
+          {
+            "item": "nat-gateway",
+            "monthlyUsd": 32.85
+          },
+          {
+            "item": "load-balancer",
+            "monthlyUsd": 16.43
+          },
+          {
+            "item": "nodes",
+            "monthlyUsd": 242.94
+          }
+        ],
+        "isEstimate": true,
+        "pricingAsOf": "2026-09-01"
+      },
+      "steps": {
+        "network": [
+          "vpc",
+          "subnet-public-a",
+          "subnet-public-b",
+          "subnet-private-a",
+          "subnet-private-b",
+          "igw",
+          "eip",
+          "nat",
+          "rtb-public",
+          "rtb-private"
+        ],
+        "cluster": [
+          "sg",
+          "iam-cluster",
+          "iam-node",
+          "cluster",
+          "oidc",
+          "nodegroup"
+        ]
+      },
+      "deployOrder": [],
+      "estimatedMinutes": {
+        "min": 15,
+        "max": 25
+      },
+      "requiresConfirmation": true,
+      "blockers": [
+        "cloud-not-validated",
+        "egress-not-configured"
+      ]
+    }
+  }
+}

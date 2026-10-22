@@ -1,0 +1,17 @@
+{
+  "route": "PUT /projects/{id}/domains/CICD/oidc-required",
+  "status": 200,
+  "body": {
+    "cicd": {
+      "provider": "github-actions",
+      "webhookPath": "/api/v1/webhooks/cicd/c12d03e6-e521-4bc5-bb32-b63552e4119d/github-actions",
+      "webhookUrl": "http://localhost:5173/api/v1/webhooks/cicd/c12d03e6-e521-4bc5-bb32-b63552e4119d/github-actions",
+      "secretSet": true,
+      "trustedDeploy": {
+        "required": true,
+        "available": true,
+        "unavailableReason": null
+      }
+    }
+  }
+}

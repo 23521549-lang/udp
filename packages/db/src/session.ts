@@ -1,5 +1,9 @@
 import { Client } from "pg";
-import { DB_TLS_OPTIONS, sanitizeConnectionString } from "./adapter.js";
+import {
+  resolveTlsOptions,
+  sanitizeConnectionString,
+  type TlsMode,
+} from "./adapter.js";
 
 /**
  * Kết nối SESSION riêng, ngoài pool — cho việc cần trạng thái sống qua nhiều câu
@@ -56,15 +60,20 @@ export type SessionConnector = () => SessionClient;
  */
 export function createSessionConnector(
   connectionString: string,
+  tlsMode: TlsMode = "verify-full",
 ): SessionConnector {
   const sanitized = sanitizeConnectionString(connectionString);
-  return () => sessionClient(sanitized);
+  return () => sessionClient(sanitized, tlsMode);
 }
 
-function sessionClient(connectionString: string): SessionClient {
+function sessionClient(
+  connectionString: string,
+  tlsMode: TlsMode,
+): SessionClient {
+  const tlsOptions = resolveTlsOptions(tlsMode, connectionString);
   const client = new Client({
     connectionString,
-    ssl: DB_TLS_OPTIONS,
+    ...(tlsOptions === undefined ? {} : { ssl: tlsOptions }),
     /**
      * Keepalive TCP để NAT và pooler không cắt im một kết nối chỉ ngồi chờ
      * notification. Không thay được `ping`: keepalive của hệ điều hành mặc định

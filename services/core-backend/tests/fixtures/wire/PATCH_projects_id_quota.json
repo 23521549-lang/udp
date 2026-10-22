@@ -1,0 +1,25 @@
+{
+  "route": "PATCH /projects/{id}/quota",
+  "status": 200,
+  "body": {
+    "project": {
+      "id": "1e7fb1e8-01df-4bbf-baab-720b361eb205",
+      "name": "proj-913b2838",
+      "ownerId": "1b2da0b9-0326-4b90-95b5-dc989b8dbd87",
+      "creationMode": "CREATE_NEW",
+      "languageRuntime": "nodejs",
+      "repoUrl": null,
+      "status": "DRAFT",
+      "resourceQuota": {
+        "maxNodes": 5,
+        "maxNodeSize": "large",
+        "maxDatabases": 3,
+        "maxStorageGb": 100,
+        "maxLoadBalancers": 2
+      },
+      "expiresAt": null,
+      "createdAt": "2026-09-24T19:33:35.566Z",
+      "myRole": "OWNER"
+    }
+  }
+}

@@ -1,0 +1,105 @@
+# Service 1 — API của Portal, provisioning, rollout (Plan #49). Chạy mã nguồn bằng tsx (deploy/docker/service.Dockerfile, QĐ-1): startupProbe
+# cho tsx thời gian biên dịch lúc khởi động; /readyz chỉ xanh khi database và danh tính role đã khẳng định.
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-backend
+spec:
+  selector:
+    app.kubernetes.io/name: core-backend
+  ports:
+    - name: http
+      port: 3001
+      targetPort: http
+---
+# [Plan #66] Cổng nội bộ: `/internal/*` chỉ phục vụ ở đây (Service 3 gọi qua Service này). Service RIÊNG, ClusterIP:
+# overlay kind đổi Service công khai thành NodePort, và một cổng thêm vào đó sẽ lộ ra IP của node. Tên đặt
+# `internal-…` chứ không `…-internal`: kubelet sinh biến service link `<TÊN>_PORT`, và `CORE_BACKEND_INTERNAL_PORT` là biến cấu hình.
+apiVersion: v1
+kind: Service
+metadata:
+  name: internal-core-backend
+spec:
+  selector:
+    app.kubernetes.io/name: core-backend
+  ports:
+    - name: internal
+      port: 3101
+      targetPort: internal
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: core-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: core-backend
+    spec:
+      # [Plan #63 QĐ-5] Không nhận biến "service link" của kubelet: Service `core-backend` sinh `CORE_BACKEND_PORT=tcp://<ip>:3001`
+      # trong mọi pod cùng namespace, trùng khoá cổng của `@udp/config`, và cả ba service chết ở lượt CI đầu tiên. Địa chỉ
+      # của service khác đi qua DNS (`*_URL` của ConfigMap); biến của Service `kubernetes` vẫn được tiêm (platform-probe.ts
+      # cần nó). `deploy/tests` canh cờ này ở MỌI pod của hai overlay.
+      enableServiceLinks: false
+      # [Plan #53] Token của ServiceAccount chỉ-đọc (core-backend-rbac.yaml) — đọc node, PVC PostgreSQL,
+      # CronJob sao lưu, Certificate cho Bảng điều khiển nền tảng. Không quyền ghi, không secret.
+      serviceAccountName: core-backend
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      # [Plan #67] Token chiếu của ServiceAccount cho từng đích `/internal/*` mà service này gọi - audience theo đích
+      # (`INTERNAL_AUDIENCE` của @udp/config/constants), kubelet xoay ở 80% thời hạn, đọc lại mỗi lời gọi
+      volumes:
+        - name: internal-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: udp:internal:flag-service
+                  expirationSeconds: 3600
+                  path: flag-service
+      containers:
+        - name: core-backend
+          image: udp/core-backend
+          ports:
+            - name: http
+              containerPort: 3001
+            - name: internal
+              containerPort: 3101
+          envFrom:
+            - configMapRef:
+                name: udp-config
+            - secretRef:
+                name: udp-secrets
+          volumeMounts:
+            - name: internal-token
+              mountPath: /var/run/secrets/udp/internal
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false

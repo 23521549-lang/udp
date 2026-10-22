@@ -1,0 +1,29 @@
+{
+  "route": "PUT /projects/{id}/flags/{id}/envs/{id}/rules",
+  "status": 200,
+  "body": {
+    "updatedAt": "2026-09-24T19:37:25.775Z",
+    "rules": [
+      {
+        "id": "fd6814f2-3f0d-4982-b453-86967df919f6",
+        "priority": 0,
+        "ruleType": "ALL",
+        "condition": {},
+        "serve": {
+          "kind": "distribution",
+          "weights": [
+            {
+              "weight": 10000,
+              "variantId": "02b879f2-7e9e-4534-a20d-f09c1d46820e"
+            },
+            {
+              "weight": 90000,
+              "variantId": "4dc88db4-0da2-4b74-bdf2-edae9fc96c07"
+            }
+          ]
+        },
+        "description": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "route": "PUT /projects/{id}/segments/{id}",
+  "status": 200,
+  "body": {
+    "segment": {
+      "id": "a7295f78-2f45-4ccf-9d49-babb82ef1957",
+      "name": "put-maintainer-557949b7",
+      "description": null,
+      "createdAt": "2026-09-24T19:35:07.069Z",
+      "updatedAt": "2026-09-24T19:35:08.635Z",
+      "summary": {
+        "conditionCount": 0,
+        "userIdCount": 1,
+        "hasRegex": false,
+        "payloadBytes": 31
+      },
+      "usage": {
+        "flagCount": 0,
+        "productionFlagCount": 0,
+        "flags": []
+      },
+      "conditions": {
+        "all": [],
+        "userIds": [
+          "u-1"
+        ]
+      }
+    }
+  }
+}

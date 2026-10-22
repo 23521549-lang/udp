@@ -1,0 +1,61 @@
+{
+  "route": "POST /projects/{id}/flags/{id}/promote",
+  "status": 200,
+  "body": {
+    "updatedAt": "2026-09-28T14:02:44.926Z",
+    "rules": [
+      {
+        "id": "39a43df3-f406-410b-a675-c37edc01c949",
+        "priority": 10,
+        "ruleType": "ATTRIBUTE_BASED",
+        "condition": {
+          "all": [
+            {
+              "value": "VN",
+              "operator": "eq",
+              "attribute": "country"
+            }
+          ]
+        },
+        "serve": {
+          "kind": "variant",
+          "variantId": "acfaecea-8f69-4e50-a1e6-8b9ceb0986d3"
+        },
+        "description": null
+      },
+      {
+        "id": "dbbe4264-1f23-4516-ac0b-8e2595e2fa34",
+        "priority": 20,
+        "ruleType": "ALL",
+        "condition": {},
+        "serve": {
+          "kind": "variant",
+          "variantId": "2f13c7bd-7d73-4c5b-9b26-0c3473a400f5"
+        },
+        "description": null
+      }
+    ],
+    "diff": [
+      {
+        "kind": "changed",
+        "index": 0,
+        "ruleType": "ATTRIBUTE_BASED",
+        "description": null,
+        "keptId": "39a43df3-f406-410b-a675-c37edc01c949"
+      },
+      {
+        "kind": "added",
+        "index": 1,
+        "ruleType": "ALL",
+        "description": null
+      },
+      {
+        "kind": "removed",
+        "index": 1,
+        "ruleType": "USER_BASED",
+        "description": null
+      }
+    ],
+    "changes": 3
+  }
+}

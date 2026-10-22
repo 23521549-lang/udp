@@ -1,0 +1,72 @@
+{
+  "route": "POST /projects/{id}/flags",
+  "status": 201,
+  "body": {
+    "flag": {
+      "id": "59b16ebc-c7be-4748-8b12-ed20251e3bfb",
+      "key": "pr-55ce521b",
+      "flagType": "BOOLEAN",
+      "description": null,
+      "lifecycleStatus": "DRAFT",
+      "stickinessAttribute": "targetingKey",
+      "defaultVariantId": "22f3b1f7-7746-4948-8982-f05d6ae3b61b",
+      "permanent": false,
+      "activatedAt": null,
+      "createdAt": "2026-09-24T19:35:36.737Z",
+      "updatedAt": "2026-09-24T19:35:37.050Z",
+      "variants": [
+        {
+          "id": "ced3cec1-0932-449d-b70e-9427fe5c7fae",
+          "key": "off",
+          "value": false
+        },
+        {
+          "id": "22f3b1f7-7746-4948-8982-f05d6ae3b61b",
+          "key": "on",
+          "value": true
+        }
+      ],
+      "envs": [
+        {
+          "environment": {
+            "id": "a8bc1d25-2c75-4174-a51b-40408f9e82e4",
+            "name": "dev",
+            "isProduction": false
+          },
+          "configId": "7c2ce178-fe8e-4493-b301-09c2f905ae36",
+          "isEnabled": false,
+          "defaultVariantId": null,
+          "isTracked": false,
+          "ruleCount": 0,
+          "updatedAt": "2026-09-24T19:35:36.737Z"
+        },
+        {
+          "environment": {
+            "id": "466735d7-4137-494b-89e4-cba1790b7e50",
+            "name": "staging",
+            "isProduction": false
+          },
+          "configId": "a2599cf2-f831-4049-a0d9-699f9a846be4",
+          "isEnabled": false,
+          "defaultVariantId": null,
+          "isTracked": false,
+          "ruleCount": 0,
+          "updatedAt": "2026-09-24T19:35:36.737Z"
+        },
+        {
+          "environment": {
+            "id": "00b53676-36b2-4bb5-9eeb-1df872cf18d0",
+            "name": "prod",
+            "isProduction": true
+          },
+          "configId": "64b212aa-5e56-4f88-aa46-829b9b731207",
+          "isEnabled": false,
+          "defaultVariantId": null,
+          "isTracked": false,
+          "ruleCount": 0,
+          "updatedAt": "2026-09-24T19:35:36.737Z"
+        }
+      ]
+    }
+  }
+}

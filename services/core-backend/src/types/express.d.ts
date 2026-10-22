@@ -1,4 +1,4 @@
-import type { ProjectRole } from "@udp/db";
+import type { ProjectRole, TeamRole } from "@udp/db";
 import type { AccessTokenPayload } from "../core/security/tokens.js";
 
 /**
@@ -20,6 +20,8 @@ declare global {
        * la loi bien dich chu khong phai cach xoa truong.
        */
       projectRole?: ProjectRole;
+      /** [v4.11, Plan #55] Vai của người gọi trong nhóm của route — có sau `requireTeamRole` */
+      teamRole?: TeamRole;
     }
   }
 }

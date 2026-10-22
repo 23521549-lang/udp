@@ -134,7 +134,8 @@ describe("chốt danh tính của Service 2 chặn ngay ở cửa khởi động
     const boot = await bootWith(
       { LOG_LEVEL: "info", CHANGEFEED_NOTIFY_ENABLED: "true" },
       (output) =>
-        output.includes("đã khởi động") && output.includes("Tầng 3 đang nghe"),
+        output.includes("đã khởi động") &&
+        output.includes("Kênh LISTEN của tầng 3 đang nghe"),
     );
 
     expect(boot.survived, boot.output).toBe(true);

@@ -1,8 +1,17 @@
 import type { Request } from "express";
-import { NotFoundError } from "@udp/http";
+import type { ProjectRole } from "@udp/db";
+import { logger, NotFoundError } from "@udp/http";
+import type { ProjectClusterWire } from "@udp/shared-types/wire";
+import { z } from "zod";
+import { activeMeta } from "../cloud/cloud.repository.js";
+import {
+  retireInfrastructure,
+  type EnqueueJob,
+} from "../provisioning/provisioning.service.js";
 import * as repository from "./project.repository.js";
 import type {
   CreateProjectInput,
+  ListProjectsQuery,
   PublicEnvironment,
   PublicProject,
   UpdateQuotaInput,
@@ -34,8 +43,8 @@ export const create = (
     request,
   });
 
-export const listForUser = (userId: string): Promise<PublicProject[]> =>
-  repository.listForUser(userId);
+export const listForUser = (userId: string, page: ListProjectsQuery) =>
+  repository.listForUser(userId, page);
 
 export async function getById(
   id: string,
@@ -45,6 +54,34 @@ export async function getById(
     throw new NotFoundError("Không tìm thấy project");
   }
   return project;
+}
+
+/** Phần địa chỉ của `cluster_access` (ADR-06) — `caData` và tài khoản dịch vụ không ra dây */
+const clusterAddressSchema = z.object({
+  clusterId: z.string().min(1),
+  apiEndpoint: z.string().min(1),
+});
+
+/**
+ * [v4.11, Plan #45] Cluster của project cho thẻ Tổng quan (§10.6): địa chỉ từ `cluster_access`,
+ * cloud và region từ credential đang dùng. `null` khi project chưa có cluster — hay khi credential
+ * đã bị gỡ: thẻ không đoán nửa phần còn lại.
+ */
+export async function clusterOf(
+  projectId: string,
+): Promise<ProjectClusterWire | null> {
+  const [access, meta] = await Promise.all([
+    repository.clusterAccessOf(projectId),
+    activeMeta(projectId),
+  ]);
+  const address = clusterAddressSchema.safeParse(access);
+  if (!address.success || meta === null) return null;
+  return {
+    clusterId: address.data.clusterId,
+    apiEndpoint: address.data.apiEndpoint,
+    provider: meta.provider,
+    region: meta.region,
+  };
 }
 
 /**
@@ -86,12 +123,23 @@ export async function updateTtl(
 }
 
 /**
- * Xoá mềm.
+ * Xoá mềm + giao việc dọn hạ tầng (§9 "soft-delete + enqueue teardown", Plan #29 QĐ-3).
  *
- * §9 mô tả endpoint này là "soft-delete + enqueue teardown". Phần enqueue chưa
- * làm được: hạ tầng `jobs/` (pg-boss) của §3.1 chưa tồn tại, nên chưa có hàng
- * đợi nào để đẩy việc vào. Ghi rõ ở đây thay vì im lặng bỏ qua — tài nguyên
- * cloud của project bị xoá mềm hiện KHÔNG tự được dọn.
+ * Xoá mềm, audit và job TEARDOWN (hay yêu cầu hủy job PROVISION đang chạy) đi trong MỘT
+ * transaction; job chỉ được gửi sang hàng đợi SAU commit — hỏng ở đó thì đối soát gửi lại
+ * (outbox, Plan #28 QĐ-1).
  */
-export const remove = (id: string, request: Request): Promise<PublicProject> =>
-  repository.softDelete(id, request);
+export async function remove(
+  id: string,
+  request: Request,
+  enqueue: EnqueueJob,
+): Promise<void> {
+  const jobId = await repository.softDeleteWith(id, request, (tx) =>
+    retireInfrastructure(tx, id),
+  );
+  if (jobId !== null && enqueue !== null) {
+    await enqueue(jobId).catch((err: unknown) => {
+      logger.warn({ err, jobId }, "Chưa gửi được job TEARDOWN sang hàng đợi");
+    });
+  }
+}

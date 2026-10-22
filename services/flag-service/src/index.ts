@@ -1,5 +1,12 @@
-import { env } from "@udp/config";
-import { logger } from "@udp/http";
+import { tokenReviewIdentity } from "@udp/cluster-access/in-cluster";
+import {
+  env,
+  INTERNAL_AUDIENCE,
+  INTERNAL_CALLERS,
+  SDK_STATS,
+} from "@udp/config";
+import { closeServer, listenInternal, logger } from "@udp/http";
+import { describeBootFailure } from "@udp/db";
 import { assertServiceIdentity, prisma, SERVICE_ROLE } from "./core/db.js";
 import {
   changeFeedWatcher,
@@ -7,7 +14,8 @@ import {
   pruneJob,
 } from "./changefeed/index.js";
 import { createApp } from "./app.js";
-import { sseHub } from "./sdk/index.js";
+import { statsFlusher, statsRollupJob } from "./modules/stats/index.js";
+import { sseHub, statsIngest } from "./sdk/index.js";
 
 /**
  * Khẳng định danh tính kết nối TRƯỚC khi mở cổng.
@@ -25,7 +33,9 @@ try {
   await assertServiceIdentity();
   logger.info({ role: SERVICE_ROLE }, "Danh tính kết nối database đã xác nhận");
 } catch (err) {
-  logger.fatal({ err }, "Không khởi động: danh tính kết nối database sai");
+  // [Plan #64] gọi đúng tên lỗi: lỗi kết nối (TLS, DNS, timeout…) không còn
+  // bị dán nhãn "danh tính sai". Chuỗi message giữ nguyên — boot-identity.test.ts ghim.
+  logger.fatal({ err }, describeBootFailure(err));
   process.exit(1);
 }
 
@@ -58,13 +68,49 @@ if (notifyAccelerator !== undefined) {
   }
 }
 
-const app = createApp();
+/**
+ * [Plan #67] Lớp danh tính của `/internal/*`: ở chế độ `token-review` mọi lời gọi nội bộ phải mang token chiếu của một
+ * ServiceAccount trong `INTERNAL_CALLERS["flag-service"]`, hỏi qua `TokenReview`. Ngoài cụm thì KHÔNG khởi động - lùi về
+ * bí mật dùng chung là tắt im lặng lớp mà cấu hình đòi.
+ */
+const identity =
+  env.INTERNAL_AUTH_MODE === "token-review"
+    ? await tokenReviewIdentity(
+        INTERNAL_AUDIENCE["flag-service"],
+        INTERNAL_CALLERS["flag-service"],
+      )
+    : undefined;
+if (identity?.kind === "outside") {
+  logger.fatal(
+    { reason: identity.reason },
+    "Không khởi động: INTERNAL_AUTH_MODE=token-review mà tiến trình không chạy trong cụm",
+  );
+  process.exit(1);
+}
+const appOptions = {
+  ...(env.FLAG_SERVICE_INTERNAL_PORT === undefined
+    ? {}
+    : { internalPort: env.FLAG_SERVICE_INTERNAL_PORT }),
+  ...(identity?.kind === "ready"
+    ? { identity: { verifier: identity.verifier, callers: identity.callers } }
+    : {}),
+};
+
+const app = createApp(appOptions);
 const server = app.listen(env.FLAG_SERVICE_PORT, () => {
   logger.info(
     { port: env.FLAG_SERVICE_PORT, env: env.NODE_ENV },
     "udp-feature-flag-service đã khởi động",
   );
 });
+/** [Plan #66] `/internal/*` của Service 1 và Service 3 tới đây; NetworkPolicy chỉ mở cổng này cho hai bên đó */
+const internalServer = listenInternal(
+  app,
+  env.FLAG_SERVICE_INTERNAL_PORT,
+  (port) => {
+    logger.info({ port }, "cổng nội bộ đã mở");
+  },
+);
 
 /**
  * Vòng poll của change feed bắt đầu Ở ĐÂY, không phải trong `createApp()`.
@@ -82,6 +128,15 @@ changeFeedWatcher.start();
 
 /** Dọn outbox quá hạn — cùng lý do với vòng poll: bắt đầu sau `listen`, không trong `createApp()` */
 pruneJob.start();
+
+/**
+ * [v4.9] Telemetry: đẩy số đếm đang gộp xuống database, và gộp hàng giờ quá hạn
+ * thành hàng ngày. Cùng lý do với hai job trên, và với một lý do riêng đắt hơn:
+ * một flusher khởi động trong `createApp()` sẽ bắn truy vấn trong mọi file test
+ * dựng app, trên đúng pool 5 khe mà test đang dùng (R13 (c)).
+ */
+statsFlusher.start();
+statsRollupJob.start();
 
 /**
  * Tầng 3 nghe sau `listen`, cùng lý do với vòng poll: nó chỉ đánh thức vòng poll,
@@ -109,22 +164,65 @@ const shutdown = (signal: string) => {
    *   2. Tầng 3 → watcher → dọn outbox: thứ đánh thức dừng trước thứ bị đánh thức.
    *      (Đảo lại vẫn an toàn — `wake()` sau `stop()` là no-op — nhưng sự an toàn
    *      không nên phụ thuộc vào một chi tiết cài đặt.)
-   *   3. Đóng pool CUỐI CÙNG, khi cổng HTTP và kênh LISTEN đã đóng hẳn. Ngược lại
+   *   3. [v4.9] Đẩy nốt số đếm telemetry TRƯỚC khi đóng pool, sau khi đã ngừng
+   *      nhận báo cáo mới (`statsIngest.close()` ⇒ `/sdk/stats` trả 503). Tổng
+   *      ngân sách `SDK_STATS.ingest.shutdownFlushTimeoutMs` (5 giây) nhỏ hơn hạn
+   *      thoát cưỡng bức 10 giây ở trên, nên lần flush cuối không bao giờ là thứ
+   *      làm tiến trình bị cắt ngang.
+   *   4. Đóng pool CUỐI CÙNG, khi cổng HTTP và kênh LISTEN đã đóng hẳn. Ngược lại
    *      thì một vòng đang bay chạm pool vừa đóng và ném — một lỗi nổi lên đúng
    *      trên đường lẽ ra phải im lặng nhất.
    */
   sseHub.closeAll();
-  const httpClosed = new Promise<void>((resolve) => {
-    server.close(() => {
-      resolve();
-    });
-  });
+  statsIngest.close();
+  const httpClosed = Promise.all([
+    closeServer(server),
+    internalServer.close(),
+  ]).then(() => undefined);
   const listenerStopped = notifyAccelerator?.stop() ?? Promise.resolve();
   changeFeedWatcher.stop();
   pruneJob.stop();
+  statsFlusher.stop();
+  statsRollupJob.stop();
 
-  void Promise.all([httpClosed, listenerStopped])
-    .then(() => prisma.$disconnect())
+  /** `true` nếu `promise` xong trong `ms`; không huỷ gì, chỉ thôi chờ */
+  const within = (promise: Promise<unknown>, ms: number): Promise<boolean> =>
+    new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        resolve(false);
+      }, ms);
+      timer.unref();
+      void promise.then(() => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+
+  /**
+   * HAI lần flush, và lần thứ hai là lần đáng giá nhất.
+   *
+   * `server.close()` chỉ ngừng nhận KẾT NỐI mới; một kết nối keep-alive đang mở
+   * vẫn gửi thêm request, và OFREP vẫn đếm cho tới lúc nó đóng. Nên: chờ cổng
+   * đóng nhiều nhất `shutdownHttpWaitMs` rồi flush lần một (không chờ vô điều
+   * kiện — stream SSE có thể giữ `close()` lâu hơn cả ngân sách), rồi nếu cổng
+   * đóng xong trong phần hạn còn lại thì flush lần hai để lấy những gì tới sau
+   * lần một (C-10, G20).
+   */
+  const flushDeadline = Date.now() + SDK_STATS.ingest.shutdownFlushTimeoutMs;
+  const remainingMs = (): number => Math.max(0, flushDeadline - Date.now());
+
+  void (async () => {
+    const closedEarly = await within(
+      httpClosed,
+      SDK_STATS.ingest.shutdownHttpWaitMs,
+    );
+    await statsFlusher.flushNow({ timeoutMs: remainingMs() });
+    if (!closedEarly && (await within(httpClosed, remainingMs()))) {
+      await statsFlusher.flushNow({ timeoutMs: remainingMs() });
+    }
+    await Promise.all([httpClosed, listenerStopped]);
+    await prisma.$disconnect();
+  })()
     .catch((err: unknown) => {
       logger.error({ err }, "Lỗi khi đóng kết nối database");
     })

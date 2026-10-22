@@ -7,16 +7,23 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./constants": "./src/constants.ts"
+    "./constants": "./src/constants.ts",
+    "./domains": "./src/domains.ts",
+    "./env-schema": "./src/env-schema.ts",
+    "./build-toolchain": "./src/build-toolchain.ts",
+    "./helm-charts": "./src/helm-charts.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "chart:check": "tsx scripts/chart-check.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
   }
 }
