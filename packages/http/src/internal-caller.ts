@@ -1,21 +1,23 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
 import { env, INTERNAL_SECRET_HEADER } from "@udp/config";
-import { UnauthenticatedError } from "./errors.js";
+import { ServiceUnavailableError, UnauthenticatedError } from "./errors.js";
+import { logger } from "./logger.js";
 
 /**
  * Xác thực lời gọi máy-tới-máy vào `/internal/*` (§9, §12 T12) — MỘT hiện thực cho mọi service
  * có route nội bộ: Service 2 (bên gọi S1, S3) và Service 1 (bên gọi S3, Plan #39). Hai bản chép
  * là hai chỗ để một bản sửa lọt mất một bên.
  *
- * **Đây là BƯỚC MỘT của T12, không phải toàn bộ T12.** §3.1 và §12 quy định lớp chính là *SA
- * token của Kubernetes + TokenReview*, cộng NetworkPolicy. NetworkPolicy theo cổng nội bộ CÓ từ Plan #66;
- * TokenReview chưa (§16), nên hôm nay bí mật dùng chung là lớp xác thực duy nhất ở tầng ứng dụng; với `PATCH /internal/rules/:id` của S2
- * còn thêm phép kiểm lease (`assertFencing`) — "chỉ có token hợp lệ là chưa đủ". §9 cho phép
- * "mTLS **hoặc** shared secret", nên bí mật dùng chung là hợp lệ, nhưng thiết kế muốn nó là lớp phòng
- * khi NetworkPolicy bị cấu hình sai chứ không phải lớp duy nhất. Guard đứng đúng chỗ §3.2 chỉ định để
- * ngày thêm TokenReview không phải sửa một call-site nào.
+ * Ba lớp của T12, từ ngoài vào: NetworkPolicy theo cổng nội bộ (Plan #66); danh tính bên gọi bằng
+ * token chiếu của ServiceAccount hỏi qua `TokenReview` (`requireInternalIdentity`, Plan #67 - mount ở
+ * cấp app, chỉ khi chạy trong cụm); và bí mật dùng chung (`requireInternalCaller`, mỗi route). Ngoài
+ * cụm (dev, test) bí mật là lớp duy nhất. Với `PATCH /internal/rules/:id` của S2 còn thêm phép kiểm
+ * lease (`assertFencing`) — "chỉ có token hợp lệ là chưa đủ".
  */
+
+/** Một thông điệp cho MỌI lần từ chối, ở cả hai lớp: phân biệt các ca là nói cho người dò biết họ đã đi đúng nửa đường */
+const REJECTED = "Lời gọi nội bộ không hợp lệ";
 
 /**
  * So sánh hằng thời gian.
@@ -42,9 +44,85 @@ export const requireInternalCaller: RequestHandler = (req, _res, next) => {
      * Một thông điệp duy nhất cho cả "thiếu header" lẫn "sai bí mật". Phân biệt hai ca là nói
      * cho người dò biết họ đã đi đúng nửa đường.
      */
-    next(new UnauthenticatedError("Lời gọi nội bộ không hợp lệ"));
+    next(new UnauthenticatedError(REJECTED));
     return;
   }
 
   next();
 };
+
+/**
+ * [Plan #67] Hỏi ai đứng sau một token. Trả username (`system:serviceaccount:<ns>:<tên>`) khi token hợp lệ, `null` khi
+ * không; NÉM khi không hỏi được (API server vắng) - để bên dùng đóng cửa bằng 503 chứ không nhầm thành "token sai".
+ * Hiện thực `TokenReview`: `@udp/cluster-access/in-cluster`.
+ */
+export interface CallerVerifier {
+  verify(token: string): Promise<string | null>;
+}
+
+export interface InternalIdentityLog {
+  warn(obj: Record<string, unknown>, msg: string): void;
+}
+
+export interface InternalIdentityOptions {
+  verifier: CallerVerifier;
+  /** Username được gọi service này - `INTERNAL_CALLERS` của `@udp/config/constants` */
+  callers: readonly string[];
+  log?: InternalIdentityLog;
+}
+
+const BEARER = /^Bearer ([^\s]+)$/;
+
+/**
+ * [Plan #67] Lớp danh tính của T12. Mount bằng `app.use("/internal", …)` ngay sau `internalPortOnly`, TRƯỚC parser:
+ * mọi route nội bộ đều qua, request chưa xác thực không được parse body.
+ *
+ * Tự log lời từ chối (`reason`, và `username` khi biết) vì ở Service 1 nó đứng trước `requestLogger` - KHÔNG BAO GIỜ
+ * log token.
+ */
+export function requireInternalIdentity(
+  options: InternalIdentityOptions,
+): RequestHandler {
+  const callers = new Set(options.callers);
+  const log = options.log ?? logger;
+  const reject = (
+    next: Parameters<RequestHandler>[2],
+    reason: string,
+    username?: string,
+  ): void => {
+    log.warn(
+      username === undefined ? { reason } : { reason, username },
+      "Từ chối lời gọi nội bộ",
+    );
+    next(new UnauthenticatedError(REJECTED));
+  };
+
+  return (req, _res, next) => {
+    const token = BEARER.exec(req.get("authorization") ?? "")?.[1];
+    if (token === undefined) {
+      reject(next, "missing");
+      return;
+    }
+    options.verifier.verify(token).then(
+      (username) => {
+        if (username === null) {
+          reject(next, "invalid");
+        } else if (!callers.has(username)) {
+          reject(next, "unknown-caller", username);
+        } else {
+          next();
+        }
+      },
+      (err: unknown) => {
+        log.warn(
+          {
+            reason: "verifier-unavailable",
+            cause: err instanceof Error ? err.message : String(err),
+          },
+          "Không xác minh được bên gọi nội bộ",
+        );
+        next(new ServiceUnavailableError("Chưa xác minh được bên gọi nội bộ"));
+      },
+    );
+  };
+}
