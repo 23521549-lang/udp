@@ -6,4 +6,5 @@
  * `node:crypto` và `undici` (qua `transport.ts`), không nạp `direct.ts` hay `@udp/adapter-core`.
  */
 export * from "./api.js";
+export * from "./identity.js";
 export * from "./token-review.js";

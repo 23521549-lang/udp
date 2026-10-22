@@ -799,6 +799,9 @@ importers:
 
   services/flag-service:
     dependencies:
+      '@udp/cluster-access':
+        specifier: workspace:*
+        version: link:../../packages/cluster-access
       '@udp/config':
         specifier: workspace:*
         version: link:../../packages/config

@@ -5,8 +5,11 @@ import {
   env,
   JOB_LEASE,
   JOB_QUEUE,
+  INTERNAL_AUDIENCE,
+  INTERNAL_CALLERS,
 } from "@udp/config";
 import { assertServiceIdentity, prisma } from "./core/db.js";
+import { tokenReviewIdentity } from "@udp/cluster-access/in-cluster";
 import { describeBootFailure } from "@udp/db";
 import { createApp } from "./app.js";
 import { defaultAppDeps } from "./core/app-deps.js";
@@ -168,6 +171,34 @@ const clusterAccess = createClusterAccessCache({
   resolve: kit.projectClusterAccess,
 });
 
+/**
+ * [Plan #67] Lớp danh tính của `/internal/*`: ở chế độ `token-review` mọi lời gọi nội bộ phải mang token chiếu của một
+ * ServiceAccount trong `INTERNAL_CALLERS["core-backend"]`, hỏi qua `TokenReview`. Ngoài cụm thì KHÔNG khởi động - lùi về
+ * bí mật dùng chung là tắt im lặng lớp mà cấu hình đòi.
+ */
+const identity =
+  env.INTERNAL_AUTH_MODE === "token-review"
+    ? await tokenReviewIdentity(
+        INTERNAL_AUDIENCE["core-backend"],
+        INTERNAL_CALLERS["core-backend"],
+      )
+    : undefined;
+if (identity?.kind === "outside") {
+  logger.fatal(
+    { reason: identity.reason },
+    "Không khởi động: INTERNAL_AUTH_MODE=token-review mà tiến trình không chạy trong cụm",
+  );
+  process.exit(1);
+}
+const appOptions = {
+  ...(env.CORE_BACKEND_INTERNAL_PORT === undefined
+    ? {}
+    : { internalPort: env.CORE_BACKEND_INTERNAL_PORT }),
+  ...(identity?.kind === "ready"
+    ? { identity: { verifier: identity.verifier, callers: identity.callers } }
+    : {}),
+};
+
 const app = createApp(
   {
     ...deps,
@@ -185,9 +216,7 @@ const app = createApp(
       },
     },
   },
-  env.CORE_BACKEND_INTERNAL_PORT === undefined
-    ? {}
-    : { internalPort: env.CORE_BACKEND_INTERNAL_PORT },
+  appOptions,
 );
 const server = app.listen(env.CORE_BACKEND_PORT, () => {
   logger.info(

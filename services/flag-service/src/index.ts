@@ -1,4 +1,10 @@
-import { env, SDK_STATS } from "@udp/config";
+import { tokenReviewIdentity } from "@udp/cluster-access/in-cluster";
+import {
+  env,
+  INTERNAL_AUDIENCE,
+  INTERNAL_CALLERS,
+  SDK_STATS,
+} from "@udp/config";
 import { closeServer, listenInternal, logger } from "@udp/http";
 import { describeBootFailure } from "@udp/db";
 import { assertServiceIdentity, prisma, SERVICE_ROLE } from "./core/db.js";
@@ -62,11 +68,35 @@ if (notifyAccelerator !== undefined) {
   }
 }
 
-const app = createApp(
-  env.FLAG_SERVICE_INTERNAL_PORT === undefined
+/**
+ * [Plan #67] Lớp danh tính của `/internal/*`: ở chế độ `token-review` mọi lời gọi nội bộ phải mang token chiếu của một
+ * ServiceAccount trong `INTERNAL_CALLERS["flag-service"]`, hỏi qua `TokenReview`. Ngoài cụm thì KHÔNG khởi động - lùi về
+ * bí mật dùng chung là tắt im lặng lớp mà cấu hình đòi.
+ */
+const identity =
+  env.INTERNAL_AUTH_MODE === "token-review"
+    ? await tokenReviewIdentity(
+        INTERNAL_AUDIENCE["flag-service"],
+        INTERNAL_CALLERS["flag-service"],
+      )
+    : undefined;
+if (identity?.kind === "outside") {
+  logger.fatal(
+    { reason: identity.reason },
+    "Không khởi động: INTERNAL_AUTH_MODE=token-review mà tiến trình không chạy trong cụm",
+  );
+  process.exit(1);
+}
+const appOptions = {
+  ...(env.FLAG_SERVICE_INTERNAL_PORT === undefined
     ? {}
-    : { internalPort: env.FLAG_SERVICE_INTERNAL_PORT },
-);
+    : { internalPort: env.FLAG_SERVICE_INTERNAL_PORT }),
+  ...(identity?.kind === "ready"
+    ? { identity: { verifier: identity.verifier, callers: identity.callers } }
+    : {}),
+};
+
+const app = createApp(appOptions);
 const server = app.listen(env.FLAG_SERVICE_PORT, () => {
   logger.info(
     { port: env.FLAG_SERVICE_PORT, env: env.NODE_ENV },
