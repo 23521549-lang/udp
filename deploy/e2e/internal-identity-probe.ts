@@ -342,10 +342,15 @@ function expectNamespaceAttackerDenied(
     result: { code: number | null; output: string },
     by: string,
     what: string,
+    /** Đầu ra có thể chứa token (`create token` lọt qua): không in */
+    secret = false,
   ) => {
-    // Không in đầu ra: nếu lần thử lọt qua, nó có thể chứa token
-    expect(result.code !== 0, `${what}: bị từ chối`).toBe(true);
-    expect(result.output.includes(by), `${what}: từ chối bởi ${by}`).toBe(true);
+    const shown = secret ? "(không in)" : result.output.trim().slice(0, 400);
+    expect(result.code !== 0, `${what}: bị từ chối - ${shown}`).toBe(true);
+    expect(
+      result.output.includes(by),
+      `${what}: từ chối bởi ${by} - ${shown}`,
+    ).toBe(true);
   };
 
   const made = apply(kube, role);
@@ -480,6 +485,7 @@ function expectNamespaceAttackerDenied(
       ]),
       POLICY,
       "xin token cho SA pd-controller",
+      true,
     );
     denied(
       apply(

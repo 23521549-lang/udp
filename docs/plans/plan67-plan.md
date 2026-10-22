@@ -142,3 +142,15 @@ job-controller không gỡ được finalizer của pod `udp-migrate` đã `Succ
 kiểu của policy (`status.typeChecking`) KHÔNG bắt được lỗi này - nó chỉ cảnh báo trường không có trong schema. Sửa:
 hai biến `sub`, `requestName` đọc qua `request.?`; cổng manifest đòi mọi truy cập thẳng `request.<trường>` chỉ ở
 `kind`, `operation`, `resource`, `userInfo` (đỏ trên policy cũ, xanh trên bản sửa).
+
+## Lượt CI thứ hai (`39788161634`, `f26e0f3`) - đỏ ở một ô trên cả hai cụm
+
+Cụm dựng xong, nhóm dương, nhóm âm trên pod thật và pod mạo nhãn đều xanh ở kind lẫn k3s - `TokenReview` đúng trên cụm
+thật. Ô đỏ: ServiceAccount thử chỉ có quyền trong namespace TẠO ĐƯỢC pod mang SA `pd-controller`. Gốc, đo trên
+kube-apiserver 1.35.0 chạy ở máy (envtest, cùng phiên bản node image của kind): `variables.x.?trường` trên một biến
+kiểu optional luôn trả rỗng, trong khi chuỗi `object.?a.?b` viết liền và `.value()` đều đúng. Bốn biến `spec`, `meta`,
+`oldSpec`, `oldMeta` giữ optional nên policy đọc SA của MỌI pod là `default` và nhãn là rỗng - luật SA và luật nhãn không
+bao giờ kích hoạt. Sửa: bốn biến giữ map (`orValue({})`); cổng manifest cấm biến mang optional. Trên cùng API server
+cục bộ, 19 ca (tám ca của kẻ có quyền trong namespace, người cài, `deployment-controller`, `replicaset-controller`,
+`job-controller` gỡ finalizer, Secret `generateName` như cert-manager, `exec`, đổi image) đúng cả 19 với bản sửa; bản
+`f26e0f3` trượt đúng sáu ca của luật SA và workload.

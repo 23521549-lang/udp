@@ -132,31 +132,33 @@ spec:
       expression: >-
         variables.sub == '' && request.operation != 'DELETE' &&
         variables.kind in ['Pod', 'ReplicationController', 'Deployment', 'ReplicaSet', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob']
-    # Pod spec và metadata của pod (hay của pod template), bản mới và bản cũ
+    # Pod spec và metadata của pod (hay của pod template), bản mới và bản cũ - giữ dạng MAP (rỗng khi không có), không
+    # dạng optional: `variables.x.?trường` trên một biến optional luôn trả rỗng (đo trên kube-apiserver 1.35), nên
+    # bản đầu của policy đọc SA là `default` và nhãn là rỗng với MỌI pod - luật SA không bao giờ kích hoạt
     - name: spec
       expression: >-
-        !variables.workload ? optional.none() :
-        variables.kind == 'Pod' ? object.?spec :
-        variables.kind == 'CronJob' ? object.?spec.?jobTemplate.?spec.?template.?spec :
-        object.?spec.?template.?spec
+        !variables.workload ? {} :
+        variables.kind == 'Pod' ? object.?spec.orValue({}) :
+        variables.kind == 'CronJob' ? object.?spec.?jobTemplate.?spec.?template.?spec.orValue({}) :
+        object.?spec.?template.?spec.orValue({})
     - name: meta
       expression: >-
-        !variables.workload ? optional.none() :
-        variables.kind == 'Pod' ? object.?metadata :
-        variables.kind == 'CronJob' ? object.?spec.?jobTemplate.?spec.?template.?metadata :
-        object.?spec.?template.?metadata
+        !variables.workload ? {} :
+        variables.kind == 'Pod' ? object.?metadata.orValue({}) :
+        variables.kind == 'CronJob' ? object.?spec.?jobTemplate.?spec.?template.?metadata.orValue({}) :
+        object.?spec.?template.?metadata.orValue({})
     - name: oldSpec
       expression: >-
-        !variables.workload || request.operation != 'UPDATE' ? optional.none() :
-        variables.kind == 'Pod' ? oldObject.?spec :
-        variables.kind == 'CronJob' ? oldObject.?spec.?jobTemplate.?spec.?template.?spec :
-        oldObject.?spec.?template.?spec
+        !variables.workload || request.operation != 'UPDATE' ? {} :
+        variables.kind == 'Pod' ? oldObject.?spec.orValue({}) :
+        variables.kind == 'CronJob' ? oldObject.?spec.?jobTemplate.?spec.?template.?spec.orValue({}) :
+        oldObject.?spec.?template.?spec.orValue({})
     - name: oldMeta
       expression: >-
-        !variables.workload || request.operation != 'UPDATE' ? optional.none() :
-        variables.kind == 'Pod' ? oldObject.?metadata :
-        variables.kind == 'CronJob' ? oldObject.?spec.?jobTemplate.?spec.?template.?metadata :
-        oldObject.?spec.?template.?metadata
+        !variables.workload || request.operation != 'UPDATE' ? {} :
+        variables.kind == 'Pod' ? oldObject.?metadata.orValue({}) :
+        variables.kind == 'CronJob' ? oldObject.?spec.?jobTemplate.?spec.?template.?metadata.orValue({}) :
+        oldObject.?spec.?template.?metadata.orValue({})
     - name: sa
       expression: "variables.spec.?serviceAccountName.orValue(variables.spec.?serviceAccount.orValue('default'))"
     - name: label
@@ -178,7 +180,7 @@ spec:
         variables.workload && (request.operation == 'CREATE' ||
         (variables.kind == 'Pod'
           ? variables.label != variables.oldLabel || variables.images != variables.oldImages
-          : variables.spec.orValue({}) != variables.oldSpec.orValue({}) || variables.label != variables.oldLabel))
+          : variables.spec != variables.oldSpec || variables.label != variables.oldLabel))
     - name: controller
       expression: >-
         (variables.kind == 'Pod' && request.userInfo.username == 'system:serviceaccount:kube-system:replicaset-controller') ||

@@ -1015,6 +1015,17 @@ describe("danh tính bên gọi /internal (Plan #67)", () => {
         ),
       );
       expect(expressions).not.toMatch(/userInfo\.groups/);
+      // Biến KHÔNG giữ optional: `variables.x.?trường` trên biến optional luôn trả rỗng (đo trên kube-apiserver 1.35) -
+      // lượt CI thứ hai của Plan #67 cho kẻ thử tạo pod mang SA pd-controller vì policy đọc SA của mọi pod là `default`
+      for (const v of policy.spec.variables) {
+        expect(v.expression, v.name).not.toMatch(/optional\.(none|of)\(/);
+        if (v.expression.includes(".?")) {
+          expect(
+            v.expression,
+            `${v.name}: chuỗi .? phải kết thúc bằng orValue`,
+          ).toMatch(/\.orValue\(/);
+        }
+      }
 
       const binding = named(
         rendered[name],
