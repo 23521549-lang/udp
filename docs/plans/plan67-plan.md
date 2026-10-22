@@ -154,3 +154,9 @@ bao giờ kích hoạt. Sửa: bốn biến giữ map (`orValue({})`); cổng ma
 cục bộ, 19 ca (tám ca của kẻ có quyền trong namespace, người cài, `deployment-controller`, `replicaset-controller`,
 `job-controller` gỡ finalizer, Secret `generateName` như cert-manager, `exec`, đổi image) đúng cả 19 với bản sửa; bản
 `f26e0f3` trượt đúng sáu ca của luật SA và workload.
+
+## Lượt CI thứ ba (`39844208475`, `897dc34`)
+
+Cả năm nhóm phép thử danh tính - kể cả mọi đường của kẻ có quyền trong namespace - xanh ở kind và k3s. Ô đỏ còn lại
+là của chính phép thử: `kubectl auth can-i create tokenreviews` trả `yes` đúng, nhưng in kèm `Warning: resource
+'tokenreviews' is not namespace scoped` ra stderr, mà `attempt` gộp hai luồng. Sửa: đọc đúng dòng `yes`/`no`.

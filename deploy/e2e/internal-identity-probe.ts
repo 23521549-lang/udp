@@ -270,7 +270,15 @@ export async function expectInternalIdentityEnforced(
       "tokenreviews.authentication.k8s.io",
       `--as=system:serviceaccount:${namespace}:${sa}`,
     ]);
-    expect(out.output.trim(), `${sa} create tokenreviews`).toBe(allowed);
+    // `attempt` gộp stderr: kubectl in thêm `Warning: resource 'tokenreviews' is not namespace scoped` (lượt CI 3) -
+    // đọc đúng dòng trả lời, và đòi có ĐÚNG một dòng như vậy
+    const answers = out.output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line === "yes" || line === "no");
+    expect(answers, `${sa} create tokenreviews - ${out.output}`).toEqual([
+      allowed,
+    ]);
   }
 }
 
