@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { caPinnedTransport, type KubeTransport } from "@udp/cluster-access";
+import type { KubeTransport } from "@udp/cluster-access";
+import { inClusterApi } from "@udp/cluster-access/in-cluster";
 import type { AdminPlatformWire } from "@udp/shared-types/wire";
 
 /**
@@ -260,32 +260,14 @@ export function inClusterPlatformProbe(opts: InClusterOptions): PlatformProbe {
   };
 }
 
-const SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount";
-
 /**
- * Probe theo môi trường chạy: trong pod (kubelet đặt `KUBERNETES_SERVICE_HOST` và gắn token + CA của
- * ServiceAccount) ⇒ đọc API server của cụm; ngoài cụm ⇒ `outsideClusterProbe`.
+ * Probe theo môi trường chạy: trong pod ⇒ đọc API server của cụm; ngoài cụm (kể cả pod chạy với
+ * `automountServiceAccountToken: false`) ⇒ `outsideClusterProbe`. Dò cụm dùng chung với `TokenReview` (Plan #67).
  */
 export async function platformProbeFromEnv(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<PlatformProbe> {
-  const host = environment.KUBERNETES_SERVICE_HOST;
-  if (host === undefined || host === "") return outsideClusterProbe;
-  let ca: string;
-  let namespace: string;
-  try {
-    ca = await readFile(`${SA_DIR}/ca.crt`, "utf8");
-    namespace = (await readFile(`${SA_DIR}/namespace`, "utf8")).trim();
-  } catch {
-    // Pod chạy với automountServiceAccountToken: false — không có gì để đọc bằng
-    return outsideClusterProbe;
-  }
-  const port = environment.KUBERNETES_SERVICE_PORT ?? "443";
-  const hostPart = host.includes(":") ? `[${host}]` : host;
-  return inClusterPlatformProbe({
-    apiServer: `https://${hostPart}:${port}`,
-    namespace,
-    transport: caPinnedTransport(Buffer.from(ca, "utf8").toString("base64")),
-    token: async () => (await readFile(`${SA_DIR}/token`, "utf8")).trim(),
-  });
+  const found = await inClusterApi(environment);
+  if (found.kind === "outside") return outsideClusterProbe;
+  return inClusterPlatformProbe(found.api);
 }
