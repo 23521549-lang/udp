@@ -132,3 +132,13 @@ phục của máy ảo (rollout restart do người cài làm) không đổi.
   `/internal` ⇒ viết hẹp khẳng định, chặn Secret token; Pod Security chỉ ở `udp` ⇒ ghi phần còn lại; `exec`, `create
 token` không có dry-run. Đứng: ngữ nghĩa audience, kiểm UID pod, token chiếu khi tắt automount, VAP v1 và `CONNECT`
   trên cả hai cụm, `authorizer`, `?.`/`orValue`, người cài có `escalate`, mọi pod qua `baseline`.
+
+## Lượt CI đầu (`39701859694`, `b5ee191`) - đỏ ở `kind` và `vm`, cùng một gốc
+
+`request.subResource` và `request.name` VẮNG MẶT khỏi request khi rỗng; policy truy cập thẳng nên CEL báo "no such
+key", và `failurePolicy: Fail` biến lỗi đó thành từ chối. Trên k3s, cert-manager không tạo được Secret `udp-tls-*`
+(log của controller ghi nguyên văn); trên kind, pod của ba Deployment kịp tạo trước khi policy có hiệu lực, nhưng
+job-controller không gỡ được finalizer của pod `udp-migrate` đã `Succeeded` nên Job không bao giờ hoàn thành. Kiểm
+kiểu của policy (`status.typeChecking`) KHÔNG bắt được lỗi này - nó chỉ cảnh báo trường không có trong schema. Sửa:
+hai biến `sub`, `requestName` đọc qua `request.?`; cổng manifest đòi mọi truy cập thẳng `request.<trường>` chỉ ở
+`kind`, `operation`, `resource`, `userInfo` (đỏ trên policy cũ, xanh trên bản sửa).
