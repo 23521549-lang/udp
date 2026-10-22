@@ -1,6 +1,7 @@
 # [Plan #53 QĐ-6] Quyền CHỈ-ĐỌC của Service 1 trên CHÍNH cụm chạy UDP, cho Bảng điều khiển nền tảng
 # (src/core/platform-probe.ts). Không verb ghi nào, không `secrets`, không `pods/exec`: lộ token này thì
-# người cầm chỉ đọc được đúng những gì trang đó hiện.
+# người cầm chỉ đọc được đúng những gì trang đó hiện. [Plan #67] Quyền ghi duy nhất của SA này ở chỗ khác:
+# `tokenreviews: create` (internal-identity.yaml) - một câu hỏi tới API server, không đổi trạng thái cụm.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

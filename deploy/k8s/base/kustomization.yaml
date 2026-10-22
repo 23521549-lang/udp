@@ -14,7 +14,7 @@ resources:
   - prometheus.yaml
   - migrate-job.yaml
   - core-backend.yaml
-  # [Plan #53 QĐ-6] ServiceAccount + RBAC CHỈ-ĐỌC của Service 1 cho Bảng điều khiển nền tảng
+  # [Plan #53 QĐ-6] ServiceAccount + RBAC chỉ đọc của Service 1 (cộng `tokenreviews: create`, Plan #67) cho Bảng điều khiển nền tảng
   - core-backend-rbac.yaml
   - flag-service.yaml
   - pd-controller.yaml

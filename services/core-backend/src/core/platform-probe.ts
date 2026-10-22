@@ -4,7 +4,7 @@ import type { AdminPlatformWire } from "@udp/shared-types/wire";
 
 /**
  * [v4.11, Plan #53 QĐ-6] Tín hiệu của CHÍNH cụm đang chạy UDP (máy ảo Oracle Always Free, cụm kind) —
- * không phải cụm của khách. Đọc Kubernetes API bằng ServiceAccount CHỈ-ĐỌC của Service 1
+ * không phải cụm của khách. Đọc Kubernetes API bằng ServiceAccount của Service 1 - chỉ đọc, cộng `tokenreviews: create` (Plan #67)
  * (`deploy/k8s/base/core-backend-rbac.yaml`): node và số đo của node (metrics-server), PVC của
  * PostgreSQL, CronJob sao lưu, Certificate của Ingress.
  *
