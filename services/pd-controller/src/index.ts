@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { env, INTERNAL_CALL, ROLLOUT_POOL_HEADROOM } from "@udp/config";
 import { createSessionConnector, describeBootFailure } from "@udp/db";
-import { logger } from "@udp/http";
+import {
+  assertInternalCallerReady,
+  internalTokenOption,
+  logger,
+} from "@udp/http";
 import { createApp } from "./app.js";
 import { createClusterAccessProvider } from "./cluster-access/provider.js";
 import { createClusterTokenClient } from "./cluster-access/token-client.js";
@@ -34,6 +38,17 @@ try {
 }
 
 /**
+ * [Plan #67] Bên gọi `/internal/*`: đọc thử token chiếu của từng đích TRƯỚC khi mở cổng (chế độ `token-review`).
+ * Deployment thiếu volume `projected` thì sập ở đây với một câu rõ, thay vì chạy rồi nhận 401 ở mọi lời gọi nội bộ.
+ */
+try {
+  await assertInternalCallerReady(["core-backend", "flag-service"]);
+} catch (err) {
+  logger.fatal({ err }, "Không đọc được token chiếu của bên gọi nội bộ");
+  process.exit(1);
+}
+
+/**
  * Lệch đồng hồ giữa máy này và database — chỉ để LOG. Lease tính bằng `now()` của
  * database nên không phụ thuộc; nhưng dwell/analysis tính bằng đồng hồ JS so với
  * `last_step_at` cũng ghi bằng đồng hồ JS, nên một máy lệch nhiều là điều người
@@ -58,12 +73,14 @@ const providers = createMetricsProviders({
   client: createCoreMetricsClient({
     baseUrl: env.CORE_BACKEND_URL,
     secret: env.INTERNAL_SERVICE_SECRET,
+    ...internalTokenOption("core-backend"),
   }),
 });
 
 const executor = createFlagLevelExecutor({
   baseUrl: env.FLAG_SERVICE_URL,
   secret: env.INTERNAL_SERVICE_SECRET,
+  ...internalTokenOption("flag-service"),
 });
 
 const untracker = createUntracker({ db: prisma, executor });
@@ -76,6 +93,7 @@ const clusters = createClusterAccessProvider({
   issue: createClusterTokenClient({
     baseUrl: env.CORE_BACKEND_URL,
     secret: env.INTERNAL_SERVICE_SECRET,
+    ...internalTokenOption("core-backend"),
     timeoutMs: INTERNAL_CALL.clusterTokenTimeoutMs,
   }),
 });

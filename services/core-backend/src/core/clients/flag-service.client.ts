@@ -3,10 +3,13 @@ import {
   CLIENT_IP_HEADER,
   CLIENT_UA_HEADER,
   INTERNAL_CALL,
-  INTERNAL_SECRET_HEADER,
   ROLLOUT_CREATE,
 } from "@udp/config";
 import type { SdkKeyType } from "@udp/db";
+import {
+  internalAuthHeaders,
+  type InternalToken,
+} from "@udp/http/internal-token";
 import {
   logger,
   relayedProblemOf,
@@ -184,6 +187,8 @@ const createdSdkKeySchema = z.object({
 export interface FlagServiceClientOptions {
   baseUrl: string;
   secret: string;
+  /** [Plan #67] Token chiếu cho Service 2 (`internalTokenFrom`); không có ở chế độ `secret` */
+  token?: InternalToken;
   /** Hạn chờ của `track`; lời gọi ghi cấu hình dùng `INTERNAL_CALL.configWriteTimeoutMs` */
   timeoutMs?: number;
   fetch?: typeof fetch;
@@ -221,7 +226,7 @@ export function createFlagServiceClient(
         method,
         headers: {
           ...(body === undefined ? {} : { "content-type": "application/json" }),
-          [INTERNAL_SECRET_HEADER]: options.secret,
+          ...(await internalAuthHeaders(options.secret, options.token)),
           ...(ctx.actorUserId === undefined
             ? {}
             : { [ACTOR_HEADER]: ctx.actorUserId }),
@@ -274,7 +279,7 @@ export function createFlagServiceClient(
           `${baseUrl}/internal/rollouts/${encodeURIComponent(sessionId)}/track`,
           {
             method: "POST",
-            headers: { [INTERNAL_SECRET_HEADER]: options.secret },
+            headers: await internalAuthHeaders(options.secret, options.token),
             signal: AbortSignal.timeout(trackTimeoutMs),
           },
         );

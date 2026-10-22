@@ -742,6 +742,38 @@ export const CSRF_HEADER = "X-CSRF-Token";
 export const INTERNAL_SECRET_HEADER = "X-Internal-Secret";
 
 /**
+ * [Plan #67] Bên NHẬN `/internal/*`. Mỗi tên là cùng lúc: tên ServiceAccount, nhãn `app.kubernetes.io/name`, tên tệp
+ * token chiếu trong `INTERNAL_TOKEN_DIR` của bên gọi - `deploy/tests/manifests.test.ts` khẳng định ba chỗ khớp nhau.
+ */
+export type InternalTarget = "core-backend" | "flag-service";
+
+/**
+ * [Plan #67] Audience của token chiếu, MỘT cho mỗi bên nhận: token gửi tới Service 2 không dùng lại được ở Service 1
+ * nếu Service 2 bị chiếm. Bên gọi khai nó trong volume `projected` của Deployment; bên nhận đặt nó vào
+ * `spec.audiences` của `TokenReview`.
+ */
+export const INTERNAL_AUDIENCE: Readonly<Record<InternalTarget, string>> = {
+  "core-backend": "udp:internal:core-backend",
+  "flag-service": "udp:internal:flag-service",
+};
+
+/**
+ * [Plan #67] Tên ServiceAccount được gọi `/internal/*` của từng bên nhận (T12). Cùng tập với NetworkPolicy
+ * `core-backend-ingress`, `flag-service-ingress` (Plan #66): cổng manifest dựng tập đó từ mã (service nào đọc
+ * `env.*_URL`) và so với hằng này. Service 2 không gọi route nào của Service 1.
+ */
+export const INTERNAL_CALLERS: Readonly<
+  Record<InternalTarget, readonly string[]>
+> = {
+  "core-backend": ["pd-controller"],
+  "flag-service": ["core-backend", "pd-controller"],
+};
+
+/** Username mà `TokenReview` trả cho token của một ServiceAccount */
+export const serviceAccountUsername = (namespace: string, name: string) =>
+  `system:serviceaccount:${namespace}:${name}`;
+
+/**
  * [v4.5] Ngữ cảnh người dùng mà Service 1 chuyển tiếp cho lời gọi `/internal/*`
  * ghi cấu hình: ai (id user đã xác thực ở S1) và từ đâu (IP, UA của CHÍNH người
  * dùng, không phải của S1). Service 2 ghi chúng vào `audit_logs` trong transaction

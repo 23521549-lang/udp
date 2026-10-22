@@ -1,8 +1,14 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
 import { env, INTERNAL_SECRET_HEADER } from "@udp/config";
+import type { InternalTarget } from "@udp/config/constants";
 import { ServiceUnavailableError, UnauthenticatedError } from "./errors.js";
 import { logger } from "./logger.js";
+import {
+  assertInternalTokens,
+  internalTokenFrom,
+  type InternalToken,
+} from "./internal-token.js";
 
 /**
  * Xác thực lời gọi máy-tới-máy vào `/internal/*` (§9, §12 T12) — MỘT hiện thực cho mọi service
@@ -125,4 +131,34 @@ export function requireInternalIdentity(
       },
     );
   };
+}
+
+/** `INTERNAL_TOKEN_DIR` khi chạy `token-review`, `undefined` ở chế độ `secret` */
+function callerTokenDir(): string | undefined {
+  if (env.INTERNAL_AUTH_MODE !== "token-review") return undefined;
+  if (env.INTERNAL_TOKEN_DIR === undefined) {
+    throw new Error(
+      "INTERNAL_AUTH_MODE=token-review cần INTERNAL_TOKEN_DIR (thư mục token chiếu của bên gọi)",
+    );
+  }
+  return env.INTERNAL_TOKEN_DIR;
+}
+
+/**
+ * [Plan #67] Token chiếu của bên gọi cho đích `target` theo cấu hình - trải vào options của client nội bộ:
+ * `createFlagServiceClient({ baseUrl, secret, ...internalTokenOption("flag-service") })`. Chế độ `secret` ⇒ `{}`.
+ */
+export function internalTokenOption(target: InternalTarget): {
+  token?: InternalToken;
+} {
+  const dir = callerTokenDir();
+  return dir === undefined ? {} : { token: internalTokenFrom(dir, target) };
+}
+
+/** [Plan #67] Lúc khởi động bên gọi: đọc thử token của từng đích nó gọi - thiếu thì không mở cổng */
+export async function assertInternalCallerReady(
+  targets: readonly InternalTarget[],
+): Promise<void> {
+  const dir = callerTokenDir();
+  if (dir !== undefined) await assertInternalTokens(dir, targets);
 }

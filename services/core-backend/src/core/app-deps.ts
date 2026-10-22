@@ -25,6 +25,7 @@ import {
   type DomainAdapterRegistry,
 } from "../modules/domain/domain-adapter.registry.js";
 import type { ClusterAccess } from "@udp/adapter-core";
+import { internalTokenOption } from "@udp/http";
 import type { EnqueueDeploy } from "../modules/cicd/deploy.service.js";
 import type { EnqueueJob } from "../modules/provisioning/provisioning.service.js";
 import {
@@ -186,6 +187,7 @@ export function defaultAppDeps(): AppDeps {
     flagService: createFlagServiceClient({
       baseUrl: env.FLAG_SERVICE_URL,
       secret: env.INTERNAL_SERVICE_SECRET,
+      ...internalTokenOption("flag-service"),
     }),
     oidcIssuer,
     cloud: createCloudPlatform(env, oidcIssuer),

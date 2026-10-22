@@ -1,6 +1,5 @@
 import {
   ACTOR_HEADER,
-  INTERNAL_SECRET_HEADER,
   ROLLOUT_EVENT,
   ROLLOUT_RETRY,
   TOTAL_BUCKETS,
@@ -10,6 +9,10 @@ import {
   trackResultSchema,
   type TrackOutcome,
 } from "@udp/shared-types";
+import {
+  internalAuthHeaders,
+  type InternalToken,
+} from "@udp/http/internal-token";
 import { errorMessage } from "../core/errors.js";
 import type { Weight } from "../rollout-session/target.js";
 import type { Fence } from "../reconciler/fence.js";
@@ -92,6 +95,8 @@ export interface FlagLevelExecutor {
 export interface FlagLevelExecutorOptions {
   baseUrl: string;
   secret: string;
+  /** [Plan #67] Token chiếu cho Service 2 (`internalTokenFrom`); không có ở chế độ `secret` */
+  token?: InternalToken;
   timeoutMs?: number;
   fetch?: typeof fetch;
 }
@@ -145,7 +150,7 @@ export function createFlagLevelExecutor(
             method: "PATCH",
             headers: {
               "content-type": "application/json",
-              [INTERNAL_SECRET_HEADER]: options.secret,
+              ...(await internalAuthHeaders(options.secret, options.token)),
               "if-match": fence.ifMatch(),
             },
             body: JSON.stringify({
@@ -180,7 +185,7 @@ export function createFlagLevelExecutor(
           `${baseUrl}/internal/flag-envs/${encodeURIComponent(configId)}/untrack`,
           {
             method: "POST",
-            headers: { [INTERNAL_SECRET_HEADER]: options.secret },
+            headers: await internalAuthHeaders(options.secret, options.token),
             signal: AbortSignal.timeout(timeoutMs),
           },
         );
@@ -208,7 +213,7 @@ export function createFlagLevelExecutor(
             method: "PATCH",
             headers: {
               "content-type": "application/json",
-              [INTERNAL_SECRET_HEADER]: options.secret,
+              ...(await internalAuthHeaders(options.secret, options.token)),
               [ACTOR_HEADER]: actorUserId,
             },
             body: JSON.stringify({ defaultVariantId: variantId }),
@@ -231,7 +236,7 @@ export function createFlagLevelExecutor(
           `${baseUrl}/internal/rollouts/${encodeURIComponent(sessionId)}/track`,
           {
             method: "POST",
-            headers: { [INTERNAL_SECRET_HEADER]: options.secret },
+            headers: await internalAuthHeaders(options.secret, options.token),
             signal: AbortSignal.timeout(timeoutMs),
           },
         );

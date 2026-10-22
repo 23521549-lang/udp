@@ -1,6 +1,10 @@
 import type { z } from "zod";
-import { INTERNAL_SECRET_HEADER, METRICS_PROVIDER } from "@udp/config";
+import { METRICS_PROVIDER } from "@udp/config";
 import { logger } from "@udp/http";
+import {
+  internalAuthHeaders,
+  type InternalToken,
+} from "@udp/http/internal-token";
 import type {
   MetricSample,
   MetricTarget,
@@ -30,6 +34,8 @@ import {
 export interface CoreMetricsClientOptions {
   baseUrl: string;
   secret: string;
+  /** [Plan #67] Token chiếu cho Service 1 (`internalTokenFrom`); không có ở chế độ `secret` */
+  token?: InternalToken;
   timeoutMs?: number;
   fetch?: typeof fetch;
 }
@@ -50,7 +56,7 @@ export function createCoreMetricsClient(
       ...init,
       headers: {
         "content-type": "application/json",
-        [INTERNAL_SECRET_HEADER]: options.secret,
+        ...(await internalAuthHeaders(options.secret, options.token)),
       },
       signal: AbortSignal.timeout(timeoutMs),
     });

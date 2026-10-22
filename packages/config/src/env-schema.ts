@@ -322,6 +322,22 @@ export const envSchema = z
      */
     CORE_BACKEND_INTERNAL_PORT: optionalSetting(port),
     FLAG_SERVICE_INTERNAL_PORT: optionalSetting(port),
+    /**
+     * [Plan #67] Lớp danh tính của `/internal/*` (T12). `secret`: chỉ bí mật dùng chung - dev, test, supertest.
+     * `token-review`: bên gọi gửi thêm token chiếu của ServiceAccount, bên nhận hỏi API server bằng `TokenReview`;
+     * chỉ chạy được trong cụm. Bắt buộc ở production - xem luật liên biến bên dưới.
+     */
+    INTERNAL_AUTH_MODE: z.preprocess(
+      (v) => (v === "" ? undefined : v),
+      z.enum(["secret", "token-review"]).default("secret"),
+    ),
+    /**
+     * [Plan #67] Thư mục volume `projected` chứa token chiếu của bên gọi, một tệp cho mỗi đích (`core-backend`,
+     * `flag-service`). Đường tuyệt đối; schema không đọc đĩa - bên gọi đọc thử lúc khởi động.
+     */
+    INTERNAL_TOKEN_DIR: optionalSetting(
+      z.string().refine((v) => v.startsWith("/"), "phải là đường tuyệt đối"),
+    ),
 
     // ---------- URL nội bộ ----------
     FLAG_SERVICE_URL: z.string().url(),

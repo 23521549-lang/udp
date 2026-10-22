@@ -1,4 +1,7 @@
-import { INTERNAL_SECRET_HEADER } from "@udp/config";
+import {
+  internalAuthHeaders,
+  type InternalToken,
+} from "@udp/http/internal-token";
 import { internalClusterTokenResponseWire } from "@udp/shared-types/wire";
 
 /**
@@ -32,23 +35,27 @@ export class ClusterTokenUnavailableError extends Error {
 export function createClusterTokenClient(options: {
   baseUrl: string;
   secret: string;
+  /** [Plan #67] Token chiếu cho Service 1 (`internalTokenFrom`); không có ở chế độ `secret` */
+  token?: InternalToken;
   timeoutMs: number;
   fetch?: typeof fetch;
 }): IssueToken {
   const doFetch = options.fetch ?? fetch;
   return async (projectId) => {
-    const res = await doFetch(
-      `${options.baseUrl}/internal/clusters/${encodeURIComponent(projectId)}/token`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          [INTERNAL_SECRET_HEADER]: options.secret,
+    // Đọc token chiếu nằm TRONG chuỗi `.catch`: tệp hỏng là "không lấy được token", cùng lý do HOLD với lỗi mạng
+    const res = await (async () =>
+      doFetch(
+        `${options.baseUrl}/internal/clusters/${encodeURIComponent(projectId)}/token`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            ...(await internalAuthHeaders(options.secret, options.token)),
+          },
+          body: JSON.stringify({ serviceAccount: "traffic" }),
+          signal: AbortSignal.timeout(options.timeoutMs),
         },
-        body: JSON.stringify({ serviceAccount: "traffic" }),
-        signal: AbortSignal.timeout(options.timeoutMs),
-      },
-    ).catch(() => {
+      ))().catch(() => {
       throw new ClusterTokenUnavailableError(null);
     });
     if (!res.ok) throw new ClusterTokenUnavailableError(res.status);
