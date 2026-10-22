@@ -1,0 +1,233 @@
+# [Plan #67] Danh tính bên gọi `/internal/*` (T12, D-P59).
+#
+# Bên gọi (Service 1 → Service 2; Service 3 → cả hai) gửi token chiếu của ServiceAccount của nó, audience theo đích;
+# bên nhận hỏi API server bằng TokenReview và chỉ nhận username trong `INTERNAL_CALLERS` (@udp/config/constants).
+# Danh tính đó chỉ có nghĩa khi KHÔNG AI ngoài chính Deployment dùng được ba ServiceAccount - quyền tạo pod trong một
+# namespace là quyền dùng mọi ServiceAccount ở đó. ValidatingAdmissionPolicy cuối tệp khoá điều này.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flag-service
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pd-controller
+---
+# Quyền hẹp nhất cho bên nhận: chỉ `tokenreviews: create`. `system:auth-delegator` (thiết kế ghi tên này) cấp thêm
+# `subjectaccessreviews` mà không service nào dùng.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: udp-internal-token-review
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: udp-internal-token-review
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: udp-internal-token-review
+subjects:
+  - kind: ServiceAccount
+    name: core-backend
+    namespace: udp
+  - kind: ServiceAccount
+    name: flag-service
+    namespace: udp
+---
+# Ai tạo được pod trong `udp` thì đặt được `serviceAccountName: pd-controller` - và TokenReview chỉ xác nhận đúng cái
+# tên đó. Policy này để danh tính của ba ServiceAccount chỉ đến từ ba Deployment do người cài dựng:
+#
+#  - pod và mọi loại workload mang một trong ba SA, hay nhãn `app.kubernetes.io/name` mang một trong ba tên (để thành
+#    endpoint của Service nội bộ và hứng token), chỉ được TẠO hoặc ĐỔI (template, image, nhãn) bởi người có `escalate`
+#    trên `clusterroles` (người cài, vốn làm được mọi thứ) - hoặc controller tạo đúng loại đó: ReplicaSet ←
+#    deployment-controller, Pod ← replicaset-controller; nhãn và SA phải cùng tên;
+#  - `exec`, `attach`, ephemeral container vào pod của ba Deployment (đọc được tệp token);
+#  - TokenRequest cho ba SA (trừ kubelet, nhóm `system:nodes`, xin token chiếu); xoá ba SA; Secret token dài hạn trỏ
+#    tới chúng;
+#  - ConfigMap `udp-config-*` và Secret `udp-secrets` (thêm `NODE_OPTIONS` là chạy mã khác dưới cùng SA);
+#  - năm Service của ba service và EndpointSlice của chúng (chỉ endpointslice-controller).
+#
+# Xoá do controller của `kube-system` (namespace-controller khi xoá namespace, garbage collector) luôn được phép.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: udp-internal-identity
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: udp
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "replicationcontrollers"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CONNECT"]
+        resources: ["pods/exec", "pods/attach"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["pods/ephemeralcontainers"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["serviceaccounts/token"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["DELETE"]
+        resources: ["serviceaccounts"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps", "secrets", "services"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: ["discovery.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["endpointslices"]
+  variables:
+    - name: protected
+      expression: "['core-backend', 'flag-service', 'pd-controller']"
+    - name: services
+      expression: "['core-backend', 'flag-service', 'pd-controller', 'internal-core-backend', 'internal-flag-service']"
+    - name: privileged
+      expression: "authorizer.group('rbac.authorization.k8s.io').resource('clusterroles').check('escalate').allowed()"
+    - name: systemDelete
+      expression: "request.operation == 'DELETE' && request.userInfo.username.startsWith('system:serviceaccount:kube-system:')"
+    - name: resource
+      expression: "request.resource.resource"
+    - name: kind
+      expression: "request.kind.kind"
+    # Tên của đối tượng: CREATE dùng `generateName` thì `request.name` rỗng - đọc từ object
+    - name: name
+      expression: >-
+        request.operation == 'DELETE' ? request.name :
+        request.subResource != '' ? request.name :
+        object.?metadata.?name.orValue(request.name)
+    - name: workload
+      expression: >-
+        request.subResource == '' && request.operation != 'DELETE' &&
+        variables.kind in ['Pod', 'ReplicationController', 'Deployment', 'ReplicaSet', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob']
+    # Pod spec và metadata của pod (hay của pod template), bản mới và bản cũ
+    - name: spec
+      expression: >-
+        !variables.workload ? optional.none() :
+        variables.kind == 'Pod' ? object.?spec :
+        variables.kind == 'CronJob' ? object.?spec.?jobTemplate.?spec.?template.?spec :
+        object.?spec.?template.?spec
+    - name: meta
+      expression: >-
+        !variables.workload ? optional.none() :
+        variables.kind == 'Pod' ? object.?metadata :
+        variables.kind == 'CronJob' ? object.?spec.?jobTemplate.?spec.?template.?metadata :
+        object.?spec.?template.?metadata
+    - name: oldSpec
+      expression: >-
+        !variables.workload || request.operation != 'UPDATE' ? optional.none() :
+        variables.kind == 'Pod' ? oldObject.?spec :
+        variables.kind == 'CronJob' ? oldObject.?spec.?jobTemplate.?spec.?template.?spec :
+        oldObject.?spec.?template.?spec
+    - name: oldMeta
+      expression: >-
+        !variables.workload || request.operation != 'UPDATE' ? optional.none() :
+        variables.kind == 'Pod' ? oldObject.?metadata :
+        variables.kind == 'CronJob' ? oldObject.?spec.?jobTemplate.?spec.?template.?metadata :
+        oldObject.?spec.?template.?metadata
+    - name: sa
+      expression: "variables.spec.?serviceAccountName.orValue(variables.spec.?serviceAccount.orValue('default'))"
+    - name: label
+      expression: "variables.meta.?labels[?'app.kubernetes.io/name'].orValue('')"
+    - name: oldLabel
+      expression: "variables.oldMeta.?labels[?'app.kubernetes.io/name'].orValue('')"
+    - name: images
+      expression: >-
+        variables.spec.?containers.orValue([]).map(c, c.image) +
+        variables.spec.?initContainers.orValue([]).map(c, c.image)
+    - name: oldImages
+      expression: >-
+        variables.oldSpec.?containers.orValue([]).map(c, c.image) +
+        variables.oldSpec.?initContainers.orValue([]).map(c, c.image)
+    # CREATE luôn tính; UPDATE chỉ tính khi đổi thứ quyết định mã chạy dưới SA nào: Pod - nhãn, SA, image (controller
+    # và garbage collector chỉ sửa metadata khác); workload khác - pod template (scale đi qua subresource)
+    - name: changed
+      expression: >-
+        variables.workload && (request.operation == 'CREATE' ||
+        (variables.kind == 'Pod'
+          ? variables.label != variables.oldLabel || variables.images != variables.oldImages
+          : variables.spec.orValue({}) != variables.oldSpec.orValue({}) || variables.label != variables.oldLabel))
+    - name: controller
+      expression: >-
+        (variables.kind == 'Pod' && request.userInfo.username == 'system:serviceaccount:kube-system:replicaset-controller') ||
+        (variables.kind == 'ReplicaSet' && request.userInfo.username == 'system:serviceaccount:kube-system:deployment-controller')
+  validations:
+    - expression: >-
+        !variables.changed ||
+        !(variables.label in variables.protected || variables.sa in variables.protected) ||
+        variables.label == variables.sa || variables.privileged
+      message: "udp-internal-identity: nhãn app.kubernetes.io/name của core-backend, flag-service, pd-controller phải đi cùng ServiceAccount cùng tên"
+    - expression: >-
+        !variables.changed || !(variables.sa in variables.protected) || variables.privileged || variables.controller
+      message: "udp-internal-identity: chỉ Deployment do người cài dựng mới chạy được bằng ServiceAccount của bên gọi nội bộ"
+    - expression: >-
+        !(variables.resource == 'pods' && request.subResource in ['exec', 'attach']) ||
+        !variables.protected.exists(p, request.name.startsWith(p + '-')) || variables.privileged
+      message: "udp-internal-identity: không exec hay attach vào pod của core-backend, flag-service, pd-controller"
+    - expression: >-
+        !(variables.resource == 'pods' && request.subResource == 'ephemeralcontainers') ||
+        !(object.?spec.?serviceAccountName.orValue('') in variables.protected) || variables.privileged
+      message: "udp-internal-identity: không gắn ephemeral container vào pod của bên gọi nội bộ"
+    - expression: >-
+        !(variables.resource == 'serviceaccounts' && request.subResource == 'token') ||
+        !(request.name in variables.protected) || variables.privileged ||
+        'system:nodes' in request.userInfo.?groups.orValue([])
+      message: "udp-internal-identity: không xin token cho ServiceAccount của bên gọi nội bộ"
+    - expression: >-
+        !(variables.resource == 'serviceaccounts' && request.subResource == '') ||
+        !(request.name in variables.protected) || variables.privileged || variables.systemDelete
+      message: "udp-internal-identity: không xoá ServiceAccount của bên gọi nội bộ"
+    - expression: >-
+        !(variables.resource == 'secrets' && request.operation != 'DELETE') ||
+        object.?type.orValue('') != 'kubernetes.io/service-account-token' ||
+        !(object.?metadata.?annotations[?'kubernetes.io/service-account.name'].orValue('') in variables.protected) ||
+        variables.privileged
+      message: "udp-internal-identity: không tạo Secret token dài hạn cho ServiceAccount của bên gọi nội bộ"
+    - expression: >-
+        !(variables.resource in ['configmaps', 'secrets']) ||
+        !(variables.name.startsWith('udp-config') || variables.name == 'udp-secrets') ||
+        variables.privileged || variables.systemDelete
+      message: "udp-internal-identity: cấu hình và bí mật mà ba service nạp chỉ do người cài sửa"
+    - expression: >-
+        !(variables.resource == 'services') || !(variables.name in variables.services) ||
+        variables.privileged || variables.systemDelete
+      message: "udp-internal-identity: Service của ba service chỉ do người cài sửa"
+    - expression: >-
+        !(variables.resource == 'endpointslices') ||
+        !((request.operation == 'DELETE' ? oldObject : object).?metadata.?labels[?'kubernetes.io/service-name'].orValue('') in variables.services) ||
+        variables.privileged || variables.systemDelete ||
+        request.userInfo.username == 'system:serviceaccount:kube-system:endpointslice-controller'
+      message: "udp-internal-identity: EndpointSlice của ba service chỉ do endpointslice-controller ghi"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: udp-internal-identity
+spec:
+  policyName: udp-internal-identity
+  validationActions: ["Deny"]

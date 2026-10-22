@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { flaggerGatePath } from "@udp/http/flagger-gate";
 import { beforeAll, describe, expect, it } from "vitest";
 import { NAMESPACE } from "../src/cluster.js";
+import { expectInternalIdentityEnforced } from "../e2e/internal-identity-probe.js";
 import {
   expectInternalPortsOnlyForCallers,
   expectPostgresOnlyForClients,
@@ -247,6 +248,12 @@ describe("Bảng điều khiển nền tảng (Plan #53 QĐ-6)", () => {
 describe("cổng nội bộ của Service 1 và Service 2 (Plan #66)", () => {
   it("k3s cưỡng chế: Service 3 tới cổng nội bộ, nhãn lạ và namespace khác thì không; cổng công khai không phục vụ /internal", async () => {
     await expectInternalPortsOnlyForCallers(kube, NAMESPACE);
+  }, 900_000);
+});
+
+describe("danh tính bên gọi /internal (Plan #67)", () => {
+  it("k3s: TokenReview và policy udp-internal-identity - đủ ba lớp thì qua; thiếu token, sai audience, mạo nhãn, quyền trong namespace thì không", async () => {
+    await expectInternalIdentityEnforced(kube, NAMESPACE);
   }, 900_000);
 });
 

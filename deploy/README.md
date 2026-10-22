@@ -95,9 +95,14 @@ workflow `Deploy` tự phát hành. Thiết kế: `docs/plans/plan52-spec.md`, D
 
 - `docker/service.Dockerfile` — một Dockerfile cho S1, S2, S3 và sample-app (`--build-arg PKG`, `DIR`);
   service chạy mã nguồn bằng `tsx`, đúng đường mà dev và bộ test chạy.
+  Image đặt sẵn `NODE_ENV=production`, nên service CHỈ khởi động trong cụm (Plan #67): production đòi
+  `INTERNAL_AUTH_MODE=token-review`, và bên nhận `/internal/*` cần API server của cụm để gọi `TokenReview`. Chạy
+  image ngoài cụm (`docker run`) thì đặt `NODE_ENV` khác production.
 - `docker/portal.Dockerfile` + `nginx.conf` — Portal tĩnh, proxy `/api` sang Service 1, nginx không root.
 - `docker/migrate.Dockerfile` — job `udp-migrate`: migration, LOGIN + mật khẩu cho `udp_s1…3`, seed.
-- `k8s/base` — PostgreSQL 16, Prometheus (khám phá pod, nhãn `namespace` từ pod), S1/S2/S3, Portal, job.
+- `k8s/base` — PostgreSQL 16, Prometheus (khám phá pod, nhãn `namespace` từ pod), S1/S2/S3, Portal, job;
+  `internal-identity.yaml` (Plan #67) - ServiceAccount của bên gọi `/internal`, quyền `TokenReview`, và
+  ValidatingAdmissionPolicy `udp-internal-identity` khoá chúng.
 - `k8s/overlays/kind` — tag `local`, NodePort 8080/3002, seed, sample-app trong namespace env dev của seed.
 - `k8s/overlays/vm` — Ingress HTTPS với đúng bề mặt công khai (`/`, `/sdk`, `/ofrep`, `/oidc`,
   `/webhooks/flagger`) và Ingress HTTP chỉ chuyển hướng, Traefik giữ IP khách, hop proxy theo service, PVC

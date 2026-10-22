@@ -1,10 +1,17 @@
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { config as loadDotenv } from "dotenv";
 import { describe, expect, it } from "vitest";
 import { envSchema } from "../src/env-schema.js";
 
 /**
- * [Plan #67] Lớp danh tính của `/internal/*`: hình dạng của hai biến. Luật production (bắt buộc `token-review`) ở
- * `env-internal-auth-production.test.ts`, cùng commit với manifest khai chúng.
+ * [Plan #67] Lớp danh tính của `/internal/*`: hình dạng của hai biến, và luật production - cùng commit với manifest
+ * khai chúng, vì cổng env của cụm (`deploy/tests`) parse ConfigMap bằng chính schema này.
+ *
+ * Nền là `.env` thật như `env-internal-port.test.ts`: luật liên biến (superRefine) chỉ chạy khi mọi trường khác hợp lệ.
  */
+const here = dirname(fileURLToPath(import.meta.url));
+loadDotenv({ path: resolve(here, "../../../.env") });
 
 const KEYS = ["INTERNAL_AUTH_MODE", "INTERNAL_TOKEN_DIR"];
 
@@ -47,5 +54,33 @@ describe("INTERNAL_AUTH_MODE, INTERNAL_TOKEN_DIR (Plan #67)", () => {
       parse({ INTERNAL_TOKEN_DIR: "/var/run/secrets/udp/internal" }).issues,
     ).toEqual([]);
     expect(parse({ INTERNAL_TOKEN_DIR: "" }).issues).toEqual([]);
+  });
+});
+
+describe("luật production (Plan #67)", () => {
+  const PROD = { NODE_ENV: "production" };
+
+  it("production thiếu cả hai ⇒ từ chối cả hai", () => {
+    expect(parse(PROD).issues.sort()).toEqual([...KEYS].sort());
+  });
+
+  it("production ở chế độ secret ⇒ từ chối", () => {
+    expect(
+      parse({
+        ...PROD,
+        INTERNAL_AUTH_MODE: "secret",
+        INTERNAL_TOKEN_DIR: "/var/run/secrets/udp/internal",
+      }).issues,
+    ).toEqual(["INTERNAL_AUTH_MODE"]);
+  });
+
+  it("production đủ ⇒ không lỗi nào ở hai biến", () => {
+    expect(
+      parse({
+        ...PROD,
+        INTERNAL_AUTH_MODE: "token-review",
+        INTERNAL_TOKEN_DIR: "/var/run/secrets/udp/internal",
+      }).issues,
+    ).toEqual([]);
   });
 });

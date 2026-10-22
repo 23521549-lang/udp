@@ -18,6 +18,8 @@ resources:
   - core-backend-rbac.yaml
   - flag-service.yaml
   - pd-controller.yaml
+  # [Plan #67] Danh tính bên gọi `/internal/*`: ServiceAccount, quyền TokenReview, ValidatingAdmissionPolicy
+  - internal-identity.yaml
   - portal.yaml
 labels:
   - pairs:
@@ -33,6 +35,9 @@ configMapGenerator:
       - FLAG_SERVICE_URL=http://internal-flag-service:3102
       - CORE_BACKEND_INTERNAL_PORT=3101
       - FLAG_SERVICE_INTERNAL_PORT=3102
+      # [Plan #67] Bên gọi gửi token chiếu (volume `internal-token`), bên nhận hỏi TokenReview
+      - INTERNAL_AUTH_MODE=token-review
+      - INTERNAL_TOKEN_DIR=/var/run/secrets/udp/internal
       - PD_CONTROLLER_URL=http://pd-controller:3003
       - PROMETHEUS_URL=http://prometheus:9090
       - CORS_ORIGIN=http://localhost:8080

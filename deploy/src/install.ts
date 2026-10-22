@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ImageSpec } from "./cluster.js";
-import { query, run, runAsync } from "./shell.js";
+import { attempt, query, run, runAsync } from "./shell.js";
 
 /**
  * Các bước cài UDP vào một cụm, DÙNG CHUNG cho kind (Plan #49) và máy ảo (Plan #52): hai nơi chạy khác nhau ở
@@ -14,6 +14,11 @@ export interface Kube {
   run(args: readonly string[]): void;
   /** Hỏi trạng thái; `null` khi lệnh thất bại */
   ask(args: readonly string[]): string | null;
+  /** [Plan #67] Mã thoát và toàn bộ đầu ra (kể cả lỗi); `input` qua stdin */
+  attempt(
+    args: readonly string[],
+    input?: string,
+  ): { code: number | null; output: string };
 }
 
 export function pinnedKubectl(pin: readonly string[]): Kube {
@@ -22,6 +27,7 @@ export function pinnedKubectl(pin: readonly string[]): Kube {
       run("kubectl", [...pin, ...args]);
     },
     ask: (args) => query("kubectl", [...pin, ...args]),
+    attempt: (args, input) => attempt("kubectl", [...pin, ...args], input),
   };
 }
 

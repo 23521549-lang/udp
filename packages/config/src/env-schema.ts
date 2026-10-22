@@ -598,6 +598,30 @@ export const envSchema = z
       }
     }
 
+    /**
+     * [Plan #67] Production chạy trong cụm: lớp danh tính của `/internal/*` (T12) là bắt buộc. Thiếu nó thì bí mật dùng
+     * chung lộ một mình đủ gọi mọi route nội bộ. Chỉ kiểm chuỗi - job `udp-migrate` cũng parse schema này; bên gọi đọc
+     * thử tệp token lúc khởi động, bên nhận ngoài cụm thì không khởi động.
+     */
+    if (env.NODE_ENV === "production") {
+      if (env.INTERNAL_AUTH_MODE !== "token-review") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["INTERNAL_AUTH_MODE"],
+          message:
+            "phải là token-review ở production - bí mật dùng chung không được là lớp xác thực duy nhất của /internal",
+        });
+      }
+      if (env.INTERNAL_TOKEN_DIR === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["INTERNAL_TOKEN_DIR"],
+          message:
+            "bắt buộc ở production - thư mục volume projected chứa token chiếu của bên gọi",
+        });
+      }
+    }
+
     if (env.NODE_ENV === "production" && !env.COOKIE_SECURE) {
       ctx.addIssue({
         code: "custom",

@@ -30,6 +30,21 @@ show("sự kiện gần nhất", ["get", "events", "-A", "--sort-by=.lastTimesta
 show("pod của UDP", ["describe", "pods", "-n", NAMESPACE]);
 // [Plan #65] Pod nối database bị từ chối? Policy nào đang chọn postgres, và nó mở cho nhãn nào
 show("NetworkPolicy", ["describe", "networkpolicy", "-n", NAMESPACE]);
+// [Plan #67] Deployment không lên pod? ReplicaSet bị admission từ chối hiện ở sự kiện `FailedCreate`; cảnh báo kiểu
+// của biểu thức CEL nằm ở `status.typeChecking` của policy
+show("ReplicaSet", ["get", "replicasets", "-n", NAMESPACE, "-o", "wide"]);
+show("ServiceAccount và quyền TokenReview", [
+  "get",
+  "serviceaccounts,clusterrolebinding/udp-internal-token-review",
+  "-n",
+  NAMESPACE,
+  "-o",
+  "wide",
+]);
+show("ValidatingAdmissionPolicy", [
+  "describe",
+  "validatingadmissionpolicy/udp-internal-identity",
+]);
 show("job udp-migrate", [
   "logs",
   "job/udp-migrate",

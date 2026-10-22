@@ -211,8 +211,16 @@ describe("bản phát hành vm — Let's Encrypt (Plan #52 AC-1)", () => {
   });
 
   it("cấu hình TỪNG service qua CHÍNH envSchema, với URL công khai của máy", () => {
-    for (const name of ["core-backend", "flag-service", "pd-controller"]) {
-      const parsed = envSchema.safeParse(effectiveEnv(docs, name, secrets));
+    const parsers = [
+      ...["core-backend", "flag-service", "pd-controller"].map(
+        (name) => ["Deployment", name] as const,
+      ),
+      ["Job", "udp-migrate"] as const,
+    ];
+    for (const [kind, name] of parsers) {
+      const parsed = envSchema.safeParse(
+        effectiveEnv(docs, name, secrets, kind),
+      );
       expect(
         parsed.success
           ? []
@@ -473,6 +481,9 @@ describe("bản phát hành vm — Let's Encrypt (Plan #52 AC-1)", () => {
       "ClusterRole",
       "ClusterRoleBinding",
       "ClusterIssuer",
+      // [Plan #67]
+      "ValidatingAdmissionPolicy",
+      "ValidatingAdmissionPolicyBinding",
     ];
     const outside = docs.filter(
       (d) =>

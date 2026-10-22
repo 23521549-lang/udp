@@ -214,8 +214,10 @@ export function effectiveEnv(
   docs: readonly Resource[],
   deployment: string,
   secrets: Secrets,
+  /** [Plan #67] Job `udp-migrate` cũng parse env bằng `@udp/config` */
+  kind: "Deployment" | "Job" = "Deployment",
 ): Record<string, string> {
-  const workload = named(docs, "Deployment", deployment);
+  const workload = named(docs, kind, deployment);
   const [container] = containersOf(workload);
   const env: Record<string, string> = {};
   for (const ref of container?.envFrom ?? []) {

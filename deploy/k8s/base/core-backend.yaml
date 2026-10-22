@@ -52,6 +52,16 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+      # [Plan #67] Token chiếu của ServiceAccount cho từng đích `/internal/*` mà service này gọi - audience theo đích
+      # (`INTERNAL_AUDIENCE` của @udp/config/constants), kubelet xoay ở 80% thời hạn, đọc lại mỗi lời gọi
+      volumes:
+        - name: internal-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: udp:internal:flag-service
+                  expirationSeconds: 3600
+                  path: flag-service
       containers:
         - name: core-backend
           image: udp/core-backend
@@ -65,6 +75,10 @@ spec:
                 name: udp-config
             - secretRef:
                 name: udp-secrets
+          volumeMounts:
+            - name: internal-token
+              mountPath: /var/run/secrets/udp/internal
+              readOnly: true
           startupProbe:
             httpGet:
               path: /healthz
