@@ -107,6 +107,13 @@ spec:
       expression: "['core-backend', 'flag-service', 'pd-controller']"
     - name: services
       expression: "['core-backend', 'flag-service', 'pd-controller', 'internal-core-backend', 'internal-flag-service']"
+    # `request.subResource` và `request.name` KHÔNG CÓ MẶT khi rỗng (request không subresource, CREATE dùng
+    # `generateName`): truy cập thẳng là lỗi "no such key", và với failurePolicy Fail thì lỗi là từ chối - lượt CI đầu
+    # của Plan #67 chặn cert-manager tạo Secret và job-controller gỡ finalizer của pod migrate vì đúng điều này
+    - name: sub
+      expression: "request.?subResource.orValue('')"
+    - name: requestName
+      expression: "request.?name.orValue('')"
     - name: privileged
       expression: "authorizer.group('rbac.authorization.k8s.io').resource('clusterroles').check('escalate').allowed()"
     - name: systemDelete
@@ -118,12 +125,12 @@ spec:
     # Tên của đối tượng: CREATE dùng `generateName` thì `request.name` rỗng - đọc từ object
     - name: name
       expression: >-
-        request.operation == 'DELETE' ? request.name :
-        request.subResource != '' ? request.name :
-        object.?metadata.?name.orValue(request.name)
+        request.operation == 'DELETE' ? variables.requestName :
+        variables.sub != '' ? variables.requestName :
+        object.?metadata.?name.orValue(variables.requestName)
     - name: workload
       expression: >-
-        request.subResource == '' && request.operation != 'DELETE' &&
+        variables.sub == '' && request.operation != 'DELETE' &&
         variables.kind in ['Pod', 'ReplicationController', 'Deployment', 'ReplicaSet', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob']
     # Pod spec và metadata của pod (hay của pod template), bản mới và bản cũ
     - name: spec
@@ -186,21 +193,21 @@ spec:
         !variables.changed || !(variables.sa in variables.protected) || variables.privileged || variables.controller
       message: "udp-internal-identity: chỉ Deployment do người cài dựng mới chạy được bằng ServiceAccount của bên gọi nội bộ"
     - expression: >-
-        !(variables.resource == 'pods' && request.subResource in ['exec', 'attach']) ||
-        !variables.protected.exists(p, request.name.startsWith(p + '-')) || variables.privileged
+        !(variables.resource == 'pods' && variables.sub in ['exec', 'attach']) ||
+        !variables.protected.exists(p, variables.requestName.startsWith(p + '-')) || variables.privileged
       message: "udp-internal-identity: không exec hay attach vào pod của core-backend, flag-service, pd-controller"
     - expression: >-
-        !(variables.resource == 'pods' && request.subResource == 'ephemeralcontainers') ||
+        !(variables.resource == 'pods' && variables.sub == 'ephemeralcontainers') ||
         !(object.?spec.?serviceAccountName.orValue('') in variables.protected) || variables.privileged
       message: "udp-internal-identity: không gắn ephemeral container vào pod của bên gọi nội bộ"
     - expression: >-
-        !(variables.resource == 'serviceaccounts' && request.subResource == 'token') ||
-        !(request.name in variables.protected) || variables.privileged ||
+        !(variables.resource == 'serviceaccounts' && variables.sub == 'token') ||
+        !(variables.requestName in variables.protected) || variables.privileged ||
         'system:nodes' in request.userInfo.?groups.orValue([])
       message: "udp-internal-identity: không xin token cho ServiceAccount của bên gọi nội bộ"
     - expression: >-
-        !(variables.resource == 'serviceaccounts' && request.subResource == '') ||
-        !(request.name in variables.protected) || variables.privileged || variables.systemDelete
+        !(variables.resource == 'serviceaccounts' && variables.sub == '') ||
+        !(variables.requestName in variables.protected) || variables.privileged || variables.systemDelete
       message: "udp-internal-identity: không xoá ServiceAccount của bên gọi nội bộ"
     - expression: >-
         !(variables.resource == 'secrets' && request.operation != 'DELETE') ||

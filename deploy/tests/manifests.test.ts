@@ -1000,6 +1000,22 @@ describe("danh tính bên gọi /internal (Plan #67)", () => {
       ).toEqual(CALLER_SERVICES);
       expect(policy.spec.validations.length).toBeGreaterThanOrEqual(10);
 
+      // Trường VẮNG MẶT khi rỗng (`subResource`, `name`) phải đọc qua `request.?`: truy cập thẳng là lỗi "no such key",
+      // và với failurePolicy Fail thì lỗi là từ chối - lượt CI đầu của Plan #67 chặn cert-manager và job-controller
+      const expressions = [
+        ...policy.spec.variables.map((v) => v.expression),
+        ...policy.spec.validations.map((v) => v.expression),
+      ].join("\n");
+      const direct = new Set(
+        [...expressions.matchAll(/\brequest\.(\w+)/g)].map((m) => m[1]),
+      );
+      expect([...direct].sort()).toEqual(
+        ["kind", "operation", "resource", "userInfo"].filter((f) =>
+          direct.has(f),
+        ),
+      );
+      expect(expressions).not.toMatch(/userInfo\.groups/);
+
       const binding = named(
         rendered[name],
         "ValidatingAdmissionPolicyBinding",
