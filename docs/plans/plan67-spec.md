@@ -40,7 +40,9 @@ hạn số mục; âm không nhớ. Lỗi mạng hay 5xx từ API server: dùng 
 từ lần xác nhận cuối; không có ⇒ 503 (bên gọi thử lại). `authenticated: false` hay audience, username sai thì luôn từ
 chối, không bao giờ dùng bản nhớ. Đánh đổi được ghi vào thiết kế: API server thành phụ thuộc trên đường dữ liệu nội bộ
 (CRUD flag, kill-switch); trần 60 giây giữ hệ thống chạy qua một lần k3s khởi động lại ngắn mà không cho token lạ nào
-qua. Pod bên gọi bị xoá thì token của nó bị từ chối trong tối đa 10 giây (60 giây nếu API server vắng đúng lúc đó).
+qua. Pod bên gọi bị xoá thì token của nó bị từ chối sau khoảng 50 giây (QA vòng C: ân hạn dừng pod 30 giây vì API server
+cho leeway quanh `deletionTimestamp`, API server tự nhớ kết quả 10 giây, cộng 10 giây nhớ của verifier); khoảng 100 giây
+nếu API server vắng đúng lúc đó.
 
 **Vì sao `TokenReview` chứ không kiểm JWT bằng JWKS** (lối mà §8.3 chọn cho Trusted Deploy trên cụm của khách,
 Plan #61). Lối JWKS ở đó tránh thêm quyền trên cụm của KHÁCH, vốn phải bootstrap lại. Ở đây là cụm của chính UDP, manifest
@@ -50,7 +52,8 @@ do repo này dựng, nên quyền thêm là một ClusterRoleBinding trong base.
 **Khoá ServiceAccount của bên gọi (QA vòng A, chặn).** Không có bước này, ai có quyền tạo pod trong `udp` đặt
 `serviceAccountName: pd-controller` là qua cả ba lớp, và `TokenReview` chỉ xác nhận đúng cái tên đó. Một
 `ValidatingAdmissionPolicy` (`udp-internal-identity`, binding `Deny`) chặn mọi cách lấy được danh tính của ba
-ServiceAccount `core-backend`, `flag-service`, `pd-controller` trong `udp`:
+ServiceAccount `core-backend`, `flag-service`, `pd-controller` trong `udp` để làm BÊN GỌI `/internal`, và giả làm
+BÊN NHẬN để hứng token:
 
 - TẠO Deployment, StatefulSet, DaemonSet, Job, CronJob, ReplicaSet, ReplicationController, Pod mang một trong ba SA
   đó; SỬA chúng khi pod template đổi (đổi image hay lệnh là chạy mã khác dưới cùng SA; controller và garbage collector
@@ -58,6 +61,14 @@ ServiceAccount `core-backend`, `flag-service`, `pd-controller` trong `udp`:
   `serviceaccounts/token` (TokenRequest) cho chúng; tạo, sửa, xoá ConfigMap `udp-config-*` và Secret `udp-secrets` mà
   ba Deployment nạp qua `envFrom` (QA vòng B: thêm `NODE_OPTIONS=--import=…` vào ConfigMap rồi xoá pod là chạy mã lạ
   dưới SA `pd-controller` mà không chạm template);
+- SỬA Pod mang ba SA khi image của `containers`, `initContainers` đổi so với `oldObject` (QA vòng C: `kubectl set image
+pod/…` giữ nguyên UID, SA và token; garbage collector và controller chỉ sửa metadata);
+- nhãn `app.kubernetes.io/name` mang một trong ba tên thì `serviceAccountName` phải cùng tên, cho Pod và mọi template
+  (QA vòng C, chặn: pod SA `default` mang nhãn `core-backend` thành endpoint của Service `internal-core-backend`, nhận
+  nguyên văn token chiếu và bí mật của `pd-controller` rồi phát lại tới pod thật - bên gọi không xác thực bên nhận);
+  tạo, sửa, xoá năm Service (`core-backend`, `flag-service`, `pd-controller`, `internal-core-backend`,
+  `internal-flag-service`) và EndpointSlice mang nhãn `kubernetes.io/service-name` của chúng (chỉ
+  `endpointslice-controller`); xoá ba ServiceAccount; Secret kiểu `kubernetes.io/service-account-token` trỏ tới chúng;
 - với `pods/exec`, `pods/attach` (thao tác `CONNECT`) và TokenRequest, `object` là `PodExecOptions`, `PodAttachOptions`,
   `TokenRequest` - không có `serviceAccountName` (QA vòng B) ⇒ so `request.name`: tên pod bắt đầu bằng
   `core-backend-`, `flag-service-`, `pd-controller-` (pod mang ba SA chỉ sinh từ Deployment cùng tên - cổng manifest
@@ -68,13 +79,17 @@ ServiceAccount `core-backend`, `flag-service`, `pd-controller` trong `udp`:
   `failurePolicy: Fail` khai tường minh;
 - được phép khi bên yêu cầu có quyền `escalate` trên `clusterroles` (biến `authorizer` của CEL) - tức người cài đặt, vốn
   đã làm được mọi thứ; hoặc là controller tạo đúng loại đó: ReplicaSet ← `deployment-controller`, Pod ←
-  `replicaset-controller` (dạng ServiceAccount của `kube-system`, và `system:kube-controller-manager` khi controller
-  manager không dùng credential riêng); TokenRequest ← nhóm `system:nodes` (kubelet xin token chiếu).
+  `replicaset-controller` (dạng ServiceAccount của `kube-system` - kind và k3s đều bật
+  `use-service-account-credentials`, QA vòng C); TokenRequest ← nhóm `system:nodes` (kubelet xin token chiếu). Pod CREATE
+  dùng `generateName` nên `request.name` rỗng - với Pod chỉ dựa vào `object`.
 
 Kẻ chỉ có quyền trong namespace (`admin`, `edit` buộc bằng RoleBinding) không có `escalate` trên `clusterroles`, nên không
 tạo được workload mang SA bên gọi, không vào được pod của nó, không xin được token cho nó. Phần còn lại, ghi vào §16:
 chiếm node (đọc được tệp token của mọi pod trên node), quyền cấp cụm, mã của chính bên gọi bị chiếm, registry image bị
-chiếm.
+chiếm; pod `hostPath` ở namespace KHÁC `udp` (Pod Security chỉ đặt cho `udp`, k3s không có mặc định cấp cụm - QA vòng C);
+bên gọi không xác thực bên nhận (lý do dài hạn cho mTLS). `edit` vẫn `impersonate` được ba SA: đó là danh tính API
+(quyền đọc và `tokenreviews: create`), KHÔNG là token `/internal` - API server không cấp token có audience qua giả danh,
+và token không audience bị `TokenReview` với `spec.audiences` từ chối.
 
 **Pod Security `baseline` cho namespace `udp` (QA vòng B, chặn).** Không có nó, người có quyền `edit` tạo pod SA
 `default` gắn `hostPath` tới thư mục pod của kubelet và đọc tệp token chiếu của `pd-controller` - k3s một node nên luôn
@@ -131,8 +146,10 @@ mật dùng chung giữ nguyên ở mọi chế độ.
     readiness luôn hỏng (không thành endpoint của Service thật), đo bằng `kubectl exec`.
   - **Âm, kẻ có quyền trong namespace:** một ServiceAccount thử có Role tạo pod, deployment, replicaset và
     `pods/exec`, `serviceaccounts/token`, `configmaps` trong `udp` (đủ `get`, `patch` để RBAC không trả 403 trước
-    admission); mọi phép ghi chạy `--dry-run=server` (policy hỏng cũng không phá cụm); giả danh nó (`--as`): tạo pod và Deployment mang SA `pd-controller`,
-    sửa image của Deployment `pd-controller` thật, `exec` vào pod của nó, xin token cho `pd-controller`, sửa ConfigMap `udp-config-*` ⇒ admission từ chối, thông điệp nêu tên policy. Đối chứng: cùng danh tính tạo pod SA `default` ⇒
+    admission); phép ghi chạy `--dry-run=server`; `exec` và `create token` không có dry-run nên chạy thật nhưng vô hại theo
+    cấu tạo (`exec -- true`, token không in ra); giả danh nó (`--as`): tạo pod và Deployment mang SA `pd-controller`,
+    sửa image của Deployment `pd-controller` thật, `exec` vào pod của nó, xin token cho `pd-controller`, sửa ConfigMap `udp-config-*`, tạo pod SA `default` mang nhãn `core-backend`, sửa image pod `pd-controller` ⇒ admission
+    từ chối, thông điệp nêu tên policy. Đối chứng: cùng danh tính tạo pod SA `default` ⇒
     được (lần từ chối đến từ policy, không từ RBAC). Pod `hostPath` SA `default` ⇒ Pod Security từ chối.
   - **Quyền:** `kubectl auth can-i create tokenreviews` có cho `core-backend`, `flag-service`; không cho `pd-controller`.
 

@@ -101,7 +101,8 @@ phục của máy ảo (rollout restart do người cài làm) không đổi.
 1. API server của k3s và kind trả `status.audiences` khi request có `spec.audiences`.
 2. Pod `automountServiceAccountToken: false` vẫn nhận volume `projected` với `serviceAccountToken`.
 3. `ValidatingAdmissionPolicy` v1 có ở k3s `v1.36.4+k3s1` và image node của kind; biến `authorizer` dùng được.
-4. Tên người yêu cầu khi controller tạo ReplicaSet, Pod và khi kubelet xin token chiếu, trên CẢ k3s và kind.
+4. Tên người yêu cầu khi controller tạo ReplicaSet, Pod, EndpointSlice và khi kubelet xin token chiếu, trên CẢ k3s và
+   kind (QA vòng C đọc từ nguồn: dạng ServiceAccount của `kube-system`; đo lại trên cụm).
 5. Người cài (`install.ts`) có `escalate` trên `clusterroles` ở cả hai cụm.
 6. `kubectl exec` có đi qua admission với thao tác `CONNECT` trên `pods/exec` (policy chặn được).
 7. API server của k3s ngừng bao lâu khi khởi động lại (đặt trần 60 giây có đủ không).
@@ -124,3 +125,10 @@ phục của máy ảo (rollout restart do người cài làm) không đổi.
   ConfigMap và Secret được nạp; template không khai SA làm CEL lỗi và chặn sao lưu hằng đêm ⇒ `?.`/`orValue`; phép thử
   dương "không phải 401" xanh giả khi lớp danh tính trả 503 ⇒ mã chính xác; Role của danh tính thử thiếu verb ⇒ 403
   trước admission; `effectiveEnv` chỉ nhận Deployment; `z.enum` từ chối chuỗi rỗng; thời hạn job E2E.
+- **C (đúng kỹ thuật, đối chiếu nguồn Kubernetes v1.35.0 và k3s):** pod SA `default` mang nhãn `core-backend` thành
+  endpoint của Service nội bộ và hứng nguyên văn token chiếu cùng bí mật ⇒ policy buộc nhãn đi cùng SA, khoá năm Service
+  và EndpointSlice; `kubectl set image pod/…` đổi mã giữ nguyên token ⇒ so image khi sửa Pod; thời gian từ chối sau khi
+  xoá pod là khoảng 50 giây chứ không 10; `impersonate` và Secret token dài hạn cho danh tính API chứ không cho token
+  `/internal` ⇒ viết hẹp khẳng định, chặn Secret token; Pod Security chỉ ở `udp` ⇒ ghi phần còn lại; `exec`, `create
+token` không có dry-run. Đứng: ngữ nghĩa audience, kiểm UID pod, token chiếu khi tắt automount, VAP v1 và `CONNECT`
+  trên cả hai cụm, `authorizer`, `?.`/`orValue`, người cài có `escalate`, mọi pod qua `baseline`.
