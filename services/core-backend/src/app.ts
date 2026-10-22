@@ -6,6 +6,8 @@ import { CSRF_HEADER, env } from "@udp/config";
 import {
   errorHandler,
   internalPortOnly,
+  type InternalIdentityOptions,
+  requireInternalIdentity,
   jsonBodyExcept,
   notFoundHandler,
   requestLogger,
@@ -77,6 +79,11 @@ const CSRF_EXEMPT_PATHS = [
 /** [Plan #66] Cổng nội bộ: có thì `/internal/*` chỉ phục vụ trên cổng đó; không có (test, dev) thì một cổng như trước */
 export interface AppOptions {
   internalPort?: number;
+  /**
+   * [Plan #67] Lớp danh tính của `/internal/*` (chế độ `token-review`): mount ngay sau chốt cổng, trước parser. Không
+   * truyền (dev, test, supertest) thì chỉ bí mật dùng chung như trước.
+   */
+  identity?: InternalIdentityOptions;
 }
 
 export function createApp(
@@ -104,6 +111,9 @@ export function createApp(
   // `/internal/*` mà không đọc thân request
   if (options.internalPort !== undefined) {
     app.use("/internal", internalPortOnly(options.internalPort));
+  }
+  if (options.identity !== undefined) {
+    app.use("/internal", requireInternalIdentity(options.identity));
   }
   app.use(
     cors({

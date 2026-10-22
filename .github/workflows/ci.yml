@@ -452,7 +452,8 @@ jobs:
         timeout-minutes: 50
         run: pnpm deploy:up
       - name: E2E rút gọn
-        timeout-minutes: 10
+        # [Plan #67] thêm năm nhóm phép thử danh tính bên gọi (một pod mạo nhãn, giả danh một ServiceAccount)
+        timeout-minutes: 20
         run: pnpm --filter @udp/deploy e2e
       - name: E9 — tài nguyên khi rỗi và khi 1 000 SDK nối SSE
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -498,7 +499,8 @@ jobs:
         timeout-minutes: 50
         run: bash deploy/vm/release.sh "$GITHUB_SHA"
       - name: E2E qua HTTPS
-        timeout-minutes: 15
+        # [Plan #67] thêm năm nhóm phép thử danh tính bên gọi
+        timeout-minutes: 25
         run: pnpm --filter @udp/deploy e2e:vm
       - name: chẩn đoán máy
         if: failure()

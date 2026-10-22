@@ -99,7 +99,11 @@ async function probe(
 }
 
 /** `<ClusterIP>:<cổng đầu tiên>` của một Service */
-function endpointOf(kube: Kube, namespace: string, service: string): string {
+export function endpointOf(
+  kube: Kube,
+  namespace: string,
+  service: string,
+): string {
   const out = kube.ask([
     "get",
     "service",
@@ -214,7 +218,7 @@ async function expectStatusFromServiceThree(
  * [Plan #66] Cổng nội bộ chỉ cho bên gọi thật; cổng công khai không phục vụ `/internal`.
  *
  * Dương bằng Service 3 thật tới cổng nội bộ của CẢ HAI service (Service 1 ← Service 3 không có đường E2E nào khác chạm
- * tới). Chốt `internalPortOnly` đo cùng lúc: route nội bộ có thật trả 401 (thiếu bí mật) qua cổng nội bộ, 404 qua cổng
+ * tới). Chốt `internalPortOnly` đo cùng lúc: route nội bộ có thật trả 401 (thiếu token và bí mật - Plan #67) qua cổng nội bộ, 404 qua cổng
  * công khai. Âm bằng pod thử nhãn lạ và namespace khác; đối chứng: cổng công khai vẫn mở cho mọi nguồn (luật 1).
  */
 export async function expectInternalPortsOnlyForCallers(

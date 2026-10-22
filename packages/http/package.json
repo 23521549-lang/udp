@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./errors": "./src/errors.ts",
-    "./flagger-gate": "./src/flagger-gate.ts"
+    "./flagger-gate": "./src/flagger-gate.ts",
+    "./internal-token": "./src/internal-token.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -12,6 +12,7 @@
     "rehash": "tsx src/scripts/rehash-config.ts"
   },
   "dependencies": {
+    "@udp/cluster-access": "workspace:*",
     "@udp/config": "workspace:*",
     "@udp/db": "workspace:*",
     "@udp/flag-evaluator": "workspace:*",

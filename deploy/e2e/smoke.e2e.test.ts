@@ -7,6 +7,7 @@ import {
 import { beforeAll, describe, expect, it } from "vitest";
 import { KUBE_CONTEXT, NAMESPACE, SAMPLE_NAMESPACE } from "../src/cluster.js";
 import { pinnedKubectl } from "../src/install.js";
+import { expectInternalIdentityEnforced } from "./internal-identity-probe.js";
 import {
   expectInternalPortsOnlyForCallers,
   expectPostgresOnlyForClients,
@@ -221,6 +222,15 @@ describe("NetworkPolicy của PostgreSQL (Plan #65)", () => {
 describe("cổng nội bộ của Service 1 và Service 2 (Plan #66)", () => {
   it("kindnet cưỡng chế: Service 3 tới cổng nội bộ, nhãn lạ và namespace khác thì không; cổng công khai không phục vụ /internal", async () => {
     await expectInternalPortsOnlyForCallers(
+      pinnedKubectl(["--context", KUBE_CONTEXT]),
+      NAMESPACE,
+    );
+  }, 900_000);
+});
+
+describe("danh tính bên gọi /internal (Plan #67)", () => {
+  it("TokenReview và policy udp-internal-identity: đủ ba lớp thì qua; thiếu token, sai audience, mạo nhãn, quyền trong namespace thì không", async () => {
+    await expectInternalIdentityEnforced(
       pinnedKubectl(["--context", KUBE_CONTEXT]),
       NAMESPACE,
     );

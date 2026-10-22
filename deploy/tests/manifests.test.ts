@@ -1,6 +1,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  INTERNAL_AUDIENCE,
+  INTERNAL_CALLERS,
+  type InternalTarget,
+} from "@udp/config/constants";
 import { envSchema } from "@udp/config/env-schema";
 import { SEED_DEV_SERVER_KEY } from "@udp/db/seed-constants";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -47,6 +52,54 @@ const byKind = (kind: string): Resource[] => byKindIn(docs, kind);
 const workloads = (): Resource[] => workloadsIn(docs);
 const UDP_SERVICES = ["core-backend", "flag-service", "pd-controller"];
 
+interface RbacRule {
+  apiGroups?: string[];
+  resources: string[];
+  verbs: string[];
+}
+
+/** [Plan #67] Quyền duy nhất mà bên nhận `/internal/*` cần thêm */
+const TOKEN_REVIEW_RULE: RbacRule = {
+  apiGroups: ["authentication.k8s.io"],
+  resources: ["tokenreviews"],
+  verbs: ["create"],
+};
+
+/** Mọi binding có subject là ServiceAccount `udp/<sa>`, và rule của role mà chúng trỏ tới */
+function rulesBoundTo(
+  rendered: readonly Resource[],
+  sa: string,
+): { bindings: string[]; rules: RbacRule[] } {
+  const bindings = [
+    ...byKindIn(rendered, "RoleBinding"),
+    ...byKindIn(rendered, "ClusterRoleBinding"),
+  ].filter((b) =>
+    (
+      b as unknown as {
+        subjects?: { kind: string; name: string; namespace?: string }[];
+      }
+    ).subjects?.some(
+      (s) =>
+        s.kind === "ServiceAccount" &&
+        s.name === sa &&
+        s.namespace === NAMESPACE,
+    ),
+  );
+  const rules = bindings.flatMap((b) => {
+    const ref = (b as unknown as { roleRef: { kind: string; name: string } })
+      .roleRef;
+    return (
+      named(rendered, ref.kind, ref.name) as unknown as {
+        rules: RbacRule[];
+      }
+    ).rules;
+  });
+  return {
+    bindings: bindings.map((b) => `${b.kind}/${b.metadata.name}`),
+    rules,
+  };
+}
+
 describe("overlay kind (Plan #49)", () => {
   /**
    * [Plan #63] Env THẬT của từng pod (`effectiveEnv` — ConfigMap, Secret, `env`, rồi biến service link của kubelet),
@@ -54,8 +107,15 @@ describe("overlay kind (Plan #49)", () => {
    */
   it("env thật của từng service (ConfigMap, Secret sinh ra, biến của kubelet) qua CHÍNH schema env", () => {
     const secrets = { [SECRET_NAME]: generateSecrets() };
-    for (const name of UDP_SERVICES) {
-      const parsed = envSchema.safeParse(effectiveEnv(docs, name, secrets));
+    // [Plan #67] Job `udp-migrate` (`sync-catalog`, `seed`) nạp cùng schema - luật production chạm cả nó
+    const parsers = [
+      ...UDP_SERVICES.map((name) => ["Deployment", name] as const),
+      ["Job", "udp-migrate"] as const,
+    ];
+    for (const [kind, name] of parsers) {
+      const parsed = envSchema.safeParse(
+        effectiveEnv(docs, name, secrets, kind),
+      );
       expect(
         parsed.success
           ? []
@@ -278,38 +338,24 @@ describe("overlay kind (Plan #49)", () => {
       ),
     ).toContain(`${NAMESPACE}/core-backend`);
 
-    const rules = [...byKind("Role"), ...byKind("ClusterRole")]
-      .filter((r) => r.metadata.name.includes("core-backend"))
-      .flatMap(
-        (r) =>
-          (
-            r as unknown as {
-              rules: { resources: string[]; verbs: string[] }[];
-            }
-          ).rules,
-      );
-    expect(rules.length).toBeGreaterThan(0);
-    for (const rule of rules) {
+    // [Plan #67] Theo SUBJECT, không theo tên: một binding tên bất kỳ cấp thêm quyền cho Service 1 cũng phải lộ ra ở đây
+    const bound = rulesBoundTo(docs, "core-backend");
+    expect(bound.bindings.sort()).toEqual([
+      "ClusterRoleBinding/udp-core-backend-node-read",
+      "ClusterRoleBinding/udp-internal-token-review",
+      "RoleBinding/core-backend-platform-read",
+    ]);
+    const isTokenReview = (rule: RbacRule) =>
+      JSON.stringify(rule) === JSON.stringify(TOKEN_REVIEW_RULE);
+    // Chỉ đọc, cộng đúng một quyền ghi: `tokenreviews: create` - một câu hỏi tới API server, không đổi trạng thái cụm
+    expect(bound.rules.filter(isTokenReview)).toHaveLength(1);
+    for (const rule of bound.rules.filter((r) => !isTokenReview(r))) {
       expect(rule.verbs.filter((v) => !["get", "list"].includes(v))).toEqual(
         [],
       );
       expect(rule.resources).not.toContain("secrets");
       expect(rule.resources.some((r) => r.includes("/"))).toBe(false);
     }
-    const bindings = [...byKind("RoleBinding"), ...byKind("ClusterRoleBinding")]
-      .filter((b) => b.metadata.name.includes("core-backend"))
-      .flatMap(
-        (b) =>
-          (b as unknown as { subjects: { name: string; namespace?: string }[] })
-            .subjects,
-      );
-    expect(bindings).toEqual(
-      Array.from({ length: 2 }, () => ({
-        kind: "ServiceAccount",
-        name: "core-backend",
-        namespace: NAMESPACE,
-      })),
-    );
     const config = byKind("ConfigMap").find((c) =>
       c.metadata.name.startsWith("udp-config-"),
     );
@@ -321,7 +367,13 @@ describe("overlay kind (Plan #49)", () => {
   it("mọi tài nguyên của UDP nằm trong namespace udp", () => {
     const outside = docs.filter(
       (d) =>
-        !["Namespace", "ClusterRole", "ClusterRoleBinding"].includes(d.kind) &&
+        ![
+          "Namespace",
+          "ClusterRole",
+          "ClusterRoleBinding",
+          "ValidatingAdmissionPolicy",
+          "ValidatingAdmissionPolicyBinding",
+        ].includes(d.kind) &&
         d.metadata.namespace !== NAMESPACE &&
         d.metadata.name !== "sample-app",
     );
@@ -734,6 +786,287 @@ describe("cổng nội bộ của Service 1 và Service 2 (Plan #66)", () => {
         ].filter((k) => keys.has(k));
       });
       expect(clashes).toEqual([]);
+    });
+  }
+});
+
+/**
+ * [Plan #67] Danh tính bên gọi `/internal/*`: token chiếu của ServiceAccount, `TokenReview`, và policy khoá ba
+ * ServiceAccount. Cách nó hỏng mà cụm vẫn chạy, và ô bắt từng cái:
+ *
+ *  - `INTERNAL_CALLERS` (bên nhận đòi ai) lệch bên gọi thật trong mã, hay lệch volume `projected` (bên gọi mang token
+ *    cho đích nào): lời gọi hợp lệ bị 401, hoặc một token thừa nằm trong pod không cần nó.
+ *  - Audience trong manifest lệch `INTERNAL_AUDIENCE`: mọi lời gọi 401.
+ *  - Quyền `tokenreviews` rộng ra (thêm subject, thêm verb, `system:auth-delegator`).
+ *  - Policy bị bỏ, đổi sang `Warn`, hay quên một loại workload hoặc subresource: danh tính lại thành "ai tạo được pod".
+ *  - Một workload khác đặt tên bắt đầu bằng tiền tố của ba Deployment: luật `exec` theo tên pod chặn nhầm nó.
+ */
+const TARGETS = Object.keys(INTERNAL_AUDIENCE) as InternalTarget[];
+const CALLER_SERVICES = ["core-backend", "flag-service", "pd-controller"];
+
+interface ProjectedSource {
+  serviceAccountToken?: {
+    audience?: string;
+    expirationSeconds?: number;
+    path: string;
+  };
+}
+
+interface IdentityPodSpec {
+  serviceAccountName?: string;
+  automountServiceAccountToken?: boolean;
+  hostNetwork?: boolean;
+  volumes?: {
+    name: string;
+    projected?: { sources: ProjectedSource[] };
+    hostPath?: unknown;
+  }[];
+  containers: {
+    volumeMounts?: { name: string; mountPath: string }[];
+    securityContext?: { privileged?: boolean };
+  }[];
+}
+
+const podSpecOf = (r: Resource): IdentityPodSpec =>
+  templateOf(r).spec as unknown as IdentityPodSpec;
+
+/** Các đích mà `service` gọi, theo `INTERNAL_CALLERS` */
+const targetsCalledBy = (service: string): InternalTarget[] =>
+  TARGETS.filter((t) => INTERNAL_CALLERS[t].includes(service));
+
+describe("danh tính bên gọi /internal (Plan #67)", () => {
+  const overlays = {
+    kind: OVERLAY,
+    vm: resolve(here, "../k8s/overlays/vm"),
+  } as const;
+  const rendered: Record<keyof typeof overlays, Resource[]> = {
+    kind: [],
+    vm: [],
+  };
+  beforeAll(() => {
+    rendered.kind = render(overlays.kind).docs;
+    rendered.vm = render(overlays.vm).docs;
+  });
+
+  it("INTERNAL_CALLERS khớp bên gọi dựng từ mã (cùng tập với NetworkPolicy của Plan #66)", () => {
+    for (const target of EXPOSED) {
+      expect(
+        [...INTERNAL_CALLERS[target.name as InternalTarget]].sort(),
+      ).toEqual(callersOf(target));
+    }
+    expect(EXPOSED.map((e) => e.name).sort()).toEqual([...TARGETS].sort());
+  });
+
+  for (const name of ["kind", "vm"] as const) {
+    it(`${name}: mỗi service chạy bằng ServiceAccount cùng tên; Service 3 không gắn token mặc định`, () => {
+      const accounts = byKindIn(rendered[name], "ServiceAccount").map(
+        (a) => a.metadata.name,
+      );
+      for (const service of CALLER_SERVICES) {
+        const spec = podSpecOf(named(rendered[name], "Deployment", service));
+        expect(spec.serviceAccountName, service).toBe(service);
+        expect(accounts).toContain(service);
+        // Bên nhận gọi TokenReview bằng token mặc định; Service 3 không gọi API server của cụm UDP
+        expect(spec.automountServiceAccountToken, service).toBe(
+          service === "pd-controller" ? false : undefined,
+        );
+      }
+    });
+
+    it(`${name}: volume projected mang đúng token cho đúng đích, đúng audience, gắn ở INTERNAL_TOKEN_DIR`, () => {
+      const config = configOf(rendered[name]);
+      expect(config["INTERNAL_AUTH_MODE"]).toBe("token-review");
+      const dir = config["INTERNAL_TOKEN_DIR"];
+      for (const service of CALLER_SERVICES) {
+        const spec = podSpecOf(named(rendered[name], "Deployment", service));
+        const volume = spec.volumes?.find((v) => v.name === "internal-token");
+        const expected = targetsCalledBy(service).map((t) => ({
+          path: t,
+          audience: INTERNAL_AUDIENCE[t],
+        }));
+        if (expected.length === 0) {
+          expect(volume, service).toBeUndefined();
+          continue;
+        }
+        const sources = (volume?.projected?.sources ?? []).map((s) => ({
+          path: s.serviceAccountToken?.path,
+          audience: s.serviceAccountToken?.audience,
+        }));
+        expect(sources, service).toEqual(expected);
+        for (const s of volume?.projected?.sources ?? []) {
+          // Tối thiểu của API server; kubelet xoay ở 80%
+          expect(
+            s.serviceAccountToken?.expirationSeconds,
+          ).toBeGreaterThanOrEqual(600);
+        }
+        const mounts = spec.containers.flatMap((c) =>
+          (c.volumeMounts ?? []).filter((m) => m.name === "internal-token"),
+        );
+        expect(
+          mounts.map((m) => m.mountPath),
+          service,
+        ).toEqual([dir]);
+      }
+    });
+
+    it(`${name}: tokenreviews chỉ ở một ClusterRole, đúng một verb, chỉ buộc vào bên nhận`, () => {
+      const grants = [
+        ...byKindIn(rendered[name], "Role"),
+        ...byKindIn(rendered[name], "ClusterRole"),
+      ].filter((r) =>
+        (r as unknown as { rules: RbacRule[] }).rules.some(
+          (rule) =>
+            rule.resources.includes("tokenreviews") ||
+            rule.resources.includes("*"),
+        ),
+      );
+      expect(grants.map((r) => `${r.kind}/${r.metadata.name}`)).toEqual([
+        "ClusterRole/udp-internal-token-review",
+      ]);
+      expect(
+        (grants[0] as unknown as { rules: RbacRule[] }).rules,
+      ).toStrictEqual([TOKEN_REVIEW_RULE]);
+      const subjects = (
+        named(
+          rendered[name],
+          "ClusterRoleBinding",
+          "udp-internal-token-review",
+        ) as unknown as { subjects: { name: string; namespace: string }[] }
+      ).subjects;
+      expect(subjects.map((x) => `${x.namespace}/${x.name}`).sort()).toEqual(
+        TARGETS.map((t) => `${NAMESPACE}/${t}`).sort(),
+      );
+      for (const service of CALLER_SERVICES) {
+        const has = rulesBoundTo(rendered[name], service).rules.some(
+          (r) => JSON.stringify(r) === JSON.stringify(TOKEN_REVIEW_RULE),
+        );
+        expect(has, service).toBe(TARGETS.includes(service as InternalTarget));
+      }
+    });
+
+    it(`${name}: ValidatingAdmissionPolicy khoá ba ServiceAccount - Deny, Fail, đủ loại workload và subresource`, () => {
+      const policy = named(
+        rendered[name],
+        "ValidatingAdmissionPolicy",
+        "udp-internal-identity",
+      ) as unknown as {
+        spec: {
+          failurePolicy: string;
+          matchConstraints: {
+            namespaceSelector: { matchLabels: Record<string, string> };
+            resourceRules: { resources: string[]; operations: string[] }[];
+          };
+          variables: { name: string; expression: string }[];
+          validations: { expression: string }[];
+        };
+      };
+      expect(policy.spec.failurePolicy).toBe("Fail");
+      expect(
+        policy.spec.matchConstraints.namespaceSelector.matchLabels,
+      ).toEqual({ "kubernetes.io/metadata.name": NAMESPACE });
+      const ops = new Map<string, string[]>();
+      for (const rule of policy.spec.matchConstraints.resourceRules) {
+        for (const r of rule.resources) ops.set(r, rule.operations);
+      }
+      const required: Record<string, string[]> = {
+        pods: ["CREATE", "UPDATE"],
+        replicationcontrollers: ["CREATE", "UPDATE"],
+        "pods/exec": ["CONNECT"],
+        "pods/attach": ["CONNECT"],
+        "pods/ephemeralcontainers": ["UPDATE"],
+        "serviceaccounts/token": ["CREATE"],
+        serviceaccounts: ["DELETE"],
+        configmaps: ["CREATE", "UPDATE", "DELETE"],
+        secrets: ["CREATE", "UPDATE", "DELETE"],
+        services: ["CREATE", "UPDATE", "DELETE"],
+        deployments: ["CREATE", "UPDATE"],
+        replicasets: ["CREATE", "UPDATE"],
+        statefulsets: ["CREATE", "UPDATE"],
+        daemonsets: ["CREATE", "UPDATE"],
+        jobs: ["CREATE", "UPDATE"],
+        cronjobs: ["CREATE", "UPDATE"],
+        endpointslices: ["CREATE", "UPDATE", "DELETE"],
+      };
+      for (const [resource, operations] of Object.entries(required)) {
+        expect([...(ops.get(resource) ?? [])].sort(), resource).toEqual(
+          [...operations].sort(),
+        );
+      }
+      const protectedNames = policy.spec.variables.find(
+        (v) => v.name === "protected",
+      )?.expression;
+      expect(
+        JSON.parse((protectedNames ?? "").replace(/'/g, '"')) as string[],
+      ).toEqual(CALLER_SERVICES);
+      expect(policy.spec.validations.length).toBeGreaterThanOrEqual(10);
+
+      // Trường VẮNG MẶT khi rỗng (`subResource`, `name`) phải đọc qua `request.?`: truy cập thẳng là lỗi "no such key",
+      // và với failurePolicy Fail thì lỗi là từ chối - lượt CI đầu của Plan #67 chặn cert-manager và job-controller
+      const expressions = [
+        ...policy.spec.variables.map((v) => v.expression),
+        ...policy.spec.validations.map((v) => v.expression),
+      ].join("\n");
+      const direct = new Set(
+        [...expressions.matchAll(/\brequest\.(\w+)/g)].map((m) => m[1]),
+      );
+      expect([...direct].sort()).toEqual(
+        ["kind", "operation", "resource", "userInfo"].filter((f) =>
+          direct.has(f),
+        ),
+      );
+      expect(expressions).not.toMatch(/userInfo\.groups/);
+      // Biến KHÔNG giữ optional: `variables.x.?trường` trên biến optional luôn trả rỗng (đo trên kube-apiserver 1.35) -
+      // lượt CI thứ hai của Plan #67 cho kẻ thử tạo pod mang SA pd-controller vì policy đọc SA của mọi pod là `default`
+      for (const v of policy.spec.variables) {
+        expect(v.expression, v.name).not.toMatch(/optional\.(none|of)\(/);
+        if (v.expression.includes(".?")) {
+          expect(
+            v.expression,
+            `${v.name}: chuỗi .? phải kết thúc bằng orValue`,
+          ).toMatch(/\.orValue\(/);
+        }
+      }
+
+      const binding = named(
+        rendered[name],
+        "ValidatingAdmissionPolicyBinding",
+        "udp-internal-identity",
+      ) as unknown as {
+        spec: { policyName: string; validationActions: string[] };
+      };
+      expect(binding.spec).toEqual({
+        policyName: "udp-internal-identity",
+        validationActions: ["Deny"],
+      });
+    });
+
+    it(`${name}: không workload nào khác mang tên bắt đầu bằng tiền tố của ba Deployment (luật exec theo tên pod)`, () => {
+      const clash = podWorkloads(rendered[name]).filter(
+        (w) =>
+          !(
+            w.kind === "Deployment" && CALLER_SERVICES.includes(w.metadata.name)
+          ) && CALLER_SERVICES.some((p) => w.metadata.name.startsWith(`${p}-`)),
+      );
+      expect(clash.map((w) => `${w.kind}/${w.metadata.name}`)).toEqual([]);
+    });
+
+    it(`${name}: namespace udp cưỡng chế Pod Security baseline, và mọi pod của UDP qua được nó`, () => {
+      expect(
+        named(rendered[name], "Namespace", NAMESPACE).metadata.labels?.[
+          "pod-security.kubernetes.io/enforce"
+        ],
+      ).toBe("baseline");
+      const breaking = podWorkloads(rendered[name])
+        .filter((w) => (w.metadata.namespace ?? NAMESPACE) === NAMESPACE)
+        .filter((w) => {
+          const spec = podSpecOf(w);
+          return (
+            spec.hostNetwork === true ||
+            (spec.volumes ?? []).some((v) => v.hostPath !== undefined) ||
+            spec.containers.some((c) => c.securityContext?.privileged === true)
+          );
+        });
+      expect(breaking.map((w) => `${w.kind}/${w.metadata.name}`)).toEqual([]);
     });
   }
 });

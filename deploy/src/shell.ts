@@ -51,6 +51,23 @@ export function query(command: string, args: readonly string[]): string | null {
 }
 
 /**
+ * [Plan #67] Chạy và giữ CẢ mã thoát lẫn stdout + stderr - cho phép thử cần biết lệnh bị từ chối VÌ ĐÂU (thông điệp
+ * của admission khác 403 của RBAC). `input` đi qua stdin, không qua dòng lệnh.
+ */
+export function attempt(
+  command: string,
+  args: readonly string[],
+  input?: string,
+): { code: number | null; output: string } {
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    ...(input === undefined ? {} : { input }),
+  });
+  if (result.error !== undefined) throw result.error;
+  return { code: result.status, output: `${result.stdout}${result.stderr}` };
+}
+
+/**
  * Lệnh hỏi phiên bản của từng công cụ. `kubectl version` trần hỏi cả API server và thoát mã 1 khi chưa có cụm nào
  * — đúng lúc `deploy:up` hỏi, trước khi dựng cụm; `sudo` không có lệnh con `version`. `docker version` thì CỐ Ý
  * hỏi cả daemon: Docker có mà chưa chạy cũng là "chưa dùng được".

@@ -109,6 +109,9 @@ async function launch(
           // sẽ làm các tiến trình con giẫm lên nhau (`EADDRINUSE`). Chuỗi rỗng là "chưa đặt" (`optionalSetting`).
           CORE_BACKEND_INTERNAL_PORT: "",
           FLAG_SERVICE_INTERNAL_PORT: "",
+          // [Plan #67] Tiến trình con không ở trong cụm: chỉ bí mật dùng chung, dù `.env` của máy có khai gì
+          INTERNAL_AUTH_MODE: "",
+          INTERNAL_TOKEN_DIR: "",
           ...env,
           [spec.portEnv]: String(port),
         },

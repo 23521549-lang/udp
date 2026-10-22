@@ -5,6 +5,8 @@ import {
   asyncHandler,
   errorHandler,
   internalPortOnly,
+  type InternalIdentityOptions,
+  requireInternalIdentity,
   notFoundHandler,
   requestLogger,
 } from "@udp/http";
@@ -42,6 +44,11 @@ import { sdkRouter, sdkStatsRouter } from "./sdk/sdk.controller.js";
 /** [Plan #66] Cổng nội bộ: có thì `/internal/*` chỉ phục vụ trên cổng đó; không có (test, dev) thì một cổng như trước */
 export interface AppOptions {
   internalPort?: number;
+  /**
+   * [Plan #67] Lớp danh tính của `/internal/*` (chế độ `token-review`): mount ngay sau chốt cổng, trước parser. Không
+   * truyền (dev, test, supertest) thì chỉ bí mật dùng chung như trước.
+   */
+  identity?: InternalIdentityOptions;
 }
 
 export function createApp(options: AppOptions = {}): Express {
@@ -62,6 +69,9 @@ export function createApp(options: AppOptions = {}): Express {
   // [Plan #66] Trước MỌI router `/internal` - router segment bên dưới mount trước cả parser JSON
   if (options.internalPort !== undefined) {
     app.use("/internal", internalPortOnly(options.internalPort));
+  }
+  if (options.identity !== undefined) {
+    app.use("/internal", requireInternalIdentity(options.identity));
   }
   /**
    * [v4.6] OFREP mount TRƯỚC parser 1 MB toàn cục: router của nó có parser 16 KB
@@ -102,8 +112,9 @@ export function createApp(options: AppOptions = {}): Express {
    * `/internal/*` KHONG duoc phoi ra Internet — §9 noi ro. O tang ha tang, ingress
    * va nginx cua Portal chi route duong cong khai; o production /internal chi tra
    * loi tren cong noi bo (`internalPortOnly`, Plan #66), va NetworkPolicy chi mo
-   * cong do cho Service 1 va Service 3. Bi mat dung chung la lop xac thuc cua
-   * /internal - chua co TokenReview (§16).
+   * cong do cho Service 1 va Service 3. Trong cum, moi loi goi con phai mang token
+   * chieu cua ServiceAccount ben goi (`requireInternalIdentity`, TokenReview, Plan #67);
+   * bi mat dung chung la lop thu ba, va la lop duy nhat ngoai cum.
    */
   /**
    * Sẵn sàng nhận request chưa — CÓ chạm database, khác hẳn `/healthz`.
